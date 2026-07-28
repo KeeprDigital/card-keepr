@@ -1,9 +1,32 @@
 {
   "private": true,
+  "type": "module",
+  "bin": {
+    "keepr": "./cli/keepr.mjs"
+  },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler dev --config apps/api/wrangler.jsonc --port 8787 --inspector-port 9229",
+    "dev:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler dev --config apps/ingestion/wrangler.jsonc --port 8788 --inspector-port 9230",
+    "keepr": "node cli/keepr.mjs",
+    "test": "node --test --test-concurrency=1 acceptance/*.test.mjs",
+    "test:acceptance": "node --test --test-concurrency=1 acceptance/*.test.mjs",
+    "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/ingestion/tsconfig.json",
+    "types:generate": "node scripts/worker-types.mjs",
+    "types:check": "node scripts/worker-types.mjs --check",
+    "deploy:dry-run": "npm run deploy:dry-run:api && npm run deploy:dry-run:ingestion",
+    "deploy:dry-run:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/api/wrangler.jsonc",
+    "deploy:dry-run:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc",
     "prototype:game-contracts": "node prototype/v1-game-profiles-source-adapters/cli.mjs",
     "prototype:implementation-contracts": "node prototype/formalize-implementation-contracts/cli.mjs",
     "prototype:lifecycle-evidence-export-deletion": "node prototype/formalize-implementation-contracts/cli.mjs",
     "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.114.0"
   }
 }
