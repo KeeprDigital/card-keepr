@@ -24,6 +24,9 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
+const validateCatalogue = ajv.getSchema(
+  `${apiSchema.$id}#/$defs/CatalogueDocument`,
+);
 
 async function waitForHealth(url, key, runtime, worker) {
   const deadline = Date.now() + 15_000;
@@ -206,12 +209,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
       {
         name: "api",
         status: "ok",
-        capabilities: [
-          "catalogue:read",
-          "evidence:read",
-          "printing-image:read",
-          "export:read",
-        ],
+        capabilities: ["catalogue:read", "printing-image:read"],
       },
       {
         name: "ingestion",
@@ -233,7 +231,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     humanCli.stdout,
     [
       "Card Keepr runtimes are healthy",
-      "api: ok (catalogue:read, evidence:read, printing-image:read, export:read)",
+      "api: ok (catalogue:read, printing-image:read)",
       "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write)",
       "",
     ].join("\n"),
@@ -259,6 +257,20 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   assert.match(ingestionProblem.request_id, /^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
   assert.equal(JSON.stringify(apiProblem).includes(administrationKey), false);
   assert.equal(JSON.stringify(ingestionProblem).includes(apiKey), false);
+
+  const rejectedCli = await runCli(["health", "--json"], {
+    ...cliEnvironment,
+    KEEPR_API_KEY: administrationKey,
+  });
+  assert.equal(rejectedCli.code, 4);
+  assert.equal(rejectedCli.stderr, "");
+  assert.deepEqual(JSON.parse(rejectedCli.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "authentication_failed",
+    detail: "api runtime rejected its credential",
+    runtime: "api",
+  });
 });
 
 test("the API accepts an unauthenticated preflight for an exact allowed origin", async (t) => {
@@ -347,6 +359,7 @@ test("the API rejects a browser origin that only prefixes the allowed origin", a
   assert.equal(validateProblem?.(problem), true, JSON.stringify(validateProblem?.errors));
   assert.equal(problem.code, "forbidden_origin");
   assert.equal(response.headers.get("access-control-allow-origin"), null);
+  assert.equal(response.headers.get("vary"), "Origin");
 });
 
 test("an allowed browser origin receives a CORS-shaped authentication problem", async (t) => {
@@ -547,8 +560,19 @@ test("authenticated API responses expose the accepted browser headers", async (t
       origin: "http://localhost:3000",
     },
   });
+  const document = await response.json();
 
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 200);
+  assert.equal(
+    validateCatalogue?.(document),
+    true,
+    JSON.stringify(validateCatalogue?.errors),
+  );
+  assert.equal(
+    response.headers.get("x-catalogue-revision"),
+    document.meta.catalogue_revision_id,
+  );
+  assert.match(response.headers.get("etag") ?? "", /^".+"$/);
   assert.equal(
     response.headers.get("access-control-allow-origin"),
     "http://localhost:3000",

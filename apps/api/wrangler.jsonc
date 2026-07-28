@@ -8,7 +8,9 @@
     "mode": "smart"
   },
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "http://localhost:3000"
+    "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
+    "CATALOGUE_REVISION_ID": "catrev_spine_000",
+    "CATALOGUE_PUBLISHED_AT": "1970-01-01T00:00:00.000Z"
   },
   "d1_databases": [
     {
@@ -19,16 +21,8 @@
   ],
   "r2_buckets": [
     {
-      "binding": "EVIDENCE_OBJECTS",
-      "bucket_name": "card-keepr-evidence"
-    },
-    {
       "binding": "PRINTING_IMAGES",
       "bucket_name": "card-keepr-printing-images"
-    },
-    {
-      "binding": "CATALOGUE_EXPORTS",
-      "bucket_name": "card-keepr-catalogue-exports"
     }
   ],
   "ratelimits": [
@@ -51,6 +45,14 @@
   ],
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
   }
 }

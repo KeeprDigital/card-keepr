@@ -9,9 +9,12 @@
     "dev:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler dev --config apps/api/wrangler.jsonc --port 8787 --inspector-port 9229",
     "dev:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler dev --config apps/ingestion/wrangler.jsonc --port 8788 --inspector-port 9230",
     "keepr": "node cli/keepr.mjs",
-    "test": "node --test --test-concurrency=1 acceptance/*.test.mjs",
+    "test": "npm run test:workers && npm run test:acceptance",
+    "test:workers": "npm run test:workers:api && npm run test:workers:ingestion",
+    "test:workers:api": "vitest run --config apps/api/vitest.config.ts",
+    "test:workers:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
     "test:acceptance": "node --test --test-concurrency=1 acceptance/*.test.mjs",
-    "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/ingestion/tsconfig.json",
+    "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json",
     "types:generate": "node scripts/worker-types.mjs",
     "types:check": "node scripts/worker-types.mjs --check",
     "deploy:dry-run": "npm run deploy:dry-run:api && npm run deploy:dry-run:ingestion",
@@ -23,10 +26,12 @@
     "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.8",
     "@types/node": "^26.1.2",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "wrangler": "^4.114.0"
   }
 }

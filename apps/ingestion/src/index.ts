@@ -1,15 +1,11 @@
 import { authenticateBearer } from "../../../src/http/authentication";
-import { healthResponse } from "../../../src/http/health";
+import {
+  assertBindingsAvailable,
+  healthResponse,
+} from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
-
-const capabilities = [
-  "catalogue:write",
-  "evidence:write",
-  "printing-image:write",
-  "export:write",
-  "backup:write",
-];
+import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -36,7 +32,8 @@ export default {
 
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
-        requireBindings(
+        assertBindingsAvailable(
+          "mutation",
           env.CATALOGUE_DB,
           env.EVIDENCE_OBJECTS,
           env.PRINTING_IMAGES,
@@ -47,7 +44,7 @@ export default {
           contract: "card-keepr-runtime-health@1",
           runtime: "ingestion",
           status: "ok",
-          capabilities,
+          capabilities: ingestionCapabilities,
         });
       }
 
@@ -77,21 +74,3 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
-
-function requireBindings(
-  catalogueDatabase: D1Database,
-  evidenceObjects: R2Bucket,
-  printingImages: R2Bucket,
-  catalogueExports: R2Bucket,
-  backups: R2Bucket,
-): void {
-  if (
-    !catalogueDatabase ||
-    !evidenceObjects ||
-    !printingImages ||
-    !catalogueExports ||
-    !backups
-  ) {
-    throw new Error("Required mutation bindings are unavailable");
-  }
-}

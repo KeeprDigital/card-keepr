@@ -1,6 +1,6 @@
 # Card Keepr
 
-Card Keepr is a private catalogue service for Bandai Card data. This first
+Card Keepr is a private catalogue service for Bandai Catalogue Data. This first
 production spine runs two separately configured Cloudflare Workers:
 
 - `card-keepr-api` is the authenticated read boundary for Catalogue Consumers.
@@ -21,6 +21,9 @@ npm run dev
 
 The API listens on `http://127.0.0.1:8787` and ingestion listens on
 `http://127.0.0.1:8788`. Local D1 and R2 state is emulated by Wrangler.
+`GET /v1/catalogue` provides the schema-valid walking-spine document identified
+by `catrev_spine_000`; the later publication path will replace these configured
+bootstrap values with the current Catalogue Revision from D1.
 
 The read-only CLI health check takes credentials only from the environment,
 never from command arguments:
@@ -48,10 +51,16 @@ Binding declarations live in each runtime's `wrangler.jsonc`; generated
 `worker-configuration.d.ts` files are checked in and must be regenerated after
 binding changes with `npm run types:generate`.
 
-The API Worker has catalogue/evidence/image/export read responsibilities and no
-backup binding. The ingestion Worker has the corresponding mutation bindings
-plus the private backup bucket. R2 buckets have no `r2.dev` or custom-domain
-configuration and remain reachable only through authenticated Worker routes.
+The API Worker has catalogue and Printing Image read responsibilities and no
+evidence, export-mutation, or backup binding. The ingestion Worker has the
+corresponding mutation bindings plus the private backup bucket. R2 buckets have
+no `r2.dev` or custom-domain configuration and remain reachable only through
+authenticated Worker routes.
+
+Cloudflare D1 and R2 bindings are resource-scoped rather than method-scoped, so
+the API's least-privilege boundary is the smaller attached resource set plus its
+read-only routes and separate bearer credential. Evidence, Catalogue Export,
+backup, and administration capabilities are attached only to ingestion.
 
 Before a first deployment, provision the named APAC D1 database and private R2
 buckets, then replace the placeholder D1 identifier in both configurations

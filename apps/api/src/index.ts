@@ -1,19 +1,17 @@
 import { authenticateBearer } from "../../../src/http/authentication";
+import { catalogueResponse } from "../../../src/http/catalogue";
 import {
   allowedPreflightResponse,
   hasAllowedOrigin,
   withCorsHeaders,
 } from "../../../src/http/cors";
-import { healthResponse } from "../../../src/http/health";
+import {
+  assertBindingsAvailable,
+  healthResponse,
+} from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
-
-const capabilities = [
-  "catalogue:read",
-  "evidence:read",
-  "printing-image:read",
-  "export:read",
-];
+import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -33,6 +31,7 @@ export default {
           title: "Forbidden preflight",
           detail:
             "The browser preflight does not match the allowed origin, method, or headers.",
+          headers: { vary: "Origin" },
         });
       }
       if (!hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)) {
@@ -42,6 +41,7 @@ export default {
           code: "forbidden_origin",
           title: "Forbidden origin",
           detail: "The browser origin is not allowed for this environment.",
+          headers: { vary: "Origin" },
         });
       }
 
@@ -73,12 +73,21 @@ export default {
         return withCorsHeaders(request, authenticationFailure);
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/catalogue") {
+        return withCorsHeaders(
+          request,
+          catalogueResponse({
+            revisionId: env.CATALOGUE_REVISION_ID,
+            publishedAt: env.CATALOGUE_PUBLISHED_AT,
+          }),
+        );
+      }
+
       if (request.method === "GET" && url.pathname === "/health") {
-        requireBindings(
+        assertBindingsAvailable(
+          "read",
           env.CATALOGUE_DB,
-          env.EVIDENCE_OBJECTS,
           env.PRINTING_IMAGES,
-          env.CATALOGUE_EXPORTS,
         );
         return withCorsHeaders(
           request,
@@ -86,7 +95,7 @@ export default {
             contract: "card-keepr-runtime-health@1",
             runtime: "api",
             status: "ok",
-            capabilities,
+            capabilities: apiCapabilities,
           }),
         );
       }
@@ -123,22 +132,6 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
-
-function requireBindings(
-  catalogueDatabase: D1Database,
-  evidenceObjects: R2Bucket,
-  printingImages: R2Bucket,
-  catalogueExports: R2Bucket,
-): void {
-  if (
-    !catalogueDatabase ||
-    !evidenceObjects ||
-    !printingImages ||
-    !catalogueExports
-  ) {
-    throw new Error("Required read bindings are unavailable");
-  }
-}
 
 function isPrintingImageContent(pathname: string): boolean {
   return (

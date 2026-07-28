@@ -1,19 +1,37 @@
 #!/usr/bin/env node
 
+import {
+  apiCapabilities,
+  ingestionCapabilities,
+} from "../src/runtime-capabilities.mjs";
+
 const exit = await main(process.argv.slice(2), process.env);
 process.exitCode = exit;
 
 async function main(arguments_, environment) {
   const [command, ...options] = arguments_;
+  const json = options.includes("--json");
   if (command !== "health" || options.some((option) => option !== "--json")) {
-    process.stderr.write("Usage: keepr health [--json]\n");
-    return 2;
+    return writeFailure(
+      json,
+      {
+        code: "usage_error",
+        detail: "Usage: keepr health [--json]",
+      },
+      2,
+    );
   }
 
   const configuration = readConfiguration(environment);
   if (configuration.error !== null) {
-    process.stderr.write(`${configuration.error}\n`);
-    return 2;
+    return writeFailure(
+      json,
+      {
+        code: "configuration_error",
+        detail: configuration.error,
+      },
+      2,
+    );
   }
 
   const results = await Promise.all(
@@ -21,8 +39,7 @@ async function main(arguments_, environment) {
   );
   const failure = results.find((result) => !result.ok);
   if (failure !== undefined) {
-    process.stderr.write(`${failure.message}\n`);
-    return failure.exitCode;
+    return writeFailure(json, failure, failure.exitCode);
   }
 
   const document = {
@@ -30,7 +47,7 @@ async function main(arguments_, environment) {
     status: "ok",
     runtimes: results.map((result) => result.health),
   };
-  if (options.includes("--json")) {
+  if (json) {
     process.stdout.write(`${JSON.stringify(document)}\n`);
   } else {
     process.stdout.write("Card Keepr runtimes are healthy\n");
@@ -62,24 +79,13 @@ function readConfiguration(environment) {
         name: "api",
         url: environment.KEEPR_API_URL ?? "http://127.0.0.1:8787",
         key: environment.KEEPR_API_KEY,
-        capabilities: [
-          "catalogue:read",
-          "evidence:read",
-          "printing-image:read",
-          "export:read",
-        ],
+        capabilities: apiCapabilities,
       },
       {
         name: "ingestion",
         url: environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788",
         key: environment.KEEPR_ADMINISTRATION_KEY,
-        capabilities: [
-          "catalogue:write",
-          "evidence:write",
-          "printing-image:write",
-          "export:write",
-          "backup:write",
-        ],
+        capabilities: ingestionCapabilities,
       },
     ],
   };
@@ -98,7 +104,9 @@ async function checkRuntime(runtime) {
     return {
       ok: false,
       exitCode: 9,
-      message: `${runtime.name} runtime is unavailable`,
+      code: "runtime_unavailable",
+      detail: `${runtime.name} runtime is unavailable`,
+      runtime: runtime.name,
     };
   }
 
@@ -106,18 +114,33 @@ async function checkRuntime(runtime) {
     return {
       ok: false,
       exitCode: 4,
-      message: `${runtime.name} runtime rejected its credential`,
+      code: "authentication_failed",
+      detail: `${runtime.name} runtime rejected its credential`,
+      runtime: runtime.name,
     };
   }
   if (!response.ok) {
     return {
       ok: false,
       exitCode: 9,
-      message: `${runtime.name} runtime returned HTTP ${response.status}`,
+      code: "runtime_error",
+      detail: `${runtime.name} runtime returned HTTP ${response.status}`,
+      runtime: runtime.name,
     };
   }
 
-  const health = await response.json();
+  let health;
+  try {
+    health = await response.json();
+  } catch {
+    return {
+      ok: false,
+      exitCode: 8,
+      code: "invalid_health_contract",
+      detail: `${runtime.name} runtime returned invalid JSON`,
+      runtime: runtime.name,
+    };
+  }
   if (
     health?.contract !== "card-keepr-runtime-health@1" ||
     health.runtime !== runtime.name ||
@@ -127,7 +150,9 @@ async function checkRuntime(runtime) {
     return {
       ok: false,
       exitCode: 8,
-      message: `${runtime.name} runtime returned an invalid health contract`,
+      code: "invalid_health_contract",
+      detail: `${runtime.name} runtime returned an invalid health contract`,
+      runtime: runtime.name,
     };
   }
 
@@ -147,4 +172,20 @@ function sameStrings(actual, expected) {
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
+}
+
+function writeFailure(json, failure, exitCode) {
+  if (json) {
+    const document = {
+      contract: "card-keepr-cli-problem@1",
+      status: "error",
+      code: failure.code,
+      detail: failure.detail,
+      ...(failure.runtime ? { runtime: failure.runtime } : {}),
+    };
+    process.stdout.write(`${JSON.stringify(document)}\n`);
+  } else {
+    process.stderr.write(`${failure.detail}\n`);
+  }
+  return exitCode;
 }
