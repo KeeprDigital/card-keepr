@@ -1,6 +1,9 @@
 const digestA = "a".repeat(64);
 const digestB = "b".repeat(64);
 const digestC = "c".repeat(64);
+const currentExportManifest = "1".repeat(64);
+const olderExportManifest = "2".repeat(64);
+const olderExportObjectSet = "4".repeat(64);
 
 const startAndReachCandidate = (runId = "run_demo_002") => [
   {
@@ -217,6 +220,171 @@ export const scenarios = [
         rotation_id: "rotation_admin_key",
         to: "old_revoked",
         old_fingerprint: "sha256:old-demo"
+      }
+    ]
+  },
+  {
+    key: "7",
+    name: "Current export is a blocking dependency",
+    question:
+      "Can the owner inspect the exact deletion consequences while the current Catalogue Revision remains impossible to delete?",
+    actions: [
+      {
+        type: "PREPARE_EXPORT_DELETION",
+        plan_id: "plan_current",
+        catalogue_revision_id: "catrev_demo_001",
+        manifest_digest: currentExportManifest,
+        expected_current_revision_id: "catrev_demo_001"
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_current",
+        plan_digest: "$PLAN_DIGEST:plan_current",
+        deletion_id: "delete_current",
+        catalogue_revision_id: "catrev_demo_001",
+        manifest_digest: currentExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "catrev_demo_001",
+        idempotency_key: "delete-current"
+      }
+    ]
+  },
+  {
+    key: "8",
+    name: "Deletion bindings fail closed",
+    question:
+      "Do a stale manifest digest, missing exact confirmation, and an expired plan leave the older export available?",
+    actions: [
+      {
+        type: "PREPARE_EXPORT_DELETION",
+        plan_id: "plan_stale_manifest",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: digestA,
+        expected_current_revision_id: "catrev_demo_001"
+      },
+      {
+        type: "PREPARE_EXPORT_DELETION",
+        plan_id: "plan_expiring",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001"
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_expiring",
+        plan_digest: "$PLAN_DIGEST:plan_expiring",
+        deletion_id: "delete_without_confirmation",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "wrong-revision",
+        idempotency_key: "delete-without-confirmation"
+      },
+      {
+        type: "TICK",
+        at: Date.parse("2026-07-28T00:15:00.000Z")
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_expiring",
+        plan_digest: "$PLAN_DIGEST:plan_expiring",
+        deletion_id: "delete_expired",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "catrev_demo_000",
+        idempotency_key: "delete-expired"
+      }
+    ]
+  },
+  {
+    key: "9",
+    name: "Exact deletion and stable replay",
+    question:
+      "Does confirmation hide and delete only the bound older export while preserving stable audit, recovery, and idempotent outcomes?",
+    actions: [
+      {
+        type: "PREPARE_EXPORT_DELETION",
+        plan_id: "plan_delete_older",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001"
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_delete_older",
+        plan_digest: "$PLAN_DIGEST:plan_delete_older",
+        deletion_id: "delete_older",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "catrev_demo_000",
+        idempotency_key: "delete-older"
+      },
+      {
+        type: "ADVANCE_EXPORT_DELETION",
+        deletion_id: "delete_older",
+        to: "deleted",
+        deleted_object_set_digest: olderExportObjectSet
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_delete_older",
+        plan_digest: "$PLAN_DIGEST:plan_delete_older",
+        deletion_id: "delete_older_retry_request",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "catrev_demo_000",
+        idempotency_key: "delete-older"
+      }
+    ]
+  },
+  {
+    key: "0",
+    name: "Partial deletion retries the same object set",
+    question:
+      "Does a platform failure keep the export unavailable and constrain retry to the originally confirmed object-set digest?",
+    actions: [
+      {
+        type: "PREPARE_EXPORT_DELETION",
+        plan_id: "plan_retry_older",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001"
+      },
+      {
+        type: "CONFIRM_EXPORT_DELETION",
+        plan_id: "plan_retry_older",
+        plan_digest: "$PLAN_DIGEST:plan_retry_older",
+        deletion_id: "delete_retry_older",
+        catalogue_revision_id: "catrev_demo_000",
+        manifest_digest: olderExportManifest,
+        expected_current_revision_id: "catrev_demo_001",
+        confirmation_revision_id: "catrev_demo_000",
+        idempotency_key: "delete-retry-older"
+      },
+      {
+        type: "ADVANCE_EXPORT_DELETION",
+        deletion_id: "delete_retry_older",
+        to: "failed",
+        failure_code: "synthetic_r2_failure"
+      },
+      {
+        type: "RETRY_EXPORT_DELETION",
+        deletion_id: "delete_retry_older"
+      },
+      {
+        type: "ADVANCE_EXPORT_DELETION",
+        deletion_id: "delete_retry_older",
+        to: "deleted",
+        deleted_object_set_digest: digestB
+      },
+      {
+        type: "ADVANCE_EXPORT_DELETION",
+        deletion_id: "delete_retry_older",
+        to: "deleted",
+        deleted_object_set_digest: olderExportObjectSet
       }
     ]
   }

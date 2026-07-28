@@ -1,6 +1,13 @@
+import { createHash } from "node:crypto";
+
 export const contractVersion = "card-keepr-administration@1";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPORT_DELETION_PLAN_TTL_MS = 15 * 60 * 1000;
+const DEMO_MANIFEST_CURRENT = "1".repeat(64);
+const DEMO_MANIFEST_OLDER = "2".repeat(64);
+const DEMO_OBJECTS_CURRENT = "3".repeat(64);
+const DEMO_OBJECTS_OLDER = "4".repeat(64);
 const ACTIVE_RUN_STATES = new Set([
   "planning",
   "collecting",
@@ -46,6 +53,10 @@ const rotationNext = {
 
 function clone(value) {
   return structuredClone(value);
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function at(state, action) {
@@ -97,10 +108,36 @@ function activeRelease(state) {
     : null;
 }
 
+function exportObjectKeys(catalogueRevisionId) {
+  const prefix = `catalogue-exports/${catalogueRevisionId}`;
+  return [
+    `${prefix}/cards.ndjson.gz`,
+    `${prefix}/printings.ndjson.gz`,
+    `${prefix}/products.ndjson.gz`,
+    `${prefix}/manifest.json`
+  ];
+}
+
+function makeExport(catalogueRevisionId, manifestDigest, objectSetDigest) {
+  return {
+    catalogue_revision_id: catalogueRevisionId,
+    manifest_digest: manifestDigest,
+    object_keys: exportObjectKeys(catalogueRevisionId),
+    object_set_digest: objectSetDigest,
+    state: "available",
+    deletion_operation_id: null,
+    deleted_at: null
+  };
+}
+
 export function createInitialState({
   now = Date.parse("2026-07-28T00:00:00.000Z"),
   currentRevisionId = "catrev_demo_001",
-  recoveryHealth = "healthy"
+  recoveryHealth = "healthy",
+  catalogueExports = [
+    makeExport("catrev_demo_000", DEMO_MANIFEST_OLDER, DEMO_OBJECTS_OLDER),
+    makeExport(currentRevisionId, DEMO_MANIFEST_CURRENT, DEMO_OBJECTS_CURRENT)
+  ]
 } = {}) {
   return {
     contract: contractVersion,
@@ -109,6 +146,14 @@ export function createInitialState({
     active_run_id: null,
     runs: {},
     backups: {},
+    catalogue_exports: Object.fromEntries(
+      catalogueExports.map((catalogueExport) => [
+        catalogueExport.catalogue_revision_id,
+        clone(catalogueExport)
+      ])
+    ),
+    export_deletion_plans: {},
+    export_deletions: {},
     recovery: {
       health: recoveryHealth,
       verified_revision_id:
@@ -273,6 +318,14 @@ export function transition(input, action) {
       run.terminal_at = now;
       state.current_revision_id = action.catalogue_revision_id;
       state.active_run_id = null;
+      const exportObjectSetDigest =
+        action.export_object_set_digest ??
+        sha256(JSON.stringify(exportObjectKeys(action.catalogue_revision_id)));
+      state.catalogue_exports[action.catalogue_revision_id] = makeExport(
+        action.catalogue_revision_id,
+        action.export_manifest_digest,
+        exportObjectSetDigest
+      );
       const backupId = action.backup_attempt_id;
       state.backups[backupId] = {
         id: backupId,
@@ -346,6 +399,242 @@ export function transition(input, action) {
         linked_attempt_id: source.id
       };
       return accept(state, action, `Created ${action.new_attempt_id}.`);
+    }
+
+    case "PREPARE_EXPORT_DELETION": {
+      const catalogueExport = state.catalogue_exports[action.catalogue_revision_id];
+      if (!catalogueExport) {
+        return reject(state, action, "catalogue_export_not_found", action.catalogue_revision_id);
+      }
+      if (catalogueExport.state !== "available") {
+        return reject(state, action, "catalogue_export_not_available", catalogueExport.state);
+      }
+      if (action.manifest_digest !== catalogueExport.manifest_digest) {
+        return reject(state, action, "manifest_digest_mismatch", catalogueExport.manifest_digest);
+      }
+      if (action.expected_current_revision_id !== state.current_revision_id) {
+        return reject(state, action, "current_revision_mismatch", state.current_revision_id);
+      }
+      if (!action.plan_id || state.export_deletion_plans[action.plan_id]) {
+        return reject(state, action, "identity_conflict", action.plan_id);
+      }
+      const expectedPrefix = `catalogue-exports/${catalogueExport.catalogue_revision_id}/`;
+      if (!catalogueExport.object_keys.every((key) => key.startsWith(expectedPrefix))) {
+        return reject(
+          state,
+          action,
+          "unsafe_export_object_scope",
+          "Every deletable object must stay inside the exact Catalogue Export prefix."
+        );
+      }
+      const dependencies = [
+        {
+          code: "catalogue_consumers_may_depend",
+          severity: "warning",
+          detail: "Owner-controlled Catalogue Consumers may retain this immutable export."
+        },
+        {
+          code: "authenticated_urls_will_return_410",
+          severity: "warning",
+          detail: "Its manifest and component URLs will permanently return catalogue_export_deleted."
+        }
+      ];
+      if (catalogueExport.catalogue_revision_id === state.current_revision_id) {
+        dependencies.unshift({
+          code: "current_catalogue_revision",
+          severity: "blocking",
+          detail: "The current Catalogue Revision must retain its verified Catalogue Export."
+        });
+      }
+      const planCore = {
+        id: action.plan_id,
+        catalogue_revision_id: catalogueExport.catalogue_revision_id,
+        manifest_digest: catalogueExport.manifest_digest,
+        expected_current_revision_id: state.current_revision_id,
+        object_keys: [...catalogueExport.object_keys],
+        object_set_digest: catalogueExport.object_set_digest,
+        dependencies,
+        created_at: now,
+        expires_at: now + EXPORT_DELETION_PLAN_TTL_MS
+      };
+      const plan = {
+        ...planCore,
+        plan_digest: sha256(JSON.stringify(planCore))
+      };
+      state.export_deletion_plans[plan.id] = plan;
+      return accept(
+        state,
+        action,
+        dependencies.some((dependency) => dependency.severity === "blocking")
+          ? `Prepared blocked deletion plan ${plan.id}; inspect dependencies.`
+          : `Prepared deletion plan ${plan.id}; exact confirmation is required.`
+      );
+    }
+
+    case "CONFIRM_EXPORT_DELETION": {
+      const plan = state.export_deletion_plans[action.plan_id];
+      if (!plan) {
+        return reject(state, action, "deletion_plan_not_found", action.plan_id);
+      }
+      if (now >= plan.expires_at) {
+        return reject(state, action, "deletion_plan_expired", plan.id);
+      }
+      const bindingsMatch =
+        action.catalogue_revision_id === plan.catalogue_revision_id &&
+        action.manifest_digest === plan.manifest_digest &&
+        action.expected_current_revision_id === plan.expected_current_revision_id &&
+        action.plan_digest === plan.plan_digest;
+      if (!bindingsMatch) {
+        return reject(state, action, "deletion_plan_mismatch", plan.id);
+      }
+      if (action.expected_current_revision_id !== state.current_revision_id) {
+        return reject(state, action, "current_revision_mismatch", state.current_revision_id);
+      }
+      if (plan.catalogue_revision_id === state.current_revision_id) {
+        return reject(
+          state,
+          action,
+          "current_export_required",
+          "Publish or recover another Catalogue Revision before deleting this export."
+        );
+      }
+      if (activeRun(state) || activeRelease(state) || state.recovery.health !== "healthy") {
+        return reject(
+          state,
+          action,
+          "maintenance_not_idle",
+          "Ingestion and release must be idle and recovery must be healthy."
+        );
+      }
+      if (action.confirmation_revision_id !== plan.catalogue_revision_id) {
+        return reject(
+          state,
+          action,
+          "confirmation_required",
+          "Type the exact Catalogue Revision identity."
+        );
+      }
+      if (!action.idempotency_key || !action.deletion_id) {
+        return reject(
+          state,
+          action,
+          "invalid_precondition",
+          "Deletion and idempotency identities are required."
+        );
+      }
+      const prior = Object.values(state.export_deletions).find(
+        (operation) => operation.idempotency_key === action.idempotency_key
+      );
+      if (prior) {
+        const identical =
+          prior.catalogue_revision_id === plan.catalogue_revision_id &&
+          prior.manifest_digest === plan.manifest_digest &&
+          prior.plan_id === plan.id;
+        return outcome(
+          state,
+          action,
+          identical,
+          identical ? "idempotent_replay" : "idempotency_key_reused",
+          prior.id
+        );
+      }
+      if (state.export_deletions[action.deletion_id]) {
+        return reject(state, action, "identity_conflict", action.deletion_id);
+      }
+      const catalogueExport = state.catalogue_exports[plan.catalogue_revision_id];
+      if (
+        !catalogueExport ||
+        catalogueExport.state !== "available" ||
+        catalogueExport.manifest_digest !== plan.manifest_digest ||
+        catalogueExport.object_set_digest !== plan.object_set_digest
+      ) {
+        return reject(
+          state,
+          action,
+          "catalogue_export_changed",
+          "The plan no longer names the exact available immutable object set."
+        );
+      }
+      state.export_deletions[action.deletion_id] = {
+        id: action.deletion_id,
+        plan_id: plan.id,
+        state: "deleting",
+        catalogue_revision_id: plan.catalogue_revision_id,
+        manifest_digest: plan.manifest_digest,
+        expected_current_revision_id: plan.expected_current_revision_id,
+        object_set_digest: plan.object_set_digest,
+        idempotency_key: action.idempotency_key,
+        requested_at: now,
+        completed_at: null
+      };
+      catalogueExport.state = "deleting";
+      catalogueExport.deletion_operation_id = action.deletion_id;
+      return accept(
+        state,
+        action,
+        `Confirmed ${action.deletion_id}; the export is unavailable while exact-prefix deletion is verified.`
+      );
+    }
+
+    case "ADVANCE_EXPORT_DELETION": {
+      const operation = state.export_deletions[action.deletion_id];
+      if (!operation) {
+        return reject(state, action, "export_deletion_not_found", action.deletion_id);
+      }
+      const catalogueExport = state.catalogue_exports[operation.catalogue_revision_id];
+      if (operation.state !== "deleting" || catalogueExport?.state !== "deleting") {
+        return reject(
+          state,
+          action,
+          "export_deletion_not_active",
+          `${operation.state}/${catalogueExport?.state ?? "missing"}`
+        );
+      }
+      if (action.to === "failed") {
+        operation.state = "failed";
+        operation.failure_code = action.failure_code ?? "r2_delete_or_verification_failed";
+        operation.completed_at = now;
+        return accept(
+          state,
+          action,
+          `Deletion failed; ${catalogueExport.catalogue_revision_id} remains unavailable and retryable.`
+        );
+      }
+      if (action.to !== "deleted") {
+        return reject(state, action, "illegal_export_deletion_transition", action.to);
+      }
+      if (action.deleted_object_set_digest !== operation.object_set_digest) {
+        return reject(state, action, "deleted_object_set_mismatch", operation.object_set_digest);
+      }
+      operation.state = "deleted";
+      operation.completed_at = now;
+      catalogueExport.state = "deleted";
+      catalogueExport.deleted_at = now;
+      return accept(
+        state,
+        action,
+        `Deleted only the bound Catalogue Export objects; audit and recovery evidence remain.`
+      );
+    }
+
+    case "RETRY_EXPORT_DELETION": {
+      const operation = state.export_deletions[action.deletion_id];
+      if (!operation || operation.state !== "failed") {
+        return reject(state, action, "export_deletion_not_failed", action.deletion_id);
+      }
+      if (
+        operation.catalogue_revision_id === state.current_revision_id ||
+        operation.expected_current_revision_id !== state.current_revision_id
+      ) {
+        return reject(state, action, "current_revision_mismatch", state.current_revision_id);
+      }
+      if (activeRun(state) || activeRelease(state) || state.recovery.health !== "healthy") {
+        return reject(state, action, "maintenance_not_idle", "Mutation gates remain closed.");
+      }
+      operation.state = "deleting";
+      operation.completed_at = null;
+      delete operation.failure_code;
+      return accept(state, action, `Retrying ${operation.id} against the same object-set digest.`);
     }
 
     case "BEGIN_RECOVERY": {
@@ -494,5 +783,10 @@ export const transitionTables = {
   backup_attempt: backupNext,
   recovery_operation: recoveryNext,
   production_release: releaseNext,
-  credential_rotation: rotationNext
+  credential_rotation: rotationNext,
+  catalogue_export_deletion: {
+    available: "deleting",
+    deleting: ["deleted", "failed"],
+    failed: "deleting"
+  }
 };

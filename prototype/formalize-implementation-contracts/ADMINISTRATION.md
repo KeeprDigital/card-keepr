@@ -42,6 +42,10 @@ operation accepted but not yet terminal.
 | `keepr run retry` | yes | terminal source run; creates a new linked run |
 | `keepr backup status` | no | Catalogue Revision identity |
 | `keepr backup retry` | yes | current revision; exact failed attempt and export/backup digest |
+| `keepr catalogue-export deletion prepare` | no | exact Catalogue Revision, manifest digest, expected current revision |
+| `keepr catalogue-export deletion confirm` | yes | unexpired plan and plan digest; exact Catalogue Revision, manifest digest, expected current revision, typed confirmation, idempotency key |
+| `keepr catalogue-export deletion status` | no | deletion identity |
+| `keepr catalogue-export deletion retry` | yes | failed deletion identity; unchanged target and object-set digest; idle mutation gates |
 | `keepr recovery begin` | yes | target Catalogue Revision or bookmark; ingestion and release idle |
 | `keepr recovery verify` | yes | recovery operation and restored target digest |
 | `keepr recovery accept` | yes | verified recovery operation and expected restored revision |
@@ -54,6 +58,48 @@ The ingestion Workflow owns automatic collection, parsing, reconciliation,
 candidate finalization, publication, export verification, expiry, and backup
 attempt progression. The CLI observes these automatic transitions; it cannot
 skip or rewrite them.
+
+## Catalogue Export deletion
+
+Preparation resolves the manifest and every component to an exact immutable R2
+object set and returns a plan:
+
+```text
+prepared --confirm exact bindings--> deleting → deleted
+                                      deleting → failed → deleting
+```
+
+A plan expires after 15 minutes. It always warns that Catalogue Consumers may
+depend on the immutable bytes and that known URLs will return
+`catalogue_export_deleted`. The current Catalogue Revision is a blocking
+dependency: its verified Catalogue Export cannot be deleted.
+
+Confirmation atomically rechecks the plan digest, Catalogue Revision, manifest
+digest, object-set digest, expected current Catalogue Revision, expiry,
+availability, typed Catalogue Revision confirmation, idempotency key, idle
+ingestion and release, and healthy recovery. The export disappears from listing
+and serving when the operation enters `deleting`, so a partially removed package
+is never presented as verified.
+
+Deletion is confined to
+`catalogue-exports/<catalogue_revision_id>/`; the manifest is removed last and
+absence of every bound object is verified. Source and reconciliation evidence,
+Catalogue Revision records, backups, Time Travel bookmarks, recovery exports,
+and the deletion plan, operation, and tombstone remain retained. A failed
+operation stays unavailable and can only retry the same object-set digest.
+
+Stable result codes are:
+
+- `catalogue_export_not_found`, `catalogue_export_not_available`;
+- `manifest_digest_mismatch`, `current_revision_mismatch`;
+- `unsafe_export_object_scope`, `deletion_plan_not_found`,
+  `deletion_plan_expired`, `deletion_plan_mismatch`;
+- `current_export_required`, `maintenance_not_idle`,
+  `confirmation_required`, `catalogue_export_changed`;
+- `idempotent_replay`, `idempotency_key_reused`;
+- `export_deletion_not_found`, `export_deletion_not_active`,
+  `export_deletion_not_failed`, `deleted_object_set_mismatch`; and
+- `ok`.
 
 ## Ingestion Run states
 

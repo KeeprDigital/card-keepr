@@ -1,11 +1,11 @@
-# PROTOTYPE — formalized implementation contracts
+# PROTOTYPE — completed lifecycle, evidence, and export-deletion contracts
 
 This throwaway prototype asks:
 
-> Do the machine-readable read API, Catalogue Export, and owner-administration
-> contracts preserve all accepted Card Keepr decisions without leaving state
-> transitions, regional legality, serialization, approval, recovery, or
-> deployment behavior for the implementer to invent?
+> Do lifecycle and evidence read sidecars plus guarded Catalogue Export
+> deletion now behave as one revision-pinned, provenance-first, fail-closed
+> contract, without leaving destructive-operation behavior for the implementer
+> to invent?
 
 It uses synthetic identities and state. It does not scrape Bandai, mutate
 Cloudflare, call GitHub Actions, or assert facts about real cards.
@@ -13,7 +13,7 @@ Cloudflare, call GitHub Actions, or assert facts about real cards.
 Run it from the repository root:
 
 ```sh
-npm run prototype:implementation-contracts
+npm run prototype:lifecycle-evidence-export-deletion
 ```
 
 Choose a scenario, advance it one event at a time, and inspect the complete
@@ -23,12 +23,14 @@ pure state machine is in `administration.mjs`.
 The proposed handoff artifacts are:
 
 - `openapi.json` — OpenAPI 3.1 contract for the authenticated `/v1` read API;
-- `schemas/api.schema.json` — exact JSON response resource shapes;
+- `schemas/api.schema.json` — exact JSON response resource shapes, including
+  shared lifecycle and Product/Release evidence sidecars;
 - `schemas/catalogue-export-manifest.schema.json` and
   `schemas/catalogue-export-record.schema.json` — Catalogue Export schemas;
 - `SERIALIZATION.md` — deterministic NDJSON, ordering, digest, and gzip rules;
 - `ADMINISTRATION.md` and `schemas/administration.schema.json` — administration
-  API/CLI commands, guards, states, and transitions; and
+  API/CLI commands, guards, states, and transitions, including two-step
+  Catalogue Export deletion; and
 - `CONTRACT.md` — the cross-artifact decisions and acceptance checklist.
 
 The accepted v1 Game Profile and source-adapter definitions remain in

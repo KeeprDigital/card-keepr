@@ -92,6 +92,16 @@
         }
       }
     },
+    "Lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_revision_id", "last_observed_revision_id", "withdrawn"],
+      "properties": {
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "withdrawn": { "type": "boolean" }
+      }
+    },
     "CardSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -102,6 +112,7 @@
         "official_identity",
         "name",
         "game_data",
+        "lifecycle",
         "links"
       ],
       "properties": {
@@ -111,6 +122,7 @@
         "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
         "name": { "type": "string", "minLength": 1 },
         "game_data": { "$ref": "#/$defs/GameData" },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
     },
@@ -126,6 +138,7 @@
         "game_data",
         "effective_rules_text",
         "printing_ids",
+        "lifecycle",
         "links"
       ],
       "properties": {
@@ -142,6 +155,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/OpaqueId" }
         },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
     },
@@ -221,6 +235,7 @@
         "game_data",
         "printing_images",
         "distribution_contexts",
+        "lifecycle",
         "links"
       ],
       "properties": {
@@ -242,6 +257,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/DistributionContext" }
         },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
     },
@@ -269,7 +285,7 @@
     "Product": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "game", "official_code", "name", "releases", "links"],
+      "required": ["type", "id", "game", "official_code", "name", "releases", "lifecycle", "links"],
       "properties": {
         "type": { "const": "product" },
         "id": { "$ref": "#/$defs/OpaqueId" },
@@ -282,6 +298,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/Release" }
         },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
     },
@@ -469,6 +486,18 @@
       "required": ["data", "meta", "links"],
       "properties": {
         "data": { "$ref": "#/$defs/Product" },
+        "included": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceResource" }
+        },
+        "provenance": {
+          "description": "JSON Pointers may address Product facts or nested Release facts, for example /data/releases/0/date/value.",
+          "$ref": "#/$defs/Provenance"
+        },
+        "disagreements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Disagreement" }
+        },
         "meta": { "$ref": "#/$defs/Meta" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
@@ -590,6 +619,7 @@
             "invalid_parameter",
             "invalid_cursor",
             "cursor_revision_unavailable",
+            "catalogue_export_deleted",
             "invalid_legality_region",
             "range_not_satisfiable",
             "rate_limited",

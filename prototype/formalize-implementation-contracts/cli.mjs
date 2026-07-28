@@ -74,13 +74,31 @@ function relevantState(full) {
     },
     release: full.release,
     credential_rotations: Object.values(full.credential_rotations),
+    catalogue_exports: Object.values(full.catalogue_exports).map((catalogueExport) => ({
+      catalogue_revision_id: catalogueExport.catalogue_revision_id,
+      manifest_digest: catalogueExport.manifest_digest,
+      object_set_digest: catalogueExport.object_set_digest,
+      state: catalogueExport.state,
+      deletion_operation_id: catalogueExport.deletion_operation_id,
+      deleted_at: catalogueExport.deleted_at
+    })),
+    export_deletion_plans: Object.values(full.export_deletion_plans).map((plan) => ({
+      id: plan.id,
+      catalogue_revision_id: plan.catalogue_revision_id,
+      manifest_digest: plan.manifest_digest,
+      object_set_digest: plan.object_set_digest,
+      plan_digest: plan.plan_digest,
+      dependencies: plan.dependencies,
+      expires_at: plan.expires_at
+    })),
+    export_deletions: Object.values(full.export_deletions),
     last_transition: full.last_transition
   };
 }
 
 function renderMenu() {
   console.clear();
-  console.log(`${bold}PROTOTYPE — formalized implementation contracts${reset}`);
+  console.log(`${bold}PROTOTYPE — lifecycle, evidence, and export deletion${reset}`);
   console.log(`${dim}Five JSON artifacts parsed successfully.${reset}\n`);
   console.log(`${bold}Choose a contract scenario${reset}\n`);
   for (const scenario of scenarios) {
@@ -111,8 +129,13 @@ function selectScenario(key) {
 }
 
 function nextAction() {
-  const action = selected?.actions[actionIndex];
+  const sourceAction = selected?.actions[actionIndex];
+  const action = sourceAction ? structuredClone(sourceAction) : null;
   if (action) {
+    if (typeof action.plan_digest === "string" && action.plan_digest.startsWith("$PLAN_DIGEST:")) {
+      const planId = action.plan_digest.slice("$PLAN_DIGEST:".length);
+      action.plan_digest = state.export_deletion_plans[planId]?.plan_digest ?? action.plan_digest;
+    }
     state = transition(state, action);
     actionIndex += 1;
   }

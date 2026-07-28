@@ -1,6 +1,6 @@
 # Proposed formalized implementation contracts
 
-Contract family: `card-keepr-implementation-contracts@1`
+Contract family: `card-keepr-implementation-contracts@1.1`
 
 This family is the proposed answer to “Formalize the implementation contracts.”
 Normative words such as **must**, **must not**, and **exactly** are acceptance
@@ -45,6 +45,16 @@ override a machine-readable artifact.
   ETag.
 - Provenance and disagreements are opt-in detail sidecars. An unresolved
   canonical value is `null`; the API never chooses an unaccepted candidate.
+- Card, Printing, and Product representations expose the same required
+  `lifecycle` object already fixed by Catalogue Export records:
+  `first_revision_id`, `last_observed_revision_id`, and `withdrawn`. Collection
+  and detail representations do not invent different lifecycle vocabulary.
+- Product detail accepts `include=evidence,disagreements` with the same
+  semantics as Card and Printing detail. Provenance keys are JSON Pointers into
+  the exact revision-pinned response and may address nested Release facts.
+  Unresolved Product or Release facts remain `null`, with candidate values in
+  `disagreements` and supporting Source Observations or Curated Revisions in
+  `included`.
 - `GET /legality-status` requires Card, date, and format. With `region`, it
   returns exactly one regional result. Without `region`, it returns every
   applicable regional result separately. Gundam accepts only `EN-ASIA` and
@@ -56,6 +66,38 @@ override a machine-readable artifact.
 - The later Catalogue Export decision supersedes only the earlier exclusion of
   bulk export. It adds the three routes in `openapi.json`; it does not add raw
   Source Snapshots or provenance bundles.
+- A Catalogue Export in `deleting` or `deleted` state is absent from the export
+  collection. Its known manifest and component URLs return `410
+  catalogue_export_deleted`; a never-known Catalogue Revision remains `404
+  not_found`.
+
+## Guarded Catalogue Export deletion
+
+- Deletion is a two-step owner maintenance operation: prepare an immutable
+  15-minute plan, inspect its dependencies and exact R2 object set, then confirm
+  against the plan digest. Preparation never makes bytes unavailable.
+- The plan binds Catalogue Revision, manifest SHA-256, expected current
+  Catalogue Revision, exact export-only object keys, their set digest,
+  dependencies, and expiry. Any changed binding requires a new plan.
+- The current Catalogue Revision's export is a blocking dependency and cannot
+  be deleted. Every plan warns that owner-controlled Catalogue Consumers may
+  retain the export and that authenticated URLs will return `410`.
+- Confirmation additionally binds a deletion identity, idempotency key, and the
+  exact typed Catalogue Revision identity. Non-interactive confirmation is
+  allowed only with every binding. Ingestion and production release must be
+  idle and recovery must be healthy at the atomic confirmation check.
+- Confirmation immediately makes the export unavailable, then deletion removes
+  and verifies only keys beneath
+  `catalogue-exports/<catalogue_revision_id>/`. The manifest is removed last.
+  A key outside that prefix is a hard contract failure.
+- Partial platform failure leaves the export unavailable and the operation
+  `failed`; retry targets the same object-set digest. Success creates a retained
+  tombstone and immutable operation result. The same idempotency key and request
+  replays that result; changed reuse fails closed.
+- Source Snapshots, Source Observations, Curated Revisions, Ingestion Runs,
+  Catalogue Revision records, D1 backups, Time Travel bookmarks, recovery
+  exports, and deletion audit records are outside the deletable object set and
+  must not be removed by this operation.
 
 ## Publication and recovery invariants
 
@@ -110,7 +152,15 @@ The executable state machine must demonstrate:
 4. an active Ingestion Run or degraded recovery blocks a release or approval;
 5. recovery blocks mutation until validation and explicit acceptance; and
 6. credential rotation cannot revoke the old value before replacement
-   verification.
+   verification;
+7. the current Catalogue Export is a blocking deletion dependency;
+8. stale digests, stale current revisions, changed plans, and missing exact
+   confirmation fail closed without hiding an export;
+9. a confirmed older export becomes unavailable, deletes only its bound object
+   set, returns a stable replay result, and preserves audit and recovery state;
+   and
+10. a partial deletion failure remains unavailable and retries only the same
+    exact object-set digest.
 
 Acceptance means these artifacts feel correct as a single handoff and no
 machine-readable field, route, serialization rule, command guard, or transition
