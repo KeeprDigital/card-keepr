@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "prototype:game-contracts": "node prototype/v1-game-profiles-source-adapters/cli.mjs"
+  }
+}
