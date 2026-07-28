@@ -1,0 +1,600 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/curated-revisions@1",
+  "title": "Card Keepr Curated Revision administration state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "now",
+    "current_revision_id",
+    "operational",
+    "active_run_id",
+    "runs",
+    "revisions",
+    "events",
+    "idempotency",
+    "last_transition"
+  ],
+  "properties": {
+    "contract": { "const": "card-keepr-curated-revisions@1" },
+    "now": { "$ref": "#/$defs/TimestampMs" },
+    "current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+    "operational": { "$ref": "#/$defs/OperationalState" },
+    "active_run_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/OpaqueId" },
+        { "type": "null" }
+      ]
+    },
+    "runs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/IngestionRun" }
+    },
+    "revisions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/CuratedRevision" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/LifecycleEvent" }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/IdempotencyResult" }
+    },
+    "last_transition": {
+      "oneOf": [
+        { "$ref": "#/$defs/TransitionOutcome" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "TimestampMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Date": {
+      "type": "string",
+      "format": "date"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+    },
+    "EntityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "id": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "FieldTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entity_type", "entity_id", "path"],
+      "properties": {
+        "kind": { "const": "field" },
+        "entity_type": {
+          "enum": [
+            "card",
+            "printing",
+            "product",
+            "release",
+            "distribution_context",
+            "erratum",
+            "legality_rule"
+          ]
+        },
+        "entity_id": { "$ref": "#/$defs/OpaqueId" },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        }
+      }
+    },
+    "RelationshipTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relationship_kind", "from", "to"],
+      "properties": {
+        "kind": { "const": "relationship" },
+        "relationship_kind": { "type": "string", "minLength": 1 },
+        "from": { "$ref": "#/$defs/EntityReference" },
+        "to": { "$ref": "#/$defs/EntityReference" }
+      }
+    },
+    "Target": {
+      "oneOf": [
+        { "$ref": "#/$defs/FieldTarget" },
+        { "$ref": "#/$defs/RelationshipTarget" }
+      ]
+    },
+    "FieldAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "field" },
+        "value": true
+      }
+    },
+    "RelationshipAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "presence"],
+      "properties": {
+        "kind": { "const": "relationship" },
+        "presence": { "enum": ["present", "absent"] }
+      }
+    },
+    "Assertion": {
+      "oneOf": [
+        { "$ref": "#/$defs/FieldAssertion" },
+        { "$ref": "#/$defs/RelationshipAssertion" }
+      ]
+    },
+    "SourceObservationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "const": "source_observation" },
+        "id": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "OwnerReferenceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "uri", "content_digest"],
+      "properties": {
+        "kind": { "const": "owner_reference" },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_digest": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "Evidence": {
+      "oneOf": [
+        { "$ref": "#/$defs/SourceObservationEvidence" },
+        { "$ref": "#/$defs/OwnerReferenceEvidence" }
+      ]
+    },
+    "EffectiveInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "oneOf": [
+            { "$ref": "#/$defs/Date" },
+            { "type": "null" }
+          ]
+        },
+        "to": {
+          "oneOf": [
+            { "$ref": "#/$defs/Date" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "CuratedRevisionProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "game",
+        "target",
+        "assertion",
+        "rationale",
+        "evidence",
+        "effective_interval",
+        "reviewed_source_digest",
+        "supersedes_revision_id"
+      ],
+      "properties": {
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "target": { "$ref": "#/$defs/Target" },
+        "assertion": { "$ref": "#/$defs/Assertion" },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Evidence" }
+        },
+        "effective_interval": { "$ref": "#/$defs/EffectiveInterval" },
+        "reviewed_source_digest": { "$ref": "#/$defs/Sha256" },
+        "supersedes_revision_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/OpaqueId" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "PendingConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "digest",
+        "run_id",
+        "previous_source_digest",
+        "observed_source_digest"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "digest": { "$ref": "#/$defs/Sha256" },
+        "run_id": { "$ref": "#/$defs/OpaqueId" },
+        "previous_source_digest": { "$ref": "#/$defs/Sha256" },
+        "observed_source_digest": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "CuratedRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "content",
+        "content_digest",
+        "author",
+        "created_at",
+        "status",
+        "event_version",
+        "pending_conflict"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "content": { "$ref": "#/$defs/CuratedRevisionProposal" },
+        "content_digest": { "$ref": "#/$defs/Sha256" },
+        "author": { "$ref": "#/$defs/OpaqueId" },
+        "created_at": { "$ref": "#/$defs/TimestampMs" },
+        "status": {
+          "enum": [
+            "active",
+            "reconfirmation_required",
+            "superseded",
+            "retired"
+          ]
+        },
+        "event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pending_conflict": {
+          "oneOf": [
+            { "$ref": "#/$defs/PendingConflict" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "LifecycleEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision_id",
+        "type",
+        "event_version",
+        "at",
+        "details"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "type": {
+          "enum": [
+            "authored",
+            "source_change_detected",
+            "reaffirmed",
+            "superseded",
+            "retired"
+          ]
+        },
+        "event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "at": { "$ref": "#/$defs/TimestampMs" },
+        "details": {
+          "type": "object"
+        }
+      }
+    },
+    "CuratedEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision_id", "target", "assertion", "evidence_category"],
+      "properties": {
+        "revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "target": { "type": "string", "minLength": 1 },
+        "assertion": { "$ref": "#/$defs/Assertion" },
+        "evidence_category": { "const": "curated" }
+      }
+    },
+    "IngestionRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "selected_games",
+        "effective_on",
+        "curated_revision_ids",
+        "curated_revision_set_digest",
+        "candidate_digest",
+        "curated_effects",
+        "failure_code",
+        "linked_run_id"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "state": {
+          "enum": ["reconciling", "awaiting_approval", "failed"]
+        },
+        "selected_games": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/SupportedGame" }
+        },
+        "effective_on": { "$ref": "#/$defs/Date" },
+        "curated_revision_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "curated_revision_set_digest": { "$ref": "#/$defs/Sha256" },
+        "candidate_digest": {
+          "oneOf": [
+            { "$ref": "#/$defs/Sha256" },
+            { "type": "null" }
+          ]
+        },
+        "curated_effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CuratedEffect" }
+        },
+        "failure_code": {
+          "oneOf": [
+            { "$ref": "#/$defs/OpaqueId" },
+            { "type": "null" }
+          ]
+        },
+        "linked_run_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/OpaqueId" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "OperationalState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recovery_health", "active_release_id"],
+      "properties": {
+        "recovery_health": {
+          "enum": ["healthy", "degraded", "blocked"]
+        },
+        "active_release_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/OpaqueId" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "IdempotencyResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "code", "detail"],
+      "properties": {
+        "fingerprint": { "$ref": "#/$defs/Sha256" },
+        "code": { "$ref": "#/$defs/OpaqueId" },
+        "detail": { "type": "string" }
+      }
+    },
+    "TransitionOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "accepted", "code", "detail", "at"],
+      "properties": {
+        "action": { "type": "string", "minLength": 1 },
+        "accepted": { "type": "boolean" },
+        "code": { "$ref": "#/$defs/OpaqueId" },
+        "detail": { "type": "string" },
+        "at": { "$ref": "#/$defs/TimestampMs" }
+      }
+    },
+    "CreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "expected_current_revision_id",
+        "proposal",
+        "proposal_digest",
+        "idempotency_key"
+      ],
+      "properties": {
+        "environment": { "const": "production" },
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "proposal": { "$ref": "#/$defs/CuratedRevisionProposal" },
+        "proposal_digest": { "$ref": "#/$defs/Sha256" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "ValidateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalogue_revision_id", "proposal"],
+      "properties": {
+        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "proposal": { "$ref": "#/$defs/CuratedRevisionProposal" }
+      }
+    },
+    "ReaffirmRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "expected_current_revision_id",
+        "expected_event_version",
+        "conflict_digest",
+        "rationale",
+        "idempotency_key"
+      ],
+      "properties": {
+        "environment": { "const": "production" },
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "expected_event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conflict_digest": { "$ref": "#/$defs/Sha256" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "SupersedeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "expected_current_revision_id",
+        "expected_event_version",
+        "conflict_digest",
+        "proposal",
+        "proposal_digest",
+        "rationale",
+        "idempotency_key"
+      ],
+      "properties": {
+        "environment": { "const": "production" },
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "expected_event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conflict_digest": {
+          "oneOf": [
+            { "$ref": "#/$defs/Sha256" },
+            { "type": "null" }
+          ]
+        },
+        "proposal": { "$ref": "#/$defs/CuratedRevisionProposal" },
+        "proposal_digest": { "$ref": "#/$defs/Sha256" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "RetireRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "expected_current_revision_id",
+        "expected_event_version",
+        "conflict_digest",
+        "rationale",
+        "idempotency_key"
+      ],
+      "properties": {
+        "environment": { "const": "production" },
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "expected_event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conflict_digest": {
+          "oneOf": [
+            { "$ref": "#/$defs/Sha256" },
+            { "type": "null" }
+          ]
+        },
+        "rationale": { "type": "string", "minLength": 1 },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "MutationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "curated_revision_id",
+        "status",
+        "event_version",
+        "content_digest",
+        "current_catalogue_revision_id",
+        "code"
+      ],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/OpaqueId" },
+        "curated_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "status": {
+          "enum": [
+            "active",
+            "reconfirmation_required",
+            "superseded",
+            "retired"
+          ]
+        },
+        "event_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_digest": { "$ref": "#/$defs/Sha256" },
+        "current_catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "code": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CuratedRevisionDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "events"],
+      "properties": {
+        "revision": { "$ref": "#/$defs/CuratedRevision" },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LifecycleEvent" }
+        }
+      }
+    },
+    "CuratedRevisionCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "next_cursor"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CuratedRevision" }
+        },
+        "next_cursor": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@
   "private": true,
   "scripts": {
     "prototype:game-contracts": "node prototype/v1-game-profiles-source-adapters/cli.mjs",
-    "prototype:implementation-contracts": "node prototype/formalize-implementation-contracts/cli.mjs"
+    "prototype:implementation-contracts": "node prototype/formalize-implementation-contracts/cli.mjs",
+    "prototype:curated-revisions": "node prototype/curated-revision-administration/cli.mjs"
   }
 }
