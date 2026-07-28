@@ -15,7 +15,7 @@ export function healthResponse(health: RuntimeHealth): Response {
 
 export function assertBindingsAvailable(
   boundary: "read" | "mutation",
-  ...bindings: readonly unknown[]
+  ...bindings: readonly (D1Database | R2Bucket)[]
 ): void {
   if (bindings.some((binding) => binding === null || binding === undefined)) {
     throw new Error(`Required ${boundary} bindings are unavailable`);

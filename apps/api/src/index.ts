@@ -1,5 +1,9 @@
 import { authenticateBearer } from "../../../src/http/authentication";
-import { catalogueResponse } from "../../../src/http/catalogue";
+import {
+  catalogueResponse,
+  parseCatalogueRevisionId,
+  parsePublicationInstant,
+} from "../../../src/http/catalogue";
 import {
   allowedPreflightResponse,
   hasAllowedOrigin,
@@ -77,8 +81,10 @@ export default {
         return withCorsHeaders(
           request,
           catalogueResponse({
-            revisionId: env.CATALOGUE_REVISION_ID,
-            publishedAt: env.CATALOGUE_PUBLISHED_AT,
+            revisionId: parseCatalogueRevisionId(env.CATALOGUE_REVISION_ID),
+            publishedAt: parsePublicationInstant(
+              env.CATALOGUE_PUBLISHED_AT,
+            ),
           }),
         );
       }

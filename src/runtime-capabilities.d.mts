@@ -1,12 +1,3 @@
-export const apiCapabilities: readonly [
-  "catalogue:read",
-  "printing-image:read",
-];
+export const apiCapabilities: readonly string[];
 
-export const ingestionCapabilities: readonly [
-  "catalogue:write",
-  "evidence:write",
-  "printing-image:write",
-  "export:write",
-  "backup:write",
-];
+export const ingestionCapabilities: readonly string[];

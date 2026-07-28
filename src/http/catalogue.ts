@@ -1,7 +1,36 @@
-type CatalogueStatus = {
-  revisionId: string;
-  publishedAt: string;
+declare const catalogueRevisionIdBrand: unique symbol;
+declare const publicationInstantBrand: unique symbol;
+
+export type CatalogueRevisionId = string & {
+  readonly [catalogueRevisionIdBrand]: true;
 };
+
+export type PublicationInstant = string & {
+  readonly [publicationInstantBrand]: true;
+};
+
+type CatalogueStatus = {
+  revisionId: CatalogueRevisionId;
+  publishedAt: PublicationInstant;
+};
+
+export function parseCatalogueRevisionId(value: string): CatalogueRevisionId {
+  if (
+    value.length < 1 ||
+    value.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
+  ) {
+    throw new Error("Catalogue Revision ID configuration is invalid");
+  }
+  return value as CatalogueRevisionId;
+}
+
+export function parsePublicationInstant(value: string): PublicationInstant {
+  if (!value.endsWith("Z") || Number.isNaN(Date.parse(value))) {
+    throw new Error("Catalogue publication time configuration is invalid");
+  }
+  return value as PublicationInstant;
+}
 
 export function catalogueResponse(status: CatalogueStatus): Response {
   const currentExport = `/v1/catalogue-exports/${status.revisionId}`;
