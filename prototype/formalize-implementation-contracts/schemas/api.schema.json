@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/read-api@1",
+  "title": "Card Keepr read API representations",
+  "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+    },
+    "Region": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
+    },
+    "Meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalogue_revision_id", "published_at"],
+      "properties": {
+        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "published_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "SelfLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["self"],
+      "properties": {
+        "self": { "type": "string", "pattern": "^/v1/" }
+      }
+    },
+    "Page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limit", "next_cursor"],
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "next_cursor": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "OfficialIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "card_number" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "functional_designation" },
+            "value": { "const": "DON!!" }
+          }
+        }
+      ]
+    },
+    "GameData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "attributes"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Validated by the accepted versioned Game Profile."
+        }
+      }
+    },
+    "CardSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "official_identity",
+        "name",
+        "game_data",
+        "links"
+      ],
+      "properties": {
+        "type": { "const": "card" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
+        "name": { "type": "string", "minLength": 1 },
+        "game_data": { "$ref": "#/$defs/GameData" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "CardDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "official_identity",
+        "name",
+        "game_data",
+        "effective_rules_text",
+        "printing_ids",
+        "links"
+      ],
+      "properties": {
+        "type": { "const": "card" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
+        "name": { "type": "string", "minLength": 1 },
+        "game_data": { "$ref": "#/$defs/GameData" },
+        "effective_rules_text": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "printing_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "Rarity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized", "raw"],
+      "properties": {
+        "normalized": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "raw": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        }
+      }
+    },
+    "PrintingImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "printing_id",
+        "role",
+        "media_type",
+        "width",
+        "height",
+        "content_sha256",
+        "links"
+      ],
+      "properties": {
+        "type": { "const": "printing_image" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "printing_id": { "$ref": "#/$defs/OpaqueId" },
+        "role": { "enum": ["front", "back", "other"] },
+        "media_type": { "type": "string", "pattern": "^image/" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "content_sha256": { "$ref": "#/$defs/Sha256" },
+        "links": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["self", "content"],
+          "properties": {
+            "self": { "type": "string", "pattern": "^/v1/" },
+            "content": {
+              "type": "string",
+              "pattern": "^/v1/printing-images/[^/]+/content$"
+            }
+          }
+        }
+      }
+    },
+    "DistributionContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "product_id", "evidence_category"],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "kind": { "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
+        "label": { "type": "string", "minLength": 1 },
+        "product_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        },
+        "evidence_category": { "enum": ["explicit", "derived", "curated"] }
+      }
+    },
+    "Printing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+        "printing_images",
+        "distribution_contexts",
+        "links"
+      ],
+      "properties": {
+        "type": { "const": "printing" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "card_id": { "$ref": "#/$defs/OpaqueId" },
+        "rarity": { "$ref": "#/$defs/Rarity" },
+        "printed_rules_text": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "game_data": {
+          "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
+        },
+        "printing_images": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PrintingImage" }
+        },
+        "distribution_contexts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DistributionContext" }
+        },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "ReleaseDate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["precision", "value"],
+      "properties": {
+        "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
+        "value": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        }
+      }
+    },
+    "Release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "region", "date"],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "region": { "$ref": "#/$defs/Region" },
+        "date": { "$ref": "#/$defs/ReleaseDate" }
+      }
+    },
+    "Product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "official_code", "name", "releases", "links"],
+      "properties": {
+        "type": { "const": "product" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "official_code": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "releases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Release" }
+        },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "propertyNames": { "pattern": "^/" },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "Disagreement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "candidates"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^/" },
+        "status": { "const": "unresolved" },
+        "candidates": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "observation_id"],
+            "properties": {
+              "value": {},
+              "observation_id": { "$ref": "#/$defs/OpaqueId" }
+            }
+          }
+        }
+      }
+    },
+    "Freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["game", "area", "checked_at"],
+      "properties": {
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "area": {
+          "enum": [
+            "cards-and-printings",
+            "products-and-releases",
+            "legality-rules",
+            "errata"
+          ]
+        },
+        "checked_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "CatalogueDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "current_revision_id",
+            "published_at",
+            "last_successful_checks",
+            "current_export"
+          ],
+          "properties": {
+            "type": { "const": "catalogue" },
+            "current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+            "published_at": { "$ref": "#/$defs/Timestamp" },
+            "last_successful_checks": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Freshness" }
+            },
+            "current_export": {
+              "type": "string",
+              "pattern": "^/v1/catalogue-exports/"
+            }
+          }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": {
+          "type": "object",
+          "required": ["self", "cards", "printings", "products", "catalogue_exports"],
+          "properties": {
+            "self": { "const": "/v1/catalogue" },
+            "cards": { "const": "/v1/cards" },
+            "printings": { "const": "/v1/printings" },
+            "products": { "const": "/v1/products" },
+            "catalogue_exports": { "const": "/v1/catalogue-exports" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "CardCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "page", "links"],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CardSummary" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "page": { "$ref": "#/$defs/Page" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "CardDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": { "$ref": "#/$defs/CardDetail" },
+        "included": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/Printing" },
+              { "$ref": "#/$defs/EvidenceResource" }
+            ]
+          }
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" },
+        "disagreements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Disagreement" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "PrintingCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "page", "links"],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Printing" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "page": { "$ref": "#/$defs/Page" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "PrintingDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": { "$ref": "#/$defs/Printing" },
+        "included": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceResource" }
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" },
+        "disagreements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Disagreement" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "ProductCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "page", "links"],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Product" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "page": { "$ref": "#/$defs/Page" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "ProductDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": { "$ref": "#/$defs/Product" },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "EvidenceResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "captured_at", "source"],
+      "properties": {
+        "type": { "enum": ["source_observation", "curated_revision"] },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "captured_at": { "$ref": "#/$defs/Timestamp" },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "LegalityStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "card_id",
+        "on",
+        "format",
+        "event_tier",
+        "region",
+        "status",
+        "rule_ids",
+        "derivation"
+      ],
+      "properties": {
+        "card_id": { "$ref": "#/$defs/OpaqueId" },
+        "on": { "type": "string", "format": "date" },
+        "format": { "type": "string", "minLength": 1 },
+        "event_tier": {
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
+        },
+        "region": { "$ref": "#/$defs/Region" },
+        "status": { "enum": ["legal", "restricted", "not_legal", "indeterminate"] },
+        "rule_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "derivation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "LegalityStatusDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/LegalityStatus" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "CatalogueExportSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "catalogue_revision_id",
+        "export_schema_major",
+        "published_at",
+        "manifest_sha256",
+        "links"
+      ],
+      "properties": {
+        "type": { "const": "catalogue_export" },
+        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "export_schema_major": { "type": "integer", "minimum": 1 },
+        "published_at": { "$ref": "#/$defs/Timestamp" },
+        "manifest_sha256": { "$ref": "#/$defs/Sha256" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "CatalogueExportCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "page", "links"],
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CatalogueExportSummary" }
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "page": { "$ref": "#/$defs/Page" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "CatalogueExportDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "meta", "links"],
+      "properties": {
+        "data": {
+          "$ref": "./catalogue-export-manifest.schema.json"
+        },
+        "meta": { "$ref": "#/$defs/Meta" },
+        "links": { "$ref": "#/$defs/SelfLink" }
+      }
+    },
+    "Problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title", "status", "code", "detail", "request_id"],
+      "properties": {
+        "type": { "type": "string", "format": "uri-reference" },
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "code": {
+          "enum": [
+            "authentication_required",
+            "invalid_api_key",
+            "forbidden_origin",
+            "not_found",
+            "invalid_parameter",
+            "invalid_cursor",
+            "cursor_revision_unavailable",
+            "invalid_legality_region",
+            "range_not_satisfiable",
+            "rate_limited",
+            "internal_error"
+          ]
+        },
+        "detail": { "type": "string", "minLength": 1 },
+        "request_id": { "$ref": "#/$defs/OpaqueId" },
+        "invalid_params": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "reason"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "links": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "format": "uri-reference" }
+        }
+      }
+    }
+  }
+}
