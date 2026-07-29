@@ -252,17 +252,44 @@ export async function capturePreparedAttempt(
     return retryOrFinish(operation.attempt_number);
   }
   if (operation.state === "response_received") {
-    const recovered = await recoverCompletedUpload(
-      database,
-      evidenceObjects,
-      operation,
-    );
-    if (recovered) {
-      return {
-        kind: "uploaded",
-        attempt_id: operation.attempt_id,
-        request_made: false,
-      };
+    try {
+      const recovered = await recoverCompletedUpload(
+        database,
+        evidenceObjects,
+        operation,
+      );
+      if (recovered) {
+        return {
+          kind: "uploaded",
+          attempt_id: operation.attempt_id,
+          request_made: false,
+        };
+      }
+      return recordFailedTransportAttempt(database, sourceRequest, operation, {
+        outcome: "storage_failure",
+        completedAt: new Date().toISOString(),
+        status: operation.http_status,
+        headers:
+          operation.response_headers_json === null
+            ? {}
+            : parseStringRecord(operation.response_headers_json),
+        diagnostic:
+          "The staged Source Snapshot object was unavailable during recovery.",
+      });
+    } catch (error) {
+      return recordFailedTransportAttempt(database, sourceRequest, operation, {
+        outcome: "storage_failure",
+        completedAt: new Date().toISOString(),
+        status: operation.http_status,
+        headers:
+          operation.response_headers_json === null
+            ? {}
+            : parseStringRecord(operation.response_headers_json),
+        diagnostic: errorMessage(
+          error,
+          "The staged Source Snapshot object could not be recovered.",
+        ),
+      });
     }
   }
 
@@ -434,24 +461,32 @@ export async function capturePreparedAttempt(
       request_made: true,
     };
   } catch (error) {
-    const recovered = await recoverCompletedUpload(
-      database,
-      evidenceObjects,
-      operation,
-    );
-    if (recovered) {
-      return {
-        kind: "uploaded",
-        attempt_id: operation.attempt_id,
-        request_made: true,
-      };
+    let recoveryError: unknown = null;
+    try {
+      const recovered = await recoverCompletedUpload(
+        database,
+        evidenceObjects,
+        operation,
+      );
+      if (recovered) {
+        return {
+          kind: "uploaded",
+          attempt_id: operation.attempt_id,
+          request_made: true,
+        };
+      }
+    } catch (caught) {
+      recoveryError = caught;
     }
     const failure =
       error instanceof CapturePersistenceError
         ? error
         : new CapturePersistenceError(
             "storage_failure",
-            errorMessage(error, "Evidence persistence failed."),
+            errorMessage(
+              recoveryError ?? error,
+              "Evidence persistence failed.",
+            ),
           );
     return recordFailedTransportAttempt(database, request, operation, {
       outcome: failure.outcome,
@@ -594,6 +629,10 @@ export async function parseCapturedRequest(
       evidenceObjects,
       snapshotId,
       run.adapter_version,
+      {
+        intent: "collection",
+        idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
+      },
     );
     await database
       .prepare(

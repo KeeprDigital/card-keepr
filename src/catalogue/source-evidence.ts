@@ -29,14 +29,17 @@ export async function reparseSourceSnapshot(
   evidenceObjects: R2Bucket,
   snapshotId: string,
   adapterVersion: string,
+  idempotencyKey: string,
 ): Promise<Record<string, unknown>> {
   assertIdentifier(snapshotId, "source_snapshot_id");
   assertIdentifier(adapterVersion, "adapter_version");
+  assertIdentifier(idempotencyKey, "idempotency_key");
   return reparseSnapshot(
     database,
     evidenceObjects,
     snapshotId,
     adapterVersion,
+    idempotencyKey,
   );
 }
 

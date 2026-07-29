@@ -153,6 +153,7 @@ export default {
             env.EVIDENCE_OBJECTS,
             decodeURIComponent(sourceSnapshotObservationsMatch[1]!),
             requiredString(body, "adapter_version"),
+            requiredString(body, "idempotency_key"),
           ),
           { status: 201 },
         );

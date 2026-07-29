@@ -5,6 +5,7 @@ CREATE TABLE source_adapter_versions (
   source_lineage TEXT NOT NULL,
   supported_game TEXT NOT NULL,
   game_profile_version TEXT NOT NULL,
+  parser_contract TEXT NOT NULL,
   UNIQUE (
     adapter_version,
     source_lineage,
@@ -20,19 +21,22 @@ INSERT INTO source_adapter_versions (
   adapter_version,
   source_lineage,
   supported_game,
-  game_profile_version
+  game_profile_version,
+  parser_contract
 ) VALUES
   (
     'one-piece-json-document@1',
     'one-piece-en',
     'one-piece',
-    'one-piece@1'
+    'one-piece@1',
+    'one-piece-card-document@1'
   ),
   (
     'one-piece-json-document@2',
     'one-piece-en',
     'one-piece',
-    'one-piece@1'
+    'one-piece@1',
+    'one-piece-card-document@1'
   );
 
 CREATE TABLE ingestion_evidence_plans (
@@ -187,8 +191,33 @@ ON source_snapshots (
   retrieved_at DESC
 );
 
+CREATE TABLE source_parse_operations (
+  id TEXT PRIMARY KEY,
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  adapter_version TEXT NOT NULL REFERENCES source_adapter_versions(adapter_version),
+  intent TEXT NOT NULL CHECK (intent IN ('collection', 'reparse')),
+  idempotency_key TEXT NOT NULL,
+  observation_set_id TEXT NOT NULL UNIQUE,
+  content_object_key TEXT NOT NULL UNIQUE,
+  parsed_at TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (
+    state IN ('planned', 'uploaded', 'finalized')
+  ),
+  content_digest TEXT,
+  content_byte_length INTEGER,
+  observation_count INTEGER,
+  UNIQUE (
+    source_snapshot_id,
+    adapter_version,
+    intent,
+    idempotency_key
+  )
+);
+
 CREATE TABLE source_observation_sets (
   id TEXT PRIMARY KEY,
+  parse_operation_id TEXT NOT NULL UNIQUE
+    REFERENCES source_parse_operations(id),
   source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
   source_lineage TEXT NOT NULL,
   supported_game TEXT NOT NULL,

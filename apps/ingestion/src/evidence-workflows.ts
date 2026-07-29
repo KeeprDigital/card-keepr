@@ -79,30 +79,24 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         "start dynamically sharded hostname workflows",
         deterministicDatabaseStep,
         async () => {
-          let children: WorkflowInstance[];
-          try {
-            children = await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
-              hostnames.map((hostname, index) => ({
-                id: childIds[index]!,
-                params: { ingestion_run_id: runId, hostname },
-              })),
-            );
-          } catch {
-            children = await Promise.all(
-              childIds.map((id) =>
-                this.env.EVIDENCE_HOST_WORKFLOW.get(id),
-              ),
-            );
-            for (const child of children) {
-              const status = await child.status();
-              if (
-                status.status === "errored" ||
-                status.status === "terminated"
-              ) {
-                await child.restart();
-              } else if (status.status === "paused") {
-                await child.resume();
-              }
+          await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
+            hostnames.map((hostname, index) => ({
+              id: childIds[index]!,
+              params: { ingestion_run_id: runId, hostname },
+            })),
+          );
+          const children = await Promise.all(
+            childIds.map((id) => this.env.EVIDENCE_HOST_WORKFLOW.get(id)),
+          );
+          for (const child of children) {
+            const status = await child.status();
+            if (
+              status.status === "errored" ||
+              status.status === "terminated"
+            ) {
+              await child.restart();
+            } else if (status.status === "paused") {
+              await child.resume();
             }
           }
           return childIds;

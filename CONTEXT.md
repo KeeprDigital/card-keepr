@@ -65,7 +65,7 @@ A provenance-bearing fact or relationship read from a Source Snapshot. It remain
 _Avoid_: Canonical fact, Curated Revision
 
 **Source Observation Set**:
-The immutable result of applying one Source Adapter Version to one Source Snapshot. Reprocessing appends another set rather than replacing an earlier interpretation.
+The immutable result of applying one Source Adapter Version to one Source Snapshot. Reprocessing with a new idempotency key appends another set rather than replacing an earlier interpretation; retrying the same parse intent returns its existing set.
 _Avoid_: Source Snapshot, Catalogue Data, mutable parse result
 
 **Evidence Plan**:

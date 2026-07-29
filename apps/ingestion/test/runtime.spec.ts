@@ -4,8 +4,16 @@ import {
   type D1Migration,
 } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { captureOperationIdentity } from "../../../src/catalogue/source-evidence-capture";
+import {
+  captureOperationIdentity,
+  capturePreparedAttempt,
+  prepareCaptureAttempt,
+} from "../../../src/catalogue/source-evidence-capture";
 import { sourceAdapterRegistrations } from "../../../src/catalogue/source-adapters";
+import {
+  pendingEvidenceRequests,
+  requiredEvidenceRun,
+} from "../../../src/catalogue/source-evidence-repository";
 
 declare global {
   interface __BaseEnv_Env {
@@ -186,6 +194,44 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   expect(shown.status).toBe(200);
   await expect(shown.json()).resolves.toEqual(completed);
 });
+
+test("resuming collection restarts an existing errored hostname Workflow and its staged parse", async () => {
+  const run = await createCollection(
+    "source_collection_existing_child_001",
+    "https://official-source.invalid/cards",
+  );
+  await env.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER fail_initial_observation_set_insert
+     BEFORE INSERT ON source_observation_sets
+     BEGIN
+       SELECT RAISE(FAIL, 'synthetic_initial_parse_d1_outage');
+     END`,
+  ).run();
+  const accepted = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(accepted.status).toBe(202);
+  await accepted.body?.cancel();
+  const childId = `evidence-${run.id}-host-1`;
+  const staged = await waitForParseOperation(run.id, "uploaded");
+  await waitForWorkflowStatus(
+    childId,
+    async () =>
+      (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status(),
+    "errored",
+  );
+  expect(staged.state).toBe("uploaded");
+  await env.CATALOGUE_DB.prepare(
+    "DROP TRIGGER fail_initial_observation_set_insert",
+  ).run();
+
+  const completed = await resumeCollection(run.id);
+
+  expect(completed.state).toBe("parsing");
+  expect(completed.snapshots).toHaveLength(1);
+  expect(completed.observation_sets).toHaveLength(1);
+}, 15_000);
 
 test("redirects and terminal HTTP failures remain diagnostics without Source Snapshots", async () => {
   const redirectRun = await createCollection(
@@ -488,13 +534,14 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
 
   const constrained = await env.CATALOGUE_DB.prepare(
     `SELECT adapter_version, source_lineage, supported_game,
-            game_profile_version
+            game_profile_version, parser_contract
      FROM source_adapter_versions ORDER BY adapter_version`,
   ).all<{
     adapter_version: string;
     source_lineage: string;
     supported_game: string;
     game_profile_version: string;
+    parser_contract: string;
   }>();
   expect(constrained.results).toEqual(
     sourceAdapterRegistrations
@@ -503,6 +550,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
         source_lineage: adapter.sourceLineage,
         supported_game: adapter.supportedGame,
         game_profile_version: adapter.gameProfileVersion,
+        parser_contract: adapter.parserContract,
       }))
       .sort((left, right) =>
         left.adapter_version.localeCompare(right.adapter_version),
@@ -574,6 +622,95 @@ test("body streaming failures are durable diagnostics with bounded retries", asy
   ]);
 }, 15_000);
 
+test("R2 recovery outages become durable bounded storage failures", async () => {
+  const run = await createCollection(
+    "source_recovery_r2_outage_001",
+    "https://official-source.invalid/cards",
+  );
+  const identity = await captureOperationIdentity(
+    run.id,
+    "required-source",
+    1,
+  );
+  const now = new Date().toISOString();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_capture_operations (
+      attempt_id, ingestion_run_id, request_id, attempt_number,
+      source_snapshot_id, content_object_key, state, requested_at,
+      completed_at, request_headers_json, http_status,
+      response_headers_json, response_vary_json, media_type
+    ) VALUES (
+      ?, ?, 'required-source', 1, ?, ?, 'response_received', ?,
+      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
+      'application/json'
+    )`,
+  )
+    .bind(
+      identity.attemptId,
+      run.id,
+      identity.snapshotId,
+      identity.objectKey,
+      now,
+      now,
+    )
+    .run();
+  const outageBucket = new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (
+        property === "get" ||
+        property === "put" ||
+        property === "createMultipartUpload"
+      ) {
+        return async () => {
+          throw new Error("synthetic R2 outage");
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const evidenceRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const request = (
+    await pendingEvidenceRequests(env.CATALOGUE_DB, run.id)
+  )[0];
+  if (request === undefined) throw new Error("missing evidence request");
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const prepared = await prepareCaptureAttempt(
+      env.CATALOGUE_DB,
+      evidenceRun,
+      request,
+    );
+    if (prepared.kind !== "attempt") {
+      throw new Error(`unexpected preparation result ${prepared.kind}`);
+    }
+    const result = await capturePreparedAttempt(
+      env.CATALOGUE_DB,
+      outageBucket,
+      env.OFFICIAL_SOURCE_TRANSPORT,
+      evidenceRun,
+      request,
+      prepared,
+    );
+    expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
+  }
+
+  const failed = await resumeCollection(run.id);
+  expect(failed).toMatchObject({
+    state: "failed",
+    failure_code: "source_request_retries_exhausted",
+    snapshots: [],
+  });
+  expect(
+    failed.diagnostics.map((diagnostic) => diagnostic.outcome),
+  ).toEqual([
+    "storage_failure",
+    "storage_failure",
+    "storage_failure",
+    "storage_failure",
+  ]);
+});
+
 test("resume recovers the deterministic object after an upload-before-D1 restart boundary", async () => {
   const run = await createCollection(
     "source_restart_boundary_001",
@@ -643,7 +780,7 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
   expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).not.toBeNull();
 });
 
-test("reparsing appends an immutable observation set tied to the exact Source Snapshot", async () => {
+test("reparse retries recover one staged immutable observation set while new intents append", async () => {
   const run = await createCollection(
     "source_collection_reparse_001",
     "https://official-source.invalid/cards",
@@ -654,26 +791,114 @@ test("reparsing appends an immutable observation set tied to the exact Source Sn
   if (snapshot === undefined || originalSet === undefined) {
     throw new Error("missing evidence for reparse");
   }
+  const objectsBeforeReparse = new Set(
+    (
+      await env.EVIDENCE_OBJECTS.list({
+        prefix: "source-observations/",
+      })
+    ).objects.map((object) => object.key),
+  );
 
-  const reparseResponse = await administrationRequest(
+  await env.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER fail_observation_set_insert
+     BEFORE INSERT ON source_observation_sets
+     BEGIN
+       SELECT RAISE(FAIL, 'synthetic_observation_d1_outage');
+     END`,
+  ).run();
+  const interrupted = await administrationRequest(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
-    { adapter_version: "one-piece-json-document@2" },
+    {
+      adapter_version: "one-piece-json-document@2",
+      idempotency_key: "reparse_intent_001",
+    },
   );
-  expect(reparseResponse.status).toBe(201);
-  const reparsed = await reparseResponse.json<ObservationSet>();
+  expect(interrupted.status).toBe(500);
+  const staged = await env.CATALOGUE_DB.prepare(
+    `SELECT state, content_object_key FROM source_parse_operations
+     WHERE source_snapshot_id = ? AND adapter_version = ?
+       AND idempotency_key = ?`,
+  )
+    .bind(snapshot.id, "one-piece-json-document@2", "reparse_intent_001")
+    .first<{ state: string; content_object_key: string }>();
+  expect(staged?.state).toBe("uploaded");
+  expect(
+    await env.EVIDENCE_OBJECTS.head(staged!.content_object_key),
+  ).not.toBeNull();
+  await env.CATALOGUE_DB.prepare(
+    "DROP TRIGGER fail_observation_set_insert",
+  ).run();
+
+  const retriedResponses = await Promise.all([
+    administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: "one-piece-json-document@2",
+        idempotency_key: "reparse_intent_001",
+      },
+    ),
+    administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: "one-piece-json-document@2",
+        idempotency_key: "reparse_intent_001",
+      },
+    ),
+  ]);
+  expect(retriedResponses.map((response) => response.status)).toEqual([
+    201,
+    201,
+  ]);
+  const [reparsed, replayed] = await Promise.all(
+    retriedResponses.map((response) => response.json<ObservationSet>()),
+  );
+  if (reparsed === undefined || replayed === undefined) {
+    throw new Error("missing replayed Source Observation Set");
+  }
   expect(reparsed).toMatchObject({
     source_snapshot_id: snapshot.id,
     adapter_version: "one-piece-json-document@2",
     observation_count: 1,
   });
+  expect(replayed).toEqual(reparsed);
   expect(reparsed.id).not.toBe(originalSet.id);
   expect(reparsed.object_key).not.toBe(originalSet.object_key);
 
+  const appendedResponse = await administrationRequest(
+    `/v1/source-snapshots/${snapshot.id}/observations`,
+    "POST",
+    {
+      adapter_version: "one-piece-json-document@2",
+      idempotency_key: "reparse_intent_002",
+    },
+  );
+  expect(appendedResponse.status).toBe(201);
+  const appended = await appendedResponse.json<ObservationSet>();
+  expect(appended.id).not.toBe(reparsed.id);
+
   const shown = await showCollection(run.id);
-  expect(shown.observation_sets).toHaveLength(2);
-  expect(shown.observation_sets[0]).toEqual(originalSet);
-  expect(shown.observation_sets[1]).toEqual(reparsed);
+  expect(shown.observation_sets).toHaveLength(3);
+  expect(shown.observation_sets).toEqual([
+    originalSet,
+    reparsed,
+    appended,
+  ]);
+  const objects = await env.EVIDENCE_OBJECTS.list({
+    prefix: "source-observations/",
+  });
+  expect(
+    objects.objects
+      .map((object) => object.key)
+      .filter((key) => !objectsBeforeReparse.has(key))
+      .sort(),
+  ).toEqual(
+    [reparsed, appended]
+      .map((set) => set.object_key)
+      .sort(),
+  );
 });
 
 test("collection is sequential per hostname and different hostnames progress concurrently", async () => {
@@ -816,6 +1041,55 @@ async function waitForEvidenceDiagnostic(
     if (current.diagnostics.length > 0) return current;
     if (Date.now() >= deadline) {
       throw new Error(`Ingestion Run ${runId} did not record a diagnostic`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function waitForWorkflowStatus(
+  instanceId: string,
+  readStatus: () => Promise<{ status: string }>,
+  expectedStatus: string,
+  timeoutMs = 8_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const status = await readStatus();
+      if (status.status === expectedStatus) return;
+    } catch {
+      // The deterministic handle can exist before createBatch reaches it.
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Workflow ${instanceId} did not reach ${expectedStatus}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function waitForParseOperation(
+  runId: string,
+  expectedState: string,
+  timeoutMs = 8_000,
+): Promise<{ state: string }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const operation = await env.CATALOGUE_DB.prepare(
+      `SELECT state FROM source_parse_operations
+       WHERE intent = 'collection' AND source_snapshot_id IN (
+         SELECT source_snapshot_id FROM source_requests
+         WHERE ingestion_run_id = ?
+       )`,
+    )
+      .bind(runId)
+      .first<{ state: string }>();
+    if (operation?.state === expectedState) return operation;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Parse operation for ${runId} did not reach ${expectedState}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
