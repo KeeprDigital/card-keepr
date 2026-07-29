@@ -5,6 +5,8 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { buildCatalogueExport } from "../../../src/catalogue/export";
+import { fixtureCandidate } from "../../../src/catalogue/fixture";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -54,6 +56,41 @@ test("the administration authentication boundary runs in the Workers runtime", a
     runtime: "ingestion",
     status: "ok",
   });
+});
+
+test("a lengthless administration body is rejected while streaming beyond 16 KiB", async () => {
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 2) {
+          controller.error(
+            new Error("the Worker read beyond the bounded prefix"),
+          );
+          return;
+        }
+        controller.enqueue(new Uint8Array(10_000));
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/ingestion-runs", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+        "cf-connecting-ip": "192.0.2.251",
+      },
+      body,
+    }),
+  );
+  expect(response.status).toBe(413);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "request_too_large",
+  });
+  expect(pulls).toBe(2);
 });
 
 test("competing starts fail closed while an identical retry replays its original result", async () => {
@@ -282,6 +319,43 @@ test("stale and mismatched approvals leave the candidate unchanged before exact 
   });
 });
 
+test("malformed persisted JSON is rejected instead of crossing the administration seam", async () => {
+  const started = await startRun("start-malformed-persistence");
+  const runId = requiredDocumentString(started.document, "id");
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET progress_json = '{"completed_stages":"invalid","current_stage":42}',
+        approval_history_json = '[{"action":"approved"}]'
+    WHERE id = ?`,
+  )
+    .bind(runId)
+    .run();
+  const malformed = await showRun(runId);
+  expect(malformed.response.status).toBe(500);
+  expect(malformed.document).toMatchObject({
+    code: "internal_error",
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET progress_json = ?,
+        approval_history_json = '[]'
+    WHERE id = ?`,
+  )
+    .bind(
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+        ],
+        current_stage: "awaiting_approval",
+      }),
+      runId,
+    )
+    .run();
+});
+
 test("rejection is terminal and retry creates a fresh linked run", async () => {
   const started = await startRun("start-reject");
   const runId = requiredDocumentString(started.document, "id");
@@ -386,7 +460,278 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
   expect(replacement.response.status).toBe(201);
 });
 
+test("an interrupted publication fails atomically and leaves cleanup independently retryable", async () => {
+  testObservedAt = "2026-07-29T00:00:00.000Z";
+  const started = await startRun("start-interrupted-publication");
+  const runId = requiredDocumentString(started.document, "id");
+  const digest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const revisionId = "catrev_interrupted";
+  const approvalKey = "approve-interrupted";
+  const approval = {
+    action: "approved",
+    approved_at: testObservedAt,
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+  };
+  const reconcileAfter = "2026-07-29T00:05:00.000Z";
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET state = 'publishing',
+        approval_json = ?,
+        approval_idempotency_key = ?,
+        approval_history_json = ?,
+        progress_json = ?,
+        publication_revision_id = ?,
+        publication_started_at = ?,
+        publication_reconcile_after = ?,
+        publication_manifest_digest = ?
+    WHERE id = ? AND state = 'awaiting_approval'`,
+  )
+    .bind(
+      JSON.stringify(approval),
+      approvalKey,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+          "awaiting_approval",
+        ],
+        current_stage: "publishing",
+      }),
+      revisionId,
+      testObservedAt,
+      reconcileAfter,
+      "f".repeat(64),
+      runId,
+    )
+    .run();
+
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+      SET approval_json = '{}'
+      WHERE id = ?`,
+    )
+      .bind(runId)
+      .run(),
+  ).rejects.toThrow("reserved_approval_immutable");
+
+  testObservedAt = reconcileAfter;
+  const status = await administrationRequest("/v1/status");
+  expect(status.response.status).toBe(200);
+  expect(status.document).toMatchObject({
+    safe_state: {
+      active_ingestion_run_id: null,
+      mutation_safe: true,
+    },
+    diagnostics: {
+      pending_publication_cleanup_count: 1,
+    },
+  });
+  const recentRuns = status.document.recent_runs;
+  expect(Array.isArray(recentRuns)).toBe(true);
+  expect(
+    Array.isArray(recentRuns)
+      ? recentRuns.find(
+          (run) =>
+            typeof run === "object" &&
+            run !== null &&
+            "id" in run &&
+            run.id === runId,
+        )
+      : null,
+  ).toMatchObject({
+    id: runId,
+    state: "failed",
+    failure_code: "publication_abandoned",
+    publication_cleanup: {
+      state: "pending",
+      attempts: 0,
+    },
+  });
+
+  const replay = await approve(
+    runId,
+    digest,
+    expectedRevision,
+    approvalKey,
+  );
+  expect(replay.response.status).toBe(500);
+  expect(replay.document).toMatchObject({
+    code: "publication_abandoned",
+  });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_publication_cleanup
+    SET state = 'failed',
+        failure_code = 'synthetic_delete_failure'
+    WHERE ingestion_run_id = ?`,
+  )
+    .bind(runId)
+    .run();
+  const failedCleanup = await showRun(runId);
+  expect(failedCleanup.document).toMatchObject({
+    state: "failed",
+    failure_code: "publication_abandoned",
+    publication_cleanup: {
+      state: "failed",
+      failure_code: "synthetic_delete_failure",
+    },
+  });
+
+  const replacement = await startRun(
+    "start-after-interrupted-publication",
+  );
+  expect(replacement.response.status).toBe(201);
+
+  const cleanup = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-interrupted-publication" },
+  );
+  expect(cleanup.response.status).toBe(200);
+  expect(cleanup.document).toMatchObject({
+    state: "failed",
+    failure_code: "publication_abandoned",
+    publication_cleanup: {
+      state: "completed",
+      attempts: 1,
+      failure_code: null,
+    },
+  });
+  const cleanupReplay = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-interrupted-publication" },
+  );
+  expect(cleanupReplay.document).toEqual(cleanup.document);
+});
+
+test("an interrupted publication finalizes only its exact verified export", async () => {
+  testObservedAt = "2026-07-29T01:00:00.000Z";
+  const started = await startRun("start-complete-interruption");
+  const runId = requiredDocumentString(started.document, "id");
+  const digest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const revisionId = "catrev_complete_interruption";
+  const approvalKey = "approve-complete-interruption";
+  const approval = {
+    action: "approved",
+    approved_at: testObservedAt,
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+  };
+  const candidate = await fixtureCandidate("first-catalogue", [
+    "one-piece",
+  ]);
+  const catalogueExport = await buildCatalogueExport(
+    candidate.candidate,
+    digest,
+    revisionId,
+    testObservedAt,
+  );
+  for (const object of catalogueExport.objects) {
+    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+  }
+  const reconcileAfter = "2026-07-29T01:05:00.000Z";
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET state = 'publishing',
+        approval_json = ?,
+        approval_idempotency_key = ?,
+        approval_history_json = ?,
+        progress_json = ?,
+        publication_revision_id = ?,
+        publication_started_at = ?,
+        publication_reconcile_after = ?,
+        publication_manifest_digest = ?
+    WHERE id = ? AND state = 'awaiting_approval'`,
+  )
+    .bind(
+      JSON.stringify(approval),
+      approvalKey,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+          "awaiting_approval",
+        ],
+        current_stage: "publishing",
+      }),
+      revisionId,
+      testObservedAt,
+      reconcileAfter,
+      catalogueExport.manifest.manifest_sha256,
+      runId,
+    )
+    .run();
+  const listed = await testEnv.CATALOGUE_EXPORTS.list({
+    prefix: `catalogue-exports/${revisionId}/`,
+  });
+  expect(
+    listed.objects.map((object) => object.key).sort(),
+  ).toEqual(
+    [...new Set(catalogueExport.objects.map((object) => object.key))].sort(),
+  );
+  for (const object of catalogueExport.objects) {
+    expect((await testEnv.CATALOGUE_EXPORTS.get(object.key))?.size).toBe(
+      object.bytes.byteLength,
+    );
+  }
+
+  testObservedAt = reconcileAfter;
+  const reconciled = await showRun(runId);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document).toMatchObject({
+    id: runId,
+    state: "published",
+    publication_outcome: "revision",
+    published_revision_id: revisionId,
+    resulting_revision_id: revisionId,
+    export_manifest_digest:
+      catalogueExport.manifest.manifest_sha256,
+    publication_cleanup: null,
+  });
+  const replay = await approve(
+    runId,
+    digest,
+    expectedRevision,
+    approvalKey,
+  );
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(reconciled.document);
+});
+
 test("an unchanged successful retry advances freshness without another revision or export", async () => {
+  const before = await administrationRequest("/v1/status");
+  const beforeDiagnostics = before.document.diagnostics;
+  if (
+    typeof beforeDiagnostics !== "object" ||
+    beforeDiagnostics === null ||
+    !("catalogue_revision_count" in beforeDiagnostics) ||
+    typeof beforeDiagnostics.catalogue_revision_count !== "number" ||
+    !("catalogue_export_count" in beforeDiagnostics) ||
+    typeof beforeDiagnostics.catalogue_export_count !== "number"
+  ) {
+    throw new Error("status diagnostics are invalid");
+  }
   const first = await startRun("start-first-publication");
   const firstPublished = await approve(
     requiredDocumentString(first.document, "id"),
@@ -434,10 +779,6 @@ test("an unchanged successful retry advances freshness without another revision 
       active_ingestion_run_id: null,
       mutation_safe: true,
     },
-    diagnostics: {
-      catalogue_revision_count: 1,
-      catalogue_export_count: 1,
-    },
     source_freshness: [
       {
         game: "one-piece",
@@ -445,6 +786,15 @@ test("an unchanged successful retry advances freshness without another revision 
         ingestion_run_id: unchanged.document.id,
       },
     ],
+  });
+  const diagnostics = status.document.diagnostics;
+  const expectedNewRevision =
+    firstPublished.document.publication_outcome === "revision" ? 1 : 0;
+  expect(diagnostics).toMatchObject({
+    catalogue_revision_count:
+      beforeDiagnostics.catalogue_revision_count + expectedNewRevision,
+    catalogue_export_count:
+      beforeDiagnostics.catalogue_export_count + expectedNewRevision,
   });
 });
 

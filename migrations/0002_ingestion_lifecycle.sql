@@ -22,6 +22,18 @@ ADD COLUMN resulting_revision_id TEXT;
 ALTER TABLE ingestion_runs
 ADD COLUMN freshness_checked_at TEXT;
 
+ALTER TABLE ingestion_runs
+ADD COLUMN publication_revision_id TEXT;
+
+ALTER TABLE ingestion_runs
+ADD COLUMN publication_started_at TEXT;
+
+ALTER TABLE ingestion_runs
+ADD COLUMN publication_reconcile_after TEXT;
+
+ALTER TABLE ingestion_runs
+ADD COLUMN publication_manifest_digest TEXT;
+
 CREATE TABLE administration_idempotency (
   idempotency_key TEXT PRIMARY KEY,
   operation TEXT NOT NULL,
@@ -53,6 +65,18 @@ CREATE TABLE ingestion_no_change_results (
   catalogue_revision_id TEXT NOT NULL,
   candidate_digest TEXT NOT NULL,
   checked_at TEXT NOT NULL
+);
+
+CREATE TABLE ingestion_publication_cleanup (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  state TEXT NOT NULL CHECK (
+    state IN ('pending', 'cleaning', 'completed', 'failed')
+  ),
+  object_keys_json TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  failure_code TEXT,
+  last_attempt_at TEXT,
+  completed_at TEXT
 );
 
 UPDATE ingestion_runs
@@ -166,6 +190,15 @@ WHEN OLD.state <> NEW.state
     'awaiting_approval',
     'publishing'
   )
+  AND NOT (
+    OLD.state = 'publishing'
+    AND NEW.state = 'failed'
+    AND NEW.failure_code IN (
+      'publication_abandoned',
+      'publication_precondition_failed',
+      'export_verification_failed'
+    )
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM operation_state
@@ -249,7 +282,9 @@ BEFORE UPDATE OF
   candidate_created_at,
   approval_deadline,
   expected_current_revision_id,
-  candidate_json
+  candidate_json,
+  selected_games_json,
+  warnings_json
 ON ingestion_runs
 WHEN OLD.state IN (
   'awaiting_approval',
@@ -266,9 +301,46 @@ WHEN OLD.state IN (
     OR OLD.expected_current_revision_id
       IS NOT NEW.expected_current_revision_id
     OR OLD.candidate_json IS NOT NEW.candidate_json
+    OR OLD.selected_games_json IS NOT NEW.selected_games_json
+    OR OLD.warnings_json IS NOT NEW.warnings_json
   )
 BEGIN
   SELECT RAISE(ABORT, 'candidate_immutable');
+END;
+
+CREATE TRIGGER guard_reserved_approval
+BEFORE UPDATE OF
+  approval_json,
+  approval_history_json,
+  approval_idempotency_key,
+  publication_revision_id,
+  publication_started_at,
+  publication_reconcile_after,
+  publication_manifest_digest
+ON ingestion_runs
+WHEN OLD.state IN (
+  'publishing',
+  'published',
+  'rejected',
+  'expired',
+  'failed'
+)
+  AND (
+    OLD.approval_json IS NOT NEW.approval_json
+    OR OLD.approval_history_json IS NOT NEW.approval_history_json
+    OR OLD.approval_idempotency_key
+      IS NOT NEW.approval_idempotency_key
+    OR OLD.publication_revision_id
+      IS NOT NEW.publication_revision_id
+    OR OLD.publication_started_at
+      IS NOT NEW.publication_started_at
+    OR OLD.publication_reconcile_after
+      IS NOT NEW.publication_reconcile_after
+    OR OLD.publication_manifest_digest
+      IS NOT NEW.publication_manifest_digest
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'reserved_approval_immutable');
 END;
 
 CREATE TRIGGER guard_approval_transition

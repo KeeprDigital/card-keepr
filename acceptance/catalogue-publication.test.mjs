@@ -48,7 +48,7 @@ test("the owner publishes the first fixture Catalogue Revision through the black
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
     writeFile(
       ingestionEnv,
-      `ADMINISTRATION_KEY=${administrationKey}\nTEST_CLOCK_ENABLED=true\n`,
+      `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
       {
         mode: 0o600,
       },

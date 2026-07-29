@@ -5,6 +5,7 @@ import {
   approveRun,
   inspectCandidate,
   rejectRun,
+  retryPublicationCleanup,
   retryRun,
   showRun,
   startFixtureRun,
@@ -72,6 +73,7 @@ export default {
         return Response.json(
           await startFixtureRun(
             env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
             {
               fixture: requiredString(body, "fixture"),
               selected_games: requiredStringArray(
@@ -105,6 +107,7 @@ export default {
         return Response.json(
           await inspectCandidate(
             env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
             decodeURIComponent(candidateMatch[1]!),
             observedAt,
           ),
@@ -154,6 +157,7 @@ export default {
         return Response.json(
           await rejectRun(
             env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
             decodeURIComponent(rejectionMatch[1]!),
             {
               candidate_digest: requiredString(
@@ -178,6 +182,7 @@ export default {
         return Response.json(
           await retryRun(
             env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
             decodeURIComponent(retryMatch[1]!),
             {
               idempotency_key: requiredString(
@@ -191,6 +196,29 @@ export default {
         );
       }
 
+      const cleanupMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/publication-cleanup$/.exec(
+          url.pathname,
+        );
+      if (request.method === "POST" && cleanupMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["idempotency_key"]);
+        return Response.json(
+          await retryPublicationCleanup(
+            env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
+            decodeURIComponent(cleanupMatch[1]!),
+            {
+              idempotency_key: requiredString(
+                body,
+                "idempotency_key",
+              ),
+            },
+            observedAt,
+          ),
+        );
+      }
+
       const runMatch = /^\/v1\/ingestion-runs\/([^/]+)$/.exec(
         url.pathname,
       );
@@ -198,6 +226,7 @@ export default {
         return Response.json(
           await showRun(
             env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
             decodeURIComponent(runMatch[1]!),
             observedAt,
           ),
@@ -243,10 +272,11 @@ export default {
 async function readAdministrationBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
+  const maximumBytes = 16_384;
   const declaredLength = request.headers.get("content-length");
   if (
     declaredLength !== null &&
-    Number.parseInt(declaredLength, 10) > 16_384
+    Number.parseInt(declaredLength, 10) > maximumBytes
   ) {
     throw new AdministrationProblem(
       413,
@@ -254,13 +284,26 @@ async function readAdministrationBody(
       "The administration request body exceeds 16 KiB.",
     );
   }
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > 16_384) {
-    throw new AdministrationProblem(
-      413,
-      "request_too_large",
-      "The administration request body exceeds 16 KiB.",
-    );
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let text = "";
+  if (reader !== undefined) {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytesRead += chunk.value.byteLength;
+      if (bytesRead > maximumBytes) {
+        await reader.cancel();
+        throw new AdministrationProblem(
+          413,
+          "request_too_large",
+          "The administration request body exceeds 16 KiB.",
+        );
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
   }
   try {
     const value: unknown = JSON.parse(text);
@@ -335,10 +378,12 @@ function administrationObservedAt(
   request: Request,
   env: Env,
 ): string {
-  const testClockEnabled =
-    Reflect.get(env, "TEST_CLOCK_ENABLED") === "true";
   const requested = request.headers.get("x-keepr-test-now");
-  if (!testClockEnabled || requested === null) {
+  const clockMode: string = env.ADMINISTRATION_CLOCK_MODE;
+  if (
+    clockMode !== "request" ||
+    requested === null
+  ) {
     return new Date().toISOString();
   }
   const parsed = new Date(requested);

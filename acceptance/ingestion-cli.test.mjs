@@ -27,6 +27,10 @@ const run = {
   ],
   publication_outcome: null,
   resulting_revision_id: "catrev_cli_demo",
+  publication_cleanup: {
+    state: "failed",
+    failure_code: "publication_cleanup_failed",
+  },
 };
 
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
@@ -102,6 +106,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(shown.stdout, /Progress: failed/);
   assert.match(shown.stdout, /Warning: source_record_missing/);
   assert.match(shown.stdout, /Failure: source_unavailable/);
+  assert.match(
+    shown.stdout,
+    /Publication cleanup: failed \(publication_cleanup_failed\)/,
+  );
   assert.match(shown.stdout, /Approval history: 1 decision/);
   assert.match(
     shown.stdout,
@@ -138,7 +146,20 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(retried.code, 0, retried.stderr);
-  assert.deepEqual(requests.slice(-2), [
+  const cleaned = await runCli(
+    [
+      "run",
+      "cleanup",
+      "--run-id",
+      "run_cli_demo",
+      "--idempotency-key",
+      "cleanup-cli-demo",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(cleaned.code, 0, cleaned.stderr);
+  assert.deepEqual(requests.slice(-3), [
     {
       method: "POST",
       path: "/v1/ingestion-runs/run_cli_demo/rejection",
@@ -152,6 +173,14 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       path: "/v1/ingestion-runs/run_cli_demo/retry",
       body: {
         idempotency_key: "retry-cli-demo",
+      },
+    },
+    {
+      method: "POST",
+      path:
+        "/v1/ingestion-runs/run_cli_demo/publication-cleanup",
+      body: {
+        idempotency_key: "cleanup-cli-demo",
       },
     },
   ]);

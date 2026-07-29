@@ -46,6 +46,9 @@ async function main(arguments_, environment) {
   if (isCommand(arguments_, "run", "retry")) {
     return retryRun(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "run", "cleanup")) {
+    return cleanupRun(arguments_.slice(2), environment, json);
+  }
 
   return usageFailure(json);
 }
@@ -245,6 +248,33 @@ async function retryRun(arguments_, environment, json) {
   );
 }
 
+async function cleanupRun(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(
+      runId,
+    )}/publication-cleanup`,
+    "POST",
+    {
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
 async function administrationRequest(
   environment,
   json,
@@ -413,7 +443,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry",
+        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup",
     },
     2,
   );
@@ -518,6 +548,16 @@ function formatRun(document) {
     }
   }
   lines.push(`Failure: ${document.failure_code ?? "none"}`);
+  const cleanup = document.publication_cleanup;
+  lines.push(
+    `Publication cleanup: ${
+      cleanup?.state ?? "not required"
+    }${
+      cleanup?.failure_code
+        ? ` (${cleanup.failure_code})`
+        : ""
+    }`,
+  );
   const history = Array.isArray(document.approval_history)
     ? document.approval_history
     : [];
