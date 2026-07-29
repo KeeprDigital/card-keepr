@@ -10,8 +10,10 @@ const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
 };
 let requestSequence = 0;
+let testObservedAt: string | null = null;
 
 beforeEach(async () => {
+  testObservedAt = null;
   await applyD1Migrations(
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
@@ -109,6 +111,49 @@ test("competing starts fail closed while an identical retry replays its original
   expect(competing.document).toMatchObject({
     code: "active_ingestion_run",
   });
+
+  await administrationRequest(
+    `/v1/ingestion-runs/${requiredDocumentString(
+      started.document,
+      "id",
+    )}/rejection`,
+    {
+      candidate_digest: requiredDocumentString(
+        started.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-first",
+    },
+  );
+  const failedReplay = await administrationRequest(
+    "/v1/ingestion-runs",
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      idempotency_key: "start-competing",
+    },
+  );
+  expect(failedReplay.response.status).toBe(409);
+  expect({
+    ...failedReplay.document,
+    request_id: "<request>",
+  }).toEqual({
+    ...competing.document,
+    request_id: "<request>",
+  });
+
+  const changedFailedReplay = await administrationRequest(
+    "/v1/ingestion-runs",
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece", "digimon"],
+      idempotency_key: "start-competing",
+    },
+  );
+  expect(changedFailedReplay.response.status).toBe(409);
+  expect(changedFailedReplay.document).toMatchObject({
+    code: "idempotency_key_reused",
+  });
 });
 
 test("stale and mismatched approvals leave the candidate unchanged before exact approval publishes", async () => {
@@ -122,6 +167,21 @@ test("stale and mismatched approvals leave the candidate unchanged before exact 
     started.document,
     "expected_current_revision_id",
   );
+  const attemptedRewrite = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/approval`,
+    {
+      candidate_digest: digest,
+      expected_current_revision_id: expectedRevision,
+      idempotency_key: "approve-rewrite",
+      approval_deadline: "2999-01-01T00:00:00.000Z",
+      candidate_created_at: "1970-01-01T00:00:00.000Z",
+    },
+  );
+  expect(attemptedRewrite.response.status).toBe(422);
+  expect(attemptedRewrite.document).toMatchObject({
+    code: "invalid_parameter",
+  });
+  expect((await showRun(runId)).document).toEqual(started.document);
 
   const staleDigest = await approve(
     runId,
@@ -144,6 +204,13 @@ test("stale and mismatched approvals leave the candidate unchanged before exact 
     code: "current_revision_mismatch",
   });
   expect((await showRun(runId)).document).toEqual(started.document);
+  const guardedStatus = await administrationRequest("/v1/status");
+  expect(guardedStatus.document).toMatchObject({
+    diagnostics: {
+      catalogue_export_object_count: 0,
+      orphaned_catalogue_export_object_count: 0,
+    },
+  });
 
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE operation_state
@@ -239,6 +306,15 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
         candidate_digest: digest,
       },
     ],
+    progress: {
+      completed_stages: [
+        "planning",
+        "collecting",
+        "parsing",
+        "reconciling",
+      ],
+      current_stage: "rejected",
+    },
   });
 
   const retry = await administrationRequest(
@@ -261,6 +337,7 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
 });
 
 test("a candidate expires at its exact seven-day boundary and releases the run lock", async () => {
+  testObservedAt = "2026-07-29T00:00:00.000Z";
   const started = await startRun("start-expiry");
   const runId = requiredDocumentString(started.document, "id");
   const createdAt = requiredDocumentString(
@@ -275,17 +352,20 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
     7 * 24 * 60 * 60 * 1_000,
   );
 
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE ingestion_runs
-    SET approval_deadline = ?
-    WHERE id = ?`,
-  )
-    .bind(new Date().toISOString(), runId)
-    .run();
+  testObservedAt = deadline;
   const expired = await showRun(runId);
   expect(expired.document).toMatchObject({
     state: "expired",
     resulting_revision_id: null,
+    progress: {
+      completed_stages: [
+        "planning",
+        "collecting",
+        "parsing",
+        "reconciling",
+      ],
+      current_stage: "expired",
+    },
   });
 
   const lateApproval = await approve(
@@ -381,6 +461,9 @@ async function administrationRequest(
       headers: {
         authorization: "Bearer vitest-administration-key",
         "cf-connecting-ip": `192.0.2.${(requestSequence++ % 250) + 1}`,
+        ...(testObservedAt === null
+          ? {}
+          : { "x-keepr-test-now": testObservedAt }),
         ...(body === undefined
           ? {}
           : { "content-type": "application/json" }),

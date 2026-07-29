@@ -57,25 +57,45 @@ export default {
           capabilities: ingestionCapabilities,
         });
       }
+      const observedAt = administrationObservedAt(request, env);
 
       if (
         request.method === "POST" &&
         url.pathname === "/v1/ingestion-runs"
       ) {
         const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "fixture",
+          "selected_games",
+          "idempotency_key",
+        ]);
         return Response.json(
-          await startFixtureRun(env.CATALOGUE_DB, {
-            fixture: requiredString(body, "fixture"),
-            selected_games: requiredStringArray(body, "selected_games"),
-            idempotency_key: requiredString(body, "idempotency_key"),
-          }),
+          await startFixtureRun(
+            env.CATALOGUE_DB,
+            {
+              fixture: requiredString(body, "fixture"),
+              selected_games: requiredStringArray(
+                body,
+                "selected_games",
+              ),
+              idempotency_key: requiredString(
+                body,
+                "idempotency_key",
+              ),
+            },
+            observedAt,
+          ),
           { status: 201 },
         );
       }
 
       if (request.method === "GET" && url.pathname === "/v1/status") {
         return Response.json(
-          await administrationStatus(env.CATALOGUE_DB),
+          await administrationStatus(
+            env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
+            observedAt,
+          ),
         );
       }
 
@@ -86,6 +106,7 @@ export default {
           await inspectCandidate(
             env.CATALOGUE_DB,
             decodeURIComponent(candidateMatch[1]!),
+            observedAt,
           ),
         );
       }
@@ -94,6 +115,11 @@ export default {
         /^\/v1\/ingestion-runs\/([^/]+)\/approval$/.exec(url.pathname);
       if (request.method === "POST" && approvalMatch !== null) {
         const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "candidate_digest",
+          "expected_current_revision_id",
+          "idempotency_key",
+        ]);
         return Response.json(
           await approveRun(
             env.CATALOGUE_DB,
@@ -110,6 +136,7 @@ export default {
               ),
               idempotency_key: requiredString(body, "idempotency_key"),
             },
+            observedAt,
           ),
         );
       }
@@ -120,6 +147,10 @@ export default {
         );
       if (request.method === "POST" && rejectionMatch !== null) {
         const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "candidate_digest",
+          "idempotency_key",
+        ]);
         return Response.json(
           await rejectRun(
             env.CATALOGUE_DB,
@@ -134,6 +165,7 @@ export default {
                 "idempotency_key",
               ),
             },
+            observedAt,
           ),
         );
       }
@@ -142,6 +174,7 @@ export default {
         /^\/v1\/ingestion-runs\/([^/]+)\/retry$/.exec(url.pathname);
       if (request.method === "POST" && retryMatch !== null) {
         const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["idempotency_key"]);
         return Response.json(
           await retryRun(
             env.CATALOGUE_DB,
@@ -152,6 +185,7 @@ export default {
                 "idempotency_key",
               ),
             },
+            observedAt,
           ),
           { status: 201 },
         );
@@ -165,6 +199,7 @@ export default {
           await showRun(
             env.CATALOGUE_DB,
             decodeURIComponent(runMatch[1]!),
+            observedAt,
           ),
         );
       }
@@ -278,6 +313,46 @@ function requiredStringArray(
     );
   }
   return value;
+}
+
+function assertOnlyFields(
+  body: Record<string, unknown>,
+  allowedFields: readonly string[],
+): void {
+  const unexpected = Object.keys(body).find(
+    (field) => !allowedFields.includes(field),
+  );
+  if (unexpected !== undefined) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_parameter",
+      `${unexpected} is not accepted for this administration operation.`,
+    );
+  }
+}
+
+function administrationObservedAt(
+  request: Request,
+  env: Env,
+): string {
+  const testClockEnabled =
+    Reflect.get(env, "TEST_CLOCK_ENABLED") === "true";
+  const requested = request.headers.get("x-keepr-test-now");
+  if (!testClockEnabled || requested === null) {
+    return new Date().toISOString();
+  }
+  const parsed = new Date(requested);
+  if (
+    !Number.isFinite(parsed.valueOf()) ||
+    parsed.toISOString() !== requested
+  ) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_parameter",
+      "x-keepr-test-now must be a canonical UTC timestamp.",
+    );
+  }
+  return requested;
 }
 
 function administrationProblemTitle(status: number): string {

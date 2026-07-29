@@ -18,6 +18,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
+          TEST_CLOCK_ENABLED: "true",
           TEST_MIGRATIONS: migrations,
         },
       },

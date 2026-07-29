@@ -269,6 +269,9 @@ async function administrationRequest(
       method,
       headers: {
         authorization: `Bearer ${configuration.key}`,
+        ...(configuration.testNow === undefined
+          ? {}
+          : { "x-keepr-test-now": configuration.testNow }),
         ...(body === undefined
           ? {}
           : { "content-type": "application/json" }),
@@ -362,12 +365,14 @@ function readAdministrationConfiguration(environment) {
       error: "Missing required environment: KEEPR_ADMINISTRATION_KEY",
       url: "",
       key: "",
+      testNow: undefined,
     };
   }
   return {
     error: null,
     url: environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788",
     key: environment.KEEPR_ADMINISTRATION_KEY,
+    testNow: environment.KEEPR_TEST_NOW,
   };
 }
 

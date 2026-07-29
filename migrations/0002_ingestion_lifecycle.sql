@@ -28,6 +28,7 @@ CREATE TABLE administration_idempotency (
   request_json TEXT NOT NULL,
   response_json TEXT NOT NULL,
   http_status INTEGER NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('success', 'problem')),
   created_at TEXT NOT NULL
 );
 
@@ -68,8 +69,18 @@ SET progress_json = CASE state
     '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
   WHEN 'publishing' THEN
     '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval"],"current_stage":"publishing"}'
-  ELSE
+  WHEN 'published' THEN
     '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval","publishing"],"current_stage":"' || state || '"}'
+  WHEN 'rejected' THEN
+    '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"rejected"}'
+  WHEN 'expired' THEN
+    '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"expired"}'
+  WHEN 'failed' THEN CASE
+    WHEN approval_json IS NOT NULL THEN
+      '{"completed_stages":["planning","collecting","parsing","reconciling","awaiting_approval"],"current_stage":"failed"}'
+    ELSE
+      '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
+  END
 END;
 
 UPDATE ingestion_runs
@@ -236,6 +247,8 @@ CREATE TRIGGER guard_fixed_candidate
 BEFORE UPDATE OF
   candidate_digest,
   candidate_created_at,
+  approval_deadline,
+  expected_current_revision_id,
   candidate_json
 ON ingestion_runs
 WHEN OLD.state IN (
@@ -249,6 +262,9 @@ WHEN OLD.state IN (
   AND (
     OLD.candidate_digest IS NOT NEW.candidate_digest
     OR OLD.candidate_created_at IS NOT NEW.candidate_created_at
+    OR OLD.approval_deadline IS NOT NEW.approval_deadline
+    OR OLD.expected_current_revision_id
+      IS NOT NEW.expected_current_revision_id
     OR OLD.candidate_json IS NOT NEW.candidate_json
   )
 BEGIN
@@ -269,10 +285,10 @@ WHEN OLD.state = 'awaiting_approval'
       NEW.approval_json,
       '$.expected_current_revision_id'
     ) = OLD.expected_current_revision_id
-    AND OLD.approval_deadline > strftime(
-      '%Y-%m-%dT%H:%M:%fZ',
-      'now'
-    )
+    AND json_extract(
+      NEW.approval_json,
+      '$.approved_at'
+    ) < OLD.approval_deadline
     AND EXISTS (
       SELECT 1
       FROM catalogue_state AS catalogue
@@ -305,11 +321,39 @@ WHEN NOT EXISTS (
     AND operation.recovery_health = 'healthy'
     AND catalogue.current_revision_id = NEW.catalogue_revision_id
     AND revision.content_digest = NEW.candidate_digest
-    AND run.approval_deadline > strftime(
-      '%Y-%m-%dT%H:%M:%fZ',
-      'now'
-    )
+    AND NEW.checked_at < run.approval_deadline
 )
 BEGIN
   SELECT RAISE(ABORT, 'no_change_guard_failed');
+END;
+
+DROP TRIGGER guard_catalogue_publication;
+
+CREATE TRIGGER guard_catalogue_publication
+BEFORE INSERT ON catalogue_revisions
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM ingestion_runs AS run
+  JOIN operation_state AS operation ON operation.singleton = 1
+  JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+  WHERE run.id = NEW.ingestion_run_id
+    AND run.state = 'publishing'
+    AND run.candidate_digest = NEW.approved_candidate_digest
+    AND run.expected_current_revision_id =
+      NEW.expected_previous_revision_id
+    AND json_extract(
+      run.approval_json,
+      '$.candidate_digest'
+    ) = NEW.approved_candidate_digest
+    AND json_extract(
+      run.approval_json,
+      '$.expected_current_revision_id'
+    ) = NEW.expected_previous_revision_id
+    AND operation.active_ingestion_run_id = run.id
+    AND operation.recovery_health = 'healthy'
+    AND catalogue.current_revision_id =
+      NEW.expected_previous_revision_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'publication_guard_failed');
 END;

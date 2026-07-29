@@ -55,6 +55,7 @@ type IdempotencyRow = {
   request_json: string;
   response_json: string;
   http_status: number;
+  outcome: "success" | "problem";
 };
 
 type FreshnessRow = {
@@ -62,6 +63,13 @@ type FreshnessRow = {
   area: string;
   checked_at: string;
   ingestion_run_id: string;
+};
+
+type IdempotencyContext = {
+  key: string;
+  operation: string;
+  requestJson: string;
+  observedAt: string;
 };
 
 export type StartRunRequest = {
@@ -88,83 +96,96 @@ export type RetryRunRequest = {
 export async function startFixtureRun(
   database: D1Database,
   request: StartRunRequest,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(request.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({
     fixture: request.fixture,
     selected_games: request.selected_games,
   });
-  const replay = await replayAdministration(
+  return idempotentAdministration(
     database,
-    request.idempotency_key,
-    "start_ingestion_run",
-    requestJson,
+    {
+      key: request.idempotency_key,
+      operation: "start_ingestion_run",
+      requestJson,
+      observedAt,
+    },
+    async () => {
+      const candidate = await validatedFixtureCandidate(request);
+      return startPreparedRun(database, {
+        candidate: candidate.candidate,
+        candidateDigest: candidate.digest,
+        idempotencyKey: request.idempotency_key,
+        idempotencyOperation: "start_ingestion_run",
+        idempotencyRequestJson: requestJson,
+        linkedRunId: null,
+        observedAt,
+      });
+    },
   );
-  if (replay !== null) return replay;
-
-  const candidate = await validatedFixtureCandidate(request);
-  return startPreparedRun(database, {
-    candidate: candidate.candidate,
-    candidateDigest: candidate.digest,
-    idempotencyKey: request.idempotency_key,
-    idempotencyOperation: "start_ingestion_run",
-    idempotencyRequestJson: requestJson,
-    linkedRunId: null,
-  });
 }
 
 export async function retryRun(
   database: D1Database,
   sourceRunId: string,
   request: RetryRunRequest,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(sourceRunId, "run_id");
   assertOpaqueId(request.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({ source_run_id: sourceRunId });
-  const replay = await replayAdministration(
+  return idempotentAdministration(
     database,
-    request.idempotency_key,
-    "retry_ingestion_run",
-    requestJson,
+    {
+      key: request.idempotency_key,
+      operation: "retry_ingestion_run",
+      requestJson,
+      observedAt,
+    },
+    async () => {
+      await expireOverdueRuns(database, observedAt);
+      const source = await requiredRun(database, sourceRunId);
+      if (!terminalRunStates.has(source.state)) {
+        throw new AdministrationProblem(
+          409,
+          "source_run_not_terminal",
+          "Only a terminal Ingestion Run can be retried.",
+        );
+      }
+      const candidate = parseCandidate(source);
+      const candidateDigest = await sha256(
+        new TextEncoder().encode(canonicalJson(candidate)),
+      );
+      return startPreparedRun(database, {
+        candidate,
+        candidateDigest,
+        idempotencyKey: request.idempotency_key,
+        idempotencyOperation: "retry_ingestion_run",
+        idempotencyRequestJson: requestJson,
+        linkedRunId: source.id,
+        observedAt,
+      });
+    },
   );
-  if (replay !== null) return replay;
-
-  await expireOverdueRuns(database, new Date().toISOString());
-  const source = await requiredRun(database, sourceRunId);
-  if (!terminalRunStates.has(source.state)) {
-    throw new AdministrationProblem(
-      409,
-      "source_run_not_terminal",
-      "Only a terminal Ingestion Run can be retried.",
-    );
-  }
-  const candidate = parseCandidate(source);
-  const candidateDigest = await sha256(
-    new TextEncoder().encode(canonicalJson(candidate)),
-  );
-  return startPreparedRun(database, {
-    candidate,
-    candidateDigest,
-    idempotencyKey: request.idempotency_key,
-    idempotencyOperation: "retry_ingestion_run",
-    idempotencyRequestJson: requestJson,
-    linkedRunId: source.id,
-  });
 }
 
 export async function showRun(
   database: D1Database,
   runId: string,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
-  await expireOverdueRuns(database, new Date().toISOString());
+  await expireOverdueRuns(database, observedAt);
   return publicRun(await requiredRun(database, runId));
 }
 
 export async function administrationStatus(
   database: D1Database,
+  catalogueExports: R2Bucket,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await expireOverdueRuns(database, new Date().toISOString());
+  await expireOverdueRuns(database, observedAt);
   const [
     catalogue,
     operation,
@@ -172,6 +193,8 @@ export async function administrationStatus(
     recentRuns,
     revisionCount,
     exportCount,
+    publishedRevisionIds,
+    exportObjects,
   ] =
     await Promise.all([
       currentCatalogueState(database),
@@ -196,6 +219,10 @@ export async function administrationStatus(
       database
         .prepare("SELECT COUNT(*) AS count FROM catalogue_exports")
         .first<{ count: number }>(),
+      database
+        .prepare("SELECT id FROM catalogue_revisions")
+        .all<{ id: string }>(),
+      listAllCatalogueExportObjects(catalogueExports),
     ]);
   const active =
     operation.active_ingestion_run_id === null
@@ -219,6 +246,12 @@ export async function administrationStatus(
     diagnostics: {
       catalogue_revision_count: revisionCount?.count ?? 0,
       catalogue_export_count: exportCount?.count ?? 0,
+      catalogue_export_object_count: exportObjects.length,
+      orphaned_catalogue_export_object_count:
+        orphanedCatalogueExportObjectCount(
+          exportObjects,
+          publishedRevisionIds.results.map((row) => row.id),
+        ),
     },
     recent_runs: recentRuns.results.map(publicRun),
   };
@@ -227,9 +260,10 @@ export async function administrationStatus(
 export async function inspectCandidate(
   database: D1Database,
   runId: string,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
-  await expireOverdueRuns(database, new Date().toISOString());
+  await expireOverdueRuns(database, observedAt);
   const row = await requiredRun(database, runId);
   if (row.state !== "awaiting_approval") {
     throw new AdministrationProblem(
@@ -246,7 +280,10 @@ export async function inspectCandidate(
     expected_current_revision_id: row.expected_current_revision_id,
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
-    progress: JSON.parse(row.progress_json),
+    progress: parsePersistedObject(
+      row.progress_json,
+      "Ingestion Run progress",
+    ),
     diff: {
       summary: {
         cards_added: candidate.cards.length,
@@ -273,6 +310,7 @@ export async function approveRun(
   catalogueExports: R2Bucket,
   runId: string,
   request: ApproveRunRequest,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
@@ -287,15 +325,34 @@ export async function approveRun(
     expected_current_revision_id:
       request.expected_current_revision_id,
   });
-  const replay = await replayAdministration(
+  return idempotentAdministration(
     database,
-    request.idempotency_key,
-    "approve_ingestion_run",
-    requestJson,
+    {
+      key: request.idempotency_key,
+      operation: "approve_ingestion_run",
+      requestJson,
+      observedAt,
+    },
+    () =>
+      approveRunAttempt(
+        database,
+        catalogueExports,
+        runId,
+        request,
+        requestJson,
+        observedAt,
+      ),
   );
-  if (replay !== null) return replay;
+}
 
-  const now = new Date().toISOString();
+async function approveRunAttempt(
+  database: D1Database,
+  catalogueExports: R2Bucket,
+  runId: string,
+  request: ApproveRunRequest,
+  requestJson: string,
+  now: string,
+): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
   assertRunIsApprovable(run, request);
@@ -357,6 +414,16 @@ export async function approveRun(
     revisionId,
     now,
   );
+  try {
+    await reservePublication(
+      database,
+      run.id,
+      approval,
+      request.idempotency_key,
+    );
+  } catch (error) {
+    await throwApprovalFailure(database, run, error, now);
+  }
   const resultingRun = publicRun({
     ...run,
     state: "published",
@@ -441,23 +508,6 @@ export async function approveRun(
         ),
       database
         .prepare(
-          `UPDATE ingestion_runs
-          SET state = 'publishing',
-              approval_json = ?,
-              approval_idempotency_key = ?,
-              approval_history_json = ?,
-              progress_json = ?
-          WHERE id = ? AND state = 'awaiting_approval'`,
-        )
-        .bind(
-          JSON.stringify(approval),
-          request.idempotency_key,
-          JSON.stringify([approval]),
-          JSON.stringify(progressFor("publishing")),
-          run.id,
-        ),
-      database
-        .prepare(
           `UPDATE catalogue_state
           SET current_revision_id = ?, published_at = ?
           WHERE singleton = 1
@@ -510,7 +560,27 @@ export async function approveRun(
       error,
     );
     if (concurrentReplay !== null) return concurrentReplay;
-    await throwApprovalFailure(database, run, error, now);
+    await deleteExportObjects(catalogueExports, catalogueExport.objects);
+    await failRun(
+      database,
+      run.id,
+      now,
+      errorMessage(error).includes("publication_guard_failed")
+        ? "publication_precondition_failed"
+        : "export_verification_failed",
+    );
+    if (errorMessage(error).includes("publication_guard_failed")) {
+      throw new AdministrationProblem(
+        409,
+        "publication_precondition_failed",
+        "The publication guards changed after approval was reserved.",
+      );
+    }
+    throw new AdministrationProblem(
+      500,
+      "export_verification_failed",
+      "The Catalogue Export could not be verified, so no revision was published.",
+    );
   }
 
   return resultingRun;
@@ -520,6 +590,7 @@ export async function rejectRun(
   database: D1Database,
   runId: string,
   request: RejectRunRequest,
+  observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
@@ -528,15 +599,32 @@ export async function rejectRun(
     run_id: runId,
     candidate_digest: request.candidate_digest,
   });
-  const replay = await replayAdministration(
+  return idempotentAdministration(
     database,
-    request.idempotency_key,
-    "reject_ingestion_run",
-    requestJson,
+    {
+      key: request.idempotency_key,
+      operation: "reject_ingestion_run",
+      requestJson,
+      observedAt,
+    },
+    () =>
+      rejectRunAttempt(
+        database,
+        runId,
+        request,
+        requestJson,
+        observedAt,
+      ),
   );
-  if (replay !== null) return replay;
+}
 
-  const now = new Date().toISOString();
+async function rejectRunAttempt(
+  database: D1Database,
+  runId: string,
+  request: RejectRunRequest,
+  requestJson: string,
+  now: string,
+): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
   if (run.state === "expired") {
@@ -565,11 +653,12 @@ export async function rejectRun(
     rejected_at: now,
     candidate_digest: request.candidate_digest,
   };
+  const rejectedProgress = terminalProgress(run, "rejected");
   const resultingRun = publicRun({
     ...run,
     state: "rejected",
     terminal_at: now,
-    progress_json: JSON.stringify(progressFor("rejected")),
+    progress_json: JSON.stringify(rejectedProgress),
     approval_history_json: JSON.stringify([decision]),
   });
   try {
@@ -585,7 +674,7 @@ export async function rejectRun(
         )
         .bind(
           now,
-          JSON.stringify(progressFor("rejected")),
+          JSON.stringify(rejectedProgress),
           JSON.stringify([decision]),
           run.id,
         ),
@@ -639,9 +728,10 @@ async function startPreparedRun(
     idempotencyOperation: string;
     idempotencyRequestJson: string;
     linkedRunId: string | null;
+    observedAt: string;
   },
 ): Promise<Record<string, unknown>> {
-  await expireOverdueRuns(database, new Date().toISOString());
+  await expireOverdueRuns(database, input.observedAt);
   const [catalogueState, operationState] = await Promise.all([
     currentCatalogueState(database),
     currentOperationState(database),
@@ -661,7 +751,7 @@ async function startPreparedRun(
     );
   }
 
-  const startedAt = new Date().toISOString();
+  const startedAt = input.observedAt;
   const approvalDeadline = new Date(
     Date.parse(startedAt) + sevenDaysInMilliseconds,
   ).toISOString();
@@ -938,7 +1028,7 @@ async function throwApprovalFailure(
   now: string,
 ): Promise<never> {
   const message = errorMessage(error);
-  await expireOverdueRuns(database, new Date().toISOString());
+  await expireOverdueRuns(database, now);
   const guardedRun = await requiredRun(database, run.id);
   if (guardedRun.state === "expired") {
     throw new AdministrationProblem(
@@ -1039,6 +1129,40 @@ function lifecycle(revisionId: string) {
   };
 }
 
+async function reservePublication(
+  database: D1Database,
+  runId: string,
+  approval: Record<string, unknown>,
+  idempotencyKey: string,
+): Promise<void> {
+  const reserved = await database
+    .prepare(
+      `UPDATE ingestion_runs
+      SET state = 'publishing',
+          approval_json = ?,
+          approval_idempotency_key = ?,
+          approval_history_json = ?,
+          progress_json = ?
+      WHERE id = ? AND state = 'awaiting_approval'
+      RETURNING id`,
+    )
+    .bind(
+      JSON.stringify(approval),
+      idempotencyKey,
+      JSON.stringify([approval]),
+      JSON.stringify(progressFor("publishing")),
+      runId,
+    )
+    .first<{ id: string }>();
+  if (reserved === null) {
+    throw new AdministrationProblem(
+      409,
+      "publication_precondition_failed",
+      "The Ingestion Run could not reserve publication.",
+    );
+  }
+}
+
 async function storeAndVerifyExport(
   bucket: R2Bucket,
   objects: readonly {
@@ -1081,6 +1205,14 @@ async function storeAndVerifyExport(
   }
 }
 
+async function deleteExportObjects(
+  bucket: R2Bucket,
+  objects: readonly { key: string }[],
+): Promise<void> {
+  if (objects.length === 0) return;
+  await bucket.delete(objects.map((object) => object.key));
+}
+
 async function validatedFixtureCandidate(
   request: StartRunRequest,
 ): Promise<{ candidate: FixtureCandidate; digest: string }> {
@@ -1109,6 +1241,33 @@ async function currentCatalogueState(
     throw new Error("Catalogue state is unavailable");
   }
   return state;
+}
+
+async function listAllCatalogueExportObjects(
+  bucket: R2Bucket,
+): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({
+      prefix: "catalogue-exports/",
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    keys.push(...page.objects.map((object) => object.key));
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor !== undefined);
+  return keys;
+}
+
+function orphanedCatalogueExportObjectCount(
+  keys: readonly string[],
+  publishedRevisionIds: readonly string[],
+): number {
+  const published = new Set(publishedRevisionIds);
+  return keys.filter((key) => {
+    const [, revisionId] = key.split("/", 3);
+    return revisionId === undefined || !published.has(revisionId);
+  }).length;
 }
 
 async function currentOperationState(
@@ -1153,7 +1312,12 @@ async function replayAdministration(
 ): Promise<Record<string, unknown> | null> {
   const prior = await database
     .prepare(
-      `SELECT operation, request_json, response_json, http_status
+      `SELECT
+        operation,
+        request_json,
+        response_json,
+        http_status,
+        outcome
       FROM administration_idempotency
       WHERE idempotency_key = ?`,
     )
@@ -1177,7 +1341,90 @@ async function replayAdministration(
       "The idempotency key was already used for a different administration request.",
     );
   }
-  return JSON.parse(prior.response_json) as Record<string, unknown>;
+  const persisted = parsePersistedObject(
+    prior.response_json,
+    "Administration idempotency outcome",
+  );
+  if (prior.outcome === "problem") {
+    if (
+      typeof persisted.code !== "string" ||
+      typeof persisted.detail !== "string" ||
+      !Number.isInteger(prior.http_status) ||
+      prior.http_status < 400 ||
+      prior.http_status > 599
+    ) {
+      throw new Error(
+        "The persisted administration problem outcome is invalid.",
+      );
+    }
+    throw new AdministrationProblem(
+      prior.http_status,
+      persisted.code,
+      persisted.detail,
+    );
+  }
+  return persisted;
+}
+
+async function idempotentAdministration(
+  database: D1Database,
+  context: IdempotencyContext,
+  operation: () => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  const replay = await replayAdministration(
+    database,
+    context.key,
+    context.operation,
+    context.requestJson,
+  );
+  if (replay !== null) return replay;
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof AdministrationProblem)) throw error;
+    try {
+      await database
+        .prepare(
+          `INSERT INTO administration_idempotency (
+            idempotency_key,
+            operation,
+            request_json,
+            response_json,
+            http_status,
+            outcome,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, 'problem', ?)`,
+        )
+        .bind(
+          context.key,
+          context.operation,
+          context.requestJson,
+          canonicalJson({
+            code: error.code,
+            detail: error.message,
+          }),
+          error.status,
+          context.observedAt,
+        )
+        .run();
+    } catch (persistError) {
+      if (
+        !errorMessage(persistError).includes(
+          "administration_idempotency.idempotency_key",
+        )
+      ) {
+        throw persistError;
+      }
+      const concurrentReplay = await replayAdministration(
+        database,
+        context.key,
+        context.operation,
+        context.requestJson,
+      );
+      if (concurrentReplay !== null) return concurrentReplay;
+    }
+    throw error;
+  }
 }
 
 async function replayLegacyAdministration(
@@ -1265,8 +1512,9 @@ function idempotencyInsertStatement(
         request_json,
         response_json,
         http_status,
+        outcome,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, 'success', ?)`,
     )
     .bind(
       input.key,
@@ -1339,16 +1587,16 @@ async function expireOverdueRuns(
         `UPDATE ingestion_runs
         SET state = 'expired',
             terminal_at = ?,
-            progress_json = ?
+            progress_json = json_set(
+              progress_json,
+              '$.current_stage',
+              'expired'
+            )
         WHERE state = 'awaiting_approval'
           AND approval_deadline IS NOT NULL
           AND approval_deadline <= ?`,
       )
-      .bind(
-        observedAt,
-        JSON.stringify(progressFor("expired")),
-        observedAt,
-      ),
+      .bind(observedAt, observedAt),
     database.prepare(
       `UPDATE operation_state
       SET active_ingestion_run_id = NULL
@@ -1375,7 +1623,11 @@ async function failRun(
         SET state = 'failed',
             terminal_at = ?,
             failure_code = ?,
-            progress_json = ?
+            progress_json = json_set(
+              progress_json,
+              '$.current_stage',
+              'failed'
+            )
         WHERE id = ?
           AND state IN (
             'planning',
@@ -1389,7 +1641,6 @@ async function failRun(
       .bind(
         terminalAt,
         failureCode,
-        JSON.stringify(progressFor("failed")),
         runId,
       ),
     releaseRunLockStatement(database, runId),
@@ -1397,12 +1648,62 @@ async function failRun(
 }
 
 function parseCandidate(row: RunRow): FixtureCandidate {
-  return JSON.parse(row.candidate_json) as FixtureCandidate;
+  const parsed: unknown = JSON.parse(row.candidate_json);
+  if (!isFixtureCandidate(parsed)) {
+    throw new Error("The persisted fixture candidate is invalid.");
+  }
+  return parsed;
 }
 
 function parseJsonArray(value: string): unknown[] {
   const parsed: unknown = JSON.parse(value);
   return Array.isArray(parsed) ? parsed : [];
+}
+
+function parsePersistedObject(
+  value: string,
+  description: string,
+): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  if (!isRecord(parsed)) {
+    throw new Error(`${description} is not a JSON object.`);
+  }
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
+function isFixtureCandidate(
+  value: unknown,
+): value is FixtureCandidate {
+  if (
+    !isRecord(value) ||
+    value.fixture !== "first-catalogue" ||
+    !Array.isArray(value.selected_games) ||
+    value.selected_games.length !== 1 ||
+    value.selected_games[0] !== "one-piece" ||
+    !Array.isArray(value.cards) ||
+    value.cards.length !== 1 ||
+    !Array.isArray(value.printings) ||
+    value.printings.length !== 1
+  ) {
+    return false;
+  }
+  const card = value.cards[0];
+  const printing = value.printings[0];
+  return (
+    isRecord(card) &&
+    typeof card.id === "string" &&
+    isRecord(printing) &&
+    typeof printing.id === "string" &&
+    typeof printing.card_id === "string"
+  );
 }
 
 function publicRun(row: RunRow): Record<string, unknown> {
@@ -1418,9 +1719,17 @@ function publicRun(row: RunRow): Record<string, unknown> {
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
     approval:
-      row.approval_json === null ? null : JSON.parse(row.approval_json),
+      row.approval_json === null
+        ? null
+        : parsePersistedObject(
+            row.approval_json,
+            "Ingestion Run approval",
+          ),
     approval_history: parseJsonArray(row.approval_history_json),
-    progress: JSON.parse(row.progress_json),
+    progress: parsePersistedObject(
+      row.progress_json,
+      "Ingestion Run progress",
+    ),
     warnings: parseJsonArray(row.warnings_json),
     failure_code: row.failure_code,
     publication_outcome: row.publication_outcome,
@@ -1453,6 +1762,20 @@ function progressFor(state: string): Record<string, unknown> {
   return {
     completed_stages: ordered,
     current_stage: state,
+  };
+}
+
+function terminalProgress(
+  run: RunRow,
+  terminalState: "rejected" | "expired" | "failed",
+): Record<string, unknown> {
+  const progress = parsePersistedObject(
+    run.progress_json,
+    "Ingestion Run progress",
+  );
+  return {
+    ...progress,
+    current_stage: terminalState,
   };
 }
 
