@@ -10,6 +10,25 @@
   "placement": {
     "mode": "smart"
   },
+  "workflows": [
+    {
+      "name": "card-keepr-evidence-ingestion",
+      "binding": "EVIDENCE_INGESTION_WORKFLOW",
+      "class_name": "EvidenceIngestionWorkflow"
+    },
+    {
+      "name": "card-keepr-evidence-host",
+      "binding": "EVIDENCE_HOST_WORKFLOW",
+      "class_name": "EvidenceHostWorkflow"
+    }
+  ],
+  "services": [
+    {
+      "binding": "OFFICIAL_SOURCE_TRANSPORT",
+      "service": "card-keepr-ingestion",
+      "entrypoint": "OfficialSourceTransport"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "CATALOGUE_DB",

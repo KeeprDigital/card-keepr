@@ -1,0 +1,648 @@
+import { AdministrationProblem } from "./ingestion";
+import { canonicalJson } from "./serialization";
+import {
+  assertIdentifier,
+  parseEvidencePlan,
+  parseStringRecord,
+  type EvidencePlan,
+  type StartEvidenceRunRequest,
+  validateEvidencePlan,
+} from "./source-evidence-model";
+
+export type IngestionEvidenceRow = {
+  id: string;
+  state: string;
+  selected_games_json: string;
+  started_at: string;
+  expected_current_revision_id: string;
+  linked_run_id: string | null;
+  idempotency_key: string;
+  terminal_at: string | null;
+  source_lineage: string;
+  supported_game: string;
+  game_profile_version: string;
+  adapter_version: string;
+  request_plan_json: string;
+  parent_workflow_id: string | null;
+  child_workflow_ids_json: string | null;
+  collection_completed_at: string | null;
+  failure_code: string | null;
+};
+
+export type EvidenceRequestRow = {
+  ingestion_run_id: string;
+  request_id: string;
+  sequence_number: number;
+  method: "GET";
+  url: string;
+  request_headers_json: string;
+  representation_fingerprint: string;
+  state: "pending" | "captured" | "observed" | "failed";
+  source_snapshot_id: string | null;
+  failure_code: string | null;
+};
+
+export type SnapshotRow = {
+  id: string;
+  ingestion_run_id: string;
+  request_id: string;
+  fetch_attempt_id: string;
+  request_method: string;
+  request_url: string;
+  request_headers_json: string;
+  representation_fingerprint: string;
+  response_vary_json: string;
+  retrieved_at: string;
+  http_status: number;
+  response_headers_json: string;
+  media_type: string | null;
+  content_digest: string;
+  content_byte_length: number;
+  content_object_key: string;
+  source_lineage: string;
+  supported_game: string;
+  game_profile_version: string;
+  adapter_version: string;
+  reused_source_snapshot_id: string | null;
+};
+
+export type ObservationSetRow = {
+  id: string;
+  source_snapshot_id: string;
+  source_lineage: string;
+  supported_game: string;
+  game_profile_version: string;
+  adapter_version: string;
+  parsed_at: string;
+  content_digest: string;
+  content_byte_length: number;
+  content_object_key: string;
+  observation_count: number;
+};
+
+type AttemptRow = {
+  id: string;
+  ingestion_run_id: string;
+  request_id: string;
+  attempt_number: number;
+  requested_at: string;
+  completed_at: string;
+  outcome: string;
+  http_status: number | null;
+  response_headers_json: string;
+  retry_after_ms: number | null;
+  diagnostic: string | null;
+};
+
+export async function startEvidenceRun(
+  database: D1Database,
+  request: StartEvidenceRunRequest,
+): Promise<Record<string, unknown>> {
+  const { plan } = await validateEvidencePlan(request);
+  const planJson = canonicalJson(plan);
+  const replay = await evidenceRunByIdempotencyKey(
+    database,
+    request.idempotency_key,
+  );
+  if (replay !== null) {
+    if (replay.request_plan_json !== planJson) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different Ingestion Run.",
+      );
+    }
+    return showEvidenceRun(database, replay.id);
+  }
+
+  const runId = `run_${crypto.randomUUID()}`;
+  const startedAt = new Date().toISOString();
+  const catalogue = await database
+    .prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
+    .first<{ current_revision_id: string }>();
+  if (catalogue === null) throw new Error("Catalogue state is unavailable");
+  const statements: D1PreparedStatement[] = [
+    await ingestionRunInsert(database, {
+      runId,
+      supportedGame: plan.supported_game,
+      startedAt,
+      expectedCurrentRevisionId: catalogue.current_revision_id,
+      linkedRunId: null,
+      idempotencyKey: request.idempotency_key,
+    }),
+    database
+      .prepare(
+        `INSERT INTO ingestion_evidence_plans (
+          ingestion_run_id, source_lineage, supported_game,
+          game_profile_version, adapter_version, request_plan_json
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        runId,
+        plan.source_lineage,
+        plan.supported_game,
+        plan.game_profile_version,
+        plan.adapter_version,
+        planJson,
+      ),
+    ...requestStatements(database, runId, plan),
+    database
+      .prepare(
+        "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+      )
+      .bind(runId),
+  ];
+  try {
+    await database.batch(statements);
+  } catch (error) {
+    const concurrent = await evidenceRunByIdempotencyKey(
+      database,
+      request.idempotency_key,
+    );
+    if (concurrent !== null && concurrent.request_plan_json === planJson) {
+      return showEvidenceRun(database, concurrent.id);
+    }
+    if (errorMessage(error).includes("active_ingestion_run")) {
+      throw new AdministrationProblem(
+        409,
+        "active_ingestion_run",
+        "Another Ingestion Run is already active.",
+      );
+    }
+    if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different Ingestion Run.",
+      );
+    }
+    throw error;
+  }
+  return showEvidenceRun(database, runId);
+}
+
+export async function retryEvidenceRun(
+  database: D1Database,
+  sourceRunId: string,
+  idempotencyKey: string,
+): Promise<Record<string, unknown>> {
+  assertIdentifier(idempotencyKey, "idempotency_key");
+  const source = await requiredEvidenceRun(database, sourceRunId);
+  if (source.state !== "failed") {
+    throw new AdministrationProblem(
+      409,
+      "ingestion_run_not_retryable",
+      "Only a failed Ingestion Run can be retried.",
+    );
+  }
+  const replay = await evidenceRunByIdempotencyKey(database, idempotencyKey);
+  if (replay !== null) {
+    if (replay.linked_run_id !== source.id) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different Ingestion Run.",
+      );
+    }
+    return showEvidenceRun(database, replay.id);
+  }
+  const plan = parseEvidencePlan(source.request_plan_json);
+  const runId = `run_${crypto.randomUUID()}`;
+  const startedAt = new Date().toISOString();
+  try {
+    await database.batch([
+      await ingestionRunInsert(database, {
+        runId,
+        supportedGame: plan.supported_game,
+        startedAt,
+        expectedCurrentRevisionId: source.expected_current_revision_id,
+        linkedRunId: source.id,
+        idempotencyKey,
+      }),
+      database
+        .prepare(
+          `INSERT INTO ingestion_evidence_plans (
+            ingestion_run_id, source_lineage, supported_game,
+            game_profile_version, adapter_version, request_plan_json
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          runId,
+          plan.source_lineage,
+          plan.supported_game,
+          plan.game_profile_version,
+          plan.adapter_version,
+          source.request_plan_json,
+        ),
+      ...requestStatements(database, runId, plan),
+      database
+        .prepare(
+          "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+        )
+        .bind(runId),
+    ]);
+  } catch (error) {
+    if (errorMessage(error).includes("active_ingestion_run")) {
+      throw new AdministrationProblem(
+        409,
+        "active_ingestion_run",
+        "Another Ingestion Run is already active.",
+      );
+    }
+    if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different Ingestion Run.",
+      );
+    }
+    throw error;
+  }
+  return showEvidenceRun(database, runId);
+}
+
+function requestStatements(
+  database: D1Database,
+  runId: string,
+  plan: EvidencePlan,
+): D1PreparedStatement[] {
+  return plan.requests.map((sourceRequest, sequenceNumber) =>
+    database
+      .prepare(
+        `INSERT INTO source_requests (
+          ingestion_run_id, request_id, sequence_number, method, url,
+          request_headers_json, representation_fingerprint, state,
+          source_snapshot_id, failure_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)`,
+      )
+      .bind(
+        runId,
+        sourceRequest.id,
+        sequenceNumber,
+        sourceRequest.method,
+        sourceRequest.url,
+        canonicalJson(sourceRequest.headers),
+        sourceRequest.representation_fingerprint,
+      ),
+  );
+}
+
+export async function requiredEvidenceRun(
+  database: D1Database,
+  runId: string,
+): Promise<IngestionEvidenceRow> {
+  assertIdentifier(runId, "run_id");
+  const row = await database
+    .prepare(
+      `SELECT runs.*, plans.source_lineage, plans.supported_game,
+              plans.game_profile_version, plans.adapter_version,
+              plans.request_plan_json, plans.parent_workflow_id,
+              plans.child_workflow_ids_json,
+              plans.collection_completed_at, plans.failure_code
+       FROM ingestion_runs AS runs
+       JOIN ingestion_evidence_plans AS plans
+         ON plans.ingestion_run_id = runs.id
+       WHERE runs.id = ?`,
+    )
+    .bind(runId)
+    .first<IngestionEvidenceRow>();
+  if (row === null) {
+    throw new AdministrationProblem(
+      404,
+      "ingestion_evidence_not_found",
+      "The requested Ingestion Run has no evidence plan.",
+    );
+  }
+  return row;
+}
+
+async function evidenceRunByIdempotencyKey(
+  database: D1Database,
+  key: string,
+): Promise<IngestionEvidenceRow | null> {
+  return database
+    .prepare(
+      `SELECT runs.*, plans.source_lineage, plans.supported_game,
+              plans.game_profile_version, plans.adapter_version,
+              plans.request_plan_json, plans.parent_workflow_id,
+              plans.child_workflow_ids_json,
+              plans.collection_completed_at, plans.failure_code
+       FROM ingestion_runs AS runs
+       JOIN ingestion_evidence_plans AS plans
+         ON plans.ingestion_run_id = runs.id
+       WHERE runs.idempotency_key = ?`,
+    )
+    .bind(key)
+    .first<IngestionEvidenceRow>();
+}
+
+export async function pendingEvidenceRequests(
+  database: D1Database,
+  runId: string,
+  hostname?: string,
+): Promise<EvidenceRequestRow[]> {
+  const result = await database
+    .prepare(
+      `SELECT * FROM source_requests
+       WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
+       ORDER BY sequence_number`,
+    )
+    .bind(runId)
+    .all<EvidenceRequestRow>();
+  return hostname === undefined
+    ? result.results
+    : result.results.filter((row) => new URL(row.url).hostname === hostname);
+}
+
+export async function recordWorkflowIds(
+  database: D1Database,
+  runId: string,
+  parentWorkflowId: string,
+  childWorkflowIds: readonly string[],
+): Promise<void> {
+  await database
+    .prepare(
+      `UPDATE ingestion_evidence_plans
+       SET parent_workflow_id = ?, child_workflow_ids_json = ?
+       WHERE ingestion_run_id = ?
+         AND (parent_workflow_id IS NULL OR parent_workflow_id = ?)`,
+    )
+    .bind(
+      parentWorkflowId,
+      canonicalJson(childWorkflowIds),
+      runId,
+      parentWorkflowId,
+    )
+    .run();
+}
+
+export async function finalizeEvidenceRun(
+  database: D1Database,
+  runId: string,
+): Promise<void> {
+  const counts = await database
+    .prepare(
+      `SELECT
+        SUM(CASE WHEN state IN ('pending', 'captured') THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) AS failed
+       FROM source_requests WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<{ active: number | null; failed: number | null }>();
+  if (counts === null || (counts.active ?? 0) > 0) return;
+  const completedAt = new Date().toISOString();
+  const lifecycleV2 = await supportsLifecycleV2(database);
+  if ((counts.failed ?? 0) > 0) {
+    const failure = await database
+      .prepare(
+        `SELECT failure_code FROM source_requests
+         WHERE ingestion_run_id = ? AND state = 'failed'
+         ORDER BY sequence_number LIMIT 1`,
+      )
+      .bind(runId)
+      .first<{ failure_code: string | null }>();
+    const failureCode = failure?.failure_code ?? "source_evidence_failed";
+    await database.batch([
+      lifecycleV2
+        ? database
+            .prepare(
+              `UPDATE ingestion_runs
+               SET state = 'failed', terminal_at = ?, failure_code = ?,
+                   progress_json =
+                     '{"completed_stages":["planning"],"current_stage":"failed"}'
+               WHERE id = ? AND state = 'collecting'`,
+            )
+            .bind(completedAt, failureCode, runId)
+        : database
+            .prepare(
+              `UPDATE ingestion_runs
+               SET state = 'failed', terminal_at = ?
+               WHERE id = ? AND state = 'collecting'`,
+            )
+            .bind(completedAt, runId),
+      database
+        .prepare(
+          `UPDATE ingestion_evidence_plans
+           SET collection_completed_at = ?, failure_code = ?
+           WHERE ingestion_run_id = ?`,
+        )
+        .bind(completedAt, failureCode, runId),
+      database
+        .prepare(
+          `UPDATE operation_state SET active_ingestion_run_id = NULL
+           WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+        )
+        .bind(runId),
+    ]);
+    return;
+  }
+  await database.batch([
+    lifecycleV2
+      ? database
+          .prepare(
+            `UPDATE ingestion_runs
+             SET state = 'parsing',
+                 progress_json =
+                   '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}'
+             WHERE id = ? AND state = 'collecting'`,
+          )
+          .bind(runId)
+      : database
+          .prepare(
+            `UPDATE ingestion_runs SET state = 'parsing'
+             WHERE id = ? AND state = 'collecting'`,
+          )
+          .bind(runId),
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans
+         SET collection_completed_at = ?, failure_code = NULL
+         WHERE ingestion_run_id = ?`,
+      )
+      .bind(completedAt, runId),
+  ]);
+}
+
+export async function showEvidenceRun(
+  database: D1Database,
+  runId: string,
+): Promise<Record<string, unknown>> {
+  const run = await requiredEvidenceRun(database, runId);
+  const [snapshots, observations, attempts] = await Promise.all([
+    database
+      .prepare(
+        `SELECT * FROM source_snapshots
+         WHERE ingestion_run_id = ? ORDER BY retrieved_at, id`,
+      )
+      .bind(runId)
+      .all<SnapshotRow>(),
+    database
+      .prepare(
+        `SELECT observations.* FROM source_observation_sets AS observations
+         JOIN source_snapshots AS snapshots
+           ON snapshots.id = observations.source_snapshot_id
+         WHERE snapshots.ingestion_run_id = ?
+         ORDER BY observations.parsed_at, observations.id`,
+      )
+      .bind(runId)
+      .all<ObservationSetRow>(),
+    database
+      .prepare(
+        `SELECT * FROM source_fetch_attempts
+         WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`,
+      )
+      .bind(runId)
+      .all<AttemptRow>(),
+  ]);
+  return {
+    id: run.id,
+    state: run.state,
+    selected_games: JSON.parse(run.selected_games_json),
+    supported_game: run.supported_game,
+    game_profile_version: run.game_profile_version,
+    source_lineage: run.source_lineage,
+    adapter_version: run.adapter_version,
+    idempotency_key: run.idempotency_key,
+    linked_run_id: run.linked_run_id,
+    started_at: run.started_at,
+    collection_completed_at: run.collection_completed_at,
+    failure_code: run.failure_code,
+    workflow: {
+      parent_id: run.parent_workflow_id,
+      child_ids:
+        run.child_workflow_ids_json === null
+          ? []
+          : JSON.parse(run.child_workflow_ids_json),
+    },
+    snapshots: snapshots.results.map(publicSnapshot),
+    observation_sets: observations.results.map(publicObservationSet),
+    diagnostics: attempts.results.map((row) => ({
+      id: row.id,
+      request_id: row.request_id,
+      attempt_number: row.attempt_number,
+      requested_at: row.requested_at,
+      completed_at: row.completed_at,
+      outcome: row.outcome,
+      http_status: row.http_status,
+      response_headers: parseStringRecord(row.response_headers_json),
+      retry_after_ms: row.retry_after_ms,
+      diagnostic: row.diagnostic,
+    })),
+  };
+}
+
+export function publicSnapshot(row: SnapshotRow): Record<string, unknown> {
+  return {
+    id: row.id,
+    request: {
+      method: row.request_method,
+      url: row.request_url,
+      headers: parseStringRecord(row.request_headers_json),
+      representation_fingerprint: row.representation_fingerprint,
+    },
+    retrieval: {
+      retrieved_at: row.retrieved_at,
+      fetch_attempt_id: row.fetch_attempt_id,
+    },
+    http: {
+      status: row.http_status,
+      headers: parseStringRecord(row.response_headers_json),
+      vary: JSON.parse(row.response_vary_json),
+    },
+    content: {
+      digest: row.content_digest,
+      byte_length: row.content_byte_length,
+      object_key: row.content_object_key,
+      media_type: row.media_type,
+    },
+    source_lineage: row.source_lineage,
+    supported_game: row.supported_game,
+    game_profile_version: row.game_profile_version,
+    adapter_version: row.adapter_version,
+    ingestion_run_id: row.ingestion_run_id,
+    reused_source_snapshot_id: row.reused_source_snapshot_id,
+  };
+}
+
+export function publicObservationSet(
+  row: ObservationSetRow,
+): Record<string, unknown> {
+  return {
+    id: row.id,
+    source_snapshot_id: row.source_snapshot_id,
+    source_lineage: row.source_lineage,
+    supported_game: row.supported_game,
+    game_profile_version: row.game_profile_version,
+    adapter_version: row.adapter_version,
+    parsed_at: row.parsed_at,
+    content_digest: row.content_digest,
+    content_byte_length: row.content_byte_length,
+    object_key: row.content_object_key,
+    observation_count: row.observation_count,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function ingestionRunInsert(
+  database: D1Database,
+  input: {
+    runId: string;
+    supportedGame: string;
+    startedAt: string;
+    expectedCurrentRevisionId: string;
+    linkedRunId: string | null;
+    idempotencyKey: string;
+  },
+): Promise<D1PreparedStatement> {
+  const baseValues = [
+    input.runId,
+    canonicalJson([input.supportedGame]),
+    input.startedAt,
+    input.expectedCurrentRevisionId,
+    input.linkedRunId,
+    input.idempotencyKey,
+  ];
+  if (await supportsLifecycleV2(database)) {
+    return database
+      .prepare(
+        `INSERT INTO ingestion_runs (
+          id, state, selected_games_json, started_at,
+          expected_current_revision_id, linked_run_id, idempotency_key,
+          candidate_digest, candidate_created_at, approval_deadline,
+          approval_json, published_revision_id, export_manifest_digest,
+          terminal_at, candidate_json, approval_idempotency_key,
+          progress_json, warnings_json, approval_history_json
+        ) VALUES (
+          ?, 'collecting', ?, ?, ?, ?, ?,
+          NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL,
+          '{"completed_stages":["planning"],"current_stage":"collecting"}',
+          '[]', '[]'
+        )`,
+      )
+      .bind(...baseValues);
+  }
+  return database
+    .prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (
+        ?, 'collecting', ?, ?, ?, ?, ?,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL
+      )`,
+    )
+    .bind(...baseValues);
+}
+
+async function supportsLifecycleV2(database: D1Database): Promise<boolean> {
+  const columns = await database
+    .prepare("PRAGMA table_info(ingestion_runs)")
+    .all<{ name: string }>();
+  return columns.results.some((column) => column.name === "progress_json");
+}

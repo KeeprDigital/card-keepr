@@ -28,6 +28,14 @@ _Avoid_: Source schema, adapter payload
 A Bandai-owned publication from which Catalogue Data is obtained. It is the catalogue’s normal authority.
 _Avoid_: Community database, marketplace listing
 
+**Source Lineage**:
+The stable identity of one Official Source across dated captures and compatible Source Adapter Versions. It distinguishes independently published regional or game sources without treating each URL or response as a new source.
+_Avoid_: Request URL, Source Snapshot, hostname
+
+**Source Adapter Version**:
+An immutable parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. A new version may reparse retained Source Snapshots without changing their captured bytes.
+_Avoid_: Generic parser name, mutable scraper, Source schema
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix
@@ -55,6 +63,14 @@ _Avoid_: Catalogue export, database backup
 **Source Observation**:
 A provenance-bearing fact or relationship read from a Source Snapshot. It remains distinct from the normalized Catalogue Data it may support.
 _Avoid_: Canonical fact, Curated Revision
+
+**Source Observation Set**:
+The immutable result of applying one Source Adapter Version to one Source Snapshot. Reprocessing with a new idempotency key appends another set rather than replacing an earlier interpretation; retrying the same parse intent returns its existing set.
+_Avoid_: Source Snapshot, Catalogue Data, mutable parse result
+
+**Evidence Plan**:
+The persisted, immutable set of Official Source requests selected for the collection phase of one Ingestion Run, including its Source Lineage and Source Adapter Version.
+_Avoid_: Ingestion Run, automatic crawl, mutable request queue
 
 **Ingestion Run**:
 One owner-initiated attempt to capture Source Snapshots and reconcile them into current Catalogue Data. Its outcome remains auditable even though the ordinary API exposes the current catalogue.
