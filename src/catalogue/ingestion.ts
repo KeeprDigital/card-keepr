@@ -8,6 +8,7 @@ import {
   type FixtureCandidate,
 } from "./fixture";
 import { canonicalJson, sha256 } from "./serialization";
+import { reconciliationPublication } from "./reconciliation-repository";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -1200,13 +1201,17 @@ async function throwApprovalFailure(
   );
 }
 
-function catalogueCard(candidate: FixtureCandidate, revisionId: string) {
+function catalogueCard(
+  candidate: FixtureCandidate,
+  revisionId: string,
+  reconciledLifecycle?: Record<string, unknown>,
+) {
   const card = candidate.cards[0];
   return {
     type: "card",
     ...card,
     printing_ids: candidate.printings.map((printing) => printing.id),
-    lifecycle: lifecycle(revisionId),
+    lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/cards/${card.id}`,
     },
@@ -1216,6 +1221,7 @@ function catalogueCard(candidate: FixtureCandidate, revisionId: string) {
 function cataloguePrinting(
   candidate: FixtureCandidate,
   revisionId: string,
+  reconciledLifecycle?: Record<string, unknown>,
 ) {
   const printing = candidate.printings[0];
   return {
@@ -1223,7 +1229,7 @@ function cataloguePrinting(
     ...printing,
     printing_images: [],
     distribution_contexts: [],
-    lifecycle: lifecycle(revisionId),
+    lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,
     },
@@ -1515,10 +1521,20 @@ async function commitVerifiedPublication(
     resulting_revision_id: revisionId,
     freshness_checked_at: input.completedAt,
   });
-  const cardDocument = catalogueCard(input.candidate, revisionId);
+  const reconciliation = await reconciliationPublication(
+    database,
+    input.run.id,
+    revisionId,
+  );
+  const cardDocument = catalogueCard(
+    input.candidate,
+    revisionId,
+    reconciliation?.cardLifecycle,
+  );
   const printingDocument = cataloguePrinting(
     input.candidate,
     revisionId,
+    reconciliation?.printingLifecycle,
   );
   await database.batch([
     database
@@ -1540,6 +1556,7 @@ async function commitVerifiedPublication(
         input.run.expected_current_revision_id,
         input.run.candidate_digest,
       ),
+    ...(reconciliation?.statements ?? []),
     database
       .prepare(
         `INSERT INTO revision_cards (

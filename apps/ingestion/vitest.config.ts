@@ -41,6 +41,10 @@ export default defineConfig({
               },
             );
           }
+          if (url.pathname.startsWith("/reconciliation/")) {
+            const scenario = url.pathname.slice("/reconciliation/".length);
+            return Response.json(reconciliationSourceDocument(scenario));
+          }
           if (url.pathname === "/redirect") {
             return new Response(null, {
               status: 302,
@@ -135,3 +139,98 @@ export default defineConfig({
     include: ["apps/ingestion/test/**/*.spec.ts"],
   },
 });
+
+function reconciliationSourceDocument(scenario: string) {
+  const conflict = scenario.startsWith("conflict");
+  const newLocator = scenario === "new-locator";
+  const unknownVocabulary = scenario === "unknown-vocabulary";
+  return {
+    cards: [
+      {
+        card: {
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: conflict
+              ? "OP09-001"
+              : scenario === "not-demonstrably-novel"
+                ? "OP08-008"
+                : "OP01-001",
+          },
+          name: conflict ? "Conflict Card" : "Monkey.D.Luffy",
+          effective_rules_text: "Official effective rules",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: {
+              card_type: "leader",
+              colours: ["red"],
+              cost: null,
+              life: 5,
+              battle_attributes: ["strike"],
+              power: 5000,
+              counter: null,
+              traits: ["Straw Hat Crew"],
+              block_icons: ["1"],
+              effect_text: "Official effective rules",
+              trigger_text: null,
+            },
+          },
+        },
+        printing: {
+          rarity: { raw: "L", normalized: "leader" },
+          printed_rules_text: "Official printed rules",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: { illustration_types: [] },
+          },
+        },
+        identity_evidence: {
+          locator: conflict
+            ? "/official/conflict"
+            : newLocator
+              ? "/official/renamed"
+              : `/official/${scenario}`,
+          artwork_fingerprint: `sha256:${
+            scenario === "not-demonstrably-novel"
+              ? "c".repeat(64)
+              : "a".repeat(64)
+          }`,
+          printed_fields_digest: `sha256:${"b".repeat(64)}`,
+          treatment:
+            scenario === "conflict-changed" ? "parallel-foil" : "standard",
+          demonstrably_novel:
+            scenario !== "not-demonstrably-novel",
+          novelty_basis: "Officially distinguished artwork record",
+        },
+        memberships: newLocator
+          ? {
+              products: ["product_promotion"],
+              distribution_contexts: ["context_event"],
+              source_buckets: ["promotion-list"],
+            }
+          : {
+              products: ["product_op01"],
+              distribution_contexts: [],
+              source_buckets: ["main-list"],
+            },
+        optional_vocabulary: unknownVocabulary
+          ? [
+              {
+                profile: "one-piece@1",
+                path: "printing.illustration_types",
+                raw_value: "etched-future",
+              },
+            ]
+          : [],
+        ...(scenario === "withdrawn"
+          ? {
+              withdrawal: {
+                entity: "printing",
+                evidence: "Official withdrawal notice",
+              },
+            }
+          : {}),
+      },
+    ],
+  };
+}

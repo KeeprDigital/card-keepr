@@ -18,524 +18,297 @@ beforeEach(async () => {
   );
 });
 
-test("Cards and Printings keep opaque identities when a new locator adds compatible evidence", async () => {
-  const first = await reconcile("catrev_reconcile_001", [
-    printingObservation({
-      source_observation_id: "srcobs_reconcile_001",
-      locator: "/cards/OP01-001?variant=base",
-    }),
-  ]);
-
+test("retained immutable evidence publishes stable identities and warns when earlier membership disappears", async () => {
+  const firstRun = await collect("/reconciliation/base", "reconcile-base");
+  const first = await reconcile(firstRun.id);
   expect(first.response.status).toBe(200);
   expect(first.document).toMatchObject({
-    contract: "card-keepr-card-printing-reconciliation@1",
+    contract: "card-keepr-card-printing-reconciliation@2",
+    state: "awaiting_approval",
     publishable: true,
-    diagnostics: [],
     warnings: [],
   });
-  const firstCard = requiredFirstRecord(first.document, "cards");
-  const firstPrinting = requiredFirstRecord(first.document, "printings");
+  const firstCard = requiredFirst(first.document, "cards");
+  const firstPrinting = requiredFirst(first.document, "printings");
   expect(firstCard.id).toMatch(/^card_[a-f0-9]{32}$/);
   expect(firstPrinting.id).toMatch(/^printing_[a-f0-9]{32}$/);
-  expect(firstCard).toMatchObject({
-    supported_game: "one-piece",
-    official_identity: {
-      kind: "card_number",
-      value: "OP01-001",
+  const firstPublished = await approve(first.document);
+  expect(firstPublished.response.status).toBe(200);
+  const firstRevision = requiredString(
+    firstPublished.document,
+    "resulting_revision_id",
+  );
+
+  const secondRun = await collect(
+    "/reconciliation/new-locator",
+    "reconcile-new-locator",
+  );
+  const second = await reconcile(secondRun.id);
+  expect(second.response.status).toBe(200);
+  expect(requiredFirst(second.document, "cards").id).toBe(firstCard.id);
+  expect(requiredFirst(second.document, "printings").id).toBe(
+    firstPrinting.id,
+  );
+  expect(second.document).toMatchObject({
+    warnings: [
+      {
+        code: "relationship_not_observed",
+        relationship_kind: "product",
+        relationship_value: "product_op01",
+        printing_id: firstPrinting.id,
+      },
+      {
+        code: "relationship_not_observed",
+        relationship_kind: "source_bucket",
+        relationship_value: "main-list",
+        printing_id: firstPrinting.id,
+      },
+    ],
+  });
+  const secondPublished = await approve(second.document);
+  expect(secondPublished.response.status).toBe(200);
+  const secondRevision = requiredString(
+    secondPublished.document,
+    "resulting_revision_id",
+  );
+
+  const lifecycle = await get(
+    `/v1/reconciliation/printings/${firstPrinting.id}`,
+  );
+  expect(lifecycle.response.status).toBe(200);
+  expect(lifecycle.document).toMatchObject({
+    id: firstPrinting.id,
+    card_id: firstCard.id,
+    locators: ["/official/base", "/official/renamed"],
+    memberships: {
+      products: ["product_op01", "product_promotion"],
+      distribution_contexts: ["context_event"],
+      source_buckets: ["main-list", "promotion-list"],
     },
     lifecycle: {
-      first_revision_id: "catrev_reconcile_001",
-      last_observed_revision_id: "catrev_reconcile_001",
+      first_revision_id: firstRevision,
+      last_observed_revision_id: secondRevision,
       withdrawn: false,
     },
   });
 
-  const repeated = await reconcile("catrev_reconcile_002", [
-    printingObservation({
-      source_observation_id: "srcobs_reconcile_002",
-      locator: "/cards/OP01-001?variant=renamed",
-    }),
-  ]);
-
-  expect(repeated.response.status).toBe(200);
-  const repeatedCard = requiredFirstRecord(repeated.document, "cards");
-  const repeatedPrinting = requiredFirstRecord(
-    repeated.document,
-    "printings",
+  const withdrawalRun = await collect(
+    "/reconciliation/withdrawn",
+    "reconcile-withdrawn",
   );
-  expect(repeatedCard.id).toBe(firstCard.id);
-  expect(repeatedPrinting.id).toBe(firstPrinting.id);
-  expect(repeatedPrinting).toMatchObject({
-    locators: [
-      "/cards/OP01-001?variant=base",
-      "/cards/OP01-001?variant=renamed",
-    ],
+  const withdrawal = await reconcile(withdrawalRun.id);
+  expect(withdrawal.response.status).toBe(200);
+  const withdrawalPublished = await approve(withdrawal.document);
+  const withdrawalRevision = requiredString(
+    withdrawalPublished.document,
+    "resulting_revision_id",
+  );
+  const withdrawn = await get(
+    `/v1/reconciliation/printings/${firstPrinting.id}`,
+  );
+  expect(withdrawn.document).toMatchObject({
     lifecycle: {
-      first_revision_id: "catrev_reconcile_001",
-      last_observed_revision_id: "catrev_reconcile_002",
-      withdrawn: false,
+      first_revision_id: firstRevision,
+      last_observed_revision_id: withdrawalRevision,
+      withdrawn: true,
+      withdrawal: {
+        revision_id: withdrawalRevision,
+        evidence: {
+          entity: "printing",
+          evidence: "Official withdrawal notice",
+        },
+      },
     },
   });
 });
 
-test("insufficient or contradictory Printing evidence blocks publication with stable diagnostics", async () => {
-  const established = await reconcile("catrev_reconcile_conflict_001", [
-    printingObservation({
-      source_observation_id: "srcobs_reconcile_conflict_001",
-      locator: "/cards/OP01-001?variant=conflict",
-    }),
-  ]);
-  expect(established.response.status).toBe(200);
-
-  const insufficientObservation = printingObservation({
-    source_observation_id: "srcobs_reconcile_insufficient_001",
-    locator: "/cards/OP01-002",
-  });
-  delete insufficientObservation.artwork_fingerprint;
-  const insufficient = await reconcile(
-    "catrev_reconcile_conflict_002",
-    [insufficientObservation],
+test("a complete zero-match blocks publication unless retained evidence proves a demonstrably novel appearance", async () => {
+  const run = await collect(
+    "/reconciliation/not-demonstrably-novel",
+    "reconcile-not-novel",
   );
-  expect(insufficient.response.status).toBe(409);
-  expect(insufficient.document).toMatchObject({
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
     publishable: false,
+    state: "failed",
     diagnostics: [
       {
         code: "printing_match_insufficient_evidence",
-        source_observation_id: "srcobs_reconcile_insufficient_001",
-        locator: "/cards/OP01-002",
-        candidate_printing_ids: [],
+        source_observation_id: expect.stringMatching(/^srcobs_/),
       },
     ],
   });
-
-  const contradictory = await reconcile(
-    "catrev_reconcile_conflict_003",
-    [
-      printingObservation({
-        source_observation_id: "srcobs_reconcile_conflict_002",
-        locator: "/cards/OP01-001?variant=conflict",
-        treatment: "parallel-foil",
-      }),
-    ],
+  const approval = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    {
+      candidate_digest: "a".repeat(64),
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "blocked-approval",
+    },
   );
-  expect(contradictory.response.status).toBe(409);
-  expect(contradictory.document).toMatchObject({
-    publishable: false,
-    diagnostics: [
-      {
-        code: "printing_match_contradictory",
-        source_observation_id: "srcobs_reconcile_conflict_002",
-        locator: "/cards/OP01-001?variant=conflict",
-      },
-    ],
+  expect(approval.response.status).toBe(409);
+  expect(approval.document).toMatchObject({
+    code: "run_not_awaiting_approval",
   });
-  expect(contradictory.document).toEqual(
-    JSON.parse(JSON.stringify(contradictory.document)),
-  );
 });
 
-test("unknown optional fields stay in the Source Observation, warn, and do not leak into a Game Profile", async () => {
-  const sourceObservationId = "srcobs_reconcile_unknown_001";
-  const reconciled = await reconcile("catrev_reconcile_unknown_001", [
-    printingObservation({
-      source_observation_id: sourceObservationId,
-      new_official_flag: "Bandai-added-value",
-      game_profile: {
-        profile: "one-piece@1",
-        attributes: {
-          card_type: "leader",
-          finish: "future-vocabulary",
-        },
-      },
-    }),
-  ]);
-
+test("unknown controlled vocabulary remains retained evidence, warns, and stays out of the Game Profile", async () => {
+  const run = await collect(
+    "/reconciliation/unknown-vocabulary",
+    "reconcile-unknown-vocabulary",
+  );
+  const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document).toMatchObject({
-    publishable: true,
-    warnings: [
-      {
-        code: "unknown_source_observation_fields",
-        source_observation_id: sourceObservationId,
-        fields: [
-          "game_profile.attributes.finish",
-          "new_official_flag",
-        ],
-      },
-    ],
+  const warnings = reconciled.document.warnings;
+  expect(Array.isArray(warnings) ? warnings : []).toContainEqual(
+    expect.objectContaining({
+      code: "unknown_source_vocabulary",
+      profile: "one-piece@1",
+      path: "printing.illustration_types",
+      raw_value: "etched-future",
+    }),
+  );
+  expect(
+    requiredFirst(reconciled.document, "printings"),
+  ).toMatchObject({
+    game_data: {
+      profile: "one-piece@1",
+      attributes: { illustration_types: [] },
+    },
   });
-  const printing = requiredFirstRecord(reconciled.document, "printings");
-  expect(printing).not.toHaveProperty("game_profile");
-  expect(printing).not.toHaveProperty("new_official_flag");
-
-  const retained = await administrationGet(
-    `/v1/reconciliation/source-observations/${sourceObservationId}`,
+  const observationSetId = requiredString(
+    requiredFirst(run.document, "observation_sets"),
+    "id",
+  );
+  const retained = await get(
+    `/v1/source-observation-sets/${observationSetId}/content`,
   );
   expect(retained.response.status).toBe(200);
-  expect(retained.document).toMatchObject({
-    contract: "card-keepr-reconciliation-source-observation@1",
-    source_observation_id: sourceObservationId,
-    observation: {
-      new_official_flag: "Bandai-added-value",
-      game_profile: {
-        attributes: {
-          finish: "future-vocabulary",
-        },
-      },
+  expect(JSON.stringify(retained.document)).toContain("etched-future");
+  const rejected = await post(
+    `/v1/ingestion-runs/${run.id}/rejection`,
+    {
+      candidate_digest: requiredString(
+        reconciled.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-unknown-vocabulary",
     },
-    unknown_fields: {
-      new_official_flag: "Bandai-added-value",
-      "game_profile.attributes.finish": "future-vocabulary",
-    },
-  });
+  );
+  expect(rejected.response.status).toBe(200);
 });
 
-test("contradictory Source Observations in one candidate fail closed before any identity is recorded", async () => {
-  const locator = "/cards/OP01-001?variant=candidate-conflict";
-  const sourceLineage = "one-piece-candidate-conflict-en";
-  const conflicted = await reconcile(
-    "catrev_reconcile_candidate_conflict_001",
-    [
-      printingObservation({
-        source_observation_id: "srcobs_candidate_conflict_001",
-        locator,
-        source_lineage: sourceLineage,
-        official_identity: {
-          kind: "card_number",
-          value: "OP09-999",
-        },
-      }),
-      printingObservation({
-        source_observation_id: "srcobs_candidate_conflict_002",
-        locator,
-        source_lineage: sourceLineage,
-        official_identity: {
-          kind: "card_number",
-          value: "OP09-999",
-        },
-        treatment: "parallel-foil",
-      }),
-    ],
+test("a known locator with contradictory retained material evidence fails the run before publication", async () => {
+  const establishedRun = await collect(
+    "/reconciliation/conflict-base",
+    "reconcile-conflict-base",
   );
+  const established = await reconcile(establishedRun.id);
+  expect(established.response.status).toBe(200);
+  await approve(established.document);
 
-  expect(conflicted.response.status).toBe(409);
-  expect(conflicted.document).toMatchObject({
+  const conflictRun = await collect(
+    "/reconciliation/conflict-changed",
+    "reconcile-conflict-changed",
+  );
+  const conflict = await reconcile(conflictRun.id);
+  expect(conflict.response.status).toBe(409);
+  expect(conflict.document).toMatchObject({
     publishable: false,
-    cards: [],
-    printings: [],
+    state: "failed",
     diagnostics: [
       {
         code: "printing_match_contradictory",
-        source_observation_id: "srcobs_candidate_conflict_001",
-        locator,
+        locator: "/official/conflict",
       },
     ],
-  });
-  const reversed = await reconcile(
-    "catrev_reconcile_candidate_conflict_001",
-    [
-      printingObservation({
-        source_observation_id: "srcobs_candidate_conflict_002",
-        source_lineage: sourceLineage,
-        locator,
-        official_identity: {
-          kind: "card_number",
-          value: "OP09-999",
-        },
-        treatment: "parallel-foil",
-      }),
-      printingObservation({
-        source_observation_id: "srcobs_candidate_conflict_001",
-        source_lineage: sourceLineage,
-        locator,
-        official_identity: {
-          kind: "card_number",
-          value: "OP09-999",
-        },
-      }),
-    ],
-  );
-  expect(reversed.response.status).toBe(409);
-  expect(reversed.document).toEqual(conflicted.document);
-
-  const afterFailure = await reconcile(
-    "catrev_reconcile_candidate_conflict_002",
-    [
-      printingObservation({
-        source_observation_id: "srcobs_candidate_conflict_003",
-        locator,
-        source_lineage: sourceLineage,
-        official_identity: {
-          kind: "card_number",
-          value: "OP09-999",
-        },
-        treatment: "parallel-foil",
-      }),
-    ],
-  );
-  expect(afterFailure.response.status).toBe(200);
-  expect(requiredFirstRecord(afterFailure.document, "cards")).toMatchObject({
-    lifecycle: {
-      first_revision_id: "catrev_reconcile_candidate_conflict_002",
-    },
   });
 });
 
-test("membership, disappearance, and explicit withdrawal preserve one Printing lifecycle", async () => {
-  const sourceLineage = "one-piece-lifecycle-en";
-  const base = printingObservation({
-    source_observation_id: "srcobs_lifecycle_001",
-    source_lineage: sourceLineage,
-    locator: "/cards/OP07-001?variant=original",
-    official_identity: {
-      kind: "card_number",
-      value: "OP07-001",
-    },
-    memberships: {
-      product_ids: ["product_op07"],
-      distribution_context_ids: [],
-      source_buckets: ["main-list"],
-    },
-  });
-  const first = await reconcile("catrev_lifecycle_001", [base]);
-  expect(first.response.status).toBe(200);
-  const printingId = requiredFirstRecord(first.document, "printings").id;
-
-  const expanded = await reconcile("catrev_lifecycle_002", [
-    {
-      ...base,
-      source_observation_id: "srcobs_lifecycle_002",
-      locator: "/cards/OP07-001?variant=new-locator",
-      memberships: {
-        product_ids: ["product_promotion"],
-        distribution_context_ids: ["context_event"],
-        source_buckets: ["promotion-list"],
-      },
-    },
-  ]);
-  const expandedPrinting = requiredFirstRecord(
-    expanded.document,
-    "printings",
-  );
-  expect(expandedPrinting).toMatchObject({
-    id: printingId,
-    memberships: {
-      product_ids: ["product_op07", "product_promotion"],
-      distribution_context_ids: ["context_event"],
-      source_buckets: ["main-list", "promotion-list"],
-    },
-  });
-
-  const absent = await reconcileWithLineages(
-    "catrev_lifecycle_003",
-    [sourceLineage],
-    [],
-  );
-  expect(absent.response.status).toBe(200);
-  expect(absent.document).toMatchObject({
-    warnings: [
-      {
-        code: "record_not_observed",
-        printing_id: printingId,
-      },
-    ],
-  });
-  expect(requiredFirstRecord(absent.document, "printings")).toMatchObject({
-    id: printingId,
-    lifecycle: {
-      first_revision_id: "catrev_lifecycle_001",
-      last_observed_revision_id: "catrev_lifecycle_002",
-      withdrawn: false,
-      withdrawal: null,
-    },
-  });
-
-  const withdrawn = await reconcile("catrev_lifecycle_004", [
-    {
-      ...base,
-      source_observation_id: "srcobs_lifecycle_004",
-      withdrawal: {
-        explicit: true,
-        entity: "printing",
-        evidence: "Official notice dated 2026-07-29",
-      },
-    },
-  ]);
-  expect(withdrawn.response.status).toBe(200);
-  expect(requiredFirstRecord(withdrawn.document, "printings")).toMatchObject({
-    id: printingId,
-    lifecycle: {
-      first_revision_id: "catrev_lifecycle_001",
-      last_observed_revision_id: "catrev_lifecycle_004",
-      withdrawn: true,
-      withdrawal: {
-        revision_id: "catrev_lifecycle_004",
-        evidence: {
-          explicit: true,
-          entity: "printing",
-          evidence: "Official notice dated 2026-07-29",
-        },
-      },
-    },
-  });
-  expect(requiredFirstRecord(withdrawn.document, "cards")).toMatchObject({
-    lifecycle: {
-      withdrawn: false,
-      withdrawal: null,
-    },
-  });
-});
-
-test("the official Card identity rules keep DON!! artwork differences as Printings and reject invented identities", async () => {
-  const sourceLineage = "one-piece-don-en";
-  const first = await reconcile("catrev_don_001", [
-    printingObservation({
-      source_observation_id: "srcobs_don_001",
-      source_lineage: sourceLineage,
-      locator: "/cards/don/artwork-001",
-      official_identity: {
-        kind: "functional_designation",
-        value: "DON!!",
-      },
-    }),
-  ]);
-  expect(first.response.status).toBe(200);
-  const cardId = requiredFirstRecord(first.document, "cards").id;
-  const firstPrintingId = requiredFirstRecord(
-    first.document,
-    "printings",
-  ).id;
-
-  const second = await reconcile("catrev_don_002", [
-    printingObservation({
-      source_observation_id: "srcobs_don_002",
-      source_lineage: sourceLineage,
-      locator: "/cards/don/artwork-002",
-      official_identity: {
-        kind: "functional_designation",
-        value: "DON!!",
-      },
-      artwork_fingerprint: `sha256:${"c".repeat(64)}`,
-    }),
-  ]);
-  expect(second.response.status).toBe(200);
-  expect(requiredFirstRecord(second.document, "cards").id).toBe(cardId);
-  const donPrintingIds = requiredRecords(second.document, "printings").map(
-    (printing) => printing.id,
-  );
-  expect(donPrintingIds).toHaveLength(2);
-  expect(donPrintingIds).toContain(firstPrintingId);
-
-  const invented = await reconcile("catrev_don_invalid_001", [
-    printingObservation({
-      source_observation_id: "srcobs_don_invalid_001",
-      source_lineage: "one-piece-invalid-identity-en",
-      locator: "/cards/not-an-official-identity",
-      official_identity: {
-        kind: "card_number",
-        value: "invented identity",
-      },
-    }),
-  ]);
-  expect(invented.response.status).toBe(422);
-  expect(invented.document).toMatchObject({
-    code: "invalid_reconciliation_request",
-  });
-});
-
-function printingObservation(
-  overrides: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    source_observation_id: "srcobs_reconcile_default",
+async function collect(path: string, key: string): Promise<{
+  id: string;
+  document: Record<string, unknown>;
+}> {
+  const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    locator: "/cards/OP01-001",
-    official_identity: {
-      kind: "card_number",
-      value: "OP01-001",
-    },
-    artwork_fingerprint: `sha256:${"a".repeat(64)}`,
-    printed_rules_fingerprint: `sha256:${"b".repeat(64)}`,
-    rarity: {
-      raw: "L",
-      normalized: "leader",
-    },
-    treatment: "standard",
-    memberships: {
-      product_ids: ["product_op01"],
-      distribution_context_ids: [],
-      source_buckets: ["leaders"],
-    },
-    ...overrides,
-  };
-}
-
-async function reconcile(
-  catalogueRevisionId: string,
-  sourceObservations: Record<string, unknown>[],
-): Promise<{
-  response: Response;
-  document: Record<string, unknown>;
-}> {
-  return reconcileWithLineages(
-    catalogueRevisionId,
-    [
-      ...new Set(
-        sourceObservations.map((observation) =>
-          String(observation.source_lineage),
-        ),
-      ),
-    ],
-    sourceObservations,
-  );
-}
-
-async function reconcileWithLineages(
-  catalogueRevisionId: string,
-  observedSourceLineages: string[],
-  sourceObservations: Record<string, unknown>[],
-): Promise<{
-  response: Response;
-  document: Record<string, unknown>;
-}> {
-  const response = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/reconciliation/card-printings",
+    adapter_version: "one-piece-json-document@1",
+    idempotency_key: key,
+    requests: [
       {
-        method: "POST",
-        headers: {
-          authorization: "Bearer vitest-administration-key",
-          "cf-connecting-ip": `198.51.100.${(requestSequence++ % 250) + 1}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          catalogue_revision_id: catalogueRevisionId,
-          observed_source_lineages: observedSourceLineages,
-          source_observations: sourceObservations,
-        }),
+        id: "cards",
+        method: "GET",
+        url: `https://official-source.invalid${path}`,
+        headers: { accept: "application/json" },
       },
-    ),
+    ],
+  });
+  expect(started.response.status).toBe(201);
+  const id = requiredString(started.document, "id");
+  const resumed = await post(
+    `/v1/ingestion-runs/${id}/collection/resume`,
+    {},
   );
-  return {
-    response,
-    document: (await response.json()) as Record<string, unknown>,
-  };
+  expect(resumed.response.status).toBe(202);
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const shown = await get(`/v1/ingestion-runs/${id}`);
+    if (shown.document.state === "parsing") {
+      return { id, document: shown.document };
+    }
+    if (shown.document.state === "failed") {
+      throw new Error(`collection failed: ${JSON.stringify(shown.document)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`run ${id} did not reach parsing`);
 }
 
-async function administrationGet(
+function reconcile(runId: string) {
+  return post(`/v1/ingestion-runs/${runId}/reconciliation`, {});
+}
+
+function approve(document: Record<string, unknown>) {
+  return post(
+    `/v1/ingestion-runs/${requiredString(document, "run_id")}/approval`,
+    {
+      candidate_digest: requiredString(document, "candidate_digest"),
+      expected_current_revision_id: requiredString(
+        document,
+        "expected_current_revision_id",
+      ),
+      idempotency_key: `approve-${crypto.randomUUID()}`,
+    },
+  );
+}
+
+function get(pathname: string) {
+  return request(pathname);
+}
+
+function post(pathname: string, body: Record<string, unknown>) {
+  return request(pathname, body);
+}
+
+async function request(
   pathname: string,
+  body?: Record<string, unknown>,
 ): Promise<{
   response: Response;
   document: Record<string, unknown>;
 }> {
   const response = await exports.default.fetch(
     new Request(`https://card-keepr.invalid${pathname}`, {
+      method: body === undefined ? "GET" : "POST",
       headers: {
         authorization: "Bearer vitest-administration-key",
-        "cf-connecting-ip": `198.51.100.${(requestSequence++ % 250) + 1}`,
+        "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
+        ...(body === undefined
+          ? {}
+          : { "content-type": "application/json" }),
       },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
   return {
@@ -544,41 +317,26 @@ async function administrationGet(
   };
 }
 
-function requiredFirstRecord(
+function requiredFirst(
   document: Record<string, unknown>,
   field: string,
 ): Record<string, unknown> {
-  const records = document[field];
-  if (!Array.isArray(records) || records.length !== 1) {
-    throw new Error(`${field} does not contain exactly one record`);
+  const values = document[field];
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error(`${field} is empty`);
   }
-  const record = records[0];
-  if (
-    record === null ||
-    typeof record !== "object" ||
-    Array.isArray(record)
-  ) {
-    throw new Error(`${field} does not contain an object`);
+  const value = values[0];
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field}[0] is invalid`);
   }
-  return record as Record<string, unknown>;
+  return value as Record<string, unknown>;
 }
 
-function requiredRecords(
+function requiredString(
   document: Record<string, unknown>,
   field: string,
-): Record<string, unknown>[] {
-  const records = document[field];
-  if (!Array.isArray(records)) {
-    throw new Error(`${field} is not an array`);
-  }
-  return records.map((record) => {
-    if (
-      record === null ||
-      typeof record !== "object" ||
-      Array.isArray(record)
-    ) {
-      throw new Error(`${field} does not contain only objects`);
-    }
-    return record as Record<string, unknown>;
-  });
+): string {
+  const value = document[field];
+  if (typeof value !== "string") throw new Error(`${field} is not a string`);
+  return value;
 }

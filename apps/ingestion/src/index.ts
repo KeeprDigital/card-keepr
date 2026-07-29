@@ -26,9 +26,8 @@ import {
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
 import {
-  parseReconciliationRequest,
-  reconcileCardPrintings,
-  showReconciliationSourceObservation,
+  reconcileRetainedCardPrintingEvidence,
+  showReconciledPrinting,
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { resumeEvidenceRun } from "./evidence-administration";
 export {
@@ -134,32 +133,36 @@ export default {
         );
       }
 
-      if (
-        request.method === "POST" &&
-        url.pathname === "/v1/reconciliation/card-printings"
-      ) {
+      const reconciliationMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/reconciliation$/.exec(
+          url.pathname,
+        );
+      if (request.method === "POST" && reconciliationMatch !== null) {
         const body = await readAdministrationBody(request);
-        const result = await reconcileCardPrintings(
+        assertOnlyFields(body, []);
+        const result = await reconcileRetainedCardPrintingEvidence(
           env.CATALOGUE_DB,
-          parseReconciliationRequest(body),
+          env.EVIDENCE_OBJECTS,
+          decodeURIComponent(reconciliationMatch[1]!),
+          observedAt,
         );
         return Response.json(result, {
           status: result.publishable === true ? 200 : 409,
         });
       }
 
-      const reconciledSourceObservationMatch =
-        /^\/v1\/reconciliation\/source-observations\/([^/]+)$/.exec(
+      const reconciledPrintingMatch =
+        /^\/v1\/reconciliation\/printings\/([^/]+)$/.exec(
           url.pathname,
         );
       if (
         request.method === "GET" &&
-        reconciledSourceObservationMatch !== null
+        reconciledPrintingMatch !== null
       ) {
         return Response.json(
-          await showReconciliationSourceObservation(
+          await showReconciledPrinting(
             env.CATALOGUE_DB,
-            decodeURIComponent(reconciledSourceObservationMatch[1]!),
+            decodeURIComponent(reconciledPrintingMatch[1]!),
           ),
         );
       }

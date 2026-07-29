@@ -5,10 +5,10 @@ CREATE TABLE reconciled_cards (
   supported_game TEXT NOT NULL,
   official_identity_kind TEXT NOT NULL,
   official_identity_value TEXT NOT NULL,
-  first_revision_id TEXT NOT NULL,
-  last_observed_revision_id TEXT NOT NULL,
+  first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   withdrawn INTEGER NOT NULL DEFAULT 0 CHECK (withdrawn IN (0, 1)),
-  withdrawn_revision_id TEXT,
+  withdrawal_revision_id TEXT REFERENCES catalogue_revisions(id),
   withdrawal_evidence_json TEXT,
   UNIQUE (
     supported_game,
@@ -22,25 +22,22 @@ CREATE TABLE reconciled_printings (
   card_id TEXT NOT NULL REFERENCES reconciled_cards(id),
   source_lineage TEXT NOT NULL,
   artwork_fingerprint TEXT NOT NULL,
-  printed_rules_fingerprint TEXT NOT NULL,
-  rarity_raw TEXT NOT NULL,
-  rarity_normalized TEXT NOT NULL,
-  treatment TEXT NOT NULL,
-  memberships_json TEXT NOT NULL,
-  first_revision_id TEXT NOT NULL,
-  last_observed_revision_id TEXT NOT NULL,
+  printed_fields_digest TEXT NOT NULL,
+  rarity_normalized TEXT,
+  treatment TEXT,
+  first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   withdrawn INTEGER NOT NULL DEFAULT 0 CHECK (withdrawn IN (0, 1)),
-  withdrawn_revision_id TEXT,
+  withdrawal_revision_id TEXT REFERENCES catalogue_revisions(id),
   withdrawal_evidence_json TEXT
 );
 
-CREATE INDEX reconciled_printing_candidates
+CREATE INDEX reconciled_printing_compatibility
 ON reconciled_printings (
   card_id,
   source_lineage,
   artwork_fingerprint,
-  printed_rules_fingerprint,
-  rarity_raw,
+  printed_fields_digest,
   rarity_normalized,
   treatment
 );
@@ -49,31 +46,58 @@ CREATE TABLE reconciled_printing_locators (
   printing_id TEXT NOT NULL REFERENCES reconciled_printings(id),
   source_lineage TEXT NOT NULL,
   locator TEXT NOT NULL,
-  first_observed_revision_id TEXT NOT NULL,
-  last_observed_revision_id TEXT NOT NULL,
-  PRIMARY KEY (source_lineage, locator),
-  UNIQUE (printing_id, source_lineage, locator)
+  first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  PRIMARY KEY (source_lineage, locator)
 );
 
-CREATE TABLE reconciliation_source_observations (
-  source_observation_id TEXT PRIMARY KEY,
-  catalogue_revision_id TEXT NOT NULL,
+CREATE TABLE reconciled_printing_memberships (
   printing_id TEXT NOT NULL REFERENCES reconciled_printings(id),
-  observation_json TEXT NOT NULL,
-  unknown_fields_json TEXT NOT NULL
+  relationship_kind TEXT NOT NULL CHECK (
+    relationship_kind IN (
+      'product',
+      'distribution_context',
+      'source_bucket'
+    )
+  ),
+  relationship_value TEXT NOT NULL,
+  first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  PRIMARY KEY (printing_id, relationship_kind, relationship_value)
 );
 
-CREATE TRIGGER reconciled_printing_locator_conflicts_fail_closed
-BEFORE INSERT ON reconciled_printing_locators
-WHEN EXISTS (
-  SELECT 1
-  FROM reconciled_printing_locators AS existing
-  WHERE existing.source_lineage = NEW.source_lineage
-    AND existing.locator = NEW.locator
-    AND existing.printing_id <> NEW.printing_id
-)
+CREATE UNIQUE INDEX source_observation_set_snapshot_identity
+ON source_observation_sets (id, source_snapshot_id);
+
+CREATE TABLE reconciliation_candidates (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  source_observation_set_id TEXT NOT NULL
+    REFERENCES source_observation_sets(id),
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  source_observation_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  printing_id TEXT NOT NULL,
+  source_lineage TEXT NOT NULL,
+  locator TEXT NOT NULL,
+  compatibility_json TEXT NOT NULL,
+  memberships_json TEXT NOT NULL,
+  withdrawal_json TEXT,
+  warnings_json TEXT NOT NULL,
+  UNIQUE (source_observation_set_id, source_observation_id),
+  FOREIGN KEY (source_observation_set_id, source_snapshot_id)
+    REFERENCES source_observation_sets (id, source_snapshot_id)
+);
+
+CREATE TRIGGER reconciliation_candidates_are_immutable_on_update
+BEFORE UPDATE ON reconciliation_candidates
 BEGIN
-  SELECT RAISE(ABORT, 'printing_locator_identity_conflict');
+  SELECT RAISE(ABORT, 'reconciliation_candidate_immutable');
+END;
+
+CREATE TRIGGER reconciliation_candidates_are_immutable_on_delete
+BEFORE DELETE ON reconciliation_candidates
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_candidate_immutable');
 END;
 
 CREATE TRIGGER reconciled_card_identity_is_immutable
@@ -94,24 +118,11 @@ BEFORE UPDATE OF
   card_id,
   source_lineage,
   artwork_fingerprint,
-  printed_rules_fingerprint,
-  rarity_raw,
+  printed_fields_digest,
   rarity_normalized,
   treatment,
   first_revision_id
 ON reconciled_printings
 BEGIN
   SELECT RAISE(ABORT, 'reconciled_printing_identity_immutable');
-END;
-
-CREATE TRIGGER reconciliation_source_observations_are_immutable_on_update
-BEFORE UPDATE ON reconciliation_source_observations
-BEGIN
-  SELECT RAISE(ABORT, 'reconciliation_source_observation_immutable');
-END;
-
-CREATE TRIGGER reconciliation_source_observations_are_immutable_on_delete
-BEFORE DELETE ON reconciliation_source_observations
-BEGIN
-  SELECT RAISE(ABORT, 'reconciliation_source_observation_immutable');
 END;
