@@ -4,6 +4,8 @@ import {
   type D1Migration,
 } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
+import { captureOperationIdentity } from "../../../src/catalogue/source-evidence-capture";
+import { sourceAdapterRegistrations } from "../../../src/catalogue/source-adapters";
 
 declare global {
   interface __BaseEnv_Env {
@@ -101,33 +103,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   const completed = await waitForEvidenceRun(
     planned.id,
     "parsing",
-  ) as unknown as {
-    state: string;
-    snapshots: {
-      id: string;
-      request: { method: string; url: string };
-      retrieval: { retrieved_at: string; fetch_attempt_id: string };
-      http: {
-        status: number;
-        headers: Record<string, string>;
-      };
-      content: {
-        digest: string;
-        byte_length: number;
-        object_key: string;
-      };
-      adapter_version: string;
-      ingestion_run_id: string;
-    }[];
-    observation_sets: {
-      id: string;
-      source_snapshot_id: string;
-      adapter_version: string;
-      content_digest: string;
-      object_key: string;
-      observation_count: number;
-    }[];
-  };
+  );
 
   expect(completed.state).toBe("parsing");
   expect(completed.snapshots).toHaveLength(1);
@@ -367,7 +343,13 @@ test("a successful response remains snapshotted when parsing terminally fails", 
     "source_collection_parse_failure_001",
     "https://parse-failure-official-source.invalid/invalid-json",
   );
-  const failed = await resumeCollection(run.id);
+  const accepted = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(accepted.status).toBe(202);
+  await accepted.body?.cancel();
+  const failed = await waitForEvidenceRun(run.id, "failed", 15_000);
   expect(failed).toMatchObject({
     state: "failed",
     failure_code: "source_parse_failed",
@@ -480,7 +462,6 @@ test("Retry-After is audited without shortening the Official Source deadline", a
   }
   const childWorkflow = await env.EVIDENCE_HOST_WORKFLOW.get(childWorkflowId);
   await childWorkflow.terminate();
-  disposeRpcHandle(childWorkflow);
 });
 
 test("adapter versions are bound to one Supported Game, Game Profile, and source lineage", async () => {
@@ -504,9 +485,32 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
   await expect(mismatched.json()).resolves.toMatchObject({
     code: "adapter_binding_mismatch",
   });
+
+  const constrained = await env.CATALOGUE_DB.prepare(
+    `SELECT adapter_version, source_lineage, supported_game,
+            game_profile_version
+     FROM source_adapter_versions ORDER BY adapter_version`,
+  ).all<{
+    adapter_version: string;
+    source_lineage: string;
+    supported_game: string;
+    game_profile_version: string;
+  }>();
+  expect(constrained.results).toEqual(
+    sourceAdapterRegistrations
+      .map((adapter) => ({
+        adapter_version: adapter.adapterVersion,
+        source_lineage: adapter.sourceLineage,
+        supported_game: adapter.supportedGame,
+        game_profile_version: adapter.gameProfileVersion,
+      }))
+      .sort((left, right) =>
+        left.adapter_version.localeCompare(right.adapter_version),
+      ),
+  );
 });
 
-test("large exact responses stream to immutable storage but parsing stays bounded", async () => {
+test("all successful response bytes stream to immutable storage while parsing stays bounded", async () => {
   const retainedRun = await createCollection(
     "source_large_parse_bound_001",
     "https://large-official-source.invalid/large-json",
@@ -523,16 +527,120 @@ test("large exact responses stream to immutable storage but parsing stays bounde
   );
   expect(retained.observation_sets).toEqual([]);
 
-  const rejectedRun = await createCollection(
-    "source_capture_bound_001",
-    "https://large-official-source.invalid/declared-too-large",
+  const hugeRun = await createCollection(
+    "source_huge_capture_001",
+    "https://large-official-source.invalid/huge-json",
   );
-  const rejected = await resumeCollection(rejectedRun.id);
-  expect(rejected).toMatchObject({
+  const huge = await resumeCollection(hugeRun.id);
+  expect(huge).toMatchObject({
     state: "failed",
-    failure_code: "source_response_too_large",
+    failure_code: "source_parse_too_large",
+  });
+  expect(huge.snapshots).toHaveLength(1);
+  expect(huge.snapshots[0]!.content.byte_length).toBeGreaterThan(
+    32 * 1024 * 1024,
+  );
+  expect(huge.snapshots[0]!.content.digest).toMatch(/^[a-f0-9]{64}$/);
+}, 15_000);
+
+test("body streaming failures are durable diagnostics with bounded retries", async () => {
+  const run = await createCollection(
+    "source_body_failure_001",
+    "https://body-failure-official-source.invalid/body-failure",
+  );
+  const accepted = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(accepted.status).toBe(202);
+  await accepted.body?.cancel();
+  const failed = await waitForEvidenceRun(run.id, "failed", 15_000);
+  expect(failed).toMatchObject({
+    state: "failed",
+    failure_code: "source_request_retries_exhausted",
     snapshots: [],
   });
+  expect(failed.diagnostics).toHaveLength(4);
+  expect(
+    failed.diagnostics.map((diagnostic) => ({
+      attempt_number: diagnostic.attempt_number,
+      outcome: diagnostic.outcome,
+    })),
+  ).toEqual([
+    { attempt_number: 1, outcome: "body_failure" },
+    { attempt_number: 2, outcome: "body_failure" },
+    { attempt_number: 3, outcome: "body_failure" },
+    { attempt_number: 4, outcome: "body_failure" },
+  ]);
+}, 15_000);
+
+test("resume recovers the deterministic object after an upload-before-D1 restart boundary", async () => {
+  const run = await createCollection(
+    "source_restart_boundary_001",
+    "https://restart-official-source.invalid/must-not-refetch",
+  );
+  const identity = await captureOperationIdentity(
+    run.id,
+    "required-source",
+    1,
+  );
+  const bytes = new TextEncoder().encode(
+    '{"cards":[{"card_number":"OP01-001"}]}',
+  );
+  await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
+    onlyIf: { etagDoesNotMatch: "*" },
+    httpMetadata: { contentType: "application/json" },
+  });
+  const now = new Date().toISOString();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_capture_operations (
+      attempt_id, ingestion_run_id, request_id, attempt_number,
+      source_snapshot_id, content_object_key, state, requested_at,
+      completed_at, request_headers_json, http_status,
+      response_headers_json, response_vary_json, media_type
+    ) VALUES (
+      ?, ?, 'required-source', 1, ?, ?, 'response_received', ?,
+      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
+      'application/json'
+    )`,
+  )
+    .bind(
+      identity.attemptId,
+      run.id,
+      identity.snapshotId,
+      identity.objectKey,
+      now,
+      now,
+    )
+    .run();
+
+  const completed = await resumeCollection(run.id);
+  expect(completed).toMatchObject({
+    state: "parsing",
+    diagnostics: [{ attempt_number: 1, outcome: "success" }],
+    snapshots: [
+      {
+        id: identity.snapshotId,
+        content: { object_key: identity.objectKey },
+      },
+    ],
+  });
+  const operation = await env.CATALOGUE_DB.prepare(
+    `SELECT state, content_digest, content_byte_length
+     FROM source_capture_operations WHERE attempt_id = ?`,
+  )
+    .bind(identity.attemptId)
+    .first<{
+      state: string;
+      content_digest: string;
+      content_byte_length: number;
+    }>();
+  expect(operation).toMatchObject({
+    state: "finalized",
+    content_byte_length: bytes.byteLength,
+    content_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
+  expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).not.toBeNull();
 });
 
 test("reparsing appends an immutable observation set tied to the exact Source Snapshot", async () => {
@@ -639,8 +747,12 @@ function administrationRequest(
 
 type Snapshot = {
   id: string;
-  http: { status: number };
+  request: { method: string; url: string };
+  retrieval: { retrieved_at: string; fetch_attempt_id: string };
+  http: { status: number; headers: Record<string, string> };
   content: { digest: string; object_key: string; byte_length: number };
+  adapter_version: string;
+  ingestion_run_id: string;
   reused_source_snapshot_id: string | null;
 };
 
@@ -648,6 +760,7 @@ type ObservationSet = {
   id: string;
   source_snapshot_id: string;
   adapter_version: string;
+  content_digest: string;
   object_key: string;
   observation_count: number;
 };
@@ -748,15 +861,6 @@ function releaseActiveRunForNextScenario(): Promise<D1Result<unknown>> {
   return env.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();
-}
-
-function disposeRpcHandle(value: unknown): void {
-  if (typeof value !== "object" || value === null) return;
-  const record = value as Record<PropertyKey, unknown>;
-  const dispose = (Symbol as unknown as { dispose?: symbol }).dispose;
-  const candidate =
-    (dispose === undefined ? undefined : record[dispose]) ?? record.dispose;
-  if (typeof candidate === "function") candidate.call(value);
 }
 
 async function showCollection(

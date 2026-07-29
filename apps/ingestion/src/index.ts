@@ -15,17 +15,18 @@ import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
   reparseSourceSnapshot,
-  resumeEvidenceRun,
   retryEvidenceRun,
   showEvidenceRun,
   sourceObservationSetContent,
   sourceSnapshotContent,
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
+import { resumeEvidenceRun } from "./evidence-administration";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
-} from "../../../src/catalogue/source-evidence-workflows";
+} from "./evidence-workflows";
+export { OfficialSourceTransport } from "./official-source-transport";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

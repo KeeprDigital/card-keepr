@@ -41,6 +41,15 @@ export type StartEvidenceRunRequest = {
   }[];
 };
 
+export type EvidenceParentWorkflowParams = {
+  ingestion_run_id: string;
+};
+
+export type EvidenceHostWorkflowParams = {
+  ingestion_run_id: string;
+  hostname: string;
+};
+
 export async function validateEvidencePlan(
   request: StartEvidenceRunRequest,
 ): Promise<{

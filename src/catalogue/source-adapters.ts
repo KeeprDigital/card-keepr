@@ -8,8 +8,9 @@ export type SourceAdapterRegistration = Readonly<{
   maximumJsonBytes: number;
 }>;
 
-const installedAdapters = new Map<string, SourceAdapterRegistration>(
-  [
+export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
+  Object.freeze(
+    [
     {
       adapterVersion: "one-piece-json-document@1",
       sourceLineage: "one-piece-en",
@@ -24,7 +25,14 @@ const installedAdapters = new Map<string, SourceAdapterRegistration>(
       gameProfileVersion: "one-piece@1",
       maximumJsonBytes: 1024 * 1024,
     },
-  ].map((adapter) => [adapter.adapterVersion, Object.freeze(adapter)]),
+    ].map((adapter) => Object.freeze(adapter)),
+  );
+
+const installedAdapters = new Map<string, SourceAdapterRegistration>(
+  sourceAdapterRegistrations.map((adapter) => [
+    adapter.adapterVersion,
+    adapter,
+  ]),
 );
 
 export function requiredSourceAdapter(

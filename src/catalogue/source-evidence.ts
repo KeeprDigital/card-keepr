@@ -16,7 +16,6 @@ import {
   type ObservationSetRow,
   type SnapshotRow,
 } from "./source-evidence-repository";
-import type { EvidenceParentWorkflowParams } from "./source-evidence-workflows";
 
 export {
   retryEvidenceRun,
@@ -24,69 +23,6 @@ export {
   startEvidenceRun,
 };
 export type { StartEvidenceRunRequest };
-
-export async function resumeEvidenceRun(
-  database: D1Database,
-  workflow: Workflow<EvidenceParentWorkflowParams>,
-  runId: string,
-): Promise<Record<string, unknown>> {
-  const run = await requiredEvidenceRun(database, runId);
-  if (run.state !== "collecting") {
-    throw new AdministrationProblem(
-      409,
-      "ingestion_run_not_collecting",
-      "Only an Ingestion Run in its collection phase can be resumed.",
-    );
-  }
-  const workflowId = `evidence-${runId}`;
-  let instance;
-  let status: Record<string, unknown> = { status: "queued" };
-  if (run.parent_workflow_id === null) {
-    try {
-      instance = await workflow.create({
-        id: workflowId,
-        params: { ingestion_run_id: runId },
-      });
-    } catch {
-      instance = await workflow.get(workflowId);
-    }
-    await database
-      .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
-      )
-      .bind(workflowId, runId)
-      .run();
-  } else {
-    instance = await workflow.get(run.parent_workflow_id);
-    try {
-      status = await instance.status();
-      if (status.status === "errored" || status.status === "terminated") {
-        await instance.restart();
-        status = { status: "queued" };
-      } else if (status.status === "paused") {
-        await instance.resume();
-        status = { status: "queued" };
-      } else if (status.status === "complete") {
-        await instance.restart({
-          from: { name: "start dynamically sharded hostname workflows" },
-        });
-        status = { status: "queued" };
-      }
-    } catch {
-      status = { status: "queued" };
-    }
-  }
-  const result = {
-    ingestion_run_id: runId,
-    workflow: {
-      id: instance.id,
-      ...status,
-    },
-  };
-  disposeRpcHandle(instance);
-  return result;
-}
 
 export async function reparseSourceSnapshot(
   database: D1Database,
@@ -183,14 +119,3 @@ async function evidenceObjectResponse(
 
 // Re-exported for the durable workflow module's adapter-bound parse path.
 export const parseImmutableSourceSnapshot = parseSnapshot;
-
-function disposeRpcHandle(value: unknown): void {
-  if (typeof value !== "object" || value === null) {
-    return;
-  }
-  const record = value as Record<PropertyKey, unknown>;
-  const dispose = (Symbol as unknown as { dispose?: symbol }).dispose;
-  const candidate =
-    (dispose === undefined ? undefined : record[dispose]) ?? record.dispose;
-  if (typeof candidate === "function") candidate.call(value);
-}

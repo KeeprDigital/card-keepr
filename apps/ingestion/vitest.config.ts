@@ -79,10 +79,20 @@ export default defineConfig({
               { headers: { "content-type": "application/json" } },
             );
           }
-          if (url.pathname === "/declared-too-large") {
-            return new Response("rejected before capture", {
+          if (url.pathname === "/huge-json") {
+            return new Response(
+              JSON.stringify({
+                padding: "x".repeat(33 * 1024 * 1024),
+              }),
+              {
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          if (url.pathname === "/body-failure") {
+            return new Response('{"cards":[]}', {
               headers: {
-                "content-length": String(32 * 1024 * 1024 + 1),
+                "content-length": "invalid",
                 "content-type": "application/json",
               },
             });
