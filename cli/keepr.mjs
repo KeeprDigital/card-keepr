@@ -12,11 +12,7 @@ import {
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 
-export async function main(
-  arguments_,
-  environment,
-  dependencies,
-) {
+export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
   if (arguments_[0] === "health") {
     if (arguments_.slice(1).some((option) => option !== "--json")) {
@@ -77,7 +73,6 @@ export async function main(
       arguments_.slice(1),
       environment,
       json,
-      dependencies,
     );
   }
 

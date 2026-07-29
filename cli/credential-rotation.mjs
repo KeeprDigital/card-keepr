@@ -1,5 +1,6 @@
 import {
   createHash,
+  randomBytes,
   timingSafeEqual,
 } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -18,7 +19,6 @@ export async function runCredentialCommand(
   arguments_,
   environment,
   json,
-  dependencies = { executeCredentialBoundary },
 ) {
   const action = arguments_[0];
   if (action === "show") {
@@ -27,13 +27,7 @@ export async function runCredentialCommand(
   if (!["install", "verify", "revoke"].includes(action)) {
     return usage(json);
   }
-  return mutate(
-    action,
-    arguments_.slice(1),
-    environment,
-    json,
-    dependencies,
-  );
+  return mutate(action, arguments_.slice(1), environment, json);
 }
 
 async function mutate(
@@ -41,7 +35,6 @@ async function mutate(
   arguments_,
   environment,
   json,
-  dependencies,
 ) {
   const options = parseMutation(arguments_);
   if (options.error !== null) return usage(json);
@@ -88,6 +81,9 @@ async function mutate(
   const secretFields = [
     "administration_key",
     "management_credential",
+    ...(credentialClass === "github_deployment_token"
+      ? ["github_management_credential"]
+      : []),
     ...(action === "install"
       ? ["old_secret", "replacement_secret"]
       : []),
@@ -121,6 +117,22 @@ async function mutate(
       7,
     );
   }
+  if (
+    credentialClass === "github_deployment_token" &&
+    !equalFingerprint(
+      fingerprint(secrets.values.github_management_credential),
+      options.values[
+        "--expected-github-management-fingerprint"
+      ],
+    )
+  ) {
+    return failure(
+      json,
+      "stale_github_management_identity",
+      "The GitHub management credential does not match its expected fingerprint.",
+      7,
+    );
+  }
 
   const planRequest = {
     action,
@@ -131,6 +143,8 @@ async function mutate(
     resource_identity: identity.resource_identity,
     owning_boundary: identity.owning_boundary,
     verification_target: identity.verification_target,
+    production_target_identity:
+      identity.production_target_identity,
     expected_catalogue_revision_id:
       options.values["--expected-catalogue-revision"],
     expected_state_generation: expectedGeneration,
@@ -142,6 +156,12 @@ async function mutate(
       options.values["--replacement-issuer-credential-id"],
     management_credential_id:
       options.values["--management-credential-id"],
+    github_management_credential_id:
+      options.values["--github-management-credential-id"],
+    github_management_credential_fingerprint:
+      options.values[
+        "--expected-github-management-fingerprint"
+      ],
     idempotency_key: options.values["--idempotency-key"],
   };
   const planned = await requestDocument(
@@ -201,13 +221,18 @@ async function mutate(
       2,
     );
   }
+  const executionOwnerToken = randomBytes(32).toString("hex");
   const claimed = await requestDocument(
     environment,
     `/v1/credential-rotation-plans/${encodeURIComponent(
       plan.id,
     )}/execution`,
     "POST",
-    { plan_digest: plan.plan_digest },
+    {
+      plan_digest: plan.plan_digest,
+      execution_owner_token: executionOwnerToken,
+      expected_execution_attempt: plan.execution_attempt,
+    },
     secrets.values.administration_key,
   );
   if (!claimed.ok) return requestFailure(json, claimed);
@@ -230,7 +255,7 @@ async function mutate(
     );
   }
 
-  const boundary = await dependencies.executeCredentialBoundary(
+  const boundary = await executeCredentialBoundary(
     claimed.document,
     secrets.values,
     environment,
@@ -243,7 +268,11 @@ async function mutate(
           plan.id,
         )}/execution-failure`,
         "POST",
-        { plan_digest: plan.plan_digest },
+        {
+          plan_digest: plan.plan_digest,
+          execution_owner_token: executionOwnerToken,
+          execution_attempt: claimed.document.execution_attempt,
+        },
         secrets.values.administration_key,
       );
     }
@@ -300,6 +329,8 @@ function parseMutation(arguments_) {
     "--old-issuer-credential-id",
     "--replacement-issuer-credential-id",
     "--management-credential-id",
+    "--github-management-credential-id",
+    "--expected-github-management-fingerprint",
     "--idempotency-key",
     "--secrets-stdin-fd",
     "--confirm",
@@ -334,6 +365,7 @@ function confirmationText(plan) {
     plan.old_fingerprint,
     plan.replacement_fingerprint,
     plan.verification_target,
+    plan.production_target_identity,
     plan.required_permission,
     plan.consumer_installation_identity,
     plan.plan_digest,
@@ -341,6 +373,9 @@ function confirmationText(plan) {
     plan.old_issuer_credential_id,
     plan.replacement_issuer_credential_id,
     plan.management_credential_id,
+    plan.github_management_credential_id,
+    plan.github_management_credential_fingerprint,
+    plan.github_management_required_permission,
   ].join(":");
 }
 
@@ -427,6 +462,7 @@ function sameExecutionPlan(planned, claimed) {
     "resource_identity",
     "owning_boundary",
     "verification_target",
+    "production_target_identity",
     "required_permission",
     "consumer_installation_identity",
     "expected_catalogue_revision_id",
@@ -435,6 +471,9 @@ function sameExecutionPlan(planned, claimed) {
     "old_issuer_credential_id",
     "replacement_issuer_credential_id",
     "management_credential_id",
+    "github_management_credential_id",
+    "github_management_credential_fingerprint",
+    "github_management_required_permission",
     "idempotency_key",
   ];
   return (
@@ -471,14 +510,22 @@ async function requestDocument(
       },
     };
   }
+  const baseUrl = administrationBaseUrl(environment);
+  if (baseUrl === null) {
+    return {
+      ok: false,
+      status: 0,
+      document: {
+        code: "configuration_error",
+        detail:
+          "Credential commands require an explicit HTTPS KEEPR_INGESTION_URL.",
+      },
+    };
+  }
   let response;
   try {
     response = await fetch(
-      new URL(
-        pathname,
-        environment.KEEPR_INGESTION_URL ??
-          "http://127.0.0.1:8788",
-      ),
+      new URL(pathname, baseUrl),
       {
         method,
         headers: {
@@ -515,6 +562,30 @@ async function requestDocument(
     };
   }
   return { ok: response.ok, status: response.status, document };
+}
+
+function administrationBaseUrl(environment) {
+  if (environment.KEEPR_INGESTION_URL === undefined) return null;
+  try {
+    const url = new URL(environment.KEEPR_INGESTION_URL);
+    if (
+      url.username !== "" ||
+      url.password !== "" ||
+      url.search !== "" ||
+      url.hash !== ""
+    ) {
+      return null;
+    }
+    if (url.protocol === "https:") return url;
+    return environment.NODE_ENV === "test" &&
+      url.protocol === "http:" &&
+      url.hostname === "127.0.0.1" &&
+      url.port !== ""
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function requestFailure(json, response) {

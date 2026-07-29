@@ -18,6 +18,8 @@ export type ResolvedCredentialIdentity = {
   verification_target: string;
   required_permission: string;
   consumer_installation_identity: string;
+  production_target_identity: string;
+  github_management_required_permission: string;
 };
 
 export const credentialClassDefinitions: Readonly<

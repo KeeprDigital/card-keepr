@@ -81,11 +81,7 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
 
 test("the signed consumer challenge proves the exact installed API value through its authenticated boundary", async () => {
   const replacement = "vitest-api-key-replacement-slot";
-  await seedRotation(
-    "replacement_installed",
-    "vitest-api-key",
-    replacement,
-  );
+  expect(await healthStatus(replacement)).toBe(200);
   const challenge = "b".repeat(64);
   const expectedFingerprint = `sha256:${await hash(replacement)}`;
   const accepted = await consumerProof(
@@ -98,6 +94,8 @@ test("the signed consumer challenge proves the exact installed API value through
     credential_class: "api_bearer_key",
     expected_fingerprint: expectedFingerprint,
     challenge,
+    slot: "replacement",
+    status: "usable",
   });
 
   const wrongValue = await consumerProof(
@@ -128,6 +126,8 @@ async function consumerProof(
     credential_class: "api_bearer_key",
     expected_fingerprint: expectedFingerprint,
     challenge,
+    slot: "replacement",
+    expected_status: "usable",
   });
   return exports.default.fetch(
     new Request(
@@ -181,6 +181,15 @@ async function seedRotation(
       resource_identity,
       owning_boundary,
       verification_target,
+      production_target_identity,
+      required_permission,
+      consumer_installation_identity,
+      old_issuer_credential_id,
+      replacement_issuer_credential_id,
+      management_credential_id,
+      github_management_credential_id,
+      github_management_credential_fingerprint,
+      github_management_required_permission,
       old_secret_hash,
       replacement_secret_hash,
       installed_at,
@@ -197,6 +206,15 @@ async function seedRotation(
       'worker:card-keepr-api',
       'api_worker',
       'worker-health:card-keepr-api',
+      '{"cloudflare_account_id":"0123456789abcdef0123456789abcdef","worker_scripts":["card-keepr-api","card-keepr-ingestion"],"d1_databases":["00000000-0000-0000-0000-000000000001","00000000-0000-0000-0000-000000000002"],"r2_buckets":["card-keepr-evidence","card-keepr-printing-images","card-keepr-catalogue-exports","card-keepr-backups"],"workflows":["card-keepr-evidence-ingestion","card-keepr-evidence-host"],"github_repository_id":"repository-KeeprDigital-card-keepr","github_environment":"production","github_workflow":".github/workflows/credential-boundary-probe.yml"}',
+      'workers-secret:api-traffic',
+      'worker-secret:card-keepr-api:API_BEARER_KEY_REPLACEMENT',
+      'issuer-old-api-test',
+      'issuer-replacement-api-test',
+      'management-api-test',
+      'not-applicable',
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      'not-applicable',
       ?,
       ?,
       '2026-07-29T00:00:00.000Z',

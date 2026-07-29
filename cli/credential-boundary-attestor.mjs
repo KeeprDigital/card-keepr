@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  timingSafeEqual,
+} from "node:crypto";
 import { resolve } from "node:path";
 
 const arguments_ = process.argv.slice(2);
@@ -45,11 +49,47 @@ async function verifyInstalledConsumer(
 ) {
   const credentialClass = arguments_[4];
   if (credentialClass === "github_deployment_token") {
-    return (
+    const expectedEvidence =
+      `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
+      `head_sha=${facts.consumer_proof_head_sha} token_id=${arguments_[17]} ` +
+      `actor=${facts.consumer_proof_actor} slot=replacement`;
+    const replacementMatches =
       facts.consumer_proof_contract ===
         "github-actions-installed-secret-probe@1" &&
       typeof facts.consumer_proof_id === "string" &&
-      /^[0-9]{1,20}$/.test(facts.consumer_proof_id)
+      /^[0-9]{1,20}$/.test(facts.consumer_proof_id) &&
+      /^[0-9a-f]{40}$/.test(facts.consumer_proof_head_sha ?? "") &&
+      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(
+        facts.consumer_proof_actor ?? "",
+      ) &&
+      safeFingerprintEqual(
+        facts.consumer_proof_digest,
+        `sha256:${createHash("sha256")
+          .update(expectedEvidence)
+          .digest("hex")}`,
+      );
+    if (!replacementMatches) return false;
+    if (arguments_[0] !== "verify") return true;
+    const expectedOldEvidence =
+      `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
+      `head_sha=${facts.old_consumer_proof_head_sha} token_id=${arguments_[16]} ` +
+      `actor=${facts.old_consumer_proof_actor} slot=active`;
+    return (
+      facts.old_consumer_proof_contract ===
+        "github-actions-installed-secret-probe@1" &&
+      /^[0-9]{1,20}$/.test(facts.old_consumer_proof_id ?? "") &&
+      /^[0-9a-f]{40}$/.test(
+        facts.old_consumer_proof_head_sha ?? "",
+      ) &&
+      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(
+        facts.old_consumer_proof_actor ?? "",
+      ) &&
+      safeFingerprintEqual(
+        facts.old_consumer_proof_digest,
+        `sha256:${createHash("sha256")
+          .update(expectedOldEvidence)
+          .digest("hex")}`,
+      )
     );
   }
   let secrets;
@@ -86,47 +126,81 @@ async function verifyInstalledConsumer(
     credentialClass === "api_bearer_key"
       ? "card-keepr-api"
       : "card-keepr-ingestion";
-  const body = JSON.stringify({
-    credential_class: credentialClass,
-    expected_fingerprint: arguments_[14],
-    challenge: arguments_[2],
-  });
-  const signature = createHmac("sha256", key)
-    .update(body)
-    .digest("hex");
-  try {
-    response = await fetch(
-      `https://${worker}.${subdomainDocument.result.subdomain}.workers.dev/v1/credential-consumer-proof`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-keepr-boundary-signature": signature,
+  const probes = [
+    {
+      slot: "replacement",
+      status: "usable",
+      fingerprint: arguments_[15],
+    },
+    ...(arguments_[0] === "verify"
+      ? [
+          {
+            slot: "active",
+            status: "usable",
+            fingerprint: arguments_[14],
+          },
+        ]
+      : []),
+    ...(arguments_[0] === "revoke"
+      ? [
+          {
+            slot: "active",
+            status: "unusable",
+            fingerprint: arguments_[14],
+          },
+        ]
+      : []),
+  ];
+  for (const requested of probes) {
+    const body = JSON.stringify({
+      credential_class: credentialClass,
+      expected_fingerprint: requested.fingerprint,
+      challenge: arguments_[2],
+      slot: requested.slot,
+      expected_status: requested.status,
+    });
+    const signature = createHmac("sha256", key)
+      .update(body)
+      .digest("hex");
+    try {
+      response = await fetch(
+        `https://${worker}.${subdomainDocument.result.subdomain}.workers.dev/v1/credential-consumer-proof`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-keepr-boundary-signature": signature,
+          },
+          body,
+          signal: AbortSignal.timeout(15_000),
         },
-        body,
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-  } catch {
-    return false;
+      );
+    } catch {
+      return false;
+    }
+    if (!response.ok) return false;
+    const proof = await response.json();
+    const expectedProof = createHmac("sha256", key)
+      .update(
+        `${credentialClass}\0${requested.fingerprint}\0${arguments_[2]}\0${requested.slot}\0${requested.status}`,
+      )
+      .digest("hex");
+    if (
+      proof?.contract !== "card-keepr-credential-consumer-proof@1" ||
+      proof.credential_class !== credentialClass ||
+      !safeFingerprintEqual(
+        proof.expected_fingerprint,
+        requested.fingerprint,
+      ) ||
+      !safeDigestEqual(proof.challenge, arguments_[2]) ||
+      proof.slot !== requested.slot ||
+      proof.status !== requested.status ||
+      !safeDigestEqual(proof.proof, expectedProof)
+    ) {
+      return false;
+    }
   }
-  if (!response.ok) return false;
-  const proof = await response.json();
-  const expectedProof = createHmac("sha256", key)
-    .update(
-      `${credentialClass}\0${arguments_[14]}\0${arguments_[2]}`,
-    )
-    .digest("hex");
-  return (
-    proof?.contract === "card-keepr-credential-consumer-proof@1" &&
-    proof.credential_class === credentialClass &&
-    safeFingerprintEqual(
-      proof.expected_fingerprint,
-      arguments_[14],
-    ) &&
-    safeDigestEqual(proof.challenge, arguments_[2]) &&
-    safeDigestEqual(proof.proof, expectedProof)
-  );
+  return true;
 }
 
 async function runProvider(arguments_, input_) {
@@ -173,6 +247,7 @@ function exactProviderFacts(arguments_, facts) {
     resourceIdentity,
     ,
     verificationTarget,
+    productionTargetIdentity,
     requiredPermission,
     consumerInstallationIdentity,
     executionMode,
@@ -182,6 +257,9 @@ function exactProviderFacts(arguments_, facts) {
     oldIssuerCredentialId,
     replacementIssuerCredentialId,
     managementCredentialId,
+    githubManagementCredentialId,
+    githubManagementCredentialFingerprint,
+    githubManagementRequiredPermission,
   ] = arguments_;
   return (
     facts.version === 1 &&
@@ -193,6 +271,7 @@ function exactProviderFacts(arguments_, facts) {
     facts.cloudflare_account_id === cloudflareAccountId &&
     facts.resource_identity === resourceIdentity &&
     facts.verification_target === verificationTarget &&
+    facts.production_target_identity === productionTargetIdentity &&
     facts.required_permission === requiredPermission &&
     facts.consumer_installation_identity ===
       consumerInstallationIdentity &&
@@ -214,6 +293,14 @@ function exactProviderFacts(arguments_, facts) {
     facts.replacement_issuer_credential_id ===
       replacementIssuerCredentialId &&
     facts.management_credential_id === managementCredentialId &&
+    facts.github_management_credential_id ===
+      githubManagementCredentialId &&
+    safeFingerprintEqual(
+      facts.github_management_credential_fingerprint,
+      githubManagementCredentialFingerprint,
+    ) &&
+    facts.github_management_required_permission ===
+      githubManagementRequiredPermission &&
     /^sha256:[0-9a-f]{64}$/.test(
       facts.scope_evidence_digest ?? "",
     ) &&

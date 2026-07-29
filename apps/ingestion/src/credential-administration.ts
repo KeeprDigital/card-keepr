@@ -27,12 +27,18 @@ export async function handleCredentialAdministration(
     );
   if (request.method === "POST" && planExecution !== null) {
     const body = await readBody(request);
-    assertOnlyFields(body, ["plan_digest"]);
+    assertOnlyFields(body, [
+      "plan_digest",
+      "execution_owner_token",
+      "expected_execution_attempt",
+    ]);
     return Response.json(
       await beginCredentialRotationPlanExecution(
         database,
         decodeURIComponent(planExecution[1]!),
         requiredSha256(body, "plan_digest"),
+        requiredOwnerToken(body),
+        requiredInteger(body, "expected_execution_attempt"),
         observedAt,
       ),
     );
@@ -64,12 +70,18 @@ export async function handleCredentialAdministration(
     );
   if (request.method === "POST" && planFailure !== null) {
     const body = await readBody(request);
-    assertOnlyFields(body, ["plan_digest"]);
+    assertOnlyFields(body, [
+      "plan_digest",
+      "execution_owner_token",
+      "execution_attempt",
+    ]);
     return Response.json(
       await releaseCredentialRotationPlanExecution(
         database,
         decodeURIComponent(planFailure[1]!),
         requiredSha256(body, "plan_digest"),
+        requiredOwnerToken(body),
+        requiredInteger(body, "execution_attempt"),
         observedAt,
       ),
     );
@@ -88,6 +100,7 @@ export async function handleCredentialAdministration(
       "resource_identity",
       "owning_boundary",
       "verification_target",
+      "production_target_identity",
       "expected_catalogue_revision_id",
       "expected_state_generation",
       "old_fingerprint",
@@ -95,6 +108,8 @@ export async function handleCredentialAdministration(
       "old_issuer_credential_id",
       "replacement_issuer_credential_id",
       "management_credential_id",
+      "github_management_credential_id",
+      "github_management_credential_fingerprint",
       "idempotency_key",
     ]);
     return Response.json(
@@ -114,6 +129,10 @@ export async function handleCredentialAdministration(
           verification_target: requiredString(
             body,
             "verification_target",
+          ),
+          production_target_identity: requiredString(
+            body,
+            "production_target_identity",
           ),
           expected_catalogue_revision_id: requiredString(
             body,
@@ -139,6 +158,14 @@ export async function handleCredentialAdministration(
           management_credential_id: requiredString(
             body,
             "management_credential_id",
+          ),
+          github_management_credential_id: requiredString(
+            body,
+            "github_management_credential_id",
+          ),
+          github_management_credential_fingerprint: requiredString(
+            body,
+            "github_management_credential_fingerprint",
           ),
           idempotency_key: requiredIdempotencyKey(body),
         },
@@ -245,6 +272,18 @@ function requiredSha256(
       422,
       "invalid_parameter",
       `${field} must be a full SHA-256 digest.`,
+    );
+  }
+  return value;
+}
+
+function requiredOwnerToken(body: Record<string, unknown>): string {
+  const value = requiredString(body, "execution_owner_token");
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new CredentialRotationProblem(
+      422,
+      "invalid_parameter",
+      "execution_owner_token must be a 256-bit opaque token.",
     );
   }
   return value;

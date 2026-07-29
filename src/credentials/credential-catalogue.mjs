@@ -83,6 +83,9 @@ export function resolveCredentialIdentity(credentialClass, context) {
       required_permission: definition.required_permission,
       consumer_installation_identity:
         `${definition.consumer_provider}:${definition.consumer_config}:${definition.replacement_secret_name}`,
+      production_target_identity:
+        productionTargetIdentity(context),
+      github_management_required_permission: "not-applicable",
     };
   }
   if (definition.resource_kind === "d1") {
@@ -97,6 +100,9 @@ export function resolveCredentialIdentity(credentialClass, context) {
       required_permission: definition.required_permission,
       consumer_installation_identity:
         `${definition.consumer_provider}:${definition.consumer_config}:${definition.replacement_secret_name}`,
+      production_target_identity:
+        productionTargetIdentity(context),
+      github_management_required_permission: "not-applicable",
     };
   }
   const prefix = `github-repository:${context.github_repository_id}:environment:production`;
@@ -109,5 +115,37 @@ export function resolveCredentialIdentity(credentialClass, context) {
     required_permission: definition.required_permission,
     consumer_installation_identity:
       `github:KeeprDigital/card-keepr:production:${definition.replacement_secret_name}`,
+    production_target_identity:
+      productionTargetIdentity(context),
+    github_management_required_permission:
+      "github-actions-secrets:write:KeeprDigital/card-keepr:environment:production",
   };
+}
+
+function productionTargetIdentity(context) {
+  return JSON.stringify({
+    cloudflare_account_id: context.cloudflare_account_id,
+    worker_scripts: [
+      "card-keepr-api",
+      "card-keepr-ingestion",
+    ],
+    d1_databases: [
+      context.catalogue_d1_database_id,
+      context.disposable_d1_database_id,
+    ],
+    r2_buckets: [
+      "card-keepr-evidence",
+      "card-keepr-printing-images",
+      "card-keepr-catalogue-exports",
+      "card-keepr-backups",
+    ],
+    workflows: [
+      "card-keepr-evidence-ingestion",
+      "card-keepr-evidence-host",
+    ],
+    github_repository_id: context.github_repository_id,
+    github_environment: "production",
+    github_workflow:
+      ".github/workflows/credential-boundary-probe.yml",
+  });
 }

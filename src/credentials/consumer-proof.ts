@@ -12,6 +12,10 @@ type ConsumerProofEnvironment = {
   ADMINISTRATION_KEY_REPLACEMENT?: string;
   D1_EXPORT_TOKEN_REPLACEMENT?: string;
   D1_VERIFICATION_TOKEN_REPLACEMENT?: string;
+  API_BEARER_KEY?: string;
+  ADMINISTRATION_KEY?: string;
+  D1_EXPORT_TOKEN?: string;
+  D1_VERIFICATION_TOKEN?: string;
 };
 
 export async function handleCredentialConsumerProof(
@@ -49,6 +53,8 @@ export async function handleCredentialConsumerProof(
     credential_class?: unknown;
     expected_fingerprint?: unknown;
     challenge?: unknown;
+    slot?: unknown;
+    expected_status?: unknown;
   };
   try {
     body = JSON.parse(text) as typeof body;
@@ -62,14 +68,30 @@ export async function handleCredentialConsumerProof(
     typeof body.expected_fingerprint !== "string" ||
     !/^sha256:[0-9a-f]{64}$/.test(body.expected_fingerprint) ||
     typeof body.challenge !== "string" ||
-    !/^[0-9a-f]{64}$/.test(body.challenge)
+    !/^[0-9a-f]{64}$/.test(body.challenge) ||
+    !["active", "replacement"].includes(String(body.slot)) ||
+    !["usable", "unusable"].includes(String(body.expected_status))
   ) {
     return Response.json({ code: "identity_conflict" }, { status: 409 });
   }
   const secret = replacementSecret(
     credentialClass as CredentialClass,
     environment,
+    body.slot as "active" | "replacement",
   );
+  if (
+    body.expected_status === "unusable" &&
+    secret === undefined
+  ) {
+    return proofResponse(
+      credentialClass,
+      body.expected_fingerprint,
+      body.challenge,
+      body.slot as string,
+      "unusable",
+      environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+    );
+  }
   if (
     secret === undefined ||
     !(await fixedHexEqual(
@@ -89,7 +111,7 @@ export async function handleCredentialConsumerProof(
           database,
           credentialClass,
           secret,
-          [],
+          [secret],
         )
       : await probeD1Capability(
           credentialClass,
@@ -102,14 +124,34 @@ export async function handleCredentialConsumerProof(
       { status: 409 },
     );
   }
+  return proofResponse(
+    credentialClass,
+    body.expected_fingerprint,
+    body.challenge,
+    body.slot as string,
+    "usable",
+    environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+  );
+}
+
+async function proofResponse(
+  credentialClass: string,
+  expectedFingerprint: string,
+  challenge: string,
+  slot: string,
+  status: string,
+  key: string,
+): Promise<Response> {
   return Response.json({
     contract: "card-keepr-credential-consumer-proof@1",
     credential_class: credentialClass,
-    expected_fingerprint: body.expected_fingerprint,
-    challenge: body.challenge,
+    expected_fingerprint: expectedFingerprint,
+    challenge,
+    slot,
+    status,
     proof: await hmac(
-      environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
-      `${credentialClass}\0${body.expected_fingerprint}\0${body.challenge}`,
+      key,
+      `${credentialClass}\0${expectedFingerprint}\0${challenge}\0${slot}\0${status}`,
     ),
   });
 }
@@ -117,18 +159,27 @@ export async function handleCredentialConsumerProof(
 function replacementSecret(
   credentialClass: CredentialClass,
   environment: ConsumerProofEnvironment,
+  slot: "active" | "replacement",
 ): string | undefined {
   if (credentialClass === "api_bearer_key") {
-    return environment.API_BEARER_KEY_REPLACEMENT;
+    return slot === "active"
+      ? environment.API_BEARER_KEY
+      : environment.API_BEARER_KEY_REPLACEMENT;
   }
   if (credentialClass === "ingestion_admin_key") {
-    return environment.ADMINISTRATION_KEY_REPLACEMENT;
+    return slot === "active"
+      ? environment.ADMINISTRATION_KEY
+      : environment.ADMINISTRATION_KEY_REPLACEMENT;
   }
   if (credentialClass === "d1_export_token") {
-    return environment.D1_EXPORT_TOKEN_REPLACEMENT;
+    return slot === "active"
+      ? environment.D1_EXPORT_TOKEN
+      : environment.D1_EXPORT_TOKEN_REPLACEMENT;
   }
   if (credentialClass === "d1_verification_token") {
-    return environment.D1_VERIFICATION_TOKEN_REPLACEMENT;
+    return slot === "active"
+      ? environment.D1_VERIFICATION_TOKEN
+      : environment.D1_VERIFICATION_TOKEN_REPLACEMENT;
   }
   return undefined;
 }

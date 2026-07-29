@@ -50,7 +50,7 @@ afterEach(async () => {
 test("recovery rejects reservation and only a signed exact attestation atomically finalizes the immutable plan", async () => {
   const reservedAt = "2026-07-29T00:00:00.000Z";
   const executionStartedAt = "2026-07-29T00:04:00.000Z";
-  const finalizedAt = "2026-07-29T00:10:00.000Z";
+  const finalizedAt = "2026-07-29T00:16:00.000Z";
   const request = await planInput("install", "api_bearer_key", 0);
   await env.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
@@ -79,10 +79,42 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
     expected_state_generation: 0,
   });
   await execute(plan, executionStartedAt);
+  const blockedIngestion = await administrationRequest(
+    "/v1/ingestion-runs",
+    "POST",
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      idempotency_key: "blocked-by-credential-execution",
+    },
+  );
+  expect(blockedIngestion.status).toBe(409);
+  await expect(blockedIngestion.json()).resolves.toMatchObject({
+    code: "credential_execution_in_progress",
+  });
+  const wrongOwnerRelease = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/execution-failure`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_owner_token: "b".repeat(64),
+      execution_attempt: plan.execution_attempt,
+    },
+    undefined,
+    "2026-07-29T00:04:15.000Z",
+  );
+  expect(wrongOwnerRelease.status).toBe(409);
+  await expect(wrongOwnerRelease.json()).resolves.toMatchObject({
+    code: "illegal_rotation_transition",
+  });
   const released = await administrationRequest(
     `/v1/credential-rotation-plans/${plan.id}/execution-failure`,
     "POST",
-    { plan_digest: plan.plan_digest },
+    {
+      plan_digest: plan.plan_digest,
+      execution_owner_token: "a".repeat(64),
+      execution_attempt: plan.execution_attempt,
+    },
     undefined,
     "2026-07-29T00:04:30.000Z",
   );
@@ -94,7 +126,17 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
     execution_mode: null,
   });
   await execute(plan, "2026-07-29T00:04:45.000Z");
-  await execute(plan, "2026-07-29T00:05:00.000Z");
+  const conflictingOwner = await executionResponse(
+    plan,
+    "2026-07-29T00:05:00.000Z",
+    "b".repeat(64),
+  );
+  expect(conflictingOwner.status).toBe(409);
+  await execute(
+    plan,
+    "2026-07-29T00:15:00.000Z",
+    "b".repeat(64),
+  );
   expect(plan).toMatchObject({
     execution_attempt: 2,
     execution_mode: "reconciliation",
@@ -228,28 +270,12 @@ test("all five classes resolve distinct exact account, resource, boundary, targe
 
 test("the signed ingestion consumer challenge proves the exact installed administration value and rejects wrong class", async () => {
   const replacement = "vitest-administration-key-replacement-slot";
-  await env.CATALOGUE_DB.prepare(
-    `INSERT INTO credential_rotations (
-      id, credential_class, state, environment, resource_identity,
-      owning_boundary, verification_target, old_secret_hash,
-      replacement_secret_hash, installed_at, install_idempotency_key,
-      install_request_digest, install_receipt
-    ) VALUES (
-      'credrot_admin_consumer_proof', 'ingestion_admin_key',
-      'replacement_installed', 'production',
-      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion',
-      'ingestion_worker',
-      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion:health',
-      ?, ?, '2026-07-29T00:00:00.000Z',
-      'admin-consumer-proof-install', ?, 'signed-boundary-receipt'
-    )`,
-  )
-    .bind(
-      (await fingerprint("old-administration-value")).slice(7),
-      (await fingerprint(replacement)).slice(7),
-      "c".repeat(64),
-    )
-    .run();
+  const health = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/health", {
+      headers: { authorization: `Bearer ${replacement}` },
+    }),
+  );
+  expect(health.status).toBe(200);
   const challenge = "d".repeat(64);
   const accepted = await consumerProofRequest(
     "ingestion_admin_key",
@@ -340,6 +366,39 @@ test("stale identity, wrong class, aliased management, and stale claim snapshot 
      WHERE singleton = 1`,
   ).run();
 
+  const targetDrift = await administrationRequest(
+    "/v1/credential-rotation-plans",
+    "POST",
+    {
+      ...request,
+      rotation_id: "credrot_target_drift",
+      idempotency_key: "target-drift-001",
+      production_target_identity: "{}",
+    },
+  );
+  expect(targetDrift.status).toBe(409);
+  await expect(targetDrift.json()).resolves.toMatchObject({
+    code: "identity_conflict",
+  });
+
+  const githubRequest = await planInput(
+    "install",
+    "github_deployment_token",
+    0,
+    "credrot_github_management_identity",
+  );
+  const missingGithubIdentity = await administrationRequest(
+    "/v1/credential-rotation-plans",
+    "POST",
+    {
+      ...githubRequest,
+      github_management_credential_id: "not-applicable",
+    },
+  );
+  expect(missingGithubIdentity.status).toBe(422);
+  await expect(missingGithubIdentity.json()).resolves.toMatchObject({
+    code: "invalid_github_management_identity",
+  });
 });
 
 const identities = {
@@ -395,6 +454,7 @@ type PlanDocument = Record<string, unknown> & {
   cloudflare_account_id: string;
   resource_identity: string;
   verification_target: string;
+  production_target_identity: string;
   required_permission: string;
   consumer_installation_identity: string;
   execution_attempt: number;
@@ -402,6 +462,32 @@ type PlanDocument = Record<string, unknown> & {
   old_fingerprint: string;
   replacement_fingerprint: string;
 };
+
+function productionTargetIdentity(): string {
+  return JSON.stringify({
+    cloudflare_account_id: accountId,
+    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+    d1_databases: [
+      catalogueDatabaseId,
+      "00000000-0000-0000-0000-000000000002",
+    ],
+    r2_buckets: [
+      "card-keepr-evidence",
+      "card-keepr-printing-images",
+      "card-keepr-catalogue-exports",
+      "card-keepr-backups",
+    ],
+    workflows: [
+      "card-keepr-evidence-ingestion",
+      "card-keepr-evidence-host",
+    ],
+    github_repository_id:
+      "repository-KeeprDigital-card-keepr",
+    github_environment: "production",
+    github_workflow:
+      ".github/workflows/credential-boundary-probe.yml",
+  });
+}
 
 async function planInput(
   action: "install" | "verify" | "revoke",
@@ -425,6 +511,7 @@ async function planInput(
     owning_boundary: identities[credentialClass].owning_boundary,
     verification_target:
       identities[credentialClass].verification_target,
+    production_target_identity: productionTargetIdentity(),
     expected_catalogue_revision_id: "catrev_spine_000",
     expected_state_generation: generation,
     old_fingerprint:
@@ -437,6 +524,14 @@ async function planInput(
     replacement_issuer_credential_id:
       "provider-token:replacement-credential-id",
     management_credential_id: "provider-token:management-id",
+    github_management_credential_id:
+      credentialClass === "github_deployment_token"
+        ? "github-token:management-id"
+        : "not-applicable",
+    github_management_credential_fingerprint:
+      credentialClass === "github_deployment_token"
+        ? await fingerprint("github-management-token")
+        : `sha256:${"0".repeat(64)}`,
     idempotency_key: `${action}-${credentialClass}-${generation}`,
   };
 }
@@ -476,8 +571,13 @@ function finalize(
 async function execute(
   plan: PlanDocument,
   observedAt?: string,
+  ownerToken = "a".repeat(64),
 ): Promise<void> {
-  const response = await executionResponse(plan, observedAt);
+  const response = await executionResponse(
+    plan,
+    observedAt,
+    ownerToken,
+  );
   expect(response.status).toBe(200);
   const document = await response.json<PlanDocument>();
   expect(document).toMatchObject({
@@ -489,11 +589,16 @@ async function execute(
 function executionResponse(
   plan: PlanDocument,
   observedAt?: string,
+  ownerToken = "a".repeat(64),
 ): Promise<Response> {
   return administrationRequest(
     `/v1/credential-rotation-plans/${plan.id}/execution`,
     "POST",
-    { plan_digest: plan.plan_digest },
+    {
+      plan_digest: plan.plan_digest,
+      execution_owner_token: ownerToken,
+      expected_execution_attempt: plan.execution_attempt,
+    },
     undefined,
     observedAt,
   );
@@ -514,6 +619,8 @@ async function signedAttestation(
     cloudflare_account_id: plan.cloudflare_account_id,
     resource_identity: plan.resource_identity,
     verification_target: plan.verification_target,
+    production_target_identity:
+      plan.production_target_identity,
     required_permission: plan.required_permission,
     consumer_installation_identity:
       plan.consumer_installation_identity,
@@ -524,6 +631,12 @@ async function signedAttestation(
     replacement_issuer_credential_id:
       "provider-token:replacement-credential-id",
     management_credential_id: "provider-token:management-id",
+    github_management_credential_id:
+      plan.github_management_credential_id,
+    github_management_credential_fingerprint:
+      plan.github_management_credential_fingerprint,
+    github_management_required_permission:
+      plan.github_management_required_permission,
     consumer_installation_id:
       plan.consumer_installation_identity,
     scope_evidence_digest: `sha256:${"a".repeat(64)}`,
@@ -596,6 +709,8 @@ async function consumerProofRequest(
     credential_class: credentialClass,
     expected_fingerprint: expectedFingerprint,
     challenge,
+    slot: "replacement",
+    expected_status: "usable",
   });
   const key = await crypto.subtle.importKey(
     "raw",

@@ -69,6 +69,45 @@ test("credential mutation requires an explicit production environment before pre
   assert.equal(existsSync(log), false);
 });
 
+test("GitHub management authority is a separate fingerprint-bound secret before preflight", async (t) => {
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(500).end();
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const result = await runCli(
+    mutationArguments({
+      action: "install",
+      rotationId: "credrot_github_management_negative",
+      credentialClass: "github_deployment_token",
+      expectedGeneration: 0,
+      oldFingerprint: fingerprint("old-github-deployment"),
+      replacementFingerprint: fingerprint(
+        "replacement-github-deployment",
+      ),
+      githubManagementCredentialId:
+        "github-token:management-negative",
+      githubManagementCredentialFingerprint:
+        fingerprint("different-github-management"),
+      idempotencyKey: "github-management-negative-001",
+      confirm: "not-reached",
+    }),
+    environment(port, undefined),
+    {
+      administration_key: "github-negative-admin",
+      management_credential: "cloudflare-management",
+      github_management_credential: "actual-github-management",
+      old_secret: "old-github-deployment",
+      replacement_secret: "replacement-github-deployment",
+    },
+  );
+  assert.equal(result.code, 7);
+  assert.match(result.stdout, /stale_github_management_identity/);
+  assert.equal(requests, 0);
+});
+
 test("rejected durable preflight causes zero owning-provider calls", async (t) => {
   const directory = mkdtempSync(
     join(tmpdir(), "keepr-boundary-ordering-"),
@@ -598,6 +637,11 @@ function mutationArguments(input) {
       "worker-secret:API_BEARER_KEY_REPLACEMENT",
     "--management-credential-id",
     input.managementCredentialId ?? "cloudflare-operator:acceptance",
+    "--github-management-credential-id",
+    input.githubManagementCredentialId ?? "not-applicable",
+    "--expected-github-management-fingerprint",
+    input.githubManagementCredentialFingerprint ??
+      `sha256:${"0".repeat(64)}`,
     "--idempotency-key",
     input.idempotencyKey,
     "--secrets-stdin-fd",
@@ -622,6 +666,8 @@ function planDocument(body, options) {
     resource_identity: identity.resource,
     owning_boundary: identity.boundary,
     verification_target: identity.target,
+    production_target_identity:
+      body.production_target_identity ?? productionTargetIdentity(),
     required_permission: options.permission,
     consumer_installation_identity:
       body.credential_class === "api_bearer_key"
@@ -636,6 +682,12 @@ function planDocument(body, options) {
     replacement_issuer_credential_id:
       body.replacement_issuer_credential_id,
     management_credential_id: body.management_credential_id,
+    github_management_credential_id:
+      body.github_management_credential_id ?? "not-applicable",
+    github_management_credential_fingerprint:
+      body.github_management_credential_fingerprint ??
+      `sha256:${"0".repeat(64)}`,
+    github_management_required_permission: "not-applicable",
     idempotency_key: body.idempotency_key,
     plan_nonce: "a".repeat(64),
     plan_digest: options.digest,
@@ -647,6 +699,31 @@ function planDocument(body, options) {
     created_at: "2026-07-29T00:00:00.000Z",
     expires_at: "2026-07-29T00:05:00.000Z",
   };
+}
+
+function productionTargetIdentity() {
+  return JSON.stringify({
+    cloudflare_account_id: context.cloudflareAccountId,
+    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+    d1_databases: [
+      context.catalogueD1DatabaseId,
+      context.disposableD1DatabaseId,
+    ],
+    r2_buckets: [
+      "card-keepr-evidence",
+      "card-keepr-printing-images",
+      "card-keepr-catalogue-exports",
+      "card-keepr-backups",
+    ],
+    workflows: [
+      "card-keepr-evidence-ingestion",
+      "card-keepr-evidence-host",
+    ],
+    github_repository_id: context.githubRepositoryId,
+    github_environment: "production",
+    github_workflow:
+      ".github/workflows/credential-boundary-probe.yml",
+  });
 }
 
 function identityFor(credentialClass) {
@@ -682,6 +759,7 @@ function confirmationText(plan) {
     plan.old_fingerprint,
     plan.replacement_fingerprint,
     plan.verification_target,
+    plan.production_target_identity,
     plan.required_permission,
     plan.consumer_installation_identity,
     plan.plan_digest,
@@ -695,6 +773,9 @@ function confirmationText(plan) {
     plan.credential_class === "d1_export_token"
       ? "cf-token:management-id"
       : "cloudflare-operator:acceptance",
+    "not-applicable",
+    `sha256:${"0".repeat(64)}`,
+    "not-applicable",
   ].join(":");
 }
 
@@ -716,6 +797,8 @@ function rotationDocument(
     resource_identity: identity.resource,
     owning_boundary: identity.boundary,
     verification_target: identity.target,
+    production_target_identity:
+      request.production_target_identity,
     old_fingerprint: oldFingerprint,
     replacement_fingerprint: replacementFingerprint,
     operation_code: "ok",
@@ -728,6 +811,7 @@ function fingerprint(secret) {
 
 function environment(port, log) {
   return {
+    NODE_ENV: "test",
     KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
     KEEPR_TEST_BOUNDARY_LOG: log,
   };

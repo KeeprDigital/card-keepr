@@ -1068,6 +1068,17 @@ async function startPreparedRun(
         "Recovery blocks new Ingestion Runs.",
       );
     }
+    if (
+      errorMessage(error).includes(
+        "credential_execution_in_progress",
+      )
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "credential_execution_in_progress",
+        "Credential execution blocks new Ingestion Runs.",
+      );
+    }
     throw error;
   }
   return resultingRun;

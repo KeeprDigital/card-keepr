@@ -13,6 +13,7 @@ CREATE TABLE credential_rotation_plans (
   resource_identity TEXT NOT NULL,
   owning_boundary TEXT NOT NULL,
   verification_target TEXT NOT NULL,
+  production_target_identity TEXT NOT NULL,
   required_permission TEXT NOT NULL,
   consumer_installation_identity TEXT NOT NULL,
   expected_catalogue_revision_id TEXT NOT NULL,
@@ -23,6 +24,9 @@ CREATE TABLE credential_rotation_plans (
   old_issuer_credential_id TEXT NOT NULL,
   replacement_issuer_credential_id TEXT NOT NULL,
   management_credential_id TEXT NOT NULL,
+  github_management_credential_id TEXT NOT NULL,
+  github_management_credential_fingerprint TEXT NOT NULL,
+  github_management_required_permission TEXT NOT NULL,
   idempotency_key TEXT NOT NULL UNIQUE,
   request_digest TEXT NOT NULL,
   plan_nonce TEXT NOT NULL UNIQUE,
@@ -35,6 +39,7 @@ CREATE TABLE credential_rotation_plans (
   execution_started_at TEXT,
   execution_expires_at TEXT,
   execution_attempt INTEGER NOT NULL DEFAULT 0,
+  execution_owner_hash TEXT,
   finalized_at TEXT,
   attestation_digest TEXT
 );
@@ -46,6 +51,37 @@ WHERE status IN ('reserved', 'executing');
 CREATE UNIQUE INDEX one_executing_credential_plan
 ON credential_rotation_plans ((1))
 WHERE status = 'executing';
+
+CREATE TRIGGER block_ingestion_during_credential_execution
+BEFORE UPDATE OF active_ingestion_run_id ON operation_state
+WHEN OLD.active_ingestion_run_id IS NULL
+  AND NEW.active_ingestion_run_id IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM credential_rotation_plans WHERE status = 'executing'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'credential_execution_in_progress');
+END;
+
+CREATE TRIGGER block_recovery_during_credential_execution
+BEFORE UPDATE OF recovery_health ON operation_state
+WHEN NEW.recovery_health <> OLD.recovery_health
+  AND EXISTS (
+    SELECT 1 FROM credential_rotation_plans WHERE status = 'executing'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'credential_execution_in_progress');
+END;
+
+CREATE TRIGGER block_catalogue_reconciliation_during_credential_execution
+BEFORE UPDATE OF current_revision_id ON catalogue_state
+WHEN NEW.current_revision_id <> OLD.current_revision_id
+  AND EXISTS (
+    SELECT 1 FROM credential_rotation_plans WHERE status = 'executing'
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'credential_execution_in_progress');
+END;
 
 CREATE TABLE credential_rotations (
   id TEXT PRIMARY KEY,
@@ -69,6 +105,15 @@ CREATE TABLE credential_rotations (
   resource_identity TEXT NOT NULL,
   owning_boundary TEXT NOT NULL,
   verification_target TEXT NOT NULL,
+  production_target_identity TEXT NOT NULL,
+  required_permission TEXT NOT NULL,
+  consumer_installation_identity TEXT NOT NULL,
+  old_issuer_credential_id TEXT NOT NULL,
+  replacement_issuer_credential_id TEXT NOT NULL,
+  management_credential_id TEXT NOT NULL,
+  github_management_credential_id TEXT NOT NULL,
+  github_management_credential_fingerprint TEXT NOT NULL,
+  github_management_required_permission TEXT NOT NULL,
   old_secret_hash TEXT NOT NULL CHECK (
     length(old_secret_hash) = 64
     AND old_secret_hash NOT GLOB '*[^0-9a-f]*'
@@ -124,6 +169,23 @@ WHEN OLD.status = 'executing' AND NEW.status = 'finalized'
         AND rotation.resource_identity = NEW.resource_identity
         AND rotation.owning_boundary = NEW.owning_boundary
         AND rotation.verification_target = NEW.verification_target
+        AND rotation.production_target_identity =
+          NEW.production_target_identity
+        AND rotation.required_permission = NEW.required_permission
+        AND rotation.consumer_installation_identity =
+          NEW.consumer_installation_identity
+        AND rotation.old_issuer_credential_id =
+          NEW.old_issuer_credential_id
+        AND rotation.replacement_issuer_credential_id =
+          NEW.replacement_issuer_credential_id
+        AND rotation.management_credential_id =
+          NEW.management_credential_id
+        AND rotation.github_management_credential_id =
+          NEW.github_management_credential_id
+        AND rotation.github_management_credential_fingerprint =
+          NEW.github_management_credential_fingerprint
+        AND rotation.github_management_required_permission =
+          NEW.github_management_required_permission
         AND rotation.old_secret_hash =
           substr(NEW.old_fingerprint, 8)
         AND rotation.replacement_secret_hash =

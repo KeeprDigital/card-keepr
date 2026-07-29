@@ -7,6 +7,21 @@ export async function executeCredentialBoundary(
   secrets,
   environment,
 ) {
+  const testBoundary = safeTestBoundary(environment);
+  if (testBoundary !== null) {
+    try {
+      const response = await fetch(testBoundary, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plan, secrets }),
+      });
+      if (!response.ok) throw new Error("test boundary failed");
+      const result = await response.json();
+      return validateBoundaryResult(plan, result);
+    } catch {
+      return boundaryFailure();
+    }
+  }
   const executor = resolve("cli/credential-boundary-attestor.mjs");
   const arguments_ = [
     executor,
@@ -19,6 +34,7 @@ export async function executeCredentialBoundary(
     plan.resource_identity,
     plan.owning_boundary,
     plan.verification_target,
+    plan.production_target_identity,
     plan.required_permission,
     plan.consumer_installation_identity,
     plan.execution_mode,
@@ -28,6 +44,9 @@ export async function executeCredentialBoundary(
     plan.old_issuer_credential_id,
     plan.replacement_issuer_credential_id,
     plan.management_credential_id,
+    plan.github_management_credential_id,
+    plan.github_management_credential_fingerprint,
+    plan.github_management_required_permission,
   ];
   const input = JSON.stringify({
     ...(secrets.old_secret === undefined
@@ -42,6 +61,12 @@ export async function executeCredentialBoundary(
           management_credential:
             secrets.management_credential,
         }),
+    ...(secrets.github_management_credential === undefined
+      ? {}
+      : {
+          github_management_credential:
+            secrets.github_management_credential,
+        }),
   });
   const result = await run(
     process.execPath,
@@ -49,13 +74,7 @@ export async function executeCredentialBoundary(
     input,
     environment,
   );
-  if (result.code !== 0) {
-    return {
-      ok: false,
-      code: "credential_boundary_operation_failed",
-      detail: "The owning credential boundary rejected the operation.",
-    };
-  }
+  if (result.code !== 0) return boundaryFailure();
   let document;
   try {
     document = JSON.parse(result.stdout);
@@ -67,6 +86,10 @@ export async function executeCredentialBoundary(
         "The owning credential boundary returned an invalid attestation.",
     };
   }
+  return validateBoundaryResult(plan, document);
+}
+
+function validateBoundaryResult(plan, document) {
   if (
     document?.ok !== true ||
     document.plan_id !== plan.id ||
@@ -84,6 +107,38 @@ export async function executeCredentialBoundary(
   return {
     ok: true,
     attestation: document.boundary_attestation,
+  };
+}
+
+function safeTestBoundary(environment) {
+  if (
+    environment.NODE_ENV !== "test" ||
+    environment.KEEPR_TEST_BOUNDARY_URL === undefined
+  ) {
+    return null;
+  }
+  try {
+    const url = new URL(environment.KEEPR_TEST_BOUNDARY_URL);
+    return url.protocol === "http:" &&
+      url.hostname === "127.0.0.1" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/credential-boundary" &&
+      url.search === "" &&
+      url.hash === "" &&
+      url.port !== ""
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function boundaryFailure() {
+  return {
+    ok: false,
+    code: "credential_boundary_operation_failed",
+    detail: "The owning credential boundary rejected the operation.",
   };
 }
 
