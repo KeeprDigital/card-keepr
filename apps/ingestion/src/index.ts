@@ -25,6 +25,11 @@ import {
   sourceSnapshotContent,
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
+import {
+  parseReconciliationRequest,
+  reconcileCardPrintings,
+  showReconciliationSourceObservation,
+} from "../../../src/catalogue/card-printing-reconciliation";
 import { resumeEvidenceRun } from "./evidence-administration";
 export {
   EvidenceHostWorkflow,
@@ -126,6 +131,36 @@ export default {
             requests: requiredSourceRequests(body, "requests"),
           }),
           { status: 201 },
+        );
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/reconciliation/card-printings"
+      ) {
+        const body = await readAdministrationBody(request);
+        const result = await reconcileCardPrintings(
+          env.CATALOGUE_DB,
+          parseReconciliationRequest(body),
+        );
+        return Response.json(result, {
+          status: result.publishable === true ? 200 : 409,
+        });
+      }
+
+      const reconciledSourceObservationMatch =
+        /^\/v1\/reconciliation\/source-observations\/([^/]+)$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "GET" &&
+        reconciledSourceObservationMatch !== null
+      ) {
+        return Response.json(
+          await showReconciliationSourceObservation(
+            env.CATALOGUE_DB,
+            decodeURIComponent(reconciledSourceObservationMatch[1]!),
+          ),
         );
       }
 
