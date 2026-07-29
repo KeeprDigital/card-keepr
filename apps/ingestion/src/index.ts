@@ -15,13 +15,17 @@ import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
   reparseSourceSnapshot,
-  resumeSourceCollection,
-  retrySourceCollection,
-  showSourceCollection,
+  resumeEvidenceRun,
+  retryEvidenceRun,
+  showEvidenceRun,
   sourceObservationSetContent,
   sourceSnapshotContent,
-  startSourceCollection,
+  startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
+export {
+  EvidenceHostWorkflow,
+  EvidenceIngestionWorkflow,
+} from "../../../src/catalogue/source-evidence-workflows";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -81,11 +85,11 @@ export default {
 
       if (
         request.method === "POST" &&
-        url.pathname === "/v1/source-collections"
+        url.pathname === "/v1/ingestion-runs/evidence"
       ) {
         const body = await readAdministrationBody(request);
         return Response.json(
-          await startSourceCollection(env.CATALOGUE_DB, {
+          await startEvidenceRun(env.CATALOGUE_DB, {
             supported_game: requiredString(body, "supported_game"),
             source_lineage: requiredString(body, "source_lineage"),
             adapter_version: requiredString(body, "adapter_version"),
@@ -96,32 +100,37 @@ export default {
         );
       }
 
-      const sourceCollectionResumeMatch =
-        /^\/v1\/source-collections\/([^/]+)\/resume$/.exec(url.pathname);
+      const evidenceResumeMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/collection\/resume$/.exec(
+          url.pathname,
+        );
       if (
         request.method === "POST" &&
-        sourceCollectionResumeMatch !== null
+        evidenceResumeMatch !== null
       ) {
         return Response.json(
-          await resumeSourceCollection(
+          await resumeEvidenceRun(
             env.CATALOGUE_DB,
-            env.EVIDENCE_OBJECTS,
-            decodeURIComponent(sourceCollectionResumeMatch[1]!),
+            env.EVIDENCE_INGESTION_WORKFLOW,
+            decodeURIComponent(evidenceResumeMatch[1]!),
           ),
+          { status: 202 },
         );
       }
 
-      const sourceCollectionRetryMatch =
-        /^\/v1\/source-collections\/([^/]+)\/retry$/.exec(url.pathname);
+      const evidenceRetryMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/collection\/retry$/.exec(
+          url.pathname,
+        );
       if (
         request.method === "POST" &&
-        sourceCollectionRetryMatch !== null
+        evidenceRetryMatch !== null
       ) {
         const body = await readAdministrationBody(request);
         return Response.json(
-          await retrySourceCollection(
+          await retryEvidenceRun(
             env.CATALOGUE_DB,
-            decodeURIComponent(sourceCollectionRetryMatch[1]!),
+            decodeURIComponent(evidenceRetryMatch[1]!),
             requiredString(body, "idempotency_key"),
           ),
           { status: 201 },
@@ -176,16 +185,16 @@ export default {
         );
       }
 
-      const sourceCollectionMatch =
-        /^\/v1\/source-collections\/([^/]+)$/.exec(url.pathname);
+      const evidenceMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/evidence$/.exec(url.pathname);
       if (
         request.method === "GET" &&
-        sourceCollectionMatch !== null
+        evidenceMatch !== null
       ) {
         return Response.json(
-          await showSourceCollection(
+          await showEvidenceRun(
             env.CATALOGUE_DB,
-            decodeURIComponent(sourceCollectionMatch[1]!),
+            decodeURIComponent(evidenceMatch[1]!),
           ),
         );
       }

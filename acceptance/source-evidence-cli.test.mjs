@@ -11,7 +11,7 @@ test("the repository CLI reports retained Official Source evidence", async (t) =
   const administrationKey = randomUUID();
   const collection = {
     id: "run_source_cli_001",
-    state: "succeeded",
+    state: "parsing",
     snapshots: [{ id: "srcsnap_cli_001" }],
     observation_sets: [{ id: "srcobsset_cli_001" }],
     diagnostics: [],
@@ -23,7 +23,7 @@ test("the repository CLI reports retained Official Source evidence", async (t) =
     );
     assert.equal(
       request.url,
-      "/v1/source-collections/run_source_cli_001",
+      "/v1/ingestion-runs/run_source_cli_001/evidence",
     );
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(collection));
@@ -55,7 +55,7 @@ test("the repository CLI reports retained Official Source evidence", async (t) =
   assert.equal(result.code, 0, result.stderr);
   assert.equal(
     result.stdout,
-    "Source Collection run_source_cli_001: succeeded; 1 Source Snapshot; 1 Source Observation set; 0 diagnostics\n",
+    "Ingestion Run run_source_cli_001 evidence: parsing; 1 Source Snapshot; 1 Source Observation set; 0 diagnostics\n",
   );
 });
 

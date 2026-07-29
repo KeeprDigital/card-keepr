@@ -33,13 +33,13 @@ async function main(arguments_, environment) {
     return collectSource(arguments_.slice(2), environment, json);
   }
   if (isCommand(arguments_, "source", "show")) {
-    return showSourceCollection(arguments_.slice(2), environment, json);
+    return showSourceEvidence(arguments_.slice(2), environment, json);
   }
   if (isCommand(arguments_, "source", "resume")) {
-    return resumeSourceCollection(arguments_.slice(2), environment, json);
+    return resumeEvidenceCollection(arguments_.slice(2), environment, json);
   }
   if (isCommand(arguments_, "source", "retry")) {
-    return retrySourceCollection(arguments_.slice(2), environment, json);
+    return retryEvidenceCollection(arguments_.slice(2), environment, json);
   }
   if (isCommand(arguments_, "snapshot", "reparse")) {
     return reparseSourceSnapshot(arguments_.slice(2), environment, json);
@@ -213,7 +213,7 @@ async function collectSource(arguments_, environment, json) {
   return administrationRequest(
     environment,
     json,
-    "/v1/source-collections",
+    "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: game,
@@ -225,7 +225,7 @@ async function collectSource(arguments_, environment, json) {
   );
 }
 
-async function showSourceCollection(arguments_, environment, json) {
+async function showSourceEvidence(arguments_, environment, json) {
   const options = parseOptions(arguments_, ["--run-id"]);
   const runId = options.values["--run-id"];
   if (options.error !== null || runId === undefined) {
@@ -234,12 +234,12 @@ async function showSourceCollection(arguments_, environment, json) {
   return administrationRequest(
     environment,
     json,
-    `/v1/source-collections/${encodeURIComponent(runId)}`,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`,
     "GET",
   );
 }
 
-async function resumeSourceCollection(arguments_, environment, json) {
+async function resumeEvidenceCollection(arguments_, environment, json) {
   const options = parseOptions(arguments_, ["--run-id"]);
   const runId = options.values["--run-id"];
   if (options.error !== null || runId === undefined) {
@@ -248,12 +248,12 @@ async function resumeSourceCollection(arguments_, environment, json) {
   return administrationRequest(
     environment,
     json,
-    `/v1/source-collections/${encodeURIComponent(runId)}/resume`,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/resume`,
     "POST",
   );
 }
 
-async function retrySourceCollection(arguments_, environment, json) {
+async function retryEvidenceCollection(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--run-id",
     "--idempotency-key",
@@ -270,7 +270,7 @@ async function retrySourceCollection(arguments_, environment, json) {
   return administrationRequest(
     environment,
     json,
-    `/v1/source-collections/${encodeURIComponent(runId)}/retry`,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/retry`,
     "POST",
     { idempotency_key: idempotencyKey },
   );
@@ -486,7 +486,7 @@ function formatAdministrationResult(document) {
     document.id
   ) {
     return [
-      `Source Collection ${document.id}: ${document.state}`,
+      `Ingestion Run ${document.id} evidence: ${document.state}`,
       formatCount(document.snapshots.length, "Source Snapshot"),
       formatCount(
         document.observation_sets.length,

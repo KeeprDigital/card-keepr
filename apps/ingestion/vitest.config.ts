@@ -63,6 +63,27 @@ export default defineConfig({
               headers: {
                 "content-type": "application/json",
                 etag: '"conditional-v1"',
+                vary: "accept-language",
+              },
+            });
+          }
+          if (url.pathname === "/retry-after-long") {
+            return new Response("temporarily unavailable", {
+              status: 503,
+              headers: { "retry-after": "120" },
+            });
+          }
+          if (url.pathname === "/large-json") {
+            return new Response(
+              JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          if (url.pathname === "/declared-too-large") {
+            return new Response("rejected before capture", {
+              headers: {
+                "content-length": String(32 * 1024 * 1024 + 1),
+                "content-type": "application/json",
               },
             });
           }

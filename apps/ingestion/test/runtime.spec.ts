@@ -16,6 +16,12 @@ beforeEach(async () => {
     env.CATALOGUE_DB,
     env.TEST_MIGRATIONS,
   );
+  // Workflow instances outlive a Vitest request isolate. Reset only the
+  // singleton lock so each test begins with an independent administration
+  // scenario; production never performs this test-only setup.
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+  ).run();
 });
 
 test("the administration authentication boundary runs in the Workers runtime", async () => {
@@ -35,12 +41,12 @@ test("the administration authentication boundary runs in the Workers runtime", a
 
 test("a successful Official Source response is snapshotted before parsing", async () => {
   const created = await administrationRequest(
-    "/v1/source-collections",
+    "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "json-document@1",
+      adapter_version: "one-piece-json-document@1",
       idempotency_key: "source_collection_success_001",
       requests: [
         {
@@ -56,13 +62,46 @@ test("a successful Official Source response is snapshotted before parsing", asyn
     state: string;
   }>();
   expect(planned.state).toBe("collecting");
+  const lifecycle = await administrationRequest(
+    `/v1/ingestion-runs/${planned.id}`,
+    "GET",
+  );
+  expect(lifecycle.status).toBe(200);
+  await expect(lifecycle.json()).resolves.toMatchObject({
+    id: planned.id,
+    state: "collecting",
+    selected_games: ["one-piece"],
+  });
 
   const resumed = await administrationRequest(
-    `/v1/source-collections/${planned.id}/resume`,
+    `/v1/ingestion-runs/${planned.id}/collection/resume`,
     "POST",
   );
-  expect(resumed.status).toBe(200);
-  const completed = await resumed.json<{
+  expect(resumed.status).toBe(202);
+  const accepted = await resumed.json<{
+    ingestion_run_id: string;
+    workflow: { id: string; status: string };
+  }>();
+  expect(accepted).toMatchObject({
+    ingestion_run_id: planned.id,
+    workflow: {
+      status: expect.stringMatching(/^(queued|running|waiting|complete)$/),
+    },
+  });
+  const replayedResume = await administrationRequest(
+    `/v1/ingestion-runs/${planned.id}/collection/resume`,
+    "POST",
+  );
+  expect(replayedResume.status).toBe(202);
+  await expect(replayedResume.json()).resolves.toMatchObject({
+    ingestion_run_id: planned.id,
+    workflow: { id: accepted.workflow.id },
+  });
+
+  const completed = await waitForEvidenceRun(
+    planned.id,
+    "parsing",
+  ) as unknown as {
     state: string;
     snapshots: {
       id: string;
@@ -88,9 +127,9 @@ test("a successful Official Source response is snapshotted before parsing", asyn
       object_key: string;
       observation_count: number;
     }[];
-  }>();
+  };
 
-  expect(completed.state).toBe("succeeded");
+  expect(completed.state).toBe("parsing");
   expect(completed.snapshots).toHaveLength(1);
   const snapshot = completed.snapshots[0];
   if (snapshot === undefined) throw new Error("missing Source Snapshot");
@@ -106,7 +145,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
         etag: '"cards-v1"',
       },
     },
-    adapter_version: "json-document@1",
+    adapter_version: "one-piece-json-document@1",
     ingestion_run_id: planned.id,
   });
   expect(snapshot.content).toMatchObject({
@@ -115,8 +154,8 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   expect(snapshot.content.digest).toMatch(
     /^[a-f0-9]{64}$/,
   );
-  expect(snapshot.content.object_key).toBe(
-    `source-snapshots/sha256/${snapshot.content.digest}`,
+  expect(snapshot.content.object_key).toMatch(
+    /^source-snapshots\/srcsnap_[A-Za-z0-9-]+\.bin$/,
   );
 
   expect(completed.observation_sets).toHaveLength(1);
@@ -126,7 +165,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }
   expect(observationSet).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "json-document@1",
+    adapter_version: "one-piece-json-document@1",
     observation_count: 1,
   });
   expect(observationSet.content_digest).toMatch(
@@ -160,12 +199,12 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }>();
   expect(observationDocument).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "json-document@1",
+    adapter_version: "one-piece-json-document@1",
   });
   expect(observationDocument.observations).toHaveLength(1);
 
   const shown = await administrationRequest(
-    `/v1/source-collections/${planned.id}`,
+    `/v1/ingestion-runs/${planned.id}/evidence`,
     "GET",
   );
   expect(shown.status).toBe(200);
@@ -178,11 +217,15 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     "https://official-source.invalid/redirect",
   );
   const rejectedResponse = await administrationRequest(
-    `/v1/source-collections/${redirectRun.id}/resume`,
+    `/v1/ingestion-runs/${redirectRun.id}/collection/resume`,
     "POST",
   );
-  expect(rejectedResponse.status).toBe(200);
-  const rejected = await rejectedResponse.json<CollectionDocument>();
+  expect(rejectedResponse.status).toBe(202);
+  await rejectedResponse.body?.cancel();
+  const rejected = await waitForEvidenceRun(
+    redirectRun.id,
+    "failed",
+  ) as CollectionDocument;
   expect(rejected).toMatchObject({
     state: "failed",
     failure_code: "source_redirect_rejected",
@@ -200,11 +243,16 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     "https://failed-official-source.invalid/unavailable",
   );
   const failedResponse = await administrationRequest(
-    `/v1/source-collections/${failedRun.id}/resume`,
+    `/v1/ingestion-runs/${failedRun.id}/collection/resume`,
     "POST",
   );
-  expect(failedResponse.status).toBe(200);
-  const failed = await failedResponse.json<CollectionDocument>();
+  expect(failedResponse.status).toBe(202);
+  await failedResponse.body?.cancel();
+  const failed = await waitForEvidenceRun(
+    failedRun.id,
+    "failed",
+    12_000,
+  ) as CollectionDocument;
   expect(failed).toMatchObject({
     state: "failed",
     failure_code: "source_request_retries_exhausted",
@@ -246,7 +294,7 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
   ]);
 
   const retriedResponse = await administrationRequest(
-    `/v1/source-collections/${failed.id}/retry`,
+    `/v1/ingestion-runs/${failed.id}/collection/retry`,
     "POST",
     { idempotency_key: "source_collection_failed_retry_001" },
   );
@@ -279,12 +327,12 @@ test(
       },
     ]) {
       const response = await administrationRequest(
-        "/v1/source-collections",
+        "/v1/ingestion-runs/evidence",
         "POST",
         {
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "json-document@1",
+          adapter_version: "one-piece-json-document@1",
           idempotency_key: scenario.key,
           requests: [
             {
@@ -340,20 +388,41 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const firstRun = await createCollection(
     "source_collection_cache_first_001",
     "https://official-source.invalid/conditional",
+    "one-piece-json-document@1",
+    { "accept-language": "en" },
   );
   const first = await resumeCollection(firstRun.id);
   const firstSnapshot = first.snapshots[0];
   if (firstSnapshot === undefined) throw new Error("missing first snapshot");
+  await releaseActiveRunForNextScenario();
+
+  const differentRepresentationRun = await createCollection(
+    "source_collection_cache_language_changed_001",
+    "https://official-source.invalid/conditional",
+    "one-piece-json-document@1",
+    { "accept-language": "fr" },
+  );
+  const differentRepresentation = await resumeCollection(
+    differentRepresentationRun.id,
+  );
+  expect(differentRepresentation.snapshots[0]).toMatchObject({
+    http: { status: 200 },
+    reused_source_snapshot_id: null,
+  });
+  await releaseActiveRunForNextScenario();
 
   const revalidatedRun = await createCollection(
     "source_collection_cache_second_001",
     "https://official-source.invalid/conditional",
+    "one-piece-json-document@1",
+    { "accept-language": "en" },
   );
   const revalidated = await resumeCollection(revalidatedRun.id);
   const revalidatedSnapshot = revalidated.snapshots[0];
   if (revalidatedSnapshot === undefined) {
     throw new Error("missing revalidated snapshot");
   }
+  await releaseActiveRunForNextScenario();
   expect(revalidatedSnapshot).toMatchObject({
     http: { status: 304 },
     reused_source_snapshot_id: firstSnapshot.id,
@@ -370,7 +439,8 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const changedAdapterRun = await createCollection(
     "source_collection_cache_adapter_changed_001",
     "https://official-source.invalid/conditional",
-    "json-document@2",
+    "one-piece-json-document@2",
+    { "accept-language": "en" },
   );
   const changedAdapter = await resumeCollection(changedAdapterRun.id);
   const changedAdapterSnapshot = changedAdapter.snapshots[0];
@@ -379,6 +449,90 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   }
   expect(changedAdapterSnapshot.http.status).toBe(200);
   expect(changedAdapterSnapshot.reused_source_snapshot_id).toBeNull();
+}, 12_000);
+
+test("Retry-After is audited without shortening the Official Source deadline", async () => {
+  const run = await createCollection(
+    "source_retry_after_long_001",
+    "https://retry-after-official-source.invalid/retry-after-long",
+  );
+  const accepted = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(accepted.status).toBe(202);
+  await accepted.body?.cancel();
+  const waiting = await waitForEvidenceDiagnostic(run.id);
+  expect(waiting).toMatchObject({
+    state: "collecting",
+    diagnostics: [
+      {
+        attempt_number: 1,
+        outcome: "http_failure",
+        http_status: 503,
+        retry_after_ms: 120_000,
+      },
+    ],
+  });
+  const childWorkflowId = waiting.workflow.child_ids[0];
+  if (childWorkflowId === undefined) {
+    throw new Error("missing hostname Workflow identity");
+  }
+  const childWorkflow = await env.EVIDENCE_HOST_WORKFLOW.get(childWorkflowId);
+  await childWorkflow.terminate();
+  disposeRpcHandle(childWorkflow);
+});
+
+test("adapter versions are bound to one Supported Game, Game Profile, and source lineage", async () => {
+  const mismatched = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "unrelated-source",
+      adapter_version: "one-piece-json-document@1",
+      idempotency_key: "source_adapter_mismatch_001",
+      requests: [
+        {
+          id: "cards",
+          url: "https://official-source.invalid/cards",
+        },
+      ],
+    },
+  );
+  expect(mismatched.status).toBe(422);
+  await expect(mismatched.json()).resolves.toMatchObject({
+    code: "adapter_binding_mismatch",
+  });
+});
+
+test("large exact responses stream to immutable storage but parsing stays bounded", async () => {
+  const retainedRun = await createCollection(
+    "source_large_parse_bound_001",
+    "https://large-official-source.invalid/large-json",
+  );
+  const retained = await resumeCollection(retainedRun.id);
+  expect(retained).toMatchObject({
+    state: "failed",
+    failure_code: "source_parse_too_large",
+  });
+  expect(retained.snapshots).toHaveLength(1);
+  expect(retained.snapshots[0]!.content.digest).toMatch(/^[a-f0-9]{64}$/);
+  expect(retained.snapshots[0]!.content.byte_length).toBeGreaterThan(
+    1024 * 1024,
+  );
+  expect(retained.observation_sets).toEqual([]);
+
+  const rejectedRun = await createCollection(
+    "source_capture_bound_001",
+    "https://large-official-source.invalid/declared-too-large",
+  );
+  const rejected = await resumeCollection(rejectedRun.id);
+  expect(rejected).toMatchObject({
+    state: "failed",
+    failure_code: "source_response_too_large",
+    snapshots: [],
+  });
 });
 
 test("reparsing appends an immutable observation set tied to the exact Source Snapshot", async () => {
@@ -396,13 +550,13 @@ test("reparsing appends an immutable observation set tied to the exact Source Sn
   const reparseResponse = await administrationRequest(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
-    { adapter_version: "json-document@2" },
+    { adapter_version: "one-piece-json-document@2" },
   );
   expect(reparseResponse.status).toBe(201);
   const reparsed = await reparseResponse.json<ObservationSet>();
   expect(reparsed).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "json-document@2",
+    adapter_version: "one-piece-json-document@2",
     observation_count: 1,
   });
   expect(reparsed.id).not.toBe(originalSet.id);
@@ -416,12 +570,12 @@ test("reparsing appends an immutable observation set tied to the exact Source Sn
 
 test("collection is sequential per hostname and different hostnames progress concurrently", async () => {
   const response = await administrationRequest(
-    "/v1/source-collections",
+    "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "json-document@1",
+      adapter_version: "one-piece-json-document@1",
       idempotency_key: "source_collection_pacing_001",
       requests: [
         {
@@ -445,7 +599,7 @@ test("collection is sequential per hostname and different hostnames progress con
   );
   const run = await response.json<{ id: string }>();
   const completed = await resumeCollection(run.id);
-  expect(completed.state).toBe("succeeded");
+  expect(completed.state).toBe("parsing");
   const attempts = Object.fromEntries(
     completed.diagnostics.map((attempt) => [
       attempt.request_id,
@@ -486,7 +640,7 @@ function administrationRequest(
 type Snapshot = {
   id: string;
   http: { status: number };
-  content: { digest: string; object_key: string };
+  content: { digest: string; object_key: string; byte_length: number };
   reused_source_snapshot_id: string | null;
 };
 
@@ -515,44 +669,101 @@ type CollectionDocument = {
   snapshots: Snapshot[];
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];
+  workflow: { parent_id: string | null; child_ids: string[] };
 };
 
 async function createCollection(
   idempotencyKey: string,
   url: string,
-  adapterVersion = "json-document@1",
+  adapterVersion = "one-piece-json-document@1",
+  headers: Record<string, string> = {},
 ): Promise<CollectionDocument> {
   const response = await administrationRequest(
-    "/v1/source-collections",
+    "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
       adapter_version: adapterVersion,
       idempotency_key: idempotencyKey,
-      requests: [{ id: "required-source", url }],
+      requests: [{ id: "required-source", url, headers }],
     },
   );
   expect(response.status).toBe(201);
   return response.json<CollectionDocument>();
 }
 
+async function waitForEvidenceDiagnostic(
+  runId: string,
+  timeoutMs = 2_000,
+): Promise<CollectionDocument> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const current = await showCollection(runId);
+    if (current.diagnostics.length > 0) return current;
+    if (Date.now() >= deadline) {
+      throw new Error(`Ingestion Run ${runId} did not record a diagnostic`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 async function resumeCollection(
   runId: string,
 ): Promise<CollectionDocument> {
   const response = await administrationRequest(
-    `/v1/source-collections/${runId}/resume`,
+    `/v1/ingestion-runs/${runId}/collection/resume`,
     "POST",
   );
-  expect(response.status).toBe(200);
-  return response.json<CollectionDocument>();
+  expect(response.status).toBe(202);
+  await response.body?.cancel();
+  return waitForEvidenceRun(runId);
+}
+
+async function waitForEvidenceRun(
+  runId: string,
+  expectedState: "parsing" | "failed" | null = null,
+  timeoutMs = 8_000,
+): Promise<CollectionDocument> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const current = await showCollection(runId);
+    if (
+      expectedState === null
+        ? current.state === "parsing" || current.state === "failed"
+        : current.state === expectedState
+    ) {
+      return current;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Ingestion Run ${runId} did not reach ${expectedState ?? "a terminal collection-phase state"}; current state is ${current.state}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function releaseActiveRunForNextScenario(): Promise<D1Result<unknown>> {
+  return env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+  ).run();
+}
+
+function disposeRpcHandle(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Record<PropertyKey, unknown>;
+  const dispose = (Symbol as unknown as { dispose?: symbol }).dispose;
+  const candidate =
+    (dispose === undefined ? undefined : record[dispose]) ?? record.dispose;
+  if (typeof candidate === "function") candidate.call(value);
 }
 
 async function showCollection(
   runId: string,
 ): Promise<CollectionDocument> {
   const response = await administrationRequest(
-    `/v1/source-collections/${runId}`,
+    `/v1/ingestion-runs/${runId}/evidence`,
     "GET",
   );
   expect(response.status).toBe(200);
