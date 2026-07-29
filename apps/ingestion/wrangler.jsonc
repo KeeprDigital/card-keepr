@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ADMINISTRATION_CLOCK_MODE": "system"
+  },
   "placement": {
     "mode": "smart"
   },

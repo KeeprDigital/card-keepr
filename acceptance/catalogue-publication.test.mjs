@@ -46,9 +46,13 @@ test("the owner publishes the first fixture Catalogue Revision through the black
   const ingestionEnv = join(testDirectory, "ingestion.env");
   await Promise.all([
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
-    writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, {
-      mode: 0o600,
-    }),
+    writeFile(
+      ingestionEnv,
+      `ADMINISTRATION_KEY=${administrationKey}\nADMINISTRATION_CLOCK_MODE=request\n`,
+      {
+        mode: 0o600,
+      },
+    ),
   ]);
   await applyMigrations(statePath);
 
@@ -416,7 +420,6 @@ test("the owner publishes the first fixture Catalogue Revision through the black
   assert.equal(expiringStart.code, 0, expiringStart.stderr);
   const expiringRun = JSON.parse(expiringStart.stdout);
   await stopWorker(ingestion);
-  await setApprovalDeadlineInPast(statePath, expiringRun.id);
 
   ingestion = startWorker({
     config: "apps/ingestion/wrangler.jsonc",
@@ -433,7 +436,10 @@ test("the owner publishes the first fixture Catalogue Revision through the black
   );
   const expiredShow = await runCli(
     ["run", "show", "--run-id", expiringRun.id, "--json"],
-    cliEnvironment,
+    {
+      ...cliEnvironment,
+      KEEPR_TEST_NOW: expiringRun.approval_deadline,
+    },
   );
   assert.equal(expiredShow.code, 0, expiredShow.stderr);
   assert.equal(JSON.parse(expiredShow.stdout).state, "expired");
@@ -487,31 +493,6 @@ function applyMigrations(statePath) {
       "apps/ingestion/wrangler.jsonc",
       "--persist-to",
       statePath,
-    ],
-    {
-      ...processEnvWithoutSecrets(),
-      CI: "1",
-      WRANGLER_LOG_PATH: join(statePath, "logs"),
-    },
-  ).then((result) => {
-    assert.equal(result.code, 0, result.stderr || result.stdout);
-  });
-}
-
-function setApprovalDeadlineInPast(statePath, runId) {
-  return runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "execute",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      "apps/ingestion/wrangler.jsonc",
-      "--persist-to",
-      statePath,
-      "--command",
-      `UPDATE ingestion_runs SET approval_deadline = '1970-01-01T00:00:00.000Z' WHERE id = '${runId}'`,
     ],
     {
       ...processEnvWithoutSecrets(),
