@@ -8,6 +8,7 @@ import { defineConfig } from "vitest/config";
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
+const outboundRequestCounts = new Map<string, number>();
 
 export default defineConfig({
   plugins: [
@@ -72,6 +73,21 @@ export default defineConfig({
               status: 503,
               headers: { "retry-after": "120" },
             });
+          }
+          if (url.pathname === "/retry-once") {
+            const key = `${url.hostname}${url.pathname}`;
+            const count = (outboundRequestCounts.get(key) ?? 0) + 1;
+            outboundRequestCounts.set(key, count);
+            if (count === 1) {
+              return new Response("temporarily unavailable", {
+                status: 503,
+                headers: { "retry-after": "2" },
+              });
+            }
+            return new Response(
+              '{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}',
+              { headers: { "content-type": "application/json" } },
+            );
           }
           if (url.pathname === "/large-json") {
             return new Response(

@@ -13,9 +13,10 @@ import {
   type CaptureTransportResult,
   type PreparedCaptureAttempt,
 } from "../../../src/catalogue/source-evidence-capture";
-import type {
-  EvidenceHostWorkflowParams,
-  EvidenceParentWorkflowParams,
+import {
+  parseEvidencePlan,
+  type EvidenceHostWorkflowParams,
+  type EvidenceParentWorkflowParams,
 } from "../../../src/catalogue/source-evidence-model";
 import {
   finalizeEvidenceRun,
@@ -23,6 +24,7 @@ import {
   recordWorkflowIds,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
+import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -43,23 +45,44 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
     step: WorkflowStep,
   ): Promise<unknown> {
     const runId = event.payload.ingestion_run_id;
-    const hostnames = await step.do(
+    const hostShards = await step.do(
       "load Official Source host shards",
       deterministicDatabaseStep,
       async () => {
         const run = await requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
-        if (run.state !== "collecting") return [];
+        if (run.state !== "collecting") {
+          return { allHostnames: [], pendingHostnames: [] };
+        }
         const requests = await pendingEvidenceRequests(
           this.env.CATALOGUE_DB,
           runId,
         );
-        return [
-          ...new Set(requests.map((request) => new URL(request.url).hostname)),
-        ].sort();
+        return {
+          allHostnames: [
+            ...new Set(
+              parseEvidencePlan(run.request_plan_json).requests.map(
+                (request) => new URL(request.url).hostname,
+              ),
+            ),
+          ].sort(),
+          pendingHostnames: [
+            ...new Set(
+              requests.map((request) => new URL(request.url).hostname),
+            ),
+          ].sort(),
+        };
       },
     );
-    const childIds = hostnames.map(
-      (_, index) => `${event.instanceId}-host-${index + 1}`,
+    const allChildIds = await Promise.all(
+      hostShards.allHostnames.map((hostname) =>
+        evidenceHostWorkflowId(runId, hostname),
+      ),
+    );
+    const pendingChildren = await Promise.all(
+      hostShards.pendingHostnames.map(async (hostname) => ({
+        hostname,
+        id: await evidenceHostWorkflowId(runId, hostname),
+      })),
     );
     await step.do(
       "record hostname Workflow identities",
@@ -69,24 +92,29 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
           this.env.CATALOGUE_DB,
           runId,
           event.instanceId,
-          childIds,
+          allChildIds,
         );
-        return childIds;
+        return allChildIds;
       },
     );
-    if (hostnames.length > 0) {
+    if (pendingChildren.length > 0) {
       await step.do(
         "start dynamically sharded hostname workflows",
         deterministicDatabaseStep,
         async () => {
           await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
-            hostnames.map((hostname, index) => ({
-              id: childIds[index]!,
-              params: { ingestion_run_id: runId, hostname },
+            pendingChildren.map((child) => ({
+              id: child.id,
+              params: {
+                ingestion_run_id: runId,
+                hostname: child.hostname,
+              },
             })),
           );
           const children = await Promise.all(
-            childIds.map((id) => this.env.EVIDENCE_HOST_WORKFLOW.get(id)),
+            pendingChildren.map((child) =>
+              this.env.EVIDENCE_HOST_WORKFLOW.get(child.id),
+            ),
           );
           for (const child of children) {
             const status = await child.status();
@@ -99,7 +127,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
               await child.resume();
             }
           }
-          return childIds;
+          return pendingChildren.map((child) => child.id);
         },
       );
     } else {
@@ -109,8 +137,23 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         () => finalizeEvidenceRun(this.env.CATALOGUE_DB, runId),
       );
     }
-    return { ingestion_run_id: runId, child_workflow_ids: childIds };
+    return { ingestion_run_id: runId, child_workflow_ids: allChildIds };
   }
+}
+
+async function evidenceHostWorkflowId(
+  runId: string,
+  hostname: string,
+): Promise<string> {
+  const digest = await sha256(
+    utf8(
+      canonicalJson({
+        ingestion_run_id: runId,
+        hostname,
+      }),
+    ),
+  );
+  return `evidence-host-${digest}`;
 }
 
 export class EvidenceHostWorkflow extends WorkflowEntrypoint<

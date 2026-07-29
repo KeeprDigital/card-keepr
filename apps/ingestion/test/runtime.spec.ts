@@ -213,8 +213,12 @@ test("resuming collection restarts an existing errored hostname Workflow and its
   );
   expect(accepted.status).toBe(202);
   await accepted.body?.cancel();
-  const childId = `evidence-${run.id}-host-1`;
   const staged = await waitForParseOperation(run.id, "uploaded");
+  const collecting = await showCollection(run.id);
+  const childId = collecting.workflow.child_ids[0];
+  if (childId === undefined) {
+    throw new Error("missing hostname Workflow identity");
+  }
   await waitForWorkflowStatus(
     childId,
     async () =>
@@ -231,6 +235,71 @@ test("resuming collection restarts an existing errored hostname Workflow and its
   expect(completed.state).toBe("parsing");
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.observation_sets).toHaveLength(1);
+}, 15_000);
+
+test("a full parent restart preserves each pending hostname child identity", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-json-document@1",
+      idempotency_key: "source_stable_hostname_mapping_001",
+      requests: [
+        {
+          id: "completed-host",
+          url: "https://mapping-a-official-source.invalid/cards",
+        },
+        {
+          id: "remaining-host",
+          url: "https://mapping-z-official-source.invalid/retry-once",
+        },
+      ],
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const accepted = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(accepted.status).toBe(202);
+  await accepted.body?.cancel();
+  const interrupted = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.snapshots.length === 1 &&
+      current.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.request_id === "remaining-host" &&
+          diagnostic.outcome === "http_failure",
+      ),
+  );
+  expect(interrupted.workflow.child_ids).toHaveLength(2);
+  const originalChildIds = interrupted.workflow.child_ids;
+  const remainingChildId = originalChildIds[1];
+  if (remainingChildId === undefined) {
+    throw new Error("missing remaining hostname Workflow identity");
+  }
+  const remainingChild =
+    await env.EVIDENCE_HOST_WORKFLOW.get(remainingChildId);
+  await remainingChild.terminate();
+  const parentId = interrupted.workflow.parent_id;
+  if (parentId === null) throw new Error("missing parent Workflow identity");
+  await waitForWorkflowStatus(
+    parentId,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    "complete",
+  );
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId);
+  await parent.restart();
+
+  const completed = await waitForEvidenceRun(run.id, "parsing", 12_000);
+  expect(completed.workflow.child_ids).toEqual(originalChildIds);
+  expect(completed.snapshots).toHaveLength(2);
+  expect(completed.observation_sets).toHaveLength(2);
 }, 15_000);
 
 test("redirects and terminal HTTP failures remain diagnostics without Source Snapshots", async () => {
@@ -1041,6 +1110,22 @@ async function waitForEvidenceDiagnostic(
     if (current.diagnostics.length > 0) return current;
     if (Date.now() >= deadline) {
       throw new Error(`Ingestion Run ${runId} did not record a diagnostic`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function waitForEvidenceCondition(
+  runId: string,
+  condition: (current: CollectionDocument) => boolean,
+  timeoutMs = 8_000,
+): Promise<CollectionDocument> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const current = await showCollection(runId);
+    if (condition(current)) return current;
+    if (Date.now() >= deadline) {
+      throw new Error(`Ingestion Run ${runId} did not reach test condition`);
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
