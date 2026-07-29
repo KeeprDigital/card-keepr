@@ -112,6 +112,12 @@ type IdempotencyContext = {
   observedAt: string;
 };
 
+type IdempotencyClaimRow = {
+  operation: string;
+  request_json: string;
+  claimed_at: string;
+};
+
 export type StartRunRequest = {
   fixture: string;
   selected_games: readonly string[];
@@ -143,11 +149,6 @@ export async function startFixtureRun(
   request: StartRunRequest,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await reconcileAbandonedPublication(
-    database,
-    catalogueExports,
-    observedAt,
-  );
   assertOpaqueId(request.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({
     fixture: request.fixture,
@@ -162,6 +163,12 @@ export async function startFixtureRun(
       observedAt,
     },
     async () => {
+      await expireOverdueRuns(database, observedAt);
+      await reconcileAbandonedPublication(
+        database,
+        catalogueExports,
+        observedAt,
+      );
       const candidate = await validatedFixtureCandidate(request);
       return startPreparedRun(database, {
         candidate: candidate.candidate,
@@ -183,11 +190,6 @@ export async function retryRun(
   request: RetryRunRequest,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await reconcileAbandonedPublication(
-    database,
-    catalogueExports,
-    observedAt,
-  );
   assertOpaqueId(sourceRunId, "run_id");
   assertOpaqueId(request.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({ source_run_id: sourceRunId });
@@ -201,6 +203,11 @@ export async function retryRun(
     },
     async () => {
       await expireOverdueRuns(database, observedAt);
+      await reconcileAbandonedPublication(
+        database,
+        catalogueExports,
+        observedAt,
+      );
       const source = await requiredRun(database, sourceRunId);
       if (!terminalRunStates.has(source.state)) {
         throw new AdministrationProblem(
@@ -233,11 +240,6 @@ export async function retryPublicationCleanup(
   request: RetryPublicationCleanupRequest,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await reconcileAbandonedPublication(
-    database,
-    catalogueExports,
-    observedAt,
-  );
   assertOpaqueId(runId, "run_id");
   assertOpaqueId(request.idempotency_key, "idempotency_key");
   const requestJson = canonicalJson({ run_id: runId });
@@ -250,6 +252,12 @@ export async function retryPublicationCleanup(
       observedAt,
     },
     async () => {
+      await expireOverdueRuns(database, observedAt);
+      await reconcileAbandonedPublication(
+        database,
+        catalogueExports,
+        observedAt,
+      );
       const result = await attemptPublicationCleanup(
         database,
         catalogueExports,
@@ -276,13 +284,13 @@ export async function showRun(
   runId: string,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
+  await expireOverdueRuns(database, observedAt);
   await reconcileAbandonedPublication(
     database,
     catalogueExports,
     observedAt,
   );
   assertOpaqueId(runId, "run_id");
-  await expireOverdueRuns(database, observedAt);
   const run = await requiredRun(database, runId);
   return publicRun(run, await publicationCleanup(database, run.id));
 }
@@ -292,12 +300,12 @@ export async function administrationStatus(
   catalogueExports: R2Bucket,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
+  await expireOverdueRuns(database, observedAt);
   await reconcileAbandonedPublication(
     database,
     catalogueExports,
     observedAt,
   );
-  await expireOverdueRuns(database, observedAt);
   const [
     catalogue,
     operation,
@@ -390,13 +398,13 @@ export async function inspectCandidate(
   runId: string,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
+  await expireOverdueRuns(database, observedAt);
   await reconcileAbandonedPublication(
     database,
     catalogueExports,
     observedAt,
   );
   assertOpaqueId(runId, "run_id");
-  await expireOverdueRuns(database, observedAt);
   const row = await requiredRun(database, runId);
   if (row.state !== "awaiting_approval") {
     throw new AdministrationProblem(
@@ -442,11 +450,6 @@ export async function approveRun(
   request: ApproveRunRequest,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await reconcileAbandonedPublication(
-    database,
-    catalogueExports,
-    observedAt,
-  );
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
   assertOpaqueId(
@@ -468,15 +471,22 @@ export async function approveRun(
       requestJson,
       observedAt,
     },
-    () =>
-      approveRunAttempt(
+    async () => {
+      await expireOverdueRuns(database, observedAt);
+      await reconcileAbandonedPublication(
+        database,
+        catalogueExports,
+        observedAt,
+      );
+      return approveRunAttempt(
         database,
         catalogueExports,
         runId,
         request,
         requestJson,
         observedAt,
-      ),
+      );
+    },
   );
 }
 
@@ -649,11 +659,6 @@ export async function rejectRun(
   request: RejectRunRequest,
   observedAt = new Date().toISOString(),
 ): Promise<Record<string, unknown>> {
-  await reconcileAbandonedPublication(
-    database,
-    catalogueExports,
-    observedAt,
-  );
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
   assertOpaqueId(request.idempotency_key, "idempotency_key");
@@ -669,14 +674,21 @@ export async function rejectRun(
       requestJson,
       observedAt,
     },
-    () =>
-      rejectRunAttempt(
+    async () => {
+      await expireOverdueRuns(database, observedAt);
+      await reconcileAbandonedPublication(
+        database,
+        catalogueExports,
+        observedAt,
+      );
+      return rejectRunAttempt(
         database,
         runId,
         request,
         requestJson,
         observedAt,
-      ),
+      );
+    },
   );
 }
 
@@ -741,7 +753,7 @@ async function rejectRunAttempt(
           run.id,
         ),
       releaseRunLockStatement(database, run.id),
-      idempotencyInsertStatement(database, {
+      ...idempotencyCompletionStatements(database, {
         key: request.idempotency_key,
         operation: "reject_ingestion_run",
         requestJson,
@@ -924,7 +936,7 @@ async function startPreparedRun(
           JSON.stringify(progressFor("awaiting_approval")),
           runId,
         ),
-      idempotencyInsertStatement(database, {
+      ...idempotencyCompletionStatements(database, {
         key: input.idempotencyKey,
         operation: input.idempotencyOperation,
         requestJson: input.idempotencyRequestJson,
@@ -1039,7 +1051,7 @@ async function publishNoChange(
           run.id,
         ),
       releaseRunLockStatement(database, run.id),
-      idempotencyInsertStatement(database, {
+      ...idempotencyCompletionStatements(database, {
         key: request.idempotency_key,
         operation: "approve_ingestion_run",
         requestJson,
@@ -1577,7 +1589,7 @@ async function commitVerifiedPublication(
         input.run.id,
       ),
     releaseRunLockStatement(database, input.run.id),
-    idempotencyInsertStatement(database, {
+    ...idempotencyCompletionStatements(database, {
       key: idempotencyKey,
       operation: "approve_ingestion_run",
       requestJson: input.requestJson,
@@ -1883,6 +1895,11 @@ async function failReservedPublication(
         problem.status,
         terminalAt,
       ),
+    administrationClaimDeleteStatement(database, {
+      key,
+      operation: "approve_ingestion_run",
+      requestJson,
+    }),
     database
       .prepare(
         `INSERT INTO ingestion_publication_cleanup (
@@ -2024,6 +2041,15 @@ async function attemptPublicationCleanup(
     )
     .first<PublicationCleanupRow>();
   if (claimed === null) {
+    if (idempotency !== undefined) {
+      const completed = await replayAdministration(
+        database,
+        idempotency.key,
+        "retry_publication_cleanup",
+        idempotency.requestJson,
+      );
+      if (completed !== null) return completed;
+    }
     cleanup = await requiredPublicationCleanup(database, runId);
     const operation = activeCleanupOperation(
       cleanup,
@@ -2078,16 +2104,14 @@ async function attemptPublicationCleanup(
       ),
       ...(idempotency === undefined
         ? []
-        : [
-            idempotencyInsertStatement(database, {
+        : idempotencyCompletionStatements(database, {
               key: idempotency.key,
               operation: "retry_publication_cleanup",
               requestJson: idempotency.requestJson,
               response: result,
               status: 200,
               createdAt: observedAt,
-            }),
-          ]),
+            })),
     ]);
     return result;
   } catch {
@@ -2524,36 +2548,78 @@ async function idempotentAdministration(
     context.requestJson,
   );
   if (replay !== null) return replay;
+  const claimed = await claimAdministration(database, context);
+  if (!claimed) {
+    const concurrentReplay = await replayAdministration(
+      database,
+      context.key,
+      context.operation,
+      context.requestJson,
+    );
+    if (concurrentReplay !== null) return concurrentReplay;
+    const priorClaim = await administrationClaim(
+      database,
+      context.key,
+    );
+    if (priorClaim === null) {
+      throw new Error(
+        "The administration idempotency claim changed without an outcome.",
+      );
+    }
+    if (
+      priorClaim.operation !== context.operation ||
+      priorClaim.request_json !== context.requestJson
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different administration request.",
+      );
+    }
+    return pendingAdministrationOperation(context, priorClaim);
+  }
   try {
-    return await operation();
+    const result = await operation();
+    return isAdministrationInProgress(result)
+      ? pendingAdministrationOperation(context, {
+          operation: context.operation,
+          request_json: context.requestJson,
+          claimed_at: context.observedAt,
+        })
+      : result;
   } catch (error) {
     if (!(error instanceof AdministrationProblem)) throw error;
-    if (!error.persistOutcome) throw error;
+    if (!error.persistOutcome) {
+      await releaseAdministrationClaim(database, context);
+      throw error;
+    }
     try {
-      await database
-        .prepare(
-          `INSERT INTO administration_idempotency (
-            idempotency_key,
-            operation,
-            request_json,
-            response_json,
-            http_status,
-            outcome,
-            created_at
-          ) VALUES (?, ?, ?, ?, ?, 'problem', ?)`,
-        )
-        .bind(
-          context.key,
-          context.operation,
-          context.requestJson,
-          canonicalJson({
-            code: error.code,
-            detail: error.message,
-          }),
-          error.status,
-          context.observedAt,
-        )
-        .run();
+      await database.batch([
+        database
+          .prepare(
+            `INSERT INTO administration_idempotency (
+              idempotency_key,
+              operation,
+              request_json,
+              response_json,
+              http_status,
+              outcome,
+              created_at
+            ) VALUES (?, ?, ?, ?, ?, 'problem', ?)`,
+          )
+          .bind(
+            context.key,
+            context.operation,
+            context.requestJson,
+            canonicalJson({
+              code: error.code,
+              detail: error.message,
+            }),
+            error.status,
+            context.observedAt,
+          ),
+        administrationClaimDeleteStatement(database, context),
+      ]);
     } catch (persistError) {
       if (
         !errorMessage(persistError).includes(
@@ -2572,6 +2638,119 @@ async function idempotentAdministration(
     }
     throw error;
   }
+}
+
+function isAdministrationInProgress(
+  value: Record<string, unknown>,
+): boolean {
+  return (
+    value.contract === "card-keepr-administration-operation@1" &&
+    value.status === "in_progress"
+  );
+}
+
+async function claimAdministration(
+  database: D1Database,
+  context: IdempotencyContext,
+): Promise<boolean> {
+  try {
+    await database
+      .prepare(
+        `INSERT INTO administration_idempotency_claims (
+          idempotency_key,
+          operation,
+          request_json,
+          claimed_at
+        ) VALUES (?, ?, ?, ?)`,
+      )
+      .bind(
+        context.key,
+        context.operation,
+        context.requestJson,
+        context.observedAt,
+      )
+      .run();
+    return true;
+  } catch (error) {
+    if (
+      errorMessage(error).includes(
+        "administration_idempotency_claims.idempotency_key",
+      ) ||
+      errorMessage(error).includes(
+        "administration_idempotency_completed",
+      )
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function administrationClaim(
+  database: D1Database,
+  key: string,
+): Promise<IdempotencyClaimRow | null> {
+  return database
+    .prepare(
+      `SELECT operation, request_json, claimed_at
+      FROM administration_idempotency_claims
+      WHERE idempotency_key = ?`,
+    )
+    .bind(key)
+    .first<IdempotencyClaimRow>();
+}
+
+function pendingAdministrationOperation(
+  context: IdempotencyContext,
+  claim: IdempotencyClaimRow,
+): Record<string, unknown> {
+  const request = parseJson(
+    context.requestJson,
+    "Administration idempotency claim request",
+  );
+  const runId =
+    isRecord(request) && typeof request.run_id === "string"
+      ? request.run_id
+      : null;
+  return {
+    contract: "card-keepr-administration-operation@1",
+    operation: context.operation,
+    status: "in_progress",
+    idempotency_key: context.key,
+    claimed_at: claim.claimed_at,
+    ...(runId === null ? {} : { run_id: runId }),
+    links: {
+      ...(runId === null
+        ? {}
+        : { run: `/v1/ingestion-runs/${runId}` }),
+      status: "/v1/status",
+    },
+  };
+}
+
+async function releaseAdministrationClaim(
+  database: D1Database,
+  context: IdempotencyContext,
+): Promise<void> {
+  await administrationClaimDeleteStatement(database, context).run();
+}
+
+function administrationClaimDeleteStatement(
+  database: D1Database,
+  context: {
+    key: string;
+    operation: string;
+    requestJson: string;
+  },
+): D1PreparedStatement {
+  return database
+    .prepare(
+      `DELETE FROM administration_idempotency_claims
+      WHERE idempotency_key = ?
+        AND operation = ?
+        AND request_json = ?`,
+    )
+    .bind(context.key, context.operation, context.requestJson);
 }
 
 async function replayLegacyAdministration(
@@ -2697,7 +2876,7 @@ async function replayAfterConflict(
   return replayAdministration(database, key, operation, requestJson);
 }
 
-function idempotencyInsertStatement(
+function idempotencyCompletionStatements(
   database: D1Database,
   input: {
     key: string;
@@ -2707,9 +2886,9 @@ function idempotencyInsertStatement(
     status: number;
     createdAt: string;
   },
-): D1PreparedStatement {
-  return database
-    .prepare(
+): D1PreparedStatement[] {
+  return [
+    database.prepare(
       `INSERT INTO administration_idempotency (
         idempotency_key,
         operation,
@@ -2719,15 +2898,16 @@ function idempotencyInsertStatement(
         outcome,
         created_at
       ) VALUES (?, ?, ?, ?, ?, 'success', ?)`,
-    )
-    .bind(
+    ).bind(
       input.key,
       input.operation,
       input.requestJson,
       canonicalJson(input.response),
       input.status,
       input.createdAt,
-    );
+    ),
+    administrationClaimDeleteStatement(database, input),
+  ];
 }
 
 function transitionStatement(
@@ -2790,7 +2970,7 @@ async function expireOverdueRuns(
       .prepare(
         `UPDATE ingestion_runs
         SET state = 'expired',
-            terminal_at = ?,
+            terminal_at = approval_deadline,
             progress_json = json_set(
               progress_json,
               '$.current_stage',
@@ -2800,7 +2980,7 @@ async function expireOverdueRuns(
           AND approval_deadline IS NOT NULL
           AND approval_deadline <= ?`,
       )
-      .bind(observedAt, observedAt),
+      .bind(observedAt),
     database.prepare(
       `UPDATE operation_state
       SET active_ingestion_run_id = NULL

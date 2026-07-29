@@ -70,25 +70,25 @@ export default {
           "selected_games",
           "idempotency_key",
         ]);
-        return Response.json(
-          await startFixtureRun(
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            {
-              fixture: requiredString(body, "fixture"),
-              selected_games: requiredStringArray(
-                body,
-                "selected_games",
-              ),
-              idempotency_key: requiredString(
-                body,
-                "idempotency_key",
-              ),
-            },
-            observedAt,
-          ),
-          { status: 201 },
+        const result = await startFixtureRun(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          {
+            fixture: requiredString(body, "fixture"),
+            selected_games: requiredStringArray(
+              body,
+              "selected_games",
+            ),
+            idempotency_key: requiredString(
+              body,
+              "idempotency_key",
+            ),
+          },
+          observedAt,
         );
+        return Response.json(result, {
+          status: administrationResultStatus(result, 201),
+        });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/status") {
@@ -141,12 +141,7 @@ export default {
             observedAt,
           );
         return Response.json(result, {
-          status:
-            result.contract ===
-              "card-keepr-administration-operation@1" &&
-            result.status === "in_progress"
-              ? 202
-              : 200,
+          status: administrationResultStatus(result, 200),
         });
       }
 
@@ -160,24 +155,25 @@ export default {
           "candidate_digest",
           "idempotency_key",
         ]);
-        return Response.json(
-          await rejectRun(
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            decodeURIComponent(rejectionMatch[1]!),
-            {
-              candidate_digest: requiredString(
-                body,
-                "candidate_digest",
-              ),
-              idempotency_key: requiredString(
-                body,
-                "idempotency_key",
-              ),
-            },
-            observedAt,
-          ),
+        const result = await rejectRun(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(rejectionMatch[1]!),
+          {
+            candidate_digest: requiredString(
+              body,
+              "candidate_digest",
+            ),
+            idempotency_key: requiredString(
+              body,
+              "idempotency_key",
+            ),
+          },
+          observedAt,
         );
+        return Response.json(result, {
+          status: administrationResultStatus(result, 200),
+        });
       }
 
       const retryMatch =
@@ -185,21 +181,21 @@ export default {
       if (request.method === "POST" && retryMatch !== null) {
         const body = await readAdministrationBody(request);
         assertOnlyFields(body, ["idempotency_key"]);
-        return Response.json(
-          await retryRun(
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            decodeURIComponent(retryMatch[1]!),
-            {
-              idempotency_key: requiredString(
-                body,
-                "idempotency_key",
-              ),
-            },
-            observedAt,
-          ),
-          { status: 201 },
+        const result = await retryRun(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(retryMatch[1]!),
+          {
+            idempotency_key: requiredString(
+              body,
+              "idempotency_key",
+            ),
+          },
+          observedAt,
         );
+        return Response.json(result, {
+          status: administrationResultStatus(result, 201),
+        });
       }
 
       const cleanupMatch =
@@ -222,12 +218,7 @@ export default {
           observedAt,
         );
         return Response.json(result, {
-          status:
-            result.contract ===
-              "card-keepr-administration-operation@1" &&
-            result.status === "in_progress"
-              ? 202
-              : 200,
+          status: administrationResultStatus(result, 200),
         });
       }
 
@@ -418,4 +409,15 @@ function administrationProblemTitle(status: number): string {
   if (status === 413) return "Request too large";
   if (status === 422) return "Invalid request";
   return "Administration operation failed";
+}
+
+function administrationResultStatus(
+  result: Record<string, unknown>,
+  completedStatus: number,
+): number {
+  return result.contract ===
+    "card-keepr-administration-operation@1" &&
+    result.status === "in_progress"
+    ? 202
+    : completedStatus;
 }

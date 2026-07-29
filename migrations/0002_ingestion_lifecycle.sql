@@ -47,6 +47,30 @@ CREATE TABLE administration_idempotency (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE administration_idempotency_claims (
+  idempotency_key TEXT PRIMARY KEY,
+  operation TEXT NOT NULL,
+  request_json TEXT NOT NULL,
+  claimed_at TEXT NOT NULL
+);
+
+CREATE TRIGGER guard_idempotency_claim_after_completion
+BEFORE INSERT ON administration_idempotency_claims
+WHEN EXISTS (
+  SELECT 1
+  FROM administration_idempotency AS outcome
+  WHERE outcome.idempotency_key = NEW.idempotency_key
+)
+BEGIN
+  SELECT RAISE(ABORT, 'administration_idempotency_completed');
+END;
+
+CREATE TRIGGER guard_idempotency_claim_update
+BEFORE UPDATE ON administration_idempotency_claims
+BEGIN
+  SELECT RAISE(ABORT, 'administration_idempotency_claim_immutable');
+END;
+
 CREATE TABLE ingestion_run_transitions (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),

@@ -755,10 +755,15 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
     7 * 24 * 60 * 60 * 1_000,
   );
 
-  testObservedAt = deadline;
+  testObservedAt = new Date(
+    Date.parse(deadline) + 2 * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  const replacement = await startRun("start-after-expiry");
+  expect(replacement.response.status).toBe(201);
   const expired = await showRun(runId);
   expect(expired.document).toMatchObject({
     state: "expired",
+    terminal_at: deadline,
     resulting_revision_id: null,
     progress: {
       completed_stages: [
@@ -785,8 +790,6 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
     code: "candidate_expired",
   });
 
-  const replacement = await startRun("start-after-expiry");
-  expect(replacement.response.status).toBe(201);
 });
 
 test("expiry repairs a dangling active identity and still wins at the deadline", async () => {
@@ -996,7 +999,24 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     status: "in_progress",
     run_id: runId,
     idempotency_key: "cleanup-interrupted-publication",
-    retry_after: "2026-07-29T00:15:00.000Z",
+    claimed_at: "2026-07-29T00:10:00.000Z",
+  });
+  const cleanupKeyCrossOperation = await administrationRequest(
+    `/v1/ingestion-runs/${requiredDocumentString(
+      replacement.document,
+      "id",
+    )}/rejection`,
+    {
+      candidate_digest: requiredDocumentString(
+        replacement.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "cleanup-interrupted-publication",
+    },
+  );
+  expect(cleanupKeyCrossOperation.response.status).toBe(409);
+  expect(cleanupKeyCrossOperation.document).toMatchObject({
+    code: "idempotency_key_reused",
   });
   const competingCleanup = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
@@ -1112,7 +1132,7 @@ test("an interrupted publication finalizes only its exact verified export", asyn
     status: "in_progress",
     run_id: runId,
     idempotency_key: approvalKey,
-    retry_after: reconcileAfter,
+    claimed_at: testObservedAt,
   });
   const inProgressReplay = await approve(
     runId,
@@ -1243,6 +1263,30 @@ test("a stalled late publication write reopens completed cleanup when exact comp
     startedAt,
   );
   await putStarted.promise;
+  const identicalInFlight = await approve(
+    runId,
+    candidateDigest,
+    expectedRevision,
+    "approve-stalled-late-writer",
+  );
+  expect(identicalInFlight.response.status).toBe(202);
+  expect(identicalInFlight.document).toMatchObject({
+    contract: "card-keepr-administration-operation@1",
+    operation: "approve_ingestion_run",
+    status: "in_progress",
+    idempotency_key: "approve-stalled-late-writer",
+  });
+  const crossOperationReuse = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/rejection`,
+    {
+      candidate_digest: candidateDigest,
+      idempotency_key: "approve-stalled-late-writer",
+    },
+  );
+  expect(crossOperationReuse.response.status).toBe(409);
+  expect(crossOperationReuse.document).toMatchObject({
+    code: "idempotency_key_reused",
+  });
 
   const failed = await showRunDirect(
     testEnv.CATALOGUE_DB,
@@ -1309,6 +1353,156 @@ test("a stalled late publication write reopens completed cleanup when exact comp
   expect(
     await testEnv.CATALOGUE_EXPORTS.get(lateObjectKey!),
   ).toBeNull();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions
+      SET content_digest = ?
+      WHERE id = ?`,
+    )
+      .bind(
+        priorCurrentRevision.content_digest,
+        priorCurrentRevision.id,
+      )
+      .run();
+  }
+});
+
+test("a cleanup CAS loser replays the immutable completion that won the race", async () => {
+  const startedAt = "2026-07-29T02:30:00.000Z";
+  testObservedAt = startedAt;
+  const priorCurrentRevision = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT revision.id, revision.content_digest
+    FROM catalogue_state AS state
+    JOIN catalogue_revisions AS revision
+      ON revision.id = state.current_revision_id
+    WHERE state.singleton = 1`,
+  ).first<{ id: string; content_digest: string }>();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions
+      SET content_digest = ?
+      WHERE id = ?`,
+    )
+      .bind("0".repeat(64), priorCurrentRevision.id)
+      .run();
+  }
+  const started = await startRun("start-cleanup-cas-replay");
+  const runId = requiredDocumentString(started.document, "id");
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async put() {
+      throw new Error("synthetic publication write failure");
+    },
+  });
+  await expect(
+    approveRunDirect(
+      testEnv.CATALOGUE_DB,
+      failingBucket,
+      runId,
+      {
+        candidate_digest: requiredDocumentString(
+          started.document,
+          "candidate_digest",
+        ),
+        expected_current_revision_id: requiredDocumentString(
+          started.document,
+          "expected_current_revision_id",
+        ),
+        idempotency_key: "approve-cleanup-cas-replay",
+      },
+      startedAt,
+    ),
+  ).rejects.toMatchObject({
+    code: "export_verification_failed",
+  });
+  const failed = await showRunDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    startedAt,
+  );
+  const pendingCleanup = requiredDocumentRecord(
+    failed,
+    "publication_cleanup",
+  );
+  const cleanupAt = requiredDocumentString(
+    pendingCleanup,
+    "not_before",
+  );
+  const cleanupKey = "cleanup-cas-replay";
+  const requestJson = JSON.stringify({ run_id: runId });
+  const completed = {
+    ...failed,
+    publication_cleanup: {
+      ...pendingCleanup,
+      state: "completed",
+      attempts: 1,
+      failure_code: null,
+      last_attempt_at: cleanupAt,
+      completed_at: cleanupAt,
+      generation: 2,
+    },
+  };
+  let completedConcurrently = false;
+  const racingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async list(options) {
+      if (!completedConcurrently) {
+        completedConcurrently = true;
+        await testEnv.CATALOGUE_DB.batch([
+          testEnv.CATALOGUE_DB.prepare(
+            `UPDATE ingestion_publication_cleanup
+            SET state = 'completed',
+                attempts = 1,
+                failure_code = NULL,
+                last_attempt_at = ?,
+                completed_at = ?,
+                idempotency_key = ?,
+                request_json = ?,
+                claim_token = NULL,
+                claim_version = 2,
+                claim_expires_at = NULL
+            WHERE ingestion_run_id = ?`,
+          ).bind(
+            cleanupAt,
+            cleanupAt,
+            cleanupKey,
+            requestJson,
+            runId,
+          ),
+          testEnv.CATALOGUE_DB.prepare(
+            `INSERT INTO administration_idempotency (
+              idempotency_key,
+              operation,
+              request_json,
+              response_json,
+              http_status,
+              outcome,
+              created_at
+            ) VALUES (
+              ?, 'retry_publication_cleanup', ?, ?, 200, 'success', ?
+            )`,
+          ).bind(
+            cleanupKey,
+            requestJson,
+            JSON.stringify(completed),
+            cleanupAt,
+          ),
+          testEnv.CATALOGUE_DB.prepare(
+            `DELETE FROM administration_idempotency_claims
+            WHERE idempotency_key = ?`,
+          ).bind(cleanupKey),
+        ]);
+      }
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const replayed = await retryPublicationCleanupDirect(
+    testEnv.CATALOGUE_DB,
+    racingBucket,
+    runId,
+    { idempotency_key: cleanupKey },
+    cleanupAt,
+  );
+  expect(replayed).toEqual(completed);
   if (priorCurrentRevision !== null) {
     await testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_revisions
@@ -1669,6 +1863,9 @@ function proxyR2Bucket(
     delete?: (
       ...arguments_: Parameters<R2Bucket["delete"]>
     ) => ReturnType<R2Bucket["delete"]>;
+    list?: (
+      ...arguments_: Parameters<R2Bucket["list"]>
+    ) => ReturnType<R2Bucket["list"]>;
   },
 ): R2Bucket {
   return new Proxy(bucket, {
@@ -1678,6 +1875,8 @@ function proxyR2Bucket(
           ? overrides.put
           : property === "delete"
             ? overrides.delete
+            : property === "list"
+              ? overrides.list
             : undefined;
       if (override !== undefined) return override;
       const value = Reflect.get(target, property);
