@@ -44,6 +44,7 @@ export type ParsedReconciliationObservation = Readonly<{
     printing: Omit<FixturePrinting, "id" | "card_id"> | null;
   };
   locator: string | null;
+  variantKey: string | null;
   artworkFingerprint: string | null;
   printedFieldsDigest: string | null;
   treatment: string | null;
@@ -85,6 +86,7 @@ const identityFields = new Set(["kind", "value"]);
 const rarityFields = new Set(["raw", "normalized"]);
 const identityEvidenceFields = new Set([
   "locator",
+  "variant_key",
   "artwork_fingerprint",
   "printed_fields_digest",
   "treatment",
@@ -195,18 +197,21 @@ export function parseReconciliationObservation(
   const don =
     identity.kind === "functional_designation" &&
     identity.value === "DON!!";
+  if (
+    don &&
+    (profile !== "one-piece@1" ||
+      canonicalCardAttributes.card_type !== "don")
+  ) {
+    throw new Error(
+      "The functional DON!! identity requires the one-piece@1 don Card shape.",
+    );
+  }
   if (record.printing === undefined) {
-    if (
-      don &&
-      (profile !== "one-piece@1" ||
-        canonicalCardAttributes.card_type !== "don")
-    ) {
-      throw new Error("The generic DON!! Card must not invent a Printing.");
-    }
     return {
       sourceObservationId,
       candidateWithoutIdentities: { card, printing: null },
       locator: null,
+      variantKey: null,
       artworkFingerprint: null,
       printedFieldsDigest: null,
       treatment: null,
@@ -285,6 +290,15 @@ export function parseReconciliationObservation(
     record.identity_evidence,
     "identity_evidence",
   );
+  const variantKey = nullableString(
+    identityEvidence.variant_key,
+    "identity_evidence.variant_key",
+  );
+  if (profile === "gundam@1" && variantKey === null) {
+    throw new Error(
+      "Gundam Printing evidence requires an exact variant key or suffix.",
+    );
+  }
   const artworkFingerprint = requiredString(
     identityEvidence.artwork_fingerprint,
     "identity_evidence.artwork_fingerprint",
@@ -302,6 +316,7 @@ export function parseReconciliationObservation(
       identityEvidence.locator,
       "identity_evidence.locator",
     ),
+    variantKey,
     artworkFingerprint,
     printedFieldsDigest: requiredString(
       identityEvidence.printed_fields_digest,

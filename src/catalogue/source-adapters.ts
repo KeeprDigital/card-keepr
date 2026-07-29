@@ -7,6 +7,7 @@ export type SourceAdapterRegistration = Readonly<{
   gameProfileVersion: string;
   parserContract: string;
   maximumJsonBytes: number;
+  origin: "production" | "synthetic_fixture";
   reconciliationCoverage: "synthetic_fixture" | "unavailable";
   parse: (document: unknown) => readonly unknown[];
 }>;
@@ -33,6 +34,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -43,6 +45,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -53,6 +56,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "fusion-world@1",
         parserContract: "fusion-world-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -63,6 +67,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "digimon@1",
         parserContract: "digimon-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -73,6 +78,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "gundam@1",
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -83,6 +89,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "gundam@1",
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
         reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
@@ -125,6 +132,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
       ].map((adapter) => ({
         ...adapter,
         maximumJsonBytes: 1024 * 1024,
+        origin: "synthetic_fixture" as const,
         reconciliationCoverage: "synthetic_fixture" as const,
         parse: parseCardDocument,
       })),

@@ -174,12 +174,14 @@ test("retained immutable evidence publishes stable identities and warns when ear
       secondRevision,
       "distribution-contexts",
     ),
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ id: "promotion-list" }),
-      expect.objectContaining({ id: "main-list" }),
-    ]),
-  );
+  ).toEqual([
+    expect.objectContaining({ id: "context_event" }),
+  ]);
+  expect(
+    JSON.stringify(
+      await exportComponentRecords(secondRevision, "relationships"),
+    ),
+  ).not.toContain("source_bucket");
   const publishedPrinting = await testEnv.CATALOGUE_DB.prepare(
     `SELECT document_json
      FROM revision_printings
@@ -187,7 +189,19 @@ test("retained immutable evidence publishes stable identities and warns when ear
   )
     .bind(secondRevision, firstPrinting.id)
     .first<{ document_json: string }>();
-  expect(JSON.parse(publishedPrinting?.document_json ?? "{}")).toMatchObject({
+  const publishedPrintingDocument = JSON.parse(
+    publishedPrinting?.document_json ?? "{}",
+  ) as Record<string, unknown>;
+  expect(publishedPrintingDocument).toMatchObject({
+    distribution_contexts: [
+      {
+        id: "context_event",
+        kind: "other",
+        label: "context_event",
+        product_id: null,
+        evidence_category: "explicit",
+      },
+    ],
     relationship_evidence: expect.arrayContaining([
       expect.objectContaining({
         source_lineage: "one-piece-en",
@@ -196,6 +210,9 @@ test("retained immutable evidence publishes stable identities and warns when ear
       }),
     ]),
   });
+  expect(publishedPrintingDocument.relationship_evidence).toEqual(
+    lifecycle.document.relationship_evidence,
+  );
 
   const withdrawalRun = await collect(
     "/reconciliation/withdrawn",
@@ -220,7 +237,13 @@ test("retained immutable evidence publishes stable identities and warns when ear
         revision_id: withdrawalRevision,
         evidence: {
           entity: "printing",
+          assertion: "withdrawn",
+          effective: true,
           evidence: "Official withdrawal notice",
+          source_lineage: "one-piece-en",
+          source_snapshot_id: expect.stringMatching(/^srcsnap_/),
+          source_observation_set_id: expect.stringMatching(/^srcobsset_/),
+          source_observation_id: expect.stringMatching(/^srcobs_/),
         },
       },
     },
@@ -241,7 +264,13 @@ test("retained immutable evidence publishes stable identities and warns when ear
           revision_id: withdrawalRevision,
           evidence: {
             entity: "printing",
+            assertion: "withdrawn",
+            effective: true,
             evidence: "Official withdrawal notice",
+            source_lineage: "one-piece-en",
+            source_snapshot_id: expect.stringMatching(/^srcsnap_/),
+            source_observation_set_id: expect.stringMatching(/^srcobsset_/),
+            source_observation_id: expect.stringMatching(/^srcobs_/),
           },
         },
       },
@@ -577,15 +606,30 @@ test.each([
 );
 
 test("production adapter placeholders fail closed without adapter-owned coverage proof", async () => {
-  const run = await collect(
-    "/reconciliation/profile-fusion-world",
-    "reconcile-production-adapter-without-coverage",
-    {
-      game: "fusion-world",
-      lineage: "fusion-world-en",
-      adapter: "fusion-world-en@1",
-    },
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@1",
+    idempotency_key: "reconcile-production-adapter-without-coverage",
+    requests: [
+      {
+        id: "cards",
+        method: "GET",
+        url: "https://official-source.invalid/reconciliation/profile-fusion-world",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(started.response.status).toBe(201);
+  const run = {
+    id: requiredString(started.document, "id"),
+  };
+  const resumed = await post(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    {},
   );
+  expect(resumed.response.status).toBe(202);
+  await waitForRunState(run.id, "parsing");
   const blocked = await reconcile(run.id);
   expect(blocked.response.status).toBe(409);
   expect(blocked.document).toMatchObject({
@@ -598,6 +642,34 @@ test("production adapter placeholders fail closed without adapter-owned coverage
       },
     ],
   });
+});
+
+test("the production source-plan route rejects synthetic fixture adapters without creating provenance", async () => {
+  const blocked = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: "production-route-fixture-bypass",
+    requests: [
+      {
+        id: "cards",
+        method: "GET",
+        url: "https://official-source.invalid/reconciliation/base",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "adapter_origin_not_permitted",
+  });
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM ingestion_evidence_plans AS plan
+     JOIN ingestion_runs AS run ON run.id = plan.ingestion_run_id
+     WHERE run.idempotency_key = 'production-route-fixture-bypass'`,
+  ).first<{ count: number }>();
+  expect(retained?.count).toBe(0);
 });
 
 test("one complete retained set can publish multiple Printings without collapsing their identities", async () => {
@@ -708,6 +780,44 @@ test("DON!! accepts explicit known Printing evidence while retaining incomplete-
   await approve(reconciled.document);
 });
 
+test("functional DON!! identity rejects a non-don Card shape even when Printing evidence exists", async () => {
+  const run = await collect(
+    "/reconciliation/profile-don-invalid-printing",
+    "reconcile-invalid-don-printing",
+  );
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    diagnostics: [
+      {
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining(
+          "functional DON!! identity requires",
+        ),
+      },
+    ],
+  });
+});
+
+test("conflicting explicit withdrawal assertions fail during reconciliation with stable diagnostics", async () => {
+  const run = await collect(
+    "/reconciliation/withdrawal-conflict",
+    "reconcile-withdrawal-conflict",
+  );
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [
+      expect.objectContaining({
+        code: "withdrawal_evidence_conflict",
+        detail: expect.stringContaining("withdrawal assertions conflict"),
+      }),
+    ],
+  });
+});
+
 test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substantive conflict blocks", async () => {
   const asiaRun = await collect(
     "/reconciliation/gundam-cross-asia",
@@ -750,20 +860,20 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     expect.arrayContaining([
       expect.objectContaining({
         source_lineage: "gundam-en-asia",
-        relationship_value: "product_asia",
+        relationship_value: "product_gd99",
         current: true,
       }),
       expect.objectContaining({
         source_lineage: "gundam-en-us",
-        relationship_value: "product_us",
+        relationship_value: "product_gd99",
         current: true,
       }),
     ]),
   );
 
   const usMissingRun = await collect(
-    "/reconciliation/gundam-cross-us-empty",
-    "reconcile-gundam-cross-us-empty",
+    "/reconciliation/complete-empty-lineage",
+    "reconcile-gundam-cross-us-whole-printing-omitted",
     {
       game: "gundam",
       lineage: "gundam-en-us",
@@ -774,9 +884,11 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   const inspected = await get(
     `/v1/ingestion-runs/${usMissingRun.id}/candidate`,
   );
-  const warningJson = JSON.stringify(inspected.document.diff);
-  expect(warningJson).toContain("product_us");
-  expect(warningJson).not.toContain("product_asia");
+  expect(inspected.document.diff).toMatchObject({
+    printings: {
+      missing_observations: [printingId],
+    },
+  });
   await approve(usMissing.document);
   const isolated = await get(
     `/v1/reconciliation/printings/${printingId}`,
@@ -785,12 +897,12 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     expect.arrayContaining([
       expect.objectContaining({
         source_lineage: "gundam-en-asia",
-        relationship_value: "product_asia",
+        relationship_value: "product_gd99",
         current: true,
       }),
       expect.objectContaining({
         source_lineage: "gundam-en-us",
-        relationship_value: "product_us",
+        relationship_value: "product_gd99",
         current: false,
       }),
     ]),
@@ -835,6 +947,37 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       },
     ],
   });
+
+  for (const [scenario, key] of [
+    [
+      "gundam-cross-product-conflict",
+      "reconcile-gundam-product-conflict",
+    ],
+    [
+      "gundam-cross-variant-conflict",
+      "reconcile-gundam-variant-conflict",
+    ],
+  ] as const) {
+    const mismatchRun = await collect(
+      `/reconciliation/${scenario}`,
+      key,
+      {
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@1",
+      },
+    );
+    const mismatch = await reconcile(mismatchRun.id);
+    expect(mismatch.response.status).toBe(409);
+    expect(mismatch.document).toMatchObject({
+      diagnostics: [
+        {
+          code: "printing_match_contradictory",
+          candidate_printing_ids: [printingId],
+        },
+      ],
+    });
+  }
 }, 20_000);
 
 test("repeated semantically identical retained evidence keeps one candidate digest and records no change", async () => {
@@ -1118,6 +1261,31 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
   expect(retainedCandidate?.digest_payload_json).toContain(
     '"catalogue_data"',
   );
+  const intervening = await post("/v1/ingestion-runs", {
+    fixture: "first-catalogue",
+    selected_games: ["one-piece"],
+    idempotency_key: "intervening-current-revision",
+  });
+  expect(intervening.response.status).toBe(201);
+  const interveningPublished = await post(
+    `/v1/ingestion-runs/${requiredString(intervening.document, "id")}/approval`,
+    {
+      candidate_digest: requiredString(
+        intervening.document,
+        "candidate_digest",
+      ),
+      expected_current_revision_id: requiredString(
+        intervening.document,
+        "expected_current_revision_id",
+      ),
+      idempotency_key: "approve-intervening-current-revision",
+    },
+  );
+  expect(interveningPublished.response.status).toBe(200);
+  const currentRevision = requiredString(
+    interveningPublished.document,
+    "resulting_revision_id",
+  );
   const evidenceRetry = await post(
     `/v1/ingestion-runs/${run.id}/collection/retry`,
     { idempotency_key: "linked-retry-retains-evidence-plan" },
@@ -1128,6 +1296,8 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     linked_run_id: run.id,
     source_lineage: "one-piece-en",
     adapter_version: "fixture-one-piece-json@1",
+    plan_origin: "synthetic_fixture",
+    expected_current_revision_id: currentRevision,
   });
   const retryId = requiredString(evidenceRetry.document, "id");
   const resumed = await post(
@@ -1169,6 +1339,18 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   expect(blockedStart.document).toMatchObject({
     code: "recovery_not_verified",
   });
+  const blockedMutation = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM ingestion_runs
+        WHERE idempotency_key = 'blocked-recovery-start') AS runs,
+       active_ingestion_run_id
+     FROM operation_state
+     WHERE singleton = 1`,
+  ).first<{ runs: number; active_ingestion_run_id: string | null }>();
+  expect(blockedMutation).toEqual({
+    runs: 0,
+    active_ingestion_run_id: null,
+  });
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
   ).run();
@@ -1202,7 +1384,7 @@ async function collect(
   id: string;
   document: Record<string, unknown>;
 }> {
-  const started = await post("/v1/ingestion-runs/evidence", {
+  const started = await postFixtureEvidence({
     supported_game: source?.game ?? "one-piece",
     source_lineage: source?.lineage ?? "one-piece-en",
     adapter_version: source?.adapter ?? "fixture-one-piece-json@1",
@@ -1271,9 +1453,21 @@ function post(pathname: string, body: Record<string, unknown>) {
   return request(pathname, body);
 }
 
+function postFixtureEvidence(body: Record<string, unknown>) {
+  return request(
+    "/v1/internal/fixture-ingestion-runs/evidence",
+    body,
+    {
+      "x-card-keepr-fixture-source-plan-key":
+        "vitest-fixture-source-plan-key",
+    },
+  );
+}
+
 async function request(
   pathname: string,
   body?: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{
   response: Response;
   document: Record<string, unknown>;
@@ -1287,6 +1481,7 @@ async function request(
         ...(body === undefined
           ? {}
           : { "content-type": "application/json" }),
+        ...extraHeaders,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),

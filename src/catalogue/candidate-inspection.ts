@@ -15,6 +15,7 @@ export async function inspectCatalogueCandidate(
     priorCards,
     priorPrintings,
     plans,
+    context,
     printingLineages,
     cardLineages,
   ] = await Promise.all([
@@ -49,6 +50,14 @@ export async function inspectCatalogueCandidate(
       }>(),
     database
       .prepare(
+        `SELECT source_lineage
+         FROM reconciliation_contexts
+         WHERE ingestion_run_id = ?`,
+      )
+      .bind(input.runId)
+      .first<{ source_lineage: string }>(),
+    database
+      .prepare(
         `SELECT printing_id, source_lineage
          FROM reconciled_printing_locators`,
       )
@@ -71,9 +80,10 @@ export async function inspectCatalogueCandidate(
       plan.printing_id === null ? [] : [plan.printing_id],
     ),
   );
-  const selectedLineages = new Set(
-    plans.results.map((plan) => plan.source_lineage),
-  );
+  const selectedLineages = new Set([
+    ...(context === null ? [] : [context.source_lineage]),
+    ...plans.results.map((plan) => plan.source_lineage),
+  ]);
   const printingEvidence = groupedLineages(
     printingLineages.results,
     "printing_id",

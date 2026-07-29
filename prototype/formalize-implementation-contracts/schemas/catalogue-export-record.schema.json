@@ -366,7 +366,6 @@
           "enum": [
             "printing-distribution-context",
             "printing-product",
-            "printing-source-bucket",
             "distribution-context-product",
             "product-card",
             "erratum-target",

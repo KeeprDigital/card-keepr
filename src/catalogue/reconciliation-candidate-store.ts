@@ -2,8 +2,8 @@ import type { FixtureCandidate } from "./fixture";
 import type {
   Memberships,
   PrintingCompatibility,
+  ProvenancedWithdrawal,
   ReconciliationWarning,
-  Withdrawal,
 } from "./reconciliation-model";
 import { canonicalJson } from "./serialization";
 
@@ -16,6 +16,7 @@ export type CandidatePlanRow = {
   printing_id: string | null;
   source_lineage: string;
   locator: string | null;
+  variant_key: string | null;
   compatibility_json: string | null;
   memberships_json: string;
   warnings_json: string;
@@ -35,9 +36,10 @@ export async function persistReviewableCandidate(
       cardId: string;
       printingId: string | null;
       locator: string | null;
+      variantKey: string | null;
       compatibility: PrintingCompatibility | null;
       memberships: Memberships;
-      withdrawal: Withdrawal | null;
+      withdrawal: ProvenancedWithdrawal | null;
     }[];
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
     candidate: FixtureCandidate;
@@ -56,6 +58,20 @@ export async function persistReviewableCandidate(
   await database.batch([
     database
       .prepare(
+        `INSERT INTO reconciliation_contexts (
+          ingestion_run_id, source_observation_set_id,
+          source_snapshot_id, source_lineage, digest_payload_json
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        input.runId,
+        input.observationSetId,
+        input.sourceSnapshotId,
+        input.sourceLineage,
+        input.digestPayloadJson,
+      ),
+    database
+      .prepare(
         `UPDATE ingestion_runs
          SET state = 'reconciling',
              progress_json =
@@ -69,9 +85,10 @@ export async function persistReviewableCandidate(
           `INSERT INTO reconciliation_candidates (
             ingestion_run_id, source_observation_set_id, source_snapshot_id,
             source_observation_id, card_id, printing_id, source_lineage,
-            locator, compatibility_json, memberships_json, withdrawal_json,
+            locator, variant_key, compatibility_json, memberships_json,
+            withdrawal_json,
             warnings_json, digest_payload_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           input.runId,
@@ -82,6 +99,7 @@ export async function persistReviewableCandidate(
           plan.printingId,
           input.sourceLineage,
           plan.locator,
+          plan.variantKey,
           plan.compatibility === null
             ? null
             : canonicalJson(plan.compatibility),
@@ -176,7 +194,7 @@ export async function digestBoundCandidatePayload(
   const row = await database
     .prepare(
       `SELECT digest_payload_json
-       FROM reconciliation_candidates
+       FROM reconciliation_contexts
        WHERE ingestion_run_id = ?`,
     )
     .bind(runId)

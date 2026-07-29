@@ -3,11 +3,16 @@ import {
   reconciliationCandidatePlans,
   type CandidatePlanRow,
 } from "./reconciliation-candidate-store";
-import { membershipEntries } from "./reconciliation-read";
+import {
+  aggregateRelationshipEvidence,
+  membershipEntries,
+  type RelationshipEvidence,
+  type RelationshipEvidenceRow,
+} from "./reconciliation-relationships";
 import type {
   Memberships,
   PrintingCompatibility,
-  Withdrawal,
+  ProvenancedWithdrawal,
 } from "./reconciliation-model";
 import { isCompatible } from "./reconciliation-model";
 import type {
@@ -26,16 +31,7 @@ export type NormalizedLifecycle = {
   } | null;
 };
 
-export type RelationshipEvidence = {
-  source_lineage: string;
-  relationship_kind: "product" | "distribution_context" | "source_bucket";
-  relationship_value: string;
-  source_observation_ids: string[];
-  first_revision_id: string;
-  last_observed_revision_id: string;
-  current: boolean;
-  last_missing_revision_id: string | null;
-};
+export type { RelationshipEvidence } from "./reconciliation-relationships";
 
 export type ReconciliationPublicationPlan = {
   cardLifecycles: Record<string, NormalizedLifecycle>;
@@ -50,7 +46,15 @@ export async function reconciliationPublication(
   revisionId: string,
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
-  if (plans.length === 0) return null;
+  const context = await database
+    .prepare(
+      `SELECT source_lineage
+       FROM reconciliation_contexts
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<{ source_lineage: string }>();
+  if (context === null) return null;
   const candidate = JSON.parse(
     await requiredRunCandidate(database, runId),
   ) as FixtureCandidate;
@@ -173,15 +177,17 @@ export async function reconciliationPublication(
           .prepare(
             `INSERT INTO reconciled_printing_locators (
               printing_id, source_lineage, locator,
-              first_revision_id, last_observed_revision_id
-            ) VALUES (?, ?, ?, ?, ?)
+              variant_key, first_revision_id, last_observed_revision_id
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (source_lineage, locator) DO UPDATE SET
+              variant_key = excluded.variant_key,
               last_observed_revision_id = excluded.last_observed_revision_id`,
           )
           .bind(
             printingId,
             plan.source_lineage,
             plan.locator,
+            plan.variant_key,
             revisionId,
             revisionId,
           );
@@ -235,6 +241,8 @@ export async function reconciliationPublication(
     runId,
     candidate,
     result,
+    context.source_lineage,
+    revisionId,
   );
   return result;
 }
@@ -244,6 +252,8 @@ async function retainCarriedLifecycles(
   runId: string,
   candidate: FixtureCandidate,
   result: ReconciliationPublicationPlan,
+  observedSourceLineage: string,
+  revisionId: string,
 ): Promise<void> {
   const run = await database
     .prepare(
@@ -299,8 +309,35 @@ async function retainCarriedLifecycles(
       candidatePrintingIds.has(row.id) &&
       result.relationshipEvidence[row.id] === undefined
     ) {
-      result.relationshipEvidence[row.id] =
-        documentRelationshipEvidence(row.document_json);
+      const carried = documentRelationshipEvidence(row.document_json);
+      const omittedLineageWasCurrent = carried.some(
+        (relationship) =>
+          relationship.source_lineage === observedSourceLineage &&
+          relationship.current,
+      );
+      result.relationshipEvidence[row.id] = carried.map((relationship) =>
+        relationship.source_lineage === observedSourceLineage &&
+        relationship.current
+          ? {
+              ...relationship,
+              current: false,
+              last_missing_revision_id: revisionId,
+            }
+          : relationship,
+      );
+      if (omittedLineageWasCurrent) {
+        result.statements.push(
+          database
+            .prepare(
+              `UPDATE reconciled_printing_memberships
+               SET current = 0, last_missing_revision_id = ?
+               WHERE printing_id = ?
+                 AND source_lineage = ?
+                 AND current = 1`,
+            )
+            .bind(revisionId, row.id, observedSourceLineage),
+        );
+      }
     }
   }
 }
@@ -344,7 +381,7 @@ function cardPersistenceStatement(
   card: FixtureCandidate["cards"][number],
   revisionId: string,
   existing: ReconciledCardRow | null,
-  withdrawal: Withdrawal | null,
+  withdrawal: ProvenancedWithdrawal | null,
 ): D1PreparedStatement {
   const withdraw =
     withdrawal?.entity === "card" ||
@@ -432,17 +469,6 @@ function cardObservationStatements(
   ];
 }
 
-type MembershipEvidenceRow = {
-  source_lineage: string;
-  source_observation_id: string;
-  relationship_kind: RelationshipEvidence["relationship_kind"];
-  relationship_value: string;
-  first_revision_id: string;
-  last_observed_revision_id: string;
-  current: number;
-  last_missing_revision_id: string | null;
-};
-
 async function nextRelationshipEvidence(
   database: D1Database,
   printingId: string,
@@ -459,9 +485,9 @@ async function nextRelationshipEvidence(
        WHERE printing_id = ?`,
     )
     .bind(printingId)
-    .all<MembershipEvidenceRow>();
+    .all<RelationshipEvidenceRow>();
   const observedLineages = new Set(plans.map((plan) => plan.source_lineage));
-  const rows: MembershipEvidenceRow[] = existing.results.map((row) =>
+  const rows: RelationshipEvidenceRow[] = existing.results.map((row) =>
     row.current === 1 && observedLineages.has(row.source_lineage)
       ? {
           ...row,
@@ -488,48 +514,13 @@ async function nextRelationshipEvidence(
   return aggregateRelationshipEvidence(rows);
 }
 
-function aggregateRelationshipEvidence(
-  rows: readonly MembershipEvidenceRow[],
-): RelationshipEvidence[] {
-  const grouped = new Map<string, MembershipEvidenceRow[]>();
-  for (const row of rows) {
-    const key = canonicalJson([
-      row.source_lineage,
-      row.relationship_kind,
-      row.relationship_value,
-    ]);
-    grouped.set(key, [...(grouped.get(key) ?? []), row]);
-  }
-  return [...grouped.values()]
-    .map((evidence) => {
-      const current = evidence.filter((row) => row.current === 1);
-      const latest = current.at(-1) ?? evidence.at(-1)!;
-      return {
-        source_lineage: latest.source_lineage,
-        relationship_kind: latest.relationship_kind,
-        relationship_value: latest.relationship_value,
-        source_observation_ids: evidence
-          .map((row) => row.source_observation_id)
-          .sort(),
-        first_revision_id: evidence[0]!.first_revision_id,
-        last_observed_revision_id: latest.last_observed_revision_id,
-        current: current.length > 0,
-        last_missing_revision_id:
-          current.length > 0 ? null : latest.last_missing_revision_id,
-      };
-    })
-    .sort((left, right) =>
-      canonicalJson(left).localeCompare(canonicalJson(right)),
-    );
-}
-
 function printingPersistenceStatement(
   database: D1Database,
   plan: CandidatePlanRow,
   compatibility: PrintingCompatibility,
   revisionId: string,
   existing: ReconciledPrintingRow | null,
-  withdrawal: Withdrawal | null,
+  withdrawal: ProvenancedWithdrawal | null,
 ): D1PreparedStatement {
   const withdraw =
     withdrawal?.entity === "printing" ||
@@ -590,17 +581,28 @@ function groupedPlans(
 function mergedWithdrawal(
   plans: readonly CandidatePlanRow[],
   entity: "card" | "printing",
-): Withdrawal | null {
+): ProvenancedWithdrawal | null {
   const withdrawals = plans
     .filter((plan) => plan.withdrawal_json !== null)
-    .map((plan) => JSON.parse(plan.withdrawal_json!) as Withdrawal)
+    .map(
+      (plan) =>
+        JSON.parse(plan.withdrawal_json!) as ProvenancedWithdrawal,
+    )
     .filter(
       (withdrawal) =>
         withdrawal.entity === entity ||
         withdrawal.entity === "card_and_printing",
     );
   const unique = new Map(
-    withdrawals.map((withdrawal) => [canonicalJson(withdrawal), withdrawal]),
+    withdrawals.map((withdrawal) => [
+      canonicalJson({
+        entity,
+        assertion: withdrawal.assertion,
+        effective: withdrawal.effective,
+        evidence: withdrawal.evidence,
+      }),
+      withdrawal,
+    ]),
   );
   if (unique.size > 1) {
     throw new Error("Conflicting explicit withdrawal evidence was retained.");

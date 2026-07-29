@@ -21,6 +21,7 @@ export default defineConfig({
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_CLOCK_MODE: "request",
+          TEST_FIXTURE_SOURCE_PLAN_KEY: "vitest-fixture-source-plan-key",
           TEST_MIGRATIONS: migrations,
         },
         outboundService: async (request) => {
@@ -141,6 +142,9 @@ export default defineConfig({
 });
 
 function reconciliationSourceDocument(scenario: string) {
+  if (scenario === "complete-empty-lineage") {
+    return { cards: [] };
+  }
   if (scenario === "multi-printing") {
     const base = printingObservation({
       game: "one-piece",
@@ -296,6 +300,8 @@ function reconciliationSourceDocument(scenario: string) {
     scenario === "gundam-cross-asia" ||
     scenario === "gundam-cross-us" ||
     scenario === "gundam-cross-us-empty" ||
+    scenario === "gundam-cross-product-conflict" ||
+    scenario === "gundam-cross-variant-conflict" ||
     scenario === "gundam-cross-conflict" ||
     scenario === "gundam-card-conflict"
   ) {
@@ -325,6 +331,10 @@ function reconciliationSourceDocument(scenario: string) {
           },
           printingAttributes: { alternate_art: false },
           locator: `/official/gundam/${scenario}`,
+          variantKey:
+            scenario === "gundam-cross-variant-conflict"
+              ? "alternate"
+              : "base",
           lineageMarker: "gundam-cross",
           memberships:
             scenario === "gundam-cross-us-empty"
@@ -335,9 +345,9 @@ function reconciliationSourceDocument(scenario: string) {
                 }
               : {
                   products: [
-                    scenario === "gundam-cross-asia"
-                      ? "product_asia"
-                      : "product_us",
+                    scenario === "gundam-cross-product-conflict"
+                      ? "product_gd99_other"
+                      : "product_gd99",
                   ],
                   distribution_contexts: [],
                   source_buckets: ["gundam-card-list"],
@@ -427,6 +437,32 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (scenario === "profile-don-invalid-printing") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "ignored-for-invalid-don",
+      name: "DON!!",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/don/invalid-leader",
+      lineageMarker: "don-invalid",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            official_identity: {
+              kind: "functional_designation",
+              value: "DON!!",
+            },
+          },
+        },
+      ],
+    };
+  }
   if (scenario === "card-without-printing") {
     return {
       cards: [
@@ -460,6 +496,36 @@ function reconciliationSourceDocument(scenario: string) {
   const canonical = scenario.startsWith("canonical");
   const incompleteAppearance = scenario === "incomplete-appearance";
   const setCountMismatch = scenario === "set-count-mismatch";
+  if (scenario === "withdrawal-conflict") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP01-001",
+      name: "Monkey.D.Luffy",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/withdrawal-conflict",
+      lineageMarker: "one-piece",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          withdrawal: {
+            entity: "printing",
+            evidence: "Official withdrawal notice A",
+          },
+        },
+        {
+          ...observation,
+          withdrawal: {
+            entity: "printing",
+            evidence: "Official withdrawal notice B",
+          },
+        },
+      ],
+    };
+  }
   return {
     cards: [
       {
@@ -553,6 +619,7 @@ function printingObservation(input: {
   demonstrablyNovel?: boolean;
   includeAppearance?: boolean;
   treatment?: string | null;
+  variantKey?: string | null;
   printedFieldsMarker?: string;
   memberships?: {
     products: string[];
@@ -587,6 +654,9 @@ function printingObservation(input: {
     },
     identity_evidence: {
       locator: input.locator,
+      ...(input.variantKey === undefined && input.profile !== "gundam@1"
+        ? {}
+        : { variant_key: input.variantKey ?? "base" }),
       artwork_fingerprint: artworkFingerprint,
       printed_fields_digest: `sha256:${
         input.printedFieldsMarker === "conflicting"

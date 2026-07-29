@@ -7,13 +7,14 @@ import {
   printingIdFor,
   type Memberships,
   type PrintingCompatibility,
-  type Withdrawal,
+  type ProvenancedWithdrawal,
 } from "./reconciliation-model";
 import type { FixtureCandidate, FixtureCard, FixturePrinting } from "./fixture";
 import {
   compatiblePrintings,
   canonicalCardConflict,
   existingCard,
+  gundamCrossLocaleEvidenceCompatible,
   hasOtherGundamLocaleEvidence,
   printingAtLocator,
   printingsWithAppearance,
@@ -44,6 +45,7 @@ type Diagnostic = {
     | "printing_match_contradictory"
     | "printing_match_insufficient_evidence"
     | "canonical_card_conflict"
+    | "withdrawal_evidence_conflict"
     | "retained_evidence_invalid";
   source_observation_id: string | null;
   locator: string | null;
@@ -105,9 +107,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     cardId: string;
     printingId: string | null;
     locator: string | null;
+    variantKey: string | null;
     compatibility: PrintingCompatibility | null;
     memberships: Memberships;
-    withdrawal: Withdrawal | null;
+    withdrawal: ProvenancedWithdrawal | null;
   }[] = [];
   const sourceWarnings: Record<string, unknown>[] = [];
 
@@ -182,11 +185,26 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       const compatibilityKey = canonicalJson(compatibility);
       const localLocated = localLocators.get(locator);
-      const [located, databaseMatches, appearanceMatches] = await Promise.all([
-        printingAtLocator(database, retained.sourceLineage, locator),
-        compatiblePrintings(database, compatibility),
-        printingsWithAppearance(database, compatibility),
-      ]);
+      const [located, unfilteredDatabaseMatches, appearanceMatches] =
+        await Promise.all([
+          printingAtLocator(database, retained.sourceLineage, locator),
+          compatiblePrintings(database, compatibility),
+          printingsWithAppearance(database, compatibility),
+        ]);
+      const databaseMatches: typeof unfilteredDatabaseMatches = [];
+      for (const match of unfilteredDatabaseMatches) {
+        if (
+          await gundamCrossLocaleEvidenceCompatible(
+            database,
+            match,
+            retained.sourceLineage,
+            observation.variantKey,
+            observation.memberships.products,
+          )
+        ) {
+          databaseMatches.push(match);
+        }
+      }
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
@@ -285,13 +303,26 @@ export async function reconcileRetainedCardPrintingEvidence(
       cardId,
       printingId,
       locator: observation.locator,
+      variantKey: observation.variantKey,
       compatibility,
       memberships: observation.memberships,
-      withdrawal: observation.withdrawal,
+      withdrawal:
+        observation.withdrawal === null
+          ? null
+          : {
+              ...observation.withdrawal,
+              assertion: "withdrawn",
+              effective: true,
+              source_lineage: retained.sourceLineage,
+              source_snapshot_id: retained.sourceSnapshotId,
+              source_observation_set_id: retained.observationSetId,
+              source_observation_id: observation.sourceObservationId,
+            },
     });
     sourceWarnings.push(...observation.sourceWarnings);
   }
 
+  diagnostics.push(...withdrawalConflictDiagnostics(plans));
   if (diagnostics.length > 0) {
     return blockedResult(database, runId, diagnostics, observedAt);
   }
@@ -337,10 +368,14 @@ export async function reconcileRetainedCardPrintingEvidence(
     plans.map((plan) => plan.cardId),
   );
   const warnings = [
-    ...sourceWarnings,
-    ...relationshipWarnings,
-    ...disappearanceWarnings,
-    ...cardWarnings,
+    ...new Map(
+      [
+        ...sourceWarnings,
+        ...relationshipWarnings,
+        ...disappearanceWarnings,
+        ...cardWarnings,
+      ].map((warning) => [canonicalJson(warning), warning]),
+    ).values(),
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
@@ -423,9 +458,10 @@ function digestObservationPlans(
     cardId: string;
     printingId: string | null;
     locator: string | null;
+    variantKey: string | null;
     compatibility: PrintingCompatibility | null;
     memberships: Memberships;
-    withdrawal: Withdrawal | null;
+    withdrawal: ProvenancedWithdrawal | null;
   }[],
 ): Record<string, unknown>[] {
   const semanticPlans = plans.map(
@@ -438,6 +474,56 @@ function digestObservationPlans(
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
+}
+
+function withdrawalConflictDiagnostics(
+  plans: readonly {
+    sourceObservationId: string;
+    cardId: string;
+    printingId: string | null;
+    withdrawal: ProvenancedWithdrawal | null;
+  }[],
+): Diagnostic[] {
+  const assertions = new Map<
+    string,
+    { evidence: Set<string>; observationIds: Set<string> }
+  >();
+  for (const plan of plans) {
+    const withdrawal = plan.withdrawal;
+    if (withdrawal === null) continue;
+    const targets = [
+      ...(withdrawal.entity === "card" ||
+      withdrawal.entity === "card_and_printing"
+        ? [`card:${plan.cardId}`]
+        : []),
+      ...(plan.printingId !== null &&
+      (withdrawal.entity === "printing" ||
+        withdrawal.entity === "card_and_printing")
+        ? [`printing:${plan.printingId}`]
+        : []),
+    ];
+    for (const target of targets) {
+      const grouped = assertions.get(target) ?? {
+        evidence: new Set<string>(),
+        observationIds: new Set<string>(),
+      };
+      grouped.evidence.add(withdrawal.evidence);
+      grouped.observationIds.add(plan.sourceObservationId);
+      assertions.set(target, grouped);
+    }
+  }
+  return [...assertions]
+    .filter(([, assertion]) => assertion.evidence.size > 1)
+    .map(([target, assertion]) => ({
+      code: "withdrawal_evidence_conflict" as const,
+      source_observation_id: [...assertion.observationIds].sort()[0] ?? null,
+      locator: null,
+      candidate_printing_ids: target.startsWith("printing:")
+        ? [target.slice("printing:".length)]
+        : [],
+      detail:
+        "Retained explicit withdrawal assertions conflict for the same entity and cannot be deterministically reconciled.",
+    }));
 }
 
 function mergedPlanMemberships(

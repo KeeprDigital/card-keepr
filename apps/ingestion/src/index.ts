@@ -133,6 +133,52 @@ export default {
         );
       }
 
+      if (
+        request.method === "POST" &&
+        url.pathname ===
+          "/v1/internal/fixture-ingestion-runs/evidence"
+      ) {
+        const fixtureKey = (
+          env as Env & { TEST_FIXTURE_SOURCE_PLAN_KEY?: string }
+        ).TEST_FIXTURE_SOURCE_PLAN_KEY;
+        if (
+          fixtureKey === undefined ||
+          request.headers.get("x-card-keepr-fixture-source-plan-key") !==
+            fixtureKey
+        ) {
+          throw new AdministrationProblem(
+            404,
+            "route_not_found",
+            "The requested administration route does not exist.",
+          );
+        }
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "supported_game",
+          "source_lineage",
+          "adapter_version",
+          "idempotency_key",
+          "requests",
+        ]);
+        return Response.json(
+          await startEvidenceRun(
+            env.CATALOGUE_DB,
+            {
+              supported_game: requiredString(body, "supported_game"),
+              source_lineage: requiredString(body, "source_lineage"),
+              adapter_version: requiredString(body, "adapter_version"),
+              idempotency_key: requiredString(
+                body,
+                "idempotency_key",
+              ),
+              requests: requiredSourceRequests(body, "requests"),
+            },
+            "synthetic_fixture",
+          ),
+          { status: 201 },
+        );
+      }
+
       const reconciliationMatch =
         /^\/v1\/ingestion-runs\/([^/]+)\/reconciliation$/.exec(
           url.pathname,

@@ -207,8 +207,12 @@ function exportRecords(
       relationship,
     })),
   );
+  const canonicalRelationshipEvidence = relationshipEvidence.filter(
+    ({ relationship }) =>
+      relationship.relationship_kind !== "source_bucket",
+  );
   const products = uniqueById(
-    relationshipEvidence
+    canonicalRelationshipEvidence
       .filter(
         ({ relationship }) =>
           relationship.relationship_kind === "product",
@@ -228,19 +232,16 @@ function exportRecords(
       })),
   );
   const distributionContexts = uniqueById(
-    relationshipEvidence
+    canonicalRelationshipEvidence
       .filter(
         ({ relationship }) =>
-          relationship.relationship_kind !== "product",
+          relationship.relationship_kind === "distribution_context",
       )
       .map(({ card, relationship }) => ({
         type: "distribution_context",
         id: relationship.relationship_value,
         game: card.game,
-        kind:
-          relationship.relationship_kind === "source_bucket"
-            ? "other"
-            : "promotion",
+        kind: "other",
         label: relationship.relationship_value,
         product_id: null,
       })),
@@ -272,16 +273,14 @@ function exportRecords(
     "distribution-contexts": distributionContexts,
     errata: [],
     "legality-rules": [],
-    relationships: relationshipEvidence
+    relationships: canonicalRelationshipEvidence
       .map(({ printing, relationship }) => ({
         type: "relationship",
         id: relationshipExportId(printing.id, relationship),
         kind:
           relationship.relationship_kind === "product"
             ? "printing-product"
-            : relationship.relationship_kind === "source_bucket"
-              ? "printing-source-bucket"
-              : "printing-distribution-context",
+            : "printing-distribution-context",
         from: { type: "printing", id: printing.id },
         to: {
           type:

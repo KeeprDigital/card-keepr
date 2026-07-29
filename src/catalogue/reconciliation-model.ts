@@ -1,4 +1,5 @@
 import type { FixtureCard } from "./fixture";
+import type { Withdrawal } from "./reconciliation-observation";
 import {
   compatibilityFields,
   type ParsedReconciliationObservation,
@@ -17,6 +18,15 @@ export type {
   ReconciliationWarning,
   Withdrawal,
 } from "./reconciliation-observation";
+
+export type ProvenancedWithdrawal = Withdrawal & {
+  assertion: "withdrawn";
+  effective: true;
+  source_lineage: string;
+  source_snapshot_id: string;
+  source_observation_set_id: string;
+  source_observation_id: string;
+};
 
 export async function cardIdFor(
   card: Omit<FixtureCard, "id">,

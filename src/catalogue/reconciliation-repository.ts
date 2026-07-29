@@ -87,6 +87,56 @@ export async function compatiblePrintings(
   return result.results;
 }
 
+export async function gundamCrossLocaleEvidenceCompatible(
+  database: D1Database,
+  printing: ReconciledPrintingRow,
+  proposedLineage: string,
+  proposedVariantKey: string | null,
+  proposedProductCodes: readonly string[],
+): Promise<boolean> {
+  if (
+    printing.source_lineage === proposedLineage ||
+    !isGundamEnglishLineage(printing.source_lineage) ||
+    !isGundamEnglishLineage(proposedLineage)
+  ) {
+    return true;
+  }
+  if (proposedVariantKey === null) return false;
+  const [variants, products] = await Promise.all([
+    database
+      .prepare(
+        `SELECT DISTINCT variant_key
+         FROM reconciled_printing_locators
+         WHERE printing_id = ? AND source_lineage = ?
+         ORDER BY variant_key`,
+      )
+      .bind(printing.id, printing.source_lineage)
+      .all<{ variant_key: string | null }>(),
+    database
+      .prepare(
+        `SELECT DISTINCT relationship_value
+         FROM reconciled_printing_memberships
+         WHERE printing_id = ?
+           AND source_lineage = ?
+           AND relationship_kind = 'product'
+           AND current = 1
+         ORDER BY relationship_value`,
+      )
+      .bind(printing.id, printing.source_lineage)
+      .all<{ relationship_value: string }>(),
+  ]);
+  const priorVariantKeys = variants.results.map((row) => row.variant_key);
+  const priorProductCodes = products.results.map(
+    (row) => row.relationship_value,
+  );
+  return (
+    priorVariantKeys.length > 0 &&
+    priorVariantKeys.every((value) => value === proposedVariantKey) &&
+    canonicalJson(priorProductCodes) ===
+      canonicalJson([...new Set(proposedProductCodes)].sort())
+  );
+}
+
 export async function printingsWithAppearance(
   database: D1Database,
   compatibility: PrintingCompatibility,

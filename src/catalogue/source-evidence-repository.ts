@@ -8,6 +8,7 @@ import {
   type StartEvidenceRunRequest,
   validateEvidencePlan,
 } from "./source-evidence-model";
+import type { SourceAdapterRegistration } from "./source-adapters";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -22,6 +23,7 @@ export type IngestionEvidenceRow = {
   supported_game: string;
   game_profile_version: string;
   adapter_version: string;
+  plan_origin: SourceAdapterRegistration["origin"];
   request_plan_json: string;
   parent_workflow_id: string | null;
   child_workflow_ids_json: string | null;
@@ -97,8 +99,9 @@ type AttemptRow = {
 export async function startEvidenceRun(
   database: D1Database,
   request: StartEvidenceRunRequest,
+  planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<Record<string, unknown>> {
-  const { plan } = await validateEvidencePlan(request);
+  const { plan } = await validateEvidencePlan(request, planOrigin);
   const planJson = canonicalJson(plan);
   const replay = await evidenceRunByIdempotencyKey(
     database,
@@ -132,7 +135,6 @@ export async function startEvidenceRun(
       runId,
       supportedGame: plan.supported_game,
       startedAt,
-      expectedCurrentRevisionId: catalogue.current_revision_id,
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
     }),
@@ -140,8 +142,9 @@ export async function startEvidenceRun(
       .prepare(
         `INSERT INTO ingestion_evidence_plans (
           ingestion_run_id, source_lineage, supported_game,
-          game_profile_version, adapter_version, request_plan_json
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
+          game_profile_version, adapter_version, request_plan_json,
+          plan_origin
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         runId,
@@ -150,11 +153,16 @@ export async function startEvidenceRun(
         plan.game_profile_version,
         plan.adapter_version,
         planJson,
+        planOrigin,
       ),
     ...requestStatements(database, runId, plan),
     database
       .prepare(
-        "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+        `UPDATE operation_state
+         SET active_ingestion_run_id = ?
+         WHERE singleton = 1
+           AND recovery_health = 'healthy'
+           AND active_ingestion_run_id IS NULL`,
       )
       .bind(runId),
   ];
@@ -168,12 +176,10 @@ export async function startEvidenceRun(
     if (concurrent !== null && concurrent.request_plan_json === planJson) {
       return showEvidenceRun(database, concurrent.id);
     }
+    await throwIfRecoveryBlocked(database);
+    await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
-      throw new AdministrationProblem(
-        409,
-        "active_ingestion_run",
-        "Another Ingestion Run is already active.",
-      );
+      throw activeRunProblem();
     }
     if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
       throw new AdministrationProblem(
@@ -228,7 +234,6 @@ export async function retryEvidenceRun(
         runId,
         supportedGame: plan.supported_game,
         startedAt,
-        expectedCurrentRevisionId: source.expected_current_revision_id,
         linkedRunId: source.id,
         idempotencyKey,
       }),
@@ -236,8 +241,9 @@ export async function retryEvidenceRun(
         .prepare(
           `INSERT INTO ingestion_evidence_plans (
             ingestion_run_id, source_lineage, supported_game,
-            game_profile_version, adapter_version, request_plan_json
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
+            game_profile_version, adapter_version, request_plan_json,
+            plan_origin
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           runId,
@@ -246,21 +252,24 @@ export async function retryEvidenceRun(
           plan.game_profile_version,
           plan.adapter_version,
           source.request_plan_json,
+          source.plan_origin,
         ),
       ...requestStatements(database, runId, plan),
       database
         .prepare(
-          "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+          `UPDATE operation_state
+           SET active_ingestion_run_id = ?
+           WHERE singleton = 1
+             AND recovery_health = 'healthy'
+             AND active_ingestion_run_id IS NULL`,
         )
         .bind(runId),
     ]);
   } catch (error) {
+    await throwIfRecoveryBlocked(database);
+    await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
-      throw new AdministrationProblem(
-        409,
-        "active_ingestion_run",
-        "Another Ingestion Run is already active.",
-      );
+      throw activeRunProblem();
     }
     if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
       throw new AdministrationProblem(
@@ -282,6 +291,38 @@ function assertRecoveryHealthy(recoveryHealth: string): void {
       "Recovery is not healthy, so evidence ingestion is blocked.",
     );
   }
+}
+
+async function throwIfRecoveryBlocked(database: D1Database): Promise<void> {
+  const operation = await database
+    .prepare(
+      "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+    )
+    .first<{ recovery_health: string }>();
+  if (operation === null) throw new Error("Operation state is unavailable.");
+  assertRecoveryHealthy(operation.recovery_health);
+}
+
+async function throwIfAnotherRunActive(database: D1Database): Promise<void> {
+  const operation = await database
+    .prepare(
+      `SELECT active_ingestion_run_id
+       FROM operation_state
+       WHERE singleton = 1`,
+    )
+    .first<{ active_ingestion_run_id: string | null }>();
+  if (operation === null) throw new Error("Operation state is unavailable.");
+  if (operation.active_ingestion_run_id !== null) {
+    throw activeRunProblem();
+  }
+}
+
+function activeRunProblem(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "active_ingestion_run",
+    "Another Ingestion Run is already active.",
+  );
 }
 
 function requestStatements(
@@ -319,7 +360,8 @@ export async function requiredEvidenceRun(
     .prepare(
       `SELECT runs.*, plans.source_lineage, plans.supported_game,
               plans.game_profile_version, plans.adapter_version,
-              plans.request_plan_json, plans.parent_workflow_id,
+              plans.request_plan_json, plans.plan_origin,
+              plans.parent_workflow_id,
               plans.child_workflow_ids_json,
               plans.collection_completed_at, plans.failure_code
        FROM ingestion_runs AS runs
@@ -347,7 +389,8 @@ async function evidenceRunByIdempotencyKey(
     .prepare(
       `SELECT runs.*, plans.source_lineage, plans.supported_game,
               plans.game_profile_version, plans.adapter_version,
-              plans.request_plan_json, plans.parent_workflow_id,
+              plans.request_plan_json, plans.plan_origin,
+              plans.parent_workflow_id,
               plans.child_workflow_ids_json,
               plans.collection_completed_at, plans.failure_code
        FROM ingestion_runs AS runs
@@ -525,8 +568,10 @@ export async function showEvidenceRun(
     game_profile_version: run.game_profile_version,
     source_lineage: run.source_lineage,
     adapter_version: run.adapter_version,
+    plan_origin: run.plan_origin,
     idempotency_key: run.idempotency_key,
     linked_run_id: run.linked_run_id,
+    expected_current_revision_id: run.expected_current_revision_id,
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
@@ -615,7 +660,6 @@ async function ingestionRunInsert(
     runId: string;
     supportedGame: string;
     startedAt: string;
-    expectedCurrentRevisionId: string;
     linkedRunId: string | null;
     idempotencyKey: string;
   },
@@ -624,7 +668,6 @@ async function ingestionRunInsert(
     input.runId,
     canonicalJson([input.supportedGame]),
     input.startedAt,
-    input.expectedCurrentRevisionId,
     input.linkedRunId,
     input.idempotencyKey,
   ];
@@ -638,12 +681,16 @@ async function ingestionRunInsert(
           approval_json, published_revision_id, export_manifest_digest,
           terminal_at, candidate_json, approval_idempotency_key,
           progress_json, warnings_json, approval_history_json
-        ) VALUES (
-          ?, 'collecting', ?, ?, ?, ?, ?,
+        ) SELECT
+          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
           NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL,
           '{"completed_stages":["planning"],"current_stage":"collecting"}',
           '[]', '[]'
-        )`,
+        FROM catalogue_state AS catalogue
+        JOIN operation_state AS operation ON operation.singleton = 1
+        WHERE catalogue.singleton = 1
+          AND operation.recovery_health = 'healthy'
+          AND operation.active_ingestion_run_id IS NULL`,
       )
       .bind(...baseValues);
   }
@@ -655,10 +702,14 @@ async function ingestionRunInsert(
         candidate_digest, candidate_created_at, approval_deadline,
         approval_json, published_revision_id, export_manifest_digest,
         terminal_at, candidate_json, approval_idempotency_key
-      ) VALUES (
-        ?, 'collecting', ?, ?, ?, ?, ?,
+      ) SELECT
+        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
         NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL
-      )`,
+      FROM catalogue_state AS catalogue
+      JOIN operation_state AS operation ON operation.singleton = 1
+      WHERE catalogue.singleton = 1
+        AND operation.recovery_health = 'healthy'
+        AND operation.active_ingestion_run_id IS NULL`,
     )
     .bind(...baseValues);
 }

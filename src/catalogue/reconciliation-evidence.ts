@@ -16,6 +16,7 @@ type EvidenceRow = {
   observation_count: number;
   planned_request_count: number;
   observed_request_count: number;
+  plan_origin: string;
 };
 
 export async function retainedReconciliationObservation(
@@ -36,6 +37,7 @@ export async function retainedReconciliationObservation(
         observations.content_byte_length,
         observations.content_object_key,
         observations.observation_count,
+        plan.plan_origin,
         (
           SELECT COUNT(*)
           FROM source_requests AS planned_request
@@ -87,6 +89,8 @@ export async function retainedReconciliationObservation(
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
     adapter.reconciliationCoverage !== "synthetic_fixture" ||
+    adapter.origin !== "synthetic_fixture" ||
+    row.plan_origin !== "synthetic_fixture" ||
     !isRecord(document.coverage_proof) ||
     document.coverage_proof.kind !== "synthetic_fixture" ||
     document.coverage_proof.adapter_version !== adapter.adapterVersion ||
@@ -96,8 +100,7 @@ export async function retainedReconciliationObservation(
       document.observations,
       row,
     ) ||
-    !Array.isArray(document.observations) ||
-    document.observations.length === 0
+    !Array.isArray(document.observations)
   ) {
     throw new Error("Retained Source Observation Set provenance is invalid.");
   }

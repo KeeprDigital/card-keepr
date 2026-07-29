@@ -1254,7 +1254,19 @@ function cataloguePrinting(
           relationship.current === true &&
           relationship.relationship_kind === "distribution_context",
       )
-      .map((relationship) => relationship.relationship_value),
+      .map((relationship) => ({
+        id: relationship.relationship_value,
+        kind: "other",
+        label: relationship.relationship_value,
+        product_id: null,
+        evidence_category: "explicit",
+      }))
+      .filter(
+        (context, index, contexts) =>
+          contexts.findIndex((candidate) => candidate.id === context.id) ===
+          index,
+      )
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
     relationship_evidence: relationshipEvidence,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
