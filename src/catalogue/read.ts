@@ -102,19 +102,13 @@ export async function catalogueExportResponse(
   bucket: R2Bucket,
   revisionId: string,
 ): Promise<Response | null> {
-  const exportRow = await findExport(database, revisionId);
-  if (exportRow === null) return null;
-  const object = await bucket.get(exportRow.manifest_key);
-  if (object === null || object.size > 1_048_576) {
-    throw new Error("Verified Catalogue Export manifest is unavailable");
-  }
-  const manifest = await object.json<ExportManifest>();
-  if (
-    manifest.catalogue_revision.id !== exportRow.catalogue_revision_id ||
-    manifest.manifest_sha256 !== exportRow.manifest_digest
-  ) {
-    throw new Error("Verified Catalogue Export manifest changed");
-  }
+  const verifiedExport = await loadVerifiedExportManifest(
+    database,
+    bucket,
+    revisionId,
+  );
+  if (verifiedExport === null) return null;
+  const { exportRow, manifest } = verifiedExport;
   return Response.json(
     {
       data: manifest,
@@ -142,13 +136,13 @@ export async function catalogueExportComponentResponse(
   revisionId: string,
   componentName: string,
 ): Promise<Response | null> {
-  const exportRow = await findExport(database, revisionId);
-  if (exportRow === null) return null;
-  const manifestObject = await bucket.get(exportRow.manifest_key);
-  if (manifestObject === null || manifestObject.size > 1_048_576) {
-    throw new Error("Verified Catalogue Export manifest is unavailable");
-  }
-  const manifest = await manifestObject.json<ExportManifest>();
+  const verifiedExport = await loadVerifiedExportManifest(
+    database,
+    bucket,
+    revisionId,
+  );
+  if (verifiedExport === null) return null;
+  const { manifest } = verifiedExport;
   const component = manifest.components.find(
     (candidate) => candidate.name === componentName,
   );
@@ -235,6 +229,30 @@ async function findExport(
     )
     .bind(revisionId)
     .first<ExportRow>();
+}
+
+async function loadVerifiedExportManifest(
+  database: D1Database,
+  bucket: R2Bucket,
+  revisionId: string,
+): Promise<{
+  exportRow: ExportRow;
+  manifest: ExportManifest;
+} | null> {
+  const exportRow = await findExport(database, revisionId);
+  if (exportRow === null) return null;
+  const object = await bucket.get(exportRow.manifest_key);
+  if (object === null || object.size > 1_048_576) {
+    throw new Error("Verified Catalogue Export manifest is unavailable");
+  }
+  const manifest = await object.json<ExportManifest>();
+  if (
+    manifest.catalogue_revision.id !== exportRow.catalogue_revision_id ||
+    manifest.manifest_sha256 !== exportRow.manifest_digest
+  ) {
+    throw new Error("Verified Catalogue Export manifest changed");
+  }
+  return { exportRow, manifest };
 }
 
 function revisionDocumentResponse(

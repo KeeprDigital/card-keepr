@@ -142,6 +142,46 @@ test("the owner publishes the first fixture Catalogue Revision through the black
   const cardId = candidate.diff.cards.added[0];
   const printingId = candidate.diff.printings.added[0];
 
+  const concurrentStart = await runCli(
+    [
+      "run",
+      "start",
+      "--fixture",
+      "first-catalogue",
+      "--games",
+      "one-piece",
+      "--idempotency-key",
+      "ingestion_fixture_concurrent_001",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(concurrentStart.code, 7, concurrentStart.stderr);
+  assert.equal(JSON.parse(concurrentStart.stdout).code, "active_ingestion_run");
+
+  const staleRevisionApproval = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      startedRun.id,
+      "--candidate-digest",
+      startedRun.candidate_digest,
+      "--expected-current-revision",
+      "catrev_stale_000",
+      "--idempotency-key",
+      "approval_fixture_first_stale_revision_001",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(staleRevisionApproval.code, 7, staleRevisionApproval.stderr);
+  assert.equal(
+    JSON.parse(staleRevisionApproval.stdout).code,
+    "current_revision_mismatch",
+  );
+
   const staleApproval = await runCli(
     [
       "run",
@@ -232,6 +272,29 @@ test("the owner publishes the first fixture Catalogue Revision through the black
   assert.equal(publishedRun.state, "published");
   assert.match(publishedRun.published_revision_id, /^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
   assert.match(publishedRun.export_manifest_digest, /^[a-f0-9]{64}$/);
+
+  const changedReplay = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      startedRun.id,
+      "--candidate-digest",
+      "0".repeat(64),
+      "--expected-current-revision",
+      expectedCurrentRevision,
+      "--idempotency-key",
+      "approval_fixture_first_001",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(changedReplay.code, 7, changedReplay.stderr);
+  assert.equal(
+    JSON.parse(changedReplay.stdout).code,
+    "idempotency_key_reused",
+  );
   await stopWorker(ingestion);
 
   api = startWorker({
@@ -321,6 +384,76 @@ test("the owner publishes the first fixture Catalogue Revision through the black
     assert.equal(records.length, component.records);
     for (const record of records) assertSchema(validateExportRecord, record);
   }
+
+  await stopWorker(api);
+  ingestion = startWorker({
+    config: "apps/ingestion/wrangler.jsonc",
+    envFile: ingestionEnv,
+    inspectorPort: 21_234,
+    port: ingestionPort,
+    statePath,
+  });
+  workers.push(ingestion);
+  await waitForHealth(
+    `http://127.0.0.1:${ingestionPort}/health`,
+    administrationKey,
+    ingestion,
+  );
+  const expiringStart = await runCli(
+    [
+      "run",
+      "start",
+      "--fixture",
+      "first-catalogue",
+      "--games",
+      "one-piece",
+      "--idempotency-key",
+      "ingestion_fixture_expiring_001",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(expiringStart.code, 0, expiringStart.stderr);
+  const expiringRun = JSON.parse(expiringStart.stdout);
+  await stopWorker(ingestion);
+  await setApprovalDeadlineInPast(statePath, expiringRun.id);
+
+  ingestion = startWorker({
+    config: "apps/ingestion/wrangler.jsonc",
+    envFile: ingestionEnv,
+    inspectorPort: 21_235,
+    port: ingestionPort,
+    statePath,
+  });
+  workers.push(ingestion);
+  await waitForHealth(
+    `http://127.0.0.1:${ingestionPort}/health`,
+    administrationKey,
+    ingestion,
+  );
+  const expiredShow = await runCli(
+    ["run", "show", "--run-id", expiringRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(expiredShow.code, 0, expiredShow.stderr);
+  assert.equal(JSON.parse(expiredShow.stdout).state, "expired");
+
+  const replacementStart = await runCli(
+    [
+      "run",
+      "start",
+      "--fixture",
+      "first-catalogue",
+      "--games",
+      "one-piece",
+      "--idempotency-key",
+      "ingestion_fixture_after_expiry_001",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(replacementStart.code, 0, replacementStart.stderr);
+  assert.equal(JSON.parse(replacementStart.stdout).state, "awaiting_approval");
 });
 
 function readSchema(name) {
@@ -354,6 +487,31 @@ function applyMigrations(statePath) {
       "apps/ingestion/wrangler.jsonc",
       "--persist-to",
       statePath,
+    ],
+    {
+      ...processEnvWithoutSecrets(),
+      CI: "1",
+      WRANGLER_LOG_PATH: join(statePath, "logs"),
+    },
+  ).then((result) => {
+    assert.equal(result.code, 0, result.stderr || result.stdout);
+  });
+}
+
+function setApprovalDeadlineInPast(statePath, runId) {
+  return runProcess(
+    resolve(root, "node_modules/.bin/wrangler"),
+    [
+      "d1",
+      "execute",
+      "CATALOGUE_DB",
+      "--local",
+      "--config",
+      "apps/ingestion/wrangler.jsonc",
+      "--persist-to",
+      statePath,
+      "--command",
+      `UPDATE ingestion_runs SET approval_deadline = '1970-01-01T00:00:00.000Z' WHERE id = '${runId}'`,
     ],
     {
       ...processEnvWithoutSecrets(),

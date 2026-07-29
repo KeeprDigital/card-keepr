@@ -22,6 +22,7 @@ const componentDefinitions = [
   ["legality-rules", "LegalityRuleRecord", "id:utf8"],
   ["relationships", "RelationshipRecord", "id:utf8"],
 ] as const;
+const maximumFixtureExportBytes = 1_048_576;
 
 export type ExportObject = {
   key: string;
@@ -109,6 +110,7 @@ export async function buildCatalogueExport(
       contentType: "application/x-ndjson",
       contentEncoding: "gzip",
     });
+    assertFixtureExportIsBounded(objects);
   }
 
   const manifestWithPlaceholder: CatalogueExportManifest = {
@@ -145,20 +147,34 @@ export async function buildCatalogueExport(
   );
   const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
   const manifestKey = `catalogue-exports/${catalogueRevisionId}/manifest.json`;
+  const manifestObject = {
+    key: manifestKey,
+    bytes: manifestBytes,
+    contentType: "application/json",
+  };
+  const boundedObjects = [...objects, manifestObject];
+  assertFixtureExportIsBounded(boundedObjects);
 
   return {
     manifest,
     manifestBytes,
     manifestKey,
-    objects: [
-      ...objects,
-      {
-        key: manifestKey,
-        bytes: manifestBytes,
-        contentType: "application/json",
-      },
-    ],
+    objects: boundedObjects,
   };
+}
+
+function assertFixtureExportIsBounded(
+  objects: readonly ExportObject[],
+): void {
+  const bytes = objects.reduce(
+    (total, object) => total + object.bytes.byteLength,
+    0,
+  );
+  if (bytes > maximumFixtureExportBytes) {
+    throw new Error(
+      "The controlled fixture Catalogue Export exceeds its 1 MiB memory bound",
+    );
+  }
 }
 
 function exportRecords(

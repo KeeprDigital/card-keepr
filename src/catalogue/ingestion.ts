@@ -58,6 +58,7 @@ export async function startFixtureRun(
     }
     throw error;
   });
+  await expireOverdueRuns(database, new Date().toISOString());
 
   const replay = await findRunByIdempotencyKey(
     database,
@@ -153,6 +154,7 @@ export async function showRun(
   runId: string,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
+  await expireOverdueRuns(database, new Date().toISOString());
   return publicRun(await requiredRun(database, runId));
 }
 
@@ -161,6 +163,7 @@ export async function inspectCandidate(
   runId: string,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
+  await expireOverdueRuns(database, new Date().toISOString());
   const row = await requiredRun(database, runId);
   if (row.state !== "awaiting_approval") {
     throw new AdministrationProblem(
@@ -210,12 +213,31 @@ export async function approveRun(
   );
   assertOpaqueId(request.idempotency_key, "idempotency_key");
 
+  await expireOverdueRuns(database, new Date().toISOString());
   const run = await requiredRun(database, runId);
   if (
     run.state === "published" &&
     run.approval_idempotency_key === request.idempotency_key
   ) {
-    return publicRun(run);
+    const approval =
+      run.approval_json === null
+        ? null
+        : (JSON.parse(run.approval_json) as {
+            candidate_digest?: unknown;
+            expected_current_revision_id?: unknown;
+          });
+    if (
+      approval?.candidate_digest === request.candidate_digest &&
+      approval.expected_current_revision_id ===
+        request.expected_current_revision_id
+    ) {
+      return publicRun(run);
+    }
+    throw new AdministrationProblem(
+      409,
+      "idempotency_key_reused",
+      "The idempotency key was already used for a different approval request.",
+    );
   }
   if (
     run.approval_idempotency_key === request.idempotency_key ||
@@ -228,6 +250,13 @@ export async function approveRun(
     );
   }
   if (run.state !== "awaiting_approval") {
+    if (run.state === "expired") {
+      throw new AdministrationProblem(
+        409,
+        "candidate_expired",
+        "The candidate approval deadline has passed.",
+      );
+    }
     throw new AdministrationProblem(
       409,
       "run_not_approvable",
@@ -239,7 +268,7 @@ export async function approveRun(
     run.approval_deadline === null ||
     Date.parse(now) >= Date.parse(run.approval_deadline)
   ) {
-    await expireRun(database, run.id, now);
+    await expireOverdueRuns(database, now);
     throw new AdministrationProblem(
       409,
       "candidate_expired",
@@ -389,6 +418,15 @@ export async function approveRun(
     ]);
   } catch (error) {
     if (errorMessage(error).includes("publication_guard_failed")) {
+      await expireOverdueRuns(database, new Date().toISOString());
+      const guardedRun = await requiredRun(database, run.id);
+      if (guardedRun.state === "expired") {
+        throw new AdministrationProblem(
+          409,
+          "candidate_expired",
+          "The candidate approval deadline has passed.",
+        );
+      }
       throw new AdministrationProblem(
         409,
         "publication_precondition_failed",
@@ -467,6 +505,9 @@ async function storeAndVerifyExport(
     const expectedDigest = await sha256(object.bytes);
     const existing = await bucket.get(object.key);
     if (existing !== null) {
+      if (existing.size !== object.bytes.byteLength) {
+        throw new Error("Immutable Catalogue Export object changed");
+      }
       const existingDigest = await sha256(await existing.arrayBuffer());
       if (existingDigest !== expectedDigest) {
         throw new Error("Immutable Catalogue Export object changed");
@@ -549,26 +590,29 @@ async function approvalKeyExists(
   );
 }
 
-async function expireRun(
+async function expireOverdueRuns(
   database: D1Database,
-  runId: string,
-  terminalAt: string,
+  observedAt: string,
 ): Promise<void> {
   await database.batch([
     database
       .prepare(
         `UPDATE ingestion_runs
         SET state = 'expired', terminal_at = ?
-        WHERE id = ? AND state = 'awaiting_approval'`,
+        WHERE state = 'awaiting_approval'
+          AND approval_deadline IS NOT NULL
+          AND approval_deadline <= ?`,
       )
-      .bind(terminalAt, runId),
+      .bind(observedAt, observedAt),
     database
       .prepare(
         `UPDATE operation_state
         SET active_ingestion_run_id = NULL
-        WHERE singleton = 1 AND active_ingestion_run_id = ?`,
-      )
-      .bind(runId),
+        WHERE singleton = 1
+          AND active_ingestion_run_id IN (
+            SELECT id FROM ingestion_runs WHERE state = 'expired'
+          )`,
+      ),
   ]);
 }
 

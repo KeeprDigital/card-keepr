@@ -93,7 +93,7 @@ WHEN NOT EXISTS (
     AND operation.active_ingestion_run_id = run.id
     AND operation.recovery_health = 'healthy'
     AND catalogue.current_revision_id = NEW.expected_previous_revision_id
-    AND run.approval_deadline > NEW.published_at
+    AND run.approval_deadline > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 )
 BEGIN
   SELECT RAISE(ABORT, 'publication_guard_failed');
