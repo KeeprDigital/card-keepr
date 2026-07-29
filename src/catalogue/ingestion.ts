@@ -6,9 +6,14 @@ import {
   FixtureInputError,
   fixtureCandidate,
   type FixtureCandidate,
+  type SupportedGame,
 } from "./fixture";
 import { canonicalJson, sha256 } from "./serialization";
-import { reconciliationPublication } from "./reconciliation-repository";
+import {
+  reconciliationPublication,
+  type ReconciliationPublicationPlan,
+} from "./reconciliation-publication";
+import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -583,11 +588,22 @@ async function approveRunAttempt(
   const candidate = parseCandidate(run);
   const revisionId = `catrev_${crypto.randomUUID()}`;
   const writerToken = publicationWriterToken(revisionId);
+  const reconciliation = await reconciliationPublication(
+    database,
+    run.id,
+    revisionId,
+  );
   const catalogueExport = await buildCatalogueExport(
     candidate,
     request.candidate_digest,
     revisionId,
     now,
+    reconciliation === null
+      ? undefined
+      : {
+          cards: reconciliation.cardLifecycles,
+          printings: reconciliation.printingLifecycles,
+        },
   );
   try {
     await reservePublication(
@@ -635,6 +651,7 @@ async function approveRunAttempt(
       run: await requiredRun(database, run.id),
       candidate,
       catalogueExport,
+      reconciliation,
       requestJson,
       completedAt: now,
       claimOwner,
@@ -1202,15 +1219,15 @@ async function throwApprovalFailure(
 }
 
 function catalogueCard(
-  candidate: FixtureCandidate,
+  card: FixtureCandidate["cards"][number],
+  printingIds: readonly string[],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
 ) {
-  const card = candidate.cards[0];
   return {
     type: "card",
     ...card,
-    printing_ids: candidate.printings.map((printing) => printing.id),
+    printing_ids: printingIds,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/cards/${card.id}`,
@@ -1219,11 +1236,10 @@ function catalogueCard(
 }
 
 function cataloguePrinting(
-  candidate: FixtureCandidate,
+  printing: FixtureCandidate["printings"][number],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
 ) {
-  const printing = candidate.printings[0];
   return {
     type: "printing",
     ...printing,
@@ -1482,6 +1498,7 @@ async function commitVerifiedPublication(
     run: RunRow;
     candidate: FixtureCandidate;
     catalogueExport: BuiltCatalogueExport;
+    reconciliation: ReconciliationPublicationPlan | null;
     requestJson: string;
     completedAt: string;
     claimOwner?: IdempotencyClaimOwner;
@@ -1521,21 +1538,25 @@ async function commitVerifiedPublication(
     resulting_revision_id: revisionId,
     freshness_checked_at: input.completedAt,
   });
-  const reconciliation = await reconciliationPublication(
-    database,
-    input.run.id,
-    revisionId,
-  );
-  const cardDocument = catalogueCard(
-    input.candidate,
-    revisionId,
-    reconciliation?.cardLifecycle,
-  );
-  const printingDocument = cataloguePrinting(
-    input.candidate,
-    revisionId,
-    reconciliation?.printingLifecycle,
-  );
+  const cardDocuments = input.candidate.cards.map((card) => ({
+    card,
+    document: catalogueCard(
+      card,
+      input.candidate.printings
+        .filter((printing) => printing.card_id === card.id)
+        .map((printing) => printing.id),
+      revisionId,
+      input.reconciliation?.cardLifecycles[card.id],
+    ),
+  }));
+  const printingDocuments = input.candidate.printings.map((printing) => ({
+    printing,
+    document: cataloguePrinting(
+      printing,
+      revisionId,
+      input.reconciliation?.printingLifecycles[printing.id],
+    ),
+  }));
   await database.batch([
     database
       .prepare(
@@ -1556,35 +1577,35 @@ async function commitVerifiedPublication(
         input.run.expected_current_revision_id,
         input.run.candidate_digest,
       ),
-    ...(reconciliation?.statements ?? []),
-    database
-      .prepare(
-        `INSERT INTO revision_cards (
-          catalogue_revision_id,
-          card_id,
-          document_json
-        ) VALUES (?, ?, ?)`,
-      )
-      .bind(
-        revisionId,
-        input.candidate.cards[0].id,
-        JSON.stringify(cardDocument),
-      ),
-    database
-      .prepare(
-        `INSERT INTO revision_printings (
-          catalogue_revision_id,
-          printing_id,
-          card_id,
-          document_json
-        ) VALUES (?, ?, ?, ?)`,
-      )
-      .bind(
-        revisionId,
-        input.candidate.printings[0].id,
-        input.candidate.printings[0].card_id,
-        JSON.stringify(printingDocument),
-      ),
+    ...(input.reconciliation?.statements ?? []),
+    ...cardDocuments.map(({ card, document }) =>
+      database
+        .prepare(
+          `INSERT INTO revision_cards (
+            catalogue_revision_id,
+            card_id,
+            document_json
+          ) VALUES (?, ?, ?)`,
+        )
+        .bind(revisionId, card.id, JSON.stringify(document)),
+    ),
+    ...printingDocuments.map(({ printing, document }) =>
+      database
+        .prepare(
+          `INSERT INTO revision_printings (
+            catalogue_revision_id,
+            printing_id,
+            card_id,
+            document_json
+          ) VALUES (?, ?, ?, ?)`,
+        )
+        .bind(
+          revisionId,
+          printing.id,
+          printing.card_id,
+          JSON.stringify(document),
+        ),
+    ),
     database
       .prepare(
         `INSERT INTO catalogue_exports (
@@ -1727,6 +1748,9 @@ async function reconcileReservedPublication(
     run.approval_idempotency_key,
     "idempotency key",
   );
+  const digestPayload =
+    (await digestBoundCandidatePayload(database, run.id)) ??
+    canonicalJson(candidate);
   if (
     approval.candidate_digest !== run.candidate_digest ||
     approval.expected_current_revision_id !==
@@ -1742,7 +1766,7 @@ async function reconcileReservedPublication(
       candidate.selected_games,
     ) ||
     (await sha256(
-      new TextEncoder().encode(canonicalJson(candidate)),
+      new TextEncoder().encode(digestPayload),
     )) !== run.candidate_digest
   ) {
     throw new Error("The reserved publication metadata is invalid.");
@@ -1753,11 +1777,22 @@ async function reconcileReservedPublication(
     expected_current_revision_id:
       approval.expected_current_revision_id,
   });
+  const reconciliation = await reconciliationPublication(
+    database,
+    run.id,
+    revisionId,
+  );
   const catalogueExport = await buildCatalogueExport(
     candidate,
     approval.candidate_digest,
     revisionId,
     publishedAt,
+    reconciliation === null
+      ? undefined
+      : {
+          cards: reconciliation.cardLifecycles,
+          printings: reconciliation.printingLifecycles,
+        },
   );
   const exactExport =
     catalogueExport.manifest.manifest_sha256 === manifestDigest &&
@@ -1787,6 +1822,7 @@ async function reconcileReservedPublication(
       run,
       candidate,
       catalogueExport,
+      reconciliation,
       requestJson,
       completedAt: observedAt,
       ...(claimOwner === null ? {} : { claimOwner }),
@@ -3457,98 +3493,98 @@ function isFixtureCandidate(
     ]) ||
     value.fixture !== "first-catalogue" ||
     !Array.isArray(value.selected_games) ||
-    value.selected_games.length !== 1 ||
-    value.selected_games[0] !== "one-piece" ||
+    value.selected_games.length === 0 ||
+    !value.selected_games.every(isSupportedGame) ||
     !Array.isArray(value.cards) ||
-    value.cards.length !== 1 ||
-    !Array.isArray(value.printings) ||
-    value.printings.length !== 1
+    value.cards.length === 0 ||
+    !Array.isArray(value.printings)
   ) {
     return false;
   }
-  const card = value.cards[0];
-  const printing = value.printings[0];
-  return (
-    isRecord(card) &&
-    hasOnlyKeys(card, [
+  const cards = value.cards;
+  const cardIds = new Set<string>();
+  for (const card of cards) {
+    if (
+      !isRecord(card) ||
+      !hasOnlyKeys(card, [
       "id",
       "game",
       "official_identity",
       "name",
       "effective_rules_text",
       "game_data",
-    ]) &&
-    typeof card.id === "string" &&
-    card.game === "one-piece" &&
-    typeof card.name === "string" &&
-    typeof card.effective_rules_text === "string" &&
-    isRecord(card.official_identity) &&
-    hasOnlyKeys(card.official_identity, ["kind", "value"]) &&
-    card.official_identity.kind === "card_number" &&
-    typeof card.official_identity.value === "string" &&
-    isRecord(card.game_data) &&
-    hasOnlyKeys(card.game_data, ["profile", "attributes"]) &&
-    card.game_data.profile === "one-piece@1" &&
-    isFixtureCardAttributes(card.game_data.attributes) &&
-    isRecord(printing) &&
-    hasOnlyKeys(printing, [
-      "id",
-      "card_id",
-      "rarity",
-      "printed_rules_text",
-      "game_data",
-    ]) &&
-    typeof printing.id === "string" &&
-    typeof printing.card_id === "string" &&
-    printing.card_id === card.id &&
-    typeof printing.printed_rules_text === "string" &&
-    isRecord(printing.rarity) &&
-    hasOnlyKeys(printing.rarity, ["normalized", "raw"]) &&
-    typeof printing.rarity.normalized === "string" &&
-    typeof printing.rarity.raw === "string" &&
-    isRecord(printing.game_data) &&
-    hasOnlyKeys(printing.game_data, ["profile", "attributes"]) &&
-    printing.game_data.profile === "one-piece@1" &&
-    isRecord(printing.game_data.attributes) &&
-    hasOnlyKeys(printing.game_data.attributes, [
-      "illustration_types",
-    ]) &&
-    Array.isArray(
-      printing.game_data.attributes.illustration_types,
-    ) &&
-    printing.game_data.attributes.illustration_types.length === 0
+      ]) ||
+      typeof card.id !== "string" ||
+      !isSupportedGame(card.game) ||
+      typeof card.name !== "string" ||
+      (card.effective_rules_text !== null &&
+        typeof card.effective_rules_text !== "string") ||
+      !isRecord(card.official_identity) ||
+      !hasOnlyKeys(card.official_identity, ["kind", "value"]) ||
+      !validOfficialIdentity(card.official_identity, card.game) ||
+      !isRecord(card.game_data) ||
+      !hasOnlyKeys(card.game_data, ["profile", "attributes"]) ||
+      card.game_data.profile !== `${card.game}@1` ||
+      !isRecord(card.game_data.attributes)
+    ) {
+      return false;
+    }
+    cardIds.add(card.id);
+  }
+  return value.printings.every((printing) => {
+    if (
+      !isRecord(printing) ||
+      !hasOnlyKeys(printing, [
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+      ]) ||
+      typeof printing.id !== "string" ||
+      typeof printing.card_id !== "string" ||
+      !cardIds.has(printing.card_id) ||
+      (printing.printed_rules_text !== null &&
+        typeof printing.printed_rules_text !== "string") ||
+      !isRecord(printing.rarity) ||
+      !hasOnlyKeys(printing.rarity, ["normalized", "raw"]) ||
+      (printing.rarity.normalized !== null &&
+        typeof printing.rarity.normalized !== "string") ||
+      (printing.rarity.raw !== null &&
+        typeof printing.rarity.raw !== "string")
+    ) {
+      return false;
+    }
+    return (
+      printing.game_data === null ||
+      (isRecord(printing.game_data) &&
+        hasOnlyKeys(printing.game_data, ["profile", "attributes"]) &&
+        typeof printing.game_data.profile === "string" &&
+        isRecord(printing.game_data.attributes))
+    );
+  });
+}
+
+function validOfficialIdentity(
+  identity: Record<string, unknown>,
+  game: SupportedGame,
+): boolean {
+  return (
+    (identity.kind === "card_number" &&
+      typeof identity.value === "string" &&
+      identity.value.length > 0) ||
+    (game === "one-piece" &&
+      identity.kind === "functional_designation" &&
+      identity.value === "DON!!")
   );
 }
 
-function isFixtureCardAttributes(value: unknown): boolean {
+function isSupportedGame(value: unknown): value is SupportedGame {
   return (
-    isRecord(value) &&
-    hasOnlyKeys(value, [
-      "card_type",
-      "colours",
-      "cost",
-      "life",
-      "battle_attributes",
-      "power",
-      "counter",
-      "traits",
-      "block_icons",
-      "effect_text",
-      "trigger_text",
-    ]) &&
-    value.card_type === "leader" &&
-    isExactStringTuple(value.colours, ["red"]) &&
-    value.cost === null &&
-    typeof value.life === "number" &&
-    Number.isInteger(value.life) &&
-    isExactStringTuple(value.battle_attributes, ["strike"]) &&
-    typeof value.power === "number" &&
-    Number.isInteger(value.power) &&
-    value.counter === null &&
-    isExactStringTuple(value.traits, ["Straw Hat Crew"]) &&
-    isExactStringTuple(value.block_icons, ["1"]) &&
-    typeof value.effect_text === "string" &&
-    value.trigger_text === null
+    value === "one-piece" ||
+    value === "fusion-world" ||
+    value === "digimon" ||
+    value === "gundam"
   );
 }
 
@@ -3574,12 +3610,16 @@ function hasOnlyKeys(
   );
 }
 
-function parseSelectedGames(value: string): readonly ["one-piece"] {
+function parseSelectedGames(value: string): readonly SupportedGame[] {
   const parsed: unknown = JSON.parse(value);
-  if (!isExactStringTuple(parsed, ["one-piece"])) {
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every(isSupportedGame)
+  ) {
     throw new Error("The persisted selected games are invalid.");
   }
-  return ["one-piece"];
+  return parsed;
 }
 
 function parseProgress(
@@ -3949,7 +3989,9 @@ function decodePublicRunDocument(
     !isOpaqueIdentity(value.id) ||
     typeof value.state !== "string" ||
     !runStates.has(value.state) ||
-    !isExactStringTuple(value.selected_games, ["one-piece"]) ||
+    !Array.isArray(value.selected_games) ||
+    value.selected_games.length === 0 ||
+    !value.selected_games.every(isSupportedGame) ||
     !isIsoInstant(value.started_at) ||
     typeof value.expected_current_revision_id !== "string" ||
     !isOpaqueIdentity(value.expected_current_revision_id) ||

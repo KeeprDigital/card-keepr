@@ -1,5 +1,41 @@
 PRAGMA foreign_keys = ON;
 
+INSERT INTO source_adapter_versions (
+  adapter_version,
+  source_lineage,
+  supported_game,
+  game_profile_version,
+  parser_contract
+) VALUES
+  (
+    'fusion-world-en@1',
+    'fusion-world-en',
+    'fusion-world',
+    'fusion-world@1',
+    'fusion-world-card-document@1'
+  ),
+  (
+    'digimon-en@1',
+    'digimon-en',
+    'digimon',
+    'digimon@1',
+    'digimon-card-document@1'
+  ),
+  (
+    'gundam-en-asia@1',
+    'gundam-en-asia',
+    'gundam',
+    'gundam@1',
+    'gundam-card-document@1'
+  ),
+  (
+    'gundam-en-us@1',
+    'gundam-en-us',
+    'gundam',
+    'gundam@1',
+    'gundam-card-document@1'
+  );
+
 CREATE TABLE reconciled_cards (
   id TEXT PRIMARY KEY,
   supported_game TEXT NOT NULL,
@@ -63,6 +99,8 @@ CREATE TABLE reconciled_printing_memberships (
   relationship_value TEXT NOT NULL,
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
+  last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
   PRIMARY KEY (printing_id, relationship_kind, relationship_value)
 );
 
@@ -70,19 +108,21 @@ CREATE UNIQUE INDEX source_observation_set_snapshot_identity
 ON source_observation_sets (id, source_snapshot_id);
 
 CREATE TABLE reconciliation_candidates (
-  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
   source_observation_set_id TEXT NOT NULL
     REFERENCES source_observation_sets(id),
   source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
   source_observation_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
-  printing_id TEXT NOT NULL,
+  printing_id TEXT,
   source_lineage TEXT NOT NULL,
-  locator TEXT NOT NULL,
-  compatibility_json TEXT NOT NULL,
+  locator TEXT,
+  compatibility_json TEXT,
   memberships_json TEXT NOT NULL,
   withdrawal_json TEXT,
   warnings_json TEXT NOT NULL,
+  digest_payload_json TEXT NOT NULL,
+  PRIMARY KEY (ingestion_run_id, source_observation_id),
   UNIQUE (source_observation_set_id, source_observation_id),
   FOREIGN KEY (source_observation_set_id, source_snapshot_id)
     REFERENCES source_observation_sets (id, source_snapshot_id)

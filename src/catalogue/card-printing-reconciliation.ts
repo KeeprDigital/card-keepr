@@ -1,22 +1,30 @@
 import { AdministrationProblem } from "./ingestion";
 import { retainedReconciliationObservation } from "./reconciliation-evidence";
 import {
-  candidateWithIdentities,
   cardIdFor,
   compatibilityFor,
   isCompatible,
   printingIdFor,
+  type Memberships,
+  type PrintingCompatibility,
+  type Withdrawal,
 } from "./reconciliation-model";
+import type { FixtureCandidate, FixtureCard, FixturePrinting } from "./fixture";
 import {
   compatiblePrintings,
+  canonicalCardConflict,
   existingCard,
+  printingAtLocator,
+} from "./reconciliation-repository";
+import {
   failReconciliation,
   persistReviewableCandidate,
+} from "./reconciliation-candidate-store";
+import {
   printingDisappearanceWarnings,
-  printingAtLocator,
   publicReconciledPrinting,
   relationshipDisappearanceWarnings,
-} from "./reconciliation-repository";
+} from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
 
 type ActiveRunRow = {
@@ -31,6 +39,7 @@ type Diagnostic = {
     | "printing_match_ambiguous"
     | "printing_match_contradictory"
     | "printing_match_insufficient_evidence"
+    | "canonical_card_conflict"
     | "retained_evidence_invalid";
   source_observation_id: string | null;
   locator: string | null;
@@ -70,123 +79,219 @@ export async function reconcileRetainedCardPrintingEvidence(
     return blockedResult(database, runId, diagnostics, observedAt);
   }
 
-  const observation = retained.observation;
-  const existing = await existingCard(database, {
-    supportedGame: observation.candidateWithoutIdentities.card.game,
-    identityKind:
-      observation.candidateWithoutIdentities.card.official_identity.kind,
-    identityValue:
-      observation.candidateWithoutIdentities.card.official_identity.value,
-  });
-  const cardId =
-    existing?.id ??
-    (await cardIdFor(observation.candidateWithoutIdentities.card));
-  const compatibility = compatibilityFor(
-    cardId,
-    retained.sourceLineage,
-    observation,
-  );
-  const [located, matches] = await Promise.all([
-    printingAtLocator(
-      database,
-      retained.sourceLineage,
-      observation.locator,
-    ),
-    compatiblePrintings(database, compatibility),
-  ]);
-
-  let printingId: string;
   const diagnostics: Diagnostic[] = [];
-  if (located !== null && !isCompatible(located, compatibility)) {
-    diagnostics.push({
-      code: "printing_match_contradictory",
-      source_observation_id: observation.sourceObservationId,
-      locator: observation.locator,
-      candidate_printing_ids: [located.id],
-      detail:
-        "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
+  const cards = new Map<string, FixtureCard>();
+  const printings = new Map<string, FixturePrinting>();
+  const localCardFacts = new Map<string, string>();
+  const localCompatibility = new Map<string, string>();
+  const localLocators = new Map<
+    string,
+    { compatibility: PrintingCompatibility; printingId: string }
+  >();
+  const plans: {
+    sourceObservationId: string;
+    cardId: string;
+    printingId: string | null;
+    locator: string | null;
+    compatibility: PrintingCompatibility | null;
+    memberships: Memberships;
+    withdrawal: Withdrawal | null;
+  }[] = [];
+  const sourceWarnings: Record<string, unknown>[] = [];
+
+  for (const observation of retained.observations) {
+    const proposedCard = observation.candidateWithoutIdentities.card;
+    if (proposedCard.game !== retained.supportedGame) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.locator,
+        candidate_printing_ids: [],
+        detail:
+          "The retained Card Supported Game conflicts with its provenance envelope.",
+      });
+      continue;
+    }
+    const existing = await existingCard(database, {
+      supportedGame: proposedCard.game,
+      identityKind: proposedCard.official_identity.kind,
+      identityValue: proposedCard.official_identity.value,
     });
-    printingId = located.id;
-  } else if (matches.length > 1) {
-    diagnostics.push({
-      code: "printing_match_ambiguous",
-      source_observation_id: observation.sourceObservationId,
+    const cardId = existing?.id ?? (await cardIdFor(proposedCard));
+    const canonicalFacts = canonicalJson(proposedCard);
+    const priorFacts = localCardFacts.get(cardId);
+    const publishedConflict = await canonicalCardConflict(
+      database,
+      cardId,
+      proposedCard,
+    );
+    if (
+      publishedConflict !== null ||
+      (priorFacts !== undefined && priorFacts !== canonicalFacts)
+    ) {
+      diagnostics.push({
+        code: "canonical_card_conflict",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.locator,
+        candidate_printing_ids: [],
+        detail:
+          publishedConflict ??
+          "Retained observations disagree on canonical Card facts and no deterministic authority rule resolves them.",
+      });
+    } else {
+      localCardFacts.set(cardId, canonicalFacts);
+      cards.set(cardId, { id: cardId, ...proposedCard });
+    }
+
+    let compatibility: PrintingCompatibility | null = null;
+    let printingId: string | null = null;
+    const proposedPrinting = observation.candidateWithoutIdentities.printing;
+    if (proposedPrinting !== null) {
+      compatibility = compatibilityFor(
+        cardId,
+        retained.sourceLineage,
+        observation,
+      );
+      const locator = observation.locator;
+      if (locator === null) {
+        throw new Error("A Printing observation has no locator.");
+      }
+      const compatibilityKey = canonicalJson(compatibility);
+      const localLocated = localLocators.get(locator);
+      const [located, databaseMatches] = await Promise.all([
+        printingAtLocator(database, retained.sourceLineage, locator),
+        compatiblePrintings(database, compatibility),
+      ]);
+      const matchIds = new Set(databaseMatches.map((match) => match.id));
+      const localMatch = localCompatibility.get(compatibilityKey);
+      if (localMatch !== undefined) matchIds.add(localMatch);
+      const locatedConflict =
+        (located !== null && !isCompatible(located, compatibility)) ||
+        (localLocated !== undefined &&
+          !isCompatible(localLocated.compatibility, compatibility));
+      if (locatedConflict) {
+        const locatedId = located?.id ?? localLocated!.printingId;
+        diagnostics.push({
+          code: "printing_match_contradictory",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids: [locatedId],
+          detail:
+            "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
+        });
+        printingId = locatedId;
+      } else if (matchIds.size > 1) {
+        diagnostics.push({
+          code: "printing_match_ambiguous",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids: [...matchIds].sort(),
+          detail:
+            "The retained evidence has more than one exactly compatible Printing.",
+        });
+        printingId = [...matchIds].sort()[0]!;
+      } else if (located !== null || localLocated !== undefined) {
+        printingId = located?.id ?? localLocated!.printingId;
+      } else if (matchIds.size === 1) {
+        printingId = [...matchIds][0]!;
+      } else {
+        printingId = await printingIdFor(compatibility);
+        if (
+          !observation.demonstrablyNovel ||
+          !observation.structurallyComplete ||
+          !observation.noveltyProofComplete
+        ) {
+          diagnostics.push({
+            code: "printing_match_insufficient_evidence",
+            source_observation_id: observation.sourceObservationId,
+            locator,
+            candidate_printing_ids: [],
+            detail:
+              "A zero-match requires structurally complete retained adapter evidence and complete official Printing Image proof of a demonstrably novel appearance.",
+          });
+        }
+      }
+      localCompatibility.set(compatibilityKey, printingId);
+      localLocators.set(locator, { compatibility, printingId });
+      printings.set(printingId, {
+        id: printingId,
+        card_id: cardId,
+        ...proposedPrinting,
+      });
+    } else if (!observation.structurallyComplete) {
+      diagnostics.push({
+        code: "printing_match_insufficient_evidence",
+        source_observation_id: observation.sourceObservationId,
+        locator: null,
+        candidate_printing_ids: [],
+        detail:
+          "The Card-only retained observation is not structurally complete.",
+      });
+    }
+    plans.push({
+      sourceObservationId: observation.sourceObservationId,
+      cardId,
+      printingId,
       locator: observation.locator,
-      candidate_printing_ids: matches.map((match) => match.id),
-      detail:
-        "The retained evidence has more than one exactly compatible Printing.",
+      compatibility,
+      memberships: observation.memberships,
+      withdrawal: observation.withdrawal,
     });
-    printingId = matches[0]!.id;
-  } else if (located !== null) {
-    printingId = located.id;
-  } else if (matches.length === 1) {
-    printingId = matches[0]!.id;
-  } else if (
-    !observation.demonstrablyNovel ||
-    observation.noveltyBasis === null
-  ) {
-    diagnostics.push({
-      code: "printing_match_insufficient_evidence",
-      source_observation_id: observation.sourceObservationId,
-      locator: observation.locator,
-      candidate_printing_ids: [],
-      detail:
-        "A complete zero-match can create a Printing only with retained evidence that its appearance is demonstrably novel.",
-    });
-    printingId = await printingIdFor(compatibility);
-  } else {
-    printingId = await printingIdFor(compatibility);
+    sourceWarnings.push(...observation.sourceWarnings);
   }
 
   if (diagnostics.length > 0) {
     return blockedResult(database, runId, diagnostics, observedAt);
   }
 
-  const candidate = candidateWithIdentities(
-    observation,
-    cardId,
-    printingId,
+  const candidate: FixtureCandidate = {
+    fixture: "first-catalogue",
+    selected_games: [retained.supportedGame],
+    cards: [...cards.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+    printings: [...printings.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+  };
+  const groupedMemberships = mergedPlanMemberships(plans);
+  const relationshipWarnings = (
+    await Promise.all(
+      [...groupedMemberships].map(([printingId, memberships]) =>
+        relationshipDisappearanceWarnings(
+          database,
+          printingId,
+          memberships,
+        ),
+      ),
+    )
+  ).flat();
+  const disappearanceWarnings = await printingDisappearanceWarnings(
+    database,
+    retained.sourceLineage,
+    [...printings.keys()],
   );
-  const [relationshipWarnings, disappearanceWarnings] = await Promise.all([
-    relationshipDisappearanceWarnings(
-      database,
-      printingId,
-      observation.memberships,
-    ),
-    printingDisappearanceWarnings(
-      database,
-      retained.sourceLineage,
-      printingId,
-    ),
-  ]);
   const warnings = [
-    ...observation.vocabularyWarnings,
+    ...sourceWarnings,
     ...relationshipWarnings,
     ...disappearanceWarnings,
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  const candidateDigest = await sha256Text(
-    canonicalJson({
-      catalogue_data: candidate,
-      printing_identity_evidence: compatibility,
-      locator: observation.locator,
-      memberships: observation.memberships,
-      withdrawal: observation.withdrawal,
-    }),
-  );
+  const digestPayloadJson = canonicalJson({
+    catalogue_data: candidate,
+    observation_plans: digestObservationPlans(plans),
+  });
+  const candidateDigest = await sha256Text(digestPayloadJson);
   await persistReviewableCandidate(database, {
     runId,
     observationSetId: retained.observationSetId,
     sourceSnapshotId: retained.sourceSnapshotId,
-    sourceObservationId: observation.sourceObservationId,
     sourceLineage: retained.sourceLineage,
-    locator: observation.locator,
-    compatibility,
-    memberships: observation.memberships,
-    withdrawal: observation.withdrawal,
+    plans,
     warnings,
     candidate,
+    digestPayloadJson,
     candidateDigest,
     observedAt,
   });
@@ -221,6 +326,73 @@ export async function showReconciledPrinting(
     contract: "card-keepr-reconciled-printing@1",
     ...printing,
   };
+}
+
+function digestObservationPlans(
+  plans: readonly {
+    sourceObservationId: string;
+    cardId: string;
+    printingId: string | null;
+    locator: string | null;
+    compatibility: PrintingCompatibility | null;
+    memberships: Memberships;
+    withdrawal: Withdrawal | null;
+  }[],
+): Record<string, unknown>[] {
+  const semanticPlans = plans.map(
+    ({ sourceObservationId: _sourceObservationId, ...semantic }) => semantic,
+  );
+  return [
+    ...new Map(
+      semanticPlans.map((plan) => [canonicalJson(plan), plan]),
+    ).values(),
+  ].sort((left, right) =>
+    canonicalJson(left).localeCompare(canonicalJson(right)),
+  );
+}
+
+function mergedPlanMemberships(
+  plans: readonly {
+    printingId: string | null;
+    memberships: Memberships;
+  }[],
+): Map<string, Memberships> {
+  const grouped = new Map<
+    string,
+    {
+      products: Set<string>;
+      distributionContexts: Set<string>;
+      sourceBuckets: Set<string>;
+    }
+  >();
+  for (const plan of plans) {
+    if (plan.printingId === null) continue;
+    const membership = grouped.get(plan.printingId) ?? {
+      products: new Set<string>(),
+      distributionContexts: new Set<string>(),
+      sourceBuckets: new Set<string>(),
+    };
+    plan.memberships.products.forEach((value) =>
+      membership.products.add(value),
+    );
+    plan.memberships.distribution_contexts.forEach((value) =>
+      membership.distributionContexts.add(value),
+    );
+    plan.memberships.source_buckets.forEach((value) =>
+      membership.sourceBuckets.add(value),
+    );
+    grouped.set(plan.printingId, membership);
+  }
+  return new Map(
+    [...grouped].map(([printingId, membership]) => [
+      printingId,
+      {
+        products: [...membership.products].sort(),
+        distribution_contexts: [...membership.distributionContexts].sort(),
+        source_buckets: [...membership.sourceBuckets].sort(),
+      },
+    ]),
+  );
 }
 
 async function blockedResult(

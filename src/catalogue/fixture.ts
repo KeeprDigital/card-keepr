@@ -12,35 +12,32 @@ export type SupportedGame =
 
 export type FixtureCandidate = {
   fixture: typeof firstCatalogueFixture;
-  selected_games: readonly ["one-piece"];
-  cards: readonly [FixtureCard];
-  printings: readonly [FixturePrinting];
+  selected_games: readonly SupportedGame[];
+  cards: readonly FixtureCard[];
+  printings: readonly FixturePrinting[];
 };
 
 export type FixtureCard = {
   id: string;
-  game: "one-piece";
-  official_identity: {
-    kind: "card_number";
-    value: string;
-  };
+  game: SupportedGame;
+  official_identity:
+    | {
+        kind: "card_number";
+        value: string;
+      }
+    | {
+        kind: "functional_designation";
+        value: "DON!!";
+      };
   name: string;
-  effective_rules_text: string;
+  effective_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1";
-    attributes: {
-      card_type: "leader";
-      colours: readonly ["red"];
-      cost: null;
-      life: number;
-      battle_attributes: readonly ["strike"];
-      power: number;
-      counter: null;
-      traits: readonly ["Straw Hat Crew"];
-      block_icons: readonly ["1"];
-      effect_text: string;
-      trigger_text: null;
-    };
+    profile:
+      | "one-piece@1"
+      | "fusion-world@1"
+      | "digimon@1"
+      | "gundam@1";
+    attributes: Record<string, unknown>;
   };
 };
 
@@ -48,16 +45,18 @@ export type FixturePrinting = {
   id: string;
   card_id: string;
   rarity: {
-    normalized: string;
-    raw: string;
+    normalized: string | null;
+    raw: string | null;
   };
-  printed_rules_text: string;
+  printed_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1";
-    attributes: {
-      illustration_types: readonly [];
-    };
-  };
+    profile:
+      | "one-piece@1"
+      | "fusion-world@1"
+      | "digimon@1"
+      | "gundam@1";
+    attributes: Record<string, unknown>;
+  } | null;
 };
 
 export async function fixtureCandidate(

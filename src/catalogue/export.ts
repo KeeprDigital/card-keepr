@@ -1,4 +1,5 @@
-import type { FixtureCandidate } from "./fixture";
+import type { FixtureCandidate, SupportedGame } from "./fixture";
+import type { NormalizedLifecycle } from "./reconciliation-publication";
 import { verifyExportSchemas } from "./export-validation";
 import {
   canonicalJson,
@@ -48,9 +49,9 @@ type CatalogueExportManifest = {
   };
   published_at: string;
   export_created_at: string;
-  supported_games: readonly ["one-piece"];
+  supported_games: readonly SupportedGame[];
   source_freshness: readonly {
-    game: "one-piece";
+    game: SupportedGame;
     area: "cards-and-printings";
     checked_at: string;
   }[];
@@ -77,8 +78,12 @@ export async function buildCatalogueExport(
   candidateDigest: string,
   catalogueRevisionId: string,
   publishedAt: string,
+  lifecycles?: {
+    cards: Readonly<Record<string, NormalizedLifecycle>>;
+    printings: Readonly<Record<string, NormalizedLifecycle>>;
+  },
 ): Promise<BuiltCatalogueExport> {
-  const records = exportRecords(candidate, catalogueRevisionId);
+  const records = exportRecords(candidate, catalogueRevisionId, lifecycles);
   const components: ExportComponent[] = [];
   const objects: ExportObject[] = [];
 
@@ -123,14 +128,12 @@ export async function buildCatalogueExport(
     },
     published_at: publishedAt,
     export_created_at: publishedAt,
-    supported_games: ["one-piece"],
-    source_freshness: [
-      {
-        game: "one-piece",
+    supported_games: candidate.selected_games,
+    source_freshness: candidate.selected_games.map((game) => ({
+        game,
         area: "cards-and-printings",
         checked_at: publishedAt,
-      },
-    ],
+      })),
     components,
     manifest_sha256: "0".repeat(64),
   };
@@ -180,40 +183,36 @@ function assertFixtureExportIsBounded(
 function exportRecords(
   candidate: FixtureCandidate,
   revisionId: string,
+  lifecycles?: {
+    cards: Readonly<Record<string, NormalizedLifecycle>>;
+    printings: Readonly<Record<string, NormalizedLifecycle>>;
+  },
 ): Record<(typeof componentDefinitions)[number][0], readonly unknown[]> {
-  const lifecycle = {
+  const defaultLifecycle = {
     first_revision_id: revisionId,
     last_observed_revision_id: revisionId,
     withdrawn: false,
   };
   return {
-    "supported-games": [
-      {
+    "supported-games": candidate.selected_games.map((game) => ({
         type: "supported_game",
-        id: "game_one_piece",
-        key: "one-piece",
-        name: "One Piece Card Game",
-        supported_locales: ["EN-OCEANIA"],
-        game_profile: "one-piece@1",
-      },
-    ],
-    "game-profiles": [
-      {
+        ...supportedGameExport(game),
+      })),
+    "game-profiles": candidate.selected_games.map((game) => ({
         type: "game_profile",
-        profile: "one-piece@1",
-        game: "one-piece",
+        profile: `${game}@1`,
+        game,
         schema: { type: "object" },
-      },
-    ],
+      })),
     cards: candidate.cards.map((card) => ({
       type: "card",
       ...card,
-      lifecycle,
+      lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
     })),
     printings: candidate.printings.map((printing) => ({
       type: "printing",
       ...printing,
-      lifecycle,
+      lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
     })),
     "printing-images": [],
     products: [],
@@ -223,4 +222,38 @@ function exportRecords(
     "legality-rules": [],
     relationships: [],
   };
+}
+
+function supportedGameExport(game: SupportedGame) {
+  const definitions = {
+    "one-piece": {
+      id: "game_one_piece",
+      key: "one-piece",
+      name: "One Piece Card Game",
+      supported_locales: ["EN-OCEANIA"],
+      game_profile: "one-piece@1",
+    },
+    "fusion-world": {
+      id: "game_fusion_world",
+      key: "fusion-world",
+      name: "Dragon Ball Super Card Game Fusion World",
+      supported_locales: ["EN-OCEANIA"],
+      game_profile: "fusion-world@1",
+    },
+    digimon: {
+      id: "game_digimon",
+      key: "digimon",
+      name: "Digimon Card Game",
+      supported_locales: ["EN-OCEANIA"],
+      game_profile: "digimon@1",
+    },
+    gundam: {
+      id: "game_gundam",
+      key: "gundam",
+      name: "Gundam Card Game",
+      supported_locales: ["EN-ASIA", "EN-US"],
+      game_profile: "gundam@1",
+    },
+  } as const;
+  return definitions[game];
 }

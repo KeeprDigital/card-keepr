@@ -1,5 +1,6 @@
 import { sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
+import type { SupportedGame } from "./fixture";
 
 type EvidenceRow = {
   observation_set_id: string;
@@ -69,20 +70,34 @@ export async function retainedReconciliationObservation(
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
     !Array.isArray(document.observations) ||
-    document.observations.length !== 1
+    document.observations.length === 0
   ) {
     throw new Error("Retained Source Observation Set provenance is invalid.");
-  }
-  const wrapped = document.observations[0];
-  if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
-    throw new Error("Retained Source Observation identity is invalid.");
   }
   return {
     observationSetId: row.observation_set_id,
     sourceSnapshotId: row.source_snapshot_id,
     sourceLineage: row.source_lineage,
-    observation: parseReconciliationObservation(wrapped.id, wrapped.value),
+    supportedGame: supportedGame(row.supported_game),
+    observations: document.observations.map((wrapped) => {
+      if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
+        throw new Error("Retained Source Observation identity is invalid.");
+      }
+      return parseReconciliationObservation(wrapped.id, wrapped.value);
+    }),
   };
+}
+
+function supportedGame(value: string): SupportedGame {
+  if (
+    value !== "one-piece" &&
+    value !== "fusion-world" &&
+    value !== "digimon" &&
+    value !== "gundam"
+  ) {
+    throw new Error("Retained Source Observation Set game is unsupported.");
+  }
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

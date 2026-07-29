@@ -141,87 +141,233 @@ export default defineConfig({
 });
 
 function reconciliationSourceDocument(scenario: string) {
+  if (scenario === "multi-printing") {
+    const base = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP05-005",
+      name: "Multiple Printing Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/multi/base",
+      lineageMarker: "multi-base",
+    });
+    return {
+      cards: [
+        base,
+        {
+          ...base,
+          identity_evidence: {
+            ...base.identity_evidence,
+            locator: "/official/multi/alternate",
+            artwork_fingerprint: `sha256:${"d".repeat(64)}`,
+            novelty_basis: {
+              ...base.identity_evidence.novelty_basis,
+              source_url:
+                "https://official-source.invalid/images/OP05-005-alt.png",
+              artwork_fingerprint: `sha256:${"d".repeat(64)}`,
+            },
+          },
+          appearance_evidence: {
+            images: [
+              {
+                role: "front",
+                source_url:
+                  "https://official-source.invalid/images/OP05-005-alt.png",
+                artwork_fingerprint: `sha256:${"d".repeat(64)}`,
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "profile-fusion-world") {
+    return {
+      cards: [
+        printingObservation({
+          game: "fusion-world",
+          profile: "fusion-world@1",
+          cardNumber: "FB01-001",
+          name: "Son Goku",
+          cardAttributes: {
+            card_type: "battle",
+            colours: ["red"],
+            cost: 1,
+            specified_cost: [{ colour: "red", count: 1 }],
+            power: 10000,
+            combo_power: 5000,
+            traits: ["Saiyan"],
+            skills: [{ kind: "ordinary", text: "Official skill" }],
+          },
+          printingAttributes: {},
+          locator: "/official/fusion-world/FB01-001",
+          lineageMarker: "fusion-world",
+        }),
+      ],
+    };
+  }
+  if (scenario === "profile-digimon") {
+    return {
+      cards: [
+        printingObservation({
+          game: "digimon",
+          profile: "digimon@1",
+          cardNumber: "BT1-001",
+          name: "Agumon",
+          cardAttributes: {
+            card_type: "digimon",
+            colours: ["red"],
+            level: 3,
+            play_cost: 3,
+            use_cost: null,
+            dp: 2000,
+            form: "Rookie",
+            attribute: "Vaccine",
+            traits: ["Reptile"],
+            digivolution_requirements: [],
+            text_sections: [{ kind: "effect", text: "Official effect" }],
+          },
+          printingAttributes: { alternative_art: false },
+          locator: "/official/digimon/BT1-001",
+          lineageMarker: "digimon",
+        }),
+      ],
+    };
+  }
+  if (scenario === "profile-gundam") {
+    return {
+      cards: [
+        printingObservation({
+          game: "gundam",
+          profile: "gundam@1",
+          cardNumber: "GD01-001",
+          name: "Gundam",
+          cardAttributes: {
+            card_type: "unit",
+            colours: ["blue"],
+            level: 4,
+            cost: 3,
+            block_icon: "1",
+            effect_text: "Official effect",
+            zone: "space",
+            traits: ["Earth Federation"],
+            link_condition: null,
+            ap: 3,
+            hp: 4,
+            series_titles: ["Mobile Suit Gundam"],
+          },
+          printingAttributes: { alternate_art: false },
+          locator: "/official/gundam/GD01-001",
+          lineageMarker: "gundam",
+        }),
+      ],
+    };
+  }
+  if (scenario === "profile-don") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "functional_designation",
+              value: "DON!!",
+            },
+            name: "DON!!",
+            effective_rules_text: "Your turn +1000 power.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: {
+                card_type: "don",
+                colours: [],
+                cost: null,
+                life: null,
+                battle_attributes: [],
+                power: null,
+                counter: null,
+                traits: [],
+                block_icons: [],
+                effect_text: "Your turn +1000 power.",
+                trigger_text: null,
+              },
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["don-rules"],
+          },
+        },
+      ],
+    };
+  }
   const conflict = scenario.startsWith("conflict");
   const newLocator = scenario === "new-locator";
   const unknownVocabulary = scenario === "unknown-vocabulary";
+  const canonical = scenario.startsWith("canonical");
+  const incompleteAppearance = scenario === "incomplete-appearance";
   return {
     cards: [
       {
-        card: {
+        ...printingObservation({
           game: "one-piece",
-          official_identity: {
-            kind: "card_number",
-            value: conflict
-              ? "OP09-001"
-              : scenario === "not-demonstrably-novel"
+          profile: "one-piece@1",
+          cardNumber: conflict
+            ? "OP09-001"
+            : canonical
+              ? "OP07-007"
+              : scenario === "repeatable"
+                ? "OP04-004"
+              : scenario === "not-demonstrably-novel" ||
+                  incompleteAppearance
                 ? "OP08-008"
                 : "OP01-001",
+          name:
+            scenario === "canonical-name-conflict"
+              ? "Unsupported replacement name"
+              : conflict
+                ? "Conflict Card"
+                : canonical
+                  ? "Canonical Card"
+                  : "Monkey.D.Luffy",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: {
+            illustration_types: unknownVocabulary
+              ? ["etched-future"]
+              : [],
           },
-          name: conflict ? "Conflict Card" : "Monkey.D.Luffy",
-          effective_rules_text: "Official effective rules",
-          game_data: {
-            profile: "one-piece@1",
-            attributes: {
-              card_type: "leader",
-              colours: ["red"],
-              cost: null,
-              life: 5,
-              battle_attributes: ["strike"],
-              power: 5000,
-              counter: null,
-              traits: ["Straw Hat Crew"],
-              block_icons: ["1"],
-              effect_text: "Official effective rules",
-              trigger_text: null,
-            },
-          },
-        },
-        printing: {
-          rarity: { raw: "L", normalized: "leader" },
-          printed_rules_text: "Official printed rules",
-          game_data: {
-            profile: "one-piece@1",
-            attributes: { illustration_types: [] },
-          },
-        },
-        identity_evidence: {
           locator: conflict
             ? "/official/conflict"
-            : newLocator
-              ? "/official/renamed"
-              : `/official/${scenario}`,
-          artwork_fingerprint: `sha256:${
-            scenario === "not-demonstrably-novel"
-              ? "c".repeat(64)
-              : "a".repeat(64)
-          }`,
-          printed_fields_digest: `sha256:${"b".repeat(64)}`,
-          treatment:
-            scenario === "conflict-changed" ? "parallel-foil" : "standard",
-          demonstrably_novel:
+            : canonical
+              ? `/official/${scenario}`
+              : newLocator
+                ? "/official/renamed"
+                : `/official/${scenario}`,
+          lineageMarker:
+            scenario === "not-demonstrably-novel" ||
+            incompleteAppearance
+              ? "different"
+              : "one-piece",
+          demonstrablyNovel:
             scenario !== "not-demonstrably-novel",
-          novelty_basis: "Officially distinguished artwork record",
-        },
-        memberships: newLocator
-          ? {
-              products: ["product_promotion"],
-              distribution_contexts: ["context_event"],
-              source_buckets: ["promotion-list"],
-            }
-          : {
-              products: ["product_op01"],
-              distribution_contexts: [],
-              source_buckets: ["main-list"],
-            },
-        optional_vocabulary: unknownVocabulary
-          ? [
-              {
-                profile: "one-piece@1",
-                path: "printing.illustration_types",
-                raw_value: "etched-future",
-              },
-            ]
-          : [],
+          includeAppearance: !incompleteAppearance,
+          treatment:
+            scenario === "conflict-changed"
+              ? "parallel-foil"
+              : "standard",
+          memberships: newLocator
+            ? {
+                products: ["product_promotion"],
+                distribution_contexts: ["context_event"],
+                source_buckets: ["promotion-list"],
+              }
+            : undefined,
+        }),
+        ...(unknownVocabulary
+          ? { new_official_label: "Bandai-added-value" }
+          : {}),
         ...(scenario === "withdrawn"
           ? {
               withdrawal: {
@@ -232,5 +378,108 @@ function reconciliationSourceDocument(scenario: string) {
           : {}),
       },
     ],
+  };
+}
+
+function printingObservation(input: {
+  game: string;
+  profile: string;
+  cardNumber: string;
+  name: string;
+  cardAttributes: Record<string, unknown>;
+  printingAttributes: Record<string, unknown>;
+  locator: string;
+  lineageMarker: string;
+  demonstrablyNovel?: boolean;
+  includeAppearance?: boolean;
+  treatment?: string | null;
+  memberships?: {
+    products: string[];
+    distribution_contexts: string[];
+    source_buckets: string[];
+  };
+}) {
+  const artworkFingerprint = `sha256:${
+    input.lineageMarker === "different" ? "c".repeat(64) : "a".repeat(64)
+  }`;
+  return {
+    card: {
+      game: input.game,
+      official_identity: {
+        kind: "card_number",
+        value: input.cardNumber,
+      },
+      name: input.name,
+      effective_rules_text: "Official effective rules",
+      game_data: {
+        profile: input.profile,
+        attributes: input.cardAttributes,
+      },
+    },
+    printing: {
+      rarity: { raw: "L", normalized: "leader" },
+      printed_rules_text: "Official printed rules",
+      game_data: {
+        profile: input.profile,
+        attributes: input.printingAttributes,
+      },
+    },
+    identity_evidence: {
+      locator: input.locator,
+      artwork_fingerprint: artworkFingerprint,
+      printed_fields_digest: `sha256:${"b".repeat(64)}`,
+      treatment: input.treatment ?? "standard",
+      demonstrably_novel: input.demonstrablyNovel ?? true,
+      novelty_basis: {
+        kind: "official_printing_image",
+        source_url: `https://official-source.invalid/images/${input.cardNumber}.png`,
+        artwork_fingerprint: artworkFingerprint,
+      },
+    },
+    appearance_evidence:
+      input.includeAppearance === false
+        ? { images: [] }
+        : {
+            images: [
+              {
+                role: "front",
+                source_url: `https://official-source.invalid/images/${input.cardNumber}.png`,
+                artwork_fingerprint: artworkFingerprint,
+              },
+            ],
+          },
+    completeness: completeEvidence(),
+    memberships:
+      input.memberships ?? {
+        products: ["product_op01"],
+        distribution_contexts: [],
+        source_buckets: ["main-list"],
+      },
+  };
+}
+
+function completeEvidence() {
+  return {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 1,
+    parsed_record_count: 1,
+  };
+}
+
+function onePieceLeaderAttributes() {
+  return {
+    card_type: "leader",
+    colours: ["red"],
+    cost: null,
+    life: 5,
+    battle_attributes: ["strike"],
+    power: 5000,
+    counter: null,
+    traits: ["Straw Hat Crew"],
+    block_icons: ["1"],
+    effect_text: "Official effective rules",
+    trigger_text: null,
   };
 }
