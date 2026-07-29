@@ -1,6 +1,7 @@
 import type { FixtureCard } from "./fixture";
 import {
   compatibilityFields,
+  isGundamEnglishLineage,
   type PrintingCompatibility,
 } from "./reconciliation-model";
 import { canonicalJson } from "./serialization";
@@ -53,15 +54,58 @@ export async function compatiblePrintings(
   database: D1Database,
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
+  const crossLocale = isGundamEnglishLineage(
+    compatibility.source_lineage,
+  );
   const result = await database
     .prepare(
-      `SELECT * FROM reconciled_printings
-       WHERE ${compatibilityPredicate}
-       ORDER BY id`,
+      crossLocale
+        ? `SELECT * FROM reconciled_printings
+           WHERE card_id IS ?
+             AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+             AND artwork_fingerprint IS ?
+             AND printed_fields_digest IS ?
+             AND rarity_normalized IS ?
+             AND treatment IS ?
+           ORDER BY id`
+        : `SELECT * FROM reconciled_printings
+           WHERE ${compatibilityPredicate}
+           ORDER BY id`,
     )
-    .bind(...compatibilityValues(compatibility))
+    .bind(
+      ...(crossLocale
+        ? [
+            compatibility.card_id,
+            compatibility.artwork_fingerprint,
+            compatibility.printed_fields_digest,
+            compatibility.rarity_normalized,
+            compatibility.treatment,
+          ]
+        : compatibilityValues(compatibility)),
+    )
     .all<ReconciledPrintingRow>();
   return result.results;
+}
+
+export async function printingsWithAppearance(
+  database: D1Database,
+  compatibility: PrintingCompatibility,
+): Promise<ReconciledPrintingRow[]> {
+  const rows = await database
+    .prepare(
+      `SELECT * FROM reconciled_printings
+       WHERE card_id = ?
+         AND artwork_fingerprint = ?
+         AND treatment IS ?
+       ORDER BY id`,
+    )
+    .bind(
+      compatibility.card_id,
+      compatibility.artwork_fingerprint,
+      compatibility.treatment,
+    )
+    .all<ReconciledPrintingRow>();
+  return rows.results;
 }
 
 export async function printingAtLocator(
@@ -79,6 +123,30 @@ export async function printingAtLocator(
     )
     .bind(sourceLineage, locator)
     .first<ReconciledPrintingRow>();
+}
+
+export async function hasOtherGundamLocaleEvidence(
+  database: D1Database,
+  printingId: string,
+  sourceLineage: string,
+): Promise<boolean> {
+  const counterpart =
+    sourceLineage === "gundam-en-asia"
+      ? "gundam-en-us"
+      : sourceLineage === "gundam-en-us"
+        ? "gundam-en-asia"
+        : null;
+  if (counterpart === null) return true;
+  const row = await database
+    .prepare(
+      `SELECT printing_id
+       FROM reconciled_printing_locators
+       WHERE printing_id = ? AND source_lineage = ?
+       LIMIT 1`,
+    )
+    .bind(printingId, counterpart)
+    .first<{ printing_id: string }>();
+  return row !== null;
 }
 
 export async function canonicalCardConflict(

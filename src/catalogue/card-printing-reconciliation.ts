@@ -14,13 +14,16 @@ import {
   compatiblePrintings,
   canonicalCardConflict,
   existingCard,
+  hasOtherGundamLocaleEvidence,
   printingAtLocator,
+  printingsWithAppearance,
 } from "./reconciliation-repository";
 import {
   failReconciliation,
   persistReviewableCandidate,
 } from "./reconciliation-candidate-store";
 import {
+  cardDisappearanceWarnings,
   printingDisappearanceWarnings,
   publicReconciledPrinting,
   relationshipDisappearanceWarnings,
@@ -80,8 +83,16 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   const diagnostics: Diagnostic[] = [];
-  const cards = new Map<string, FixtureCard>();
-  const printings = new Map<string, FixturePrinting>();
+  const priorCandidate = await candidateAtRevision(
+    database,
+    run.expected_current_revision_id,
+  );
+  const cards = new Map<string, FixtureCard>(
+    priorCandidate?.cards.map((card) => [card.id, card]) ?? [],
+  );
+  const printings = new Map<string, FixturePrinting>(
+    priorCandidate?.printings.map((printing) => [printing.id, printing]) ?? [],
+  );
   const localCardFacts = new Map<string, string>();
   const localCompatibility = new Map<string, string>();
   const localLocators = new Map<
@@ -158,9 +169,10 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       const compatibilityKey = canonicalJson(compatibility);
       const localLocated = localLocators.get(locator);
-      const [located, databaseMatches] = await Promise.all([
+      const [located, databaseMatches, appearanceMatches] = await Promise.all([
         printingAtLocator(database, retained.sourceLineage, locator),
         compatiblePrintings(database, compatibility),
+        printingsWithAppearance(database, compatibility),
       ]);
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
@@ -197,8 +209,19 @@ export async function reconcileRetainedCardPrintingEvidence(
       } else {
         printingId = await printingIdFor(compatibility);
         if (
+          appearanceMatches.length > 0
+        ) {
+          diagnostics.push({
+            code: "printing_match_contradictory",
+            source_observation_id: observation.sourceObservationId,
+            locator,
+            candidate_printing_ids: appearanceMatches.map(({ id }) => id),
+            detail:
+              "The claimed novel appearance already exists with materially incompatible rules, rarity, lineage, or treatment evidence.",
+          });
+        } else if (
           !observation.demonstrablyNovel ||
-          !observation.structurallyComplete ||
+          !retained.structurallyComplete ||
           !observation.noveltyProofComplete
         ) {
           diagnostics.push({
@@ -218,7 +241,23 @@ export async function reconcileRetainedCardPrintingEvidence(
         card_id: cardId,
         ...proposedPrinting,
       });
-    } else if (!observation.structurallyComplete) {
+      if (
+        retained.supportedGame === "gundam" &&
+        !(await hasOtherGundamLocaleEvidence(
+          database,
+          printingId,
+          retained.sourceLineage,
+        ))
+      ) {
+        sourceWarnings.push({
+          code: "single_locale_gundam_printing",
+          printing_id: printingId,
+          source_lineage: retained.sourceLineage,
+          detail:
+            "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
+        });
+      }
+    } else if (!retained.structurallyComplete) {
       diagnostics.push({
         code: "printing_match_insufficient_evidence",
         source_observation_id: observation.sourceObservationId,
@@ -246,7 +285,12 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
-    selected_games: [retained.supportedGame],
+    selected_games: [
+      ...new Set([
+        ...(priorCandidate?.selected_games ?? []),
+        retained.supportedGame,
+      ]),
+    ].sort(),
     cards: [...cards.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
@@ -269,12 +313,20 @@ export async function reconcileRetainedCardPrintingEvidence(
   const disappearanceWarnings = await printingDisappearanceWarnings(
     database,
     retained.sourceLineage,
-    [...printings.keys()],
+    plans.flatMap((plan) =>
+      plan.printingId === null ? [] : [plan.printingId],
+    ),
+  );
+  const cardWarnings = await cardDisappearanceWarnings(
+    database,
+    retained.supportedGame,
+    plans.map((plan) => plan.cardId),
   );
   const warnings = [
     ...sourceWarnings,
     ...relationshipWarnings,
     ...disappearanceWarnings,
+    ...cardWarnings,
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
@@ -303,11 +355,34 @@ export async function reconcileRetainedCardPrintingEvidence(
     candidate_digest: candidateDigest,
     expected_current_revision_id: run.expected_current_revision_id,
     source_observation_set_id: retained.observationSetId,
-    cards: candidate.cards,
-    printings: candidate.printings,
+    cards: [...cards.values()]
+      .filter((card) => localCardFacts.has(card.id))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    printings: [...printings.values()]
+      .filter((printing) =>
+        plans.some((plan) => plan.printingId === printing.id),
+      )
+      .sort((left, right) => left.id.localeCompare(right.id)),
     diagnostics: [],
     warnings,
   };
+}
+
+async function candidateAtRevision(
+  database: D1Database,
+  revisionId: string,
+): Promise<FixtureCandidate | null> {
+  const row = await database
+    .prepare(
+      `SELECT run.candidate_json
+       FROM catalogue_revisions AS revision
+       JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
+       WHERE revision.id = ?`,
+    )
+    .bind(revisionId)
+    .first<{ candidate_json: string }>();
+  if (row === null) return null;
+  return JSON.parse(row.candidate_json) as FixtureCandidate;
 }
 
 export async function showReconciledPrinting(

@@ -4,6 +4,11 @@ import type {
   SupportedGame,
 } from "./fixture";
 import { canonicalJson } from "./serialization";
+import {
+  canonicalProfileAttributes,
+  requiredProfileContract,
+  type ProfileWarning,
+} from "./reconciliation-profile";
 
 export type PrintingCompatibility = Readonly<{
   card_id: string;
@@ -29,14 +34,7 @@ export type Memberships = Readonly<{
   source_buckets: readonly string[];
 }>;
 
-export type ReconciliationWarning = Readonly<{
-  code: "unknown_source_vocabulary" | "unknown_source_field";
-  source_observation_id: string;
-  profile: string;
-  path: string;
-  raw_value: string;
-  detail: string;
-}>;
+export type ReconciliationWarning = ProfileWarning;
 
 export type ParsedReconciliationObservation = Readonly<{
   sourceObservationId: string;
@@ -50,7 +48,6 @@ export type ParsedReconciliationObservation = Readonly<{
   treatment: string | null;
   demonstrablyNovel: boolean;
   noveltyProofComplete: boolean;
-  structurallyComplete: boolean;
   memberships: Memberships;
   withdrawal: Withdrawal | null;
   sourceWarnings: readonly ReconciliationWarning[];
@@ -60,146 +57,6 @@ export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
   evidence: string;
 }>;
-
-type ProfileContract = {
-  game: SupportedGame;
-  cardFields: readonly string[];
-  printingFields: readonly string[];
-  controlledValues: Readonly<Record<string, readonly string[]>>;
-};
-
-const sharedColours = [
-  "red",
-  "green",
-  "blue",
-  "purple",
-  "black",
-  "yellow",
-  "white",
-  "colourless",
-] as const;
-
-const profileContracts: Readonly<Record<string, ProfileContract>> = {
-  "one-piece@1": {
-    game: "one-piece",
-    cardFields: [
-      "card_type",
-      "colours",
-      "cost",
-      "life",
-      "battle_attributes",
-      "power",
-      "counter",
-      "traits",
-      "block_icons",
-      "effect_text",
-      "trigger_text",
-    ],
-    printingFields: ["illustration_types"],
-    controlledValues: {
-      "card.card_type": ["leader", "character", "event", "stage", "don"],
-      "card.colours": sharedColours,
-      "printing.illustration_types": [
-        "comic",
-        "animation",
-        "original",
-        "other",
-      ],
-    },
-  },
-  "fusion-world@1": {
-    game: "fusion-world",
-    cardFields: [
-      "card_type",
-      "colours",
-      "cost",
-      "specified_cost",
-      "power",
-      "combo_power",
-      "traits",
-      "skills",
-      "leader_faces",
-    ],
-    printingFields: [],
-    controlledValues: {
-      "card.card_type": ["leader", "battle", "extra", "energy_marker"],
-      "card.colours": sharedColours,
-      "card.skills.kind": ["ordinary", "front", "back"],
-    },
-  },
-  "digimon@1": {
-    game: "digimon",
-    cardFields: [
-      "card_type",
-      "colours",
-      "level",
-      "play_cost",
-      "use_cost",
-      "dp",
-      "form",
-      "attribute",
-      "traits",
-      "digivolution_requirements",
-      "text_sections",
-      "dual_colours",
-      "dual_cost",
-      "link_dp",
-    ],
-    printingFields: ["alternative_art"],
-    controlledValues: {
-      "card.card_type": [
-        "digi_egg",
-        "digimon",
-        "tamer",
-        "option",
-        "digimon_option",
-      ],
-      "card.colours": sharedColours,
-      "card.text_sections.kind": [
-        "effect",
-        "inherited_effect",
-        "security_effect",
-        "rule",
-        "special_digivolution_condition",
-        "dual_effect",
-        "dual_rule",
-        "link_condition",
-        "link_effect",
-      ],
-    },
-  },
-  "gundam@1": {
-    game: "gundam",
-    cardFields: [
-      "card_type",
-      "colours",
-      "level",
-      "cost",
-      "block_icon",
-      "effect_text",
-      "zone",
-      "traits",
-      "link_condition",
-      "ap",
-      "hp",
-      "series_titles",
-    ],
-    printingFields: ["alternate_art"],
-    controlledValues: {
-      "card.card_type": [
-        "unit",
-        "pilot",
-        "command",
-        "base",
-        "resource",
-        "ex_base",
-        "ex_resource",
-        "unit_token",
-      ],
-      "card.colours": sharedColours,
-    },
-  },
-};
 
 const rootFields = new Set([
   "card",
@@ -266,8 +123,8 @@ export function parseReconciliationObservation(
   const rawCard = requiredRecord(record.card, "card");
   const gameData = requiredRecord(rawCard.game_data, "card.game_data");
   const profile = requiredString(gameData.profile, "card.game_data.profile");
-  const contract = profileContracts[profile];
-  if (contract === undefined || rawCard.game !== contract.game) {
+  const contract = requiredProfileContract(profile);
+  if (rawCard.game !== contract.game) {
     throw new Error("Retained Card evidence has an unsupported profile binding.");
   }
   const warnings: ReconciliationWarning[] = [];
@@ -313,16 +170,13 @@ export function parseReconciliationObservation(
     gameData.attributes,
     "card.game_data.attributes",
   );
-  const canonicalCardAttributes = canonicalAttributes(
+  const canonicalCardAttributes = canonicalProfileAttributes(
     sourceObservationId,
     profile,
     "card",
     rawCardAttributes,
-    contract.cardFields,
-    contract.controlledValues,
     warnings,
   );
-  validateCardAttributes(profile, canonicalCardAttributes);
   const identity = parseOfficialIdentity(rawCard.official_identity, contract.game);
   const card: Omit<FixtureCard, "id"> = {
     game: contract.game,
@@ -340,11 +194,14 @@ export function parseReconciliationObservation(
   const don =
     identity.kind === "functional_designation" &&
     identity.value === "DON!!";
-  if (don) {
+  if (don && record.printing !== undefined) {
+    throw new Error("The generic DON!! Card must not invent a Printing.");
+  }
+  if (record.printing === undefined) {
     if (
-      profile !== "one-piece@1" ||
-      canonicalCardAttributes.card_type !== "don" ||
-      record.printing !== undefined
+      don &&
+      (profile !== "one-piece@1" ||
+        canonicalCardAttributes.card_type !== "don")
     ) {
       throw new Error("The generic DON!! Card must not invent a Printing.");
     }
@@ -357,7 +214,6 @@ export function parseReconciliationObservation(
       treatment: null,
       demonstrablyNovel: false,
       noveltyProofComplete: true,
-      structurallyComplete: structuralCompleteness(record.completeness),
       memberships: parseMemberships(record.memberships),
       withdrawal: parseWithdrawal(record.withdrawal, false),
       sourceWarnings: sortedWarnings(warnings),
@@ -401,16 +257,13 @@ export function parseReconciliationObservation(
     printingGameData.attributes,
     "printing.game_data.attributes",
   );
-  const canonicalPrintingAttributes = canonicalAttributes(
+  const canonicalPrintingAttributes = canonicalProfileAttributes(
     sourceObservationId,
     profile,
     "printing",
     rawPrintingAttributes,
-    contract.printingFields,
-    contract.controlledValues,
     warnings,
   );
-  validatePrintingAttributes(profile, canonicalPrintingAttributes);
   const printing: Omit<FixturePrinting, "id" | "card_id"> = {
     rarity: {
       raw: nullableString(rarity.raw, "printing.rarity.raw"),
@@ -467,8 +320,6 @@ export function parseReconciliationObservation(
         identityEvidence.novelty_basis,
         artworkFingerprint,
       ),
-    structurallyComplete:
-      structuralCompleteness(record.completeness) && appearanceComplete,
     memberships: parseMemberships(record.memberships),
     withdrawal: parseWithdrawal(record.withdrawal, true),
     sourceWarnings: sortedWarnings(warnings),
@@ -495,132 +346,6 @@ function parseOfficialIdentity(
     throw new Error("Retained Card official identity is invalid.");
   }
   return { kind: "card_number", value: identity.value };
-}
-
-function canonicalAttributes(
-  sourceObservationId: string,
-  profile: string,
-  entity: "card" | "printing",
-  raw: Record<string, unknown>,
-  acceptedFields: readonly string[],
-  controlled: Readonly<Record<string, readonly string[]>>,
-  warnings: ReconciliationWarning[],
-): Record<string, unknown> {
-  const canonical: Record<string, unknown> = {};
-  for (const [field, value] of Object.entries(raw)) {
-    const path = `${entity}.${field}`;
-    if (!acceptedFields.includes(field)) {
-      warnings.push(fieldWarning(sourceObservationId, profile, path, value));
-      continue;
-    }
-    const accepted = controlled[path];
-    if (accepted !== undefined) {
-      if (Array.isArray(value)) {
-        canonical[field] = value.filter((item) => {
-          if (typeof item === "string" && accepted.includes(item)) return true;
-          warnings.push(
-            vocabularyWarning(sourceObservationId, profile, path, item),
-          );
-          return false;
-        });
-      } else if (typeof value === "string" && accepted.includes(value)) {
-        canonical[field] = value;
-      } else {
-        warnings.push(
-          vocabularyWarning(sourceObservationId, profile, path, value),
-        );
-        canonical[field] = null;
-      }
-      continue;
-    }
-    canonical[field] = value;
-  }
-  canonicalizeNestedProfileValues(
-    sourceObservationId,
-    profile,
-    canonical,
-    warnings,
-  );
-  return canonical;
-}
-
-function canonicalizeNestedProfileValues(
-  sourceObservationId: string,
-  profile: string,
-  attributes: Record<string, unknown>,
-  warnings: ReconciliationWarning[],
-): void {
-  if (profile === "fusion-world@1" && Array.isArray(attributes.skills)) {
-    attributes.skills = canonicalTypedTextArray(
-      sourceObservationId,
-      profile,
-      "card.skills",
-      attributes.skills,
-      ["ordinary", "front", "back"],
-      warnings,
-    );
-  }
-  if (
-    profile === "digimon@1" &&
-    Array.isArray(attributes.text_sections)
-  ) {
-    attributes.text_sections = canonicalTypedTextArray(
-      sourceObservationId,
-      profile,
-      "card.text_sections",
-      attributes.text_sections,
-      profileContracts[profile]!.controlledValues[
-        "card.text_sections.kind"
-      ]!,
-      warnings,
-    );
-  }
-}
-
-function canonicalTypedTextArray(
-  sourceObservationId: string,
-  profile: string,
-  path: string,
-  values: unknown[],
-  acceptedKinds: readonly string[],
-  warnings: ReconciliationWarning[],
-): Record<string, unknown>[] {
-  const result: Record<string, unknown>[] = [];
-  for (const [index, item] of values.entries()) {
-    if (!isRecord(item)) {
-      warnings.push(
-        fieldWarning(sourceObservationId, profile, `${path}[${index}]`, item),
-      );
-      continue;
-    }
-    detectUnknownFields(
-      sourceObservationId,
-      profile,
-      item,
-      new Set(["kind", "text"]),
-      `${path}[${index}]`,
-      warnings,
-    );
-    if (
-      typeof item.kind !== "string" ||
-      !acceptedKinds.includes(item.kind)
-    ) {
-      warnings.push(
-        vocabularyWarning(
-          sourceObservationId,
-          profile,
-          `${path}.kind`,
-          item.kind,
-        ),
-      );
-      continue;
-    }
-    if (typeof item.text !== "string") {
-      throw new Error(`${path}[${index}].text must be a string.`);
-    }
-    result.push({ kind: item.kind, text: item.text });
-  }
-  return result;
 }
 
 function inspectSharedObservationFields(
@@ -680,75 +405,6 @@ function inspectSharedObservationFields(
     );
     return value;
   }
-}
-
-function validateCardAttributes(
-  profile: string,
-  value: Record<string, unknown>,
-): void {
-  const contract = profileContracts[profile]!;
-  const required =
-    profile === "fusion-world@1"
-      ? contract.cardFields.filter((field) => field !== "leader_faces")
-      : profile === "digimon@1"
-        ? contract.cardFields.filter((field) =>
-            !["dual_colours", "dual_cost", "link_dp"].includes(field),
-          )
-        : contract.cardFields;
-  if (required.some((field) => !(field in value))) {
-    throw new Error(`Retained ${profile} Card evidence is incomplete.`);
-  }
-  if (
-    !Array.isArray(value.colours) ||
-    typeof value.card_type !== "string"
-  ) {
-    throw new Error(`Retained ${profile} Card evidence is invalid.`);
-  }
-  if (
-    profile === "fusion-world@1" &&
-    value.card_type === "leader" &&
-    (!Array.isArray(value.leader_faces) ||
-      value.leader_faces.length !== 2)
-  ) {
-    throw new Error("A Fusion World Leader requires two canonical faces.");
-  }
-}
-
-function validatePrintingAttributes(
-  profile: string,
-  value: Record<string, unknown>,
-): void {
-  if (
-    profile === "digimon@1" &&
-    typeof value.alternative_art !== "boolean"
-  ) {
-    throw new Error("A Digimon Printing requires alternative_art.");
-  }
-  if (
-    profile === "gundam@1" &&
-    typeof value.alternate_art !== "boolean"
-  ) {
-    throw new Error("A Gundam Printing requires alternate_art.");
-  }
-  if (
-    profile === "one-piece@1" &&
-    "illustration_types" in value &&
-    !Array.isArray(value.illustration_types)
-  ) {
-    throw new Error("One Piece illustration_types must be an array.");
-  }
-}
-
-function structuralCompleteness(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return (
-    value.structurally_complete === true &&
-    value.required_surfaces_complete === true &&
-    value.partitions_complete === true &&
-    Number.isInteger(value.declared_record_count) &&
-    Number.isInteger(value.parsed_record_count) &&
-    value.declared_record_count === value.parsed_record_count
-  );
 }
 
 function appearanceEvidenceComplete(

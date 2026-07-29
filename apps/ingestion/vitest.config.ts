@@ -182,26 +182,54 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
-  if (scenario === "profile-fusion-world") {
+  if (
+    scenario === "profile-fusion-world" ||
+    scenario === "union-fusion-world" ||
+    scenario === "profile-nested-unknown" ||
+    scenario === "profile-invalid-number"
+  ) {
     return {
       cards: [
         printingObservation({
           game: "fusion-world",
           profile: "fusion-world@1",
-          cardNumber: "FB01-001",
-          name: "Son Goku",
+          cardNumber:
+            scenario === "union-fusion-world" ? "FB99-999" : "FB01-001",
+          name:
+            scenario === "union-fusion-world"
+              ? "Union Son Goku"
+              : "Son Goku",
           cardAttributes: {
             card_type: "battle",
             colours: ["red"],
-            cost: 1,
-            specified_cost: [{ colour: "red", count: 1 }],
+            cost: scenario === "profile-invalid-number" ? -1 : 1,
+            specified_cost: [
+              {
+                colour: "red",
+                count: 1,
+                ...(scenario === "profile-nested-unknown"
+                  ? { new_metric: "retained raw" }
+                  : {}),
+              },
+            ],
             power: 10000,
             combo_power: 5000,
             traits: ["Saiyan"],
-            skills: [{ kind: "ordinary", text: "Official skill" }],
+            skills: [
+              {
+                kind: "ordinary",
+                text: "Official skill",
+                ...(scenario === "profile-nested-unknown"
+                  ? { new_label: "retained raw" }
+                  : {}),
+              },
+            ],
           },
           printingAttributes: {},
-          locator: "/official/fusion-world/FB01-001",
+          locator:
+            scenario === "union-fusion-world"
+              ? "/official/fusion-world/FB99-999"
+              : "/official/fusion-world/FB01-001",
           lineageMarker: "fusion-world",
         }),
       ],
@@ -264,6 +292,43 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (
+    scenario === "gundam-cross-asia" ||
+    scenario === "gundam-cross-us" ||
+    scenario === "gundam-cross-conflict"
+  ) {
+    return {
+      cards: [
+        printingObservation({
+          game: "gundam",
+          profile: "gundam@1",
+          cardNumber: "GD99-001",
+          name: "Cross-locale Gundam",
+          cardAttributes: {
+            card_type: "unit",
+            colours: ["blue"],
+            level: 4,
+            cost: 3,
+            block_icon: "1",
+            effect_text: "Official effect",
+            zone: "space",
+            traits: ["Earth Federation"],
+            link_condition: null,
+            ap: 3,
+            hp: 4,
+            series_titles: ["Mobile Suit Gundam"],
+          },
+          printingAttributes: { alternate_art: false },
+          locator: `/official/gundam/${scenario}`,
+          lineageMarker: "gundam-cross",
+          printedFieldsMarker:
+            scenario === "gundam-cross-conflict"
+              ? "conflicting"
+              : "shared",
+        }),
+      ],
+    };
+  }
   if (scenario === "profile-don") {
     return {
       cards: [
@@ -303,11 +368,39 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (scenario === "card-without-printing") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "card_number",
+              value: "OP99-000",
+            },
+            name: "Card-only evidence",
+            effective_rules_text: "Official rules without an appearance.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: onePieceLeaderAttributes(),
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["card-list"],
+          },
+        },
+      ],
+    };
+  }
   const conflict = scenario.startsWith("conflict");
   const newLocator = scenario === "new-locator";
   const unknownVocabulary = scenario === "unknown-vocabulary";
   const canonical = scenario.startsWith("canonical");
   const incompleteAppearance = scenario === "incomplete-appearance";
+  const setCountMismatch = scenario === "set-count-mismatch";
   return {
     cards: [
       {
@@ -368,6 +461,14 @@ function reconciliationSourceDocument(scenario: string) {
         ...(unknownVocabulary
           ? { new_official_label: "Bandai-added-value" }
           : {}),
+        ...(setCountMismatch
+          ? {
+              completeness: {
+                ...completeEvidence(),
+                declared_record_count: 2,
+              },
+            }
+          : {}),
         ...(scenario === "withdrawn"
           ? {
               withdrawal: {
@@ -393,6 +494,7 @@ function printingObservation(input: {
   demonstrablyNovel?: boolean;
   includeAppearance?: boolean;
   treatment?: string | null;
+  printedFieldsMarker?: string;
   memberships?: {
     products: string[];
     distribution_contexts: string[];
@@ -427,7 +529,11 @@ function printingObservation(input: {
     identity_evidence: {
       locator: input.locator,
       artwork_fingerprint: artworkFingerprint,
-      printed_fields_digest: `sha256:${"b".repeat(64)}`,
+      printed_fields_digest: `sha256:${
+        input.printedFieldsMarker === "conflicting"
+          ? "d".repeat(64)
+          : "b".repeat(64)
+      }`,
       treatment: input.treatment ?? "standard",
       demonstrably_novel: input.demonstrablyNovel ?? true,
       novelty_basis: {

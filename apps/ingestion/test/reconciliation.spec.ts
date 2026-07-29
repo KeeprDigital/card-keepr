@@ -364,6 +364,26 @@ test("a novel flag without structurally complete adapter and Printing Image evid
   });
 });
 
+test("immutable Observation Set counts, not an observation novelty assertion, decide structural completeness", async () => {
+  const run = await collect(
+    "/reconciliation/set-count-mismatch",
+    "reconcile-set-count-mismatch",
+  );
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    publishable: false,
+    diagnostics: [
+      {
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining(
+          "Source Observation Set provenance is invalid",
+        ),
+      },
+    ],
+  });
+});
+
 test("unknown controlled vocabulary remains retained evidence, warns, and stays out of the Game Profile", async () => {
   const run = await collect(
     "/reconciliation/unknown-vocabulary",
@@ -514,6 +534,134 @@ test("one complete retained set can publish multiple Printings without collapsin
   expect(published.response.status).toBe(200);
 });
 
+test("the profile registry strips and warns on unknown nested fields while enforcing exact numeric types", async () => {
+  const warningRun = await collect(
+    "/reconciliation/profile-nested-unknown",
+    "reconcile-profile-nested-unknown",
+    {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fusion-world-en@1",
+    },
+  );
+  const warned = await reconcile(warningRun.id);
+  expect(warned.response.status).toBe(200);
+  expect(warned.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "unknown_source_field",
+        path: "card.specified_cost[0].new_metric",
+        raw_value: "retained raw",
+      }),
+      expect.objectContaining({
+        code: "unknown_source_field",
+        path: "card.skills[0].new_label",
+        raw_value: "retained raw",
+      }),
+    ]),
+  );
+  expect(JSON.stringify(requiredFirst(warned.document, "cards"))).not.toContain(
+    "new_metric",
+  );
+  await post(`/v1/ingestion-runs/${warningRun.id}/rejection`, {
+    candidate_digest: requiredString(warned.document, "candidate_digest"),
+    idempotency_key: "reject-nested-profile-warning",
+  });
+
+  const invalidRun = await collect(
+    "/reconciliation/profile-invalid-number",
+    "reconcile-profile-invalid-number",
+    {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fusion-world-en@1",
+    },
+  );
+  const invalid = await reconcile(invalidRun.id);
+  expect(invalid.response.status).toBe(409);
+  expect(invalid.document).toMatchObject({
+    diagnostics: [
+      {
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining("card.cost"),
+      },
+    ],
+  });
+});
+
+test("a structurally complete non-DON Card may have zero catalogued Printings", async () => {
+  const run = await collect(
+    "/reconciliation/card-without-printing",
+    "reconcile-card-without-printing",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document.cards).toHaveLength(1);
+  expect(reconciled.document.printings).toEqual([]);
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+});
+
+test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substantive conflict blocks", async () => {
+  const asiaRun = await collect(
+    "/reconciliation/gundam-cross-asia",
+    "reconcile-gundam-cross-asia",
+    {
+      game: "gundam",
+      lineage: "gundam-en-asia",
+      adapter: "gundam-en-asia@1",
+    },
+  );
+  const asia = await reconcile(asiaRun.id);
+  const printingId = requiredString(
+    requiredFirst(asia.document, "printings"),
+    "id",
+  );
+  await approve(asia.document);
+
+  const usRun = await collect(
+    "/reconciliation/gundam-cross-us",
+    "reconcile-gundam-cross-us",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "gundam-en-us@1",
+    },
+  );
+  const us = await reconcile(usRun.id);
+  expect(requiredFirst(us.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  await approve(us.document);
+  const lifecycle = await get(
+    `/v1/reconciliation/printings/${printingId}`,
+  );
+  expect(lifecycle.document.locators).toEqual([
+    "/official/gundam/gundam-cross-asia",
+    "/official/gundam/gundam-cross-us",
+  ]);
+
+  const conflictRun = await collect(
+    "/reconciliation/gundam-cross-conflict",
+    "reconcile-gundam-cross-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "gundam-en-us@1",
+    },
+  );
+  const conflict = await reconcile(conflictRun.id);
+  expect(conflict.response.status).toBe(409);
+  expect(conflict.document).toMatchObject({
+    diagnostics: [
+      {
+        code: "printing_match_contradictory",
+        candidate_printing_ids: [printingId],
+      },
+    ],
+  });
+});
+
 test("repeated semantically identical retained evidence keeps one candidate digest and records no change", async () => {
   const firstRun = await collect(
     "/reconciliation/repeatable",
@@ -590,6 +738,177 @@ test("an unresolved canonical Card fact conflict hard-fails instead of replacing
       },
     ],
   });
+});
+
+test("sequential selected-game publications retain the complete current catalogue across D1 and export", async () => {
+  const onePieceRun = await collect(
+    "/reconciliation/base",
+    "reconcile-union-one-piece",
+  );
+  const onePiece = await reconcile(onePieceRun.id);
+  const onePieceCard = requiredFirst(onePiece.document, "cards");
+  const onePiecePrinting = requiredFirst(onePiece.document, "printings");
+  const onePiecePublished = await approve(onePiece.document);
+  expect(onePiecePublished.response.status).toBe(200);
+
+  const fusionRun = await collect(
+    "/reconciliation/union-fusion-world",
+    "reconcile-union-fusion-world",
+    {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fusion-world-en@1",
+    },
+  );
+  const fusion = await reconcile(fusionRun.id);
+  expect(fusion.response.status).toBe(200);
+  const candidate = await get(
+    `/v1/ingestion-runs/${fusionRun.id}/candidate`,
+  );
+  expect(candidate.document).toMatchObject({
+    diff: {
+      summary: {
+        cards_added: 1,
+        printings_added: 1,
+      },
+    },
+  });
+  const published = await approve(fusion.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+
+  const d1Cards = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT card_id FROM revision_cards WHERE catalogue_revision_id = ? ORDER BY card_id",
+  )
+    .bind(revisionId)
+    .all<{ card_id: string }>();
+  expect(d1Cards.results.length).toBeGreaterThanOrEqual(2);
+  expect(d1Cards.results.map(({ card_id }) => card_id)).toContain(
+    requiredString(onePieceCard, "id"),
+  );
+  const d1Printings = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT printing_id FROM revision_printings WHERE catalogue_revision_id = ? ORDER BY printing_id",
+  )
+    .bind(revisionId)
+    .all<{ printing_id: string }>();
+  expect(d1Printings.results.map(({ printing_id }) => printing_id)).toContain(
+    requiredString(onePiecePrinting, "id"),
+  );
+  expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(
+    d1Cards.results.length,
+  );
+});
+
+test("candidate inspection reports stable reconciliation matches rather than every entity as added", async () => {
+  const firstRun = await collect(
+    "/reconciliation/base",
+    "reconcile-inspection-base",
+  );
+  const first = await reconcile(firstRun.id);
+  const firstCard = requiredFirst(first.document, "cards");
+  const firstPrinting = requiredFirst(first.document, "printings");
+  await approve(first.document);
+
+  const nextRun = await collect(
+    "/reconciliation/new-locator",
+    "reconcile-inspection-new-locator",
+  );
+  const next = await reconcile(nextRun.id);
+  const inspected = await get(
+    `/v1/ingestion-runs/${nextRun.id}/candidate`,
+  );
+  expect(inspected.response.status).toBe(200);
+  const inspectedWarnings = (
+    inspected.document.diff as Record<string, unknown>
+  ).warnings as Record<string, unknown>[];
+  expect(inspectedWarnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "record_not_observed",
+        card_id: expect.any(String),
+      }),
+      expect.objectContaining({
+        code: "record_not_observed",
+        printing_id: expect.any(String),
+      }),
+    ]),
+  );
+  expect(inspected.document).toMatchObject({
+    diff: {
+      summary: {
+        cards_added: 0,
+        printings_added: 0,
+      },
+      cards: {
+        added: [],
+        changed: [],
+        missing_observations: expect.not.arrayContaining([
+          requiredString(firstCard, "id"),
+        ]),
+      },
+      printings: {
+        added: [],
+        changed: [],
+        identity_matches: [requiredString(firstPrinting, "id")],
+      },
+    },
+  });
+  await post(`/v1/ingestion-runs/${nextRun.id}/rejection`, {
+    candidate_digest: requiredString(next.document, "candidate_digest"),
+    idempotency_key: "reject-inspected-candidate",
+  });
+});
+
+test("generic retry rejects an evidence-backed terminal run so reconciliation provenance cannot be reset", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "reconcile-generic-retry",
+  );
+  const reconciled = await reconcile(run.id);
+  await post(`/v1/ingestion-runs/${run.id}/rejection`, {
+    candidate_digest: requiredString(
+      reconciled.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-before-generic-retry",
+  });
+
+  const retried = await post(`/v1/ingestion-runs/${run.id}/retry`, {
+    idempotency_key: "generic-retry-must-not-reset-evidence",
+  });
+  expect(retried.response.status).toBe(409);
+  expect(retried.document).toMatchObject({
+    code: "evidence_retry_required",
+  });
+  const original = await get(`/v1/ingestion-runs/${run.id}`);
+  expect(original.document).toMatchObject({
+    state: "rejected",
+  });
+  const retainedCandidate = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT candidate.candidate_digest, plan.digest_payload_json
+     FROM ingestion_runs AS candidate
+     JOIN reconciliation_candidates AS plan
+       ON plan.ingestion_run_id = candidate.id
+     WHERE candidate.id = ?
+     LIMIT 1`,
+  )
+    .bind(run.id)
+    .first<{
+      candidate_digest: string;
+      digest_payload_json: string;
+    }>();
+  expect(retainedCandidate).toMatchObject({
+    candidate_digest: requiredString(
+      reconciled.document,
+      "candidate_digest",
+    ),
+  });
+  expect(retainedCandidate?.digest_payload_json).toContain(
+    '"catalogue_data"',
+  );
 });
 
 async function collect(

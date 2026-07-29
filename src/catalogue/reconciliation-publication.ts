@@ -9,6 +9,7 @@ import type {
   PrintingCompatibility,
   Withdrawal,
 } from "./reconciliation-model";
+import { isCompatible } from "./reconciliation-model";
 import type {
   ReconciledCardRow,
   ReconciledPrintingRow,
@@ -96,8 +97,10 @@ export async function reconciliationPublication(
       grouped.some(
         (plan) =>
           plan.compatibility_json === null ||
-          canonicalJson(JSON.parse(plan.compatibility_json)) !==
-            canonicalJson(compatibility),
+          !isCompatible(
+            JSON.parse(plan.compatibility_json) as PrintingCompatibility,
+            compatibility,
+          ),
       )
     ) {
       throw new Error("One Printing has incompatible publication plans.");
@@ -178,7 +181,92 @@ export async function reconciliationPublication(
       ),
     );
   }
+  await retainCarriedLifecycles(
+    database,
+    runId,
+    candidate,
+    result,
+  );
   return result;
+}
+
+async function retainCarriedLifecycles(
+  database: D1Database,
+  runId: string,
+  candidate: FixtureCandidate,
+  result: ReconciliationPublicationPlan,
+): Promise<void> {
+  const run = await database
+    .prepare(
+      "SELECT expected_current_revision_id FROM ingestion_runs WHERE id = ?",
+    )
+    .bind(runId)
+    .first<{ expected_current_revision_id: string }>();
+  if (run === null) {
+    throw new Error("The reconciliation Ingestion Run disappeared.");
+  }
+  const [cards, printings] = await Promise.all([
+    database
+      .prepare(
+        `SELECT card_id AS id, document_json
+         FROM revision_cards
+         WHERE catalogue_revision_id = ?`,
+      )
+      .bind(run.expected_current_revision_id)
+      .all<{ id: string; document_json: string }>(),
+    database
+      .prepare(
+        `SELECT printing_id AS id, document_json
+         FROM revision_printings
+         WHERE catalogue_revision_id = ?`,
+      )
+      .bind(run.expected_current_revision_id)
+      .all<{ id: string; document_json: string }>(),
+  ]);
+  const candidateCardIds = new Set(candidate.cards.map((card) => card.id));
+  const candidatePrintingIds = new Set(
+    candidate.printings.map((printing) => printing.id),
+  );
+  for (const row of cards.results) {
+    if (
+      candidateCardIds.has(row.id) &&
+      result.cardLifecycles[row.id] === undefined
+    ) {
+      result.cardLifecycles[row.id] = documentLifecycle(
+        row.document_json,
+      );
+    }
+  }
+  for (const row of printings.results) {
+    if (
+      candidatePrintingIds.has(row.id) &&
+      result.printingLifecycles[row.id] === undefined
+    ) {
+      result.printingLifecycles[row.id] = documentLifecycle(
+        row.document_json,
+      );
+    }
+  }
+}
+
+function documentLifecycle(documentJson: string): NormalizedLifecycle {
+  const document = JSON.parse(documentJson) as {
+    lifecycle?: Partial<NormalizedLifecycle>;
+  };
+  const lifecycle = document.lifecycle;
+  if (
+    lifecycle === undefined ||
+    typeof lifecycle.first_revision_id !== "string" ||
+    typeof lifecycle.last_observed_revision_id !== "string" ||
+    typeof lifecycle.withdrawn !== "boolean"
+  ) {
+    throw new Error("A carried Catalogue lifecycle is invalid.");
+  }
+  return {
+    first_revision_id: lifecycle.first_revision_id,
+    last_observed_revision_id: lifecycle.last_observed_revision_id,
+    withdrawn: lifecycle.withdrawn,
+  };
 }
 
 function cardPersistenceStatement(

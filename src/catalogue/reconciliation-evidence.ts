@@ -12,6 +12,9 @@ type EvidenceRow = {
   content_digest: string;
   content_byte_length: number;
   content_object_key: string;
+  observation_count: number;
+  planned_request_count: number;
+  observed_request_count: number;
 };
 
 export async function retainedReconciliationObservation(
@@ -30,7 +33,19 @@ export async function retainedReconciliationObservation(
         observations.adapter_version,
         observations.content_digest,
         observations.content_byte_length,
-        observations.content_object_key
+        observations.content_object_key,
+        observations.observation_count,
+        (
+          SELECT COUNT(*)
+          FROM source_requests AS planned_request
+          WHERE planned_request.ingestion_run_id = snapshots.ingestion_run_id
+        ) AS planned_request_count,
+        (
+          SELECT COUNT(*)
+          FROM source_requests AS observed_request
+          WHERE observed_request.ingestion_run_id = snapshots.ingestion_run_id
+            AND observed_request.state = 'observed'
+        ) AS observed_request_count
       FROM source_observation_sets AS observations
       JOIN source_snapshots AS snapshots
         ON snapshots.id = observations.source_snapshot_id
@@ -69,6 +84,11 @@ export async function retainedReconciliationObservation(
     document.supported_game !== row.supported_game ||
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
+    !validEvidenceSummary(
+      document.evidence_summary,
+      document.observations,
+      row,
+    ) ||
     !Array.isArray(document.observations) ||
     document.observations.length === 0
   ) {
@@ -79,6 +99,7 @@ export async function retainedReconciliationObservation(
     sourceSnapshotId: row.source_snapshot_id,
     sourceLineage: row.source_lineage,
     supportedGame: supportedGame(row.supported_game),
+    structurallyComplete: true,
     observations: document.observations.map((wrapped) => {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
@@ -86,6 +107,28 @@ export async function retainedReconciliationObservation(
       return parseReconciliationObservation(wrapped.id, wrapped.value);
     }),
   };
+}
+
+function validEvidenceSummary(
+  value: unknown,
+  observations: unknown,
+  row: Pick<
+    EvidenceRow,
+    "observation_count" | "planned_request_count" | "observed_request_count"
+  >,
+): boolean {
+  if (!isRecord(value) || !Array.isArray(observations)) return false;
+  return (
+    value.structurally_complete === true &&
+    value.required_surfaces_complete === true &&
+    value.partitions_complete === true &&
+    row.planned_request_count > 0 &&
+    row.planned_request_count === row.observed_request_count &&
+    row.observation_count === observations.length &&
+    value.observation_count === row.observation_count &&
+    value.declared_record_count === row.observation_count &&
+    value.parsed_record_count === row.observation_count
+  );
 }
 
 function supportedGame(value: string): SupportedGame {

@@ -47,13 +47,15 @@ export async function printingDisappearanceWarnings(
   sourceLineage: string,
   observedPrintingIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  if (observedPrintingIds.length === 0) return [];
-  const placeholders = observedPrintingIds.map(() => "?").join(", ");
+  const exclusion =
+    observedPrintingIds.length === 0
+      ? ""
+      : `AND id NOT IN (${observedPrintingIds.map(() => "?").join(", ")})`;
   const result = await database
     .prepare(
       `SELECT id FROM reconciled_printings
        WHERE source_lineage = ?
-         AND id NOT IN (${placeholders})
+         ${exclusion}
          AND withdrawn = 0
        ORDER BY id`,
     )
@@ -64,6 +66,33 @@ export async function printingDisappearanceWarnings(
     printing_id: row.id,
     detail:
       "The Printing was not observed in this complete run; it remains historical and is not withdrawn.",
+  }));
+}
+
+export async function cardDisappearanceWarnings(
+  database: D1Database,
+  supportedGame: string,
+  observedCardIds: readonly string[],
+): Promise<Record<string, unknown>[]> {
+  const exclusion =
+    observedCardIds.length === 0
+      ? ""
+      : `AND id NOT IN (${observedCardIds.map(() => "?").join(", ")})`;
+  const result = await database
+    .prepare(
+      `SELECT id FROM reconciled_cards
+       WHERE supported_game = ?
+         ${exclusion}
+         AND withdrawn = 0
+       ORDER BY id`,
+    )
+    .bind(supportedGame, ...observedCardIds)
+    .all<{ id: string }>();
+  return result.results.map((row) => ({
+    code: "record_not_observed",
+    card_id: row.id,
+    detail:
+      "The Card was not observed in this complete run; it remains historical and is not withdrawn.",
   }));
 }
 

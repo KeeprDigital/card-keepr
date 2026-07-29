@@ -14,6 +14,7 @@ import {
   type ReconciliationPublicationPlan,
 } from "./reconciliation-publication";
 import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
+import { inspectCatalogueCandidate } from "./candidate-inspection";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -231,6 +232,19 @@ export async function retryRun(
           "Only a terminal Ingestion Run can be retried.",
         );
       }
+      const evidencePlan = await database
+        .prepare(
+          "SELECT ingestion_run_id FROM ingestion_evidence_plans WHERE ingestion_run_id = ?",
+        )
+        .bind(source.id)
+        .first<{ ingestion_run_id: string }>();
+      if (evidencePlan !== null) {
+        throw new AdministrationProblem(
+          409,
+          "evidence_retry_required",
+          "Evidence-backed runs must be retried through their linked collection workflow so immutable provenance is retained.",
+        );
+      }
       const candidate = parseCandidate(source);
       const candidateDigest = await sha256(
         new TextEncoder().encode(canonicalJson(candidate)),
@@ -431,7 +445,13 @@ export async function inspectCandidate(
     );
   }
   const candidate = parseCandidate(row);
-  const warnings = parseWarnings(row.warnings_json);
+  const diff = await inspectCatalogueCandidate(database, {
+    runId: row.id,
+    expectedRevisionId: row.expected_current_revision_id,
+    selectedGames: parseSelectedGames(row.selected_games_json),
+    candidate,
+    fallbackWarnings: parseWarnings(row.warnings_json),
+  });
   return {
     run_id: row.id,
     candidate_digest: row.candidate_digest,
@@ -439,24 +459,7 @@ export async function inspectCandidate(
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
     progress: parseProgress(row.progress_json),
-    diff: {
-      summary: {
-        cards_added: candidate.cards.length,
-        printings_added: candidate.printings.length,
-        warnings: warnings.length,
-      },
-      cards: {
-        added: candidate.cards.map((card) => card.id),
-        changed: [],
-        missing_observations: [],
-      },
-      printings: {
-        added: candidate.printings.map((printing) => printing.id),
-        changed: [],
-        identity_matches: [],
-      },
-      warnings,
-    },
+    diff,
   };
 }
 
@@ -1630,7 +1633,7 @@ async function commitVerifiedPublication(
       ),
     ...freshnessStatements(
       database,
-      input.candidate.selected_games,
+      parseSelectedGames(input.run.selected_games_json),
       input.run.id,
       input.completedAt,
     ),
@@ -1761,9 +1764,8 @@ async function reconcileReservedPublication(
     !isOpaqueIdentity(revisionId) ||
     run.publication_writer_token !==
       publicationWriterToken(revisionId) ||
-    !isExactStringTuple(
-      JSON.parse(run.selected_games_json),
-      candidate.selected_games,
+    !parseSelectedGames(run.selected_games_json).every((game) =>
+      candidate.selected_games.includes(game as SupportedGame),
     ) ||
     (await sha256(
       new TextEncoder().encode(digestPayload),
@@ -3875,7 +3877,11 @@ function publicRun(
   const approvalHistory = parseApprovalHistory(
     row.approval_history_json,
   );
-  if (!isExactStringTuple(selectedGames, candidate.selected_games)) {
+  if (
+    !selectedGames.every((game) =>
+      candidate.selected_games.includes(game),
+    )
+  ) {
     throw new Error(
       "The persisted Ingestion Run document is inconsistent.",
     );

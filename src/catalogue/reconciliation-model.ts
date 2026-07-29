@@ -66,5 +66,15 @@ export function isCompatible(
   left: PrintingCompatibility,
   right: PrintingCompatibility,
 ): boolean {
-  return compatibilityFields.every((field) => left[field] === right[field]);
+  return compatibilityFields.every(
+    (field) =>
+      left[field] === right[field] ||
+      (field === "source_lineage" &&
+        isGundamEnglishLineage(left.source_lineage) &&
+        isGundamEnglishLineage(right.source_lineage)),
+  );
+}
+
+export function isGundamEnglishLineage(lineage: string): boolean {
+  return lineage === "gundam-en-asia" || lineage === "gundam-en-us";
 }

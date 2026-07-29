@@ -99,7 +99,6 @@ export async function persistReviewableCandidate(
          SET state = 'awaiting_approval',
              candidate_json = ?,
              candidate_digest = ?,
-             selected_games_json = ?,
              candidate_created_at = ?,
              approval_deadline = ?,
              warnings_json = ?,
@@ -110,7 +109,6 @@ export async function persistReviewableCandidate(
       .bind(
         canonicalJson(input.candidate),
         input.candidateDigest,
-        canonicalJson(input.candidate.selected_games),
         input.observedAt,
         approvalDeadline,
         canonicalJson(runWarnings),
