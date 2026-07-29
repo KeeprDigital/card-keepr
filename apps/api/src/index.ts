@@ -25,7 +25,7 @@ import {
   handleCredentialConsumerProof,
 } from "../../../src/credentials/consumer-proof";
 
-export default {
+const apiWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
 
@@ -60,9 +60,20 @@ export default {
       const url = new URL(request.url);
       const consumerProof = await handleCredentialConsumerProof(
         request,
-        env.CATALOGUE_DB,
         env,
         ["api_bearer_key"],
+        async (secret) => {
+          const response = await apiWorker.fetch(
+            new Request(new URL("/health", request.url), {
+              headers: {
+                authorization: `Bearer ${secret}`,
+              },
+            }),
+            env,
+          );
+          await response.body?.cancel();
+          return response.status === 200;
+        },
       );
       if (consumerProof !== null) return consumerProof;
       if (url.pathname.startsWith("/v1/")) {
@@ -201,6 +212,8 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+export default apiWorker;
 
 function isPrintingImageContent(pathname: string): boolean {
   return (

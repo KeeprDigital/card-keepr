@@ -9,6 +9,7 @@ export type BoundaryAttestationPlan = {
   verification_target: string;
   production_target_identity: string;
   required_permission: string;
+  cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
   old_fingerprint: string;
   replacement_fingerprint: string;
@@ -35,6 +36,7 @@ type BoundaryAttestation = {
   verification_target: string;
   production_target_identity: string;
   required_permission: string;
+  cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
   old_fingerprint: string;
   replacement_fingerprint: string;
@@ -96,6 +98,8 @@ export async function credentialBoundaryAttestationFailure(
     attestation.production_target_identity ===
       plan.production_target_identity &&
     attestation.required_permission === plan.required_permission &&
+    attestation.cloudflare_management_required_permissions ===
+      plan.cloudflare_management_required_permissions &&
     attestation.consumer_installation_identity ===
       plan.consumer_installation_identity &&
     attestation.consumer_installation_id ===

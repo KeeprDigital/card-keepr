@@ -1,19 +1,43 @@
 import { spawn } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export async function executeCredentialBoundary(
   plan,
   secrets,
   environment,
 ) {
+  const attestationKey = secrets.boundary_attestation_key;
+  if (
+    typeof attestationKey !== "string" ||
+    attestationKey.length < 32
+  ) {
+    return boundaryFailure();
+  }
+  const providerSecrets = {
+    ...(secrets.old_secret === undefined
+      ? {}
+      : { old_secret: secrets.old_secret }),
+    ...(secrets.replacement_secret === undefined
+      ? {}
+      : { replacement_secret: secrets.replacement_secret }),
+    ...(secrets.management_credential === undefined
+      ? {}
+      : { management_credential: secrets.management_credential }),
+    ...(secrets.github_management_credential === undefined
+      ? {}
+      : {
+          github_management_credential:
+            secrets.github_management_credential,
+        }),
+  };
   const testBoundary = safeTestBoundary(environment);
   if (testBoundary !== null) {
     try {
       const response = await fetch(testBoundary, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan, secrets }),
+        body: JSON.stringify({ plan, secrets: providerSecrets }),
       });
       if (!response.ok) throw new Error("test boundary failed");
       const result = await response.json();
@@ -22,7 +46,9 @@ export async function executeCredentialBoundary(
       return boundaryFailure();
     }
   }
-  const executor = resolve("cli/credential-boundary-attestor.mjs");
+  const executor = fileURLToPath(
+    new URL("./credential-boundary-attestor.mjs", import.meta.url),
+  );
   const arguments_ = [
     executor,
     plan.action,
@@ -36,6 +62,7 @@ export async function executeCredentialBoundary(
     plan.verification_target,
     plan.production_target_identity,
     plan.required_permission,
+    plan.cloudflare_management_required_permissions,
     plan.consumer_installation_identity,
     plan.execution_mode,
     String(plan.execution_attempt),
@@ -48,31 +75,13 @@ export async function executeCredentialBoundary(
     plan.github_management_credential_fingerprint,
     plan.github_management_required_permission,
   ];
-  const input = JSON.stringify({
-    ...(secrets.old_secret === undefined
-      ? {}
-      : { old_secret: secrets.old_secret }),
-    ...(secrets.replacement_secret === undefined
-      ? {}
-      : { replacement_secret: secrets.replacement_secret }),
-    ...(secrets.management_credential === undefined
-      ? {}
-      : {
-          management_credential:
-            secrets.management_credential,
-        }),
-    ...(secrets.github_management_credential === undefined
-      ? {}
-      : {
-          github_management_credential:
-            secrets.github_management_credential,
-        }),
-  });
+  const input = JSON.stringify(providerSecrets);
   const result = await run(
     process.execPath,
     arguments_,
     input,
-    environment,
+    attestationKey,
+    subprocessEnvironment(environment),
   );
   if (result.code !== 0) return boundaryFailure();
   let document;
@@ -156,12 +165,22 @@ function safeDigestEqual(left, right) {
   );
 }
 
-function run(command, arguments_, input, environment) {
+function subprocessEnvironment(environment) {
+  return Object.fromEntries(
+    Object.entries({
+      PATH: environment.PATH,
+      HOME: environment.HOME,
+      CI: "1",
+    }).filter(([, value]) => typeof value === "string"),
+  );
+}
+
+function run(command, arguments_, input, key, environment) {
   return new Promise((resolveRun) => {
     const child = spawn(command, arguments_, {
-      cwd: process.cwd(),
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
       env: environment,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
     });
     let stdout = "";
     child.stdout.setEncoding("utf8");
@@ -179,5 +198,6 @@ function run(command, arguments_, input, environment) {
       resolveRun({ code: code ?? 1, stdout });
     });
     child.stdin.end(input);
+    child.stdio[3].end(key);
   });
 }

@@ -336,6 +336,21 @@ test("stale identity, wrong class, aliased management, and stale claim snapshot 
     code: "invalid_provider_credential_identity",
   });
 
+  const arbitraryApiSlot = await administrationRequest(
+    "/v1/credential-rotation-plans",
+    "POST",
+    {
+      ...request,
+      old_issuer_credential_id: "worker-secret:arbitrary-old-slot",
+      replacement_issuer_credential_id:
+        "worker-secret:arbitrary-replacement-slot",
+    },
+  );
+  expect(arbitraryApiSlot.status).toBe(409);
+  await expect(arbitraryApiSlot.json()).resolves.toMatchObject({
+    code: "identity_conflict",
+  });
+
   const claimPlan = await reserve({
     ...request,
     rotation_id: "credrot_claim_snapshot",
@@ -436,10 +451,10 @@ const identities = {
   },
   github_deployment_token: {
     resource_identity:
-      "github-repository:repository-KeeprDigital-card-keepr:environment:production:workflow:card-keepr-production-release",
+      "github-repository:1313489088:installation:22222222:environment:33333333:workflow:44444444",
     owning_boundary: "production_release_workflow",
     verification_target:
-      "github-repository:repository-KeeprDigital-card-keepr:environment:production:workflow:card-keepr-production-release:deployment-scope-introspection",
+      "github-repository:1313489088:installation:22222222:environment:33333333:workflow:44444444:deployment-scope-introspection",
     required_permission: "Workers Scripts Write",
   },
 } as const;
@@ -456,11 +471,18 @@ type PlanDocument = Record<string, unknown> & {
   verification_target: string;
   production_target_identity: string;
   required_permission: string;
+  cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
   execution_attempt: number;
   execution_mode: "mutation" | "reconciliation" | null;
   old_fingerprint: string;
   replacement_fingerprint: string;
+  old_issuer_credential_id: string;
+  replacement_issuer_credential_id: string;
+  management_credential_id: string;
+  github_management_credential_id: string;
+  github_management_credential_fingerprint: string;
+  github_management_required_permission: string;
 };
 
 function productionTargetIdentity(): string {
@@ -481,11 +503,10 @@ function productionTargetIdentity(): string {
       "card-keepr-evidence-ingestion",
       "card-keepr-evidence-host",
     ],
-    github_repository_id:
-      "repository-KeeprDigital-card-keepr",
-    github_environment: "production",
-    github_workflow:
-      ".github/workflows/credential-boundary-probe.yml",
+    github_repository_id: "1313489088",
+    github_installation_id: "22222222",
+    github_environment_id: "33333333",
+    github_workflow_id: "44444444",
   });
 }
 
@@ -520,13 +541,22 @@ async function planInput(
     replacement_fingerprint:
       replacementFingerprint ??
       (await fingerprint(`replacement-${credentialClass}`)),
-    old_issuer_credential_id: "provider-token:old-credential-id",
+    old_issuer_credential_id:
+      credentialClass === "api_bearer_key"
+        ? "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY"
+        : credentialClass === "ingestion_admin_key"
+          ? "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY"
+          : "provider-token:old-credential-id",
     replacement_issuer_credential_id:
-      "provider-token:replacement-credential-id",
+      credentialClass === "api_bearer_key"
+        ? "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT"
+        : credentialClass === "ingestion_admin_key"
+          ? "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY_REPLACEMENT"
+          : "provider-token:replacement-credential-id",
     management_credential_id: "provider-token:management-id",
     github_management_credential_id:
       credentialClass === "github_deployment_token"
-        ? "github-token:management-id"
+        ? "github-app-installation:22222222"
         : "not-applicable",
     github_management_credential_fingerprint:
       credentialClass === "github_deployment_token"
@@ -622,15 +652,17 @@ async function signedAttestation(
     production_target_identity:
       plan.production_target_identity,
     required_permission: plan.required_permission,
+    cloudflare_management_required_permissions:
+      plan.cloudflare_management_required_permissions,
     consumer_installation_identity:
       plan.consumer_installation_identity,
     old_fingerprint: plan.old_fingerprint,
     replacement_fingerprint: plan.replacement_fingerprint,
     installed_fingerprint: plan.replacement_fingerprint,
-    old_issuer_credential_id: "provider-token:old-credential-id",
+    old_issuer_credential_id: plan.old_issuer_credential_id,
     replacement_issuer_credential_id:
-      "provider-token:replacement-credential-id",
-    management_credential_id: "provider-token:management-id",
+      plan.replacement_issuer_credential_id,
+    management_credential_id: plan.management_credential_id,
     github_management_credential_id:
       plan.github_management_credential_id,
     github_management_credential_fingerprint:

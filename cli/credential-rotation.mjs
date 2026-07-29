@@ -65,6 +65,12 @@ async function mutate(
       options.values["--disposable-d1-database-id"],
     github_repository_id:
       options.values["--github-repository-id"],
+    github_installation_id:
+      options.values["--github-installation-id"],
+    github_environment_id:
+      options.values["--github-environment-id"],
+    github_workflow_id:
+      options.values["--github-workflow-id"],
   };
   const identity = resolveCredentialIdentity(credentialClass, context);
   if (identity === undefined) return usage(json);
@@ -81,6 +87,7 @@ async function mutate(
   const secretFields = [
     "administration_key",
     "management_credential",
+    "boundary_attestation_key",
     ...(credentialClass === "github_deployment_token"
       ? ["github_management_credential"]
       : []),
@@ -94,6 +101,21 @@ async function mutate(
   );
   if (secrets.error !== null) {
     return failure(json, "secret_input_error", secrets.error, 2);
+  }
+  if (
+    action === "install" &&
+    ["api_bearer_key", "ingestion_admin_key"].includes(
+      credentialClass,
+    ) &&
+    (!safeBearerSecret(secrets.values.old_secret) ||
+      !safeBearerSecret(secrets.values.replacement_secret))
+  ) {
+    return failure(
+      json,
+      "invalid_bearer_secret",
+      "Bearer credentials must be non-empty and contain no whitespace or control characters.",
+      2,
+    );
   }
   const oldFingerprint =
     options.values["--expected-old-fingerprint"];
@@ -322,6 +344,9 @@ function parseMutation(arguments_) {
     "--catalogue-d1-database-id",
     "--disposable-d1-database-id",
     "--github-repository-id",
+    "--github-installation-id",
+    "--github-environment-id",
+    "--github-workflow-id",
     "--expected-catalogue-revision",
     "--expected-state-generation",
     "--expected-old-fingerprint",
@@ -367,6 +392,7 @@ function confirmationText(plan) {
     plan.verification_target,
     plan.production_target_identity,
     plan.required_permission,
+    plan.cloudflare_management_required_permissions,
     plan.consumer_installation_identity,
     plan.plan_digest,
     plan.idempotency_key,
@@ -425,6 +451,15 @@ function fingerprint(secret) {
   return `sha256:${createHash("sha256").update(secret).digest("hex")}`;
 }
 
+function safeBearerSecret(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 4096 &&
+    !/[\s\u0000-\u001f\u007f]/u.test(value)
+  );
+}
+
 function equalFingerprint(left, right) {
   const leftBytes = fingerprintBytes(left);
   const rightBytes = fingerprintBytes(right);
@@ -464,6 +499,7 @@ function sameExecutionPlan(planned, claimed) {
     "verification_target",
     "production_target_identity",
     "required_permission",
+    "cloudflare_management_required_permissions",
     "consumer_installation_identity",
     "expected_catalogue_revision_id",
     "expected_state_generation",

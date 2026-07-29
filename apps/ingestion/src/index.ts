@@ -43,20 +43,31 @@ export {
 } from "./evidence-workflows";
 export { OfficialSourceTransport } from "./official-source-transport";
 
-export default {
+const ingestionWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
 
     try {
       const consumerProof = await handleCredentialConsumerProof(
         request,
-        env.CATALOGUE_DB,
         env,
         [
           "ingestion_admin_key",
           "d1_export_token",
           "d1_verification_token",
         ],
+        async (secret) => {
+          const response = await ingestionWorker.fetch(
+            new Request(new URL("/health", request.url), {
+              headers: {
+                authorization: `Bearer ${secret}`,
+              },
+            }),
+            env,
+          );
+          await response.body?.cancel();
+          return response.status === 200;
+        },
       );
       if (consumerProof !== null) return consumerProof;
       const rateLimited = await rateLimitFailure(
@@ -111,6 +122,9 @@ export default {
           disposable_d1_database_id:
             env.DISPOSABLE_D1_DATABASE_ID,
           github_repository_id: env.GITHUB_REPOSITORY_ID,
+          github_installation_id: env.GITHUB_INSTALLATION_ID,
+          github_environment_id: env.GITHUB_ENVIRONMENT_ID,
+          github_workflow_id: env.GITHUB_WORKFLOW_ID,
         },
         env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
       );
@@ -465,6 +479,8 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+export default ingestionWorker;
 
 async function readAdministrationBody(
   request: Request,

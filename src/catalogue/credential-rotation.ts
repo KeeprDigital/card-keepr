@@ -8,136 +8,47 @@ import {
 import {
   credentialBoundaryAttestationFailure,
 } from "../credentials/credential-attestation";
+import type {
+  AuthenticationRow,
+  CredentialRotationDocument,
+  CredentialRotationPlanDocument,
+  CredentialRotationPlanInput,
+  CredentialRotationPlanRow,
+  CredentialRotationState,
+  RotationRow,
+} from "./credential-rotation-contracts";
+import {
+  CredentialRotationProblem,
+  credentialConflict,
+} from "./credential-rotation-problem";
+import {
+  assertFingerprint,
+  fixedHashEqual,
+  fixedIdentityEqual,
+  hashFromFingerprint,
+  randomHex,
+  requestDigest,
+  secretHash,
+} from "./credential-rotation-crypto";
+import {
+  currentCredentialMutationState,
+  optionalRotation as optionalRow,
+  planDocument,
+  requiredPlan,
+  requiredRotation as requiredRow,
+  rotationDocument as document,
+} from "./credential-rotation-store";
 
 export { credentialClasses };
 export type { CredentialClass };
-export type CredentialRotationState =
-  | "replacement_installed"
-  | "replacement_verified"
-  | "old_revoked";
-
-export type CredentialRotationPlanAction =
-  | "install"
-  | "verify"
-  | "revoke";
-
-export type CredentialRotationPlanInput = {
-  action: CredentialRotationPlanAction;
-  rotation_id: string;
-  credential_class: CredentialClass;
-  environment: "production";
-  cloudflare_account_id: string;
-  resource_identity: string;
-  owning_boundary: string;
-  verification_target: string;
-  production_target_identity: string;
-  old_issuer_credential_id: string;
-  replacement_issuer_credential_id: string;
-  management_credential_id: string;
-  github_management_credential_id: string;
-  github_management_credential_fingerprint: string;
-  expected_catalogue_revision_id: string;
-  expected_state_generation: number;
-  old_fingerprint: string;
-  replacement_fingerprint: string;
-  idempotency_key: string;
-};
-
-export type CredentialRotationPlanDocument =
-  CredentialRotationPlanInput & {
-    contract: "card-keepr-credential-rotation-plan@1";
-    id: string;
-    required_permission: string;
-    consumer_installation_identity: string;
-    github_management_required_permission: string;
-    expected_rotation_state: CredentialRotationState | null;
-    plan_nonce: string;
-    plan_digest: string;
-    status: "reserved" | "executing" | "finalized" | "expired";
-    created_at: string;
-    expires_at: string;
-    execution_started_at: string | null;
-    execution_expires_at: string | null;
-    execution_attempt: number;
-    execution_mode: "mutation" | "reconciliation" | null;
-  };
-
-type CredentialRotationPlanRow = Omit<
+export { CredentialRotationProblem };
+export type {
+  CredentialRotationDocument,
+  CredentialRotationPlanAction,
   CredentialRotationPlanDocument,
-  "contract" | "expected_state_generation"
-> & {
-  expected_state_generation: number;
-  request_digest: string;
-  execution_owner_hash: string | null;
-  finalized_at: string | null;
-  attestation_digest: string | null;
-};
-
-type RotationRow = {
-  id: string;
-  credential_class: CredentialClass;
-  state: CredentialRotationState;
-  environment: "production";
-  resource_identity: string;
-  owning_boundary: string;
-  verification_target: string;
-  production_target_identity: string;
-  required_permission: string;
-  consumer_installation_identity: string;
-  old_issuer_credential_id: string;
-  replacement_issuer_credential_id: string;
-  management_credential_id: string;
-  github_management_credential_id: string;
-  github_management_credential_fingerprint: string;
-  github_management_required_permission: string;
-  old_secret_hash: string;
-  replacement_secret_hash: string;
-  installed_at: string;
-  verified_at: string | null;
-  old_revoked_at: string | null;
-  install_idempotency_key: string;
-  install_request_digest: string;
-  verification_idempotency_key: string | null;
-  verification_request_digest: string | null;
-  revocation_idempotency_key: string | null;
-  revocation_request_digest: string | null;
-  install_receipt: string;
-  verification_receipt: string | null;
-  revocation_receipt: string | null;
-};
-
-type AuthenticationRow = Pick<
-  RotationRow,
-  "state" | "old_secret_hash" | "replacement_secret_hash"
->;
-
-export type CredentialRotationDocument = {
-  contract: "card-keepr-credential-rotation@1";
-  id: string;
-  credential_class: CredentialClass;
-  state: CredentialRotationState;
-  environment: "production";
-  resource_identity: string;
-  owning_boundary: string;
-  verification_target: string;
-  production_target_identity: string;
-  old_fingerprint: string;
-  replacement_fingerprint: string;
-  installed_at: string;
-  verified_at: string | null;
-  old_revoked_at: string | null;
-  operation_code: "ok" | "idempotent_replay";
-};
-
-export class CredentialRotationProblem extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+  CredentialRotationPlanInput,
+  CredentialRotationState,
+} from "./credential-rotation-contracts";
 
 export function isCredentialClass(value: string): value is CredentialClass {
   return isSharedCredentialClass(value);
@@ -152,6 +63,15 @@ export async function reserveCredentialRotationPlan(
   const expectedIdentity = resolveCredentialIdentity(
     input.credential_class,
     context,
+  );
+  if (expectedIdentity === undefined) {
+    throw problem(
+      "identity_conflict",
+      "The production credential deployment context is not provisioned.",
+    );
+  }
+  const cloudflareManagementPermissions = JSON.stringify(
+    expectedIdentity.cloudflare_management_required_permissions,
   );
   if (
     input.environment !== expectedIdentity.environment ||
@@ -168,6 +88,19 @@ export async function reserveCredentialRotationPlan(
       "The resolved credential boundary identity is stale.",
     );
   }
+  if (
+    (expectedIdentity.fixed_old_issuer_credential_id !== null &&
+      input.old_issuer_credential_id !==
+        expectedIdentity.fixed_old_issuer_credential_id) ||
+    (expectedIdentity.fixed_replacement_issuer_credential_id !== null &&
+      input.replacement_issuer_credential_id !==
+        expectedIdentity.fixed_replacement_issuer_credential_id)
+  ) {
+    throw problem(
+      "identity_conflict",
+      "The issuer identity must be the exact catalogue-managed secret slot.",
+    );
+  }
   const githubManagementApplies =
     input.credential_class === "github_deployment_token";
   if (
@@ -179,6 +112,8 @@ export async function reserveCredentialRotationPlan(
           "not-applicable" ||
         input.github_management_credential_id ===
           input.management_credential_id ||
+        input.github_management_credential_id !==
+          expectedIdentity.fixed_github_management_credential_id ||
         !/^sha256:[0-9a-f]{64}$/.test(
           input.github_management_credential_fingerprint,
         )
@@ -298,6 +233,8 @@ export async function reserveCredentialRotationPlan(
     request_digest: requestHash,
     plan_nonce: planNonce,
     required_permission: expectedIdentity.required_permission,
+    cloudflare_management_required_permissions:
+      cloudflareManagementPermissions,
     consumer_installation_identity:
       expectedIdentity.consumer_installation_identity,
     github_management_required_permission:
@@ -315,6 +252,7 @@ export async function reserveCredentialRotationPlan(
           cloudflare_account_id, resource_identity, owning_boundary,
           verification_target, production_target_identity,
           required_permission,
+          cloudflare_management_required_permissions,
           consumer_installation_identity,
           expected_catalogue_revision_id, expected_state_generation,
           expected_rotation_state, old_fingerprint,
@@ -327,7 +265,7 @@ export async function reserveCredentialRotationPlan(
           plan_nonce, plan_digest, status, created_at, expires_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?,
           'reserved', ?, ?
         )`,
       )
@@ -343,6 +281,7 @@ export async function reserveCredentialRotationPlan(
         input.verification_target,
         input.production_target_identity,
         expectedIdentity.required_permission,
+        cloudflareManagementPermissions,
         expectedIdentity.consumer_installation_identity,
         input.expected_catalogue_revision_id,
         input.expected_state_generation,
@@ -449,7 +388,9 @@ export async function finalizeCredentialRotationPlan(
               id, credential_class, state, environment,
               resource_identity, owning_boundary, verification_target,
               production_target_identity,
-              required_permission, consumer_installation_identity,
+              required_permission,
+              cloudflare_management_required_permissions,
+              consumer_installation_identity,
               old_issuer_credential_id,
               replacement_issuer_credential_id,
               management_credential_id,
@@ -461,7 +402,7 @@ export async function finalizeCredentialRotationPlan(
               install_receipt
             ) VALUES (
               ?, ?, 'replacement_installed', ?, ?, ?, ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )`,
           )
           .bind(
@@ -473,6 +414,7 @@ export async function finalizeCredentialRotationPlan(
             plan.verification_target,
             plan.production_target_identity,
             plan.required_permission,
+            plan.cloudflare_management_required_permissions,
             plan.consumer_installation_identity,
             plan.old_issuer_credential_id,
             plan.replacement_issuer_credential_id,
@@ -674,6 +616,8 @@ export async function beginCredentialRotationPlanExecution(
                      credential_rotation_plans.production_target_identity
                    AND rotation.required_permission =
                      credential_rotation_plans.required_permission
+                   AND rotation.cloudflare_management_required_permissions =
+                     credential_rotation_plans.cloudflare_management_required_permissions
                    AND rotation.consumer_installation_identity =
                      credential_rotation_plans.consumer_installation_identity
                    AND rotation.old_issuer_credential_id =
@@ -836,138 +780,6 @@ export async function credentialSecretMatches(
   return active && !revoked;
 }
 
-async function optionalRow(
-  database: D1Database,
-  id: string,
-): Promise<RotationRow | null> {
-  return database
-    .prepare(`SELECT * FROM credential_rotations WHERE id = ?`)
-    .bind(id)
-    .first<RotationRow>();
-}
-
-async function requiredRow(
-  database: D1Database,
-  id: string,
-): Promise<RotationRow> {
-  const row = await optionalRow(database, id);
-  if (row === null) {
-    throw new CredentialRotationProblem(
-      404,
-      "rotation_not_found",
-      "The credential rotation does not exist.",
-    );
-  }
-  return row;
-}
-
-function document(
-  row: RotationRow,
-  operationCode: "ok" | "idempotent_replay",
-): CredentialRotationDocument {
-  return {
-    contract: "card-keepr-credential-rotation@1",
-    id: row.id,
-    credential_class: row.credential_class,
-    state: row.state,
-    environment: row.environment,
-    resource_identity: row.resource_identity,
-    owning_boundary: row.owning_boundary,
-    verification_target: row.verification_target,
-    production_target_identity: row.production_target_identity,
-    old_fingerprint: `sha256:${row.old_secret_hash}`,
-    replacement_fingerprint: `sha256:${row.replacement_secret_hash}`,
-    installed_at: row.installed_at,
-    verified_at: row.verified_at,
-    old_revoked_at: row.old_revoked_at,
-    operation_code: operationCode,
-  };
-}
-
-async function assertFingerprint(
-  expectedHash: string,
-  fingerprint: string,
-  code: string,
-): Promise<void> {
-  if (
-    !(await fixedHashEqual(
-      hashFromFingerprint(fingerprint),
-      expectedHash,
-    ))
-  ) {
-    throw problem(code, "The expected credential fingerprint is stale.");
-  }
-}
-
-function hashFromFingerprint(fingerprint: string): string {
-  const match = /^sha256:([0-9a-f]{64})$/.exec(fingerprint);
-  if (match === null) {
-    throw new CredentialRotationProblem(
-      422,
-      "invalid_credential_fingerprint",
-      "Credential fingerprints must be full SHA-256 fingerprints.",
-    );
-  }
-  return match[1]!;
-}
-
-async function requestDigest(value: unknown): Promise<string> {
-  return secretHash(JSON.stringify(value));
-}
-
-async function currentCredentialMutationState(
-  database: D1Database,
-): Promise<{
-  active_ingestion_run_id: string | null;
-  recovery_health: string;
-  credential_rotation_generation: number;
-  current_revision_id: string;
-}> {
-  const state = await database
-    .prepare(
-      `SELECT operation.active_ingestion_run_id,
-              operation.recovery_health,
-              operation.credential_rotation_generation,
-              catalogue.current_revision_id
-       FROM operation_state AS operation
-       JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
-       WHERE operation.singleton = 1`,
-    )
-    .first<{
-      active_ingestion_run_id: string | null;
-      recovery_health: string;
-      credential_rotation_generation: number;
-      current_revision_id: string;
-    }>();
-  if (state === null) {
-    throw problem(
-      "credential_mutation_conflict",
-      "The credential mutation state is unavailable.",
-    );
-  }
-  return state;
-}
-
-async function requiredPlan(
-  database: D1Database,
-  planId: string,
-): Promise<CredentialRotationPlanRow> {
-  const plan = await database
-    .prepare(
-      "SELECT * FROM credential_rotation_plans WHERE id = ?",
-    )
-    .bind(planId)
-    .first<CredentialRotationPlanRow>();
-  if (plan === null) {
-    throw new CredentialRotationProblem(
-      404,
-      "credential_rotation_plan_not_found",
-      "The credential transition plan does not exist.",
-    );
-  }
-  return plan;
-}
-
 function safeProviderIdentity(value: string): boolean {
   return (
     typeof value === "string" &&
@@ -980,6 +792,7 @@ async function expectedStateForAction(
   input: CredentialRotationPlanInput,
   expectedIdentity: {
     required_permission: string;
+    cloudflare_management_required_permissions: readonly string[];
     consumer_installation_identity: string;
     github_management_required_permission: string;
   },
@@ -1046,6 +859,10 @@ async function expectedStateForAction(
     providerIdentityMatches.some((matches) => !matches) ||
     rotation.required_permission !==
       expectedIdentity.required_permission ||
+    rotation.cloudflare_management_required_permissions !==
+      JSON.stringify(
+        expectedIdentity.cloudflare_management_required_permissions,
+      ) ||
     rotation.consumer_installation_identity !==
       expectedIdentity.consumer_installation_identity ||
     rotation.github_management_required_permission !==
@@ -1149,6 +966,8 @@ async function assertExecutionSnapshot(
     rotation.production_target_identity !==
       plan.production_target_identity ||
     rotation.required_permission !== plan.required_permission ||
+    rotation.cloudflare_management_required_permissions !==
+      plan.cloudflare_management_required_permissions ||
     rotation.consumer_installation_identity !==
       plan.consumer_installation_identity ||
     rotation.old_issuer_credential_id !==
@@ -1192,99 +1011,8 @@ async function assertExecutionSnapshot(
   }
 }
 
-function planDocument(
-  row: CredentialRotationPlanRow,
-): CredentialRotationPlanDocument {
-  return {
-    contract: "card-keepr-credential-rotation-plan@1",
-    id: row.id,
-    action: row.action,
-    rotation_id: row.rotation_id,
-    credential_class: row.credential_class,
-    environment: row.environment,
-    cloudflare_account_id: row.cloudflare_account_id,
-    resource_identity: row.resource_identity,
-    owning_boundary: row.owning_boundary,
-    verification_target: row.verification_target,
-    production_target_identity: row.production_target_identity,
-    required_permission: row.required_permission,
-    consumer_installation_identity:
-      row.consumer_installation_identity,
-    expected_catalogue_revision_id:
-      row.expected_catalogue_revision_id,
-    expected_state_generation: row.expected_state_generation,
-    expected_rotation_state: row.expected_rotation_state,
-    old_fingerprint: row.old_fingerprint,
-    replacement_fingerprint: row.replacement_fingerprint,
-    old_issuer_credential_id: row.old_issuer_credential_id,
-    replacement_issuer_credential_id:
-      row.replacement_issuer_credential_id,
-    management_credential_id: row.management_credential_id,
-    github_management_credential_id:
-      row.github_management_credential_id,
-    github_management_credential_fingerprint:
-      row.github_management_credential_fingerprint,
-    github_management_required_permission:
-      row.github_management_required_permission,
-    idempotency_key: row.idempotency_key,
-    plan_nonce: row.plan_nonce,
-    plan_digest: row.plan_digest,
-    status: row.status,
-    created_at: row.created_at,
-    expires_at: row.expires_at,
-    execution_started_at: row.execution_started_at,
-    execution_expires_at: row.execution_expires_at,
-    execution_attempt: row.execution_attempt,
-    execution_mode:
-      row.status === "executing"
-        ? row.execution_attempt === 1
-          ? "mutation"
-          : "reconciliation"
-        : null,
-  };
-}
-
-function randomHex(bytes: number): string {
-  const value = new Uint8Array(bytes);
-  crypto.getRandomValues(value);
-  return Array.from(value)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function secretHash(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function fixedHashEqual(left: string, right: string): Promise<boolean> {
-  return crypto.subtle.timingSafeEqual(hashBytes(left), hashBytes(right));
-}
-
-async function fixedIdentityEqual(
-  left: string,
-  right: string,
-): Promise<boolean> {
-  return fixedHashEqual(
-    await secretHash(left),
-    await secretHash(right),
-  );
-}
-
-function hashBytes(hash: string): Uint8Array {
-  if (!/^[0-9a-f]{64}$/.test(hash)) return new Uint8Array(32);
-  return Uint8Array.from(
-    hash.match(/../g)!.map((byte) => Number.parseInt(byte, 16)),
-  );
-}
-
 function problem(code: string, detail: string): CredentialRotationProblem {
-  return new CredentialRotationProblem(409, code, detail);
+  return credentialConflict(code, detail);
 }
 
 function errorMessage(error: unknown): string {

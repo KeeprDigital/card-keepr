@@ -20,7 +20,10 @@ const context = {
   cloudflareAccountId: "0123456789abcdef0123456789abcdef",
   catalogueD1DatabaseId: "00000000-0000-0000-0000-000000000001",
   disposableD1DatabaseId: "00000000-0000-0000-0000-000000000002",
-  githubRepositoryId: "repository-KeeprDigital-card-keepr",
+  githubRepositoryId: "1313489088",
+  githubInstallationId: "22222222",
+  githubEnvironmentId: "33333333",
+  githubWorkflowId: "44444444",
 };
 
 test("credential mutation requires an explicit production environment before preflight or provider work", async (t) => {
@@ -88,7 +91,7 @@ test("GitHub management authority is a separate fingerprint-bound secret before 
         "replacement-github-deployment",
       ),
       githubManagementCredentialId:
-        "github-token:management-negative",
+        "github-app-installation:22222222",
       githubManagementCredentialFingerprint:
         fingerprint("different-github-management"),
       idempotencyKey: "github-management-negative-001",
@@ -105,6 +108,47 @@ test("GitHub management authority is a separate fingerprint-bound secret before 
   );
   assert.equal(result.code, 7);
   assert.match(result.stdout, /stale_github_management_identity/);
+  assert.equal(requests, 0);
+});
+
+test("API and administration replacements reject whitespace and controls before preflight", async (t) => {
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(500).end();
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  for (const [credentialClass, replacementSecret] of [
+    ["api_bearer_key", "   "],
+    ["api_bearer_key", "line\nbreak"],
+    ["ingestion_admin_key", "tab\tsecret"],
+    ["ingestion_admin_key", "\u0000control"],
+  ]) {
+    const oldSecret = `valid-old-${credentialClass}`;
+    const result = await runCli(
+      mutationArguments({
+        action: "install",
+        rotationId: `credrot_lexical_${requests}_${replacementSecret.length}`,
+        credentialClass,
+        expectedGeneration: 0,
+        oldFingerprint: fingerprint(oldSecret),
+        replacementFingerprint: fingerprint(replacementSecret),
+        idempotencyKey:
+          `lexical-${credentialClass}-${replacementSecret.length}`,
+        confirm: "not-reached",
+      }),
+      environment(port, undefined),
+      {
+        administration_key: "lexical-test-admin",
+        management_credential: "lexical-test-management",
+        old_secret: oldSecret,
+        replacement_secret: replacementSecret,
+      },
+    );
+    assert.equal(result.code, 2);
+    assert.match(result.stdout, /invalid_bearer_secret/);
+  }
   assert.equal(requests, 0);
 });
 
@@ -622,6 +666,12 @@ function mutationArguments(input) {
     context.disposableD1DatabaseId,
     "--github-repository-id",
     context.githubRepositoryId,
+    "--github-installation-id",
+    context.githubInstallationId,
+    "--github-environment-id",
+    context.githubEnvironmentId,
+    "--github-workflow-id",
+    context.githubWorkflowId,
     "--expected-catalogue-revision",
     "catrev_spine_000",
     "--expected-state-generation",
@@ -669,6 +719,13 @@ function planDocument(body, options) {
     production_target_identity:
       body.production_target_identity ?? productionTargetIdentity(),
     required_permission: options.permission,
+    cloudflare_management_required_permissions:
+      body.credential_class === "api_bearer_key"
+        ? JSON.stringify(["Workers Scripts Write"])
+        : JSON.stringify([
+            "Account API Tokens Write",
+            "Workers Scripts Write",
+          ]),
     consumer_installation_identity:
       body.credential_class === "api_bearer_key"
         ? "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT"
@@ -720,9 +777,9 @@ function productionTargetIdentity() {
       "card-keepr-evidence-host",
     ],
     github_repository_id: context.githubRepositoryId,
-    github_environment: "production",
-    github_workflow:
-      ".github/workflows/credential-boundary-probe.yml",
+    github_installation_id: context.githubInstallationId,
+    github_environment_id: context.githubEnvironmentId,
+    github_workflow_id: context.githubWorkflowId,
   });
 }
 
@@ -761,6 +818,7 @@ function confirmationText(plan) {
     plan.verification_target,
     plan.production_target_identity,
     plan.required_permission,
+    plan.cloudflare_management_required_permissions,
     plan.consumer_installation_identity,
     plan.plan_digest,
     plan.idempotency_key,
@@ -833,7 +891,11 @@ async function runCli(arguments_, environment_, secrets) {
     env: { ...process.env, ...environment_ },
     stdio: ["pipe", "pipe", "pipe"],
   });
-  child.stdin.end(JSON.stringify(secrets));
+  child.stdin.end(JSON.stringify({
+    ...secrets,
+    boundary_attestation_key:
+      "acceptance-boundary-attestation-key-0001",
+  }));
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");

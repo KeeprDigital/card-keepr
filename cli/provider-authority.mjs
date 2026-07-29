@@ -17,14 +17,28 @@ export async function cloudflareOperationSucceeded(response) {
   if (!response.ok) return false;
   const document = await safeJson(response);
   if (document?.success !== true) return false;
+  const results = Array.isArray(document.result)
+    ? document.result
+    : [document.result];
+  return results.every((result) => {
+    if (result === null || typeof result !== "object") return true;
+    if (result.success !== undefined && result.success !== true) {
+      return false;
+    }
+    return result.status === undefined ||
+      ["complete", "completed", "success"].includes(result.status);
+  });
+}
+
+export async function d1DatabaseInfoSucceeded(
+  response,
+  databaseId,
+) {
+  if (!response.ok) return false;
+  const document = await safeJson(response);
   return (
-    !Array.isArray(document.result) ||
-    document.result.every(
-      (result) =>
-        result !== null &&
-        typeof result === "object" &&
-        result.success === true,
-    )
+    document?.success === true &&
+    document.result?.uuid === databaseId
   );
 }
 
@@ -67,6 +81,47 @@ export function exactTokenPolicy(
     Array.isArray(groups) &&
     groups.length === 1 &&
     groups[0]?.name === permission &&
+    entries.length === 1 &&
+    entries[0][0] ===
+      `com.cloudflare.api.account.${cloudflareAccountId}` &&
+    entries[0][1] === "*"
+  );
+}
+
+export function exactManagementTokenPolicy(
+  token,
+  permissions,
+  cloudflareAccountId,
+) {
+  if (
+    !Array.isArray(permissions) ||
+    permissions.length === 0 ||
+    !Array.isArray(token.policies) ||
+    token.policies.length !== 1
+  ) {
+    return false;
+  }
+  const policy = token.policies[0];
+  const groups = policy?.permission_groups;
+  const resources = policy?.resources;
+  if (
+    policy?.effect !== "allow" ||
+    !Array.isArray(groups) ||
+    groups.length !== permissions.length ||
+    resources === null ||
+    typeof resources !== "object" ||
+    Array.isArray(resources)
+  ) {
+    return false;
+  }
+  const actualPermissions = groups.map((group) => group?.name).sort();
+  const expectedPermissions = [...permissions].sort();
+  const entries = Object.entries(resources);
+  return (
+    actualPermissions.every(
+      (permission, index) =>
+        permission === expectedPermissions[index],
+    ) &&
     entries.length === 1 &&
     entries[0][0] ===
       `com.cloudflare.api.account.${cloudflareAccountId}` &&

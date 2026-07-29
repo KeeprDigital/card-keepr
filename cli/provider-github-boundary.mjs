@@ -6,6 +6,102 @@ const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
 const probeWorkflow = "credential-boundary-probe.yml";
 
+export async function verifyGithubManagementAuthority({
+  credential,
+  installationId,
+  repositoryId,
+  environmentId,
+  workflowId,
+  requiredPolicy,
+}) {
+  const [installationResult, repositoryResult, environmentResult, workflowResult] =
+    await Promise.all([
+      capture(["api", "installation"], credential),
+      capture(["api", `repositories/${repositoryId}`], credential),
+      capture(
+        [
+          "api",
+          `repos/${repository}/environments/production`,
+        ],
+        credential,
+      ),
+      capture(
+        [
+          "api",
+          `repos/${repository}/actions/workflows/${workflowId}`,
+        ],
+        credential,
+      ),
+    ]);
+  const installation = parsedDocument(installationResult);
+  const repositoryDocument = parsedDocument(repositoryResult);
+  const environment = parsedDocument(environmentResult);
+  const workflow = parsedDocument(workflowResult);
+  const expectedPermissions = {
+    actions: "write",
+    contents: "read",
+    environments: "write",
+    metadata: "read",
+  };
+  const expectedPolicy =
+    `github-app-installation:${installationId}` +
+    `:repository:${repositoryId}` +
+    `:environment:${environmentId}` +
+    `:workflow:${workflowId}` +
+    ":actions=write,contents=read,environments=write,metadata=read";
+  if (!githubAuthorityMatches({
+    installation,
+    repository: repositoryDocument,
+    environment,
+    workflow,
+    expected: {
+      installationId,
+      repositoryId,
+      environmentId,
+      workflowId,
+      requiredPolicy: expectedPolicy,
+      suppliedPolicy: requiredPolicy,
+      permissions: expectedPermissions,
+    },
+  })) {
+    return null;
+  }
+  return {
+    installation_id: String(installation.id),
+    app_id: String(installation.app_id),
+    app_slug: installation.app_slug,
+    target_id: String(installation.target_id),
+    repository_id: String(repositoryDocument.id),
+    environment_id: String(environment.id),
+    workflow_id: String(workflow.id),
+    permissions: expectedPermissions,
+  };
+}
+
+export function githubAuthorityMatches({
+  installation,
+  repository: repositoryDocument,
+  environment,
+  workflow,
+  expected,
+}) {
+  return (
+    installation?.id === Number(expected.installationId) &&
+    exactObject(
+      installation.permissions,
+      expected.permissions,
+    ) &&
+    repositoryDocument?.id === Number(expected.repositoryId) &&
+    environment?.id === Number(expected.environmentId) &&
+    environment?.name === environmentName &&
+    workflow?.id === Number(expected.workflowId) &&
+    workflow?.path ===
+      ".github/workflows/credential-boundary-probe.yml" &&
+    workflow?.state === "active" &&
+    expected.suppliedPolicy === expected.requiredPolicy
+  );
+}
+
 export async function setGithubConsumerSecret(
   name,
   value,
@@ -212,6 +308,35 @@ function githubEnvironment(credential) {
     GH_TOKEN: credential,
     GH_PROMPT_DISABLED: "1",
   };
+}
+
+function parsedDocument(result) {
+  if (result.code !== 0) return null;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+}
+
+function exactObject(actual, expected) {
+  if (
+    actual === null ||
+    typeof actual !== "object" ||
+    Array.isArray(actual)
+  ) {
+    return false;
+  }
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return (
+    actualKeys.length === expectedKeys.length &&
+    actualKeys.every(
+      (key, index) =>
+        key === expectedKeys[index] &&
+        actual[key] === expected[key],
+    )
+  );
 }
 
 function run(arguments_, input, credential) {

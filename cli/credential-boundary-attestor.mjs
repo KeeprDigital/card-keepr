@@ -1,14 +1,23 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   createHash,
   createHmac,
   timingSafeEqual,
 } from "node:crypto";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  credentialClassDefinitions,
+} from "../src/credentials/credential-catalogue.mjs";
 
 const arguments_ = process.argv.slice(2);
 const input = await readInput();
-const key = process.env.KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY;
+let key;
+try {
+  key = readFileSync(3, "utf8");
+} catch {
+  key = null;
+}
 
 if (typeof key !== "string" || key.length < 32) {
   process.exitCode = 2;
@@ -51,7 +60,7 @@ async function verifyInstalledConsumer(
   if (credentialClass === "github_deployment_token") {
     const expectedEvidence =
       `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
-      `head_sha=${facts.consumer_proof_head_sha} token_id=${arguments_[17]} ` +
+      `head_sha=${facts.consumer_proof_head_sha} token_id=${arguments_[18]} ` +
       `actor=${facts.consumer_proof_actor} slot=replacement`;
     const replacementMatches =
       facts.consumer_proof_contract ===
@@ -72,7 +81,7 @@ async function verifyInstalledConsumer(
     if (arguments_[0] !== "verify") return true;
     const expectedOldEvidence =
       `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
-      `head_sha=${facts.old_consumer_proof_head_sha} token_id=${arguments_[16]} ` +
+      `head_sha=${facts.old_consumer_proof_head_sha} token_id=${arguments_[17]} ` +
       `actor=${facts.old_consumer_proof_actor} slot=active`;
     return (
       facts.old_consumer_proof_contract ===
@@ -123,21 +132,20 @@ async function verifyInstalledConsumer(
     return false;
   }
   const worker =
-    credentialClass === "api_bearer_key"
-      ? "card-keepr-api"
-      : "card-keepr-ingestion";
+    credentialClassDefinitions[credentialClass]?.consumer_worker_name;
+  if (typeof worker !== "string") return false;
   const probes = [
     {
       slot: "replacement",
       status: "usable",
-      fingerprint: arguments_[15],
+      fingerprint: arguments_[16],
     },
     ...(arguments_[0] === "verify"
       ? [
           {
             slot: "active",
             status: "usable",
-            fingerprint: arguments_[14],
+            fingerprint: arguments_[15],
           },
         ]
       : []),
@@ -146,7 +154,7 @@ async function verifyInstalledConsumer(
           {
             slot: "active",
             status: "unusable",
-            fingerprint: arguments_[14],
+            fingerprint: arguments_[15],
           },
         ]
       : []),
@@ -204,12 +212,19 @@ async function verifyInstalledConsumer(
 }
 
 async function runProvider(arguments_, input_) {
-  const provider = resolve("cli/provider-credential-boundary.mjs");
-  const environment = { ...process.env };
-  delete environment.KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY;
+  const provider = fileURLToPath(
+    new URL("./provider-credential-boundary.mjs", import.meta.url),
+  );
+  const environment = Object.fromEntries(
+    Object.entries({
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      CI: "1",
+    }).filter(([, value]) => typeof value === "string"),
+  );
   return new Promise((resolveRun) => {
     const child = spawn(process.execPath, [provider, ...arguments_], {
-      cwd: process.cwd(),
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
       env: environment,
       stdio: ["pipe", "pipe", "ignore"],
     });
@@ -249,6 +264,7 @@ function exactProviderFacts(arguments_, facts) {
     verificationTarget,
     productionTargetIdentity,
     requiredPermission,
+    cloudflareManagementRequiredPermissions,
     consumerInstallationIdentity,
     executionMode,
     executionAttempt,
@@ -273,6 +289,8 @@ function exactProviderFacts(arguments_, facts) {
     facts.verification_target === verificationTarget &&
     facts.production_target_identity === productionTargetIdentity &&
     facts.required_permission === requiredPermission &&
+    facts.cloudflare_management_required_permissions ===
+      cloudflareManagementRequiredPermissions &&
     facts.consumer_installation_identity ===
       consumerInstallationIdentity &&
     facts.consumer_installation_id ===

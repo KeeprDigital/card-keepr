@@ -15,6 +15,7 @@ CREATE TABLE credential_rotation_plans (
   verification_target TEXT NOT NULL,
   production_target_identity TEXT NOT NULL,
   required_permission TEXT NOT NULL,
+  cloudflare_management_required_permissions TEXT NOT NULL,
   consumer_installation_identity TEXT NOT NULL,
   expected_catalogue_revision_id TEXT NOT NULL,
   expected_state_generation INTEGER NOT NULL,
@@ -107,6 +108,7 @@ CREATE TABLE credential_rotations (
   verification_target TEXT NOT NULL,
   production_target_identity TEXT NOT NULL,
   required_permission TEXT NOT NULL,
+  cloudflare_management_required_permissions TEXT NOT NULL,
   consumer_installation_identity TEXT NOT NULL,
   old_issuer_credential_id TEXT NOT NULL,
   replacement_issuer_credential_id TEXT NOT NULL,
@@ -172,6 +174,8 @@ WHEN OLD.status = 'executing' AND NEW.status = 'finalized'
         AND rotation.production_target_identity =
           NEW.production_target_identity
         AND rotation.required_permission = NEW.required_permission
+        AND rotation.cloudflare_management_required_permissions =
+          NEW.cloudflare_management_required_permissions
         AND rotation.consumer_installation_identity =
           NEW.consumer_installation_identity
         AND rotation.old_issuer_credential_id =

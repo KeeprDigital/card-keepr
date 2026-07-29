@@ -124,9 +124,50 @@ the API's least-privilege boundary is the smaller attached resource set plus its
 read-only routes and separate bearer credential. Evidence, Catalogue Export,
 backup, and administration capabilities are attached only to ingestion.
 
-Before a first deployment, provision the named APAC D1 database and private R2
-buckets, then replace the placeholder D1 identifier in both configurations
-with the same real database identifier. Set `API_BEARER_KEY` only on the API
-Worker and `ADMINISTRATION_KEY` only on the ingestion Worker using
-`wrangler secret put`. Set the production CORS allowlist to the exact owner
-origins before deploying.
+Before a first deployment, provision and record every production target rather
+than reusing the checked-in Cloudflare placeholders:
+
+- the Cloudflare account ID;
+- `card-keepr-api` and `card-keepr-ingestion` Worker scripts;
+- the APAC `card-keepr-catalogue` D1 database and a separate disposable
+  verification D1 database;
+- the private `card-keepr-evidence`, `card-keepr-printing-images`,
+  `card-keepr-catalogue-exports`, and `card-keepr-backups` R2 buckets;
+- the `card-keepr-evidence-ingestion` and `card-keepr-evidence-host`
+  Workflows;
+- the numeric GitHub repository, GitHub App installation, production
+  environment, and credential-boundary workflow IDs.
+
+Replace `CLOUDFLARE_ACCOUNT_ID`, both D1 IDs, and all GitHub numeric IDs in
+`apps/ingestion/wrangler.jsonc`. The checked-in GitHub repository ID
+`1313489088` is the authoritative ID for `KeeprDigital/card-keepr`; the
+installation, environment, and workflow values remain `0` until those
+resources are provisioned. A zero or non-numeric value intentionally prevents
+credential-rotation execution.
+
+Resolve GitHub IDs with the same least-privilege GitHub App installation token
+that will manage the production environment:
+
+```sh
+gh api repos/KeeprDigital/card-keepr --jq .id
+gh api installation --jq .id
+gh api repos/KeeprDigital/card-keepr/environments/production --jq .id
+gh api repos/KeeprDigital/card-keepr/actions/workflows \
+  --jq '.workflows[] | select(.path == ".github/workflows/credential-boundary-probe.yml") | .id'
+```
+
+The installation token must expose exactly `actions:write`, `contents:read`,
+`environments:write`, and `metadata:read` for this repository. Cloudflare
+management tokens are class-specific: API/administration bearer rotations use
+only `Workers Scripts Write`; D1 token rotations use exactly
+`Account API Tokens Write` plus `Workers Scripts Write`; the GitHub deployment
+token rotation uses only `Account API Tokens Write`. Rotated D1 tokens remain
+restricted to `D1 Read` on the catalogue account or `D1 Edit` on the exact
+disposable database path.
+
+Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
+the ingestion Worker using `wrangler secret put`. Set the production CORS
+allowlist to the exact owner origins before deploying. Credential CLI input is
+provided through its secret file descriptor; that document includes the
+boundary attestation key, which the CLI forwards to the fixed attestor on a
+dedicated child descriptor and never exposes to the provider subprocess.

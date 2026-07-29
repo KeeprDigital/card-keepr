@@ -9,15 +9,18 @@ import {
 } from "../src/credentials/credential-catalogue.mjs";
 import {
   classifySecretList,
-  classifyTokenLookup,
-  cloudflareOperationSucceeded,
+  exactManagementTokenPolicy,
   exactTokenPolicy,
 } from "./provider-authority.mjs";
+import {
+  createCloudflareProvider,
+} from "./provider-cloudflare-boundary.mjs";
 import {
   deleteGithubConsumerSecret,
   listGithubConsumerSecrets,
   probeGithubInstalledSecret,
   setGithubConsumerSecret,
+  verifyGithubManagementAuthority,
 } from "./provider-github-boundary.mjs";
 
 const [
@@ -32,6 +35,7 @@ const [
   verificationTarget,
   productionTargetIdentity,
   requiredPermission,
+  cloudflareManagementRequiredPermissions,
   consumerInstallationIdentity,
   executionMode,
   executionAttempt,
@@ -48,11 +52,12 @@ const secrets = await readInput();
 const definition = isCredentialClass(credentialClass)
   ? credentialClassDefinitions[credentialClass]
   : undefined;
-const tokenClass = [
-  "d1_export_token",
-  "d1_verification_token",
-  "github_deployment_token",
-].includes(credentialClass);
+const tokenClass =
+  definition?.issuer_provider === "cloudflare-api-token";
+const cloudflare = createCloudflareProvider({
+  accountId: cloudflareAccountId,
+  resourceIdentity,
+});
 
 if (
   definition === undefined ||
@@ -72,6 +77,8 @@ if (
     cloudflareAccountId,
     resourceIdentity,
   ) ||
+  cloudflareManagementRequiredPermissions !==
+    JSON.stringify(definition.management_permissions) ||
   typeof secrets.management_credential !== "string" ||
   secrets.management_credential.length === 0 ||
   (credentialClass === "github_deployment_token" &&
@@ -108,6 +115,8 @@ if (
       verification_target: verificationTarget,
       production_target_identity: productionTargetIdentity,
       required_permission: requiredPermission,
+      cloudflare_management_required_permissions:
+        cloudflareManagementRequiredPermissions,
       consumer_installation_identity:
         consumerInstallationIdentity,
       execution_mode: executionMode,
@@ -162,12 +171,43 @@ async function execute() {
     }
   }
 
-  const management = await verifyToken(
-    secrets.management_credential,
-  );
+  const [management, managementRecord] = await Promise.all([
+    cloudflare.verifyToken(secrets.management_credential),
+    cloudflare.tokenDetails(
+      secrets.management_credential,
+      managementCredentialId,
+    ),
+  ]);
   if (
     management?.id !== managementCredentialId ||
-    management.status !== "active"
+    management.status !== "active" ||
+    managementRecord.kind !== "present" ||
+    !exactManagementTokenPolicy(
+      managementRecord.token,
+      definition.management_permissions,
+      cloudflareAccountId,
+    )
+  ) {
+    return { ok: false };
+  }
+  const productionTarget = JSON.parse(productionTargetIdentity);
+  const githubAuthority =
+    credentialClass === "github_deployment_token"
+      ? await verifyGithubManagementAuthority({
+          credential: secrets.github_management_credential,
+          installationId:
+            productionTarget.github_installation_id,
+          repositoryId: productionTarget.github_repository_id,
+          environmentId:
+            productionTarget.github_environment_id,
+          workflowId: productionTarget.github_workflow_id,
+          requiredPolicy:
+            githubManagementRequiredPermission,
+        })
+      : null;
+  if (
+    credentialClass === "github_deployment_token" &&
+    githubAuthority === null
   ) {
     return { ok: false };
   }
@@ -176,9 +216,12 @@ async function execute() {
     permission: requiredPermission,
     resource: resourceIdentity,
     provider: definition.consumer_provider,
+    ...(githubAuthority === null
+      ? {}
+      : { github_management_authority: githubAuthority }),
   };
   if (tokenClass) {
-    const replacementRecord = await tokenDetails(
+    const replacementRecord = await cloudflare.tokenDetails(
       secrets.management_credential,
       replacementIssuerCredentialId,
     );
@@ -198,9 +241,12 @@ async function execute() {
       policies: replacement.policies,
       status: replacement.status,
       resource: resourceIdentity,
+      ...(githubAuthority === null
+        ? {}
+        : { github_management_authority: githubAuthority }),
     };
     if (action === "verify") {
-      const oldRecord = await tokenDetails(
+      const oldRecord = await cloudflare.tokenDetails(
         secrets.management_credential,
         oldIssuerCredentialId,
       );
@@ -217,9 +263,9 @@ async function execute() {
     }
     if (action === "install" && executionMode === "mutation") {
       const [verified, oldVerified, oldDetails] = await Promise.all([
-        verifyToken(secrets.replacement_secret),
-        verifyToken(secrets.old_secret),
-        tokenDetails(
+        cloudflare.verifyToken(secrets.replacement_secret),
+        cloudflare.verifyToken(secrets.old_secret),
+        cloudflare.tokenDetails(
           secrets.management_credential,
           oldIssuerCredentialId,
         ),
@@ -235,7 +281,7 @@ async function execute() {
           requiredPermission,
           cloudflareAccountId,
         ) ||
-        !(await probeExactCapability(
+        !(await cloudflare.probeExactCapability(
           credentialClass,
           secrets.replacement_secret,
         ))
@@ -305,16 +351,16 @@ async function execute() {
     if (tokenClass) {
       const absent =
         executionMode === "mutation"
-          ? (await deleteIssuerCredential(
+          ? (await cloudflare.deleteIssuerCredential(
               secrets.management_credential,
               oldIssuerCredentialId,
               requiredPermission,
             )) &&
-            (await tokenDetails(
+            (await cloudflare.tokenDetails(
               secrets.management_credential,
               oldIssuerCredentialId,
             )).kind === "absent"
-          : (await tokenDetails(
+          : (await cloudflare.tokenDetails(
               secrets.management_credential,
               oldIssuerCredentialId,
             )).kind === "absent";
@@ -345,116 +391,6 @@ async function execute() {
     ),
     consumerProof,
   };
-}
-
-async function tokenDetails(managementCredential, tokenId) {
-  let response;
-  try {
-    response = await cloudflareRequest(
-      managementCredential,
-      `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
-        tokenId,
-      )}`,
-    );
-  } catch {
-    return { kind: "failure" };
-  }
-  return classifyTokenLookup(response, tokenId);
-}
-
-async function verifyToken(token) {
-  const response = await cloudflareRequest(
-    token,
-    `/accounts/${cloudflareAccountId}/tokens/verify`,
-  );
-  if (!response.ok) return null;
-  const document = await response.json();
-  return document?.success === true ? document.result : null;
-}
-
-async function deleteIssuerCredential(
-  managementCredential,
-  tokenId,
-  permission,
-) {
-  const existing = await tokenDetails(managementCredential, tokenId);
-  if (existing.kind === "absent") return true;
-  if (
-    existing.kind !== "present" ||
-    !exactTokenPolicy(
-      existing.token,
-      permission,
-      cloudflareAccountId,
-    )
-  ) {
-    return false;
-  }
-  let response;
-  try {
-    response = await cloudflareRequest(
-      managementCredential,
-      `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
-        tokenId,
-      )}`,
-      { method: "DELETE" },
-    );
-  } catch {
-    return false;
-  }
-  if (!response.ok) return false;
-  const document = await safeJson(response);
-  return document?.success === true;
-}
-
-async function probeExactCapability(credentialClass_, token) {
-  if (credentialClass_ === "d1_export_token") {
-    const databaseId = d1DatabaseId(resourceIdentity);
-    const response = await cloudflareRequest(
-      token,
-      `/accounts/${cloudflareAccountId}/d1/database/${databaseId}/export`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          output_format: "polling",
-          dump_options: { no_data: true },
-        }),
-      },
-    );
-    return cloudflareOperationSucceeded(response);
-  }
-  if (credentialClass_ === "d1_verification_token") {
-    const databaseId = d1DatabaseId(resourceIdentity);
-    const response = await cloudflareRequest(
-      token,
-      `/accounts/${cloudflareAccountId}/d1/database/${databaseId}/query`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sql: [
-            "CREATE TABLE IF NOT EXISTS __keepr_credential_probe (id INTEGER PRIMARY KEY)",
-            "DROP TABLE __keepr_credential_probe",
-          ].join(";"),
-        }),
-      },
-    );
-    return cloudflareOperationSucceeded(response);
-  }
-  // Exact issuer policy/resource introspection proves deploy capability
-  // without mutating a production Worker.
-  return credentialClass_ === "github_deployment_token";
-}
-
-function cloudflareRequest(token, pathname, init = {}) {
-  return fetch(`https://api.cloudflare.com/client/v4${pathname}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(15_000),
-  });
 }
 
 async function putConsumerSecret(definition_, name, value) {
@@ -557,10 +493,14 @@ async function consumerSecretAuthoritativelyAbsent(
 }
 
 function providerEnvironment() {
-  return {
-    ...process.env,
-    CLOUDFLARE_API_TOKEN: secrets.management_credential,
-  };
+  return Object.fromEntries(
+    Object.entries({
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      CI: "1",
+      CLOUDFLARE_API_TOKEN: secrets.management_credential,
+    }).filter(([, value]) => typeof value === "string"),
+  );
 }
 
 function resourceMatchesDefinition(
@@ -571,8 +511,8 @@ function resourceMatchesDefinition(
 ) {
   if (definition_.resource_kind === "github-workflow") {
     return (
-      resource.includes(
-        `:workflow:${definition_.resource_name}`,
+      /^github-repository:[1-9][0-9]*:installation:[1-9][0-9]*:environment:[1-9][0-9]*:workflow:[1-9][0-9]*$/.test(
+        resource,
       ) &&
       target ===
         `${resource}:${definition_.verification_operation}`
@@ -624,11 +564,13 @@ function productionTargetMatches(value, accountId, resource) {
       "card-keepr-evidence-ingestion",
       "card-keepr-evidence-host",
     ]) &&
-    target.github_repository_id ===
-      "repository-KeeprDigital-card-keepr" &&
-    target.github_environment === "production" &&
-    target.github_workflow ===
-      ".github/workflows/credential-boundary-probe.yml"
+    ["github_repository_id", "github_installation_id",
+      "github_environment_id", "github_workflow_id"].every(
+      (field) => /^[1-9][0-9]*$/.test(target[field] ?? ""),
+    ) &&
+    (definition.resource_kind !== "github-workflow" ||
+      resource ===
+        `github-repository:${target.github_repository_id}:installation:${target.github_installation_id}:environment:${target.github_environment_id}:workflow:${target.github_workflow_id}`)
   );
 }
 
@@ -676,14 +618,6 @@ function canonicalJson(value) {
       .join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }
 
 function run(command, arguments_, input, environment) {

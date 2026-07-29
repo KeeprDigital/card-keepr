@@ -1,7 +1,9 @@
-import {
-  credentialSecretMatches,
-  type CredentialClass,
+import type {
+  CredentialClass,
 } from "../catalogue/credential-rotation";
+import {
+  credentialClassDefinitions,
+} from "./credential-catalogue.mjs";
 
 type ConsumerProofEnvironment = {
   CREDENTIAL_BOUNDARY_ATTESTATION_KEY: string;
@@ -20,9 +22,12 @@ type ConsumerProofEnvironment = {
 
 export async function handleCredentialConsumerProof(
   request: Request,
-  database: D1Database,
   environment: ConsumerProofEnvironment,
   acceptedClasses: readonly CredentialClass[],
+  normalBearerProbe: (
+    secret: string,
+    credentialClass: CredentialClass,
+  ) => Promise<boolean>,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   if (
@@ -107,11 +112,9 @@ export async function handleCredentialConsumerProof(
   const capable =
     credentialClass === "api_bearer_key" ||
     credentialClass === "ingestion_admin_key"
-      ? await credentialSecretMatches(
-          database,
-          credentialClass,
+      ? await normalBearerProbe(
           secret,
-          [secret],
+          credentialClass as CredentialClass,
         )
       : await probeD1Capability(
           credentialClass,
@@ -161,27 +164,14 @@ function replacementSecret(
   environment: ConsumerProofEnvironment,
   slot: "active" | "replacement",
 ): string | undefined {
-  if (credentialClass === "api_bearer_key") {
-    return slot === "active"
-      ? environment.API_BEARER_KEY
-      : environment.API_BEARER_KEY_REPLACEMENT;
-  }
-  if (credentialClass === "ingestion_admin_key") {
-    return slot === "active"
-      ? environment.ADMINISTRATION_KEY
-      : environment.ADMINISTRATION_KEY_REPLACEMENT;
-  }
-  if (credentialClass === "d1_export_token") {
-    return slot === "active"
-      ? environment.D1_EXPORT_TOKEN
-      : environment.D1_EXPORT_TOKEN_REPLACEMENT;
-  }
-  if (credentialClass === "d1_verification_token") {
-    return slot === "active"
-      ? environment.D1_VERIFICATION_TOKEN
-      : environment.D1_VERIFICATION_TOKEN_REPLACEMENT;
-  }
-  return undefined;
+  const definition = credentialClassDefinitions[credentialClass];
+  const key =
+    slot === "active"
+      ? definition.active_environment_key
+      : definition.replacement_environment_key;
+  return environment[key as keyof ConsumerProofEnvironment] as
+    | string
+    | undefined;
 }
 
 async function probeD1Capability(
@@ -189,10 +179,10 @@ async function probeD1Capability(
   token: string,
   environment: ConsumerProofEnvironment,
 ): Promise<boolean> {
-  const databaseId =
-    credentialClass === "d1_export_token"
-      ? environment.CATALOGUE_D1_DATABASE_ID
-      : environment.DISPOSABLE_D1_DATABASE_ID;
+  const definition = credentialClassDefinitions[credentialClass];
+  const databaseId = environment[
+    definition.database_environment_key as keyof ConsumerProofEnvironment
+  ] as string | undefined;
   if (
     environment.CLOUDFLARE_ACCOUNT_ID === undefined ||
     databaseId === undefined

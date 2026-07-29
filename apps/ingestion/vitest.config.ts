@@ -25,6 +25,10 @@ export default defineConfig({
           ADMINISTRATION_CLOCK_MODE: "request",
           CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
             "vitest-boundary-attestation-key",
+          GITHUB_REPOSITORY_ID: "1313489088",
+          GITHUB_INSTALLATION_ID: "22222222",
+          GITHUB_ENVIRONMENT_ID: "33333333",
+          GITHUB_WORKFLOW_ID: "44444444",
           TEST_MIGRATIONS: migrations,
         },
         outboundService: async (request) => {
