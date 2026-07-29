@@ -199,6 +199,12 @@ WHEN OLD.state <> NEW.state
       'export_verification_failed'
     )
   )
+  AND NOT (
+    OLD.state = 'awaiting_approval'
+    AND NEW.state = 'expired'
+    AND OLD.approval_deadline IS NOT NULL
+    AND NEW.terminal_at >= OLD.approval_deadline
+  )
   AND NOT EXISTS (
     SELECT 1
     FROM operation_state

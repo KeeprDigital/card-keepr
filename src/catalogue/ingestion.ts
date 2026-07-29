@@ -11,6 +11,21 @@ import { canonicalJson, sha256 } from "./serialization";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
+const activeRunStages = [
+  "planning",
+  "collecting",
+  "parsing",
+  "reconciling",
+  "awaiting_approval",
+  "publishing",
+] as const;
+const runStates = new Set([
+  ...activeRunStages,
+  "published",
+  "rejected",
+  "expired",
+  "failed",
+]);
 const terminalRunStates = new Set([
   "published",
   "rejected",
@@ -477,11 +492,11 @@ async function approveRunAttempt(
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
   if (run.state === "publishing") {
-    throw new AdministrationProblem(
-      409,
-      "publication_in_progress",
-      "The Ingestion Run already has a publication in progress.",
-      run.approval_idempotency_key !== request.idempotency_key,
+    return waitForOriginalApproval(
+      database,
+      run,
+      request.idempotency_key,
+      requestJson,
     );
   }
   assertRunIsApprovable(run, request);
@@ -556,18 +571,28 @@ async function approveRunAttempt(
   } catch (error) {
     const reserved = await requiredRun(database, run.id);
     if (reserved.state === "publishing") {
-      throw new AdministrationProblem(
-        409,
-        "publication_in_progress",
-        "The Ingestion Run already has a publication in progress.",
-        reserved.approval_idempotency_key !==
-          request.idempotency_key,
+      return waitForOriginalApproval(
+        database,
+        reserved,
+        request.idempotency_key,
+        requestJson,
       );
     }
     await throwApprovalFailure(database, run, error, now);
   }
   try {
     await storeAndVerifyExport(catalogueExports, catalogueExport.objects);
+    if (
+      !(await isExactVerifiedExport(
+        catalogueExports,
+        revisionId,
+        catalogueExport,
+      ))
+    ) {
+      throw new Error(
+        "The Catalogue Export attempt contains unexpected objects.",
+      );
+    }
     return await commitVerifiedPublication(database, {
       run: await requiredRun(database, run.id),
       candidate,
@@ -585,10 +610,14 @@ async function approveRunAttempt(
     );
     if (concurrentReplay !== null) return concurrentReplay;
     const problem = publicationFailureProblem(error);
+    const cleanupKeys = await listCatalogueExportPrefix(
+      catalogueExports,
+      revisionId,
+    );
     await failReservedPublication(
       database,
       await requiredRun(database, run.id),
-      catalogueExport.objects.map((object) => object.key),
+      cleanupKeys,
       now,
       problem,
     );
@@ -1555,10 +1584,14 @@ async function reconcileReservedPublication(
         "publication_precondition_failed",
         "The publication guards changed while the reserved publication was interrupted.",
       );
+  const cleanupKeys = await listCatalogueExportPrefix(
+    bucket,
+    revisionId,
+  );
   await failReservedPublication(
     database,
     run,
-    catalogueExport.objects.map((object) => object.key),
+    cleanupKeys,
     observedAt,
     problem,
   );
@@ -1770,25 +1803,38 @@ async function attemptPublicationCleanup(
       );
     }
   }
-  const keys = parseCleanupKeys(cleanup.object_keys_json, run);
+  const recordedKeys = parseCleanupKeys(
+    cleanup.object_keys_json,
+    run,
+  );
+  const revisionId = requiredPublicationValue(
+    run.publication_revision_id,
+    "revision ID",
+  );
+  const observedKeys = await listCatalogueExportPrefix(
+    bucket,
+    revisionId,
+  );
+  const keys = [...new Set([...recordedKeys, ...observedKeys])].sort();
   await database
     .prepare(
       `UPDATE ingestion_publication_cleanup
       SET state = 'cleaning',
           attempts = attempts + 1,
           failure_code = NULL,
-          last_attempt_at = ?
+          last_attempt_at = ?,
+          object_keys_json = ?
       WHERE ingestion_run_id = ?
         AND state IN ('pending', 'failed', 'cleaning')`,
     )
-    .bind(observedAt, runId)
+    .bind(observedAt, canonicalJson(keys), runId)
     .run();
   try {
     if (keys.length > 0) await bucket.delete(keys);
-    for (const key of keys) {
-      if ((await bucket.get(key)) !== null) {
-        throw new Error("Catalogue Export cleanup verification failed");
-      }
+    if (
+      (await listCatalogueExportPrefix(bucket, revisionId)).length > 0
+    ) {
+      throw new Error("Catalogue Export cleanup verification failed");
     }
     const completedCleanup: PublicationCleanupRow = {
       ...cleanup,
@@ -1991,12 +2037,14 @@ async function replayAdministration(
       "The idempotency key was already used for a different administration request.",
     );
   }
-  const persisted = parsePersistedObject(
+  const persisted = parseJson(
     prior.response_json,
     "Administration idempotency outcome",
   );
   if (prior.outcome === "problem") {
     if (
+      !isRecord(persisted) ||
+      !hasOnlyKeys(persisted, ["code", "detail"]) ||
       typeof persisted.code !== "string" ||
       typeof persisted.detail !== "string" ||
       !Number.isInteger(prior.http_status) ||
@@ -2013,12 +2061,7 @@ async function replayAdministration(
       persisted.detail,
     );
   }
-  if (!isPublicRunDocument(persisted)) {
-    throw new Error(
-      "The persisted administration success outcome is invalid.",
-    );
-  }
-  return persisted;
+  return decodePublicRunDocument(persisted);
 }
 
 async function idempotentAdministration(
@@ -2122,12 +2165,52 @@ async function replayLegacyAdministration(
       expected_current_revision_id:
         run.expected_current_revision_id,
     });
-    if (legacyRequestJson === requestJson) return publicRun(run);
+    if (
+      legacyRequestJson === requestJson &&
+      terminalRunStates.has(run.state)
+    ) {
+      return publicRun(run);
+    }
+    if (legacyRequestJson === requestJson) return null;
   }
   throw new AdministrationProblem(
     409,
     "idempotency_key_reused",
     "The idempotency key was already used for a different administration request.",
+  );
+}
+
+async function waitForOriginalApproval(
+  database: D1Database,
+  run: RunRow,
+  idempotencyKey: string,
+  requestJson: string,
+): Promise<Record<string, unknown>> {
+  if (run.approval_idempotency_key !== idempotencyKey) {
+    throw new AdministrationProblem(
+      409,
+      "publication_in_progress",
+      "The Ingestion Run already has a publication in progress.",
+    );
+  }
+  const maximumAttempts = 25;
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    const replay = await replayAdministration(
+      database,
+      idempotencyKey,
+      "approve_ingestion_run",
+      requestJson,
+    );
+    if (replay !== null) return replay;
+    if (attempt + 1 < maximumAttempts) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  throw new AdministrationProblem(
+    409,
+    "publication_in_progress",
+    "The original approval is still publishing; retry the identical request.",
+    false,
   );
 }
 
@@ -2257,10 +2340,26 @@ async function expireOverdueRuns(
       `UPDATE operation_state
       SET active_ingestion_run_id = NULL
       WHERE singleton = 1
-        AND active_ingestion_run_id IN (
-          SELECT id
-          FROM ingestion_runs
-          WHERE state = 'expired'
+        AND active_ingestion_run_id IS NOT NULL
+        AND (
+          active_ingestion_run_id IN (
+            SELECT id
+            FROM ingestion_runs
+            WHERE state = 'expired'
+          )
+          OR NOT EXISTS (
+            SELECT 1
+            FROM ingestion_runs
+            WHERE id = operation_state.active_ingestion_run_id
+              AND state IN (
+                'planning',
+                'collecting',
+                'parsing',
+                'reconciling',
+                'awaiting_approval',
+                'publishing'
+              )
+          )
         )`,
     ),
   ]);
@@ -2311,15 +2410,15 @@ function parseCandidate(row: RunRow): FixtureCandidate {
   return parsed;
 }
 
-function parsePersistedObject(
+function parseJson(
   value: string,
   description: string,
-): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(value);
-  if (!isRecord(parsed)) {
-    throw new Error(`${description} is not a JSON object.`);
+): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${description} is not valid JSON.`);
   }
-  return parsed;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2468,59 +2567,96 @@ function parseSelectedGames(value: string): readonly ["one-piece"] {
   return ["one-piece"];
 }
 
-function parseProgress(value: string): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(value);
-  const stages = new Set([
-    "planning",
-    "collecting",
-    "parsing",
-    "reconciling",
-    "awaiting_approval",
-    "publishing",
-    "published",
-    "rejected",
-    "expired",
-    "failed",
-  ]);
+function parseProgress(
+  value: string,
+  expectedState?: string,
+): Record<string, unknown> {
+  return decodeProgress(
+    parseJson(value, "Ingestion Run progress"),
+    expectedState,
+  );
+}
+
+function decodeProgress(
+  value: unknown,
+  expectedState?: string,
+): Record<string, unknown> {
   if (
-    !isRecord(parsed) ||
-    !hasOnlyKeys(parsed, ["completed_stages", "current_stage"]) ||
-    !Array.isArray(parsed.completed_stages) ||
-    parsed.completed_stages.some(
-      (stage) => typeof stage !== "string" || !stages.has(stage),
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["completed_stages", "current_stage"]) ||
+    !Array.isArray(value.completed_stages) ||
+    value.completed_stages.some(
+      (stage) =>
+        typeof stage !== "string" ||
+        !activeRunStages.some((knownStage) => knownStage === stage),
     ) ||
-    new Set(parsed.completed_stages).size !==
-      parsed.completed_stages.length ||
-    typeof parsed.current_stage !== "string" ||
-    !stages.has(parsed.current_stage)
+    value.completed_stages.length > activeRunStages.length ||
+    value.completed_stages.some(
+      (stage, index) => stage !== activeRunStages[index],
+    ) ||
+    typeof value.current_stage !== "string" ||
+    !runStates.has(value.current_stage) ||
+    (expectedState !== undefined &&
+      value.current_stage !== expectedState) ||
+    !validCompletedStageCount(
+      value.current_stage,
+      value.completed_stages.length,
+    )
   ) {
     throw new Error("The persisted Ingestion Run progress is invalid.");
   }
-  return parsed;
+  return {
+    completed_stages: [...value.completed_stages],
+    current_stage: value.current_stage,
+  };
 }
 
 function parseWarnings(value: string): Record<string, unknown>[] {
-  const parsed: unknown = JSON.parse(value);
+  return decodeWarnings(
+    parseJson(value, "Ingestion Run warnings"),
+  );
+}
+
+function decodeWarnings(value: unknown): Record<string, unknown>[] {
   if (
-    !Array.isArray(parsed) ||
-    parsed.some(
-      (warning) =>
-        !isRecord(warning) ||
-        !(
-          hasOnlyKeys(warning, ["code", "detail"]) ||
-          hasOnlyKeys(warning, ["code", "detail", "severity"])
-        ) ||
-        typeof warning.code !== "string" ||
-        typeof warning.detail !== "string" ||
-        ("severity" in warning &&
-          !["info", "warning", "error"].includes(
-            String(warning.severity),
-          )),
-    )
+    !Array.isArray(value) ||
+    value.some((warning) => !isWarningDocument(warning))
   ) {
     throw new Error("The persisted Ingestion Run warnings are invalid.");
   }
-  return parsed;
+  return value;
+}
+
+function validCompletedStageCount(
+  state: string,
+  completedCount: number,
+): boolean {
+  const activeIndex = activeRunStages.findIndex(
+    (knownStage) => knownStage === state,
+  );
+  if (activeIndex >= 0) return completedCount === activeIndex;
+  if (state === "published") {
+    return completedCount === activeRunStages.length;
+  }
+  if (state === "rejected" || state === "expired") {
+    return completedCount ===
+      activeRunStages.indexOf("awaiting_approval");
+  }
+  return state === "failed";
+}
+
+function isWarningDocument(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    (hasOnlyKeys(value, ["code", "detail"]) ||
+      hasOnlyKeys(value, ["code", "detail", "severity"])) &&
+    typeof value.code === "string" &&
+    value.code.length > 0 &&
+    typeof value.detail === "string" &&
+    (!("severity" in value) ||
+      (typeof value.severity === "string" &&
+        ["info", "warning", "error"].includes(value.severity)))
+  );
 }
 
 function parseApproval(value: string | null): {
@@ -2532,49 +2668,69 @@ function parseApproval(value: string | null): {
   if (value === null) {
     throw new Error("The persisted Ingestion Run approval is missing.");
   }
-  const parsed: unknown = JSON.parse(value);
+  return decodeApproval(
+    parseJson(value, "Ingestion Run approval"),
+  );
+}
+
+function decodeApproval(value: unknown): {
+  action: "approved";
+  approved_at: string;
+  candidate_digest: string;
+  expected_current_revision_id: string;
+} {
   if (
-    !isRecord(parsed) ||
-    !hasOnlyKeys(parsed, [
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
       "action",
       "approved_at",
       "candidate_digest",
       "expected_current_revision_id",
     ]) ||
-    parsed.action !== "approved" ||
-    !isIsoInstant(parsed.approved_at) ||
-    typeof parsed.candidate_digest !== "string" ||
-    !/^[a-f0-9]{64}$/.test(parsed.candidate_digest) ||
-    typeof parsed.expected_current_revision_id !== "string" ||
-    parsed.expected_current_revision_id.length === 0
+    value.action !== "approved" ||
+    !isIsoInstant(value.approved_at) ||
+    typeof value.candidate_digest !== "string" ||
+    !isSha256Digest(value.candidate_digest) ||
+    typeof value.expected_current_revision_id !== "string" ||
+    !isOpaqueIdentity(value.expected_current_revision_id)
   ) {
     throw new Error("The persisted Ingestion Run approval is invalid.");
   }
   return {
     action: "approved",
-    approved_at: parsed.approved_at,
-    candidate_digest: parsed.candidate_digest,
+    approved_at: value.approved_at,
+    candidate_digest: value.candidate_digest,
     expected_current_revision_id:
-      parsed.expected_current_revision_id,
+      value.expected_current_revision_id,
   };
 }
 
 function parseApprovalHistory(
   value: string,
 ): Record<string, unknown>[] {
-  const parsed: unknown = JSON.parse(value);
+  return decodeApprovalHistory(
+    parseJson(value, "Ingestion Run approval history"),
+  );
+}
+
+function decodeApprovalHistory(
+  value: unknown,
+): Record<string, unknown>[] {
   if (
-    !Array.isArray(parsed) ||
-    parsed.some((decision) => !isApprovalDecision(decision))
+    !Array.isArray(value) ||
+    value.length > 1 ||
+    value.some((decision) => !isApprovalDecision(decision))
   ) {
     throw new Error(
       "The persisted Ingestion Run approval history is invalid.",
     );
   }
-  return parsed;
+  return value;
 }
 
-function isApprovalDecision(value: unknown): boolean {
+function isApprovalDecision(
+  value: unknown,
+): value is Record<string, unknown> {
   if (!isRecord(value) || typeof value.candidate_digest !== "string") {
     return false;
   }
@@ -2587,9 +2743,9 @@ function isApprovalDecision(value: unknown): boolean {
         "expected_current_revision_id",
       ]) &&
       isIsoInstant(value.approved_at) &&
-      /^[a-f0-9]{64}$/.test(value.candidate_digest) &&
+      isSha256Digest(value.candidate_digest) &&
       typeof value.expected_current_revision_id === "string" &&
-      value.expected_current_revision_id.length > 0
+      isOpaqueIdentity(value.expected_current_revision_id)
     );
   }
   return (
@@ -2600,7 +2756,7 @@ function isApprovalDecision(value: unknown): boolean {
       "candidate_digest",
     ]) &&
     isIsoInstant(value.rejected_at) &&
-    /^[a-f0-9]{64}$/.test(value.candidate_digest)
+    isSha256Digest(value.candidate_digest)
   );
 }
 
@@ -2616,27 +2772,40 @@ function parseCleanupKeys(
   value: string,
   run: RunRow,
 ): string[] {
-  const parsed: unknown = JSON.parse(value);
   const revisionId = requiredPublicationValue(
     run.publication_revision_id,
     "revision ID",
   );
   const prefix = `catalogue-exports/${revisionId}/`;
+  return decodeCleanupKeySet(
+    parseJson(value, "Publication cleanup object keys"),
+    prefix,
+  );
+}
+
+function decodeCleanupKeySet(
+  value: unknown,
+  prefix: string,
+): string[] {
   if (
-    !Array.isArray(parsed) ||
-    parsed.some(
+    !Array.isArray(value) ||
+    value.some(
       (key) =>
         typeof key !== "string" ||
         key.length <= prefix.length ||
         !key.startsWith(prefix),
     ) ||
-    new Set(parsed).size !== parsed.length
+    new Set(value).size !== value.length ||
+    value.some(
+      (key, index) =>
+        key !== [...value].sort()[index],
+    )
   ) {
     throw new Error(
       "The persisted publication cleanup object keys are invalid.",
     );
   }
-  return parsed;
+  return value;
 }
 
 function publicRun(
@@ -2651,23 +2820,12 @@ function publicRun(
   const approvalHistory = parseApprovalHistory(
     row.approval_history_json,
   );
-  if (
-    !isExactStringTuple(selectedGames, candidate.selected_games) ||
-    progress.current_stage !== row.state ||
-    (approval !== null &&
-      (approval.candidate_digest !== row.candidate_digest ||
-        approval.expected_current_revision_id !==
-          row.expected_current_revision_id)) ||
-    approvalHistory.some(
-      (decision) =>
-        decision.candidate_digest !== row.candidate_digest,
-    )
-  ) {
+  if (!isExactStringTuple(selectedGames, candidate.selected_games)) {
     throw new Error(
       "The persisted Ingestion Run document is inconsistent.",
     );
   }
-  return {
+  return decodePublicRunDocument({
     id: row.id,
     state: row.state,
     selected_games: selectedGames,
@@ -2693,7 +2851,7 @@ function publicRun(
     terminal_at: row.terminal_at,
     publication_reservation: publicPublicationReservation(row),
     publication_cleanup: publicPublicationCleanup(cleanup),
-  };
+  });
 }
 
 function publicPublicationReservation(
@@ -2705,171 +2863,397 @@ function publicPublicationReservation(
     row.publication_reconcile_after,
     row.publication_manifest_digest,
   ];
-  if (values.every((value) => value === null)) return null;
-  if (
-    row.publication_revision_id === null ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(
-      row.publication_revision_id,
-    ) ||
-    !isIsoInstant(row.publication_started_at) ||
-    !isIsoInstant(row.publication_reconcile_after) ||
-    Date.parse(row.publication_reconcile_after) <
-      Date.parse(row.publication_started_at) ||
-    row.publication_manifest_digest === null ||
-    !/^[a-f0-9]{64}$/.test(row.publication_manifest_digest)
-  ) {
-    throw new Error("The persisted publication reservation is invalid.");
-  }
-  return {
-    revision_id: row.publication_revision_id,
-    started_at: row.publication_started_at,
-    reconcile_after: row.publication_reconcile_after,
-    manifest_digest: row.publication_manifest_digest,
-  };
+  return decodePublicationReservation(
+    values.every((value) => value === null)
+      ? null
+      : {
+          revision_id: row.publication_revision_id,
+          started_at: row.publication_started_at,
+          reconcile_after: row.publication_reconcile_after,
+          manifest_digest: row.publication_manifest_digest,
+        },
+  );
 }
 
 function publicPublicationCleanup(
   cleanup: PublicationCleanupRow | null,
 ): Record<string, unknown> | null {
-  if (cleanup === null) return null;
+  return decodePublicationCleanup(
+    cleanup === null
+      ? null
+      : {
+          state: cleanup.state,
+          attempts: cleanup.attempts,
+          failure_code: cleanup.failure_code,
+          last_attempt_at: cleanup.last_attempt_at,
+          completed_at: cleanup.completed_at,
+        },
+  );
+}
+
+function decodePublicRunDocument(
+  value: unknown,
+): Record<string, unknown> {
+  const requiredKeys = [
+    "id",
+    "state",
+    "selected_games",
+    "started_at",
+    "expected_current_revision_id",
+    "linked_run_id",
+    "idempotency_key",
+    "candidate_digest",
+    "candidate_created_at",
+    "approval_deadline",
+    "approval",
+    "approval_history",
+    "progress",
+    "warnings",
+    "failure_code",
+    "publication_outcome",
+    "published_revision_id",
+    "resulting_revision_id",
+    "freshness_checked_at",
+    "terminal_at",
+    "publication_reservation",
+    "publication_cleanup",
+  ];
   if (
-    !["pending", "cleaning", "completed", "failed"].includes(
-      cleanup.state,
+    !isRecord(value) ||
+    requiredKeys.some((key) => !(key in value)) ||
+    Object.keys(value).some(
+      (key) =>
+        !requiredKeys.includes(key) &&
+        key !== "export_manifest_digest",
     ) ||
-    !Number.isInteger(cleanup.attempts) ||
-    cleanup.attempts < 0 ||
-    (cleanup.failure_code !== null &&
-      typeof cleanup.failure_code !== "string") ||
-    (cleanup.last_attempt_at !== null &&
-      !isIsoInstant(cleanup.last_attempt_at)) ||
-    (cleanup.completed_at !== null &&
-      !isIsoInstant(cleanup.completed_at)) ||
-    (cleanup.state === "completed" &&
-      cleanup.completed_at === null)
+    typeof value.id !== "string" ||
+    !isOpaqueIdentity(value.id) ||
+    typeof value.state !== "string" ||
+    !runStates.has(value.state) ||
+    !isExactStringTuple(value.selected_games, ["one-piece"]) ||
+    !isIsoInstant(value.started_at) ||
+    typeof value.expected_current_revision_id !== "string" ||
+    !isOpaqueIdentity(value.expected_current_revision_id) ||
+    !isNullableOpaqueIdentity(value.linked_run_id) ||
+    typeof value.idempotency_key !== "string" ||
+    !isOpaqueIdentity(value.idempotency_key) ||
+    !isNullableSha256(value.candidate_digest) ||
+    !isNullableIsoInstant(value.candidate_created_at) ||
+    !isNullableIsoInstant(value.approval_deadline) ||
+    !isNullableString(value.failure_code) ||
+    !isNullableOpaqueIdentity(value.published_revision_id) ||
+    !isNullableOpaqueIdentity(value.resulting_revision_id) ||
+    !isNullableIsoInstant(value.freshness_checked_at) ||
+    !isNullableIsoInstant(value.terminal_at) ||
+    !(
+      value.publication_outcome === null ||
+      value.publication_outcome === "revision" ||
+      value.publication_outcome === "no_change"
+    ) ||
+    ("export_manifest_digest" in value &&
+      (typeof value.export_manifest_digest !== "string" ||
+        !isSha256Digest(value.export_manifest_digest)))
+  ) {
+    throw new Error(
+      "The persisted administration success outcome is invalid.",
+    );
+  }
+  const progress = decodeProgress(value.progress, value.state);
+  const warnings = decodeWarnings(value.warnings);
+  const approval =
+    value.approval === null
+      ? null
+      : decodeApproval(value.approval);
+  const approvalHistory = decodeApprovalHistory(
+    value.approval_history,
+  );
+  const reservation = decodePublicationReservation(
+    value.publication_reservation,
+  );
+  const cleanup = decodePublicationCleanup(
+    value.publication_cleanup,
+  );
+  assertPublicRunCrossFieldInvariants(value, {
+    progress,
+    approval,
+    approvalHistory,
+    reservation,
+    cleanup,
+  });
+  return {
+    ...value,
+    progress,
+    warnings,
+    approval,
+    approval_history: approvalHistory,
+    publication_reservation: reservation,
+    publication_cleanup: cleanup,
+  };
+}
+
+function decodePublicationReservation(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "revision_id",
+      "started_at",
+      "reconcile_after",
+      "manifest_digest",
+    ]) ||
+    typeof value.revision_id !== "string" ||
+    !isOpaqueIdentity(value.revision_id) ||
+    !isIsoInstant(value.started_at) ||
+    !isIsoInstant(value.reconcile_after) ||
+    Date.parse(value.reconcile_after) <
+      Date.parse(value.started_at) ||
+    typeof value.manifest_digest !== "string" ||
+    !isSha256Digest(value.manifest_digest)
+  ) {
+    throw new Error("The persisted publication reservation is invalid.");
+  }
+  return {
+    revision_id: value.revision_id,
+    started_at: value.started_at,
+    reconcile_after: value.reconcile_after,
+    manifest_digest: value.manifest_digest,
+  };
+}
+
+function decodePublicationCleanup(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "state",
+      "attempts",
+      "failure_code",
+      "last_attempt_at",
+      "completed_at",
+    ]) ||
+    typeof value.state !== "string" ||
+    !["pending", "cleaning", "completed", "failed"].includes(
+      value.state,
+    ) ||
+    typeof value.attempts !== "number" ||
+    !Number.isInteger(value.attempts) ||
+    value.attempts < 0 ||
+    !isNullableString(value.failure_code) ||
+    !isNullableIsoInstant(value.last_attempt_at) ||
+    !isNullableIsoInstant(value.completed_at) ||
+    (value.state === "pending" &&
+      (value.attempts !== 0 ||
+        value.last_attempt_at !== null ||
+        value.completed_at !== null)) ||
+    (value.state === "cleaning" &&
+      (value.attempts < 1 ||
+        value.last_attempt_at === null ||
+        value.completed_at !== null)) ||
+    (value.state === "failed" &&
+      (value.attempts < 1 ||
+        value.failure_code === null ||
+        value.last_attempt_at === null ||
+        value.completed_at !== null)) ||
+    (value.state === "completed" &&
+      (value.attempts < 1 ||
+        value.failure_code !== null ||
+        value.last_attempt_at === null ||
+        value.completed_at === null))
   ) {
     throw new Error(
       "The persisted publication cleanup state is invalid.",
     );
   }
   return {
-    state: cleanup.state,
-    attempts: cleanup.attempts,
-    failure_code: cleanup.failure_code,
-    last_attempt_at: cleanup.last_attempt_at,
-    completed_at: cleanup.completed_at,
+    state: value.state,
+    attempts: value.attempts,
+    failure_code: value.failure_code,
+    last_attempt_at: value.last_attempt_at,
+    completed_at: value.completed_at,
   };
 }
 
-function isPublicRunDocument(
+function assertPublicRunCrossFieldInvariants(
   value: Record<string, unknown>,
+  decoded: {
+    progress: Record<string, unknown>;
+    approval: {
+      action: "approved";
+      approved_at: string;
+      candidate_digest: string;
+      expected_current_revision_id: string;
+    } | null;
+    approvalHistory: Record<string, unknown>[];
+    reservation: Record<string, unknown> | null;
+    cleanup: Record<string, unknown> | null;
+  },
+): void {
+  const state = value.state;
+  const terminal = typeof state === "string" &&
+    terminalRunStates.has(state);
+  const completedStages = decoded.progress.completed_stages;
+  const candidateRequired =
+    state === "awaiting_approval" ||
+    state === "publishing" ||
+    state === "published" ||
+    state === "rejected" ||
+    state === "expired" ||
+    (Array.isArray(completedStages) &&
+      completedStages.includes("reconciling"));
+  if (
+    (terminal && value.terminal_at === null) ||
+    (!terminal && value.terminal_at !== null) ||
+    (candidateRequired &&
+      (typeof value.candidate_digest !== "string" ||
+        typeof value.candidate_created_at !== "string" ||
+        typeof value.approval_deadline !== "string" ||
+        Date.parse(value.approval_deadline) -
+          Date.parse(value.candidate_created_at) !==
+          sevenDaysInMilliseconds)) ||
+    (!candidateRequired &&
+      (value.candidate_digest !== null ||
+        value.candidate_created_at !== null ||
+        value.approval_deadline !== null)) ||
+    (decoded.approval !== null &&
+      (decoded.approval.candidate_digest !==
+        value.candidate_digest ||
+        decoded.approval.expected_current_revision_id !==
+          value.expected_current_revision_id ||
+        decoded.approvalHistory.length !== 1 ||
+        canonicalJson(decoded.approvalHistory[0]) !==
+          canonicalJson(decoded.approval))) ||
+    (decoded.approval === null &&
+      decoded.approvalHistory.some(
+        (decision) => decision.action === "approved",
+      )) ||
+    decoded.approvalHistory.some(
+      (decision) =>
+        decision.candidate_digest !== value.candidate_digest,
+    ) ||
+    (state === "rejected" &&
+      (decoded.approvalHistory.length !== 1 ||
+        decoded.approvalHistory[0]?.action !== "rejected")) ||
+    (state !== "rejected" &&
+      decoded.approvalHistory.some(
+        (decision) => decision.action === "rejected",
+      )) ||
+    (state === "expired" &&
+      decoded.approvalHistory.length !== 0) ||
+    (decoded.reservation !== null &&
+      (decoded.approval === null ||
+        decoded.reservation.started_at !==
+          decoded.approval.approved_at)) ||
+    (state === "publishing" &&
+      (decoded.approval === null ||
+        decoded.reservation === null)) ||
+    (decoded.cleanup !== null &&
+      (state !== "failed" || decoded.reservation === null)) ||
+    (state === "failed" &&
+      (typeof value.failure_code !== "string" ||
+        value.failure_code.length === 0)) ||
+    (state !== "failed" && value.failure_code !== null) ||
+    !validPublicationOutcome(value, decoded)
+  ) {
+    throw new Error(
+      "The persisted Ingestion Run document is inconsistent.",
+    );
+  }
+}
+
+function validPublicationOutcome(
+  value: Record<string, unknown>,
+  decoded: {
+    approval: Record<string, unknown> | null;
+    reservation: Record<string, unknown> | null;
+  },
 ): boolean {
-  const states = new Set([
-    "planning",
-    "collecting",
-    "parsing",
-    "reconciling",
-    "awaiting_approval",
-    "publishing",
-    "published",
-    "rejected",
-    "expired",
-    "failed",
-  ]);
+  if (value.state !== "published") {
+    return (
+      value.publication_outcome === null &&
+      value.published_revision_id === null &&
+      value.resulting_revision_id === null &&
+      !("export_manifest_digest" in value) &&
+      value.freshness_checked_at === null
+    );
+  }
+  if (
+    decoded.approval === null ||
+    value.terminal_at === null ||
+    value.freshness_checked_at === null
+  ) {
+    return false;
+  }
+  if (value.publication_outcome === "no_change") {
+    return (
+      decoded.reservation === null &&
+      value.published_revision_id === null &&
+      value.resulting_revision_id ===
+        value.expected_current_revision_id &&
+      !("export_manifest_digest" in value)
+    );
+  }
   return (
-    typeof value.id === "string" &&
-    typeof value.state === "string" &&
-    states.has(value.state) &&
-    Array.isArray(value.selected_games) &&
-    isExactStringTuple(value.selected_games, ["one-piece"]) &&
-    isIsoInstant(value.started_at) &&
-    isPublicProgress(value.progress, value.state) &&
-    Array.isArray(value.warnings) &&
-    value.warnings.every(isPublicWarning) &&
-    Array.isArray(value.approval_history) &&
-    value.approval_history.every(isApprovalDecision) &&
-    (value.approval === null ||
-      (isRecord(value.approval) &&
-        value.approval.action === "approved" &&
-        isApprovalDecision(value.approval))) &&
-    (value.failure_code === null ||
-      typeof value.failure_code === "string") &&
-    (value.publication_cleanup === null ||
-      isPublicCleanupDocument(value.publication_cleanup))
+    value.publication_outcome === "revision" &&
+    decoded.reservation !== null &&
+    value.published_revision_id ===
+      decoded.reservation.revision_id &&
+    value.resulting_revision_id ===
+      decoded.reservation.revision_id &&
+    value.export_manifest_digest ===
+      decoded.reservation.manifest_digest
   );
 }
 
-function isPublicProgress(value: unknown, state: string): boolean {
+function isNullableString(value: unknown): boolean {
+  return value === null || typeof value === "string";
+}
+
+function isNullableIsoInstant(value: unknown): boolean {
+  return value === null || isIsoInstant(value);
+}
+
+function isNullableOpaqueIdentity(value: unknown): boolean {
   return (
-    isRecord(value) &&
-    hasOnlyKeys(value, ["completed_stages", "current_stage"]) &&
-    Array.isArray(value.completed_stages) &&
-    value.completed_stages.every(
-      (stage) => typeof stage === "string",
-    ) &&
-    new Set(value.completed_stages).size ===
-      value.completed_stages.length &&
-    value.current_stage === state
+    value === null ||
+    (typeof value === "string" && isOpaqueIdentity(value))
   );
 }
 
-function isPublicWarning(value: unknown): boolean {
+function isNullableSha256(value: unknown): boolean {
   return (
-    isRecord(value) &&
-    (hasOnlyKeys(value, ["code", "detail"]) ||
-      hasOnlyKeys(value, ["code", "detail", "severity"])) &&
-    typeof value.code === "string" &&
-    typeof value.detail === "string" &&
-    (!("severity" in value) ||
-      ["info", "warning", "error"].includes(
-        String(value.severity),
-      ))
+    value === null ||
+    (typeof value === "string" && isSha256Digest(value))
   );
 }
 
-function isPublicCleanupDocument(value: unknown): boolean {
+function isOpaqueIdentity(value: string): boolean {
   return (
-    isRecord(value) &&
-    hasOnlyKeys(value, [
-      "state",
-      "attempts",
-      "failure_code",
-      "last_attempt_at",
-      "completed_at",
-    ]) &&
-    typeof value.state === "string" &&
-    ["pending", "cleaning", "completed", "failed"].includes(
-      value.state,
-    ) &&
-    Number.isInteger(value.attempts) &&
-    typeof value.attempts === "number" &&
-    value.attempts >= 0 &&
-    (value.failure_code === null ||
-      typeof value.failure_code === "string") &&
-    (value.last_attempt_at === null ||
-      isIsoInstant(value.last_attempt_at)) &&
-    (value.completed_at === null ||
-      isIsoInstant(value.completed_at))
+    value.length >= 1 &&
+    value.length <= 200 &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
   );
+}
+
+function isSha256Digest(value: string): boolean {
+  return /^[a-f0-9]{64}$/.test(value);
 }
 
 function progressFor(state: string): Record<string, unknown> {
-  const ordered = [
-    "planning",
-    "collecting",
-    "parsing",
-    "reconciling",
-    "awaiting_approval",
-    "publishing",
-  ];
-  const position = ordered.indexOf(state);
+  const position = activeRunStages.findIndex(
+    (knownStage) => knownStage === state,
+  );
   if (position >= 0) {
     return {
-      completed_stages: ordered.slice(0, position),
+      completed_stages: activeRunStages.slice(0, position),
       current_stage: state,
     };
   }
   return {
-    completed_stages: ordered,
+    completed_stages: [...activeRunStages],
     current_stage: state,
   };
 }

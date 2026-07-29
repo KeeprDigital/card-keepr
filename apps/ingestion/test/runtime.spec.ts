@@ -319,13 +319,48 @@ test("stale and mismatched approvals leave the candidate unchanged before exact 
   });
 });
 
+test("identical concurrent approvals replay one original publication result", async () => {
+  const started = await startRun("start-concurrent-approval");
+  const runId = requiredDocumentString(started.document, "id");
+  const digest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const approvals = await Promise.all([
+    approve(
+      runId,
+      digest,
+      expectedRevision,
+      "approve-concurrently",
+    ),
+    approve(
+      runId,
+      digest,
+      expectedRevision,
+      "approve-concurrently",
+    ),
+  ]);
+  expect(approvals.map(({ response }) => response.status)).toEqual([
+    200,
+    200,
+  ]);
+  expect(approvals[1].document).toEqual(approvals[0].document);
+  expect(approvals[0].document).toMatchObject({
+    id: runId,
+    state: "published",
+  });
+});
+
 test("malformed persisted JSON is rejected instead of crossing the administration seam", async () => {
   const started = await startRun("start-malformed-persistence");
   const runId = requiredDocumentString(started.document, "id");
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE ingestion_runs
-    SET progress_json = '{"completed_stages":"invalid","current_stage":42}',
-        approval_history_json = '[{"action":"approved"}]'
+    SET progress_json = '{"completed_stages":["planning","parsing"],"current_stage":"awaiting_approval"}'
     WHERE id = ?`,
   )
     .bind(runId)
@@ -338,7 +373,7 @@ test("malformed persisted JSON is rejected instead of crossing the administratio
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE ingestion_runs
     SET progress_json = ?,
-        approval_history_json = '[]'
+        approval_history_json = '[{"action":"approved"}]'
     WHERE id = ?`,
   )
     .bind(
@@ -354,6 +389,49 @@ test("malformed persisted JSON is rejected instead of crossing the administratio
       runId,
     )
     .run();
+  const malformedAudit = await showRun(runId);
+  expect(malformedAudit.response.status).toBe(500);
+  expect(malformedAudit.document).toMatchObject({
+    code: "internal_error",
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET approval_history_json = '[]'
+    WHERE id = ?`,
+  )
+    .bind(runId)
+    .run();
+});
+
+test("a partial persisted success cannot masquerade as an original run result", async () => {
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO administration_idempotency (
+      idempotency_key,
+      operation,
+      request_json,
+      response_json,
+      http_status,
+      outcome,
+      created_at
+    ) VALUES (?, 'start_ingestion_run', ?, ?, 201, 'success', ?)`,
+  )
+    .bind(
+      "start-partial-success-replay",
+      `{"fixture":"first-catalogue","selected_games":["one-piece"]}`,
+      JSON.stringify({
+        id: "run_partial",
+        state: "awaiting_approval",
+        selected_games: ["one-piece"],
+        started_at: "2026-07-29T00:00:00.000Z",
+      }),
+      "2026-07-29T00:00:00.000Z",
+    )
+    .run();
+  const replay = await startRun("start-partial-success-replay");
+  expect(replay.response.status).toBe(500);
+  expect(replay.document).toMatchObject({
+    code: "internal_error",
+  });
 });
 
 test("rejection is terminal and retry creates a fresh linked run", async () => {
@@ -457,6 +535,39 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
   });
 
   const replacement = await startRun("start-after-expiry");
+  expect(replacement.response.status).toBe(201);
+});
+
+test("expiry repairs a dangling active identity and still wins at the deadline", async () => {
+  testObservedAt = "2026-07-29T02:00:00.000Z";
+  const started = await startRun("start-expiry-pointer-repair");
+  const runId = requiredDocumentString(started.document, "id");
+  const deadline = requiredDocumentString(
+    started.document,
+    "approval_deadline",
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+    SET active_ingestion_run_id = 'run_dangling_pointer'
+    WHERE singleton = 1`,
+  ).run();
+
+  testObservedAt = deadline;
+  const expired = await showRun(runId);
+  expect(expired.response.status).toBe(200);
+  expect(expired.document).toMatchObject({
+    id: runId,
+    state: "expired",
+    terminal_at: deadline,
+  });
+  const status = await administrationRequest("/v1/status");
+  expect(status.document).toMatchObject({
+    safe_state: {
+      active_ingestion_run_id: null,
+      mutation_safe: true,
+    },
+  });
+  const replacement = await startRun("start-after-pointer-repair");
   expect(replacement.response.status).toBe(201);
 });
 
@@ -574,10 +685,12 @@ test("an interrupted publication fails atomically and leaves cleanup independent
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE ingestion_publication_cleanup
     SET state = 'failed',
-        failure_code = 'synthetic_delete_failure'
+        attempts = 1,
+        failure_code = 'synthetic_delete_failure',
+        last_attempt_at = ?
     WHERE ingestion_run_id = ?`,
   )
-    .bind(runId)
+    .bind(testObservedAt, runId)
     .run();
   const failedCleanup = await showRun(runId);
   expect(failedCleanup.document).toMatchObject({
@@ -604,7 +717,7 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     failure_code: "publication_abandoned",
     publication_cleanup: {
       state: "completed",
-      attempts: 1,
+      attempts: 2,
       failure_code: null,
     },
   });
@@ -717,6 +830,118 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   );
   expect(replay.response.status).toBe(200);
   expect(replay.document).toEqual(reconciled.document);
+});
+
+test("unexpected recovery keys fail publication and are all removed by cleanup", async () => {
+  testObservedAt = "2026-07-29T03:00:00.000Z";
+  const before = await administrationRequest("/v1/status");
+  const beforeDiagnostics = requiredDocumentRecord(
+    before.document,
+    "diagnostics",
+  );
+  const beforeObjectCount = requiredDocumentNumber(
+    beforeDiagnostics,
+    "catalogue_export_object_count",
+  );
+  const started = await startRun("start-unexpected-recovery-key");
+  const runId = requiredDocumentString(started.document, "id");
+  const digest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const revisionId = "catrev_unexpected_recovery_key";
+  const approvalKey = "approve-unexpected-recovery-key";
+  const approval = {
+    action: "approved",
+    approved_at: testObservedAt,
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+  };
+  const candidate = await fixtureCandidate("first-catalogue", [
+    "one-piece",
+  ]);
+  const catalogueExport = await buildCatalogueExport(
+    candidate.candidate,
+    digest,
+    revisionId,
+    testObservedAt,
+  );
+  for (const object of catalogueExport.objects) {
+    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+  }
+  await testEnv.CATALOGUE_EXPORTS.put(
+    `catalogue-exports/${revisionId}/unexpected.bin`,
+    new Uint8Array([1, 2, 3]),
+  );
+  const reconcileAfter = "2026-07-29T03:05:00.000Z";
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+    SET state = 'publishing',
+        approval_json = ?,
+        approval_idempotency_key = ?,
+        approval_history_json = ?,
+        progress_json = ?,
+        publication_revision_id = ?,
+        publication_started_at = ?,
+        publication_reconcile_after = ?,
+        publication_manifest_digest = ?
+    WHERE id = ? AND state = 'awaiting_approval'`,
+  )
+    .bind(
+      JSON.stringify(approval),
+      approvalKey,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+          "awaiting_approval",
+        ],
+        current_stage: "publishing",
+      }),
+      revisionId,
+      testObservedAt,
+      reconcileAfter,
+      catalogueExport.manifest.manifest_sha256,
+      runId,
+    )
+    .run();
+
+  testObservedAt = reconcileAfter;
+  const reconciled = await showRun(runId);
+  expect(reconciled.document).toMatchObject({
+    state: "failed",
+    failure_code: "publication_abandoned",
+    publication_cleanup: { state: "pending" },
+  });
+  await testEnv.CATALOGUE_EXPORTS.put(
+    `catalogue-exports/${revisionId}/late-unexpected.bin`,
+    new Uint8Array([4, 5, 6]),
+  );
+  const cleanup = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-unexpected-recovery-key" },
+  );
+  expect(cleanup.document).toMatchObject({
+    publication_cleanup: { state: "completed" },
+  });
+  const after = await administrationRequest("/v1/status");
+  const afterDiagnostics = requiredDocumentRecord(
+    after.document,
+    "diagnostics",
+  );
+  expect(
+    requiredDocumentNumber(
+      afterDiagnostics,
+      "catalogue_export_object_count",
+    ),
+  ).toBe(beforeObjectCount);
 });
 
 test("an unchanged successful retry advances freshness without another revision or export", async () => {
@@ -875,6 +1100,32 @@ function requiredDocumentString(
   const value = document[field];
   if (typeof value !== "string") {
     throw new Error(`${field} is not a string`);
+  }
+  return value;
+}
+
+function requiredDocumentRecord(
+  document: Record<string, unknown>,
+  field: string,
+): Record<string, unknown> {
+  const value = document[field];
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    throw new Error(`${field} is not an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredDocumentNumber(
+  document: Record<string, unknown>,
+  field: string,
+): number {
+  const value = document[field];
+  if (typeof value !== "number") {
+    throw new Error(`${field} is not a number`);
   }
   return value;
 }
