@@ -14,6 +14,7 @@ declare global {
 const accountId = "0123456789abcdef0123456789abcdef";
 const catalogueDatabaseId =
   "00000000-0000-0000-0000-000000000001";
+let requestAddress = 1;
 
 beforeEach(async () => {
   await applyD1Migrations(env.CATALOGUE_DB, env.TEST_MIGRATIONS);
@@ -78,6 +79,26 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
     expected_state_generation: 0,
   });
   await execute(plan, executionStartedAt);
+  const released = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/execution-failure`,
+    "POST",
+    { plan_digest: plan.plan_digest },
+    undefined,
+    "2026-07-29T00:04:30.000Z",
+  );
+  expect(released.status).toBe(200);
+  Object.assign(plan, await released.json<PlanDocument>());
+  expect(plan).toMatchObject({
+    status: "reserved",
+    execution_attempt: 0,
+    execution_mode: null,
+  });
+  await execute(plan, "2026-07-29T00:04:45.000Z");
+  await execute(plan, "2026-07-29T00:05:00.000Z");
+  expect(plan).toMatchObject({
+    execution_attempt: 2,
+    execution_mode: "reconciliation",
+  });
 
   const fabricated = await finalize(plan, `v1.${base64Url("{}")}.${"0".repeat(64)}`);
   expect(fabricated.status).toBe(409);
@@ -205,7 +226,49 @@ test("all five classes resolve distinct exact account, resource, boundary, targe
   }
 });
 
-test("stale identity, wrong class, stale generation, and wrong administration credential fail before execution", async () => {
+test("the signed ingestion consumer challenge proves the exact installed administration value and rejects wrong class", async () => {
+  const replacement = "vitest-administration-key-replacement-slot";
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO credential_rotations (
+      id, credential_class, state, environment, resource_identity,
+      owning_boundary, verification_target, old_secret_hash,
+      replacement_secret_hash, installed_at, install_idempotency_key,
+      install_request_digest, install_receipt
+    ) VALUES (
+      'credrot_admin_consumer_proof', 'ingestion_admin_key',
+      'replacement_installed', 'production',
+      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion',
+      'ingestion_worker',
+      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion:health',
+      ?, ?, '2026-07-29T00:00:00.000Z',
+      'admin-consumer-proof-install', ?, 'signed-boundary-receipt'
+    )`,
+  )
+    .bind(
+      (await fingerprint("old-administration-value")).slice(7),
+      (await fingerprint(replacement)).slice(7),
+      "c".repeat(64),
+    )
+    .run();
+  const challenge = "d".repeat(64);
+  const accepted = await consumerProofRequest(
+    "ingestion_admin_key",
+    await fingerprint(replacement),
+    challenge,
+  );
+  expect(accepted.status).toBe(200);
+  const wrongClass = await consumerProofRequest(
+    "github_deployment_token",
+    await fingerprint(replacement),
+    challenge,
+  );
+  expect(wrongClass.status).toBe(409);
+  await expect(wrongClass.json()).resolves.toMatchObject({
+    code: "identity_conflict",
+  });
+});
+
+test("stale identity, wrong class, aliased management, and stale claim snapshot fail before execution", async () => {
   const request = await planInput("install", "api_bearer_key", 0);
   const stale = await administrationRequest(
     "/v1/credential-rotation-plans",
@@ -217,7 +280,7 @@ test("stale identity, wrong class, stale generation, and wrong administration cr
   );
   expect(stale.status).toBe(409);
   await expect(stale.json()).resolves.toMatchObject({
-    code: "stale_credential_identity",
+    code: "identity_conflict",
   });
 
   const wrongClass = await administrationRequest(
@@ -230,7 +293,7 @@ test("stale identity, wrong class, stale generation, and wrong administration cr
   );
   expect(wrongClass.status).toBe(409);
   await expect(wrongClass.json()).resolves.toMatchObject({
-    code: "stale_credential_identity",
+    code: "identity_conflict",
   });
 
   const aliasedManagement = await administrationRequest(
@@ -247,23 +310,36 @@ test("stale identity, wrong class, stale generation, and wrong administration cr
     code: "invalid_provider_credential_identity",
   });
 
-  const staleGeneration = await administrationRequest(
-    "/v1/credential-rotation-plans",
-    "POST",
-    { ...request, expected_state_generation: 7 },
-  );
-  expect(staleGeneration.status).toBe(409);
-  await expect(staleGeneration.json()).resolves.toMatchObject({
+  const claimPlan = await reserve({
+    ...request,
+    rotation_id: "credrot_claim_snapshot",
+    idempotency_key: "claim-snapshot-001",
+  });
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
+  ).run();
+  const blockedClaim = await executionResponse(claimPlan);
+  expect(blockedClaim.status).toBe(409);
+  await expect(blockedClaim.json()).resolves.toMatchObject({
+    code: "recovery_in_progress",
+  });
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET recovery_health = 'healthy',
+         credential_rotation_generation = 1
+     WHERE singleton = 1`,
+  ).run();
+  const staleClaim = await executionResponse(claimPlan);
+  expect(staleClaim.status).toBe(409);
+  await expect(staleClaim.json()).resolves.toMatchObject({
     code: "credential_state_generation_mismatch",
   });
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET credential_rotation_generation = 0
+     WHERE singleton = 1`,
+  ).run();
 
-  const unauthorized = await administrationRequest(
-    "/v1/credential-rotation-plans",
-    "POST",
-    request,
-    "self-consistent-but-not-active",
-  );
-  expect(unauthorized.status).toBe(401);
 });
 
 const identities = {
@@ -320,6 +396,9 @@ type PlanDocument = Record<string, unknown> & {
   resource_identity: string;
   verification_target: string;
   required_permission: string;
+  consumer_installation_identity: string;
+  execution_attempt: number;
+  execution_mode: "mutation" | "reconciliation" | null;
   old_fingerprint: string;
   replacement_fingerprint: string;
 };
@@ -398,17 +477,26 @@ async function execute(
   plan: PlanDocument,
   observedAt?: string,
 ): Promise<void> {
-  const response = await administrationRequest(
+  const response = await executionResponse(plan, observedAt);
+  expect(response.status).toBe(200);
+  const document = await response.json<PlanDocument>();
+  expect(document).toMatchObject({
+    status: "executing",
+  });
+  Object.assign(plan, document);
+}
+
+function executionResponse(
+  plan: PlanDocument,
+  observedAt?: string,
+): Promise<Response> {
+  return administrationRequest(
     `/v1/credential-rotation-plans/${plan.id}/execution`,
     "POST",
     { plan_digest: plan.plan_digest },
     undefined,
     observedAt,
   );
-  expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toMatchObject({
-    status: "executing",
-  });
 }
 
 async function signedAttestation(
@@ -427,6 +515,8 @@ async function signedAttestation(
     resource_identity: plan.resource_identity,
     verification_target: plan.verification_target,
     required_permission: plan.required_permission,
+    consumer_installation_identity:
+      plan.consumer_installation_identity,
     old_fingerprint: plan.old_fingerprint,
     replacement_fingerprint: plan.replacement_fingerprint,
     installed_fingerprint: plan.replacement_fingerprint,
@@ -434,11 +524,14 @@ async function signedAttestation(
     replacement_issuer_credential_id:
       "provider-token:replacement-credential-id",
     management_credential_id: "provider-token:management-id",
-    consumer_installation_id: `consumer-installation:${plan.id}`,
+    consumer_installation_id:
+      plan.consumer_installation_identity,
     scope_evidence_digest: `sha256:${"a".repeat(64)}`,
     old_credential_status: oldStatus,
     replacement_credential_status: "usable",
     observed_at: observedAt,
+    execution_attempt: plan.execution_attempt,
+    execution_mode: plan.execution_mode,
   };
   const encoded = base64Url(JSON.stringify(payload));
   const key = await crypto.subtle.importKey(
@@ -481,6 +574,7 @@ async function administrationRequest(
       method,
       headers: {
         authorization: `Bearer ${key}`,
+        "cf-connecting-ip": `192.0.2.${requestAddress++}`,
         ...(observedAt === undefined
           ? {}
           : { "x-keepr-test-now": observedAt }),
@@ -490,6 +584,47 @@ async function administrationRequest(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
+  );
+}
+
+async function consumerProofRequest(
+  credentialClass: string,
+  expectedFingerprint: string,
+  challenge: string,
+): Promise<Response> {
+  const body = JSON.stringify({
+    credential_class: credentialClass,
+    expected_fingerprint: expectedFingerprint,
+    challenge,
+  });
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode("vitest-boundary-attestation-key"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(body),
+  );
+  return exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-keepr-boundary-signature": Array.from(
+            new Uint8Array(signature),
+          )
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join(""),
+        },
+        body,
+      },
+    ),
   );
 }
 

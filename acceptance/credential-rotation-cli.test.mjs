@@ -13,8 +13,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-const executor = resolve(
-  "acceptance/fixtures/credential-boundary-executor.mjs",
+const cliHarness = resolve(
+  "acceptance/fixtures/credential-cli-harness.mjs",
 );
 const context = {
   cloudflareAccountId: "0123456789abcdef0123456789abcdef",
@@ -22,6 +22,52 @@ const context = {
   disposableD1DatabaseId: "00000000-0000-0000-0000-000000000002",
   githubRepositoryId: "repository-KeeprDigital-card-keepr",
 };
+
+test("credential mutation requires an explicit production environment before preflight or provider work", async (t) => {
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests += 1;
+    response.writeHead(500).end();
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const directory = mkdtempSync(join(tmpdir(), "keepr-environment-"));
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const oldSecret = "old-explicit-environment";
+  const replacementSecret = "replacement-explicit-environment";
+  const base = {
+    action: "install",
+    rotationId: "credrot_explicit_environment",
+    credentialClass: "api_bearer_key",
+    expectedGeneration: 0,
+    oldFingerprint: fingerprint(oldSecret),
+    replacementFingerprint: fingerprint(replacementSecret),
+    idempotencyKey: "explicit-environment-001",
+    confirm: "never-valid",
+  };
+  const secrets = {
+    administration_key: "explicit-environment-admin",
+    management_credential: "explicit-environment-management",
+    old_secret: oldSecret,
+    replacement_secret: replacementSecret,
+  };
+  const omitted = await runCli(
+    mutationArguments({ ...base, environment: null }),
+    environment(port, log),
+    secrets,
+  );
+  const nonProduction = await runCli(
+    mutationArguments({ ...base, environment: "staging" }),
+    environment(port, log),
+    secrets,
+  );
+  assert.equal(omitted.code, 2);
+  assert.equal(nonProduction.code, 2);
+  assert.match(nonProduction.stdout, /production_target_required/);
+  assert.equal(requests, 0);
+  assert.equal(existsSync(log), false);
+});
 
 test("rejected durable preflight causes zero owning-provider calls", async (t) => {
   const directory = mkdtempSync(
@@ -68,6 +114,186 @@ test("rejected durable preflight causes zero owning-provider calls", async (t) =
   assert.match(result.stdout, /recovery_in_progress/);
 });
 
+test("a stale atomic execution claim causes zero owning-provider calls", async (t) => {
+  const oldSecret = "old-stale-claim-secret";
+  const replacementSecret = "replacement-stale-claim-secret";
+  const planId = "credplan_stale_claim";
+  const planDigest = "9".repeat(64);
+  let reservedBody;
+  const server = createServer(async (request, response) => {
+    let text = "";
+    request.setEncoding("utf8");
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text);
+    if (request.url === "/v1/credential-rotation-plans") {
+      reservedBody = body;
+      response.writeHead(201, {
+        "content-type": "application/json",
+      });
+      response.end(
+        JSON.stringify(
+          planDocument(body, {
+            id: planId,
+            digest: planDigest,
+            permission: "workers-secret:api-traffic",
+          }),
+        ),
+      );
+      return;
+    }
+    response.writeHead(409, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        code: "current_revision_mismatch",
+        detail: "The claim snapshot is stale.",
+      }),
+    );
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const directory = mkdtempSync(join(tmpdir(), "keepr-stale-claim-"));
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const body = {
+    action: "install",
+    rotation_id: "credrot_stale_claim",
+    credential_class: "api_bearer_key",
+    idempotency_key: "stale-claim-001",
+    expected_state_generation: 0,
+    old_fingerprint: fingerprint(oldSecret),
+    replacement_fingerprint: fingerprint(replacementSecret),
+  };
+  const plan = planDocument(body, {
+    id: planId,
+    digest: planDigest,
+    permission: "workers-secret:api-traffic",
+  });
+  const result = await runCli(
+    mutationArguments({
+      action: "install",
+      rotationId: body.rotation_id,
+      credentialClass: body.credential_class,
+      expectedGeneration: 0,
+      oldFingerprint: body.old_fingerprint,
+      replacementFingerprint: body.replacement_fingerprint,
+      idempotencyKey: body.idempotency_key,
+      confirm: confirmationText(plan),
+    }),
+    environment(port, log),
+    {
+      administration_key: "stale-claim-admin",
+      management_credential: "stale-claim-management",
+      old_secret: oldSecret,
+      replacement_secret: replacementSecret,
+    },
+  );
+  assert.equal(reservedBody.expected_catalogue_revision_id, "catrev_spine_000");
+  assert.equal(result.code, 7);
+  assert.match(result.stdout, /current_revision_mismatch/);
+  assert.equal(existsSync(log), false);
+});
+
+test("an initial provider failure releases the bounded mutation claim without finalizing", async (t) => {
+  const oldSecret = "old-release-claim-secret";
+  const replacementSecret = "replacement-release-claim-secret";
+  const planId = "credplan_release_claim";
+  const planDigest = "8".repeat(64);
+  const requests = [];
+  let reservedBody;
+  const server = createServer(async (request, response) => {
+    let text = "";
+    request.setEncoding("utf8");
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text);
+    requests.push(request.url);
+    if (request.url === "/v1/credential-rotation-plans") {
+      reservedBody = body;
+      response.writeHead(201, {
+        "content-type": "application/json",
+      });
+      response.end(
+        JSON.stringify(
+          planDocument(body, {
+            id: planId,
+            digest: planDigest,
+            permission: "workers-secret:api-traffic",
+          }),
+        ),
+      );
+      return;
+    }
+    const document = planDocument(reservedBody, {
+      id: planId,
+      digest: planDigest,
+      permission: "workers-secret:api-traffic",
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify(
+        request.url.endsWith("/execution")
+          ? {
+              ...document,
+              status: "executing",
+              execution_attempt: 1,
+              execution_mode: "mutation",
+            }
+          : document,
+      ),
+    );
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const directory = mkdtempSync(join(tmpdir(), "keepr-release-claim-"));
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const body = {
+    action: "install",
+    rotation_id: "credrot_release_claim",
+    credential_class: "api_bearer_key",
+    idempotency_key: "release-claim-001",
+    expected_state_generation: 0,
+    old_fingerprint: fingerprint(oldSecret),
+    replacement_fingerprint: fingerprint(replacementSecret),
+  };
+  const plan = planDocument(body, {
+    id: planId,
+    digest: planDigest,
+    permission: "workers-secret:api-traffic",
+  });
+  const result = await runCli(
+    mutationArguments({
+      action: body.action,
+      rotationId: body.rotation_id,
+      credentialClass: body.credential_class,
+      expectedGeneration: 0,
+      oldFingerprint: body.old_fingerprint,
+      replacementFingerprint: body.replacement_fingerprint,
+      idempotencyKey: body.idempotency_key,
+      confirm: confirmationText(plan),
+    }),
+    {
+      ...environment(port, log),
+      KEEPR_TEST_BOUNDARY_FAIL: "1",
+    },
+    {
+      administration_key: "release-claim-admin",
+      management_credential: "release-claim-management",
+      old_secret: oldSecret,
+      replacement_secret: replacementSecret,
+    },
+  );
+  assert.equal(result.code, 9);
+  assert.deepEqual(requests, [
+    "/v1/credential-rotation-plans",
+    `/v1/credential-rotation-plans/${planId}/execution`,
+    `/v1/credential-rotation-plans/${planId}/execution-failure`,
+  ]);
+  assert.equal(
+    readFileSync(log, "utf8").trim().split("\n").length,
+    1,
+  );
+});
+
 test("plan digest is printed and fully bound before provider installation and finalization", async (t) => {
   const oldSecret = "old-api-plan-secret";
   const replacementSecret = "replacement-api-plan-secret";
@@ -107,6 +333,8 @@ test("plan digest is printed and fully bound before provider installation and fi
                   permission: "workers-secret:api-traffic",
                 }),
                 status: "executing",
+                execution_attempt: 1,
+                execution_mode: "mutation",
               }
           : rotationDocument(
               body,
@@ -163,6 +391,12 @@ test("plan digest is printed and fully bound before provider installation and fi
     ),
   });
   assert.ok(first.stdout.includes(planDigest));
+  assert.ok(first.stdout.includes("workers-secret:api-traffic"));
+  assert.ok(
+    first.stdout.includes(
+      "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT",
+    ),
+  );
 
   const second = await runCli(
     mutationArguments({ ...base, confirm: confirmation }),
@@ -240,6 +474,8 @@ test("single-holder verify and revoke send no rotated plaintext and carry manage
           }),
           action,
           status: "executing",
+          execution_attempt: 1,
+          execution_mode: "mutation",
         }),
       );
       return;
@@ -336,6 +572,9 @@ function mutationArguments(input) {
     input.rotationId,
     "--credential-class",
     input.credentialClass,
+    ...(input.environment === null
+      ? []
+      : ["--environment", input.environment ?? "production"]),
     "--cloudflare-account-id",
     context.cloudflareAccountId,
     "--catalogue-d1-database-id",
@@ -384,6 +623,10 @@ function planDocument(body, options) {
     owning_boundary: identity.boundary,
     verification_target: identity.target,
     required_permission: options.permission,
+    consumer_installation_identity:
+      body.credential_class === "api_bearer_key"
+        ? "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT"
+        : "wrangler:apps/ingestion/wrangler.jsonc:D1_EXPORT_TOKEN_REPLACEMENT",
     expected_catalogue_revision_id: "catrev_spine_000",
     expected_state_generation: body.expected_state_generation ?? 0,
     expected_rotation_state: null,
@@ -397,6 +640,10 @@ function planDocument(body, options) {
     plan_nonce: "a".repeat(64),
     plan_digest: options.digest,
     status: "reserved",
+    execution_attempt: 0,
+    execution_mode: null,
+    execution_started_at: null,
+    execution_expires_at: null,
     created_at: "2026-07-29T00:00:00.000Z",
     expires_at: "2026-07-29T00:05:00.000Z",
   };
@@ -435,6 +682,8 @@ function confirmationText(plan) {
     plan.old_fingerprint,
     plan.replacement_fingerprint,
     plan.verification_target,
+    plan.required_permission,
+    plan.consumer_installation_identity,
     plan.plan_digest,
     plan.idempotency_key,
     plan.credential_class === "d1_export_token"
@@ -480,9 +729,6 @@ function fingerprint(secret) {
 function environment(port, log) {
   return {
     KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
-    KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR: executor,
-    KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
-      "acceptance-boundary-attestation-key",
     KEEPR_TEST_BOUNDARY_LOG: log,
   };
 }
@@ -498,7 +744,7 @@ async function listen(server) {
 }
 
 async function runCli(arguments_, environment_, secrets) {
-  const child = spawn(process.execPath, ["cli/keepr.mjs", ...arguments_], {
+  const child = spawn(process.execPath, [cliHarness, ...arguments_], {
     cwd: process.cwd(),
     env: { ...process.env, ...environment_ },
     stdio: ["pipe", "pipe", "pipe"],

@@ -7,9 +7,7 @@ export async function executeCredentialBoundary(
   secrets,
   environment,
 ) {
-  const executor =
-    environment.KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR ??
-    resolve("cli/provider-credential-boundary.mjs");
+  const executor = resolve("cli/credential-boundary-attestor.mjs");
   const arguments_ = [
     executor,
     plan.action,
@@ -22,6 +20,9 @@ export async function executeCredentialBoundary(
     plan.owning_boundary,
     plan.verification_target,
     plan.required_permission,
+    plan.consumer_installation_identity,
+    plan.execution_mode,
+    String(plan.execution_attempt),
     plan.old_fingerprint,
     plan.replacement_fingerprint,
     plan.old_issuer_credential_id,

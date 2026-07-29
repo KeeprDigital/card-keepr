@@ -4,6 +4,7 @@ import {
   finalizeCredentialRotationPlan,
   isCredentialClass,
   reserveCredentialRotationPlan,
+  releaseCredentialRotationPlanExecution,
   showCredentialRotation,
   type CredentialClass,
 } from "../../../src/catalogue/credential-rotation";
@@ -53,6 +54,22 @@ export async function handleCredentialAdministration(
         requiredSha256(body, "plan_digest"),
         requiredString(body, "boundary_attestation"),
         attestationKey,
+        observedAt,
+      ),
+    );
+  }
+  const planFailure =
+    /^\/v1\/credential-rotation-plans\/([^/]+)\/execution-failure$/.exec(
+      url.pathname,
+    );
+  if (request.method === "POST" && planFailure !== null) {
+    const body = await readBody(request);
+    assertOnlyFields(body, ["plan_digest"]);
+    return Response.json(
+      await releaseCredentialRotationPlanExecution(
+        database,
+        decodeURIComponent(planFailure[1]!),
+        requiredSha256(body, "plan_digest"),
         observedAt,
       ),
     );

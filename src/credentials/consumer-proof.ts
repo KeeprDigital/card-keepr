@@ -1,0 +1,248 @@
+import {
+  credentialSecretMatches,
+  type CredentialClass,
+} from "../catalogue/credential-rotation";
+
+type ConsumerProofEnvironment = {
+  CREDENTIAL_BOUNDARY_ATTESTATION_KEY: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CATALOGUE_D1_DATABASE_ID?: string;
+  DISPOSABLE_D1_DATABASE_ID?: string;
+  API_BEARER_KEY_REPLACEMENT?: string;
+  ADMINISTRATION_KEY_REPLACEMENT?: string;
+  D1_EXPORT_TOKEN_REPLACEMENT?: string;
+  D1_VERIFICATION_TOKEN_REPLACEMENT?: string;
+};
+
+export async function handleCredentialConsumerProof(
+  request: Request,
+  database: D1Database,
+  environment: ConsumerProofEnvironment,
+  acceptedClasses: readonly CredentialClass[],
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (
+    request.method !== "POST" ||
+    url.pathname !== "/v1/credential-consumer-proof"
+  ) {
+    return null;
+  }
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > 16_384) {
+    return Response.json({ code: "request_too_large" }, { status: 413 });
+  }
+  const supplied = request.headers.get("x-keepr-boundary-signature");
+  const expected = await hmac(
+    environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+    text,
+  );
+  if (
+    supplied === null ||
+    !(await fixedHexEqual(supplied, expected))
+  ) {
+    return Response.json(
+      { code: "invalid_boundary_challenge" },
+      { status: 401 },
+    );
+  }
+  let body: {
+    credential_class?: unknown;
+    expected_fingerprint?: unknown;
+    challenge?: unknown;
+  };
+  try {
+    body = JSON.parse(text) as typeof body;
+  } catch {
+    return Response.json({ code: "invalid_parameter" }, { status: 422 });
+  }
+  const credentialClass = body.credential_class;
+  if (
+    typeof credentialClass !== "string" ||
+    !acceptedClasses.includes(credentialClass as CredentialClass) ||
+    typeof body.expected_fingerprint !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(body.expected_fingerprint) ||
+    typeof body.challenge !== "string" ||
+    !/^[0-9a-f]{64}$/.test(body.challenge)
+  ) {
+    return Response.json({ code: "identity_conflict" }, { status: 409 });
+  }
+  const secret = replacementSecret(
+    credentialClass as CredentialClass,
+    environment,
+  );
+  if (
+    secret === undefined ||
+    !(await fixedHexEqual(
+      await sha256(secret),
+      body.expected_fingerprint.slice("sha256:".length),
+    ))
+  ) {
+    return Response.json(
+      { code: "credential_fingerprint_mismatch" },
+      { status: 409 },
+    );
+  }
+  const capable =
+    credentialClass === "api_bearer_key" ||
+    credentialClass === "ingestion_admin_key"
+      ? await credentialSecretMatches(
+          database,
+          credentialClass,
+          secret,
+          [],
+        )
+      : await probeD1Capability(
+          credentialClass,
+          secret,
+          environment,
+        );
+  if (!capable) {
+    return Response.json(
+      { code: "credential_capability_mismatch" },
+      { status: 409 },
+    );
+  }
+  return Response.json({
+    contract: "card-keepr-credential-consumer-proof@1",
+    credential_class: credentialClass,
+    expected_fingerprint: body.expected_fingerprint,
+    challenge: body.challenge,
+    proof: await hmac(
+      environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+      `${credentialClass}\0${body.expected_fingerprint}\0${body.challenge}`,
+    ),
+  });
+}
+
+function replacementSecret(
+  credentialClass: CredentialClass,
+  environment: ConsumerProofEnvironment,
+): string | undefined {
+  if (credentialClass === "api_bearer_key") {
+    return environment.API_BEARER_KEY_REPLACEMENT;
+  }
+  if (credentialClass === "ingestion_admin_key") {
+    return environment.ADMINISTRATION_KEY_REPLACEMENT;
+  }
+  if (credentialClass === "d1_export_token") {
+    return environment.D1_EXPORT_TOKEN_REPLACEMENT;
+  }
+  if (credentialClass === "d1_verification_token") {
+    return environment.D1_VERIFICATION_TOKEN_REPLACEMENT;
+  }
+  return undefined;
+}
+
+async function probeD1Capability(
+  credentialClass: CredentialClass,
+  token: string,
+  environment: ConsumerProofEnvironment,
+): Promise<boolean> {
+  const databaseId =
+    credentialClass === "d1_export_token"
+      ? environment.CATALOGUE_D1_DATABASE_ID
+      : environment.DISPOSABLE_D1_DATABASE_ID;
+  if (
+    environment.CLOUDFLARE_ACCOUNT_ID === undefined ||
+    databaseId === undefined
+  ) {
+    return false;
+  }
+  const operation =
+    credentialClass === "d1_export_token"
+      ? {
+          path: "export",
+          body: {
+            output_format: "polling",
+            dump_options: { no_data: true },
+          },
+        }
+      : {
+          path: "query",
+          body: {
+            sql: [
+              "CREATE TABLE IF NOT EXISTS __keepr_credential_probe (id INTEGER PRIMARY KEY)",
+              "DROP TABLE __keepr_credential_probe",
+            ].join(";"),
+          },
+        };
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${environment.CLOUDFLARE_ACCOUNT_ID}/d1/database/${databaseId}/${operation.path}`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(operation.body),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+  } catch {
+    return false;
+  }
+  if (!response.ok) return false;
+  const document = await response.json<{
+    success?: boolean;
+    result?: unknown;
+  }>();
+  if (document.success !== true) return false;
+  return (
+    !Array.isArray(document.result) ||
+    document.result.every(
+      (result) =>
+        typeof result === "object" &&
+        result !== null &&
+        (result as { success?: boolean }).success === true,
+    )
+  );
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return hex(new Uint8Array(digest));
+}
+
+async function hmac(key: string, value: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return hex(
+    new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        cryptoKey,
+        new TextEncoder().encode(value),
+      ),
+    ),
+  );
+}
+
+async function fixedHexEqual(
+  left: string,
+  right: string,
+): Promise<boolean> {
+  return crypto.subtle.timingSafeEqual(bytes(left), bytes(right));
+}
+
+function bytes(value: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/.test(value)) return new Uint8Array(32);
+  return Uint8Array.from(
+    value.match(/../g)!.map((part) => Number.parseInt(part, 16)),
+  );
+}
+
+function hex(value: Uint8Array): string {
+  return Array.from(value)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}

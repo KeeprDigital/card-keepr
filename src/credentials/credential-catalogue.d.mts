@@ -1,12 +1,7 @@
-export const credentialClasses: readonly [
-  "api_bearer_key",
-  "ingestion_admin_key",
-  "d1_export_token",
-  "d1_verification_token",
-  "github_deployment_token",
-];
+export type CredentialClass =
+  keyof typeof credentialClassDefinitions;
 
-export type CredentialClass = (typeof credentialClasses)[number];
+export const credentialClasses: readonly CredentialClass[];
 
 export type CredentialDeploymentContext = {
   cloudflare_account_id: string;
@@ -22,6 +17,7 @@ export type ResolvedCredentialIdentity = {
   owning_boundary: string;
   verification_target: string;
   required_permission: string;
+  consumer_installation_identity: string;
 };
 
 export const credentialClassDefinitions: Readonly<

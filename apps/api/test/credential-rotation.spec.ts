@@ -79,6 +79,37 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
   expect(await healthStatus("next-api-key")).toBe(200);
 });
 
+test("the signed consumer challenge proves the exact installed API value through its authenticated boundary", async () => {
+  const replacement = "vitest-api-key-replacement-slot";
+  await seedRotation(
+    "replacement_installed",
+    "vitest-api-key",
+    replacement,
+  );
+  const challenge = "b".repeat(64);
+  const expectedFingerprint = `sha256:${await hash(replacement)}`;
+  const accepted = await consumerProof(
+    expectedFingerprint,
+    challenge,
+  );
+  expect(accepted.status).toBe(200);
+  await expect(accepted.json()).resolves.toMatchObject({
+    contract: "card-keepr-credential-consumer-proof@1",
+    credential_class: "api_bearer_key",
+    expected_fingerprint: expectedFingerprint,
+    challenge,
+  });
+
+  const wrongValue = await consumerProof(
+    `sha256:${"0".repeat(64)}`,
+    challenge,
+  );
+  expect(wrongValue.status).toBe(409);
+  await expect(wrongValue.json()).resolves.toMatchObject({
+    code: "credential_fingerprint_mismatch",
+  });
+});
+
 async function healthStatus(secret: string): Promise<number> {
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/health", {
@@ -87,6 +118,48 @@ async function healthStatus(secret: string): Promise<number> {
   );
   await response.body?.cancel();
   return response.status;
+}
+
+async function consumerProof(
+  expectedFingerprint: string,
+  challenge: string,
+): Promise<Response> {
+  const body = JSON.stringify({
+    credential_class: "api_bearer_key",
+    expected_fingerprint: expectedFingerprint,
+    challenge,
+  });
+  return exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-keepr-boundary-signature": await hmac(body),
+        },
+        body,
+      },
+    ),
+  );
+}
+
+async function hmac(value: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode("vitest-boundary-attestation-key"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function seedRotation(

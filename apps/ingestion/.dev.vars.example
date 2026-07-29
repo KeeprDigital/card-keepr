@@ -2,3 +2,7 @@
 ADMINISTRATION_KEY=generated-type-placeholder
 ADMINISTRATION_KEY_REPLACEMENT=generated-type-placeholder-replacement
 CREDENTIAL_BOUNDARY_ATTESTATION_KEY=generated-type-placeholder-attestation
+D1_EXPORT_TOKEN=generated-type-placeholder-d1-export
+D1_EXPORT_TOKEN_REPLACEMENT=generated-type-placeholder-d1-export-replacement
+D1_VERIFICATION_TOKEN=generated-type-placeholder-d1-verification
+D1_VERIFICATION_TOKEN_REPLACEMENT=generated-type-placeholder-d1-verification-replacement

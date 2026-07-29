@@ -1,6 +1,5 @@
 import {
   createHash,
-  createHmac,
   timingSafeEqual,
 } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -8,6 +7,12 @@ import {
   credentialClassDefinitions,
   isCredentialClass,
 } from "../src/credentials/credential-catalogue.mjs";
+import {
+  classifySecretList,
+  classifyTokenLookup,
+  cloudflareOperationSucceeded,
+  exactTokenPolicy,
+} from "./provider-authority.mjs";
 
 const [
   action,
@@ -20,6 +25,9 @@ const [
   owningBoundary,
   verificationTarget,
   requiredPermission,
+  consumerInstallationIdentity,
+  executionMode,
+  executionAttempt,
   oldFingerprint,
   replacementFingerprint,
   oldIssuerCredentialId,
@@ -39,6 +47,8 @@ const tokenClass = [
 if (
   definition === undefined ||
   !["install", "verify", "revoke"].includes(action) ||
+  !["mutation", "reconciliation"].includes(executionMode) ||
+  !/^[1-9][0-9]*$/.test(executionAttempt) ||
   owningBoundary !== definition.owning_boundary ||
   requiredPermission !== definition.required_permission ||
   !resourceMatchesDefinition(
@@ -47,7 +57,6 @@ if (
     resourceIdentity,
     verificationTarget,
   ) ||
-  !process.env.KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY ||
   typeof secrets.management_credential !== "string" ||
   secrets.management_credential.length === 0
 ) {
@@ -57,7 +66,7 @@ if (
   if (!result.ok) {
     process.exitCode = 9;
   } else {
-    const payload = {
+    const facts = {
       version: 1,
       plan_id: planId,
       plan_digest: planDigest,
@@ -68,6 +77,10 @@ if (
       resource_identity: resourceIdentity,
       verification_target: verificationTarget,
       required_permission: requiredPermission,
+      consumer_installation_identity:
+        consumerInstallationIdentity,
+      execution_mode: executionMode,
+      execution_attempt: Number.parseInt(executionAttempt, 10),
       old_fingerprint: oldFingerprint,
       replacement_fingerprint: replacementFingerprint,
       installed_fingerprint: replacementFingerprint,
@@ -81,29 +94,21 @@ if (
         action === "revoke" ? "unusable" : "usable",
       replacement_credential_status: "usable",
       observed_at: new Date().toISOString(),
+      ...(result.consumerProof ?? {}),
     };
-    const encoded = Buffer.from(JSON.stringify(payload)).toString(
-      "base64url",
-    );
-    const signature = createHmac(
-      "sha256",
-      process.env.KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
-    )
-      .update(encoded)
-      .digest("hex");
     process.stdout.write(
       `${JSON.stringify({
         ok: true,
         plan_id: planId,
         plan_digest: planDigest,
-        boundary_attestation: `v1.${encoded}.${signature}`,
+        facts,
       })}\n`,
     );
   }
 }
 
 async function execute() {
-  if (action === "install") {
+  if (action === "install" && executionMode === "mutation") {
     if (
       typeof secrets.old_secret !== "string" ||
       typeof secrets.replacement_secret !== "string" ||
@@ -136,23 +141,28 @@ async function execute() {
     provider: definition.consumer_provider,
   };
   if (tokenClass) {
-    const replacement = await tokenDetails(
+    const replacementRecord = await tokenDetails(
       secrets.management_credential,
       replacementIssuerCredentialId,
     );
     if (
-      replacement === null ||
-      !exactTokenPolicy(replacement, requiredPermission)
+      replacementRecord.kind !== "present" ||
+      !exactTokenPolicy(
+        replacementRecord.token,
+        requiredPermission,
+        cloudflareAccountId,
+      )
     ) {
       return { ok: false };
     }
+    const replacement = replacementRecord.token;
     scopeEvidence = {
       token_id: replacementIssuerCredentialId,
       policies: replacement.policies,
       status: replacement.status,
       resource: resourceIdentity,
     };
-    if (action === "install") {
+    if (action === "install" && executionMode === "mutation") {
       const [verified, oldVerified, oldDetails] = await Promise.all([
         verifyToken(secrets.replacement_secret),
         verifyToken(secrets.old_secret),
@@ -166,8 +176,12 @@ async function execute() {
         verified.status !== "active" ||
         oldVerified?.id !== oldIssuerCredentialId ||
         oldVerified.status !== "active" ||
-        oldDetails === null ||
-        !exactTokenPolicy(oldDetails, requiredPermission) ||
+        oldDetails.kind !== "present" ||
+        !exactTokenPolicy(
+          oldDetails.token,
+          requiredPermission,
+          cloudflareAccountId,
+        ) ||
         !(await probeExactCapability(
           credentialClass,
           secrets.replacement_secret,
@@ -179,7 +193,7 @@ async function execute() {
   }
 
   const marker = markerName(replacementFingerprint);
-  if (action === "install") {
+  if (action === "install" && executionMode === "mutation") {
     const installed =
       (await putConsumerSecret(
         definition,
@@ -195,60 +209,140 @@ async function execute() {
   ]))) {
     return { ok: false };
   }
+  const consumerProof =
+    credentialClass === "github_deployment_token"
+      ? await githubInstalledSecretProbe()
+      : {};
+  if (consumerProof === null) return { ok: false };
 
   if (action === "revoke") {
     if (tokenClass) {
-      if (
-        !(await deleteIssuerCredential(
-          secrets.management_credential,
-          oldIssuerCredentialId,
-        )) ||
-        (await tokenDetails(
-          secrets.management_credential,
-          oldIssuerCredentialId,
-        )) !== null
-      ) {
+      const absent =
+        executionMode === "mutation"
+          ? (await deleteIssuerCredential(
+              secrets.management_credential,
+              oldIssuerCredentialId,
+            )) &&
+            (await tokenDetails(
+              secrets.management_credential,
+              oldIssuerCredentialId,
+            )).kind === "absent"
+          : (await tokenDetails(
+              secrets.management_credential,
+              oldIssuerCredentialId,
+            )).kind === "absent";
+      if (!absent) {
         return { ok: false };
       }
     }
-    if (
-      !(await deleteConsumerSecret(
-        definition,
-        definition.active_secret_name,
-      ))
-    ) {
+    const consumerAbsent =
+      executionMode === "mutation"
+        ? await deleteConsumerSecret(
+            definition,
+            definition.active_secret_name,
+          )
+        : await consumerSecretAuthoritativelyAbsent(
+            definition,
+            definition.active_secret_name,
+          );
+    if (!consumerAbsent) {
       return { ok: false };
     }
   }
 
   return {
     ok: true,
-    consumerInstallationId: [
-      definition.consumer_provider,
-      definition.replacement_secret_name,
-      marker,
-    ].join(":"),
+    consumerInstallationId: consumerInstallationIdentity,
     scopeEvidenceDigest: fingerprint(
       canonicalJson(scopeEvidence),
     ),
+    consumerProof,
   };
 }
 
-async function tokenDetails(managementCredential, tokenId) {
-  const response = await cloudflareRequest(
-    managementCredential,
-    `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
-      tokenId,
-    )}`,
+async function githubInstalledSecretProbe() {
+  const dispatched = await run(
+    "gh",
+    [
+      "workflow",
+      "run",
+      "credential-boundary-probe.yml",
+      "--repo",
+      "KeeprDigital/card-keepr",
+      "--ref",
+      "main",
+      "-f",
+      `expected_account_id=${cloudflareAccountId}`,
+      "-f",
+      `expected_token_id=${replacementIssuerCredentialId}`,
+    ],
+    "",
+    process.env,
   );
-  if (response.status === 404) return null;
-  if (!response.ok) return null;
-  const document = await response.json();
-  return document?.success === true &&
-    document.result?.id === tokenId &&
-    document.result?.status === "active"
-    ? document.result
-    : null;
+  if (dispatched !== 0) return null;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const result = await capture(
+      "gh",
+      [
+        "run",
+        "list",
+        "--repo",
+        "KeeprDigital/card-keepr",
+        "--workflow",
+        "credential-boundary-probe.yml",
+        "--event",
+        "workflow_dispatch",
+        "--limit",
+        "10",
+        "--json",
+        "databaseId,status,conclusion,displayTitle",
+      ],
+      process.env,
+    );
+    if (result.code !== 0) return null;
+    let runs;
+    try {
+      runs = JSON.parse(result.stdout);
+    } catch {
+      return null;
+    }
+    const run = Array.isArray(runs)
+      ? runs.find(
+          (candidate) =>
+            candidate?.displayTitle ===
+            `credential-boundary-probe-${replacementIssuerCredentialId}`,
+        )
+      : undefined;
+    if (
+      Number.isSafeInteger(run?.databaseId) &&
+      run.status === "completed"
+    ) {
+      return run.conclusion === "success"
+        ? {
+            consumer_proof_contract:
+              "github-actions-installed-secret-probe@1",
+            consumer_proof_id: String(run.databaseId),
+          }
+        : null;
+    }
+    await delay(5_000);
+  }
+  return null;
+}
+
+async function tokenDetails(managementCredential, tokenId) {
+  let response;
+  try {
+    response = await cloudflareRequest(
+      managementCredential,
+      `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
+        tokenId,
+      )}`,
+    );
+  } catch {
+    return { kind: "failure" };
+  }
+  return classifyTokenLookup(response, tokenId);
 }
 
 async function verifyToken(token) {
@@ -263,47 +357,23 @@ async function verifyToken(token) {
 
 async function deleteIssuerCredential(managementCredential, tokenId) {
   const existing = await tokenDetails(managementCredential, tokenId);
-  if (existing === null) return true;
-  const response = await cloudflareRequest(
-    managementCredential,
-    `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
-      tokenId,
-    )}`,
-    { method: "DELETE" },
-  );
-  return response.ok;
-}
-
-function exactTokenPolicy(token, permission) {
-  if (!Array.isArray(token.policies) || token.policies.length !== 1) {
+  if (existing.kind === "absent") return true;
+  if (existing.kind !== "present") return false;
+  let response;
+  try {
+    response = await cloudflareRequest(
+      managementCredential,
+      `/accounts/${cloudflareAccountId}/tokens/${encodeURIComponent(
+        tokenId,
+      )}`,
+      { method: "DELETE" },
+    );
+  } catch {
     return false;
   }
-  const policy = token.policies[0];
-  const groups = policy?.permission_groups;
-  return (
-    policy?.effect === "allow" &&
-    Array.isArray(groups) &&
-    groups.length === 1 &&
-    groups[0]?.name === permission &&
-    exactAccountResource(policy?.resources)
-  );
-}
-
-function exactAccountResource(resources) {
-  if (
-    resources === null ||
-    typeof resources !== "object" ||
-    Array.isArray(resources)
-  ) {
-    return false;
-  }
-  const entries = Object.entries(resources);
-  return (
-    entries.length === 1 &&
-    entries[0][0] ===
-      `com.cloudflare.api.account.${cloudflareAccountId}` &&
-    entries[0][1] === "*"
-  );
+  if (!response.ok) return false;
+  const document = await safeJson(response);
+  return document?.success === true;
 }
 
 async function probeExactCapability(credentialClass_, token) {
@@ -321,7 +391,7 @@ async function probeExactCapability(credentialClass_, token) {
         }),
       },
     );
-    return response.ok;
+    return cloudflareOperationSucceeded(response);
   }
   if (credentialClass_ === "d1_verification_token") {
     const databaseId = d1DatabaseId(resourceIdentity);
@@ -339,7 +409,7 @@ async function probeExactCapability(credentialClass_, token) {
         }),
       },
     );
-    return response.ok;
+    return cloudflareOperationSucceeded(response);
   }
   // Exact issuer policy/resource introspection proves deploy capability
   // without mutating a production Worker.
@@ -393,6 +463,14 @@ async function putConsumerSecret(definition_, name, value) {
 }
 
 async function consumerHasSecrets(definition_, names) {
+  const listed = await listConsumerSecrets(definition_);
+  return (
+    listed.kind === "present" &&
+    names.every((name) => listed.names.includes(name))
+  );
+}
+
+async function listConsumerSecrets(definition_) {
   const result =
     definition_.consumer_provider === "wrangler"
       ? await capture(
@@ -421,25 +499,16 @@ async function consumerHasSecrets(definition_, names) {
           ],
           process.env,
         );
-  if (result.code !== 0) return false;
-  let listed;
-  try {
-    listed = JSON.parse(result.stdout);
-  } catch {
-    return false;
-  }
-  return (
-    Array.isArray(listed) &&
-    names.every((name) =>
-      listed.some((item) => item?.name === name),
-    )
-  );
+  return classifySecretList(result);
 }
 
 async function deleteConsumerSecret(definition_, name) {
-  if (!(await consumerHasSecrets(definition_, [name]))) return true;
+  const before = await listConsumerSecrets(definition_);
+  if (before.kind !== "present") return false;
+  if (!before.names.includes(name)) return true;
+  let deleted;
   if (definition_.consumer_provider === "wrangler") {
-    return (
+    deleted =
       (await run(
         "wrangler",
         [
@@ -451,24 +520,40 @@ async function deleteConsumerSecret(definition_, name) {
         ],
         "",
         providerEnvironment(),
-      )) === 0
-    );
+      )) === 0;
+  } else {
+    deleted =
+      (await run(
+        "gh",
+        [
+          "secret",
+          "delete",
+          name,
+          "--repo",
+          "KeeprDigital/card-keepr",
+          "--env",
+          "production",
+        ],
+        "",
+        process.env,
+      )) === 0;
   }
+  if (!deleted) return false;
+  const after = await listConsumerSecrets(definition_);
   return (
-    (await run(
-      "gh",
-      [
-        "secret",
-        "delete",
-        name,
-        "--repo",
-        "KeeprDigital/card-keepr",
-        "--env",
-        "production",
-      ],
-      "",
-      process.env,
-    )) === 0
+    after.kind === "present" &&
+    !after.names.includes(name)
+  );
+}
+
+async function consumerSecretAuthoritativelyAbsent(
+  definition_,
+  name,
+) {
+  const listed = await listConsumerSecrets(definition_);
+  return (
+    listed.kind === "present" &&
+    !listed.names.includes(name)
   );
 }
 
@@ -542,6 +627,14 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
+async function safeJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 function run(command, arguments_, input, environment) {
   return new Promise((resolveRun) => {
     const child = spawn(command, arguments_, {
@@ -572,6 +665,12 @@ function capture(command, arguments_, environment) {
     child.once("exit", (code) => {
       resolveRun({ code: code ?? 9, stdout });
     });
+  });
+}
+
+function delay(milliseconds) {
+  return new Promise((resolveDelay) => {
+    setTimeout(resolveDelay, milliseconds);
   });
 }
 

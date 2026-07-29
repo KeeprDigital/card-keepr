@@ -14,6 +14,7 @@ CREATE TABLE credential_rotation_plans (
   owning_boundary TEXT NOT NULL,
   verification_target TEXT NOT NULL,
   required_permission TEXT NOT NULL,
+  consumer_installation_identity TEXT NOT NULL,
   expected_catalogue_revision_id TEXT NOT NULL,
   expected_state_generation INTEGER NOT NULL,
   expected_rotation_state TEXT,
@@ -32,6 +33,8 @@ CREATE TABLE credential_rotation_plans (
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   execution_started_at TEXT,
+  execution_expires_at TEXT,
+  execution_attempt INTEGER NOT NULL DEFAULT 0,
   finalized_at TEXT,
   attestation_digest TEXT
 );
@@ -39,6 +42,10 @@ CREATE TABLE credential_rotation_plans (
 CREATE UNIQUE INDEX one_reserved_credential_plan_per_class
 ON credential_rotation_plans (credential_class)
 WHERE status IN ('reserved', 'executing');
+
+CREATE UNIQUE INDEX one_executing_credential_plan
+ON credential_rotation_plans ((1))
+WHERE status = 'executing';
 
 CREATE TABLE credential_rotations (
   id TEXT PRIMARY KEY,
@@ -107,16 +114,11 @@ WHEN OLD.status = 'executing' AND NEW.status = 'finalized'
     OR NOT EXISTS (
       SELECT 1
       FROM operation_state AS operation
-      JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
       JOIN credential_rotations AS rotation
         ON rotation.id = NEW.rotation_id
       WHERE operation.singleton = 1
-        AND operation.recovery_health = 'healthy'
-        AND operation.active_ingestion_run_id IS NULL
         AND operation.credential_rotation_generation =
           NEW.expected_state_generation + 1
-        AND catalogue.current_revision_id =
-          NEW.expected_catalogue_revision_id
         AND rotation.credential_class = NEW.credential_class
         AND rotation.environment = NEW.environment
         AND rotation.resource_identity = NEW.resource_identity

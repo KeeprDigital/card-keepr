@@ -18,6 +18,7 @@ export async function runCredentialCommand(
   arguments_,
   environment,
   json,
+  dependencies = { executeCredentialBoundary },
 ) {
   const action = arguments_[0];
   if (action === "show") {
@@ -26,10 +27,22 @@ export async function runCredentialCommand(
   if (!["install", "verify", "revoke"].includes(action)) {
     return usage(json);
   }
-  return mutate(action, arguments_.slice(1), environment, json);
+  return mutate(
+    action,
+    arguments_.slice(1),
+    environment,
+    json,
+    dependencies,
+  );
 }
 
-async function mutate(action, arguments_, environment, json) {
+async function mutate(
+  action,
+  arguments_,
+  environment,
+  json,
+  dependencies,
+) {
   const options = parseMutation(arguments_);
   if (options.error !== null) return usage(json);
   const credentialClass = options.values["--credential-class"];
@@ -38,6 +51,15 @@ async function mutate(action, arguments_, environment, json) {
       json,
       "invalid_credential_class",
       "The credential class is not supported.",
+      2,
+    );
+  }
+  const targetEnvironment = options.values["--environment"];
+  if (targetEnvironment !== "production") {
+    return failure(
+      json,
+      "production_target_required",
+      "Credential mutation requires --environment production.",
       2,
     );
   }
@@ -104,7 +126,7 @@ async function mutate(action, arguments_, environment, json) {
     action,
     rotation_id: options.values["--rotation-id"],
     credential_class: credentialClass,
-    environment: "production",
+    environment: targetEnvironment,
     cloudflare_account_id: context.cloudflare_account_id,
     resource_identity: identity.resource_identity,
     owning_boundary: identity.owning_boundary,
@@ -134,7 +156,9 @@ async function mutate(action, arguments_, environment, json) {
   if (
     plan?.contract !== "card-keepr-credential-rotation-plan@1" ||
     typeof plan.plan_digest !== "string" ||
-    typeof plan.plan_nonce !== "string"
+    typeof plan.plan_nonce !== "string" ||
+    typeof plan.required_permission !== "string" ||
+    typeof plan.consumer_installation_identity !== "string"
   ) {
     return failure(
       json,
@@ -191,10 +215,12 @@ async function mutate(action, arguments_, environment, json) {
     claimed.document?.contract !==
       "card-keepr-credential-rotation-plan@1" ||
     claimed.document.status !== "executing" ||
-    !equalDigest(
-      claimed.document.plan_digest,
-      plan.plan_digest,
-    )
+    !["mutation", "reconciliation"].includes(
+      claimed.document.execution_mode,
+    ) ||
+    !Number.isSafeInteger(claimed.document.execution_attempt) ||
+    claimed.document.execution_attempt < 1 ||
+    !sameExecutionPlan(plan, claimed.document)
   ) {
     return failure(
       json,
@@ -204,12 +230,23 @@ async function mutate(action, arguments_, environment, json) {
     );
   }
 
-  const boundary = await executeCredentialBoundary(
+  const boundary = await dependencies.executeCredentialBoundary(
     claimed.document,
     secrets.values,
     environment,
   );
   if (!boundary.ok) {
+    if (claimed.document.execution_mode === "mutation") {
+      await requestDocument(
+        environment,
+        `/v1/credential-rotation-plans/${encodeURIComponent(
+          plan.id,
+        )}/execution-failure`,
+        "POST",
+        { plan_digest: plan.plan_digest },
+        secrets.values.administration_key,
+      );
+    }
     return failure(json, boundary.code, boundary.detail, 9);
   }
   const finalized = await requestDocument(
@@ -251,6 +288,7 @@ function parseMutation(arguments_) {
   const valueOptions = [
     "--rotation-id",
     "--credential-class",
+    "--environment",
     "--cloudflare-account-id",
     "--catalogue-d1-database-id",
     "--disposable-d1-database-id",
@@ -296,6 +334,8 @@ function confirmationText(plan) {
     plan.old_fingerprint,
     plan.replacement_fingerprint,
     plan.verification_target,
+    plan.required_permission,
+    plan.consumer_installation_identity,
     plan.plan_digest,
     plan.idempotency_key,
     plan.old_issuer_credential_id,
@@ -372,6 +412,44 @@ function equalDigest(left, right) {
     timingSafeEqual(
       Buffer.from(left, "hex"),
       Buffer.from(right, "hex"),
+    )
+  );
+}
+
+function sameExecutionPlan(planned, claimed) {
+  const exactFields = [
+    "id",
+    "action",
+    "rotation_id",
+    "credential_class",
+    "environment",
+    "cloudflare_account_id",
+    "resource_identity",
+    "owning_boundary",
+    "verification_target",
+    "required_permission",
+    "consumer_installation_identity",
+    "expected_catalogue_revision_id",
+    "expected_state_generation",
+    "expected_rotation_state",
+    "old_issuer_credential_id",
+    "replacement_issuer_credential_id",
+    "management_credential_id",
+    "idempotency_key",
+  ];
+  return (
+    exactFields.every(
+      (field) => planned[field] === claimed[field],
+    ) &&
+    equalDigest(planned.plan_digest, claimed.plan_digest) &&
+    equalDigest(planned.plan_nonce, claimed.plan_nonce) &&
+    equalFingerprint(
+      planned.old_fingerprint,
+      claimed.old_fingerprint,
+    ) &&
+    equalFingerprint(
+      planned.replacement_fingerprint,
+      claimed.replacement_fingerprint,
     )
   );
 }

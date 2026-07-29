@@ -21,6 +21,9 @@ import {
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
+import {
+  handleCredentialConsumerProof,
+} from "../../../src/credentials/consumer-proof";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -55,6 +58,13 @@ export default {
       }
 
       const url = new URL(request.url);
+      const consumerProof = await handleCredentialConsumerProof(
+        request,
+        env.CATALOGUE_DB,
+        env,
+        ["api_bearer_key"],
+      );
+      if (consumerProof !== null) return consumerProof;
       if (url.pathname.startsWith("/v1/")) {
         const rateLimit = isPrintingImageContent(url.pathname)
           ? env.PRINTING_IMAGE_RATE_LIMIT

@@ -42,12 +42,17 @@ export type CredentialRotationPlanDocument =
     contract: "card-keepr-credential-rotation-plan@1";
     id: string;
     required_permission: string;
+    consumer_installation_identity: string;
     expected_rotation_state: CredentialRotationState | null;
     plan_nonce: string;
     plan_digest: string;
     status: "reserved" | "executing" | "finalized" | "expired";
     created_at: string;
     expires_at: string;
+    execution_started_at: string | null;
+    execution_expires_at: string | null;
+    execution_attempt: number;
+    execution_mode: "mutation" | "reconciliation" | null;
   };
 
 type CredentialRotationPlanRow = Omit<
@@ -56,7 +61,6 @@ type CredentialRotationPlanRow = Omit<
 > & {
   expected_state_generation: number;
   request_digest: string;
-  execution_started_at: string | null;
   finalized_at: string | null;
   attestation_digest: string | null;
 };
@@ -72,6 +76,7 @@ type CredentialBoundaryAttestation = {
   resource_identity: string;
   verification_target: string;
   required_permission: string;
+  consumer_installation_identity: string;
   old_fingerprint: string;
   replacement_fingerprint: string;
   installed_fingerprint: string;
@@ -83,6 +88,8 @@ type CredentialBoundaryAttestation = {
   old_credential_status: "usable" | "unusable";
   replacement_credential_status: "usable";
   observed_at: string;
+  execution_attempt: number;
+  execution_mode: "mutation" | "reconciliation";
 };
 
 type RotationRow = {
@@ -164,7 +171,7 @@ export async function reserveCredentialRotationPlan(
     input.verification_target !== expectedIdentity.verification_target
   ) {
     throw problem(
-      "stale_credential_identity",
+      "identity_conflict",
       "The resolved credential boundary identity is stale.",
     );
   }
@@ -272,6 +279,8 @@ export async function reserveCredentialRotationPlan(
     request_digest: requestHash,
     plan_nonce: planNonce,
     required_permission: expectedIdentity.required_permission,
+    consumer_installation_identity:
+      expectedIdentity.consumer_installation_identity,
     expected_rotation_state: expectedRotationState,
   });
   const expiresAt = new Date(
@@ -284,6 +293,7 @@ export async function reserveCredentialRotationPlan(
           id, action, rotation_id, credential_class, environment,
           cloudflare_account_id, resource_identity, owning_boundary,
           verification_target, required_permission,
+          consumer_installation_identity,
           expected_catalogue_revision_id, expected_state_generation,
           expected_rotation_state, old_fingerprint,
           replacement_fingerprint, old_issuer_credential_id,
@@ -292,7 +302,7 @@ export async function reserveCredentialRotationPlan(
           plan_nonce, plan_digest, status, created_at, expires_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?,
+          ?, ?, ?,
           'reserved', ?, ?
         )`,
       )
@@ -307,6 +317,7 @@ export async function reserveCredentialRotationPlan(
         input.owning_boundary,
         input.verification_target,
         expectedIdentity.required_permission,
+        expectedIdentity.consumer_installation_identity,
         input.expected_catalogue_revision_id,
         input.expected_state_generation,
         expectedRotationState,
@@ -469,9 +480,7 @@ export async function finalizeCredentialRotationPlan(
            SET credential_rotation_generation =
              credential_rotation_generation + 1
            WHERE singleton = 1
-             AND credential_rotation_generation = ?
-             AND recovery_health = 'healthy'
-             AND active_ingestion_run_id IS NULL`,
+             AND credential_rotation_generation = ?`,
         )
         .bind(plan.expected_state_generation),
       database
@@ -518,25 +527,147 @@ export async function beginCredentialRotationPlanExecution(
       "The credential transition plan digest is stale.",
     );
   }
-  if (plan.status === "executing") return planDocument(plan);
-  if (plan.status !== "reserved" || plan.expires_at <= observedAt) {
+  if (
+    !["reserved", "executing"].includes(plan.status) ||
+    (plan.status === "reserved" && plan.expires_at <= observedAt)
+  ) {
     throw problem(
       "credential_plan_expired",
       "The credential transition plan is no longer executable.",
     );
   }
+  const executionExpiresAt = new Date(
+    Date.parse(observedAt) + 10 * 60 * 1000,
+  ).toISOString();
+  let result: D1Result<unknown>;
+  try {
+    result = await database
+      .prepare(
+      `UPDATE credential_rotation_plans
+       SET status = 'executing', execution_started_at = ?,
+           execution_expires_at = ?, execution_attempt =
+             execution_attempt + 1
+       WHERE id = ?
+         AND status IN ('reserved', 'executing')
+         AND (status = 'executing' OR expires_at > ?)
+         AND plan_digest = ?
+         AND (
+           status = 'executing'
+           OR EXISTS (
+           SELECT 1
+           FROM operation_state AS operation
+           JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+           WHERE operation.singleton = 1
+             AND operation.recovery_health = 'healthy'
+             AND operation.active_ingestion_run_id IS NULL
+             AND operation.credential_rotation_generation =
+               credential_rotation_plans.expected_state_generation
+             AND catalogue.current_revision_id =
+               credential_rotation_plans.expected_catalogue_revision_id
+             AND (
+               (
+                 credential_rotation_plans.action = 'install'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM credential_rotations AS rotation
+                   WHERE rotation.id =
+                     credential_rotation_plans.rotation_id
+                 )
+               )
+               OR EXISTS (
+                 SELECT 1 FROM credential_rotations AS rotation
+                 WHERE rotation.id =
+                   credential_rotation_plans.rotation_id
+                   AND rotation.credential_class =
+                     credential_rotation_plans.credential_class
+                   AND rotation.environment =
+                     credential_rotation_plans.environment
+                   AND rotation.resource_identity =
+                     credential_rotation_plans.resource_identity
+                   AND rotation.owning_boundary =
+                     credential_rotation_plans.owning_boundary
+                   AND rotation.verification_target =
+                     credential_rotation_plans.verification_target
+                   AND rotation.old_secret_hash =
+                     substr(credential_rotation_plans.old_fingerprint, 8)
+                   AND rotation.replacement_secret_hash =
+                     substr(
+                       credential_rotation_plans.replacement_fingerprint,
+                       8
+                     )
+                   AND rotation.state =
+                     credential_rotation_plans.expected_rotation_state
+               )
+             )
+           )
+         )`,
+    )
+      .bind(
+        observedAt,
+        executionExpiresAt,
+        plan.id,
+        observedAt,
+        plan.plan_digest,
+      )
+      .run();
+  } catch (error) {
+    if (errorMessage(error).includes("UNIQUE constraint")) {
+      throw problem(
+        "credential_mutation_conflict",
+        "Another credential execution claim is active.",
+      );
+    }
+    throw error;
+  }
+  if (result.meta.changes !== 1) {
+    await assertExecutionSnapshot(database, plan, observedAt);
+    throw problem(
+      "credential_mutation_conflict",
+      "Another credential execution claim is active.",
+    );
+  }
+  return planDocument(await requiredPlan(database, plan.id));
+}
+
+export async function releaseCredentialRotationPlanExecution(
+  database: D1Database,
+  planId: string,
+  planDigest: string,
+  observedAt: string,
+): Promise<CredentialRotationPlanDocument> {
+  const plan = await requiredPlan(database, planId);
+  if (!(await fixedHashEqual(plan.plan_digest, planDigest))) {
+    throw problem(
+      "credential_plan_digest_mismatch",
+      "The credential transition plan digest is stale.",
+    );
+  }
+  if (
+    plan.status !== "executing" ||
+    plan.execution_attempt !== 1
+  ) {
+    throw problem(
+      "illegal_rotation_transition",
+      "Only the initial failed execution may be safely released.",
+    );
+  }
+  const retryExpiresAt = new Date(
+    Date.parse(observedAt) + 5 * 60 * 1000,
+  ).toISOString();
   const result = await database
     .prepare(
       `UPDATE credential_rotation_plans
-       SET status = 'executing', execution_started_at = ?
-       WHERE id = ? AND status = 'reserved' AND plan_digest = ?`,
+       SET status = 'reserved', execution_started_at = NULL,
+           execution_expires_at = NULL, execution_attempt = 0,
+           expires_at = ?
+       WHERE id = ? AND status = 'executing'
+         AND execution_attempt = 1 AND plan_digest = ?`,
     )
-    .bind(observedAt, plan.id, plan.plan_digest)
+    .bind(retryExpiresAt, plan.id, plan.plan_digest)
     .run();
   if (result.meta.changes !== 1) {
     throw problem(
       "credential_mutation_conflict",
-      "The credential transition execution claim changed concurrently.",
+      "The execution release changed concurrently.",
     );
   }
   return planDocument(await requiredPlan(database, plan.id));
@@ -605,7 +736,7 @@ async function requiredRow(
   if (row === null) {
     throw new CredentialRotationProblem(
       404,
-      "credential_rotation_not_found",
+      "rotation_not_found",
       "The credential rotation does not exist.",
     );
   }
@@ -763,6 +894,10 @@ async function verifyBoundaryAttestation(
     attestation.resource_identity === plan.resource_identity &&
     attestation.verification_target === plan.verification_target &&
     attestation.required_permission === plan.required_permission &&
+    attestation.consumer_installation_identity ===
+      plan.consumer_installation_identity &&
+    attestation.consumer_installation_id ===
+      plan.consumer_installation_identity &&
     attestation.old_issuer_credential_id ===
       plan.old_issuer_credential_id &&
     attestation.replacement_issuer_credential_id ===
@@ -771,9 +906,16 @@ async function verifyBoundaryAttestation(
       plan.management_credential_id &&
     attestation.old_credential_status === expectedOldStatus &&
     attestation.replacement_credential_status === "usable" &&
+    attestation.execution_attempt === plan.execution_attempt &&
+    attestation.execution_mode ===
+      (plan.execution_attempt === 1
+        ? "mutation"
+        : "reconciliation") &&
     plan.execution_started_at !== null &&
+    plan.execution_expires_at !== null &&
     canonicalTimestamp(attestation.observed_at) &&
     attestation.observed_at >= plan.execution_started_at &&
+    attestation.observed_at <= plan.execution_expires_at &&
     attestation.observed_at <= observedAt &&
     safeProviderIdentity(attestation.old_issuer_credential_id) &&
     safeProviderIdentity(
@@ -869,7 +1011,7 @@ async function expectedStateForAction(
   if (input.action === "install") {
     if (rotation !== null) {
       throw problem(
-        "credential_mutation_conflict",
+        "identity_conflict",
         "The credential rotation already exists.",
       );
     }
@@ -878,13 +1020,13 @@ async function expectedStateForAction(
   if (rotation === null) {
     throw new CredentialRotationProblem(
       404,
-      "credential_rotation_not_found",
+      "rotation_not_found",
       "The credential rotation does not exist.",
     );
   }
   if (rotation.credential_class !== input.credential_class) {
     throw problem(
-      "credential_class_mismatch",
+      "identity_conflict",
       "The credential class does not match the rotation.",
     );
   }
@@ -895,19 +1037,19 @@ async function expectedStateForAction(
     rotation.verification_target !== input.verification_target
   ) {
     throw problem(
-      "stale_credential_identity",
+      "identity_conflict",
       "The resolved credential boundary identity is stale.",
     );
   }
   await assertFingerprint(
     rotation.old_secret_hash,
     input.old_fingerprint,
-    "stale_credential_identity",
+    "credential_fingerprint_mismatch",
   );
   await assertFingerprint(
     rotation.replacement_secret_hash,
     input.replacement_fingerprint,
-    "stale_credential_identity",
+    "credential_fingerprint_mismatch",
   );
   const expected =
     input.action === "verify"
@@ -915,14 +1057,107 @@ async function expectedStateForAction(
       : "replacement_verified";
   if (rotation.state !== expected) {
     throw problem(
-      input.action === "revoke" &&
-        rotation.state === "replacement_installed"
-        ? "replacement_not_verified"
-        : "credential_mutation_conflict",
+      "illegal_rotation_transition",
       `The rotation is not awaiting ${input.action}.`,
     );
   }
   return rotation.state;
+}
+
+async function assertExecutionSnapshot(
+  database: D1Database,
+  plan: CredentialRotationPlanRow,
+  observedAt: string,
+): Promise<void> {
+  if (plan.status === "reserved" && plan.expires_at <= observedAt) {
+    throw problem(
+      "credential_plan_expired",
+      "The credential transition plan is no longer executable.",
+    );
+  }
+  const state = await currentCredentialMutationState(database);
+  if (state.recovery_health !== "healthy") {
+    throw problem(
+      state.recovery_health === "blocked"
+        ? "recovery_in_progress"
+        : "recovery_not_verified",
+      "Credential execution requires healthy verified recovery.",
+    );
+  }
+  if (state.active_ingestion_run_id !== null) {
+    throw problem(
+      "ingestion_not_idle",
+      "Credential execution requires idle ingestion.",
+    );
+  }
+  if (
+    state.current_revision_id !==
+    plan.expected_catalogue_revision_id
+  ) {
+    throw problem(
+      "current_revision_mismatch",
+      "The expected current Catalogue Revision is stale.",
+    );
+  }
+  if (
+    state.credential_rotation_generation !==
+    plan.expected_state_generation
+  ) {
+    throw problem(
+      "credential_state_generation_mismatch",
+      "The expected credential state generation is stale.",
+    );
+  }
+  const rotation = await optionalRow(database, plan.rotation_id);
+  if (plan.action === "install") {
+    if (rotation !== null) {
+      throw problem(
+        "identity_conflict",
+        "The credential rotation identity already exists.",
+      );
+    }
+    return;
+  }
+  if (rotation === null) {
+    throw new CredentialRotationProblem(
+      404,
+      "rotation_not_found",
+      "The credential rotation does not exist.",
+    );
+  }
+  if (
+    rotation.credential_class !== plan.credential_class ||
+    rotation.environment !== plan.environment ||
+    rotation.resource_identity !== plan.resource_identity ||
+    rotation.owning_boundary !== plan.owning_boundary ||
+    rotation.verification_target !== plan.verification_target
+  ) {
+    throw problem(
+      "identity_conflict",
+      "The credential rotation identity changed after reservation.",
+    );
+  }
+  if (
+    !(await fixedHashEqual(
+      rotation.old_secret_hash,
+      hashFromFingerprint(plan.old_fingerprint),
+    )) ||
+    !(await fixedHashEqual(
+      rotation.replacement_secret_hash,
+      hashFromFingerprint(plan.replacement_fingerprint),
+    ))
+  ) {
+    throw problem(
+      "credential_fingerprint_mismatch",
+      "The credential fingerprints changed after reservation.",
+    );
+  }
+  if (rotation.state !== plan.expected_rotation_state) {
+    throw problem(
+      "illegal_rotation_transition",
+      "The credential rotation state changed after reservation.",
+    );
+  }
 }
 
 function planDocument(
@@ -940,6 +1175,8 @@ function planDocument(
     owning_boundary: row.owning_boundary,
     verification_target: row.verification_target,
     required_permission: row.required_permission,
+    consumer_installation_identity:
+      row.consumer_installation_identity,
     expected_catalogue_revision_id:
       row.expected_catalogue_revision_id,
     expected_state_generation: row.expected_state_generation,
@@ -956,6 +1193,15 @@ function planDocument(
     status: row.status,
     created_at: row.created_at,
     expires_at: row.expires_at,
+    execution_started_at: row.execution_started_at,
+    execution_expires_at: row.execution_expires_at,
+    execution_attempt: row.execution_attempt,
+    execution_mode:
+      row.status === "executing"
+        ? row.execution_attempt === 1
+          ? "mutation"
+          : "reconciliation"
+        : null,
   };
 }
 

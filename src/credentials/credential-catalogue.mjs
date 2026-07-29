@@ -1,11 +1,3 @@
-export const credentialClasses = Object.freeze([
-  "api_bearer_key",
-  "ingestion_admin_key",
-  "d1_export_token",
-  "d1_verification_token",
-  "github_deployment_token",
-]);
-
 export const credentialClassDefinitions = Object.freeze({
   api_bearer_key: Object.freeze({
     owning_boundary: "api_worker",
@@ -69,6 +61,10 @@ export const credentialClassDefinitions = Object.freeze({
   }),
 });
 
+export const credentialClasses = Object.freeze(
+  Object.keys(credentialClassDefinitions),
+);
+
 export function isCredentialClass(value) {
   return credentialClasses.includes(value);
 }
@@ -85,6 +81,8 @@ export function resolveCredentialIdentity(credentialClass, context) {
       owning_boundary: definition.owning_boundary,
       verification_target: `${prefix}:worker:${definition.resource_name}:${definition.verification_operation}`,
       required_permission: definition.required_permission,
+      consumer_installation_identity:
+        `${definition.consumer_provider}:${definition.consumer_config}:${definition.replacement_secret_name}`,
     };
   }
   if (definition.resource_kind === "d1") {
@@ -97,6 +95,8 @@ export function resolveCredentialIdentity(credentialClass, context) {
       owning_boundary: definition.owning_boundary,
       verification_target: `${prefix}:${definition.verification_operation}`,
       required_permission: definition.required_permission,
+      consumer_installation_identity:
+        `${definition.consumer_provider}:${definition.consumer_config}:${definition.replacement_secret_name}`,
     };
   }
   const prefix = `github-repository:${context.github_repository_id}:environment:production`;
@@ -107,5 +107,7 @@ export function resolveCredentialIdentity(credentialClass, context) {
     owning_boundary: definition.owning_boundary,
     verification_target: `${prefix}:workflow:${definition.resource_name}:${definition.verification_operation}`,
     required_permission: definition.required_permission,
+    consumer_installation_identity:
+      `github:KeeprDigital/card-keepr:production:${definition.replacement_secret_name}`,
   };
 }

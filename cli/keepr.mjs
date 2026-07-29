@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { pathToFileURL } from "node:url";
 import {
   apiCapabilities,
   ingestionCapabilities,
@@ -11,10 +12,11 @@ import {
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 
-const exit = await main(process.argv.slice(2), process.env);
-process.exitCode = exit;
-
-async function main(arguments_, environment) {
+export async function main(
+  arguments_,
+  environment,
+  dependencies,
+) {
   const json = arguments_.includes("--json");
   if (arguments_[0] === "health") {
     if (arguments_.slice(1).some((option) => option !== "--json")) {
@@ -75,10 +77,18 @@ async function main(arguments_, environment) {
       arguments_.slice(1),
       environment,
       json,
+      dependencies,
     );
   }
 
   return usageFailure(json);
+}
+
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.exitCode = await main(process.argv.slice(2), process.env);
 }
 
 async function health(environment, json) {

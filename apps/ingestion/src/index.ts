@@ -34,6 +34,9 @@ import {
   CredentialRotationProblem,
 } from "../../../src/catalogue/credential-rotation";
 import { handleCredentialAdministration } from "./credential-administration";
+import {
+  handleCredentialConsumerProof,
+} from "../../../src/credentials/consumer-proof";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -45,6 +48,17 @@ export default {
     const requestId = crypto.randomUUID();
 
     try {
+      const consumerProof = await handleCredentialConsumerProof(
+        request,
+        env.CATALOGUE_DB,
+        env,
+        [
+          "ingestion_admin_key",
+          "d1_export_token",
+          "d1_verification_token",
+        ],
+      );
+      if (consumerProof !== null) return consumerProof;
       const rateLimited = await rateLimitFailure(
         request,
         env.ADMINISTRATION_RATE_LIMIT,
