@@ -13,6 +13,15 @@ import {
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
+import {
+  reparseSourceSnapshot,
+  resumeSourceCollection,
+  retrySourceCollection,
+  showSourceCollection,
+  sourceObservationSetContent,
+  sourceSnapshotContent,
+  startSourceCollection,
+} from "../../../src/catalogue/source-evidence";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -67,6 +76,117 @@ export default {
             idempotency_key: requiredString(body, "idempotency_key"),
           }),
           { status: 201 },
+        );
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/source-collections"
+      ) {
+        const body = await readAdministrationBody(request);
+        return Response.json(
+          await startSourceCollection(env.CATALOGUE_DB, {
+            supported_game: requiredString(body, "supported_game"),
+            source_lineage: requiredString(body, "source_lineage"),
+            adapter_version: requiredString(body, "adapter_version"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+            requests: requiredSourceRequests(body, "requests"),
+          }),
+          { status: 201 },
+        );
+      }
+
+      const sourceCollectionResumeMatch =
+        /^\/v1\/source-collections\/([^/]+)\/resume$/.exec(url.pathname);
+      if (
+        request.method === "POST" &&
+        sourceCollectionResumeMatch !== null
+      ) {
+        return Response.json(
+          await resumeSourceCollection(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_OBJECTS,
+            decodeURIComponent(sourceCollectionResumeMatch[1]!),
+          ),
+        );
+      }
+
+      const sourceCollectionRetryMatch =
+        /^\/v1\/source-collections\/([^/]+)\/retry$/.exec(url.pathname);
+      if (
+        request.method === "POST" &&
+        sourceCollectionRetryMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        return Response.json(
+          await retrySourceCollection(
+            env.CATALOGUE_DB,
+            decodeURIComponent(sourceCollectionRetryMatch[1]!),
+            requiredString(body, "idempotency_key"),
+          ),
+          { status: 201 },
+        );
+      }
+
+      const sourceSnapshotObservationsMatch =
+        /^\/v1\/source-snapshots\/([^/]+)\/observations$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "POST" &&
+        sourceSnapshotObservationsMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        return Response.json(
+          await reparseSourceSnapshot(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_OBJECTS,
+            decodeURIComponent(sourceSnapshotObservationsMatch[1]!),
+            requiredString(body, "adapter_version"),
+          ),
+          { status: 201 },
+        );
+      }
+
+      const sourceSnapshotContentMatch =
+        /^\/v1\/source-snapshots\/([^/]+)\/content$/.exec(url.pathname);
+      if (
+        request.method === "GET" &&
+        sourceSnapshotContentMatch !== null
+      ) {
+        return sourceSnapshotContent(
+          env.CATALOGUE_DB,
+          env.EVIDENCE_OBJECTS,
+          decodeURIComponent(sourceSnapshotContentMatch[1]!),
+        );
+      }
+
+      const sourceObservationSetContentMatch =
+        /^\/v1\/source-observation-sets\/([^/]+)\/content$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "GET" &&
+        sourceObservationSetContentMatch !== null
+      ) {
+        return sourceObservationSetContent(
+          env.CATALOGUE_DB,
+          env.EVIDENCE_OBJECTS,
+          decodeURIComponent(sourceObservationSetContentMatch[1]!),
+        );
+      }
+
+      const sourceCollectionMatch =
+        /^\/v1\/source-collections\/([^/]+)$/.exec(url.pathname);
+      if (
+        request.method === "GET" &&
+        sourceCollectionMatch !== null
+      ) {
+        return Response.json(
+          await showSourceCollection(
+            env.CATALOGUE_DB,
+            decodeURIComponent(sourceCollectionMatch[1]!),
+          ),
         );
       }
 
@@ -226,6 +346,66 @@ function requiredStringArray(
     );
   }
   return value;
+}
+
+function requiredSourceRequests(
+  body: Record<string, unknown>,
+  field: string,
+): {
+  id: string;
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+}[] {
+  const value = body[field];
+  if (!Array.isArray(value)) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_parameter",
+      `${field} must be an array.`,
+    );
+  }
+  return value.map((item, index) => {
+    if (
+      item === null ||
+      typeof item !== "object" ||
+      Array.isArray(item)
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "invalid_parameter",
+        `${field}[${index}] must be an object.`,
+      );
+    }
+    const sourceRequest = item as Record<string, unknown>;
+    const headersValue = sourceRequest.headers;
+    let headers: Record<string, string> | undefined;
+    if (headersValue !== undefined) {
+      if (
+        headersValue === null ||
+        typeof headersValue !== "object" ||
+        Array.isArray(headersValue) ||
+        Object.values(headersValue).some(
+          (header) => typeof header !== "string",
+        )
+      ) {
+        throw new AdministrationProblem(
+          422,
+          "invalid_parameter",
+          `${field}[${index}].headers must contain only string values.`,
+        );
+      }
+      headers = headersValue as Record<string, string>;
+    }
+    return {
+      id: requiredString(sourceRequest, "id"),
+      url: requiredString(sourceRequest, "url"),
+      ...(sourceRequest.method === undefined
+        ? {}
+        : { method: requiredString(sourceRequest, "method") }),
+      ...(headers === undefined ? {} : { headers }),
+    };
+  });
 }
 
 function administrationProblemTitle(status: number): string {

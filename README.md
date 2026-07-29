@@ -65,6 +65,37 @@ Approval fails closed unless the run identity, candidate digest, and current
 Catalogue Revision still match. Publication verifies the deterministic
 Catalogue Export before atomically advancing the D1 current-revision pointer.
 
+An Official Source collection is planned before any network access, then
+explicitly resumed. The adapter version and credential-free HTTPS request are
+fixed in the plan:
+
+```sh
+npm run keepr -- source collect \
+  --game one-piece \
+  --lineage one-piece-en \
+  --adapter json-document@1 \
+  --request-id cards \
+  --url https://www.example.invalid/official/cards.json \
+  --idempotency-key source_collection_001 \
+  --json
+
+npm run keepr -- source resume --run-id RUN_ID --json
+npm run keepr -- source show --run-id RUN_ID
+```
+
+An interrupted active collection resumes against its persisted request plan.
+A terminal collection can only be retried as a new linked run with
+`source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
+be parsed again without changing its earlier Source Observation set with
+`snapshot reparse --snapshot-id SNAPSHOT_ID --adapter json-document@2`.
+
+Exact successful response bytes and Source Observation documents are retained
+without automatic deletion in the private evidence R2 bucket. D1 keeps their
+digests and immutable provenance references. Redirects and failed requests are
+retained as diagnostics only. Authenticated content routes stream retained
+objects at `/v1/source-snapshots/{id}/content` and
+`/v1/source-observation-sets/{id}/content`.
+
 ## Verification
 
 ```sh

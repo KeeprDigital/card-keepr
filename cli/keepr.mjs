@@ -29,6 +29,21 @@ async function main(arguments_, environment) {
   if (isCommand(arguments_, "run", "approve")) {
     return approveRun(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "source", "collect")) {
+    return collectSource(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "source", "show")) {
+    return showSourceCollection(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "source", "resume")) {
+    return resumeSourceCollection(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "source", "retry")) {
+    return retrySourceCollection(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "snapshot", "reparse")) {
+    return reparseSourceSnapshot(arguments_.slice(2), environment, json);
+  }
 
   return usageFailure(json);
 }
@@ -166,6 +181,121 @@ async function approveRun(arguments_, environment, json) {
       expected_current_revision_id: expectedCurrentRevision,
       idempotency_key: idempotencyKey,
     },
+  );
+}
+
+async function collectSource(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--game",
+    "--lineage",
+    "--adapter",
+    "--request-id",
+    "--url",
+    "--idempotency-key",
+  ]);
+  const game = options.values["--game"];
+  const lineage = options.values["--lineage"];
+  const adapter = options.values["--adapter"];
+  const requestId = options.values["--request-id"];
+  const url = options.values["--url"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    game === undefined ||
+    lineage === undefined ||
+    adapter === undefined ||
+    requestId === undefined ||
+    url === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/source-collections",
+    "POST",
+    {
+      supported_game: game,
+      source_lineage: lineage,
+      adapter_version: adapter,
+      idempotency_key: idempotencyKey,
+      requests: [{ id: requestId, url }],
+    },
+  );
+}
+
+async function showSourceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--run-id"]);
+  const runId = options.values["--run-id"];
+  if (options.error !== null || runId === undefined) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/source-collections/${encodeURIComponent(runId)}`,
+    "GET",
+  );
+}
+
+async function resumeSourceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--run-id"]);
+  const runId = options.values["--run-id"];
+  if (options.error !== null || runId === undefined) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/source-collections/${encodeURIComponent(runId)}/resume`,
+    "POST",
+  );
+}
+
+async function retrySourceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/source-collections/${encodeURIComponent(runId)}/retry`,
+    "POST",
+    { idempotency_key: idempotencyKey },
+  );
+}
+
+async function reparseSourceSnapshot(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--snapshot-id",
+    "--adapter",
+  ]);
+  const snapshotId = options.values["--snapshot-id"];
+  const adapter = options.values["--adapter"];
+  if (
+    options.error !== null ||
+    snapshotId === undefined ||
+    adapter === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/source-snapshots/${encodeURIComponent(snapshotId)}/observations`,
+    "POST",
+    { adapter_version: adapter },
   );
 }
 
@@ -332,7 +462,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | run start | run show | candidate inspect | run approve",
+        "Usage: keepr health | run start | run show | candidate inspect | run approve | source collect | source show | source resume | source retry | snapshot reparse",
     },
     2,
   );
@@ -348,6 +478,30 @@ function exitCodeForStatus(status) {
 }
 
 function formatAdministrationResult(document) {
+  if (
+    Array.isArray(document.snapshots) &&
+    Array.isArray(document.observation_sets) &&
+    Array.isArray(document.diagnostics) &&
+    document.state &&
+    document.id
+  ) {
+    return [
+      `Source Collection ${document.id}: ${document.state}`,
+      formatCount(document.snapshots.length, "Source Snapshot"),
+      formatCount(
+        document.observation_sets.length,
+        "Source Observation set",
+      ),
+      formatCount(document.diagnostics.length, "diagnostic"),
+    ].join("; ");
+  }
+  if (
+    document.source_snapshot_id &&
+    document.adapter_version &&
+    document.id
+  ) {
+    return `Source Observation set ${document.id} for Source Snapshot ${document.source_snapshot_id} (${document.adapter_version})`;
+  }
   if (document.state && document.id) {
     return `Ingestion Run ${document.id}: ${document.state}`;
   }
@@ -355,6 +509,10 @@ function formatAdministrationResult(document) {
     return `Candidate ${document.candidate_digest} for Ingestion Run ${document.run_id}`;
   }
   return JSON.stringify(document);
+}
+
+function formatCount(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 async function checkRuntime(runtime) {
