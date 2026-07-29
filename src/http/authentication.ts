@@ -48,7 +48,7 @@ export async function authenticateCredentialBearer(
   request: Request,
   database: D1Database,
   credentialClass: CredentialClass,
-  bootstrapKey: string,
+  bootstrapKeys: readonly (string | undefined)[],
   requestId: string,
   codes: AuthenticationCodes,
 ): Promise<Response | null> {
@@ -70,7 +70,7 @@ export async function authenticateCredentialBearer(
       database,
       credentialClass,
       providedKey,
-      bootstrapKey,
+      bootstrapKeys,
     ))
   ) {
     return problemResponse({

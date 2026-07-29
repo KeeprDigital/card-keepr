@@ -18,6 +18,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           API_BEARER_KEY: "vitest-api-key",
+          API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
           TEST_MIGRATIONS: migrations,
         },
       },

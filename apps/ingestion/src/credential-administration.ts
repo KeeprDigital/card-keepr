@@ -7,6 +7,7 @@ import {
   verifyCredentialRotation,
   type CredentialClass,
 } from "../../../src/catalogue/credential-rotation";
+import { readBoundedJsonObject } from "../../../src/http/bounded-json";
 
 export async function handleCredentialAdministration(
   request: Request,
@@ -25,9 +26,11 @@ export async function handleCredentialAdministration(
       "environment",
       "resource_identity",
       "owning_boundary",
-      "expected_old_fingerprint",
-      "old_secret",
-      "replacement_secret",
+      "verification_target",
+      "old_fingerprint",
+      "replacement_fingerprint",
+      "boundary_receipt",
+      "idempotency_key",
     ]);
     return Response.json(
       await installCredentialRotation(
@@ -38,15 +41,17 @@ export async function handleCredentialAdministration(
           environment: requiredProduction(body),
           resource_identity: requiredString(body, "resource_identity"),
           owning_boundary: requiredString(body, "owning_boundary"),
-          expected_old_fingerprint: requiredString(
+          verification_target: requiredString(
             body,
-            "expected_old_fingerprint",
+            "verification_target",
           ),
-          old_secret: requiredString(body, "old_secret"),
-          replacement_secret: requiredString(
+          old_fingerprint: requiredString(body, "old_fingerprint"),
+          replacement_fingerprint: requiredString(
             body,
-            "replacement_secret",
+            "replacement_fingerprint",
           ),
+          boundary_receipt: requiredBoundaryReceipt(body),
+          idempotency_key: requiredIdempotencyKey(body),
         },
         observedAt,
       ),
@@ -65,7 +70,10 @@ export async function handleCredentialAdministration(
       "environment",
       "resource_identity",
       "owning_boundary",
-      "replacement_secret",
+      "verification_target",
+      "replacement_fingerprint",
+      "boundary_receipt",
+      "idempotency_key",
     ]);
     return Response.json(
       await verifyCredentialRotation(
@@ -76,10 +84,16 @@ export async function handleCredentialAdministration(
           environment: requiredProduction(body),
           resource_identity: requiredString(body, "resource_identity"),
           owning_boundary: requiredString(body, "owning_boundary"),
-          replacement_secret: requiredString(
+          verification_target: requiredString(
             body,
-            "replacement_secret",
+            "verification_target",
           ),
+          replacement_fingerprint: requiredString(
+            body,
+            "replacement_fingerprint",
+          ),
+          boundary_receipt: requiredBoundaryReceipt(body),
+          idempotency_key: requiredIdempotencyKey(body),
         },
         observedAt,
       ),
@@ -97,7 +111,11 @@ export async function handleCredentialAdministration(
       "environment",
       "resource_identity",
       "owning_boundary",
-      "expected_old_fingerprint",
+      "verification_target",
+      "old_fingerprint",
+      "replacement_fingerprint",
+      "boundary_receipt",
+      "idempotency_key",
     ]);
     return Response.json(
       await revokeOldCredential(
@@ -108,10 +126,17 @@ export async function handleCredentialAdministration(
           environment: requiredProduction(body),
           resource_identity: requiredString(body, "resource_identity"),
           owning_boundary: requiredString(body, "owning_boundary"),
-          expected_old_fingerprint: requiredString(
+          verification_target: requiredString(
             body,
-            "expected_old_fingerprint",
+            "verification_target",
           ),
+          old_fingerprint: requiredString(body, "old_fingerprint"),
+          replacement_fingerprint: requiredString(
+            body,
+            "replacement_fingerprint",
+          ),
+          boundary_receipt: requiredBoundaryReceipt(body),
+          idempotency_key: requiredIdempotencyKey(body),
         },
         observedAt,
       ),
@@ -135,56 +160,12 @@ export async function handleCredentialAdministration(
 async function readBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
-  const maximumBytes = 16_384;
-  const declaredLength = request.headers.get("content-length");
-  if (
-    declaredLength !== null &&
-    Number.parseInt(declaredLength, 10) > maximumBytes
-  ) {
-    throw new CredentialRotationProblem(
-      413,
-      "request_too_large",
-      "The credential request body exceeds 16 KiB.",
-    );
-  }
-  const reader = request.body?.getReader();
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-  if (reader !== undefined) {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      bytesRead += chunk.value.byteLength;
-      if (bytesRead > maximumBytes) {
-        await reader.cancel();
-        throw new CredentialRotationProblem(
-          413,
-          "request_too_large",
-          "The credential request body exceeds 16 KiB.",
-        );
-      }
-      text += decoder.decode(chunk.value, { stream: true });
-    }
-    text += decoder.decode();
-  }
-  try {
-    const value: unknown = JSON.parse(text);
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      Array.isArray(value)
-    ) {
-      throw new Error("not an object");
-    }
-    return value as Record<string, unknown>;
-  } catch {
-    throw new CredentialRotationProblem(
-      400,
-      "invalid_json",
-      "The credential request body must be a JSON object.",
-    );
-  }
+  return readBoundedJsonObject(
+    request,
+    16_384,
+    (status, code, detail) =>
+      new CredentialRotationProblem(status, code, detail),
+  );
 }
 
 function requiredString(
@@ -225,6 +206,34 @@ function requiredProduction(
       422,
       "production_target_required",
       "Credential mutation requires the production environment.",
+    );
+  }
+  return value;
+}
+
+function requiredBoundaryReceipt(
+  body: Record<string, unknown>,
+): string {
+  const value = requiredString(body, "boundary_receipt");
+  if (!/^receipt:[A-Za-z0-9._:-]{8,200}$/.test(value)) {
+    throw new CredentialRotationProblem(
+      422,
+      "invalid_boundary_receipt",
+      "boundary_receipt must be a safe owning-boundary receipt.",
+    );
+  }
+  return value;
+}
+
+function requiredIdempotencyKey(
+  body: Record<string, unknown>,
+): string {
+  const value = requiredString(body, "idempotency_key");
+  if (!/^[A-Za-z0-9._:-]{8,200}$/.test(value)) {
+    throw new CredentialRotationProblem(
+      422,
+      "invalid_idempotency_key",
+      "idempotency_key must be an opaque 8 to 200 character key.",
     );
   }
   return value;

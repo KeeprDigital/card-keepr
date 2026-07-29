@@ -21,6 +21,7 @@ CREATE TABLE credential_rotations (
   environment TEXT NOT NULL CHECK (environment = 'production'),
   resource_identity TEXT NOT NULL,
   owning_boundary TEXT NOT NULL,
+  verification_target TEXT NOT NULL,
   old_secret_hash TEXT NOT NULL CHECK (
     length(old_secret_hash) = 64
     AND old_secret_hash NOT GLOB '*[^0-9a-f]*'
@@ -32,6 +33,15 @@ CREATE TABLE credential_rotations (
   installed_at TEXT NOT NULL,
   verified_at TEXT,
   old_revoked_at TEXT,
+  install_idempotency_key TEXT NOT NULL UNIQUE,
+  install_request_digest TEXT NOT NULL,
+  verification_idempotency_key TEXT UNIQUE,
+  verification_request_digest TEXT,
+  revocation_idempotency_key TEXT UNIQUE,
+  revocation_request_digest TEXT,
+  install_receipt TEXT NOT NULL,
+  verification_receipt TEXT,
+  revocation_receipt TEXT,
   CHECK (old_secret_hash <> replacement_secret_hash),
   CHECK (
     (state = 'replacement_installed'

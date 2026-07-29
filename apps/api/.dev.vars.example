@@ -1,2 +1,3 @@
 # Copy to .dev.vars and replace this non-secret type-generation placeholder.
 API_BEARER_KEY=generated-type-placeholder
+API_BEARER_KEY_REPLACEMENT=generated-type-placeholder-replacement

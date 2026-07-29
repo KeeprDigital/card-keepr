@@ -73,7 +73,7 @@ export default {
         request,
         env.CATALOGUE_DB,
         "api_bearer_key",
-        env.API_BEARER_KEY,
+        [env.API_BEARER_KEY, env.API_BEARER_KEY_REPLACEMENT],
         requestId,
         {
           missing: "authentication_required",

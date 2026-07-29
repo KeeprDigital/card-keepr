@@ -20,6 +20,8 @@ export default defineConfig({
         d1Databases: ["LEGACY_DB"],
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
+          ADMINISTRATION_KEY_REPLACEMENT:
+            "vitest-administration-key-replacement-slot",
           ADMINISTRATION_CLOCK_MODE: "request",
           TEST_MIGRATIONS: migrations,
         },

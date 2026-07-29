@@ -107,9 +107,13 @@ async function seedRotation(
       environment,
       resource_identity,
       owning_boundary,
+      verification_target,
       old_secret_hash,
       replacement_secret_hash,
       installed_at,
+      install_idempotency_key,
+      install_request_digest,
+      install_receipt,
       verified_at,
       old_revoked_at
     ) VALUES (
@@ -119,14 +123,25 @@ async function seedRotation(
       'production',
       'worker:card-keepr-api',
       'api_worker',
+      'worker-health:card-keepr-api',
       ?,
       ?,
       '2026-07-29T00:00:00.000Z',
+      ?,
+      ?,
+      'receipt:api-test-install',
       NULL,
       NULL
     )`,
   )
-    .bind(rotationId, state, oldHash, replacementHash)
+    .bind(
+      rotationId,
+      state,
+      oldHash,
+      replacementHash,
+      `install-${rotationId}`,
+      "a".repeat(64),
+    )
     .run();
 }
 

@@ -1,0 +1,51 @@
+export function parseOptions(
+  arguments_,
+  valueOptions,
+  flagOptions = ["--json"],
+) {
+  const values = {};
+  const flags = new Set();
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const option = arguments_[index];
+    if (flagOptions.includes(option) || option === "--json") {
+      if (flags.has(option)) return { error: "duplicate", values, flags };
+      flags.add(option);
+      continue;
+    }
+    if (!valueOptions.includes(option) || values[option] !== undefined) {
+      return { error: "unknown", values, flags };
+    }
+    const value = arguments_[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      return { error: "missing", values, flags };
+    }
+    values[option] = value;
+    index += 1;
+  }
+  return { error: null, values, flags };
+}
+
+export function writeCliFailure(json, failure, exitCode) {
+  if (json) {
+    const document = {
+      contract: "card-keepr-cli-problem@1",
+      status: "error",
+      code: failure.code,
+      detail: failure.detail,
+      ...(failure.runtime ? { runtime: failure.runtime } : {}),
+    };
+    process.stdout.write(`${JSON.stringify(document)}\n`);
+  } else {
+    process.stderr.write(`${failure.detail}\n`);
+  }
+  return exitCode;
+}
+
+export function exitCodeForStatus(status) {
+  if (status === 401) return 4;
+  if (status === 403) return 5;
+  if (status === 404) return 6;
+  if (status === 409) return 7;
+  if (status === 400 || status === 413 || status === 422) return 8;
+  return 9;
+}

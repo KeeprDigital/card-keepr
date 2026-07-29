@@ -15,6 +15,7 @@ import {
 } from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
+import { readBoundedJsonObject } from "../../../src/http/bounded-json";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
   reparseSourceSnapshot,
@@ -55,7 +56,10 @@ export default {
         request,
         env.CATALOGUE_DB,
         "ingestion_admin_key",
-        env.ADMINISTRATION_KEY,
+        [
+          env.ADMINISTRATION_KEY,
+          env.ADMINISTRATION_KEY_REPLACEMENT,
+        ],
         requestId,
         {
           missing: "authentication_required",
@@ -443,56 +447,12 @@ export default {
 async function readAdministrationBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
-  const maximumBytes = 16_384;
-  const declaredLength = request.headers.get("content-length");
-  if (
-    declaredLength !== null &&
-    Number.parseInt(declaredLength, 10) > maximumBytes
-  ) {
-    throw new AdministrationProblem(
-      413,
-      "request_too_large",
-      "The administration request body exceeds 16 KiB.",
-    );
-  }
-  const reader = request.body?.getReader();
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-  if (reader !== undefined) {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      bytesRead += chunk.value.byteLength;
-      if (bytesRead > maximumBytes) {
-        await reader.cancel();
-        throw new AdministrationProblem(
-          413,
-          "request_too_large",
-          "The administration request body exceeds 16 KiB.",
-        );
-      }
-      text += decoder.decode(chunk.value, { stream: true });
-    }
-    text += decoder.decode();
-  }
-  try {
-    const value: unknown = JSON.parse(text);
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      Array.isArray(value)
-    ) {
-      throw new Error("not an object");
-    }
-    return value as Record<string, unknown>;
-  } catch {
-    throw new AdministrationProblem(
-      400,
-      "invalid_json",
-      "The administration request body must be a JSON object.",
-    );
-  }
+  return readBoundedJsonObject(
+    request,
+    16_384,
+    (status, code, detail) =>
+      new AdministrationProblem(status, code, detail),
+  );
 }
 
 function requiredString(
