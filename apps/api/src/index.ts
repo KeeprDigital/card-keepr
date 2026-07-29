@@ -1,4 +1,4 @@
-import { authenticateBearer } from "../../../src/http/authentication";
+import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   catalogueExportComponentResponse,
   catalogueExportResponse,
@@ -69,8 +69,10 @@ export default {
         }
       }
 
-      const authenticationFailure = await authenticateBearer(
+      const authenticationFailure = await authenticateCredentialBearer(
         request,
+        env.CATALOGUE_DB,
+        "api_bearer_key",
         env.API_BEARER_KEY,
         requestId,
         {

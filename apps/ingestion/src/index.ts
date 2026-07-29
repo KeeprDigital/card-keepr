@@ -1,4 +1,4 @@
-import { authenticateBearer } from "../../../src/http/authentication";
+import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   AdministrationProblem,
   administrationStatus,
@@ -29,6 +29,10 @@ import {
   showReconciledPrinting,
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { resumeEvidenceRun } from "./evidence-administration";
+import {
+  CredentialRotationProblem,
+} from "../../../src/catalogue/credential-rotation";
+import { handleCredentialAdministration } from "./credential-administration";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -47,8 +51,10 @@ export default {
       );
       if (rateLimited !== null) return rateLimited;
 
-      const authenticationFailure = await authenticateBearer(
+      const authenticationFailure = await authenticateCredentialBearer(
         request,
+        env.CATALOGUE_DB,
+        "ingestion_admin_key",
         env.ADMINISTRATION_KEY,
         requestId,
         {
@@ -76,6 +82,13 @@ export default {
         });
       }
       const observedAt = administrationObservedAt(request, env);
+
+      const credentialResponse = await handleCredentialAdministration(
+        request,
+        env.CATALOGUE_DB,
+        observedAt,
+      );
+      if (credentialResponse !== null) return credentialResponse;
 
       if (
         request.method === "POST" &&
@@ -396,7 +409,10 @@ export default {
         detail: "The requested administration operation does not exist.",
       });
     } catch (error) {
-      if (error instanceof AdministrationProblem) {
+      if (
+        error instanceof AdministrationProblem ||
+        error instanceof CredentialRotationProblem
+      ) {
         return problemResponse({
           requestId,
           status: error.status,
