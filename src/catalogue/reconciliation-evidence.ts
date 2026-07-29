@@ -1,6 +1,7 @@
 import { sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./fixture";
+import { requiredSourceAdapter } from "./source-adapters";
 
 type EvidenceRow = {
   observation_set_id: string;
@@ -75,6 +76,7 @@ export async function retainedReconciliationObservation(
     throw new Error("Retained Source Observation Set digest is invalid.");
   }
   const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  const adapter = requiredSourceAdapter(row.adapter_version);
   if (
     !isRecord(document) ||
     document.contract !== "card-keepr-source-observations@1" ||
@@ -84,6 +86,11 @@ export async function retainedReconciliationObservation(
     document.supported_game !== row.supported_game ||
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
+    adapter.reconciliationCoverage !== "synthetic_fixture" ||
+    !isRecord(document.coverage_proof) ||
+    document.coverage_proof.kind !== "synthetic_fixture" ||
+    document.coverage_proof.adapter_version !== adapter.adapterVersion ||
+    document.coverage_proof.parser_contract !== adapter.parserContract ||
     !validEvidenceSummary(
       document.evidence_summary,
       document.observations,

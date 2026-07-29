@@ -7,6 +7,7 @@ export type SourceAdapterRegistration = Readonly<{
   gameProfileVersion: string;
   parserContract: string;
   maximumJsonBytes: number;
+  reconciliationCoverage: "synthetic_fixture" | "unavailable";
   parse: (document: unknown) => readonly unknown[];
 }>;
 
@@ -32,6 +33,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
       {
@@ -41,6 +43,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
       {
@@ -50,6 +53,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "fusion-world@1",
         parserContract: "fusion-world-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
       {
@@ -59,6 +63,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "digimon@1",
         parserContract: "digimon-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
       {
@@ -68,6 +73,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "gundam@1",
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
       {
@@ -77,8 +83,51 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "gundam@1",
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "unavailable" as const,
         parse: parseCardDocument,
       },
+      ...[
+        {
+          adapterVersion: "fixture-one-piece-json@1",
+          sourceLineage: "one-piece-en",
+          supportedGame: "one-piece",
+          gameProfileVersion: "one-piece@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-fusion-world-json@1",
+          sourceLineage: "fusion-world-en",
+          supportedGame: "fusion-world",
+          gameProfileVersion: "fusion-world@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-digimon-json@1",
+          sourceLineage: "digimon-en",
+          supportedGame: "digimon",
+          gameProfileVersion: "digimon@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-gundam-en-asia-json@1",
+          sourceLineage: "gundam-en-asia",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-gundam-en-us-json@1",
+          sourceLineage: "gundam-en-us",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+      ].map((adapter) => ({
+        ...adapter,
+        maximumJsonBytes: 1024 * 1024,
+        reconciliationCoverage: "synthetic_fixture" as const,
+        parse: parseCardDocument,
+      })),
     ].map((adapter) => Object.freeze(adapter)),
   );
 

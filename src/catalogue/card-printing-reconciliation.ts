@@ -35,6 +35,7 @@ type ActiveRunRow = {
   state: string;
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
+  recovery_health: string;
 };
 
 type Diagnostic = {
@@ -129,12 +130,24 @@ export async function reconcileRetainedCardPrintingEvidence(
       identityValue: proposedCard.official_identity.value,
     });
     const cardId = existing?.id ?? (await cardIdFor(proposedCard));
+    if (
+      proposedCard.official_identity.kind === "functional_designation" &&
+      proposedCard.official_identity.value === "DON!!"
+    ) {
+      sourceWarnings.push({
+        code: "printing_coverage_incomplete",
+        card_id: cardId,
+        detail:
+          "Known DON!! Printing evidence is retained when present, but Official Source coverage is incomplete and absence never proves zero Printings.",
+      });
+    }
     const canonicalFacts = canonicalJson(proposedCard);
     const priorFacts = localCardFacts.get(cardId);
     const publishedConflict = await canonicalCardConflict(
       database,
       cardId,
       proposedCard,
+      retained.sourceLineage,
     );
     if (
       publishedConflict !== null ||
@@ -305,6 +318,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         relationshipDisappearanceWarnings(
           database,
           printingId,
+          retained.sourceLineage,
           memberships,
         ),
       ),
@@ -319,7 +333,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   );
   const cardWarnings = await cardDisappearanceWarnings(
     database,
-    retained.supportedGame,
+    retained.sourceLineage,
     plans.map((plan) => plan.cardId),
   );
   const warnings = [
@@ -499,7 +513,8 @@ async function requiredActiveParsingRun(
   const row = await database
     .prepare(
       `SELECT run.id, run.state, run.expected_current_revision_id,
-              operation.active_ingestion_run_id
+              operation.active_ingestion_run_id,
+              operation.recovery_health
        FROM ingestion_runs AS run
        JOIN operation_state AS operation ON operation.singleton = 1
        WHERE run.id = ?`,
@@ -515,6 +530,13 @@ async function requiredActiveParsingRun(
       409,
       "run_not_active",
       "Only the active parsing Ingestion Run can reconcile retained evidence.",
+    );
+  }
+  if (row.recovery_health !== "healthy") {
+    throw new AdministrationProblem(
+      409,
+      "recovery_not_verified",
+      "Recovery is not healthy, so reconciliation is blocked.",
     );
   }
   return row;

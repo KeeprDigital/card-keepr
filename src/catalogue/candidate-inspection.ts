@@ -1,4 +1,4 @@
-import type { FixtureCandidate, SupportedGame } from "./fixture";
+import type { FixtureCandidate } from "./fixture";
 import { canonicalJson } from "./serialization";
 
 export async function inspectCatalogueCandidate(
@@ -6,12 +6,18 @@ export async function inspectCatalogueCandidate(
   input: {
     runId: string;
     expectedRevisionId: string;
-    selectedGames: readonly SupportedGame[];
     candidate: FixtureCandidate;
     fallbackWarnings: readonly Record<string, unknown>[];
   },
 ) {
-  const [warnings, priorCards, priorPrintings, plans] = await Promise.all([
+  const [
+    warnings,
+    priorCards,
+    priorPrintings,
+    plans,
+    printingLineages,
+    cardLineages,
+  ] = await Promise.all([
     candidateWarnings(database, input.runId, input.fallbackWarnings),
     database
       .prepare(
@@ -31,12 +37,29 @@ export async function inspectCatalogueCandidate(
       .all<{ id: string; document_json: string }>(),
     database
       .prepare(
-        `SELECT card_id, printing_id
+        `SELECT card_id, printing_id, source_lineage
          FROM reconciliation_candidates
          WHERE ingestion_run_id = ?`,
       )
       .bind(input.runId)
-      .all<{ card_id: string; printing_id: string | null }>(),
+      .all<{
+        card_id: string;
+        printing_id: string | null;
+        source_lineage: string;
+      }>(),
+    database
+      .prepare(
+        `SELECT printing_id, source_lineage
+         FROM reconciled_printing_locators`,
+      )
+      .all<{ printing_id: string; source_lineage: string }>(),
+    database
+      .prepare(
+        `SELECT card_id, source_lineage
+         FROM reconciled_card_observations
+         WHERE current = 1`,
+      )
+      .all<{ card_id: string; source_lineage: string }>(),
   ]);
   const cardsBefore = documentMap(priorCards.results);
   const printingsBefore = documentMap(priorPrintings.results);
@@ -48,10 +71,14 @@ export async function inspectCatalogueCandidate(
       plan.printing_id === null ? [] : [plan.printing_id],
     ),
   );
-  const selected = new Set(input.selectedGames);
-  const cardsById = new Map(
-    input.candidate.cards.map((card) => [card.id, card]),
+  const selectedLineages = new Set(
+    plans.results.map((plan) => plan.source_lineage),
   );
+  const printingEvidence = groupedLineages(
+    printingLineages.results,
+    "printing_id",
+  );
+  const cardEvidence = groupedLineages(cardLineages.results, "card_id");
   const cards = {
     added: input.candidate.cards
       .filter((card) => !cardsBefore.has(card.id))
@@ -62,8 +89,11 @@ export async function inspectCatalogueCandidate(
     missing_observations: input.candidate.cards
       .filter(
         (card) =>
-          selected.has(card.game) &&
           cardsBefore.has(card.id) &&
+          intersects(
+            cardEvidence.get(card.id) ?? new Set(),
+            selectedLineages,
+          ) &&
           !observedCardIds.has(card.id),
       )
       .map((card) => card.id),
@@ -80,12 +110,13 @@ export async function inspectCatalogueCandidate(
       .sort(),
     missing_observations: input.candidate.printings
       .filter((printing) => {
-        const card = cardsById.get(printing.card_id);
-        return (
-          card !== undefined &&
-          selected.has(card.game) &&
-          printingsBefore.has(printing.id) &&
-          !observedPrintingIds.has(printing.id)
+          return (
+            printingsBefore.has(printing.id) &&
+            intersects(
+              printingEvidence.get(printing.id) ?? new Set(),
+              selectedLineages,
+            ) &&
+            !observedPrintingIds.has(printing.id)
         );
       })
       .map((printing) => printing.id),
@@ -100,6 +131,27 @@ export async function inspectCatalogueCandidate(
     printings,
     warnings,
   };
+}
+
+function groupedLineages<T extends "printing_id" | "card_id">(
+  rows: readonly (Record<T, string> & { source_lineage: string })[],
+  idField: T,
+): Map<string, Set<string>> {
+  const grouped = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const id = row[idField];
+    const lineages = grouped.get(id) ?? new Set<string>();
+    lineages.add(row.source_lineage);
+    grouped.set(id, lineages);
+  }
+  return grouped;
+}
+
+function intersects(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  return [...left].some((value) => right.has(value));
 }
 
 async function candidateWarnings(

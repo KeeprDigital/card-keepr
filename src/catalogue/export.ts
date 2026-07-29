@@ -1,5 +1,9 @@
 import type { FixtureCandidate, SupportedGame } from "./fixture";
-import type { NormalizedLifecycle } from "./reconciliation-publication";
+import type {
+  NormalizedLifecycle,
+  RelationshipEvidence,
+} from "./reconciliation-publication";
+import { exportedGameProfileSchema } from "./reconciliation-profile";
 import { verifyExportSchemas } from "./export-validation";
 import {
   canonicalJson,
@@ -81,6 +85,7 @@ export async function buildCatalogueExport(
   lifecycles?: {
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
+    relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
 ): Promise<BuiltCatalogueExport> {
   const records = exportRecords(candidate, catalogueRevisionId, lifecycles);
@@ -186,6 +191,7 @@ function exportRecords(
   lifecycles?: {
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
+    relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
 ): Record<(typeof componentDefinitions)[number][0], readonly unknown[]> {
   const defaultLifecycle = {
@@ -193,6 +199,52 @@ function exportRecords(
     last_observed_revision_id: revisionId,
     withdrawn: false,
   };
+  const cardsById = new Map(candidate.cards.map((card) => [card.id, card]));
+  const relationshipEvidence = candidate.printings.flatMap((printing) =>
+    (lifecycles?.relationships?.[printing.id] ?? []).map((relationship) => ({
+      printing,
+      card: cardsById.get(printing.card_id)!,
+      relationship,
+    })),
+  );
+  const products = uniqueById(
+    relationshipEvidence
+      .filter(
+        ({ relationship }) =>
+          relationship.relationship_kind === "product",
+      )
+      .map(({ card, relationship }) => ({
+        type: "product",
+        id: relationship.relationship_value,
+        game: card.game,
+        official_code: relationship.relationship_value,
+        name: relationship.relationship_value,
+        lifecycle: {
+          first_revision_id: relationship.first_revision_id,
+          last_observed_revision_id:
+            relationship.last_observed_revision_id,
+          withdrawn: false,
+        },
+      })),
+  );
+  const distributionContexts = uniqueById(
+    relationshipEvidence
+      .filter(
+        ({ relationship }) =>
+          relationship.relationship_kind !== "product",
+      )
+      .map(({ card, relationship }) => ({
+        type: "distribution_context",
+        id: relationship.relationship_value,
+        game: card.game,
+        kind:
+          relationship.relationship_kind === "source_bucket"
+            ? "other"
+            : "promotion",
+        label: relationship.relationship_value,
+        product_id: null,
+      })),
+  );
   return {
     "supported-games": candidate.selected_games.map((game) => ({
         type: "supported_game",
@@ -202,7 +254,7 @@ function exportRecords(
         type: "game_profile",
         profile: `${game}@1`,
         game,
-        schema: { type: "object" },
+        schema: exportedGameProfileSchema(`${game}@1`),
       })),
     cards: candidate.cards.map((card) => ({
       type: "card",
@@ -215,13 +267,61 @@ function exportRecords(
       lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
     })),
     "printing-images": [],
-    products: [],
+    products,
     releases: [],
-    "distribution-contexts": [],
+    "distribution-contexts": distributionContexts,
     errata: [],
     "legality-rules": [],
-    relationships: [],
+    relationships: relationshipEvidence
+      .map(({ printing, relationship }) => ({
+        type: "relationship",
+        id: relationshipExportId(printing.id, relationship),
+        kind:
+          relationship.relationship_kind === "product"
+            ? "printing-product"
+            : relationship.relationship_kind === "source_bucket"
+              ? "printing-source-bucket"
+              : "printing-distribution-context",
+        from: { type: "printing", id: printing.id },
+        to: {
+          type:
+            relationship.relationship_kind === "product"
+              ? "product"
+              : "distribution_context",
+          id: relationship.relationship_value,
+        },
+        evidence_category: "explicit",
+        source_lineage: relationship.source_lineage,
+        source_observation_ids: relationship.source_observation_ids,
+        relationship_value: relationship.relationship_value,
+        lifecycle: {
+          first_revision_id: relationship.first_revision_id,
+          last_observed_revision_id:
+            relationship.last_observed_revision_id,
+          current: relationship.current,
+          last_missing_revision_id:
+            relationship.last_missing_revision_id,
+        },
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
   };
+}
+
+function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
+  return [...new Map(values.map((value) => [value.id, value])).values()].sort(
+    (left, right) => left.id.localeCompare(right.id),
+  );
+}
+
+function relationshipExportId(
+  printingId: string,
+  relationship: RelationshipEvidence,
+): string {
+  const raw = `${printingId}\u0000${relationship.source_lineage}\u0000${relationship.relationship_kind}\u0000${relationship.relationship_value}`;
+  return `relationship_${[...new TextEncoder().encode(raw)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 160)}`;
 }
 
 function supportedGameExport(game: SupportedGame) {

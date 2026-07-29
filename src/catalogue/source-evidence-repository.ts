@@ -118,9 +118,15 @@ export async function startEvidenceRun(
   const runId = `run_${crypto.randomUUID()}`;
   const startedAt = new Date().toISOString();
   const catalogue = await database
-    .prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
-    .first<{ current_revision_id: string }>();
+    .prepare(
+      `SELECT catalogue.current_revision_id, operation.recovery_health
+       FROM catalogue_state AS catalogue
+       JOIN operation_state AS operation ON operation.singleton = 1
+       WHERE catalogue.singleton = 1`,
+    )
+    .first<{ current_revision_id: string; recovery_health: string }>();
   if (catalogue === null) throw new Error("Catalogue state is unavailable");
+  assertRecoveryHealthy(catalogue.recovery_health);
   const statements: D1PreparedStatement[] = [
     await ingestionRunInsert(database, {
       runId,
@@ -188,11 +194,11 @@ export async function retryEvidenceRun(
 ): Promise<Record<string, unknown>> {
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
-  if (source.state !== "failed") {
+  if (!["failed", "rejected", "expired"].includes(source.state)) {
     throw new AdministrationProblem(
       409,
       "ingestion_run_not_retryable",
-      "Only a failed Ingestion Run can be retried.",
+      "Only a failed, rejected, or expired evidence Ingestion Run can be retried.",
     );
   }
   const replay = await evidenceRunByIdempotencyKey(database, idempotencyKey);
@@ -207,6 +213,13 @@ export async function retryEvidenceRun(
     return showEvidenceRun(database, replay.id);
   }
   const plan = parseEvidencePlan(source.request_plan_json);
+  const operation = await database
+    .prepare(
+      "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+    )
+    .first<{ recovery_health: string }>();
+  if (operation === null) throw new Error("Operation state is unavailable.");
+  assertRecoveryHealthy(operation.recovery_health);
   const runId = `run_${crypto.randomUUID()}`;
   const startedAt = new Date().toISOString();
   try {
@@ -259,6 +272,16 @@ export async function retryEvidenceRun(
     throw error;
   }
   return showEvidenceRun(database, runId);
+}
+
+function assertRecoveryHealthy(recoveryHealth: string): void {
+  if (recoveryHealth !== "healthy") {
+    throw new AdministrationProblem(
+      409,
+      "recovery_not_verified",
+      "Recovery is not healthy, so evidence ingestion is blocked.",
+    );
+  }
 }
 
 function requestStatements(

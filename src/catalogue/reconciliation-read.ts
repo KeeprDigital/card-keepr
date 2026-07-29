@@ -1,7 +1,10 @@
 import type { Memberships } from "./reconciliation-model";
 import type { ReconciledPrintingRow } from "./reconciliation-repository";
+import type { RelationshipEvidence } from "./reconciliation-publication";
 
 type MembershipRow = {
+  source_lineage: string;
+  source_observation_id: string;
   relationship_kind:
     | "product"
     | "distribution_context"
@@ -16,22 +19,28 @@ type MembershipRow = {
 export async function relationshipDisappearanceWarnings(
   database: D1Database,
   printingId: string,
+  sourceLineage: string,
   memberships: Memberships,
 ): Promise<Record<string, unknown>[]> {
   const existing = await database
     .prepare(
-      `SELECT relationship_kind, relationship_value,
+      `SELECT source_lineage, source_observation_id,
+              relationship_kind, relationship_value,
               first_revision_id, last_observed_revision_id,
               current, last_missing_revision_id
        FROM reconciled_printing_memberships
-       WHERE printing_id = ? AND current = 1
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
        ORDER BY relationship_kind, relationship_value`,
     )
-    .bind(printingId)
+    .bind(printingId, sourceLineage)
     .all<MembershipRow>();
   const current = new Set(membershipEntries(memberships).map(membershipKey));
-  return existing.results
-    .filter((row) => !current.has(membershipKey(row)))
+  const disappeared = new Map(
+    existing.results
+      .filter((row) => !current.has(membershipKey(row)))
+      .map((row) => [membershipKey(row), row]),
+  );
+  return [...disappeared.values()]
     .map((row) => ({
       code: "relationship_not_observed",
       printing_id: printingId,
@@ -50,14 +59,17 @@ export async function printingDisappearanceWarnings(
   const exclusion =
     observedPrintingIds.length === 0
       ? ""
-      : `AND id NOT IN (${observedPrintingIds.map(() => "?").join(", ")})`;
+      : `AND printing.id NOT IN (${observedPrintingIds.map(() => "?").join(", ")})`;
   const result = await database
     .prepare(
-      `SELECT id FROM reconciled_printings
-       WHERE source_lineage = ?
+      `SELECT DISTINCT printing.id
+       FROM reconciled_printings AS printing
+       JOIN reconciled_printing_locators AS locator
+         ON locator.printing_id = printing.id
+       WHERE locator.source_lineage = ?
          ${exclusion}
-         AND withdrawn = 0
-       ORDER BY id`,
+         AND printing.withdrawn = 0
+       ORDER BY printing.id`,
     )
     .bind(sourceLineage, ...observedPrintingIds)
     .all<{ id: string }>();
@@ -71,22 +83,26 @@ export async function printingDisappearanceWarnings(
 
 export async function cardDisappearanceWarnings(
   database: D1Database,
-  supportedGame: string,
+  sourceLineage: string,
   observedCardIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
   const exclusion =
     observedCardIds.length === 0
       ? ""
-      : `AND id NOT IN (${observedCardIds.map(() => "?").join(", ")})`;
+      : `AND card.id NOT IN (${observedCardIds.map(() => "?").join(", ")})`;
   const result = await database
     .prepare(
-      `SELECT id FROM reconciled_cards
-       WHERE supported_game = ?
+      `SELECT DISTINCT card.id
+       FROM reconciled_cards AS card
+       JOIN reconciled_card_observations AS observation
+         ON observation.card_id = card.id
+       WHERE observation.source_lineage = ?
+         AND observation.current = 1
          ${exclusion}
-         AND withdrawn = 0
-       ORDER BY id`,
+         AND card.withdrawn = 0
+       ORDER BY card.id`,
     )
-    .bind(supportedGame, ...observedCardIds)
+    .bind(sourceLineage, ...observedCardIds)
     .all<{ id: string }>();
   return result.results.map((row) => ({
     code: "record_not_observed",
@@ -115,7 +131,8 @@ export async function publicReconciledPrinting(
       .all<{ locator: string }>(),
     database
       .prepare(
-        `SELECT relationship_kind, relationship_value,
+        `SELECT source_lineage, source_observation_id,
+                relationship_kind, relationship_value,
                 first_revision_id, last_observed_revision_id,
                 current, last_missing_revision_id
          FROM reconciled_printing_memberships
@@ -135,10 +152,15 @@ export async function publicReconciledPrinting(
       last_missing_revision_id: string | null;
     }[]
   >(() => []);
-  for (const membership of memberships.results) {
+  const relationshipEvidence = aggregateRelationshipEvidence(
+    memberships.results,
+  );
+  for (const membership of relationshipEvidence) {
     const key = projectionKey(membership.relationship_kind);
-    if (membership.current === 1) {
-      current[key].push(membership.relationship_value);
+    if (membership.current) {
+      if (!current[key].includes(membership.relationship_value)) {
+        current[key].push(membership.relationship_value);
+      }
     } else {
       historical[key].push({
         id: membership.relationship_value,
@@ -154,6 +176,7 @@ export async function publicReconciledPrinting(
     card_id: printing.card_id,
     locators: locators.results.map((row) => row.locator),
     memberships: { current, historical },
+    relationship_evidence: relationshipEvidence,
     lifecycle: lifecycle(
       printing.first_revision_id,
       printing.last_observed_revision_id,
@@ -169,6 +192,8 @@ export function membershipEntries(memberships: Memberships): MembershipRow[] {
     ...memberships.products.map((relationship_value) => ({
       relationship_kind: "product" as const,
       relationship_value,
+      source_lineage: "",
+      source_observation_id: "",
       first_revision_id: "",
       last_observed_revision_id: "",
       current: 1,
@@ -177,6 +202,8 @@ export function membershipEntries(memberships: Memberships): MembershipRow[] {
     ...memberships.distribution_contexts.map((relationship_value) => ({
       relationship_kind: "distribution_context" as const,
       relationship_value,
+      source_lineage: "",
+      source_observation_id: "",
       first_revision_id: "",
       last_observed_revision_id: "",
       current: 1,
@@ -185,12 +212,46 @@ export function membershipEntries(memberships: Memberships): MembershipRow[] {
     ...memberships.source_buckets.map((relationship_value) => ({
       relationship_kind: "source_bucket" as const,
       relationship_value,
+      source_lineage: "",
+      source_observation_id: "",
       first_revision_id: "",
       last_observed_revision_id: "",
       current: 1,
       last_missing_revision_id: null,
     })),
   ];
+}
+
+function aggregateRelationshipEvidence(
+  rows: readonly MembershipRow[],
+): RelationshipEvidence[] {
+  const grouped = new Map<string, MembershipRow[]>();
+  for (const row of rows) {
+    const key = `${row.source_lineage}\u0000${row.relationship_kind}\u0000${row.relationship_value}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+  return [...grouped.values()]
+    .map((evidence) => {
+      const active = evidence.filter((row) => row.current === 1);
+      const latest =
+        active[active.length - 1] ?? evidence[evidence.length - 1]!;
+      return {
+        source_lineage: latest.source_lineage,
+        relationship_kind: latest.relationship_kind,
+        relationship_value: latest.relationship_value,
+        source_observation_ids: evidence
+          .map((row) => row.source_observation_id)
+          .sort(),
+        first_revision_id: evidence[0]!.first_revision_id,
+        last_observed_revision_id: latest.last_observed_revision_id,
+        current: active.length > 0,
+        last_missing_revision_id:
+          active.length > 0 ? null : latest.last_missing_revision_id,
+      };
+    })
+    .sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    );
 }
 
 function membershipKey(

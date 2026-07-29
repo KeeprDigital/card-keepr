@@ -153,6 +153,7 @@ export async function canonicalCardConflict(
   database: D1Database,
   cardId: string,
   proposed: Omit<FixtureCard, "id">,
+  sourceLineage: string,
 ): Promise<string | null> {
   const row = await database
     .prepare(
@@ -180,9 +181,23 @@ export async function canonicalCardConflict(
     effective_rules_text: proposed.effective_rules_text,
     game_data: proposed.game_data,
   };
-  return canonicalJson(currentCanonical) === canonicalJson(proposedCanonical)
+  if (canonicalJson(currentCanonical) === canonicalJson(proposedCanonical)) {
+    return null;
+  }
+  const authorities = await database
+    .prepare(
+      `SELECT DISTINCT source_lineage
+       FROM reconciled_card_observations
+       WHERE card_id = ? AND current = 1`,
+    )
+    .bind(cardId)
+    .all<{ source_lineage: string }>();
+  return authorities.results.length > 0 &&
+    authorities.results.every(
+      (authority) => authority.source_lineage === sourceLineage,
+    )
     ? null
-    : "The retained Card facts conflict with the published canonical Card and no deterministic authority rule in this accepted observation resolves them.";
+    : "The retained Card facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
 }
 
 function compatibilityValues(

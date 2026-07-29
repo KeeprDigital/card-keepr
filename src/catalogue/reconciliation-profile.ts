@@ -316,6 +316,62 @@ export function requiredProfileContract(profile: string): ProfileContract {
   return contract;
 }
 
+export function exportedGameProfileSchema(profile: string) {
+  const contract = requiredProfileContract(profile);
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["card", "printing"],
+    properties: {
+      card: exportedSchema(contract.card),
+      printing: exportedSchema(contract.printing),
+    },
+  };
+}
+
+function exportedSchema(schema: Schema): Record<string, unknown> {
+  if (schema.kind === "string") {
+    return {
+      type: schema.nullable ? ["string", "null"] : "string",
+      ...(schema.minimumLength === undefined
+        ? {}
+        : { minLength: schema.minimumLength }),
+    };
+  }
+  if (schema.kind === "integer") {
+    return {
+      type: schema.nullable ? ["integer", "null"] : "integer",
+      minimum: schema.minimum ?? 0,
+    };
+  }
+  if (schema.kind === "boolean") return { type: "boolean" };
+  if (schema.kind === "enum") return { enum: schema.values };
+  if (schema.kind === "array") {
+    return {
+      type: "array",
+      items: exportedSchema(schema.items),
+      ...(schema.unique ? { uniqueItems: true } : {}),
+      ...(schema.minimumItems === undefined
+        ? {}
+        : { minItems: schema.minimumItems }),
+      ...(schema.maximumItems === undefined
+        ? {}
+        : { maxItems: schema.maximumItems }),
+    };
+  }
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: schema.required,
+    properties: Object.fromEntries(
+      Object.entries(schema.properties).map(([field, child]) => [
+        field,
+        exportedSchema(child),
+      ]),
+    ),
+  };
+}
+
 export function canonicalProfileAttributes(
   sourceObservationId: string,
   profile: string,
@@ -376,7 +432,7 @@ function sanitize(
     if (typeof value === "string" && schema.values.includes(value)) {
       return value;
     }
-    warnings.push(vocabularyWarning(
+    warnings.push(sourceVocabularyWarning(
       sourceObservationId,
       profile,
       path,
@@ -420,7 +476,7 @@ function sanitize(
     const child = schema.properties[field];
     const childPath = `${path}.${field}`;
     if (child === undefined) {
-      warnings.push(fieldWarning(
+      warnings.push(sourceFieldWarning(
         sourceObservationId,
         profile,
         childPath,
@@ -487,7 +543,7 @@ function invalid(path: string): Error {
   return new Error(`Retained profile value at ${path} is invalid.`);
 }
 
-function fieldWarning(
+export function sourceFieldWarning(
   sourceObservationId: string,
   profile: string,
   path: string,
@@ -498,13 +554,13 @@ function fieldWarning(
     source_observation_id: sourceObservationId,
     profile,
     path,
-    raw_value: rawValue(raw),
+    raw_value: rawSourceValue(raw),
     detail:
       "The unknown Official Source field remains retained Source Observation evidence and was not added to the Game Profile.",
   };
 }
 
-function vocabularyWarning(
+export function sourceVocabularyWarning(
   sourceObservationId: string,
   profile: string,
   path: string,
@@ -515,13 +571,13 @@ function vocabularyWarning(
     source_observation_id: sourceObservationId,
     profile,
     path,
-    raw_value: rawValue(raw),
+    raw_value: rawSourceValue(raw),
     detail:
       "The unknown controlled value remains retained Source Observation evidence and was not added to the Game Profile.",
   };
 }
 
-function rawValue(value: unknown): string {
+export function rawSourceValue(value: unknown): string {
   return typeof value === "string" ? value : canonicalJson(value);
 }
 

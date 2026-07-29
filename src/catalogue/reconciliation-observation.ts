@@ -7,6 +7,7 @@ import { canonicalJson } from "./serialization";
 import {
   canonicalProfileAttributes,
   requiredProfileContract,
+  sourceFieldWarning,
   type ProfileWarning,
 } from "./reconciliation-profile";
 
@@ -194,9 +195,6 @@ export function parseReconciliationObservation(
   const don =
     identity.kind === "functional_designation" &&
     identity.value === "DON!!";
-  if (don && record.printing !== undefined) {
-    throw new Error("The generic DON!! Card must not invent a Printing.");
-  }
   if (record.printing === undefined) {
     if (
       don &&
@@ -490,7 +488,7 @@ function detectUnknownFields(
   for (const [field, raw] of Object.entries(value)) {
     if (!accepted.has(field)) {
       warnings.push(
-        fieldWarning(
+        sourceFieldWarning(
           sourceObservationId,
           profile,
           prefix === "" ? field : `${prefix}.${field}`,
@@ -499,44 +497,6 @@ function detectUnknownFields(
       );
     }
   }
-}
-
-function fieldWarning(
-  sourceObservationId: string,
-  profile: string,
-  path: string,
-  raw: unknown,
-): ReconciliationWarning {
-  return {
-    code: "unknown_source_field",
-    source_observation_id: sourceObservationId,
-    profile,
-    path,
-    raw_value: rawValue(raw),
-    detail:
-      "The unknown Official Source field remains retained Source Observation evidence and was not added to the Game Profile.",
-  };
-}
-
-function vocabularyWarning(
-  sourceObservationId: string,
-  profile: string,
-  path: string,
-  raw: unknown,
-): ReconciliationWarning {
-  return {
-    code: "unknown_source_vocabulary",
-    source_observation_id: sourceObservationId,
-    profile,
-    path,
-    raw_value: rawValue(raw),
-    detail:
-      "The unknown controlled value remains retained Source Observation evidence and was not added to the Game Profile.",
-  };
-}
-
-function rawValue(value: unknown): string {
-  return typeof value === "string" ? value : canonicalJson(value);
 }
 
 function sortedWarnings(

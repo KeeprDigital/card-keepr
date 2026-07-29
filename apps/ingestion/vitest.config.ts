@@ -295,7 +295,9 @@ function reconciliationSourceDocument(scenario: string) {
   if (
     scenario === "gundam-cross-asia" ||
     scenario === "gundam-cross-us" ||
-    scenario === "gundam-cross-conflict"
+    scenario === "gundam-cross-us-empty" ||
+    scenario === "gundam-cross-conflict" ||
+    scenario === "gundam-card-conflict"
   ) {
     return {
       cards: [
@@ -303,7 +305,10 @@ function reconciliationSourceDocument(scenario: string) {
           game: "gundam",
           profile: "gundam@1",
           cardNumber: "GD99-001",
-          name: "Cross-locale Gundam",
+          name:
+            scenario === "gundam-card-conflict"
+              ? "Contradictory US name"
+              : "Cross-locale Gundam",
           cardAttributes: {
             card_type: "unit",
             colours: ["blue"],
@@ -321,6 +326,22 @@ function reconciliationSourceDocument(scenario: string) {
           printingAttributes: { alternate_art: false },
           locator: `/official/gundam/${scenario}`,
           lineageMarker: "gundam-cross",
+          memberships:
+            scenario === "gundam-cross-us-empty"
+              ? {
+                  products: [],
+                  distribution_contexts: [],
+                  source_buckets: [],
+                }
+              : {
+                  products: [
+                    scenario === "gundam-cross-asia"
+                      ? "product_asia"
+                      : "product_us",
+                  ],
+                  distribution_contexts: [],
+                  source_buckets: ["gundam-card-list"],
+                },
           printedFieldsMarker:
             scenario === "gundam-cross-conflict"
               ? "conflicting"
@@ -363,6 +384,44 @@ function reconciliationSourceDocument(scenario: string) {
             products: [],
             distribution_contexts: [],
             source_buckets: ["don-rules"],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "profile-don-printing") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "ignored-for-don",
+      name: "DON!!",
+      cardAttributes: {
+        card_type: "don",
+        colours: [],
+        cost: null,
+        life: null,
+        battle_attributes: [],
+        power: null,
+        counter: null,
+        traits: [],
+        block_icons: [],
+        effect_text: "Your turn +1000 power.",
+        trigger_text: null,
+      },
+      printingAttributes: { illustration_types: ["original"] },
+      locator: "/official/don/known-design",
+      lineageMarker: "don-known",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            official_identity: {
+              kind: "functional_designation",
+              value: "DON!!",
+            },
           },
         },
       ],

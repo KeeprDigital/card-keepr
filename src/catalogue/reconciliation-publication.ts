@@ -20,11 +20,27 @@ export type NormalizedLifecycle = {
   first_revision_id: string;
   last_observed_revision_id: string;
   withdrawn: boolean;
+  withdrawal?: {
+    revision_id: string;
+    evidence: Record<string, unknown>;
+  } | null;
+};
+
+export type RelationshipEvidence = {
+  source_lineage: string;
+  relationship_kind: "product" | "distribution_context" | "source_bucket";
+  relationship_value: string;
+  source_observation_ids: string[];
+  first_revision_id: string;
+  last_observed_revision_id: string;
+  current: boolean;
+  last_missing_revision_id: string | null;
 };
 
 export type ReconciliationPublicationPlan = {
   cardLifecycles: Record<string, NormalizedLifecycle>;
   printingLifecycles: Record<string, NormalizedLifecycle>;
+  relationshipEvidence: Record<string, RelationshipEvidence[]>;
   statements: D1PreparedStatement[];
 };
 
@@ -50,6 +66,7 @@ export async function reconciliationPublication(
   const result: ReconciliationPublicationPlan = {
     cardLifecycles: {},
     printingLifecycles: {},
+    relationshipEvidence: {},
     statements: [],
   };
 
@@ -68,6 +85,10 @@ export async function reconciliationPublication(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       existing?.withdrawn === 1 || withdraw,
+      withdraw ? revisionId : existing?.withdrawal_revision_id ?? null,
+      withdraw && withdrawal !== null
+        ? canonicalJson(withdrawal)
+        : existing?.withdrawal_evidence_json ?? null,
     );
     result.statements.push(
       cardPersistenceStatement(
@@ -77,6 +98,12 @@ export async function reconciliationPublication(
         revisionId,
         existing,
         withdrawal,
+      ),
+      ...cardObservationStatements(
+        database,
+        grouped,
+        card,
+        revisionId,
       ),
     );
   }
@@ -105,7 +132,6 @@ export async function reconciliationPublication(
     ) {
       throw new Error("One Printing has incompatible publication plans.");
     }
-    const memberships = mergedMemberships(grouped);
     const withdrawal = mergedWithdrawal(grouped, "printing");
     const withdraw =
       withdrawal?.entity === "printing" ||
@@ -118,7 +144,18 @@ export async function reconciliationPublication(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       existing?.withdrawn === 1 || withdraw,
+      withdraw ? revisionId : existing?.withdrawal_revision_id ?? null,
+      withdraw && withdrawal !== null
+        ? canonicalJson(withdrawal)
+        : existing?.withdrawal_evidence_json ?? null,
     );
+    result.relationshipEvidence[printingId] =
+      await nextRelationshipEvidence(
+        database,
+        printingId,
+        grouped,
+        revisionId,
+      );
     result.statements.push(
       printingPersistenceStatement(
         database,
@@ -149,35 +186,47 @@ export async function reconciliationPublication(
             revisionId,
           );
       }),
-      database
-        .prepare(
-          `UPDATE reconciled_printing_memberships
-           SET current = 0, last_missing_revision_id = ?
-           WHERE printing_id = ? AND current = 1`,
-        )
-        .bind(revisionId, printingId),
-      ...membershipEntries(memberships).map((membership) =>
-        database
-          .prepare(
-            `INSERT INTO reconciled_printing_memberships (
-              printing_id, relationship_kind, relationship_value,
-              first_revision_id, last_observed_revision_id,
-              current, last_missing_revision_id
-            ) VALUES (?, ?, ?, ?, ?, 1, NULL)
-            ON CONFLICT (
-              printing_id, relationship_kind, relationship_value
-            ) DO UPDATE SET
-              last_observed_revision_id = excluded.last_observed_revision_id,
-              current = 1,
-              last_missing_revision_id = NULL`,
-          )
-          .bind(
-            printingId,
-            membership.relationship_kind,
-            membership.relationship_value,
-            revisionId,
-            revisionId,
-          ),
+      ...[...new Set(grouped.map((plan) => plan.source_lineage))]
+        .sort()
+        .map((sourceLineage) =>
+          database
+            .prepare(
+              `UPDATE reconciled_printing_memberships
+               SET current = 0, last_missing_revision_id = ?
+               WHERE printing_id = ? AND source_lineage = ? AND current = 1`,
+            )
+            .bind(revisionId, printingId, sourceLineage),
+        ),
+      ...grouped.flatMap((plan) =>
+        membershipEntries(
+          JSON.parse(plan.memberships_json) as Memberships,
+        ).map((membership) =>
+          database
+            .prepare(
+              `INSERT INTO reconciled_printing_memberships (
+                printing_id, source_lineage, source_observation_id,
+                relationship_kind, relationship_value,
+                first_revision_id, last_observed_revision_id,
+                current, last_missing_revision_id
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL)
+              ON CONFLICT (
+                printing_id, source_lineage, source_observation_id,
+                relationship_kind, relationship_value
+              ) DO UPDATE SET
+                last_observed_revision_id = excluded.last_observed_revision_id,
+                current = 1,
+                last_missing_revision_id = NULL`,
+            )
+            .bind(
+              printingId,
+              plan.source_lineage,
+              plan.source_observation_id,
+              membership.relationship_kind,
+              membership.relationship_value,
+              revisionId,
+              revisionId,
+            ),
+        ),
       ),
     );
   }
@@ -246,6 +295,13 @@ async function retainCarriedLifecycles(
         row.document_json,
       );
     }
+    if (
+      candidatePrintingIds.has(row.id) &&
+      result.relationshipEvidence[row.id] === undefined
+    ) {
+      result.relationshipEvidence[row.id] =
+        documentRelationshipEvidence(row.document_json);
+    }
   }
 }
 
@@ -266,7 +322,20 @@ function documentLifecycle(documentJson: string): NormalizedLifecycle {
     first_revision_id: lifecycle.first_revision_id,
     last_observed_revision_id: lifecycle.last_observed_revision_id,
     withdrawn: lifecycle.withdrawn,
+    withdrawal:
+      lifecycle.withdrawal === undefined ? null : lifecycle.withdrawal,
   };
+}
+
+function documentRelationshipEvidence(
+  documentJson: string,
+): RelationshipEvidence[] {
+  const document = JSON.parse(documentJson) as {
+    relationship_evidence?: RelationshipEvidence[];
+  };
+  return Array.isArray(document.relationship_evidence)
+    ? document.relationship_evidence
+    : [];
 }
 
 function cardPersistenceStatement(
@@ -313,6 +382,144 @@ function cardPersistenceStatement(
       revisionId,
       withdraw ? 1 : 0,
       withdraw && withdrawal !== null ? canonicalJson(withdrawal) : null,
+    );
+}
+
+function cardObservationStatements(
+  database: D1Database,
+  plans: readonly CandidatePlanRow[],
+  card: FixtureCandidate["cards"][number],
+  revisionId: string,
+): D1PreparedStatement[] {
+  const deactivatePriorLineageObservations = [
+    ...new Set(plans.map((plan) => plan.source_lineage)),
+  ]
+    .sort()
+    .map((sourceLineage) =>
+      database
+        .prepare(
+          `UPDATE reconciled_card_observations
+           SET current = 0
+           WHERE card_id = ? AND source_lineage = ? AND current = 1`,
+        )
+        .bind(card.id, sourceLineage),
+    );
+  const insertCurrentObservations = plans.map((plan) =>
+    database
+      .prepare(
+        `INSERT INTO reconciled_card_observations (
+          card_id, source_lineage, source_observation_id,
+          catalogue_revision_id, canonical_facts_json, current
+        ) VALUES (?, ?, ?, ?, ?, 1)`,
+      )
+      .bind(
+        card.id,
+        plan.source_lineage,
+        plan.source_observation_id,
+        revisionId,
+        canonicalJson({
+          game: card.game,
+          official_identity: card.official_identity,
+          name: card.name,
+          effective_rules_text: card.effective_rules_text,
+          game_data: card.game_data,
+        }),
+      ),
+  );
+  return [
+    ...deactivatePriorLineageObservations,
+    ...insertCurrentObservations,
+  ];
+}
+
+type MembershipEvidenceRow = {
+  source_lineage: string;
+  source_observation_id: string;
+  relationship_kind: RelationshipEvidence["relationship_kind"];
+  relationship_value: string;
+  first_revision_id: string;
+  last_observed_revision_id: string;
+  current: number;
+  last_missing_revision_id: string | null;
+};
+
+async function nextRelationshipEvidence(
+  database: D1Database,
+  printingId: string,
+  plans: readonly CandidatePlanRow[],
+  revisionId: string,
+): Promise<RelationshipEvidence[]> {
+  const existing = await database
+    .prepare(
+      `SELECT source_lineage, source_observation_id,
+              relationship_kind, relationship_value,
+              first_revision_id, last_observed_revision_id,
+              current, last_missing_revision_id
+       FROM reconciled_printing_memberships
+       WHERE printing_id = ?`,
+    )
+    .bind(printingId)
+    .all<MembershipEvidenceRow>();
+  const observedLineages = new Set(plans.map((plan) => plan.source_lineage));
+  const rows: MembershipEvidenceRow[] = existing.results.map((row) =>
+    row.current === 1 && observedLineages.has(row.source_lineage)
+      ? {
+          ...row,
+          current: 0,
+          last_missing_revision_id: revisionId,
+        }
+      : row,
+  );
+  for (const plan of plans) {
+    const memberships = JSON.parse(plan.memberships_json) as Memberships;
+    for (const membership of membershipEntries(memberships)) {
+      rows.push({
+        source_lineage: plan.source_lineage,
+        source_observation_id: plan.source_observation_id,
+        relationship_kind: membership.relationship_kind,
+        relationship_value: membership.relationship_value,
+        first_revision_id: revisionId,
+        last_observed_revision_id: revisionId,
+        current: 1,
+        last_missing_revision_id: null,
+      });
+    }
+  }
+  return aggregateRelationshipEvidence(rows);
+}
+
+function aggregateRelationshipEvidence(
+  rows: readonly MembershipEvidenceRow[],
+): RelationshipEvidence[] {
+  const grouped = new Map<string, MembershipEvidenceRow[]>();
+  for (const row of rows) {
+    const key = canonicalJson([
+      row.source_lineage,
+      row.relationship_kind,
+      row.relationship_value,
+    ]);
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+  return [...grouped.values()]
+    .map((evidence) => {
+      const current = evidence.filter((row) => row.current === 1);
+      const latest = current.at(-1) ?? evidence.at(-1)!;
+      return {
+        source_lineage: latest.source_lineage,
+        relationship_kind: latest.relationship_kind,
+        relationship_value: latest.relationship_value,
+        source_observation_ids: evidence
+          .map((row) => row.source_observation_id)
+          .sort(),
+        first_revision_id: evidence[0]!.first_revision_id,
+        last_observed_revision_id: latest.last_observed_revision_id,
+        current: current.length > 0,
+        last_missing_revision_id:
+          current.length > 0 ? null : latest.last_missing_revision_id,
+      };
+    })
+    .sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
     );
 }
 
@@ -380,25 +587,6 @@ function groupedPlans(
   return grouped;
 }
 
-function mergedMemberships(plans: readonly CandidatePlanRow[]): Memberships {
-  const products = new Set<string>();
-  const distributionContexts = new Set<string>();
-  const sourceBuckets = new Set<string>();
-  for (const plan of plans) {
-    const membership = JSON.parse(plan.memberships_json) as Memberships;
-    membership.products.forEach((value) => products.add(value));
-    membership.distribution_contexts.forEach((value) =>
-      distributionContexts.add(value),
-    );
-    membership.source_buckets.forEach((value) => sourceBuckets.add(value));
-  }
-  return {
-    products: [...products].sort(),
-    distribution_contexts: [...distributionContexts].sort(),
-    source_buckets: [...sourceBuckets].sort(),
-  };
-}
-
 function mergedWithdrawal(
   plans: readonly CandidatePlanRow[],
   entity: "card" | "printing",
@@ -424,11 +612,23 @@ function normalizedLifecycle(
   firstRevisionId: string,
   lastObservedRevisionId: string,
   withdrawn: boolean,
+  withdrawalRevisionId: string | null,
+  withdrawalEvidenceJson: string | null,
 ): NormalizedLifecycle {
   return {
     first_revision_id: firstRevisionId,
     last_observed_revision_id: lastObservedRevisionId,
     withdrawn,
+    ...(withdrawalRevisionId === null || withdrawalEvidenceJson === null
+      ? {}
+      : {
+          withdrawal: {
+            revision_id: withdrawalRevisionId,
+            evidence: JSON.parse(
+              withdrawalEvidenceJson,
+            ) as Record<string, unknown>,
+          },
+        }),
   };
 }
 

@@ -448,7 +448,6 @@ export async function inspectCandidate(
   const diff = await inspectCatalogueCandidate(database, {
     runId: row.id,
     expectedRevisionId: row.expected_current_revision_id,
-    selectedGames: parseSelectedGames(row.selected_games_json),
     candidate,
     fallbackWarnings: parseWarnings(row.warnings_json),
   });
@@ -606,6 +605,7 @@ async function approveRunAttempt(
       : {
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
+          relationships: reconciliation.relationshipEvidence,
         },
   );
   try {
@@ -1242,12 +1242,20 @@ function cataloguePrinting(
   printing: FixtureCandidate["printings"][number],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
+  relationshipEvidence: readonly Record<string, unknown>[] = [],
 ) {
   return {
     type: "printing",
     ...printing,
     printing_images: [],
-    distribution_contexts: [],
+    distribution_contexts: relationshipEvidence
+      .filter(
+        (relationship) =>
+          relationship.current === true &&
+          relationship.relationship_kind === "distribution_context",
+      )
+      .map((relationship) => relationship.relationship_value),
+    relationship_evidence: relationshipEvidence,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,
@@ -1558,6 +1566,7 @@ async function commitVerifiedPublication(
       printing,
       revisionId,
       input.reconciliation?.printingLifecycles[printing.id],
+      input.reconciliation?.relationshipEvidence[printing.id] ?? [],
     ),
   }));
   await database.batch([
@@ -1794,6 +1803,7 @@ async function reconcileReservedPublication(
       : {
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
+          relationships: reconciliation.relationshipEvidence,
         },
   );
   const exactExport =

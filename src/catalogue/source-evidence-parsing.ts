@@ -106,6 +106,14 @@ export async function parseSnapshot(
       game_profile_version: snapshot.game_profile_version,
       adapter_version: adapter.adapterVersion,
       parsed_at: operation.parsed_at,
+      coverage_proof:
+        adapter.reconciliationCoverage === "synthetic_fixture"
+          ? {
+              kind: "synthetic_fixture",
+              adapter_version: adapter.adapterVersion,
+              parser_contract: adapter.parserContract,
+            }
+          : null,
       evidence_summary: observationEvidenceSummary(observations),
       observations: observations.map((value, index) => ({
         id: `srcobs_${operation.observation_set_id.slice(10)}_${index + 1}`,

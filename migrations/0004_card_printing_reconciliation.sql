@@ -8,6 +8,13 @@ INSERT INTO source_adapter_versions (
   parser_contract
 ) VALUES
   (
+    'fixture-one-piece-json@1',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'synthetic-fixture-card-document@1'
+  ),
+  (
     'fusion-world-en@1',
     'fusion-world-en',
     'fusion-world',
@@ -34,6 +41,34 @@ INSERT INTO source_adapter_versions (
     'gundam',
     'gundam@1',
     'gundam-card-document@1'
+  ),
+  (
+    'fixture-fusion-world-json@1',
+    'fusion-world-en',
+    'fusion-world',
+    'fusion-world@1',
+    'synthetic-fixture-card-document@1'
+  ),
+  (
+    'fixture-digimon-json@1',
+    'digimon-en',
+    'digimon',
+    'digimon@1',
+    'synthetic-fixture-card-document@1'
+  ),
+  (
+    'fixture-gundam-en-asia-json@1',
+    'gundam-en-asia',
+    'gundam',
+    'gundam@1',
+    'synthetic-fixture-card-document@1'
+  ),
+  (
+    'fixture-gundam-en-us-json@1',
+    'gundam-en-us',
+    'gundam',
+    'gundam@1',
+    'synthetic-fixture-card-document@1'
   );
 
 CREATE TABLE reconciled_cards (
@@ -89,6 +124,8 @@ CREATE TABLE reconciled_printing_locators (
 
 CREATE TABLE reconciled_printing_memberships (
   printing_id TEXT NOT NULL REFERENCES reconciled_printings(id),
+  source_lineage TEXT NOT NULL,
+  source_observation_id TEXT NOT NULL,
   relationship_kind TEXT NOT NULL CHECK (
     relationship_kind IN (
       'product',
@@ -101,7 +138,23 @@ CREATE TABLE reconciled_printing_memberships (
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
   last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
-  PRIMARY KEY (printing_id, relationship_kind, relationship_value)
+  PRIMARY KEY (
+    printing_id,
+    source_lineage,
+    source_observation_id,
+    relationship_kind,
+    relationship_value
+  )
+);
+
+CREATE TABLE reconciled_card_observations (
+  card_id TEXT NOT NULL REFERENCES reconciled_cards(id),
+  source_lineage TEXT NOT NULL,
+  source_observation_id TEXT NOT NULL,
+  catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  canonical_facts_json TEXT NOT NULL,
+  current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
+  PRIMARY KEY (card_id, source_lineage, source_observation_id)
 );
 
 CREATE UNIQUE INDEX source_observation_set_snapshot_identity
