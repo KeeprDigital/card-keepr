@@ -23,6 +23,8 @@ export default defineConfig({
           ADMINISTRATION_KEY_REPLACEMENT:
             "vitest-administration-key-replacement-slot",
           ADMINISTRATION_CLOCK_MODE: "request",
+          CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
+            "vitest-boundary-attestation-key",
           TEST_MIGRATIONS: migrations,
         },
         outboundService: async (request) => {

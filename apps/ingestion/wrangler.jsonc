@@ -5,7 +5,11 @@
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "ADMINISTRATION_CLOCK_MODE": "system"
+    "ADMINISTRATION_CLOCK_MODE": "system",
+    "CLOUDFLARE_ACCOUNT_ID": "0123456789abcdef0123456789abcdef",
+    "CATALOGUE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000001",
+    "DISPOSABLE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000002",
+    "GITHUB_REPOSITORY_ID": "repository-KeeprDigital-card-keepr"
   },
   "placement": {
     "mode": "smart"

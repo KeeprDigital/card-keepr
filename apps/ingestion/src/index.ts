@@ -91,6 +91,14 @@ export default {
         request,
         env.CATALOGUE_DB,
         observedAt,
+        {
+          cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+          catalogue_d1_database_id: env.CATALOGUE_D1_DATABASE_ID,
+          disposable_d1_database_id:
+            env.DISPOSABLE_D1_DATABASE_ID,
+          github_repository_id: env.GITHUB_REPOSITORY_ID,
+        },
+        env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
       );
       if (credentialResponse !== null) return credentialResponse;
 

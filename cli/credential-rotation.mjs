@@ -1,42 +1,18 @@
-import { createHash } from "node:crypto";
+import {
+  createHash,
+  timingSafeEqual,
+} from "node:crypto";
 import { readFileSync } from "node:fs";
+import {
+  isCredentialClass,
+  resolveCredentialIdentity,
+} from "../src/credentials/credential-catalogue.mjs";
 import {
   exitCodeForStatus,
   parseOptions,
   writeCliFailure,
 } from "./command-support.mjs";
 import { executeCredentialBoundary } from "./credential-boundary.mjs";
-
-const targets = {
-  api_bearer_key: {
-    resource: "worker:card-keepr-api",
-    boundary: "api_worker",
-    verification: "worker-health:card-keepr-api",
-    runtime: "api",
-  },
-  ingestion_admin_key: {
-    resource: "worker:card-keepr-ingestion",
-    boundary: "ingestion_worker",
-    verification: "worker-health:card-keepr-ingestion",
-    runtime: "ingestion",
-  },
-  d1_export_token: {
-    resource: "d1:card-keepr-catalogue",
-    boundary: "d1_export_operation",
-    verification: "cloudflare:d1:card-keepr-catalogue:export",
-  },
-  d1_verification_token: {
-    resource: "d1:disposable-verification",
-    boundary: "disposable_verification",
-    verification: "cloudflare:d1:disposable-verification:edit",
-  },
-  github_deployment_token: {
-    resource: "worker-release:card-keepr",
-    boundary: "production_release_workflow",
-    verification:
-      "github:KeeprDigital/card-keepr:environment:production",
-  },
-};
 
 export async function runCredentialCommand(
   arguments_,
@@ -54,38 +30,44 @@ export async function runCredentialCommand(
 }
 
 async function mutate(action, arguments_, environment, json) {
-  const options = parse(arguments_);
+  const options = parseMutation(arguments_);
   if (options.error !== null) return usage(json);
   const credentialClass = options.values["--credential-class"];
-  const expected = targets[credentialClass];
-  const identity = {
-    credential_class: credentialClass,
-    environment: options.values["--environment"],
-    resource_identity: options.values["--resource"],
-    owning_boundary: options.values["--boundary"],
-    verification_target: options.values["--verification-target"],
-  };
-  if (
-    expected === undefined ||
-    identity.environment !== "production" ||
-    identity.resource_identity !== expected.resource ||
-    identity.owning_boundary !== expected.boundary ||
-    identity.verification_target !== expected.verification
-  ) {
+  if (!isCredentialClass(credentialClass)) {
     return failure(
       json,
-      "stale_credential_identity",
-      "The resolved credential boundary identity is stale.",
-      7,
+      "invalid_credential_class",
+      "The credential class is not supported.",
+      2,
     );
+  }
+  const context = {
+    cloudflare_account_id:
+      options.values["--cloudflare-account-id"],
+    catalogue_d1_database_id:
+      options.values["--catalogue-d1-database-id"],
+    disposable_d1_database_id:
+      options.values["--disposable-d1-database-id"],
+    github_repository_id:
+      options.values["--github-repository-id"],
+  };
+  const identity = resolveCredentialIdentity(credentialClass, context);
+  if (identity === undefined) return usage(json);
+  const expectedGeneration = Number.parseInt(
+    options.values["--expected-state-generation"],
+    10,
+  );
+  if (
+    !Number.isSafeInteger(expectedGeneration) ||
+    expectedGeneration < 0
+  ) {
+    return usage(json);
   }
   const secretFields = [
     "administration_key",
-    ...(action === "install" || action === "revoke"
-      ? ["old_secret"]
-      : []),
-    ...(action === "install" || action === "verify"
-      ? ["replacement_secret"]
+    "management_credential",
+    ...(action === "install"
+      ? ["old_secret", "replacement_secret"]
       : []),
   ];
   const secrets = readSecrets(
@@ -96,180 +78,155 @@ async function mutate(action, arguments_, environment, json) {
     return failure(json, "secret_input_error", secrets.error, 2);
   }
   const oldFingerprint =
-    secrets.values.old_secret === undefined
-      ? options.values["--expected-old-fingerprint"]
-      : fingerprint(secrets.values.old_secret);
+    options.values["--expected-old-fingerprint"];
   const replacementFingerprint =
-    secrets.values.replacement_secret === undefined
-      ? options.values["--expected-replacement-fingerprint"]
-      : fingerprint(secrets.values.replacement_secret);
+    options.values["--expected-replacement-fingerprint"];
   if (
-    oldFingerprint !== options.values["--expected-old-fingerprint"] ||
-    replacementFingerprint !==
-      options.values["--expected-replacement-fingerprint"]
+    action === "install" &&
+    (!equalFingerprint(
+      fingerprint(secrets.values.old_secret),
+      oldFingerprint,
+    ) ||
+      !equalFingerprint(
+        fingerprint(secrets.values.replacement_secret),
+        replacementFingerprint,
+      ))
   ) {
     return failure(
       json,
       "stale_credential_identity",
-      "A supplied credential does not match its expected active fingerprint.",
+      "A supplied credential does not match its expected fingerprint.",
       7,
     );
   }
-  const confirmation = [
+
+  const planRequest = {
     action,
-    options.values["--rotation-id"],
-    identity.credential_class,
-    identity.environment,
-    identity.resource_identity,
-    identity.owning_boundary,
-    identity.verification_target,
-    oldFingerprint,
-    replacementFingerprint,
-    options.values["--idempotency-key"],
-  ].join(":");
+    rotation_id: options.values["--rotation-id"],
+    credential_class: credentialClass,
+    environment: "production",
+    cloudflare_account_id: context.cloudflare_account_id,
+    resource_identity: identity.resource_identity,
+    owning_boundary: identity.owning_boundary,
+    verification_target: identity.verification_target,
+    expected_catalogue_revision_id:
+      options.values["--expected-catalogue-revision"],
+    expected_state_generation: expectedGeneration,
+    old_fingerprint: oldFingerprint,
+    replacement_fingerprint: replacementFingerprint,
+    old_issuer_credential_id:
+      options.values["--old-issuer-credential-id"],
+    replacement_issuer_credential_id:
+      options.values["--replacement-issuer-credential-id"],
+    management_credential_id:
+      options.values["--management-credential-id"],
+    idempotency_key: options.values["--idempotency-key"],
+  };
+  const planned = await requestDocument(
+    environment,
+    "/v1/credential-rotation-plans",
+    "POST",
+    planRequest,
+    secrets.values.administration_key,
+  );
+  if (!planned.ok) return requestFailure(json, planned);
+  const plan = planned.document;
+  if (
+    plan?.contract !== "card-keepr-credential-rotation-plan@1" ||
+    typeof plan.plan_digest !== "string" ||
+    typeof plan.plan_nonce !== "string"
+  ) {
+    return failure(
+      json,
+      "invalid_administration_contract",
+      "ingestion runtime returned an invalid transition plan",
+      8,
+    );
+  }
+  if (plan.status === "finalized") {
+    const completed = await requestDocument(
+      environment,
+      `/v1/credential-rotations/${encodeURIComponent(
+        plan.rotation_id,
+      )}`,
+      "GET",
+      undefined,
+      secrets.values.administration_key,
+    );
+    if (!completed.ok) return requestFailure(json, completed);
+    writeSuccess(json, completed.document);
+    return 0;
+  }
+  if (!["reserved", "executing"].includes(plan.status)) {
+    return failure(
+      json,
+      "credential_plan_expired",
+      "The credential transition plan is no longer executable.",
+      7,
+    );
+  }
+  const confirmation = confirmationText(plan);
   if (
     !options.flags.has("--yes") ||
     options.values["--confirm"] !== confirmation
   ) {
-    return usage(json);
+    return failure(
+      json,
+      "confirmation_required",
+      `Re-run with --confirm ${confirmation}`,
+      2,
+    );
   }
-
-  let receipt;
-  if (action === "install") {
-    const oldProbe = await proveBoundary(
-      "probe-old",
-      identity,
-      secrets.values.old_secret,
-      expected,
-      environment,
-    );
-    if (!oldProbe.ok) return boundaryFailure(json, oldProbe);
-    const installed = await executeCredentialBoundary(
-      "install",
-      identity,
-      secrets.values.replacement_secret,
-      environment,
-    );
-    if (!installed.ok) return boundaryFailure(json, installed);
-    receipt = installed.receipt;
-  } else if (action === "verify") {
-    const verified = await proveBoundary(
-      "verify",
-      identity,
-      secrets.values.replacement_secret,
-      expected,
-      environment,
-    );
-    if (!verified.ok) return boundaryFailure(json, verified);
-    receipt = verified.receipt;
-  } else {
-    const revoked = await executeCredentialBoundary(
-      "revoke",
-      identity,
-      secrets.values.old_secret,
-      environment,
-    );
-    if (!revoked.ok) return boundaryFailure(json, revoked);
-    receipt = revoked.receipt;
-  }
-
-  const rotationId = options.values["--rotation-id"];
-  const body = {
-    ...identity,
-    boundary_receipt: receipt,
-    idempotency_key: options.values["--idempotency-key"],
-    ...(action === "install"
-      ? {
-          rotation_id: rotationId,
-          old_fingerprint: oldFingerprint,
-          replacement_fingerprint: replacementFingerprint,
-        }
-      : action === "verify"
-        ? { replacement_fingerprint: replacementFingerprint }
-        : {
-            old_fingerprint: oldFingerprint,
-            replacement_fingerprint: replacementFingerprint,
-          }),
-  };
-  return request(
+  const claimed = await requestDocument(
     environment,
-    json,
-    action === "install"
-      ? "/v1/credential-rotations"
-      : `/v1/credential-rotations/${encodeURIComponent(rotationId)}/${
-          action === "verify" ? "verification" : "revocation"
-        }`,
+    `/v1/credential-rotation-plans/${encodeURIComponent(
+      plan.id,
+    )}/execution`,
     "POST",
-    body,
+    { plan_digest: plan.plan_digest },
     secrets.values.administration_key,
   );
-}
-
-async function proveBoundary(
-  action,
-  identity,
-  secret,
-  target,
-  environment,
-) {
-  if (target.runtime === undefined) {
-    return executeCredentialBoundary(
-      action,
-      identity,
-      secret,
-      environment,
+  if (!claimed.ok) return requestFailure(json, claimed);
+  if (
+    claimed.document?.contract !==
+      "card-keepr-credential-rotation-plan@1" ||
+    claimed.document.status !== "executing" ||
+    !equalDigest(
+      claimed.document.plan_digest,
+      plan.plan_digest,
+    )
+  ) {
+    return failure(
+      json,
+      "invalid_administration_contract",
+      "ingestion runtime returned an invalid execution claim",
+      8,
     );
   }
-  const base =
-    target.runtime === "api"
-      ? environment.KEEPR_API_URL ?? "http://127.0.0.1:8787"
-      : environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788";
-  let response;
-  try {
-    response = await fetch(new URL("/health", base), {
-      headers: { authorization: `Bearer ${secret}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return {
-      ok: false,
-      code: "credential_boundary_operation_failed",
-      detail: "The owning Worker boundary was unavailable.",
-    };
+
+  const boundary = await executeCredentialBoundary(
+    claimed.document,
+    secrets.values,
+    environment,
+  );
+  if (!boundary.ok) {
+    return failure(json, boundary.code, boundary.detail, 9);
   }
-  let document;
-  try {
-    document = await response.json();
-  } catch {
-    document = null;
-  }
-  if (
-    !response.ok ||
-    document?.contract !== "card-keepr-runtime-health@1" ||
-    document.runtime !== target.runtime ||
-    document.status !== "ok"
-  ) {
-    return {
-      ok: false,
-      code: "stale_credential_identity",
-      detail:
-        "The credential did not authenticate at its exact owning Worker boundary.",
-    };
-  }
-  return {
-    ok: true,
-    receipt: `receipt:worker-health:${createHash("sha256")
-      .update(
-        [
-          action,
-          identity.credential_class,
-          identity.resource_identity,
-          identity.verification_target,
-          fingerprint(secret),
-        ].join("\0"),
-      )
-      .digest("hex")}`,
-  };
+  const finalized = await requestDocument(
+    environment,
+    `/v1/credential-rotation-plans/${encodeURIComponent(
+      plan.id,
+    )}/finalization`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      boundary_attestation: boundary.attestation,
+    },
+    secrets.values.administration_key,
+  );
+  if (!finalized.ok) return requestFailure(json, finalized);
+  writeSuccess(json, finalized.document);
+  return 0;
 }
 
 async function show(arguments_, environment, json) {
@@ -278,26 +235,33 @@ async function show(arguments_, environment, json) {
   if (options.error !== null || rotationId === undefined) {
     return usage(json);
   }
-  return request(
+  const response = await requestDocument(
     environment,
-    json,
     `/v1/credential-rotations/${encodeURIComponent(rotationId)}`,
     "GET",
     undefined,
     environment.KEEPR_ADMINISTRATION_KEY,
   );
+  if (!response.ok) return requestFailure(json, response);
+  writeSuccess(json, response.document);
+  return 0;
 }
 
-function parse(arguments_) {
+function parseMutation(arguments_) {
   const valueOptions = [
     "--rotation-id",
     "--credential-class",
-    "--environment",
-    "--resource",
-    "--boundary",
-    "--verification-target",
+    "--cloudflare-account-id",
+    "--catalogue-d1-database-id",
+    "--disposable-d1-database-id",
+    "--github-repository-id",
+    "--expected-catalogue-revision",
+    "--expected-state-generation",
     "--expected-old-fingerprint",
     "--expected-replacement-fingerprint",
+    "--old-issuer-credential-id",
+    "--replacement-issuer-credential-id",
+    "--management-credential-id",
     "--idempotency-key",
     "--secrets-stdin-fd",
     "--confirm",
@@ -318,6 +282,28 @@ function parse(arguments_) {
   };
 }
 
+function confirmationText(plan) {
+  return [
+    plan.action,
+    plan.rotation_id,
+    plan.credential_class,
+    plan.environment,
+    plan.cloudflare_account_id,
+    plan.resource_identity,
+    plan.owning_boundary,
+    plan.expected_catalogue_revision_id,
+    plan.expected_state_generation,
+    plan.old_fingerprint,
+    plan.replacement_fingerprint,
+    plan.verification_target,
+    plan.plan_digest,
+    plan.idempotency_key,
+    plan.old_issuer_credential_id,
+    plan.replacement_issuer_credential_id,
+    plan.management_credential_id,
+  ].join(":");
+}
+
 function readSecrets(descriptor, required) {
   if (!/^(0|[3-9]|[1-9][0-9]+)$/.test(descriptor ?? "")) {
     return {
@@ -334,8 +320,8 @@ function readSecrets(descriptor, required) {
       values: {},
     };
   }
-  if (Buffer.byteLength(text) > 16_384) {
-    return { error: "The secrets input exceeds 16 KiB.", values: {} };
+  if (Buffer.byteLength(text) > 32_768) {
+    return { error: "The secrets input exceeds 32 KiB.", values: {} };
   }
   let values;
   try {
@@ -364,21 +350,48 @@ function fingerprint(secret) {
   return `sha256:${createHash("sha256").update(secret).digest("hex")}`;
 }
 
-async function request(
+function equalFingerprint(left, right) {
+  const leftBytes = fingerprintBytes(left);
+  const rightBytes = fingerprintBytes(right);
+  return timingSafeEqual(leftBytes, rightBytes);
+}
+
+function fingerprintBytes(value) {
+  const match = /^sha256:([0-9a-f]{64})$/.exec(value ?? "");
+  return match === null
+    ? Buffer.alloc(32)
+    : Buffer.from(match[1], "hex");
+}
+
+function equalDigest(left, right) {
+  const leftMatch = /^[0-9a-f]{64}$/.exec(left ?? "");
+  const rightMatch = /^[0-9a-f]{64}$/.exec(right ?? "");
+  return (
+    leftMatch !== null &&
+    rightMatch !== null &&
+    timingSafeEqual(
+      Buffer.from(left, "hex"),
+      Buffer.from(right, "hex"),
+    )
+  );
+}
+
+async function requestDocument(
   environment,
-  json,
   pathname,
   method,
   body,
   administrationKey,
 ) {
   if (!administrationKey) {
-    return failure(
-      json,
-      "configuration_error",
-      "Missing administration credential input.",
-      2,
-    );
+    return {
+      ok: false,
+      status: 0,
+      document: {
+        code: "configuration_error",
+        detail: "Missing administration credential input.",
+      },
+    };
   }
   let response;
   try {
@@ -401,57 +414,64 @@ async function request(
       },
     );
   } catch {
-    return failure(
-      json,
-      "runtime_unavailable",
-      "ingestion runtime is unavailable",
-      9,
-    );
+    return {
+      ok: false,
+      status: 0,
+      document: {
+        code: "runtime_unavailable",
+        detail: "ingestion runtime is unavailable",
+      },
+    };
   }
   let document;
   try {
     document = await response.json();
   } catch {
-    return failure(
-      json,
-      "invalid_administration_contract",
-      "ingestion runtime returned invalid JSON",
-      8,
-    );
+    return {
+      ok: false,
+      status: response.status,
+      document: {
+        code: "invalid_administration_contract",
+        detail: "ingestion runtime returned invalid JSON",
+      },
+    };
   }
-  if (!response.ok) {
-    return failure(
-      json,
-      typeof document?.code === "string"
-        ? document.code
-        : "administration_error",
-      typeof document?.detail === "string"
-        ? document.detail
-        : `ingestion runtime returned HTTP ${response.status}`,
-      exitCodeForStatus(response.status),
-    );
-  }
-  if (json) process.stdout.write(`${JSON.stringify(document)}\n`);
-  else {
-    process.stdout.write(
-      [
-        `Credential rotation ${document.id}: ${document.state}`,
-        `Class: ${document.credential_class}`,
-        `Environment: ${document.environment}`,
-        `Resource: ${document.resource_identity}`,
-        `Boundary: ${document.owning_boundary}`,
-        `Verification target: ${document.verification_target}`,
-        `Old fingerprint: ${document.old_fingerprint}`,
-        `Replacement fingerprint: ${document.replacement_fingerprint}`,
-        `Operation: ${document.operation_code}`,
-      ].join("\n") + "\n",
-    );
-  }
-  return 0;
+  return { ok: response.ok, status: response.status, document };
 }
 
-function boundaryFailure(json, result) {
-  return failure(json, result.code, result.detail, 9);
+function requestFailure(json, response) {
+  return failure(
+    json,
+    typeof response.document?.code === "string"
+      ? response.document.code
+      : "administration_error",
+    typeof response.document?.detail === "string"
+      ? response.document.detail
+      : `ingestion runtime returned HTTP ${response.status}`,
+    response.status === 0
+      ? 9
+      : exitCodeForStatus(response.status),
+  );
+}
+
+function writeSuccess(json, document) {
+  if (json) {
+    process.stdout.write(`${JSON.stringify(document)}\n`);
+    return;
+  }
+  process.stdout.write(
+    [
+      `Credential rotation ${document.id}: ${document.state}`,
+      `Class: ${document.credential_class}`,
+      `Environment: ${document.environment}`,
+      `Resource: ${document.resource_identity}`,
+      `Boundary: ${document.owning_boundary}`,
+      `Verification target: ${document.verification_target}`,
+      `Old fingerprint: ${document.old_fingerprint}`,
+      `Replacement fingerprint: ${document.replacement_fingerprint}`,
+      `Operation: ${document.operation_code}`,
+    ].join("\n") + "\n",
+  );
 }
 
 function usage(json) {

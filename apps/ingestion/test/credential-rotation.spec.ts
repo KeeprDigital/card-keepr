@@ -11,128 +11,178 @@ declare global {
   }
 }
 
+const accountId = "0123456789abcdef0123456789abcdef";
+const catalogueDatabaseId =
+  "00000000-0000-0000-0000-000000000001";
+
 beforeEach(async () => {
   await applyD1Migrations(env.CATALOGUE_DB, env.TEST_MIGRATIONS);
+  await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_rotation_plans",
+  ).run();
   await env.CATALOGUE_DB.prepare(
     "DELETE FROM credential_rotations",
   ).run();
   await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET recovery_health = 'healthy', active_ingestion_run_id = NULL WHERE singleton = 1",
+    `UPDATE operation_state
+     SET recovery_health = 'healthy', active_ingestion_run_id = NULL,
+         credential_rotation_generation = 0
+     WHERE singleton = 1`,
   ).run();
 });
 
 afterEach(async () => {
   await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_rotation_plans",
+  ).run();
+  await env.CATALOGUE_DB.prepare(
     "DELETE FROM credential_rotations",
   ).run();
   await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
+    `UPDATE operation_state
+     SET recovery_health = 'healthy', active_ingestion_run_id = NULL,
+         credential_rotation_generation = 0
+     WHERE singleton = 1`,
   ).run();
 });
 
-test("safe owning-boundary proofs advance only installed, verified, then revoked with idempotent replay", async () => {
-  const installBody = installation("api_bearer_key", {
-    rotation_id: "credrot_api_001",
-    old_fingerprint: await fingerprint("old-api-secret"),
-    replacement_fingerprint: await fingerprint("replacement-api-secret"),
-    idempotency_key: "install-api-001",
-  });
-  expect(JSON.stringify(installBody)).not.toContain("old-api-secret");
-  expect(JSON.stringify(installBody)).not.toContain(
-    "replacement-api-secret",
-  );
-
-  const installed = await administrationRequest(
-    "/v1/credential-rotations",
+test("recovery rejects reservation and only a signed exact attestation atomically finalizes the immutable plan", async () => {
+  const reservedAt = "2026-07-29T00:00:00.000Z";
+  const executionStartedAt = "2026-07-29T00:04:00.000Z";
+  const finalizedAt = "2026-07-29T00:10:00.000Z";
+  const request = await planInput("install", "api_bearer_key", 0);
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
+  ).run();
+  const rejected = await administrationRequest(
+    "/v1/credential-rotation-plans",
     "POST",
-    installBody,
+    request,
+    undefined,
+    reservedAt,
   );
-  expect(installed.status).toBe(201);
-  const installationDocument = await installed.json<{
-    state: string;
-    old_fingerprint: string;
-    replacement_fingerprint: string;
-  }>();
-  expect(installationDocument).toMatchObject({
-    contract: "card-keepr-credential-rotation@1",
-    id: "credrot_api_001",
+  expect(rejected.status).toBe(409);
+  await expect(rejected.json()).resolves.toMatchObject({
+    code: "recovery_in_progress",
+  });
+
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
+  ).run();
+  const plan = await reserve(request, reservedAt);
+  expect(plan).toMatchObject({
+    contract: "card-keepr-credential-rotation-plan@1",
+    action: "install",
+    status: "reserved",
+    expected_catalogue_revision_id: "catrev_spine_000",
+    expected_state_generation: 0,
+  });
+  await execute(plan, executionStartedAt);
+
+  const fabricated = await finalize(plan, `v1.${base64Url("{}")}.${"0".repeat(64)}`);
+  expect(fabricated.status).toBe(409);
+  await expect(fabricated.json()).resolves.toMatchObject({
+    code: "invalid_boundary_attestation",
+  });
+
+  const attestation = await signedAttestation(
+    plan,
+    "usable",
+    finalizedAt,
+  );
+  const finalized = await finalize(
+    plan,
+    attestation,
+    finalizedAt,
+  );
+  expect(finalized.status).toBe(200);
+  await expect(finalized.json()).resolves.toMatchObject({
+    id: request.rotation_id,
     state: "replacement_installed",
-    verification_target: "worker-health:card-keepr-api",
     operation_code: "ok",
   });
-
-  const replay = await administrationRequest(
-    "/v1/credential-rotations",
-    "POST",
-    installBody,
-  );
-  expect(replay.status).toBe(201);
+  const replay = await finalize(plan, attestation);
+  expect(replay.status).toBe(200);
   await expect(replay.json()).resolves.toMatchObject({
     operation_code: "idempotent_replay",
   });
-
-  const reused = await administrationRequest(
-    "/v1/credential-rotations",
+  const planRetry = await administrationRequest(
+    "/v1/credential-rotation-plans",
     "POST",
-    {
-      ...installBody,
-      boundary_receipt: "receipt:changed-install-proof",
-    },
+    request,
   );
-  expect(reused.status).toBe(409);
-  await expect(reused.json()).resolves.toMatchObject({
-    code: "idempotency_key_reused",
+  expect(planRetry.status).toBe(201);
+  await expect(planRetry.json()).resolves.toMatchObject({
+    id: plan.id,
+    plan_digest: plan.plan_digest,
+    status: "finalized",
   });
 
-  const premature = await administrationRequest(
-    "/v1/credential-rotations/credrot_api_001/revocation",
-    "POST",
-    transition("api_bearer_key", {
-      old_fingerprint: installationDocument.old_fingerprint,
-      replacement_fingerprint:
-        installationDocument.replacement_fingerprint,
-      idempotency_key: "revoke-api-001",
-      boundary_receipt: "receipt:api-old-revoked-proof",
-    }),
+  const tampered = await finalize(
+    plan,
+    `${attestation.slice(0, -1)}${attestation.endsWith("0") ? "1" : "0"}`,
   );
-  expect(premature.status).toBe(409);
-  await expect(premature.json()).resolves.toMatchObject({
-    code: "replacement_not_verified",
+  expect(tampered.status).toBe(409);
+  await expect(tampered.json()).resolves.toMatchObject({
+    code: "credential_attestation_replayed",
+  });
+});
+
+test("the durable public sequence is installed then verified then issuer-old revoked", async () => {
+  const install = await planInput(
+    "install",
+    "d1_export_token",
+    0,
+    "credrot_export_lifecycle",
+  );
+  const installedPlan = await reserve(install);
+  await execute(installedPlan);
+  const installed = await finalize(
+    installedPlan,
+    await signedAttestation(installedPlan, "usable"),
+  );
+  await expect(installed.json()).resolves.toMatchObject({
+    state: "replacement_installed",
   });
 
-  const verified = await administrationRequest(
-    "/v1/credential-rotations/credrot_api_001/verification",
-    "POST",
-    transition("api_bearer_key", {
-      replacement_fingerprint:
-        installationDocument.replacement_fingerprint,
-      idempotency_key: "verify-api-001",
-      boundary_receipt: "receipt:api-replacement-verified-proof",
-    }),
+  const verify = await planInput(
+    "verify",
+    "d1_export_token",
+    1,
+    install.rotation_id,
+    install.old_fingerprint,
+    install.replacement_fingerprint,
   );
-  expect(verified.status).toBe(200);
+  const verifiedPlan = await reserve(verify);
+  await execute(verifiedPlan);
+  const verified = await finalize(
+    verifiedPlan,
+    await signedAttestation(verifiedPlan, "usable"),
+  );
   await expect(verified.json()).resolves.toMatchObject({
     state: "replacement_verified",
   });
 
-  const revoked = await administrationRequest(
-    "/v1/credential-rotations/credrot_api_001/revocation",
-    "POST",
-    transition("api_bearer_key", {
-      old_fingerprint: installationDocument.old_fingerprint,
-      replacement_fingerprint:
-        installationDocument.replacement_fingerprint,
-      idempotency_key: "revoke-api-001",
-      boundary_receipt: "receipt:api-old-revoked-proof",
-    }),
+  const revoke = await planInput(
+    "revoke",
+    "d1_export_token",
+    2,
+    install.rotation_id,
+    install.old_fingerprint,
+    install.replacement_fingerprint,
   );
-  expect(revoked.status).toBe(200);
+  const revokedPlan = await reserve(revoke);
+  await execute(revokedPlan);
+  const revoked = await finalize(
+    revokedPlan,
+    await signedAttestation(revokedPlan, "unusable"),
+  );
   await expect(revoked.json()).resolves.toMatchObject({
     state: "old_revoked",
   });
 });
 
-test("all five credential classes resolve separate least-privilege boundaries", async () => {
+test("all five classes resolve distinct exact account, resource, boundary, target, and permission plans", async () => {
   for (const credentialClass of [
     "api_bearer_key",
     "ingestion_admin_key",
@@ -140,57 +190,29 @@ test("all five credential classes resolve separate least-privilege boundaries", 
     "d1_verification_token",
     "github_deployment_token",
   ] as const) {
-    const response = await administrationRequest(
-      "/v1/credential-rotations",
-      "POST",
-      installation(credentialClass, {
-        rotation_id: `credrot_${credentialClass}`,
-        old_fingerprint: await fingerprint(`old-${credentialClass}`),
-        replacement_fingerprint: await fingerprint(
-          `replacement-${credentialClass}`,
-        ),
-        idempotency_key: `install-${credentialClass}`,
-      }),
+    const request = await planInput(
+      "install",
+      credentialClass,
+      0,
+      `credrot_${credentialClass}`,
     );
-    expect(response.status).toBe(201);
-    await expect(response.json()).resolves.toMatchObject(
-      identities[credentialClass],
-    );
+    const plan = await reserve(request);
+    expect(plan).toMatchObject({
+      credential_class: credentialClass,
+      cloudflare_account_id: accountId,
+      ...identities[credentialClass],
+    });
   }
 });
 
-test("stale identities, wrong classes, and blocked recovery fail with stable codes", async () => {
-  const unsafeReceipt = await administrationRequest(
-    "/v1/credential-rotations",
-    "POST",
-    {
-      ...installation("api_bearer_key", {
-        rotation_id: "credrot_unsafe_receipt",
-        old_fingerprint: await fingerprint("old-unsafe-receipt"),
-        replacement_fingerprint: await fingerprint(
-          "new-unsafe-receipt",
-        ),
-        idempotency_key: "install-unsafe-receipt",
-      }),
-      boundary_receipt: "provider output with whitespace",
-    },
-  );
-  expect(unsafeReceipt.status).toBe(422);
-  await expect(unsafeReceipt.json()).resolves.toMatchObject({
-    code: "invalid_boundary_receipt",
-  });
-
+test("stale identity, wrong class, stale generation, and wrong administration credential fail before execution", async () => {
+  const request = await planInput("install", "api_bearer_key", 0);
   const stale = await administrationRequest(
-    "/v1/credential-rotations",
+    "/v1/credential-rotation-plans",
     "POST",
     {
-      ...installation("api_bearer_key", {
-        rotation_id: "credrot_stale",
-        old_fingerprint: await fingerprint("old-stale"),
-        replacement_fingerprint: await fingerprint("new-stale"),
-        idempotency_key: "install-stale",
-      }),
-      verification_target: "cloudflare:arbitrary-success-url",
+      ...request,
+      verification_target: "cloudflare-account:wrong:worker:wrong",
     },
   );
   expect(stale.status).toBe(409);
@@ -198,122 +220,253 @@ test("stale identities, wrong classes, and blocked recovery fail with stable cod
     code: "stale_credential_identity",
   });
 
-  const installed = await administrationRequest(
-    "/v1/credential-rotations",
-    "POST",
-    installation("api_bearer_key", {
-      rotation_id: "credrot_validation",
-      old_fingerprint: await fingerprint("old-validation"),
-      replacement_fingerprint: await fingerprint("new-validation"),
-      idempotency_key: "install-validation",
-    }),
-  );
-  const document = await installed.json<{
-    replacement_fingerprint: string;
-  }>();
   const wrongClass = await administrationRequest(
-    "/v1/credential-rotations/credrot_validation/verification",
+    "/v1/credential-rotation-plans",
     "POST",
-    transition("ingestion_admin_key", {
-      replacement_fingerprint: document.replacement_fingerprint,
-      idempotency_key: "verify-wrong-class",
-      boundary_receipt: "receipt:wrong-class-proof",
-    }),
+    {
+      ...request,
+      credential_class: "ingestion_admin_key",
+    },
   );
   expect(wrongClass.status).toBe(409);
   await expect(wrongClass.json()).resolves.toMatchObject({
-    code: "credential_class_mismatch",
+    code: "stale_credential_identity",
   });
 
-  await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
-  ).run();
-  const blocked = await administrationRequest(
-    "/v1/credential-rotations/credrot_validation/verification",
+  const aliasedManagement = await administrationRequest(
+    "/v1/credential-rotation-plans",
     "POST",
-    transition("api_bearer_key", {
-      replacement_fingerprint: document.replacement_fingerprint,
-      idempotency_key: "verify-blocked",
-      boundary_receipt: "receipt:blocked-proof",
-    }),
+    {
+      ...request,
+      management_credential_id:
+        request.old_issuer_credential_id,
+    },
   );
-  expect(blocked.status).toBe(409);
-  await expect(blocked.json()).resolves.toMatchObject({
-    code: "recovery_in_progress",
+  expect(aliasedManagement.status).toBe(422);
+  await expect(aliasedManagement.json()).resolves.toMatchObject({
+    code: "invalid_provider_credential_identity",
   });
-});
 
-test("a self-consistent wrong administration old secret cannot reach installation through the Worker boundary", async () => {
-  const wrongOld = "self-consistent-but-not-active";
-  const response = await administrationRequest(
-    "/v1/credential-rotations",
+  const staleGeneration = await administrationRequest(
+    "/v1/credential-rotation-plans",
     "POST",
-    installation("ingestion_admin_key", {
-      rotation_id: "credrot_wrong_old",
-      old_fingerprint: await fingerprint(wrongOld),
-      replacement_fingerprint: await fingerprint("replacement-admin"),
-      idempotency_key: "install-wrong-old",
-    }),
-    wrongOld,
+    { ...request, expected_state_generation: 7 },
   );
-  expect(response.status).toBe(401);
+  expect(staleGeneration.status).toBe(409);
+  await expect(staleGeneration.json()).resolves.toMatchObject({
+    code: "credential_state_generation_mismatch",
+  });
+
+  const unauthorized = await administrationRequest(
+    "/v1/credential-rotation-plans",
+    "POST",
+    request,
+    "self-consistent-but-not-active",
+  );
+  expect(unauthorized.status).toBe(401);
 });
 
 const identities = {
   api_bearer_key: {
-    credential_class: "api_bearer_key",
-    environment: "production",
-    resource_identity: "worker:card-keepr-api",
+    resource_identity:
+      `cloudflare-account:${accountId}:worker:card-keepr-api`,
     owning_boundary: "api_worker",
-    verification_target: "worker-health:card-keepr-api",
+    verification_target:
+      `cloudflare-account:${accountId}:worker:card-keepr-api:health`,
+    required_permission: "workers-secret:api-traffic",
   },
   ingestion_admin_key: {
-    credential_class: "ingestion_admin_key",
-    environment: "production",
-    resource_identity: "worker:card-keepr-ingestion",
+    resource_identity:
+      `cloudflare-account:${accountId}:worker:card-keepr-ingestion`,
     owning_boundary: "ingestion_worker",
-    verification_target: "worker-health:card-keepr-ingestion",
+    verification_target:
+      `cloudflare-account:${accountId}:worker:card-keepr-ingestion:health`,
+    required_permission: "workers-secret:administration",
   },
   d1_export_token: {
-    credential_class: "d1_export_token",
-    environment: "production",
-    resource_identity: "d1:card-keepr-catalogue",
+    resource_identity:
+      `cloudflare-account:${accountId}:d1:${catalogueDatabaseId}`,
     owning_boundary: "d1_export_operation",
-    verification_target: "cloudflare:d1:card-keepr-catalogue:export",
+    verification_target:
+      `cloudflare-account:${accountId}:d1:${catalogueDatabaseId}:export-schema`,
+    required_permission: "D1 Read",
   },
   d1_verification_token: {
-    credential_class: "d1_verification_token",
-    environment: "production",
-    resource_identity: "d1:disposable-verification",
+    resource_identity:
+      `cloudflare-account:${accountId}:d1:00000000-0000-0000-0000-000000000002`,
     owning_boundary: "disposable_verification",
-    verification_target: "cloudflare:d1:disposable-verification:edit",
+    verification_target:
+      `cloudflare-account:${accountId}:d1:00000000-0000-0000-0000-000000000002:write-rollback-probe`,
+    required_permission: "D1 Edit",
   },
   github_deployment_token: {
-    credential_class: "github_deployment_token",
-    environment: "production",
-    resource_identity: "worker-release:card-keepr",
+    resource_identity:
+      "github-repository:repository-KeeprDigital-card-keepr:environment:production:workflow:card-keepr-production-release",
     owning_boundary: "production_release_workflow",
     verification_target:
-      "github:KeeprDigital/card-keepr:environment:production",
+      "github-repository:repository-KeeprDigital-card-keepr:environment:production:workflow:card-keepr-production-release:deployment-scope-introspection",
+    required_permission: "Workers Scripts Write",
   },
 } as const;
 
-function installation(
-  credentialClass: keyof typeof identities,
-  values: Record<string, string>,
-): Record<string, string> {
+type CredentialClass = keyof typeof identities;
+type PlanDocument = Record<string, unknown> & {
+  id: string;
+  action: "install" | "verify" | "revoke";
+  plan_digest: string;
+  plan_nonce: string;
+  credential_class: CredentialClass;
+  cloudflare_account_id: string;
+  resource_identity: string;
+  verification_target: string;
+  required_permission: string;
+  old_fingerprint: string;
+  replacement_fingerprint: string;
+};
+
+async function planInput(
+  action: "install" | "verify" | "revoke",
+  credentialClass: CredentialClass,
+  generation: number,
+  rotationId = `credrot_${credentialClass}_plan`,
+  oldFingerprint?: string,
+  replacementFingerprint?: string,
+): Promise<Record<string, unknown> & {
+  rotation_id: string;
+  old_fingerprint: string;
+  replacement_fingerprint: string;
+}> {
   return {
-    ...identities[credentialClass],
-    ...values,
-    boundary_receipt: `receipt:${credentialClass}:installed`,
+    action,
+    rotation_id: rotationId,
+    credential_class: credentialClass,
+    environment: "production",
+    cloudflare_account_id: accountId,
+    resource_identity: identities[credentialClass].resource_identity,
+    owning_boundary: identities[credentialClass].owning_boundary,
+    verification_target:
+      identities[credentialClass].verification_target,
+    expected_catalogue_revision_id: "catrev_spine_000",
+    expected_state_generation: generation,
+    old_fingerprint:
+      oldFingerprint ??
+      (await fingerprint(`old-${credentialClass}`)),
+    replacement_fingerprint:
+      replacementFingerprint ??
+      (await fingerprint(`replacement-${credentialClass}`)),
+    old_issuer_credential_id: "provider-token:old-credential-id",
+    replacement_issuer_credential_id:
+      "provider-token:replacement-credential-id",
+    management_credential_id: "provider-token:management-id",
+    idempotency_key: `${action}-${credentialClass}-${generation}`,
   };
 }
 
-function transition(
-  credentialClass: keyof typeof identities,
-  values: Record<string, string>,
-): Record<string, string> {
-  return { ...identities[credentialClass], ...values };
+async function reserve(
+  request: Record<string, unknown>,
+  observedAt?: string,
+): Promise<PlanDocument> {
+  const response = await administrationRequest(
+    "/v1/credential-rotation-plans",
+    "POST",
+    request,
+    undefined,
+    observedAt,
+  );
+  expect(response.status).toBe(201);
+  return response.json<PlanDocument>();
+}
+
+function finalize(
+  plan: PlanDocument,
+  attestation: string,
+  observedAt?: string,
+): Promise<Response> {
+  return administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/finalization`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      boundary_attestation: attestation,
+    },
+    undefined,
+    observedAt,
+  );
+}
+
+async function execute(
+  plan: PlanDocument,
+  observedAt?: string,
+): Promise<void> {
+  const response = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/execution`,
+    "POST",
+    { plan_digest: plan.plan_digest },
+    undefined,
+    observedAt,
+  );
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    status: "executing",
+  });
+}
+
+async function signedAttestation(
+  plan: PlanDocument,
+  oldStatus: "usable" | "unusable",
+  observedAt = new Date().toISOString(),
+): Promise<string> {
+  const payload = {
+    version: 1,
+    plan_id: plan.id,
+    plan_digest: plan.plan_digest,
+    plan_nonce: plan.plan_nonce,
+    action: plan.action,
+    credential_class: plan.credential_class,
+    cloudflare_account_id: plan.cloudflare_account_id,
+    resource_identity: plan.resource_identity,
+    verification_target: plan.verification_target,
+    required_permission: plan.required_permission,
+    old_fingerprint: plan.old_fingerprint,
+    replacement_fingerprint: plan.replacement_fingerprint,
+    installed_fingerprint: plan.replacement_fingerprint,
+    old_issuer_credential_id: "provider-token:old-credential-id",
+    replacement_issuer_credential_id:
+      "provider-token:replacement-credential-id",
+    management_credential_id: "provider-token:management-id",
+    consumer_installation_id: `consumer-installation:${plan.id}`,
+    scope_evidence_digest: `sha256:${"a".repeat(64)}`,
+    old_credential_status: oldStatus,
+    replacement_credential_status: "usable",
+    observed_at: observedAt,
+  };
+  const encoded = base64Url(JSON.stringify(payload));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode("vitest-boundary-attestation-key"),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(encoded),
+  );
+  const hex = Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return `v1.${encoded}.${hex}`;
+}
+
+function base64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 async function administrationRequest(
@@ -321,12 +474,16 @@ async function administrationRequest(
   method: string,
   body?: Record<string, unknown>,
   key = "vitest-administration-key",
+  observedAt?: string,
 ): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://card-keepr.invalid${pathname}`, {
       method,
       headers: {
         authorization: `Bearer ${key}`,
+        ...(observedAt === undefined
+          ? {}
+          : { "x-keepr-test-now": observedAt }),
         ...(body === undefined
           ? {}
           : { "content-type": "application/json" }),

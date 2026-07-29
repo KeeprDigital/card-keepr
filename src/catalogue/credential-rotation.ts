@@ -1,80 +1,88 @@
-export const credentialClasses = [
-  "api_bearer_key",
-  "ingestion_admin_key",
-  "d1_export_token",
-  "d1_verification_token",
-  "github_deployment_token",
-] as const;
+import {
+  credentialClasses,
+  isCredentialClass as isSharedCredentialClass,
+  resolveCredentialIdentity,
+  type CredentialClass,
+  type CredentialDeploymentContext,
+} from "../credentials/credential-catalogue.mjs";
 
-export type CredentialClass = (typeof credentialClasses)[number];
+export { credentialClasses };
+export type { CredentialClass };
 export type CredentialRotationState =
   | "replacement_installed"
   | "replacement_verified"
   | "old_revoked";
 
-type CredentialBoundary = {
+export type CredentialRotationPlanAction =
+  | "install"
+  | "verify"
+  | "revoke";
+
+export type CredentialRotationPlanInput = {
+  action: CredentialRotationPlanAction;
+  rotation_id: string;
+  credential_class: CredentialClass;
   environment: "production";
+  cloudflare_account_id: string;
   resource_identity: string;
   owning_boundary: string;
   verification_target: string;
-};
-
-const boundaries: Record<CredentialClass, CredentialBoundary> = {
-  api_bearer_key: {
-    environment: "production",
-    resource_identity: "worker:card-keepr-api",
-    owning_boundary: "api_worker",
-    verification_target: "worker-health:card-keepr-api",
-  },
-  ingestion_admin_key: {
-    environment: "production",
-    resource_identity: "worker:card-keepr-ingestion",
-    owning_boundary: "ingestion_worker",
-    verification_target: "worker-health:card-keepr-ingestion",
-  },
-  d1_export_token: {
-    environment: "production",
-    resource_identity: "d1:card-keepr-catalogue",
-    owning_boundary: "d1_export_operation",
-    verification_target: "cloudflare:d1:card-keepr-catalogue:export",
-  },
-  d1_verification_token: {
-    environment: "production",
-    resource_identity: "d1:disposable-verification",
-    owning_boundary: "disposable_verification",
-    verification_target: "cloudflare:d1:disposable-verification:edit",
-  },
-  github_deployment_token: {
-    environment: "production",
-    resource_identity: "worker-release:card-keepr",
-    owning_boundary: "production_release_workflow",
-    verification_target:
-      "github:KeeprDigital/card-keepr:environment:production",
-  },
-};
-
-type RotationIdentity = CredentialBoundary & {
-  credential_class: CredentialClass;
-};
-
-type TransitionProof = RotationIdentity & {
+  expected_catalogue_revision_id: string;
+  expected_state_generation: number;
+  old_fingerprint: string;
+  replacement_fingerprint: string;
+  old_issuer_credential_id: string;
+  replacement_issuer_credential_id: string;
+  management_credential_id: string;
   idempotency_key: string;
-  boundary_receipt: string;
 };
 
-type InstallInput = TransitionProof & {
-  rotation_id: string;
+export type CredentialRotationPlanDocument =
+  CredentialRotationPlanInput & {
+    contract: "card-keepr-credential-rotation-plan@1";
+    id: string;
+    required_permission: string;
+    expected_rotation_state: CredentialRotationState | null;
+    plan_nonce: string;
+    plan_digest: string;
+    status: "reserved" | "executing" | "finalized" | "expired";
+    created_at: string;
+    expires_at: string;
+  };
+
+type CredentialRotationPlanRow = Omit<
+  CredentialRotationPlanDocument,
+  "contract" | "expected_state_generation"
+> & {
+  expected_state_generation: number;
+  request_digest: string;
+  execution_started_at: string | null;
+  finalized_at: string | null;
+  attestation_digest: string | null;
+};
+
+type CredentialBoundaryAttestation = {
+  version: 1;
+  plan_id: string;
+  plan_digest: string;
+  plan_nonce: string;
+  action: CredentialRotationPlanAction;
+  credential_class: CredentialClass;
+  cloudflare_account_id: string;
+  resource_identity: string;
+  verification_target: string;
+  required_permission: string;
   old_fingerprint: string;
   replacement_fingerprint: string;
-};
-
-type VerifyInput = TransitionProof & {
-  replacement_fingerprint: string;
-};
-
-type RevokeInput = TransitionProof & {
-  old_fingerprint: string;
-  replacement_fingerprint: string;
+  installed_fingerprint: string;
+  old_issuer_credential_id: string;
+  replacement_issuer_credential_id: string;
+  management_credential_id: string;
+  consumer_installation_id: string;
+  scope_evidence_digest: string;
+  old_credential_status: "usable" | "unusable";
+  replacement_credential_status: "usable";
+  observed_at: string;
 };
 
 type RotationRow = {
@@ -134,22 +142,32 @@ export class CredentialRotationProblem extends Error {
 }
 
 export function isCredentialClass(value: string): value is CredentialClass {
-  return credentialClasses.some((item) => item === value);
+  return isSharedCredentialClass(value);
 }
 
-export function credentialBoundary(
-  credentialClass: CredentialClass,
-): CredentialBoundary {
-  return boundaries[credentialClass];
-}
-
-export async function installCredentialRotation(
+export async function reserveCredentialRotationPlan(
   database: D1Database,
-  input: InstallInput,
+  input: CredentialRotationPlanInput,
+  context: CredentialDeploymentContext,
   observedAt: string,
-): Promise<CredentialRotationDocument> {
-  assertIdentity(input);
-  await assertMutationAvailable(database);
+): Promise<CredentialRotationPlanDocument> {
+  const expectedIdentity = resolveCredentialIdentity(
+    input.credential_class,
+    context,
+  );
+  if (
+    input.environment !== expectedIdentity.environment ||
+    input.cloudflare_account_id !==
+      expectedIdentity.cloudflare_account_id ||
+    input.resource_identity !== expectedIdentity.resource_identity ||
+    input.owning_boundary !== expectedIdentity.owning_boundary ||
+    input.verification_target !== expectedIdentity.verification_target
+  ) {
+    throw problem(
+      "stale_credential_identity",
+      "The resolved credential boundary identity is stale.",
+    );
+  }
   const oldHash = hashFromFingerprint(input.old_fingerprint);
   const replacementHash = hashFromFingerprint(
     input.replacement_fingerprint,
@@ -160,230 +178,368 @@ export async function installCredentialRotation(
       "The replacement credential must differ from the active old credential.",
     );
   }
-  const digest = await requestDigest({
-    action: "install",
-    ...safeProof(input),
-    old_fingerprint: input.old_fingerprint,
-    replacement_fingerprint: input.replacement_fingerprint,
-  });
-  const existing = await optionalRow(database, input.rotation_id);
+  if (
+    !safeProviderIdentity(input.old_issuer_credential_id) ||
+    !safeProviderIdentity(input.replacement_issuer_credential_id) ||
+    !safeProviderIdentity(input.management_credential_id) ||
+    input.old_issuer_credential_id ===
+      input.replacement_issuer_credential_id ||
+    input.management_credential_id ===
+      input.old_issuer_credential_id ||
+    input.management_credential_id ===
+      input.replacement_issuer_credential_id
+  ) {
+    throw new CredentialRotationProblem(
+      422,
+      "invalid_provider_credential_identity",
+      "Provider credential identities must be exact, safe, and distinct.",
+    );
+  }
+  const requestHash = await requestDigest(input);
+  const existing = await database
+    .prepare(
+      `SELECT * FROM credential_rotation_plans
+       WHERE idempotency_key = ?`,
+    )
+    .bind(input.idempotency_key)
+    .first<CredentialRotationPlanRow>();
   if (existing !== null) {
-    return replayOrReject(
-      existing,
-      input.idempotency_key,
-      digest,
-      "install",
+    if (
+      !(await fixedHashEqual(existing.request_digest, requestHash))
+    ) {
+      throw problem(
+        "idempotency_key_reused",
+        "The idempotency key was already used for another plan.",
+      );
+    }
+    return planDocument(existing);
+  }
+  const state = await currentCredentialMutationState(database);
+  if (state.recovery_health === "blocked") {
+    throw problem(
+      "recovery_in_progress",
+      "Credential mutation is blocked during recovery.",
+    );
+  }
+  if (state.recovery_health !== "healthy") {
+    throw problem(
+      "recovery_not_verified",
+      "Credential mutation requires healthy verified recovery.",
+    );
+  }
+  if (state.active_ingestion_run_id !== null) {
+    throw problem(
+      "active_ingestion_run",
+      "Credential mutation requires idle ingestion.",
+    );
+  }
+  if (
+    state.current_revision_id !==
+      input.expected_catalogue_revision_id
+  ) {
+    throw problem(
+      "current_revision_mismatch",
+      "The expected current Catalogue Revision is stale.",
+    );
+  }
+  if (
+    state.credential_rotation_generation !==
+    input.expected_state_generation
+  ) {
+    throw problem(
+      "credential_state_generation_mismatch",
+      "The expected credential state generation is stale.",
     );
   }
 
+  const expectedRotationState = await expectedStateForAction(
+    database,
+    input,
+  );
+
+  await database
+    .prepare(
+      `UPDATE credential_rotation_plans
+       SET status = 'expired'
+       WHERE status = 'reserved' AND expires_at <= ?`,
+    )
+    .bind(observedAt)
+    .run();
+  const planNonce = randomHex(32);
+  const planId = `credplan_${crypto.randomUUID()}`;
+  const planDigest = await requestDigest({
+    id: planId,
+    request_digest: requestHash,
+    plan_nonce: planNonce,
+    required_permission: expectedIdentity.required_permission,
+    expected_rotation_state: expectedRotationState,
+  });
+  const expiresAt = new Date(
+    Date.parse(observedAt) + 5 * 60 * 1000,
+  ).toISOString();
   try {
-    const result = await database
+    await database
       .prepare(
-        `INSERT INTO credential_rotations (
-          id, credential_class, state, environment, resource_identity,
-          owning_boundary, verification_target, old_secret_hash,
-          replacement_secret_hash, installed_at, install_idempotency_key,
-          install_request_digest, install_receipt
-        )
-        SELECT ?, ?, 'replacement_installed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        FROM operation_state
-        WHERE singleton = 1 AND recovery_health = 'healthy'`,
+        `INSERT INTO credential_rotation_plans (
+          id, action, rotation_id, credential_class, environment,
+          cloudflare_account_id, resource_identity, owning_boundary,
+          verification_target, required_permission,
+          expected_catalogue_revision_id, expected_state_generation,
+          expected_rotation_state, old_fingerprint,
+          replacement_fingerprint, old_issuer_credential_id,
+          replacement_issuer_credential_id, management_credential_id,
+          idempotency_key, request_digest,
+          plan_nonce, plan_digest, status, created_at, expires_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?,
+          'reserved', ?, ?
+        )`,
       )
       .bind(
+        planId,
+        input.action,
         input.rotation_id,
         input.credential_class,
         input.environment,
+        input.cloudflare_account_id,
         input.resource_identity,
         input.owning_boundary,
         input.verification_target,
-        oldHash,
-        replacementHash,
-        observedAt,
+        expectedIdentity.required_permission,
+        input.expected_catalogue_revision_id,
+        input.expected_state_generation,
+        expectedRotationState,
+        input.old_fingerprint,
+        input.replacement_fingerprint,
+        input.old_issuer_credential_id,
+        input.replacement_issuer_credential_id,
+        input.management_credential_id,
         input.idempotency_key,
-        digest,
-        input.boundary_receipt,
+        requestHash,
+        planNonce,
+        planDigest,
+        observedAt,
+        expiresAt,
       )
       .run();
-    if (result.meta.changes !== 1) {
-      await assertMutationAvailable(database);
-      throw problem(
-        "credential_mutation_conflict",
-        "The credential rotation could not reserve its mutation state.",
-      );
-    }
   } catch (error) {
-    if (error instanceof CredentialRotationProblem) throw error;
     if (errorMessage(error).includes("UNIQUE constraint")) {
-      const replay = await rowByIdempotency(
-        database,
-        input.idempotency_key,
-        "install",
-      );
-      if (replay !== null) {
-        return replayOrReject(
-          replay,
-          input.idempotency_key,
-          digest,
-          "install",
-        );
-      }
       throw problem(
         "credential_mutation_conflict",
-        "A conflicting credential rotation already exists.",
+        "Another credential transition is already reserved.",
       );
     }
     throw error;
   }
-  return document(await requiredRow(database, input.rotation_id), "ok");
+  return planDocument(
+    (await database
+      .prepare(
+        "SELECT * FROM credential_rotation_plans WHERE id = ?",
+      )
+      .bind(planId)
+      .first<CredentialRotationPlanRow>())!,
+  );
 }
 
-export async function verifyCredentialRotation(
+export async function finalizeCredentialRotationPlan(
   database: D1Database,
-  rotationId: string,
-  input: VerifyInput,
+  planId: string,
+  planDigest: string,
+  attestation: string,
+  attestationKey: string,
   observedAt: string,
 ): Promise<CredentialRotationDocument> {
-  assertIdentity(input);
-  await assertMutationAvailable(database);
-  const row = await requiredRow(database, rotationId);
-  assertRowIdentity(row, input);
-  assertFingerprint(
-    row.replacement_secret_hash,
-    input.replacement_fingerprint,
-    "stale_credential_identity",
-  );
-  const digest = await requestDigest({
-    action: "verify",
-    rotation_id: rotationId,
-    ...safeProof(input),
-    replacement_fingerprint: input.replacement_fingerprint,
-  });
-  if (row.verification_idempotency_key !== null) {
-    return replayOrReject(
-      row,
-      input.idempotency_key,
-      digest,
-      "verification",
+  const plan = await requiredPlan(database, planId);
+  if (!(await fixedHashEqual(plan.plan_digest, planDigest))) {
+    throw problem(
+      "credential_plan_digest_mismatch",
+      "The credential transition plan digest is stale.",
     );
   }
-  if (row.state !== "replacement_installed") {
+  const attestationDigest = await secretHash(attestation);
+  if (plan.status === "finalized") {
+    if (
+      plan.attestation_digest === null ||
+      !(await fixedHashEqual(
+        plan.attestation_digest,
+        attestationDigest,
+      ))
+    ) {
+      throw problem(
+        "credential_attestation_replayed",
+        "The finalized plan cannot accept another attestation.",
+      );
+    }
+    return document(
+      await requiredRow(database, plan.rotation_id),
+      "idempotent_replay",
+    );
+  }
+  if (plan.status !== "executing") {
+    throw problem(
+      "credential_plan_expired",
+      "The credential transition plan is no longer executable.",
+    );
+  }
+  await verifyBoundaryAttestation(
+    plan,
+    attestation,
+    attestationKey,
+    observedAt,
+  );
+  const oldHash = hashFromFingerprint(plan.old_fingerprint);
+  const replacementHash = hashFromFingerprint(
+    plan.replacement_fingerprint,
+  );
+  const rotationStatement =
+    plan.action === "install"
+      ? database
+          .prepare(
+            `INSERT INTO credential_rotations (
+              id, credential_class, state, environment,
+              resource_identity, owning_boundary, verification_target,
+              old_secret_hash, replacement_secret_hash, installed_at,
+              install_idempotency_key, install_request_digest,
+              install_receipt
+            ) VALUES (
+              ?, ?, 'replacement_installed', ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?
+            )`,
+          )
+          .bind(
+            plan.rotation_id,
+            plan.credential_class,
+            plan.environment,
+            plan.resource_identity,
+            plan.owning_boundary,
+            plan.verification_target,
+            oldHash,
+            replacementHash,
+            observedAt,
+            plan.idempotency_key,
+            plan.request_digest,
+            attestation,
+          )
+      : plan.action === "verify"
+        ? database
+            .prepare(
+              `UPDATE credential_rotations
+               SET state = 'replacement_verified', verified_at = ?,
+                   verification_idempotency_key = ?,
+                   verification_request_digest = ?,
+                   verification_receipt = ?
+               WHERE id = ? AND state = 'replacement_installed'
+                 AND replacement_secret_hash = ?`,
+            )
+            .bind(
+              observedAt,
+              plan.idempotency_key,
+              plan.request_digest,
+              attestation,
+              plan.rotation_id,
+              replacementHash,
+            )
+        : database
+            .prepare(
+              `UPDATE credential_rotations
+               SET state = 'old_revoked', old_revoked_at = ?,
+                   revocation_idempotency_key = ?,
+                   revocation_request_digest = ?,
+                   revocation_receipt = ?
+               WHERE id = ? AND state = 'replacement_verified'
+                 AND old_secret_hash = ?
+                 AND replacement_secret_hash = ?`,
+            )
+            .bind(
+              observedAt,
+              plan.idempotency_key,
+              plan.request_digest,
+              attestation,
+              plan.rotation_id,
+              oldHash,
+              replacementHash,
+            );
+  try {
+    const results = await database.batch([
+      rotationStatement,
+      database
+        .prepare(
+          `UPDATE operation_state
+           SET credential_rotation_generation =
+             credential_rotation_generation + 1
+           WHERE singleton = 1
+             AND credential_rotation_generation = ?
+             AND recovery_health = 'healthy'
+             AND active_ingestion_run_id IS NULL`,
+        )
+        .bind(plan.expected_state_generation),
+      database
+        .prepare(
+          `UPDATE credential_rotation_plans
+           SET status = 'finalized', finalized_at = ?,
+               attestation_digest = ?
+           WHERE id = ? AND status = 'executing'
+             AND plan_digest = ?`,
+        )
+        .bind(
+          observedAt,
+          attestationDigest,
+          plan.id,
+          plan.plan_digest,
+        ),
+    ]);
+    if (results.some((result) => result.meta.changes !== 1)) {
+      throw problem(
+        "credential_mutation_conflict",
+        "The reserved credential transition changed concurrently.",
+      );
+    }
+  } catch (error) {
+    if (error instanceof CredentialRotationProblem) throw error;
     throw problem(
       "credential_mutation_conflict",
-      "The rotation is not awaiting replacement verification.",
+      "The reserved credential transition could not finalize atomically.",
+    );
+  }
+  return document(await requiredRow(database, plan.rotation_id), "ok");
+}
+
+export async function beginCredentialRotationPlanExecution(
+  database: D1Database,
+  planId: string,
+  planDigest: string,
+  observedAt: string,
+): Promise<CredentialRotationPlanDocument> {
+  const plan = await requiredPlan(database, planId);
+  if (!(await fixedHashEqual(plan.plan_digest, planDigest))) {
+    throw problem(
+      "credential_plan_digest_mismatch",
+      "The credential transition plan digest is stale.",
+    );
+  }
+  if (plan.status === "executing") return planDocument(plan);
+  if (plan.status !== "reserved" || plan.expires_at <= observedAt) {
+    throw problem(
+      "credential_plan_expired",
+      "The credential transition plan is no longer executable.",
     );
   }
   const result = await database
     .prepare(
-      `UPDATE credential_rotations
-       SET state = 'replacement_verified', verified_at = ?,
-           verification_idempotency_key = ?,
-           verification_request_digest = ?, verification_receipt = ?
-       WHERE id = ? AND state = 'replacement_installed'
-         AND verification_idempotency_key IS NULL
-         AND EXISTS (
-           SELECT 1 FROM operation_state
-           WHERE singleton = 1 AND recovery_health = 'healthy'
-         )`,
+      `UPDATE credential_rotation_plans
+       SET status = 'executing', execution_started_at = ?
+       WHERE id = ? AND status = 'reserved' AND plan_digest = ?`,
     )
-    .bind(
-      observedAt,
-      input.idempotency_key,
-      digest,
-      input.boundary_receipt,
-      rotationId,
-    )
+    .bind(observedAt, plan.id, plan.plan_digest)
     .run();
   if (result.meta.changes !== 1) {
-    await assertMutationAvailable(database);
-    const concurrent = await requiredRow(database, rotationId);
-    return replayOrReject(
-      concurrent,
-      input.idempotency_key,
-      digest,
-      "verification",
-    );
-  }
-  return document(await requiredRow(database, rotationId), "ok");
-}
-
-export async function revokeOldCredential(
-  database: D1Database,
-  rotationId: string,
-  input: RevokeInput,
-  observedAt: string,
-): Promise<CredentialRotationDocument> {
-  assertIdentity(input);
-  await assertMutationAvailable(database);
-  const row = await requiredRow(database, rotationId);
-  assertRowIdentity(row, input);
-  assertFingerprint(
-    row.old_secret_hash,
-    input.old_fingerprint,
-    "stale_credential_identity",
-  );
-  assertFingerprint(
-    row.replacement_secret_hash,
-    input.replacement_fingerprint,
-    "stale_credential_identity",
-  );
-  const digest = await requestDigest({
-    action: "revoke",
-    rotation_id: rotationId,
-    ...safeProof(input),
-    old_fingerprint: input.old_fingerprint,
-    replacement_fingerprint: input.replacement_fingerprint,
-  });
-  if (row.revocation_idempotency_key !== null) {
-    return replayOrReject(
-      row,
-      input.idempotency_key,
-      digest,
-      "revocation",
-    );
-  }
-  if (row.state === "replacement_installed") {
-    throw problem(
-      "replacement_not_verified",
-      "The old credential cannot be revoked before verification.",
-    );
-  }
-  if (row.state !== "replacement_verified") {
     throw problem(
       "credential_mutation_conflict",
-      "The rotation is not awaiting old credential revocation.",
+      "The credential transition execution claim changed concurrently.",
     );
   }
-  const result = await database
-    .prepare(
-      `UPDATE credential_rotations
-       SET state = 'old_revoked', old_revoked_at = ?,
-           revocation_idempotency_key = ?,
-           revocation_request_digest = ?, revocation_receipt = ?
-       WHERE id = ? AND state = 'replacement_verified'
-         AND revocation_idempotency_key IS NULL
-         AND EXISTS (
-           SELECT 1 FROM operation_state
-           WHERE singleton = 1 AND recovery_health = 'healthy'
-         )`,
-    )
-    .bind(
-      observedAt,
-      input.idempotency_key,
-      digest,
-      input.boundary_receipt,
-      rotationId,
-    )
-    .run();
-  if (result.meta.changes !== 1) {
-    await assertMutationAvailable(database);
-    return replayOrReject(
-      await requiredRow(database, rotationId),
-      input.idempotency_key,
-      digest,
-      "revocation",
-    );
-  }
-  return document(await requiredRow(database, rotationId), "ok");
+  return planDocument(await requiredPlan(database, plan.id));
 }
 
 export async function showCredentialRotation(
@@ -431,39 +587,6 @@ export async function credentialSecretMatches(
   return active && !revoked;
 }
 
-function replayOrReject(
-  row: RotationRow,
-  key: string,
-  digest: string,
-  phase: "install" | "verification" | "revocation",
-): CredentialRotationDocument {
-  const storedKey =
-    phase === "install"
-      ? row.install_idempotency_key
-      : phase === "verification"
-        ? row.verification_idempotency_key
-        : row.revocation_idempotency_key;
-  const storedDigest =
-    phase === "install"
-      ? row.install_request_digest
-      : phase === "verification"
-        ? row.verification_request_digest
-        : row.revocation_request_digest;
-  if (storedKey === key && storedDigest === digest) {
-    return document(row, "idempotent_replay");
-  }
-  if (storedKey === key || storedKey !== null) {
-    throw problem(
-      "idempotency_key_reused",
-      "The idempotency key or transition identity was already used.",
-    );
-  }
-  throw problem(
-    "credential_mutation_conflict",
-    "The credential rotation changed concurrently.",
-  );
-}
-
 async function optionalRow(
   database: D1Database,
   id: string,
@@ -489,18 +612,6 @@ async function requiredRow(
   return row;
 }
 
-async function rowByIdempotency(
-  database: D1Database,
-  key: string,
-  phase: "install" | "verification" | "revocation",
-): Promise<RotationRow | null> {
-  const column = `${phase}_idempotency_key`;
-  return database
-    .prepare(`SELECT * FROM credential_rotations WHERE ${column} = ?`)
-    .bind(key)
-    .first<RotationRow>();
-}
-
 function document(
   row: RotationRow,
   operationCode: "ok" | "idempotent_replay",
@@ -523,47 +634,17 @@ function document(
   };
 }
 
-function assertIdentity(input: RotationIdentity): void {
-  const expected = credentialBoundary(input.credential_class);
-  if (
-    input.environment !== expected.environment ||
-    input.resource_identity !== expected.resource_identity ||
-    input.owning_boundary !== expected.owning_boundary ||
-    input.verification_target !== expected.verification_target
-  ) {
-    throw problem(
-      "stale_credential_identity",
-      "The resolved credential boundary identity is stale.",
-    );
-  }
-}
-
-function assertRowIdentity(row: RotationRow, input: RotationIdentity): void {
-  if (row.credential_class !== input.credential_class) {
-    throw problem(
-      "credential_class_mismatch",
-      "The credential class does not match the rotation.",
-    );
-  }
-  if (
-    row.environment !== input.environment ||
-    row.resource_identity !== input.resource_identity ||
-    row.owning_boundary !== input.owning_boundary ||
-    row.verification_target !== input.verification_target
-  ) {
-    throw problem(
-      "stale_credential_identity",
-      "The resolved credential boundary identity is stale.",
-    );
-  }
-}
-
-function assertFingerprint(
+async function assertFingerprint(
   expectedHash: string,
   fingerprint: string,
   code: string,
-): void {
-  if (hashFromFingerprint(fingerprint) !== expectedHash) {
+): Promise<void> {
+  if (
+    !(await fixedHashEqual(
+      hashFromFingerprint(fingerprint),
+      expectedHash,
+    ))
+  ) {
     throw problem(code, "The expected credential fingerprint is stale.");
   }
 }
@@ -580,40 +661,310 @@ function hashFromFingerprint(fingerprint: string): string {
   return match[1]!;
 }
 
-function safeProof(input: TransitionProof): Record<string, string> {
-  return {
-    credential_class: input.credential_class,
-    environment: input.environment,
-    resource_identity: input.resource_identity,
-    owning_boundary: input.owning_boundary,
-    verification_target: input.verification_target,
-    idempotency_key: input.idempotency_key,
-    boundary_receipt: input.boundary_receipt,
-  };
-}
-
 async function requestDigest(value: unknown): Promise<string> {
   return secretHash(JSON.stringify(value));
 }
 
-async function assertMutationAvailable(database: D1Database): Promise<void> {
-  const operation = await database
+async function currentCredentialMutationState(
+  database: D1Database,
+): Promise<{
+  active_ingestion_run_id: string | null;
+  recovery_health: string;
+  credential_rotation_generation: number;
+  current_revision_id: string;
+}> {
+  const state = await database
     .prepare(
-      "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+      `SELECT operation.active_ingestion_run_id,
+              operation.recovery_health,
+              operation.credential_rotation_generation,
+              catalogue.current_revision_id
+       FROM operation_state AS operation
+       JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+       WHERE operation.singleton = 1`,
     )
-    .first<{ recovery_health: string }>();
-  if (operation?.recovery_health === "blocked") {
+    .first<{
+      active_ingestion_run_id: string | null;
+      recovery_health: string;
+      credential_rotation_generation: number;
+      current_revision_id: string;
+    }>();
+  if (state === null) {
     throw problem(
-      "recovery_in_progress",
-      "Credential mutation is blocked during recovery.",
+      "credential_mutation_conflict",
+      "The credential mutation state is unavailable.",
     );
   }
-  if (operation?.recovery_health !== "healthy") {
-    throw problem(
-      "recovery_not_verified",
-      "Credential mutation requires healthy verified recovery.",
+  return state;
+}
+
+async function requiredPlan(
+  database: D1Database,
+  planId: string,
+): Promise<CredentialRotationPlanRow> {
+  const plan = await database
+    .prepare(
+      "SELECT * FROM credential_rotation_plans WHERE id = ?",
+    )
+    .bind(planId)
+    .first<CredentialRotationPlanRow>();
+  if (plan === null) {
+    throw new CredentialRotationProblem(
+      404,
+      "credential_rotation_plan_not_found",
+      "The credential transition plan does not exist.",
     );
   }
+  return plan;
+}
+
+async function verifyBoundaryAttestation(
+  plan: CredentialRotationPlanRow,
+  encoded: string,
+  key: string,
+  observedAt: string,
+): Promise<void> {
+  const match = /^v1\.([A-Za-z0-9_-]{32,8192})\.([0-9a-f]{64})$/.exec(
+    encoded,
+  );
+  if (match === null) {
+    throw problem(
+      "invalid_boundary_attestation",
+      "The owning-boundary attestation is malformed.",
+    );
+  }
+  const expectedSignature = await hmacHex(key, match[1]!);
+  if (!(await fixedHashEqual(match[2]!, expectedSignature))) {
+    throw problem(
+      "invalid_boundary_attestation",
+      "The owning-boundary attestation signature is invalid.",
+    );
+  }
+  let attestation: CredentialBoundaryAttestation;
+  try {
+    attestation = JSON.parse(
+      new TextDecoder().decode(base64UrlBytes(match[1]!)),
+    ) as CredentialBoundaryAttestation;
+  } catch {
+    throw problem(
+      "invalid_boundary_attestation",
+      "The owning-boundary attestation payload is invalid.",
+    );
+  }
+  const expectedOldStatus =
+    plan.action === "revoke" ? "unusable" : "usable";
+  const exactFields =
+    attestation.version === 1 &&
+    attestation.plan_id === plan.id &&
+    attestation.action === plan.action &&
+    attestation.credential_class === plan.credential_class &&
+    attestation.cloudflare_account_id ===
+      plan.cloudflare_account_id &&
+    attestation.resource_identity === plan.resource_identity &&
+    attestation.verification_target === plan.verification_target &&
+    attestation.required_permission === plan.required_permission &&
+    attestation.old_issuer_credential_id ===
+      plan.old_issuer_credential_id &&
+    attestation.replacement_issuer_credential_id ===
+      plan.replacement_issuer_credential_id &&
+    attestation.management_credential_id ===
+      plan.management_credential_id &&
+    attestation.old_credential_status === expectedOldStatus &&
+    attestation.replacement_credential_status === "usable" &&
+    plan.execution_started_at !== null &&
+    canonicalTimestamp(attestation.observed_at) &&
+    attestation.observed_at >= plan.execution_started_at &&
+    attestation.observed_at <= observedAt &&
+    safeProviderIdentity(attestation.old_issuer_credential_id) &&
+    safeProviderIdentity(
+      attestation.replacement_issuer_credential_id,
+    ) &&
+    safeProviderIdentity(attestation.management_credential_id) &&
+    safeProviderIdentity(attestation.consumer_installation_id) &&
+    /^sha256:[0-9a-f]{64}$/.test(
+      attestation.scope_evidence_digest,
+    );
+  const fixedFields = await Promise.all([
+    fixedHashEqual(attestation.plan_digest, plan.plan_digest),
+    fixedHashEqual(attestation.plan_nonce, plan.plan_nonce),
+    fixedHashEqual(
+      hashFromFingerprint(attestation.old_fingerprint),
+      hashFromFingerprint(plan.old_fingerprint),
+    ),
+    fixedHashEqual(
+      hashFromFingerprint(attestation.replacement_fingerprint),
+      hashFromFingerprint(plan.replacement_fingerprint),
+    ),
+    fixedHashEqual(
+      hashFromFingerprint(attestation.installed_fingerprint),
+      hashFromFingerprint(plan.replacement_fingerprint),
+    ),
+  ]);
+  if (!exactFields || fixedFields.some((matches) => !matches)) {
+    throw problem(
+      "credential_boundary_mismatch",
+      "The owning-boundary attestation does not match the reserved transition.",
+    );
+  }
+  if (
+    plan.action === "revoke" &&
+    attestation.old_issuer_credential_id ===
+      attestation.replacement_issuer_credential_id
+  ) {
+    throw problem(
+      "credential_boundary_mismatch",
+      "The revoked and replacement issuer identities must differ.",
+    );
+  }
+}
+
+async function hmacHex(key: string, value: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function base64UrlBytes(value: string): Uint8Array {
+  const padded = value
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) =>
+    character.charCodeAt(0),
+  );
+}
+
+function safeProviderIdentity(value: string): boolean {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9._:/-]{8,256}$/.test(value)
+  );
+}
+
+function canonicalTimestamp(value: string): boolean {
+  const parsed = new Date(value);
+  return (
+    Number.isFinite(parsed.valueOf()) &&
+    parsed.toISOString() === value
+  );
+}
+
+async function expectedStateForAction(
+  database: D1Database,
+  input: CredentialRotationPlanInput,
+): Promise<CredentialRotationState | null> {
+  const rotation = await optionalRow(database, input.rotation_id);
+  if (input.action === "install") {
+    if (rotation !== null) {
+      throw problem(
+        "credential_mutation_conflict",
+        "The credential rotation already exists.",
+      );
+    }
+    return null;
+  }
+  if (rotation === null) {
+    throw new CredentialRotationProblem(
+      404,
+      "credential_rotation_not_found",
+      "The credential rotation does not exist.",
+    );
+  }
+  if (rotation.credential_class !== input.credential_class) {
+    throw problem(
+      "credential_class_mismatch",
+      "The credential class does not match the rotation.",
+    );
+  }
+  if (
+    rotation.environment !== input.environment ||
+    rotation.resource_identity !== input.resource_identity ||
+    rotation.owning_boundary !== input.owning_boundary ||
+    rotation.verification_target !== input.verification_target
+  ) {
+    throw problem(
+      "stale_credential_identity",
+      "The resolved credential boundary identity is stale.",
+    );
+  }
+  await assertFingerprint(
+    rotation.old_secret_hash,
+    input.old_fingerprint,
+    "stale_credential_identity",
+  );
+  await assertFingerprint(
+    rotation.replacement_secret_hash,
+    input.replacement_fingerprint,
+    "stale_credential_identity",
+  );
+  const expected =
+    input.action === "verify"
+      ? "replacement_installed"
+      : "replacement_verified";
+  if (rotation.state !== expected) {
+    throw problem(
+      input.action === "revoke" &&
+        rotation.state === "replacement_installed"
+        ? "replacement_not_verified"
+        : "credential_mutation_conflict",
+      `The rotation is not awaiting ${input.action}.`,
+    );
+  }
+  return rotation.state;
+}
+
+function planDocument(
+  row: CredentialRotationPlanRow,
+): CredentialRotationPlanDocument {
+  return {
+    contract: "card-keepr-credential-rotation-plan@1",
+    id: row.id,
+    action: row.action,
+    rotation_id: row.rotation_id,
+    credential_class: row.credential_class,
+    environment: row.environment,
+    cloudflare_account_id: row.cloudflare_account_id,
+    resource_identity: row.resource_identity,
+    owning_boundary: row.owning_boundary,
+    verification_target: row.verification_target,
+    required_permission: row.required_permission,
+    expected_catalogue_revision_id:
+      row.expected_catalogue_revision_id,
+    expected_state_generation: row.expected_state_generation,
+    expected_rotation_state: row.expected_rotation_state,
+    old_fingerprint: row.old_fingerprint,
+    replacement_fingerprint: row.replacement_fingerprint,
+    old_issuer_credential_id: row.old_issuer_credential_id,
+    replacement_issuer_credential_id:
+      row.replacement_issuer_credential_id,
+    management_credential_id: row.management_credential_id,
+    idempotency_key: row.idempotency_key,
+    plan_nonce: row.plan_nonce,
+    plan_digest: row.plan_digest,
+    status: row.status,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+  };
+}
+
+function randomHex(bytes: number): string {
+  const value = new Uint8Array(bytes);
+  crypto.getRandomValues(value);
+  return Array.from(value)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function secretHash(value: string): Promise<string> {

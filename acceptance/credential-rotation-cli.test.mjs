@@ -2,324 +2,333 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { createServer } from "node:http";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 const executor = resolve(
   "acceptance/fixtures/credential-boundary-executor.mjs",
 );
+const context = {
+  cloudflareAccountId: "0123456789abcdef0123456789abcdef",
+  catalogueD1DatabaseId: "00000000-0000-0000-0000-000000000001",
+  disposableD1DatabaseId: "00000000-0000-0000-0000-000000000002",
+  githubRepositoryId: "repository-KeeprDigital-card-keepr",
+};
 
-test("API credential installation proves the active old key and sends only safe owning-boundary evidence", async (t) => {
-  const oldSecret = "old-api-cli-secret";
-  const replacementSecret = "replacement-api-cli-secret";
-  const administrationKey = "administration-cli-secret";
-  const oldFingerprint = fingerprint(oldSecret);
-  const replacementFingerprint = fingerprint(replacementSecret);
-  const requests = [];
+test("rejected durable preflight causes zero owning-provider calls", async (t) => {
+  const directory = mkdtempSync(
+    join(tmpdir(), "keepr-boundary-ordering-"),
+  );
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const server = createServer(async (request, response) => {
-    if (request.method === "GET" && request.url === "/health") {
-      assert.equal(
-        request.headers.authorization,
-        `Bearer ${oldSecret}`,
-      );
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify({
-          contract: "card-keepr-runtime-health@1",
-          runtime: "api",
-          status: "ok",
-        }),
-      );
-      return;
-    }
-    let body = "";
-    request.setEncoding("utf8");
-    for await (const chunk of request) body += chunk;
-    requests.push({
-      authorization: request.headers.authorization,
-      body: JSON.parse(body),
-    });
-    response.writeHead(201, { "content-type": "application/json" });
-    response.end(
-      JSON.stringify(
-        rotationDocument(
-          "credrot_cli_api",
-          "api_bearer_key",
-          oldFingerprint,
-          replacementFingerprint,
-        ),
-      ),
-    );
-  });
-  const port = await listen(server);
-  t.after(() => server.close());
-
-  const arguments_ = mutationArguments({
-    action: "install",
-    rotationId: "credrot_cli_api",
-    credentialClass: "api_bearer_key",
-    resource: "worker:card-keepr-api",
-    boundary: "api_worker",
-    verificationTarget: "worker-health:card-keepr-api",
-    oldFingerprint,
-    replacementFingerprint,
-    idempotencyKey: "install-cli-api-001",
-  });
-  const result = await runCli(
-    arguments_,
-    {
-      KEEPR_API_URL: `http://127.0.0.1:${port}`,
-      KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
-      KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR: executor,
-    },
-    {
-      administration_key: administrationKey,
-      old_secret: oldSecret,
-      replacement_secret: replacementSecret,
-    },
-  );
-
-  assert.equal(result.code, 0);
-  assert.equal(requests.length, 1);
-  assert.equal(
-    requests[0].authorization,
-    `Bearer ${administrationKey}`,
-  );
-  const boundaryReceipt = requests[0].body.boundary_receipt;
-  assert.match(boundaryReceipt, /^receipt:test:/);
-  assert.deepEqual(requests[0].body, {
-    credential_class: "api_bearer_key",
-    environment: "production",
-    resource_identity: "worker:card-keepr-api",
-    owning_boundary: "api_worker",
-    verification_target: "worker-health:card-keepr-api",
-    boundary_receipt: boundaryReceipt,
-    idempotency_key: "install-cli-api-001",
-    rotation_id: "credrot_cli_api",
-    old_fingerprint: oldFingerprint,
-    replacement_fingerprint: replacementFingerprint,
-  });
-  assertSecretsAbsent(
-    arguments_,
-    result,
-    oldSecret,
-    replacementSecret,
-    administrationKey,
-  );
-});
-
-test("deployment token plaintext stays in its injected GitHub owning-boundary executor", async (t) => {
-  const oldSecret = "old-deployment-token";
-  const replacementSecret = "replacement-deployment-token";
-  const administrationKey = "admin-for-deployment-rotation";
-  const oldFingerprint = fingerprint(oldSecret);
-  const replacementFingerprint = fingerprint(replacementSecret);
-  let receivedBody;
-  const server = createServer(async (request, response) => {
-    let body = "";
-    request.setEncoding("utf8");
-    for await (const chunk of request) body += chunk;
-    receivedBody = JSON.parse(body);
-    response.writeHead(201, { "content-type": "application/json" });
-    response.end(
-      JSON.stringify(
-        rotationDocument(
-          "credrot_cli_deploy",
-          "github_deployment_token",
-          oldFingerprint,
-          replacementFingerprint,
-        ),
-      ),
-    );
-  });
-  const port = await listen(server);
-  t.after(() => server.close());
-  const arguments_ = mutationArguments({
-    action: "install",
-    rotationId: "credrot_cli_deploy",
-    credentialClass: "github_deployment_token",
-    resource: "worker-release:card-keepr",
-    boundary: "production_release_workflow",
-    verificationTarget:
-      "github:KeeprDigital/card-keepr:environment:production",
-    oldFingerprint,
-    replacementFingerprint,
-    idempotencyKey: "install-cli-deploy-001",
-  });
-  const result = await runCli(
-    arguments_,
-    {
-      KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
-      KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR: executor,
-    },
-    {
-      administration_key: administrationKey,
-      old_secret: oldSecret,
-      replacement_secret: replacementSecret,
-    },
-  );
-
-  assert.equal(result.code, 0);
-  assert.equal(JSON.stringify(receivedBody).includes(oldSecret), false);
-  assert.equal(
-    JSON.stringify(receivedBody).includes(replacementSecret),
-    false,
-  );
-  assert.equal(receivedBody.credential_class, "github_deployment_token");
-  assert.equal(
-    receivedBody.verification_target,
-    "github:KeeprDigital/card-keepr:environment:production",
-  );
-  assertSecretsAbsent(
-    arguments_,
-    result,
-    oldSecret,
-    replacementSecret,
-    administrationKey,
-  );
-});
-
-test("single-holder replacement is verified before the old owning-boundary credential is revoked", async (t) => {
-  const oldSecret = "old-d1-export-token";
-  const replacementSecret = "replacement-d1-export-token";
-  const administrationKey = "admin-for-d1-export-rotation";
-  const oldFingerprint = fingerprint(oldSecret);
-  const replacementFingerprint = fingerprint(replacementSecret);
-  const received = [];
-  const server = createServer(async (request, response) => {
-    let body = "";
-    request.setEncoding("utf8");
-    for await (const chunk of request) body += chunk;
-    received.push({
-      url: request.url,
-      body: JSON.parse(body),
-    });
-    const state = request.url?.endsWith("/verification")
-      ? "replacement_verified"
-      : request.url?.endsWith("/revocation")
-        ? "old_revoked"
-        : "replacement_installed";
-    response.writeHead(
-      request.url === "/v1/credential-rotations" ? 201 : 200,
-      { "content-type": "application/json" },
-    );
+    assert.equal(request.url, "/v1/credential-rotation-plans");
+    response.writeHead(409, { "content-type": "application/json" });
     response.end(
       JSON.stringify({
-        ...rotationDocument(
-          "credrot_cli_d1_export",
-          "d1_export_token",
-          oldFingerprint,
-          replacementFingerprint,
-        ),
-        state,
+        code: "recovery_in_progress",
+        detail: "Credential mutation is blocked during recovery.",
       }),
     );
   });
   const port = await listen(server);
   t.after(() => server.close());
-  const environment = {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
-    KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR: executor,
-  };
-  const identity = {
-    rotationId: "credrot_cli_d1_export",
-    credentialClass: "d1_export_token",
-    resource: "d1:card-keepr-catalogue",
-    boundary: "d1_export_operation",
-    verificationTarget:
-      "cloudflare:d1:card-keepr-catalogue:export",
-    oldFingerprint,
-    replacementFingerprint,
-  };
-
-  const installed = await runCli(
+  const oldSecret = "old-api-ordering-secret";
+  const replacementSecret = "replacement-api-ordering-secret";
+  const result = await runCli(
     mutationArguments({
       action: "install",
-      ...identity,
-      idempotencyKey: "install-d1-export-001",
+      rotationId: "credrot_ordering",
+      credentialClass: "api_bearer_key",
+      expectedGeneration: 0,
+      oldFingerprint: fingerprint(oldSecret),
+      replacementFingerprint: fingerprint(replacementSecret),
+      idempotencyKey: "plan-ordering-001",
+      confirm: "cannot-be-valid",
     }),
-    environment,
+    environment(port, log),
     {
-      administration_key: administrationKey,
+      administration_key: "administration-ordering-secret",
       old_secret: oldSecret,
       replacement_secret: replacementSecret,
-    },
-  );
-  const verified = await runCli(
-    mutationArguments({
-      action: "verify",
-      ...identity,
-      idempotencyKey: "verify-d1-export-001",
-    }),
-    environment,
-    {
-      administration_key: administrationKey,
-      replacement_secret: replacementSecret,
-    },
-  );
-  const revoked = await runCli(
-    mutationArguments({
-      action: "revoke",
-      ...identity,
-      idempotencyKey: "revoke-d1-export-001",
-    }),
-    environment,
-    {
-      administration_key: administrationKey,
-      old_secret: oldSecret,
+      management_credential: "separate-ordering-management-token",
     },
   );
 
-  assert.deepEqual(
-    [installed.code, verified.code, revoked.code],
-    [0, 0, 0],
+  assert.equal(result.code, 7);
+  assert.equal(existsSync(log), false);
+  assert.match(result.stdout, /recovery_in_progress/);
+});
+
+test("plan digest is printed and fully bound before provider installation and finalization", async (t) => {
+  const oldSecret = "old-api-plan-secret";
+  const replacementSecret = "replacement-api-plan-secret";
+  const administrationKey = "administration-plan-secret";
+  const oldFingerprint = fingerprint(oldSecret);
+  const replacementFingerprint = fingerprint(replacementSecret);
+  const planDigest = "1".repeat(64);
+  const planId = "credplan_cli_api_001";
+  const requests = [];
+  let reservedBody;
+  const server = createServer(async (request, response) => {
+    let text = "";
+    request.setEncoding("utf8");
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text);
+    requests.push({ url: request.url, body });
+    if (request.url === "/v1/credential-rotation-plans") {
+      reservedBody = body;
+    }
+    response.writeHead(
+      request.url === "/v1/credential-rotation-plans" ? 201 : 200,
+      { "content-type": "application/json" },
+    );
+    response.end(
+      JSON.stringify(
+        request.url === "/v1/credential-rotation-plans"
+          ? planDocument(body, {
+              id: planId,
+              digest: planDigest,
+              permission: "workers-secret:api-traffic",
+            })
+          : request.url?.endsWith("/execution")
+            ? {
+                ...planDocument(reservedBody, {
+                  id: planId,
+                  digest: planDigest,
+                  permission: "workers-secret:api-traffic",
+                }),
+                status: "executing",
+              }
+          : rotationDocument(
+              body,
+              "credrot_cli_api",
+              "api_bearer_key",
+              oldFingerprint,
+              replacementFingerprint,
+              "replacement_installed",
+            ),
+      ),
+    );
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const directory = mkdtempSync(join(tmpdir(), "keepr-boundary-plan-"));
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const base = {
+    action: "install",
+    rotationId: "credrot_cli_api",
+    credentialClass: "api_bearer_key",
+    expectedGeneration: 0,
+    oldFingerprint,
+    replacementFingerprint,
+    idempotencyKey: "plan-cli-api-001",
+  };
+  const first = await runCli(
+    mutationArguments({ ...base, confirm: "first-pass" }),
+    environment(port, log),
+    {
+      administration_key: administrationKey,
+      old_secret: oldSecret,
+      replacement_secret: replacementSecret,
+      management_credential: "separate-plan-management-token",
+    },
   );
+  assert.equal(first.code, 2);
+  assert.equal(existsSync(log), false);
+  const confirmation = confirmationText({
+    ...planDocument(
+      {
+        action: base.action,
+        rotation_id: base.rotationId,
+        credential_class: base.credentialClass,
+        idempotency_key: base.idempotencyKey,
+        old_fingerprint: oldFingerprint,
+        replacement_fingerprint: replacementFingerprint,
+      },
+      {
+        id: planId,
+        digest: planDigest,
+        permission: "workers-secret:api-traffic",
+      },
+    ),
+  });
+  assert.ok(first.stdout.includes(planDigest));
+
+  const second = await runCli(
+    mutationArguments({ ...base, confirm: confirmation }),
+    environment(port, log),
+    {
+      administration_key: administrationKey,
+      old_secret: oldSecret,
+      replacement_secret: replacementSecret,
+      management_credential: "separate-plan-management-token",
+    },
+  );
+  assert.equal(second.code, 0);
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1);
   assert.deepEqual(
-    received.map((entry) => entry.url),
+    requests.map((entry) => entry.url),
     [
-      "/v1/credential-rotations",
-      "/v1/credential-rotations/credrot_cli_d1_export/verification",
-      "/v1/credential-rotations/credrot_cli_d1_export/revocation",
+      "/v1/credential-rotation-plans",
+      "/v1/credential-rotation-plans",
+      `/v1/credential-rotation-plans/${planId}/execution`,
+      `/v1/credential-rotation-plans/${planId}/finalization`,
     ],
   );
-  assert.match(received[0].body.boundary_receipt, /^receipt:test:/);
-  assert.match(received[1].body.boundary_receipt, /^receipt:test:/);
-  assert.match(received[2].body.boundary_receipt, /^receipt:test:/);
-  for (const entry of received) {
-    assert.equal(JSON.stringify(entry.body).includes(oldSecret), false);
-    assert.equal(
-      JSON.stringify(entry.body).includes(replacementSecret),
-      false,
-    );
+  for (const entry of requests) {
+    const serialized = JSON.stringify(entry.body);
+    assert.equal(serialized.includes(oldSecret), false);
+    assert.equal(serialized.includes(replacementSecret), false);
+    assert.equal(serialized.includes(administrationKey), false);
   }
 });
 
-test("secret arguments and incomplete typed confirmation fail without echoing the value", async () => {
-  const secret = "must-not-enter-arguments";
-  const result = await runCli(
-    ["credential", "install", "--replacement-secret", secret, "--json"],
-    {},
-    {},
+test("single-holder verify and revoke send no rotated plaintext and carry management identity separately", async (t) => {
+  const oldSecret = "old-export-provider-token";
+  const replacementSecret = "replacement-export-provider-token";
+  const managementCredential = "separate-provider-management-token";
+  const administrationKey = "admin-export-secret";
+  const oldFingerprint = fingerprint(oldSecret);
+  const replacementFingerprint = fingerprint(replacementSecret);
+  const requests = [];
+  let generation = 0;
+  const reserved = new Map();
+  const server = createServer(async (request, response) => {
+    let text = "";
+    request.setEncoding("utf8");
+    for await (const chunk of request) text += chunk;
+    const body = JSON.parse(text);
+    requests.push({ url: request.url, body });
+    if (request.url === "/v1/credential-rotation-plans") {
+      const action = body.action;
+      reserved.set(`credplan_export_${action}`, body);
+      response.writeHead(201, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify(
+          planDocument(body, {
+            id: `credplan_export_${action}`,
+            digest: String(generation + 2).repeat(64),
+            permission: "D1 Read",
+          }),
+        ),
+      );
+      return;
+    }
+    if (request.url?.endsWith("/execution")) {
+      const planId = request.url.split("/").at(-2);
+      const planBody = reserved.get(planId);
+      const action = planId.slice("credplan_export_".length);
+      response.writeHead(200, {
+        "content-type": "application/json",
+      });
+      response.end(
+        JSON.stringify({
+          ...planDocument(planBody, {
+            id: planId,
+            digest: String(generation + 2).repeat(64),
+            permission: "D1 Read",
+          }),
+          action,
+          status: "executing",
+        }),
+      );
+      return;
+    }
+    const state =
+      generation === 0
+        ? "replacement_installed"
+        : generation === 1
+          ? "replacement_verified"
+          : "old_revoked";
+    generation += 1;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify(
+        rotationDocument(
+          body,
+          "credrot_export",
+          "d1_export_token",
+          oldFingerprint,
+          replacementFingerprint,
+          state,
+        ),
+      ),
+    );
+  });
+  const port = await listen(server);
+  t.after(() => server.close());
+  const directory = mkdtempSync(
+    join(tmpdir(), "keepr-boundary-lifecycle-"),
   );
-  assert.equal(result.code, 2);
-  assert.equal(result.stdout.includes(secret), false);
-  assert.equal(result.stderr.includes(secret), false);
+  const log = join(directory, "calls.jsonl");
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const action of ["install", "verify", "revoke"]) {
+    const plan = planDocument(
+      {
+        action,
+        rotation_id: "credrot_export",
+        credential_class: "d1_export_token",
+        idempotency_key: `${action}-export-001`,
+        old_fingerprint: oldFingerprint,
+        replacement_fingerprint: replacementFingerprint,
+        expected_state_generation: generation,
+      },
+      {
+        id: `credplan_export_${action}`,
+        digest: String(generation + 2).repeat(64),
+        permission: "D1 Read",
+      },
+    );
+    const result = await runCli(
+      mutationArguments({
+        action,
+        rotationId: "credrot_export",
+        credentialClass: "d1_export_token",
+        expectedGeneration: generation,
+        oldFingerprint,
+        replacementFingerprint,
+        idempotencyKey: `${action}-export-001`,
+        confirm: confirmationText(plan),
+        oldIssuerCredentialId: "cf-token:old-export-id",
+        replacementIssuerCredentialId:
+          "cf-token:replacement-export-id",
+        managementCredentialId: "cf-token:management-id",
+      }),
+      environment(port, log),
+      {
+        administration_key: administrationKey,
+        management_credential: managementCredential,
+        ...(action === "install"
+          ? {
+              old_secret: oldSecret,
+              replacement_secret: replacementSecret,
+            }
+          : {}),
+      },
+    );
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+  }
+
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 3);
+  for (const entry of requests) {
+    const serialized = JSON.stringify(entry.body);
+    assert.equal(serialized.includes(oldSecret), false);
+    assert.equal(serialized.includes(replacementSecret), false);
+    assert.equal(serialized.includes(managementCredential), false);
+  }
 });
 
 function mutationArguments(input) {
-  const confirmation = [
-    input.action,
-    input.rotationId,
-    input.credentialClass,
-    "production",
-    input.resource,
-    input.boundary,
-    input.verificationTarget,
-    input.oldFingerprint,
-    input.replacementFingerprint,
-    input.idempotencyKey,
-  ].join(":");
   return [
     "credential",
     input.action,
@@ -327,59 +336,137 @@ function mutationArguments(input) {
     input.rotationId,
     "--credential-class",
     input.credentialClass,
-    "--environment",
-    "production",
-    "--resource",
-    input.resource,
-    "--boundary",
-    input.boundary,
-    "--verification-target",
-    input.verificationTarget,
+    "--cloudflare-account-id",
+    context.cloudflareAccountId,
+    "--catalogue-d1-database-id",
+    context.catalogueD1DatabaseId,
+    "--disposable-d1-database-id",
+    context.disposableD1DatabaseId,
+    "--github-repository-id",
+    context.githubRepositoryId,
+    "--expected-catalogue-revision",
+    "catrev_spine_000",
+    "--expected-state-generation",
+    String(input.expectedGeneration),
     "--expected-old-fingerprint",
     input.oldFingerprint,
     "--expected-replacement-fingerprint",
     input.replacementFingerprint,
+    "--old-issuer-credential-id",
+    input.oldIssuerCredentialId ?? "worker-secret:API_BEARER_KEY",
+    "--replacement-issuer-credential-id",
+    input.replacementIssuerCredentialId ??
+      "worker-secret:API_BEARER_KEY_REPLACEMENT",
+    "--management-credential-id",
+    input.managementCredentialId ?? "cloudflare-operator:acceptance",
     "--idempotency-key",
     input.idempotencyKey,
     "--secrets-stdin-fd",
     "0",
     "--confirm",
-    confirmation,
+    input.confirm,
     "--yes",
     "--json",
   ];
 }
 
+function planDocument(body, options) {
+  const identity = identityFor(body.credential_class);
+  return {
+    contract: "card-keepr-credential-rotation-plan@1",
+    id: options.id,
+    action: body.action,
+    rotation_id: body.rotation_id,
+    credential_class: body.credential_class,
+    environment: "production",
+    cloudflare_account_id: context.cloudflareAccountId,
+    resource_identity: identity.resource,
+    owning_boundary: identity.boundary,
+    verification_target: identity.target,
+    required_permission: options.permission,
+    expected_catalogue_revision_id: "catrev_spine_000",
+    expected_state_generation: body.expected_state_generation ?? 0,
+    expected_rotation_state: null,
+    old_fingerprint: body.old_fingerprint,
+    replacement_fingerprint: body.replacement_fingerprint,
+    old_issuer_credential_id: body.old_issuer_credential_id,
+    replacement_issuer_credential_id:
+      body.replacement_issuer_credential_id,
+    management_credential_id: body.management_credential_id,
+    idempotency_key: body.idempotency_key,
+    plan_nonce: "a".repeat(64),
+    plan_digest: options.digest,
+    status: "reserved",
+    created_at: "2026-07-29T00:00:00.000Z",
+    expires_at: "2026-07-29T00:05:00.000Z",
+  };
+}
+
+function identityFor(credentialClass) {
+  if (credentialClass === "api_bearer_key") {
+    const prefix =
+      `cloudflare-account:${context.cloudflareAccountId}:worker:card-keepr-api`;
+    return {
+      resource: prefix,
+      boundary: "api_worker",
+      target: `${prefix}:health`,
+    };
+  }
+  const prefix =
+    `cloudflare-account:${context.cloudflareAccountId}:d1:${context.catalogueD1DatabaseId}`;
+  return {
+    resource: prefix,
+    boundary: "d1_export_operation",
+    target: `${prefix}:export-schema`,
+  };
+}
+
+function confirmationText(plan) {
+  return [
+    plan.action,
+    plan.rotation_id,
+    plan.credential_class,
+    plan.environment,
+    plan.cloudflare_account_id,
+    plan.resource_identity,
+    plan.owning_boundary,
+    plan.expected_catalogue_revision_id,
+    plan.expected_state_generation,
+    plan.old_fingerprint,
+    plan.replacement_fingerprint,
+    plan.verification_target,
+    plan.plan_digest,
+    plan.idempotency_key,
+    plan.credential_class === "d1_export_token"
+      ? "cf-token:old-export-id"
+      : "worker-secret:API_BEARER_KEY",
+    plan.credential_class === "d1_export_token"
+      ? "cf-token:replacement-export-id"
+      : "worker-secret:API_BEARER_KEY_REPLACEMENT",
+    plan.credential_class === "d1_export_token"
+      ? "cf-token:management-id"
+      : "cloudflare-operator:acceptance",
+  ].join(":");
+}
+
 function rotationDocument(
+  request,
   id,
   credentialClass,
   oldFingerprint,
   replacementFingerprint,
+  state,
 ) {
+  const identity = identityFor(credentialClass);
   return {
     contract: "card-keepr-credential-rotation@1",
     id,
     credential_class: credentialClass,
-    state: "replacement_installed",
+    state,
     environment: "production",
-    resource_identity:
-      credentialClass === "api_bearer_key"
-        ? "worker:card-keepr-api"
-        : credentialClass === "d1_export_token"
-          ? "d1:card-keepr-catalogue"
-        : "worker-release:card-keepr",
-    owning_boundary:
-      credentialClass === "api_bearer_key"
-        ? "api_worker"
-        : credentialClass === "d1_export_token"
-          ? "d1_export_operation"
-        : "production_release_workflow",
-    verification_target:
-      credentialClass === "api_bearer_key"
-        ? "worker-health:card-keepr-api"
-        : credentialClass === "d1_export_token"
-          ? "cloudflare:d1:card-keepr-catalogue:export"
-        : "github:KeeprDigital/card-keepr:environment:production",
+    resource_identity: identity.resource,
+    owning_boundary: identity.boundary,
+    verification_target: identity.target,
     old_fingerprint: oldFingerprint,
     replacement_fingerprint: replacementFingerprint,
     operation_code: "ok",
@@ -390,12 +477,14 @@ function fingerprint(secret) {
   return `sha256:${createHash("sha256").update(secret).digest("hex")}`;
 }
 
-function assertSecretsAbsent(arguments_, result, ...secrets) {
-  for (const secret of secrets) {
-    assert.equal(arguments_.join(" ").includes(secret), false);
-    assert.equal(result.stdout.includes(secret), false);
-    assert.equal(result.stderr.includes(secret), false);
-  }
+function environment(port, log) {
+  return {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+    KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR: executor,
+    KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
+      "acceptance-boundary-attestation-key",
+    KEEPR_TEST_BOUNDARY_LOG: log,
+  };
 }
 
 async function listen(server) {
@@ -408,10 +497,10 @@ async function listen(server) {
   return address.port;
 }
 
-async function runCli(arguments_, environment, secrets) {
+async function runCli(arguments_, environment_, secrets) {
   const child = spawn(process.execPath, ["cli/keepr.mjs", ...arguments_], {
     cwd: process.cwd(),
-    env: { ...process.env, ...environment },
+    env: { ...process.env, ...environment_ },
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.end(JSON.stringify(secrets));

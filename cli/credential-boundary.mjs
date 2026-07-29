@@ -1,35 +1,53 @@
 import { spawn } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 
-const requiredPermissions = {
-  api_bearer_key: "workers-secret:api-traffic",
-  ingestion_admin_key: "workers-secret:administration",
-  d1_export_token: "d1:export",
-  d1_verification_token: "d1:edit-disposable",
-  github_deployment_token: "workers:deploy",
-};
-
 export async function executeCredentialBoundary(
-  action,
-  identity,
-  secret,
+  plan,
+  secrets,
   environment,
 ) {
-  const configured = environment.KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR;
-  const command = process.execPath;
-  const prefix = [
-    configured ?? resolve("cli/provider-credential-boundary.mjs"),
-  ];
+  const executor =
+    environment.KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR ??
+    resolve("cli/provider-credential-boundary.mjs");
   const arguments_ = [
-    ...prefix,
-    action,
-    identity.credential_class,
-    identity.environment,
-    identity.resource_identity,
-    identity.owning_boundary,
-    identity.verification_target,
+    executor,
+    plan.action,
+    plan.id,
+    plan.plan_digest,
+    plan.plan_nonce,
+    plan.credential_class,
+    plan.cloudflare_account_id,
+    plan.resource_identity,
+    plan.owning_boundary,
+    plan.verification_target,
+    plan.required_permission,
+    plan.old_fingerprint,
+    plan.replacement_fingerprint,
+    plan.old_issuer_credential_id,
+    plan.replacement_issuer_credential_id,
+    plan.management_credential_id,
   ];
-  const result = await run(command, arguments_, secret, environment);
+  const input = JSON.stringify({
+    ...(secrets.old_secret === undefined
+      ? {}
+      : { old_secret: secrets.old_secret }),
+    ...(secrets.replacement_secret === undefined
+      ? {}
+      : { replacement_secret: secrets.replacement_secret }),
+    ...(secrets.management_credential === undefined
+      ? {}
+      : {
+          management_credential:
+            secrets.management_credential,
+        }),
+  });
+  const result = await run(
+    process.execPath,
+    arguments_,
+    input,
+    environment,
+  );
   if (result.code !== 0) {
     return {
       ok: false,
@@ -43,37 +61,46 @@ export async function executeCredentialBoundary(
   } catch {
     return {
       ok: false,
-      code: "invalid_credential_boundary_receipt",
-      detail: "The owning credential boundary returned an invalid receipt.",
+      code: "invalid_credential_boundary_attestation",
+      detail:
+        "The owning credential boundary returned an invalid attestation.",
     };
   }
-  const requiredPermission =
-    requiredPermissions[identity.credential_class];
   if (
     document?.ok !== true ||
-    document.action !== action ||
-    document.credential_class !== identity.credential_class ||
-    document.environment !== identity.environment ||
-    document.resource_identity !== identity.resource_identity ||
-    document.owning_boundary !== identity.owning_boundary ||
-    document.verification_target !== identity.verification_target ||
-    !Array.isArray(document.permissions) ||
-    document.permissions.length !== 1 ||
-    document.permissions[0] !== requiredPermission ||
-    typeof document.receipt !== "string" ||
-    !/^receipt:[A-Za-z0-9._:-]{8,200}$/.test(document.receipt)
+    document.plan_id !== plan.id ||
+    !safeDigestEqual(document.plan_digest, plan.plan_digest) ||
+    typeof document.boundary_attestation !== "string" ||
+    document.boundary_attestation.length > 16_384
   ) {
     return {
       ok: false,
       code: "credential_boundary_mismatch",
       detail:
-        "The owning credential boundary receipt did not prove the exact class, resource, and least-privilege permission.",
+        "The owning credential boundary did not attest the exact reserved plan.",
     };
   }
-  return { ok: true, receipt: document.receipt };
+  return {
+    ok: true,
+    attestation: document.boundary_attestation,
+  };
 }
 
-function run(command, arguments_, secret, environment) {
+function safeDigestEqual(left, right) {
+  const leftMatch = /^[0-9a-f]{64}$/.exec(left ?? "");
+  const rightMatch = /^[0-9a-f]{64}$/.exec(right ?? "");
+  const leftBytes =
+    leftMatch === null ? Buffer.alloc(32) : Buffer.from(left, "hex");
+  const rightBytes =
+    rightMatch === null ? Buffer.alloc(32) : Buffer.from(right, "hex");
+  return (
+    leftMatch !== null &&
+    rightMatch !== null &&
+    timingSafeEqual(leftBytes, rightBytes)
+  );
+}
+
+function run(command, arguments_, input, environment) {
   return new Promise((resolveRun) => {
     const child = spawn(command, arguments_, {
       cwd: process.cwd(),
@@ -84,9 +111,10 @@ function run(command, arguments_, secret, environment) {
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
+      if (stdout.length > 32_768) child.kill();
     });
-    // Boundary stderr is deliberately discarded: provider tools may include
-    // request material in diagnostics. Stable CLI errors are emitted instead.
+    // Provider diagnostics are discarded because they may contain request
+    // material. The CLI emits only stable safe errors.
     child.stderr.resume();
     child.once("error", () => {
       resolveRun({ code: 1, stdout: "" });
@@ -94,6 +122,6 @@ function run(command, arguments_, secret, environment) {
     child.once("exit", (code) => {
       resolveRun({ code: code ?? 1, stdout });
     });
-    child.stdin.end(secret);
+    child.stdin.end(input);
   });
 }

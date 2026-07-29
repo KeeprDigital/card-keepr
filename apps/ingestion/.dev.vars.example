@@ -1,3 +1,4 @@
 # Copy to .dev.vars and replace this non-secret type-generation placeholder.
 ADMINISTRATION_KEY=generated-type-placeholder
 ADMINISTRATION_KEY_REPLACEMENT=generated-type-placeholder-replacement
+CREDENTIAL_BOUNDARY_ATTESTATION_KEY=generated-type-placeholder-attestation
