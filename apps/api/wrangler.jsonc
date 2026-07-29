@@ -2,27 +2,30 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "card-keepr-api",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-28",
+  "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "placement": {
     "mode": "smart"
   },
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
-    "CATALOGUE_REVISION_ID": "catrev_spine_000",
-    "CATALOGUE_PUBLISHED_AT": "1970-01-01T00:00:00.000Z"
+    "CORS_ALLOWED_ORIGINS": "http://localhost:3000"
   },
   "d1_databases": [
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
-      "database_id": "00000000-0000-0000-0000-000000000001"
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "PRINTING_IMAGES",
       "bucket_name": "card-keepr-printing-images"
+    },
+    {
+      "binding": "CATALOGUE_EXPORTS",
+      "bucket_name": "card-keepr-catalogue-exports"
     }
   ],
   "ratelimits": [

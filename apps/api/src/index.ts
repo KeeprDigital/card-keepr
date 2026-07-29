@@ -1,8 +1,13 @@
 import { authenticateBearer } from "../../../src/http/authentication";
 import {
+  catalogueExportComponentResponse,
+  catalogueExportResponse,
+  currentCardResponse,
+  currentCatalogueStatus,
+  currentPrintingResponse,
+} from "../../../src/catalogue/read";
+import {
   catalogueResponse,
-  parseCatalogueRevisionId,
-  parsePublicationInstant,
 } from "../../../src/http/catalogue";
 import {
   allowedPreflightResponse,
@@ -80,13 +85,58 @@ export default {
       if (request.method === "GET" && url.pathname === "/v1/catalogue") {
         return withCorsHeaders(
           request,
-          catalogueResponse({
-            revisionId: parseCatalogueRevisionId(env.CATALOGUE_REVISION_ID),
-            publishedAt: parsePublicationInstant(
-              env.CATALOGUE_PUBLISHED_AT,
-            ),
-          }),
+          catalogueResponse(await currentCatalogueStatus(env.CATALOGUE_DB)),
         );
+      }
+
+      const cardMatch = /^\/v1\/cards\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && cardMatch !== null) {
+        const response = await currentCardResponse(
+          env.CATALOGUE_DB,
+          decodeURIComponent(cardMatch[1]!),
+        );
+        if (response !== null) return withCorsHeaders(request, response);
+      }
+
+      const printingMatch = /^\/v1\/printings\/([^/]+)$/.exec(
+        url.pathname,
+      );
+      if (request.method === "GET" && printingMatch !== null) {
+        const response = await currentPrintingResponse(
+          env.CATALOGUE_DB,
+          decodeURIComponent(printingMatch[1]!),
+        );
+        if (response !== null) return withCorsHeaders(request, response);
+      }
+
+      const exportComponentMatch =
+        /^\/v1\/catalogue-exports\/([^/]+)\/components\/([^/]+)$/.exec(
+          url.pathname,
+        );
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        exportComponentMatch !== null
+      ) {
+        const response = await catalogueExportComponentResponse(
+          request,
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(exportComponentMatch[1]!),
+          decodeURIComponent(exportComponentMatch[2]!),
+        );
+        if (response !== null) return withCorsHeaders(request, response);
+      }
+
+      const exportMatch = /^\/v1\/catalogue-exports\/([^/]+)$/.exec(
+        url.pathname,
+      );
+      if (request.method === "GET" && exportMatch !== null) {
+        const response = await catalogueExportResponse(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(exportMatch[1]!),
+        );
+        if (response !== null) return withCorsHeaders(request, response);
       }
 
       if (request.method === "GET" && url.pathname === "/health") {
@@ -94,6 +144,7 @@ export default {
           "read",
           env.CATALOGUE_DB,
           env.PRINTING_IMAGES,
+          env.CATALOGUE_EXPORTS,
         );
         return withCorsHeaders(
           request,

@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "card-keepr-ingestion",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-28",
+  "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "placement": {
     "mode": "smart"
@@ -11,7 +11,8 @@
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
-      "database_id": "00000000-0000-0000-0000-000000000001"
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "../../migrations"
     }
   ],
   "r2_buckets": [

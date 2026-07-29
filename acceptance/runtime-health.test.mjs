@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -50,6 +50,7 @@ async function waitForHealth(url, key, runtime, worker) {
 }
 
 function startWorker({ config, envFile, inspectorPort, port, statePath }) {
+  applyMigrations(config, statePath);
   let output = "";
   const child = spawn(
     resolve(root, "node_modules/.bin/wrangler"),
@@ -94,6 +95,35 @@ function startWorker({ config, envFile, inspectorPort, port, statePath }) {
     output += `${error.message}\n`;
   });
   return { process: child, getOutput: () => output };
+}
+
+function applyMigrations(config, statePath) {
+  const result = spawnSync(
+    resolve(root, "node_modules/.bin/wrangler"),
+    [
+      "d1",
+      "migrations",
+      "apply",
+      "CATALOGUE_DB",
+      "--local",
+      "--config",
+      config,
+      "--persist-to",
+      statePath,
+    ],
+    {
+      cwd: root,
+      env: {
+        ...processEnvWithoutSecrets(),
+        CI: "1",
+        WRANGLER_LOG_PATH: join(statePath, "logs"),
+      },
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout);
+  }
 }
 
 function processEnvWithoutSecrets() {
@@ -209,7 +239,11 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
       {
         name: "api",
         status: "ok",
-        capabilities: ["catalogue:read", "printing-image:read"],
+        capabilities: [
+          "catalogue:read",
+          "printing-image:read",
+          "catalogue-export:read",
+        ],
       },
       {
         name: "ingestion",
@@ -231,7 +265,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     humanCli.stdout,
     [
       "Card Keepr runtimes are healthy",
-      "api: ok (catalogue:read, printing-image:read)",
+      "api: ok (catalogue:read, printing-image:read, catalogue-export:read)",
       "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write)",
       "",
     ].join("\n"),
