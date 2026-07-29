@@ -87,8 +87,13 @@ export async function buildCatalogueExport(
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
+  sourceFreshness?: Readonly<Partial<Record<SupportedGame, string>>>,
 ): Promise<BuiltCatalogueExport> {
-  const records = exportRecords(candidate, catalogueRevisionId, lifecycles);
+  const records = await exportRecords(
+    candidate,
+    catalogueRevisionId,
+    lifecycles,
+  );
   const components: ExportComponent[] = [];
   const objects: ExportObject[] = [];
 
@@ -137,7 +142,7 @@ export async function buildCatalogueExport(
     source_freshness: candidate.selected_games.map((game) => ({
         game,
         area: "cards-and-printings",
-        checked_at: publishedAt,
+        checked_at: sourceFreshness?.[game] ?? publishedAt,
       })),
     components,
     manifest_sha256: "0".repeat(64),
@@ -185,7 +190,7 @@ function assertFixtureExportIsBounded(
   }
 }
 
-function exportRecords(
+async function exportRecords(
   candidate: FixtureCandidate,
   revisionId: string,
   lifecycles?: {
@@ -193,7 +198,9 @@ function exportRecords(
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
-): Record<(typeof componentDefinitions)[number][0], readonly unknown[]> {
+): Promise<
+  Record<(typeof componentDefinitions)[number][0], readonly unknown[]>
+> {
   const defaultLifecycle = {
     first_revision_id: revisionId,
     last_observed_revision_id: revisionId,
@@ -211,15 +218,44 @@ function exportRecords(
     ({ relationship }) =>
       relationship.relationship_kind !== "source_bucket",
   );
+  const identifiedRelationships = await Promise.all(
+    canonicalRelationshipEvidence.map(
+      async ({ printing, card, relationship }) => {
+        const targetId =
+          relationship.relationship_kind === "product"
+            ? await productExportId(
+                card.game,
+                relationship.relationship_value,
+              )
+            : await distributionContextExportId(
+                card.game,
+                relationship.source_lineage,
+                relationship.relationship_value,
+              );
+        return {
+          printing,
+          card,
+          relationship,
+          targetId,
+          relationshipId: await relationshipExportId(
+            card.game,
+            printing.id,
+            relationship,
+            targetId,
+          ),
+        };
+      },
+    ),
+  );
   const products = uniqueById(
-    canonicalRelationshipEvidence
+    identifiedRelationships
       .filter(
         ({ relationship }) =>
           relationship.relationship_kind === "product",
       )
-      .map(({ card, relationship }) => ({
+      .map(({ card, relationship, targetId }) => ({
         type: "product",
-        id: relationship.relationship_value,
+        id: targetId,
         game: card.game,
         official_code: relationship.relationship_value,
         name: relationship.relationship_value,
@@ -232,14 +268,14 @@ function exportRecords(
       })),
   );
   const distributionContexts = uniqueById(
-    canonicalRelationshipEvidence
+    identifiedRelationships
       .filter(
         ({ relationship }) =>
           relationship.relationship_kind === "distribution_context",
       )
-      .map(({ card, relationship }) => ({
+      .map(({ card, relationship, targetId }) => ({
         type: "distribution_context",
-        id: relationship.relationship_value,
+        id: targetId,
         game: card.game,
         kind: "other",
         label: relationship.relationship_value,
@@ -273,10 +309,10 @@ function exportRecords(
     "distribution-contexts": distributionContexts,
     errata: [],
     "legality-rules": [],
-    relationships: canonicalRelationshipEvidence
-      .map(({ printing, relationship }) => ({
+    relationships: identifiedRelationships
+      .map(({ printing, relationship, relationshipId, targetId }) => ({
         type: "relationship",
-        id: relationshipExportId(printing.id, relationship),
+        id: relationshipId,
         kind:
           relationship.relationship_kind === "product"
             ? "printing-product"
@@ -287,7 +323,7 @@ function exportRecords(
             relationship.relationship_kind === "product"
               ? "product"
               : "distribution_context",
-          id: relationship.relationship_value,
+          id: targetId,
         },
         evidence_category: "explicit",
         source_lineage: relationship.source_lineage,
@@ -312,15 +348,45 @@ function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
   );
 }
 
-function relationshipExportId(
+async function relationshipExportId(
+  game: SupportedGame,
   printingId: string,
   relationship: RelationshipEvidence,
-): string {
-  const raw = `${printingId}\u0000${relationship.source_lineage}\u0000${relationship.relationship_kind}\u0000${relationship.relationship_value}`;
-  return `relationship_${[...new TextEncoder().encode(raw)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 160)}`;
+  targetId: string,
+): Promise<string> {
+  return `relationship_${await sha256Text(
+    canonicalJson({
+      game,
+      printing_id: printingId,
+      source_lineage: relationship.source_lineage,
+      relationship_kind: relationship.relationship_kind,
+      relationship_value: relationship.relationship_value,
+      target_id: targetId,
+    }),
+  )}`;
+}
+
+async function productExportId(
+  game: SupportedGame,
+  officialCode: string,
+): Promise<string> {
+  return `product_${await sha256Text(
+    canonicalJson({ game, official_code: officialCode }),
+  )}`;
+}
+
+export async function distributionContextExportId(
+  game: SupportedGame,
+  sourceLineage: string,
+  label: string,
+): Promise<string> {
+  return `distribution_context_${await sha256Text(
+    canonicalJson({
+      game,
+      source_lineage: sourceLineage,
+      label,
+    }),
+  )}`;
 }
 
 function supportedGameExport(game: SupportedGame) {

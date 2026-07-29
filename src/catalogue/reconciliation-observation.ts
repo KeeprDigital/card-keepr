@@ -206,6 +206,15 @@ export function parseReconciliationObservation(
       "The functional DON!! identity requires the one-piece@1 don Card shape.",
     );
   }
+  if (
+    profile === "one-piece@1" &&
+    canonicalCardAttributes.card_type === "don" &&
+    !don
+  ) {
+    throw new Error(
+      "The One Piece card_type don requires functional DON!! identity.",
+    );
+  }
   if (record.printing === undefined) {
     return {
       sourceObservationId,
@@ -354,11 +363,23 @@ function parseOfficialIdentity(
   if (
     identity.kind !== "card_number" ||
     typeof identity.value !== "string" ||
-    identity.value.length === 0
+    identity.value.length === 0 ||
+    identity.value !== identity.value.trim() ||
+    /\s/.test(identity.value)
   ) {
-    throw new Error("Retained Card official identity is invalid.");
+    throw new Error("Retained Card official card number is invalid.");
   }
-  return { kind: "card_number", value: identity.value };
+  const canonical = identity.value.toUpperCase();
+  const acceptedNumberPatterns: Record<SupportedGame, RegExp> = {
+    "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
+    "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
+    digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
+    gundam: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
+  };
+  if (!acceptedNumberPatterns[game].test(canonical)) {
+    throw new Error("Retained Card official card number is invalid.");
+  }
+  return { kind: "card_number", value: canonical };
 }
 
 function inspectSharedObservationFields(

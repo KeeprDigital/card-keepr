@@ -181,7 +181,13 @@ export async function reconciliationCandidatePlans(
   runId: string,
 ): Promise<CandidatePlanRow[]> {
   const rows = await database
-    .prepare("SELECT * FROM reconciliation_candidates WHERE ingestion_run_id = ?")
+    .prepare(
+      `SELECT *
+       FROM reconciliation_candidates
+       WHERE ingestion_run_id = ?
+       ORDER BY source_lineage, card_id, printing_id,
+                source_observation_id`,
+    )
     .bind(runId)
     .all<CandidatePlanRow>();
   return rows.results;

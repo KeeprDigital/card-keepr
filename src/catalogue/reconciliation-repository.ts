@@ -107,7 +107,7 @@ export async function gundamCrossLocaleEvidenceCompatible(
       .prepare(
         `SELECT DISTINCT variant_key
          FROM reconciled_printing_locators
-         WHERE printing_id = ? AND source_lineage = ?
+         WHERE printing_id = ? AND source_lineage = ? AND current = 1
          ORDER BY variant_key`,
       )
       .bind(printing.id, printing.source_lineage)
@@ -169,7 +169,9 @@ export async function printingAtLocator(
        FROM reconciled_printing_locators AS locator
        JOIN reconciled_printings AS printing
          ON printing.id = locator.printing_id
-       WHERE locator.source_lineage = ? AND locator.locator = ?`,
+       WHERE locator.source_lineage = ?
+         AND locator.locator = ?
+         AND locator.current = 1`,
     )
     .bind(sourceLineage, locator)
     .first<ReconciledPrintingRow>();
@@ -191,7 +193,7 @@ export async function hasOtherGundamLocaleEvidence(
     .prepare(
       `SELECT printing_id
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ?
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
        LIMIT 1`,
     )
     .bind(printingId, counterpart)
@@ -242,6 +244,18 @@ export async function canonicalCardConflict(
     )
     .bind(cardId)
     .all<{ source_lineage: string }>();
+  if (authorities.results.length === 0) return null;
+  if (proposed.game === "gundam") {
+    if (sourceLineage === "gundam-en-asia") return null;
+    if (
+      sourceLineage === "gundam-en-us" &&
+      authorities.results.some(
+        ({ source_lineage }) => source_lineage === "gundam-en-asia",
+      )
+    ) {
+      return "The retained Card facts conflict across source lineages; authoritative Gundam EN-ASIA evidence wins.";
+    }
+  }
   return authorities.results.length > 0 &&
     authorities.results.every(
       (authority) => authority.source_lineage === sourceLineage,

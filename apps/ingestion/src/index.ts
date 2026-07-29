@@ -143,8 +143,12 @@ export default {
         ).TEST_FIXTURE_SOURCE_PLAN_KEY;
         if (
           fixtureKey === undefined ||
-          request.headers.get("x-card-keepr-fixture-source-plan-key") !==
-            fixtureKey
+          !(await fixedHashSecretMatches(
+            request.headers.get(
+              "x-card-keepr-fixture-source-plan-key",
+            ),
+            fixtureKey,
+          ))
         ) {
           throw new AdministrationProblem(
             404,
@@ -555,6 +559,26 @@ async function readAdministrationBody(
       "The administration request body must be a JSON object.",
     );
   }
+}
+
+async function fixedHashSecretMatches(
+  provided: string | null,
+  expected: string,
+): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest(
+      "SHA-256",
+      encoder.encode(provided ?? ""),
+    ),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const providedBytes = new Uint8Array(providedHash);
+  const expectedBytes = new Uint8Array(expectedHash);
+  return (
+    provided !== null &&
+    crypto.subtle.timingSafeEqual(providedBytes, expectedBytes)
+  );
 }
 
 function requiredString(

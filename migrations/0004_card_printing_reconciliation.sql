@@ -156,6 +156,8 @@ CREATE TABLE reconciled_printing_locators (
   variant_key TEXT,
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
+  last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
   PRIMARY KEY (source_lineage, locator)
 );
 
@@ -191,8 +193,39 @@ CREATE TABLE reconciled_card_observations (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   canonical_facts_json TEXT NOT NULL,
   current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
+  last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
   PRIMARY KEY (card_id, source_lineage, source_observation_id)
 );
+
+CREATE TABLE reconciled_withdrawal_assertions (
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('card', 'printing')),
+  entity_id TEXT NOT NULL,
+  source_lineage TEXT NOT NULL,
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  source_observation_set_id TEXT NOT NULL
+    REFERENCES source_observation_sets(id),
+  source_observation_id TEXT NOT NULL,
+  assertion TEXT NOT NULL,
+  effective INTEGER NOT NULL CHECK (effective IN (0, 1)),
+  evidence_json TEXT NOT NULL,
+  published_catalogue_revision_id TEXT NOT NULL
+    REFERENCES catalogue_revisions(id),
+  PRIMARY KEY (entity_type, entity_id, source_observation_id),
+  FOREIGN KEY (source_observation_set_id, source_snapshot_id)
+    REFERENCES source_observation_sets (id, source_snapshot_id)
+);
+
+CREATE TRIGGER reconciled_withdrawal_assertions_are_immutable_on_update
+BEFORE UPDATE ON reconciled_withdrawal_assertions
+BEGIN
+  SELECT RAISE(ABORT, 'withdrawal_assertion_immutable');
+END;
+
+CREATE TRIGGER reconciled_withdrawal_assertions_are_immutable_on_delete
+BEFORE DELETE ON reconciled_withdrawal_assertions
+BEGIN
+  SELECT RAISE(ABORT, 'withdrawal_assertion_immutable');
+END;
 
 CREATE UNIQUE INDEX source_observation_set_snapshot_identity
 ON source_observation_sets (id, source_snapshot_id);

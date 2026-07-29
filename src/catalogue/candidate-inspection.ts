@@ -59,14 +59,18 @@ export async function inspectCatalogueCandidate(
     database
       .prepare(
         `SELECT printing_id, source_lineage
-         FROM reconciled_printing_locators`,
+         FROM reconciled_printing_locators
+         WHERE current = 1
+         ORDER BY printing_id, source_lineage, locator`,
       )
       .all<{ printing_id: string; source_lineage: string }>(),
     database
       .prepare(
         `SELECT card_id, source_lineage
          FROM reconciled_card_observations
-         WHERE current = 1`,
+         WHERE current = 1
+         ORDER BY card_id, source_lineage, catalogue_revision_id,
+                  source_observation_id`,
       )
       .all<{ card_id: string; source_lineage: string }>(),
   ]);

@@ -322,7 +322,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceWarnings.push(...observation.sourceWarnings);
   }
 
-  diagnostics.push(...withdrawalConflictDiagnostics(plans));
+  diagnostics.push(
+    ...withdrawalConflictDiagnostics(plans),
+    ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
+  );
   if (diagnostics.length > 0) {
     return blockedResult(database, runId, diagnostics, observedAt);
   }
@@ -465,13 +468,94 @@ function digestObservationPlans(
   }[],
 ): Record<string, unknown>[] {
   const semanticPlans = plans.map(
-    ({ sourceObservationId: _sourceObservationId, ...semantic }) => semantic,
+    ({ sourceObservationId: _sourceObservationId, withdrawal, ...semantic }) => ({
+      ...semantic,
+      withdrawal:
+        withdrawal === null
+          ? null
+          : {
+              entity: withdrawal.entity,
+              assertion: withdrawal.assertion,
+              effective: withdrawal.effective,
+              evidence: withdrawal.evidence,
+            },
+    }),
   );
   return [
     ...new Map(
       semanticPlans.map((plan) => [canonicalJson(plan), plan]),
     ).values(),
   ].sort((left, right) =>
+    canonicalJson(left).localeCompare(canonicalJson(right)),
+  );
+}
+
+async function publishedWithdrawalConflictDiagnostics(
+  database: D1Database,
+  plans: readonly {
+    sourceObservationId: string;
+    cardId: string;
+    printingId: string | null;
+    withdrawal: ProvenancedWithdrawal | null;
+  }[],
+): Promise<Diagnostic[]> {
+  const diagnostics: Diagnostic[] = [];
+  for (const plan of plans) {
+    const withdrawal = plan.withdrawal;
+    if (withdrawal === null) continue;
+    const targets = [
+      ...(withdrawal.entity === "card" ||
+      withdrawal.entity === "card_and_printing"
+        ? [{ entityType: "card", entityId: plan.cardId }]
+        : []),
+      ...(plan.printingId !== null &&
+      (withdrawal.entity === "printing" ||
+        withdrawal.entity === "card_and_printing")
+        ? [{ entityType: "printing", entityId: plan.printingId }]
+        : []),
+    ];
+    for (const target of targets) {
+      const prior = await database
+        .prepare(
+          `SELECT assertion, effective, evidence_json
+           FROM reconciled_withdrawal_assertions
+           WHERE entity_type = ? AND entity_id = ?
+           ORDER BY published_catalogue_revision_id, source_observation_id`,
+        )
+        .bind(target.entityType, target.entityId)
+        .all<{
+          assertion: string;
+          effective: number;
+          evidence_json: string;
+        }>();
+      const proposedSemantic = canonicalJson({
+        assertion: withdrawal.assertion,
+        effective: withdrawal.effective,
+        evidence: withdrawal.evidence,
+      });
+      if (
+        prior.results.some(
+          (row) =>
+            canonicalJson({
+              assertion: row.assertion,
+              effective: row.effective === 1,
+              evidence: JSON.parse(row.evidence_json),
+            }) !== proposedSemantic,
+        )
+      ) {
+        diagnostics.push({
+          code: "withdrawal_evidence_conflict",
+          source_observation_id: plan.sourceObservationId,
+          locator: null,
+          candidate_printing_ids:
+            target.entityType === "printing" ? [target.entityId] : [],
+          detail:
+            "The explicit withdrawal assertion conflicts with the published withdrawal history for this identity.",
+        });
+      }
+    }
+  }
+  return diagnostics.sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
 }

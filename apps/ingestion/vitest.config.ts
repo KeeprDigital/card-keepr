@@ -187,6 +187,51 @@ function reconciliationSourceDocument(scenario: string) {
     };
   }
   if (
+    scenario === "deterministic-forward" ||
+    scenario === "deterministic-reverse"
+  ) {
+    const base = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP10-010",
+      name: "Deterministic Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/deterministic/base",
+      lineageMarker: "deterministic-base",
+    });
+    const alternate = {
+      ...base,
+      identity_evidence: {
+        ...base.identity_evidence,
+        locator: "/official/deterministic/alternate",
+        artwork_fingerprint: `sha256:${"e".repeat(64)}`,
+        novelty_basis: {
+          ...base.identity_evidence.novelty_basis,
+          source_url:
+            "https://official-source.invalid/images/OP10-010-alt.png",
+          artwork_fingerprint: `sha256:${"e".repeat(64)}`,
+        },
+      },
+      appearance_evidence: {
+        images: [
+          {
+            role: "front",
+            source_url:
+              "https://official-source.invalid/images/OP10-010-alt.png",
+            artwork_fingerprint: `sha256:${"e".repeat(64)}`,
+          },
+        ],
+      },
+    };
+    return {
+      cards:
+        scenario === "deterministic-forward"
+          ? [base, alternate]
+          : [alternate, base],
+    };
+  }
+  if (
     scenario === "profile-fusion-world" ||
     scenario === "union-fusion-world" ||
     scenario === "profile-nested-unknown" ||
@@ -463,6 +508,34 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (scenario === "profile-numbered-don-invalid") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP99-099",
+          name: "Invalid numbered DON",
+          cardAttributes: {
+            card_type: "don",
+            colours: [],
+            cost: null,
+            life: null,
+            battle_attributes: [],
+            power: null,
+            counter: null,
+            traits: [],
+            block_icons: [],
+            effect_text: "Your turn +1000 power.",
+            trigger_text: null,
+          },
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/don/invalid-numbered",
+          lineageMarker: "don-invalid-numbered",
+        }),
+      ],
+    };
+  }
   if (scenario === "card-without-printing") {
     return {
       cards: [
@@ -500,8 +573,8 @@ function reconciliationSourceDocument(scenario: string) {
     const observation = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
-      cardNumber: "OP01-001",
-      name: "Monkey.D.Luffy",
+      cardNumber: "OP02-002",
+      name: "Conflict withdrawal card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
       locator: "/official/withdrawal-conflict",
@@ -523,6 +596,124 @@ function reconciliationSourceDocument(scenario: string) {
             evidence: "Official withdrawal notice B",
           },
         },
+      ],
+    };
+  }
+  if (scenario === "withdrawn-longitudinal") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP03-003",
+            name: "Longitudinal withdrawal card",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+            locator: "/official/withdrawn-longitudinal",
+            lineageMarker: "withdrawn-longitudinal",
+          }),
+          withdrawal: {
+            entity: "printing",
+            evidence: "Official withdrawal notice",
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "withdrawn-conflicting-later") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP03-003",
+            name: "Longitudinal withdrawal card",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+            locator: "/official/withdrawn-longitudinal",
+            lineageMarker: "withdrawn-longitudinal",
+          }),
+          withdrawal: {
+            entity: "printing",
+            evidence: "A contradictory later official notice",
+          },
+        },
+      ],
+    };
+  }
+  if (
+    scenario === "identity-lower" ||
+    scenario === "identity-upper" ||
+    scenario === "identity-whitespace" ||
+    scenario === "identity-malformed"
+  ) {
+    const identity =
+      scenario === "identity-lower"
+        ? "op06-006"
+        : scenario === "identity-whitespace"
+          ? " OP06-006 "
+          : scenario === "identity-malformed"
+            ? "OP 06-006"
+            : "OP06-006";
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: identity,
+          name: "Canonical identity",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/identity/${scenario}`,
+          lineageMarker: "identity-canonical",
+        }),
+      ],
+    };
+  }
+  if (
+    scenario === "gundam-authority-us" ||
+    scenario === "gundam-authority-asia" ||
+    scenario === "gundam-authority-us-conflict"
+  ) {
+    return {
+      cards: [
+        printingObservation({
+          game: "gundam",
+          profile: "gundam@1",
+          cardNumber: "GD98-001",
+          name:
+            scenario === "gundam-authority-asia"
+              ? "Authoritative Asia name"
+              : scenario === "gundam-authority-us-conflict"
+                ? "Later contradictory US name"
+                : "Initial US name",
+          cardAttributes: {
+            card_type: "unit",
+            colours: ["blue"],
+            level: 4,
+            cost: 3,
+            block_icon: "1",
+            effect_text: "Official effect",
+            zone: "space",
+            traits: ["Earth Federation"],
+            link_condition: null,
+            ap: 3,
+            hp: 4,
+            series_titles: ["Mobile Suit Gundam"],
+          },
+          printingAttributes: { alternate_art: false },
+          locator: `/official/gundam/${scenario}`,
+          variantKey: "base",
+          lineageMarker: "gundam-authority",
+          memberships: {
+            products: ["product_gd98"],
+            distribution_contexts: [],
+            source_buckets: ["gundam-card-list"],
+          },
+          printedFieldsMarker: "shared",
+        }),
       ],
     };
   }

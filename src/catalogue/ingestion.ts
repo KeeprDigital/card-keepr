@@ -1,5 +1,6 @@
 import {
   buildCatalogueExport,
+  distributionContextExportId,
   type BuiltCatalogueExport,
 } from "./export";
 import {
@@ -12,6 +13,7 @@ import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,
   type ReconciliationPublicationPlan,
+  withdrawalAssertionStatements,
 } from "./reconciliation-publication";
 import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
@@ -594,6 +596,13 @@ async function approveRunAttempt(
     database,
     run.id,
     revisionId,
+    now,
+  );
+  const sourceFreshness = await sourceFreshnessForExport(
+    database,
+    candidate.selected_games,
+    parseSelectedGames(run.selected_games_json),
+    now,
   );
   const catalogueExport = await buildCatalogueExport(
     candidate,
@@ -607,6 +616,7 @@ async function approveRunAttempt(
           printings: reconciliation.printingLifecycles,
           relationships: reconciliation.relationshipEvidence,
         },
+    sourceFreshness,
   );
   try {
     await reservePublication(
@@ -1045,7 +1055,11 @@ async function publishNoChange(
     resulting_revision_id: request.expected_current_revision_id,
     freshness_checked_at: now,
   });
-  const candidate = parseCandidate(run);
+  const withdrawalStatements = await withdrawalAssertionStatements(
+    database,
+    run.id,
+    request.expected_current_revision_id,
+  );
   try {
     await database.batch([
       database
@@ -1080,7 +1094,13 @@ async function publishNoChange(
           JSON.stringify(progressFor("publishing")),
           run.id,
         ),
-      ...freshnessStatements(database, candidate.selected_games, run.id, now),
+      ...withdrawalStatements,
+      ...freshnessStatements(
+        database,
+        parseSelectedGames(run.selected_games_json),
+        run.id,
+        now,
+      ),
       database
         .prepare(
           `UPDATE ingestion_runs
@@ -1238,29 +1258,37 @@ function catalogueCard(
   };
 }
 
-function cataloguePrinting(
+async function cataloguePrinting(
   printing: FixtureCandidate["printings"][number],
+  game: SupportedGame,
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
   relationshipEvidence: readonly Record<string, unknown>[] = [],
 ) {
-  return {
-    type: "printing",
-    ...printing,
-    printing_images: [],
-    distribution_contexts: relationshipEvidence
+  const contexts = await Promise.all(
+    relationshipEvidence
       .filter(
         (relationship) =>
           relationship.current === true &&
           relationship.relationship_kind === "distribution_context",
       )
-      .map((relationship) => ({
-        id: relationship.relationship_value,
+      .map(async (relationship) => ({
+        id: await distributionContextExportId(
+          game,
+          String(relationship.source_lineage),
+          String(relationship.relationship_value),
+        ),
         kind: "other",
         label: relationship.relationship_value,
         product_id: null,
         evidence_category: "explicit",
-      }))
+      })),
+  );
+  return {
+    type: "printing",
+    ...printing,
+    printing_images: [],
+    distribution_contexts: contexts
       .filter(
         (context, index, contexts) =>
           contexts.findIndex((candidate) => candidate.id === context.id) ===
@@ -1572,15 +1600,20 @@ async function commitVerifiedPublication(
       input.reconciliation?.cardLifecycles[card.id],
     ),
   }));
-  const printingDocuments = input.candidate.printings.map((printing) => ({
-    printing,
-    document: cataloguePrinting(
+  const printingDocuments = await Promise.all(
+    input.candidate.printings.map(async (printing) => ({
       printing,
-      revisionId,
-      input.reconciliation?.printingLifecycles[printing.id],
-      input.reconciliation?.relationshipEvidence[printing.id] ?? [],
-    ),
-  }));
+      document: await cataloguePrinting(
+        printing,
+        input.candidate.cards.find(
+          (card) => card.id === printing.card_id,
+        )!.game,
+        revisionId,
+        input.reconciliation?.printingLifecycles[printing.id],
+        input.reconciliation?.relationshipEvidence[printing.id] ?? [],
+      ),
+    })),
+  );
   await database.batch([
     database
       .prepare(
@@ -1804,6 +1837,13 @@ async function reconcileReservedPublication(
     database,
     run.id,
     revisionId,
+    publishedAt,
+  );
+  const sourceFreshness = await sourceFreshnessForExport(
+    database,
+    candidate.selected_games,
+    parseSelectedGames(run.selected_games_json),
+    publishedAt,
   );
   const catalogueExport = await buildCatalogueExport(
     candidate,
@@ -1817,6 +1857,7 @@ async function reconcileReservedPublication(
           printings: reconciliation.printingLifecycles,
           relationships: reconciliation.relationshipEvidence,
         },
+    sourceFreshness,
   );
   const exactExport =
     catalogueExport.manifest.manifest_sha256 === manifestDigest &&
@@ -3389,6 +3430,34 @@ function freshnessStatements(
       )
       .bind(game, checkedAt, runId),
   );
+}
+
+async function sourceFreshnessForExport(
+  database: D1Database,
+  catalogueGames: readonly SupportedGame[],
+  refreshedGames: readonly string[],
+  publishedAt: string,
+): Promise<Partial<Record<SupportedGame, string>>> {
+  const prior = await database
+    .prepare(
+      `SELECT game, checked_at
+       FROM source_freshness
+       WHERE area = 'cards-and-printings'
+       ORDER BY game`,
+    )
+    .all<{ game: SupportedGame; checked_at: string }>();
+  const freshness: Partial<Record<SupportedGame, string>> = {};
+  for (const row of prior.results) {
+    if (catalogueGames.includes(row.game)) {
+      freshness[row.game] = row.checked_at;
+    }
+  }
+  for (const game of refreshedGames) {
+    if (catalogueGames.includes(game as SupportedGame)) {
+      freshness[game as SupportedGame] = publishedAt;
+    }
+  }
+  return freshness;
 }
 
 async function expireOverdueRuns(

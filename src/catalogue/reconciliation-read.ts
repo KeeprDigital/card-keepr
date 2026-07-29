@@ -18,11 +18,22 @@ export async function relationshipDisappearanceWarnings(
     .prepare(
       `SELECT source_lineage, source_observation_id,
               relationship_kind, relationship_value,
-              first_revision_id, last_observed_revision_id,
+              membership.first_revision_id,
+              membership.last_observed_revision_id,
+              first_revision.published_at AS first_revision_order,
+              last_revision.published_at AS last_observed_revision_order,
               current, last_missing_revision_id
-       FROM reconciled_printing_memberships
+       FROM reconciled_printing_memberships AS membership
+       JOIN catalogue_revisions AS first_revision
+         ON first_revision.id = membership.first_revision_id
+       JOIN catalogue_revisions AS last_revision
+         ON last_revision.id = membership.last_observed_revision_id
        WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       ORDER BY relationship_kind, relationship_value`,
+       ORDER BY relationship_kind, relationship_value,
+                first_revision.published_at, membership.first_revision_id,
+                last_revision.published_at,
+                membership.last_observed_revision_id,
+                source_observation_id`,
     )
     .bind(printingId, sourceLineage)
     .all<MembershipRow>();
@@ -59,6 +70,7 @@ export async function printingDisappearanceWarnings(
        JOIN reconciled_printing_locators AS locator
          ON locator.printing_id = printing.id
        WHERE locator.source_lineage = ?
+         AND locator.current = 1
          ${exclusion}
          AND printing.withdrawn = 0
        ORDER BY printing.id`,
@@ -125,11 +137,23 @@ export async function publicReconciledPrinting(
       .prepare(
         `SELECT source_lineage, source_observation_id,
                 relationship_kind, relationship_value,
-                first_revision_id, last_observed_revision_id,
+                membership.first_revision_id,
+                membership.last_observed_revision_id,
+                first_revision.published_at AS first_revision_order,
+                last_revision.published_at AS last_observed_revision_order,
                 current, last_missing_revision_id
-         FROM reconciled_printing_memberships
+         FROM reconciled_printing_memberships AS membership
+         JOIN catalogue_revisions AS first_revision
+           ON first_revision.id = membership.first_revision_id
+         JOIN catalogue_revisions AS last_revision
+           ON last_revision.id = membership.last_observed_revision_id
          WHERE printing_id = ?
-         ORDER BY relationship_kind, relationship_value`,
+         ORDER BY source_lineage, relationship_kind, relationship_value,
+                  first_revision.published_at,
+                  membership.first_revision_id,
+                  last_revision.published_at,
+                  membership.last_observed_revision_id,
+                  source_observation_id`,
       )
       .bind(printingId)
       .all<MembershipRow>(),

@@ -44,6 +44,7 @@ export async function reconciliationPublication(
   database: D1Database,
   runId: string,
   revisionId: string,
+  revisionOrder = revisionId,
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
   const context = await database
@@ -73,6 +74,9 @@ export async function reconciliationPublication(
     relationshipEvidence: {},
     statements: [],
   };
+  result.statements.push(
+    ...(await withdrawalAssertionStatements(database, runId, revisionId)),
+  );
 
   for (const [cardId, grouped] of cardPlans) {
     const card = cards.get(cardId);
@@ -85,14 +89,18 @@ export async function reconciliationPublication(
     const withdraw =
       withdrawal?.entity === "card" ||
       withdrawal?.entity === "card_and_printing";
+    const withdrawalLifecycle = resolvedWithdrawalLifecycle(
+      existing,
+      withdraw,
+      withdrawal,
+      revisionId,
+    );
     result.cardLifecycles[cardId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       existing?.withdrawn === 1 || withdraw,
-      withdraw ? revisionId : existing?.withdrawal_revision_id ?? null,
-      withdraw && withdrawal !== null
-        ? canonicalJson(withdrawal)
-        : existing?.withdrawal_evidence_json ?? null,
+      withdrawalLifecycle.revisionId,
+      withdrawalLifecycle.evidenceJson,
     );
     result.statements.push(
       cardPersistenceStatement(
@@ -144,14 +152,18 @@ export async function reconciliationPublication(
       .prepare("SELECT * FROM reconciled_printings WHERE id = ?")
       .bind(printingId)
       .first<ReconciledPrintingRow>();
+    const withdrawalLifecycle = resolvedWithdrawalLifecycle(
+      existing,
+      withdraw,
+      withdrawal,
+      revisionId,
+    );
     result.printingLifecycles[printingId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       existing?.withdrawn === 1 || withdraw,
-      withdraw ? revisionId : existing?.withdrawal_revision_id ?? null,
-      withdraw && withdrawal !== null
-        ? canonicalJson(withdrawal)
-        : existing?.withdrawal_evidence_json ?? null,
+      withdrawalLifecycle.revisionId,
+      withdrawalLifecycle.evidenceJson,
     );
     result.relationshipEvidence[printingId] =
       await nextRelationshipEvidence(
@@ -159,6 +171,7 @@ export async function reconciliationPublication(
         printingId,
         grouped,
         revisionId,
+        revisionOrder,
       );
     result.statements.push(
       printingPersistenceStatement(
@@ -169,6 +182,19 @@ export async function reconciliationPublication(
         existing,
         withdrawal,
       ),
+      ...[...new Set(grouped.map((plan) => plan.source_lineage))]
+        .sort()
+        .map((sourceLineage) =>
+          database
+            .prepare(
+              `UPDATE reconciled_printing_locators
+               SET current = 0, last_missing_revision_id = ?
+               WHERE printing_id = ?
+                 AND source_lineage = ?
+                 AND current = 1`,
+            )
+            .bind(revisionId, printingId, sourceLineage),
+        ),
       ...grouped.map((plan) => {
         if (plan.locator === null) {
           throw new Error("The reconciliation Printing locator disappeared.");
@@ -177,11 +203,14 @@ export async function reconciliationPublication(
           .prepare(
             `INSERT INTO reconciled_printing_locators (
               printing_id, source_lineage, locator,
-              variant_key, first_revision_id, last_observed_revision_id
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              variant_key, first_revision_id, last_observed_revision_id,
+              current, last_missing_revision_id
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL)
             ON CONFLICT (source_lineage, locator) DO UPDATE SET
               variant_key = excluded.variant_key,
-              last_observed_revision_id = excluded.last_observed_revision_id`,
+              last_observed_revision_id = excluded.last_observed_revision_id,
+              current = 1,
+              last_missing_revision_id = NULL`,
           )
           .bind(
             printingId,
@@ -294,13 +323,24 @@ async function retainCarriedLifecycles(
       result.cardLifecycles[row.id] = documentLifecycle(
         row.document_json,
       );
+      result.statements.push(
+        database
+          .prepare(
+            `UPDATE reconciled_card_observations
+             SET current = 0, last_missing_revision_id = ?
+             WHERE card_id = ?
+               AND source_lineage = ?
+               AND current = 1`,
+          )
+          .bind(revisionId, row.id, observedSourceLineage),
+      );
     }
   }
   for (const row of printings.results) {
-    if (
+    const omittedPrinting =
       candidatePrintingIds.has(row.id) &&
-      result.printingLifecycles[row.id] === undefined
-    ) {
+      result.printingLifecycles[row.id] === undefined;
+    if (omittedPrinting) {
       result.printingLifecycles[row.id] = documentLifecycle(
         row.document_json,
       );
@@ -330,6 +370,19 @@ async function retainCarriedLifecycles(
           database
             .prepare(
               `UPDATE reconciled_printing_memberships
+               SET current = 0, last_missing_revision_id = ?
+               WHERE printing_id = ?
+                 AND source_lineage = ?
+                 AND current = 1`,
+            )
+            .bind(revisionId, row.id, observedSourceLineage),
+        );
+      }
+      if (omittedPrinting) {
+        result.statements.push(
+          database
+            .prepare(
+              `UPDATE reconciled_printing_locators
                SET current = 0, last_missing_revision_id = ?
                WHERE printing_id = ?
                  AND source_lineage = ?
@@ -386,6 +439,12 @@ function cardPersistenceStatement(
   const withdraw =
     withdrawal?.entity === "card" ||
     withdrawal?.entity === "card_and_printing";
+  const lifecycle = resolvedWithdrawalLifecycle(
+    existing,
+    withdraw,
+    withdrawal,
+    revisionId,
+  );
   return database
     .prepare(
       `INSERT INTO reconciled_cards (
@@ -412,13 +471,13 @@ function cardPersistenceStatement(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       withdraw ? 1 : 0,
-      withdraw ? revisionId : null,
-      withdraw && withdrawal !== null ? canonicalJson(withdrawal) : null,
-      withdraw ? 1 : 0,
-      withdraw ? 1 : 0,
-      revisionId,
-      withdraw ? 1 : 0,
-      withdraw && withdrawal !== null ? canonicalJson(withdrawal) : null,
+      lifecycle.revisionId,
+      lifecycle.evidenceJson,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.revisionId,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.evidenceJson,
     );
 }
 
@@ -436,18 +495,19 @@ function cardObservationStatements(
       database
         .prepare(
           `UPDATE reconciled_card_observations
-           SET current = 0
+           SET current = 0, last_missing_revision_id = ?
            WHERE card_id = ? AND source_lineage = ? AND current = 1`,
         )
-        .bind(card.id, sourceLineage),
+        .bind(revisionId, card.id, sourceLineage),
     );
   const insertCurrentObservations = plans.map((plan) =>
     database
       .prepare(
         `INSERT INTO reconciled_card_observations (
           card_id, source_lineage, source_observation_id,
-          catalogue_revision_id, canonical_facts_json, current
-        ) VALUES (?, ?, ?, ?, ?, 1)`,
+          catalogue_revision_id, canonical_facts_json, current,
+          last_missing_revision_id
+        ) VALUES (?, ?, ?, ?, ?, 1, NULL)`,
       )
       .bind(
         card.id,
@@ -474,15 +534,28 @@ async function nextRelationshipEvidence(
   printingId: string,
   plans: readonly CandidatePlanRow[],
   revisionId: string,
+  revisionOrder: string,
 ): Promise<RelationshipEvidence[]> {
   const existing = await database
     .prepare(
       `SELECT source_lineage, source_observation_id,
               relationship_kind, relationship_value,
-              first_revision_id, last_observed_revision_id,
+              membership.first_revision_id,
+              membership.last_observed_revision_id,
+              first_revision.published_at AS first_revision_order,
+              last_revision.published_at AS last_observed_revision_order,
               current, last_missing_revision_id
-       FROM reconciled_printing_memberships
-       WHERE printing_id = ?`,
+       FROM reconciled_printing_memberships AS membership
+       JOIN catalogue_revisions AS first_revision
+         ON first_revision.id = membership.first_revision_id
+       JOIN catalogue_revisions AS last_revision
+         ON last_revision.id = membership.last_observed_revision_id
+       WHERE printing_id = ?
+       ORDER BY source_lineage, relationship_kind, relationship_value,
+                first_revision.published_at, membership.first_revision_id,
+                last_revision.published_at,
+                membership.last_observed_revision_id,
+                source_observation_id`,
     )
     .bind(printingId)
     .all<RelationshipEvidenceRow>();
@@ -506,6 +579,8 @@ async function nextRelationshipEvidence(
         relationship_value: membership.relationship_value,
         first_revision_id: revisionId,
         last_observed_revision_id: revisionId,
+        first_revision_order: revisionOrder,
+        last_observed_revision_order: revisionOrder,
         current: 1,
         last_missing_revision_id: null,
       });
@@ -525,6 +600,12 @@ function printingPersistenceStatement(
   const withdraw =
     withdrawal?.entity === "printing" ||
     withdrawal?.entity === "card_and_printing";
+  const lifecycle = resolvedWithdrawalLifecycle(
+    existing,
+    withdraw,
+    withdrawal,
+    revisionId,
+  );
   return database
     .prepare(
       `INSERT INTO reconciled_printings (
@@ -554,14 +635,91 @@ function printingPersistenceStatement(
       existing?.first_revision_id ?? revisionId,
       revisionId,
       withdraw ? 1 : 0,
-      withdraw ? revisionId : null,
-      withdraw && withdrawal !== null ? canonicalJson(withdrawal) : null,
-      withdraw ? 1 : 0,
-      withdraw ? 1 : 0,
-      revisionId,
-      withdraw ? 1 : 0,
-      withdraw && withdrawal !== null ? canonicalJson(withdrawal) : null,
+      lifecycle.revisionId,
+      lifecycle.evidenceJson,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.revisionId,
+      lifecycle.newTransition ? 1 : 0,
+      lifecycle.evidenceJson,
     );
+}
+
+function resolvedWithdrawalLifecycle(
+  existing: Pick<
+    ReconciledCardRow | ReconciledPrintingRow,
+    "withdrawn" | "withdrawal_revision_id" | "withdrawal_evidence_json"
+  > | null,
+  withdraw: boolean,
+  withdrawal: ProvenancedWithdrawal | null,
+  revisionId: string,
+): {
+  newTransition: boolean;
+  revisionId: string | null;
+  evidenceJson: string | null;
+} {
+  const newTransition = withdraw && existing?.withdrawn !== 1;
+  return {
+    newTransition,
+    revisionId: newTransition
+      ? revisionId
+      : existing?.withdrawal_revision_id ?? null,
+    evidenceJson:
+      newTransition && withdrawal !== null
+        ? canonicalJson(withdrawal)
+        : existing?.withdrawal_evidence_json ?? null,
+  };
+}
+
+export async function withdrawalAssertionStatements(
+  database: D1Database,
+  runId: string,
+  publishedRevisionId: string,
+): Promise<D1PreparedStatement[]> {
+  const plans = await reconciliationCandidatePlans(database, runId);
+  return plans.flatMap((plan) => {
+    if (plan.withdrawal_json === null) return [];
+    const withdrawal = JSON.parse(
+      plan.withdrawal_json,
+    ) as ProvenancedWithdrawal;
+    const targets = [
+      ...(withdrawal.entity === "card" ||
+      withdrawal.entity === "card_and_printing"
+        ? [{ entityType: "card", entityId: plan.card_id }]
+        : []),
+      ...(plan.printing_id !== null &&
+      (withdrawal.entity === "printing" ||
+        withdrawal.entity === "card_and_printing")
+        ? [{ entityType: "printing", entityId: plan.printing_id }]
+        : []),
+    ];
+    return targets.map(({ entityType, entityId }) =>
+      database
+        .prepare(
+          `INSERT INTO reconciled_withdrawal_assertions (
+            entity_type, entity_id, source_lineage,
+            source_snapshot_id, source_observation_set_id,
+            source_observation_id, assertion, effective,
+            evidence_json, published_catalogue_revision_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (
+            entity_type, entity_id, source_observation_id
+          ) DO NOTHING`,
+        )
+        .bind(
+          entityType,
+          entityId,
+          withdrawal.source_lineage,
+          withdrawal.source_snapshot_id,
+          withdrawal.source_observation_set_id,
+          withdrawal.source_observation_id,
+          withdrawal.assertion,
+          withdrawal.effective ? 1 : 0,
+          canonicalJson(withdrawal.evidence),
+          publishedRevisionId,
+        ),
+    );
+  });
 }
 
 function groupedPlans(
