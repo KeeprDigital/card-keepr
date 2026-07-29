@@ -44,14 +44,19 @@ CREATE TABLE administration_idempotency (
   response_json TEXT NOT NULL,
   http_status INTEGER NOT NULL,
   outcome TEXT NOT NULL CHECK (outcome IN ('success', 'problem')),
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  claim_owner_token TEXT,
+  claim_version INTEGER
 );
 
 CREATE TABLE administration_idempotency_claims (
   idempotency_key TEXT PRIMARY KEY,
   operation TEXT NOT NULL,
   request_json TEXT NOT NULL,
-  claimed_at TEXT NOT NULL
+  claimed_at TEXT NOT NULL,
+  owner_token TEXT NOT NULL,
+  claim_version INTEGER NOT NULL,
+  claim_expires_at TEXT NOT NULL
 );
 
 CREATE TRIGGER guard_idempotency_claim_after_completion
@@ -65,10 +70,24 @@ BEGIN
   SELECT RAISE(ABORT, 'administration_idempotency_completed');
 END;
 
-CREATE TRIGGER guard_idempotency_claim_update
-BEFORE UPDATE ON administration_idempotency_claims
+CREATE TRIGGER guard_idempotency_outcome_owner
+BEFORE INSERT ON administration_idempotency
+WHEN EXISTS (
+  SELECT 1
+  FROM administration_idempotency_claims AS claim
+  WHERE claim.idempotency_key = NEW.idempotency_key
+)
+  AND NOT EXISTS (
+    SELECT 1
+    FROM administration_idempotency_claims AS claim
+    WHERE claim.idempotency_key = NEW.idempotency_key
+      AND claim.operation = NEW.operation
+      AND claim.request_json = NEW.request_json
+      AND claim.owner_token = NEW.claim_owner_token
+      AND claim.claim_version = NEW.claim_version
+  )
 BEGIN
-  SELECT RAISE(ABORT, 'administration_idempotency_claim_immutable');
+  SELECT RAISE(ABORT, 'administration_idempotency_owner_changed');
 END;
 
 CREATE TABLE ingestion_run_transitions (

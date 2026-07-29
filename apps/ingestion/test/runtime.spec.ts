@@ -537,6 +537,74 @@ test("identical concurrent approvals replay one original publication result", as
   });
 });
 
+test("an orphaned start claim returns stable progress before its lease and resumes by CAS after expiry", async () => {
+  const claimedAt = "2026-07-29T04:00:00.000Z";
+  const expiresAt = "2026-07-29T04:05:00.000Z";
+  const key = "start-orphaned-claim";
+  const requestJson =
+    `{"fixture":"first-catalogue","selected_games":["one-piece"]}`;
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO administration_idempotency_claims (
+      idempotency_key,
+      operation,
+      request_json,
+      claimed_at,
+      owner_token,
+      claim_version,
+      claim_expires_at
+    ) VALUES (?, 'start_ingestion_run', ?, ?, ?, 7, ?)`,
+  )
+    .bind(
+      key,
+      requestJson,
+      claimedAt,
+      "administration-claim:terminated-start",
+      expiresAt,
+    )
+    .run();
+
+  testObservedAt = "2026-07-29T04:01:00.000Z";
+  const pending = await startRun(key);
+  expect(pending.response.status).toBe(202);
+  expect(pending.document).toMatchObject({
+    contract: "card-keepr-administration-operation@1",
+    operation: "start_ingestion_run",
+    status: "in_progress",
+    idempotency_key: key,
+    claimed_at: claimedAt,
+  });
+  const pendingReplay = await startRun(key);
+  expect(pendingReplay.document).toEqual(pending.document);
+  const changed = await administrationRequest(
+    "/v1/ingestion-runs",
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece", "digimon"],
+      idempotency_key: key,
+    },
+  );
+  expect(changed.response.status).toBe(409);
+  expect(changed.document).toMatchObject({
+    code: "idempotency_key_reused",
+  });
+
+  testObservedAt = expiresAt;
+  const resumed = await startRun(key);
+  expect(resumed.response.status).toBe(201);
+  expect(resumed.document).toMatchObject({
+    state: "awaiting_approval",
+    idempotency_key: key,
+  });
+  const remainingClaim = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT idempotency_key
+    FROM administration_idempotency_claims
+    WHERE idempotency_key = ?`,
+  )
+    .bind(key)
+    .first();
+  expect(remainingClaim).toBeNull();
+});
+
 test("malformed persisted JSON is rejected instead of crossing the administration seam", async () => {
   const started = await startRun("start-malformed-persistence");
   const runId = requiredDocumentString(started.document, "id");
@@ -1030,7 +1098,7 @@ test("an interrupted publication fails atomically and leaves cleanup independent
   testObservedAt = "2026-07-29T00:15:00.000Z";
   const cleanup = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
-    { idempotency_key: "cleanup-expired-claim-takeover" },
+    { idempotency_key: "cleanup-interrupted-publication" },
   );
   expect(cleanup.response.status).toBe(200);
   expect(cleanup.document).toMatchObject({
@@ -1043,12 +1111,10 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     },
   });
   releaseDelete.resolve(undefined);
-  await expect(staleCleanup).rejects.toMatchObject({
-    code: "publication_cleanup_failed",
-  });
+  await expect(staleCleanup).resolves.toEqual(cleanup.document);
   const cleanupReplay = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
-    { idempotency_key: "cleanup-expired-claim-takeover" },
+    { idempotency_key: "cleanup-interrupted-publication" },
   );
   expect(cleanupReplay.document).toEqual(cleanup.document);
 });
@@ -1287,6 +1353,17 @@ test("a stalled late publication write reopens completed cleanup when exact comp
   expect(crossOperationReuse.document).toMatchObject({
     code: "idempotency_key_reused",
   });
+  testObservedAt = reconcileAt;
+  const expiredClaimRecovery = await approve(
+    runId,
+    candidateDigest,
+    expectedRevision,
+    "approve-stalled-late-writer",
+  );
+  expect(expiredClaimRecovery.response.status).toBe(500);
+  expect(expiredClaimRecovery.document).toMatchObject({
+    code: "publication_abandoned",
+  });
 
   const failed = await showRunDirect(
     testEnv.CATALOGUE_DB,
@@ -1447,6 +1524,20 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
     async list(options) {
       if (!completedConcurrently) {
         completedConcurrently = true;
+        const administrationClaim =
+          await testEnv.CATALOGUE_DB.prepare(
+            `SELECT owner_token, claim_version
+            FROM administration_idempotency_claims
+            WHERE idempotency_key = ?`,
+          )
+            .bind(cleanupKey)
+            .first<{
+              owner_token: string;
+              claim_version: number;
+            }>();
+        if (administrationClaim === null) {
+          throw new Error("cleanup administration claim is missing");
+        }
         await testEnv.CATALOGUE_DB.batch([
           testEnv.CATALOGUE_DB.prepare(
             `UPDATE ingestion_publication_cleanup
@@ -1476,15 +1567,20 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
               response_json,
               http_status,
               outcome,
-              created_at
+              created_at,
+              claim_owner_token,
+              claim_version
             ) VALUES (
-              ?, 'retry_publication_cleanup', ?, ?, 200, 'success', ?
+              ?, 'retry_publication_cleanup', ?, ?, 200, 'success',
+              ?, ?, ?
             )`,
           ).bind(
             cleanupKey,
             requestJson,
             JSON.stringify(completed),
             cleanupAt,
+            administrationClaim.owner_token,
+            administrationClaim.claim_version,
           ),
           testEnv.CATALOGUE_DB.prepare(
             `DELETE FROM administration_idempotency_claims

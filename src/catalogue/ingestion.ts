@@ -116,6 +116,14 @@ type IdempotencyClaimRow = {
   operation: string;
   request_json: string;
   claimed_at: string;
+  owner_token: string;
+  claim_version: number;
+  claim_expires_at: string;
+};
+
+type IdempotencyClaimOwner = {
+  ownerToken: string;
+  version: number;
 };
 
 export type StartRunRequest = {
@@ -162,7 +170,7 @@ export async function startFixtureRun(
       requestJson,
       observedAt,
     },
-    async () => {
+    async (claimOwner) => {
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(
         database,
@@ -178,6 +186,7 @@ export async function startFixtureRun(
         idempotencyRequestJson: requestJson,
         linkedRunId: null,
         observedAt,
+        claimOwner,
       });
     },
   );
@@ -201,7 +210,7 @@ export async function retryRun(
       requestJson,
       observedAt,
     },
-    async () => {
+    async (claimOwner) => {
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(
         database,
@@ -228,6 +237,7 @@ export async function retryRun(
         idempotencyRequestJson: requestJson,
         linkedRunId: source.id,
         observedAt,
+        claimOwner,
       });
     },
   );
@@ -251,7 +261,7 @@ export async function retryPublicationCleanup(
       requestJson,
       observedAt,
     },
-    async () => {
+    async (claimOwner) => {
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(
         database,
@@ -266,6 +276,7 @@ export async function retryPublicationCleanup(
         {
           key: request.idempotency_key,
           requestJson,
+          claimOwner,
         },
       );
       if (result === null) {
@@ -471,7 +482,7 @@ export async function approveRun(
       requestJson,
       observedAt,
     },
-    async () => {
+    async (claimOwner) => {
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(
         database,
@@ -485,6 +496,7 @@ export async function approveRun(
         request,
         requestJson,
         observedAt,
+        claimOwner,
       );
     },
   );
@@ -497,6 +509,7 @@ async function approveRunAttempt(
   request: ApproveRunRequest,
   requestJson: string,
   now: string,
+  claimOwner: IdempotencyClaimOwner,
 ): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
@@ -555,7 +568,15 @@ async function approveRunAttempt(
     .bind(catalogueState.current_revision_id)
     .first<{ content_digest: string }>();
   if (currentRevision?.content_digest === request.candidate_digest) {
-    return publishNoChange(database, run, request, requestJson, approval, now);
+    return publishNoChange(
+      database,
+      run,
+      request,
+      requestJson,
+      approval,
+      now,
+      claimOwner,
+    );
   }
 
   const candidate = parseCandidate(run);
@@ -615,6 +636,7 @@ async function approveRunAttempt(
       catalogueExport,
       requestJson,
       completedAt: now,
+      claimOwner,
     });
   } catch (error) {
     const concurrentReplay = await replayAfterConflict(
@@ -674,7 +696,7 @@ export async function rejectRun(
       requestJson,
       observedAt,
     },
-    async () => {
+    async (claimOwner) => {
       await expireOverdueRuns(database, observedAt);
       await reconcileAbandonedPublication(
         database,
@@ -687,6 +709,7 @@ export async function rejectRun(
         request,
         requestJson,
         observedAt,
+        claimOwner,
       );
     },
   );
@@ -698,6 +721,7 @@ async function rejectRunAttempt(
   request: RejectRunRequest,
   requestJson: string,
   now: string,
+  claimOwner: IdempotencyClaimOwner,
 ): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
@@ -760,6 +784,7 @@ async function rejectRunAttempt(
         response: resultingRun,
         status: 200,
         createdAt: now,
+        claimOwner,
       }),
     ]);
   } catch (error) {
@@ -804,6 +829,7 @@ async function startPreparedRun(
     idempotencyRequestJson: string;
     linkedRunId: string | null;
     observedAt: string;
+    claimOwner: IdempotencyClaimOwner;
   },
 ): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, input.observedAt);
@@ -943,6 +969,7 @@ async function startPreparedRun(
         response: resultingRun,
         status: 201,
         createdAt: startedAt,
+        claimOwner: input.claimOwner,
       }),
     ]);
   } catch (error) {
@@ -983,6 +1010,7 @@ async function publishNoChange(
   requestJson: string,
   approval: Record<string, unknown>,
   now: string,
+  claimOwner: IdempotencyClaimOwner,
 ): Promise<Record<string, unknown>> {
   const resultingRun = publicRun({
     ...run,
@@ -1058,6 +1086,7 @@ async function publishNoChange(
         response: resultingRun,
         status: 200,
         createdAt: now,
+        claimOwner,
       }),
     ]);
   } catch (error) {
@@ -1449,6 +1478,7 @@ async function commitVerifiedPublication(
     catalogueExport: BuiltCatalogueExport;
     requestJson: string;
     completedAt: string;
+    claimOwner?: IdempotencyClaimOwner;
   },
 ): Promise<Record<string, unknown>> {
   const revisionId = requiredPublicationValue(
@@ -1596,6 +1626,7 @@ async function commitVerifiedPublication(
       response: resultingRun,
       status: 200,
       createdAt: input.completedAt,
+      claimOwner: input.claimOwner ?? null,
     }),
   ]);
   return resultingRun;
@@ -1726,12 +1757,22 @@ async function reconcileReservedPublication(
     operation.active_ingestion_run_id === run.id &&
     operation.recovery_health === "healthy";
   if (exactExport && guardsValid) {
+    const claimOwner = await currentAdministrationClaimOwner(
+      database,
+      requiredPublicationValue(
+        run.approval_idempotency_key,
+        "idempotency key",
+      ),
+      "approve_ingestion_run",
+      requestJson,
+    );
     await commitVerifiedPublication(database, {
       run,
       candidate,
       catalogueExport,
       requestJson,
       completedAt: observedAt,
+      ...(claimOwner === null ? {} : { claimOwner }),
     });
     return;
   }
@@ -1857,6 +1898,12 @@ async function failReservedPublication(
     expected_current_revision_id:
       run.expected_current_revision_id,
   });
+  const claimOwner = await currentAdministrationClaimOwner(
+    database,
+    key,
+    "approve_ingestion_run",
+    requestJson,
+  );
   await database.batch([
     database
       .prepare(
@@ -1882,8 +1929,12 @@ async function failReservedPublication(
           response_json,
           http_status,
           outcome,
-          created_at
-        ) VALUES (?, 'approve_ingestion_run', ?, ?, ?, 'problem', ?)`,
+          created_at,
+          claim_owner_token,
+          claim_version
+        ) VALUES (
+          ?, 'approve_ingestion_run', ?, ?, ?, 'problem', ?, ?, ?
+        )`,
       )
       .bind(
         key,
@@ -1894,12 +1945,14 @@ async function failReservedPublication(
         }),
         problem.status,
         terminalAt,
+        claimOwner?.ownerToken ?? null,
+        claimOwner?.version ?? null,
       ),
     administrationClaimDeleteStatement(database, {
       key,
       operation: "approve_ingestion_run",
       requestJson,
-    }),
+    }, claimOwner),
     database
       .prepare(
         `INSERT INTO ingestion_publication_cleanup (
@@ -1932,6 +1985,7 @@ async function attemptPublicationCleanup(
   idempotency?: {
     key: string;
     requestJson: string;
+    claimOwner: IdempotencyClaimOwner;
   },
 ): Promise<Record<string, unknown> | null> {
   let cleanup = await database
@@ -1971,6 +2025,25 @@ async function attemptPublicationCleanup(
     );
   }
   if (cleanup.state === "completed") {
+    if (
+      idempotency !== undefined &&
+      cleanup.idempotency_key === idempotency.key &&
+      cleanup.request_json === idempotency.requestJson
+    ) {
+      const result = publicRun(run, cleanup);
+      await database.batch(
+        idempotencyCompletionStatements(database, {
+          key: idempotency.key,
+          operation: "retry_publication_cleanup",
+          requestJson: idempotency.requestJson,
+          response: result,
+          status: 200,
+          createdAt: cleanup.completed_at ?? observedAt,
+          claimOwner: idempotency.claimOwner,
+        }),
+      );
+      return result;
+    }
     throw new AdministrationProblem(
       409,
       "publication_cleanup_not_required",
@@ -2083,8 +2156,8 @@ async function attemptPublicationCleanup(
       claim_expires_at: null,
     };
     const result = publicRun(run, completedCleanup);
-    await database.batch([
-      database.prepare(
+    const completedRow = await database
+      .prepare(
         `UPDATE ingestion_publication_cleanup
         SET state = 'completed',
             failure_code = NULL,
@@ -2095,26 +2168,80 @@ async function attemptPublicationCleanup(
         WHERE ingestion_run_id = ?
           AND state = 'cleaning'
           AND claim_token = ?
-          AND claim_version = ?`,
-      ).bind(
+          AND claim_version = ?
+        RETURNING *`,
+      )
+      .bind(
         observedAt,
         runId,
         claimToken,
         claimed.claim_version,
-      ),
-      ...(idempotency === undefined
-        ? []
-        : idempotencyCompletionStatements(database, {
-              key: idempotency.key,
-              operation: "retry_publication_cleanup",
-              requestJson: idempotency.requestJson,
-              response: result,
-              status: 200,
-              createdAt: observedAt,
-            })),
-    ]);
+      )
+      .first<PublicationCleanupRow>();
+    if (completedRow === null) {
+      if (idempotency !== undefined) {
+        const replay = await replayAdministration(
+          database,
+          idempotency.key,
+          "retry_publication_cleanup",
+          idempotency.requestJson,
+        );
+        if (replay !== null) return replay;
+      }
+      const current = await requiredPublicationCleanup(
+        database,
+        runId,
+      );
+      const operation = activeCleanupOperation(
+        current,
+        run,
+        idempotency,
+        observedAt,
+      );
+      if (operation !== null) return operation;
+      if (
+        current.state === "completed" &&
+        idempotency !== undefined &&
+        current.idempotency_key === idempotency.key &&
+        current.request_json === idempotency.requestJson
+      ) {
+        return cleanupCompletionInProgress(
+          run,
+          idempotency.key,
+          observedAt,
+        );
+      }
+      throw new AdministrationProblem(
+        409,
+        "publication_cleanup_claim_changed",
+        "Publication cleanup ownership changed; retry the request.",
+        false,
+      );
+    }
+    if (idempotency !== undefined) {
+      await database.batch(
+        idempotencyCompletionStatements(database, {
+          key: idempotency.key,
+          operation: "retry_publication_cleanup",
+          requestJson: idempotency.requestJson,
+          response: result,
+          status: 200,
+          createdAt: observedAt,
+          claimOwner: idempotency.claimOwner,
+        }),
+      );
+    }
     return result;
   } catch {
+    if (idempotency !== undefined) {
+      const replay = await replayAdministration(
+        database,
+        idempotency.key,
+        "retry_publication_cleanup",
+        idempotency.requestJson,
+      );
+      if (replay !== null) return replay;
+    }
     await database
       .prepare(
         `UPDATE ingestion_publication_cleanup
@@ -2136,6 +2263,25 @@ async function attemptPublicationCleanup(
       "The abandoned Catalogue Export objects could not be removed.",
     );
   }
+}
+
+function cleanupCompletionInProgress(
+  run: RunRow,
+  idempotencyKey: string,
+  observedAt: string,
+): Record<string, unknown> {
+  return {
+    contract: "card-keepr-administration-operation@1",
+    operation: "retry_publication_cleanup",
+    status: "in_progress",
+    run_id: run.id,
+    idempotency_key: idempotencyKey,
+    claimed_at: observedAt,
+    links: {
+      run: `/v1/ingestion-runs/${run.id}`,
+      status: "/v1/status",
+    },
+  };
 }
 
 function activeCleanupOperation(
@@ -2539,7 +2685,9 @@ async function assertSuccessfulReplayCorrelation(
 async function idempotentAdministration(
   database: D1Database,
   context: IdempotencyContext,
-  operation: () => Promise<Record<string, unknown>>,
+  operation: (
+    owner: IdempotencyClaimOwner,
+  ) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
   const replay = await replayAdministration(
     database,
@@ -2548,8 +2696,8 @@ async function idempotentAdministration(
     context.requestJson,
   );
   if (replay !== null) return replay;
-  const claimed = await claimAdministration(database, context);
-  if (!claimed) {
+  const acquisition = await claimAdministration(database, context);
+  if (acquisition.owner === null) {
     const concurrentReplay = await replayAdministration(
       database,
       context.key,
@@ -2557,40 +2705,38 @@ async function idempotentAdministration(
       context.requestJson,
     );
     if (concurrentReplay !== null) return concurrentReplay;
-    const priorClaim = await administrationClaim(
-      database,
-      context.key,
+    return pendingAdministrationOperation(
+      context,
+      acquisition.claim,
     );
-    if (priorClaim === null) {
-      throw new Error(
-        "The administration idempotency claim changed without an outcome.",
-      );
-    }
-    if (
-      priorClaim.operation !== context.operation ||
-      priorClaim.request_json !== context.requestJson
-    ) {
-      throw new AdministrationProblem(
-        409,
-        "idempotency_key_reused",
-        "The idempotency key was already used for a different administration request.",
-      );
-    }
-    return pendingAdministrationOperation(context, priorClaim);
+  }
+  const owner = acquisition.owner;
+  const takeoverReplay = await replayAdministration(
+    database,
+    context.key,
+    context.operation,
+    context.requestJson,
+  );
+  if (takeoverReplay !== null) return takeoverReplay;
+  if (!isReplaySafeAdministrationOperation(context.operation)) {
+    return pendingAdministrationOperation(context, acquisition.claim);
   }
   try {
-    const result = await operation();
+    const result = await operation(owner);
     return isAdministrationInProgress(result)
       ? pendingAdministrationOperation(context, {
           operation: context.operation,
           request_json: context.requestJson,
           claimed_at: context.observedAt,
+          owner_token: owner.ownerToken,
+          claim_version: owner.version,
+          claim_expires_at: acquisition.claim.claim_expires_at,
         })
       : result;
   } catch (error) {
     if (!(error instanceof AdministrationProblem)) throw error;
     if (!error.persistOutcome) {
-      await releaseAdministrationClaim(database, context);
+      await releaseAdministrationClaim(database, context, owner);
       throw error;
     }
     try {
@@ -2604,8 +2750,10 @@ async function idempotentAdministration(
               response_json,
               http_status,
               outcome,
-              created_at
-            ) VALUES (?, ?, ?, ?, ?, 'problem', ?)`,
+              created_at,
+              claim_owner_token,
+              claim_version
+            ) VALUES (?, ?, ?, ?, ?, 'problem', ?, ?, ?)`,
           )
           .bind(
             context.key,
@@ -2617,11 +2765,17 @@ async function idempotentAdministration(
             }),
             error.status,
             context.observedAt,
+            owner.ownerToken,
+            owner.version,
           ),
-        administrationClaimDeleteStatement(database, context),
+        administrationClaimDeleteStatement(database, context, owner),
       ]);
     } catch (persistError) {
+      const ownerChanged = errorMessage(persistError).includes(
+        "administration_idempotency_owner_changed",
+      );
       if (
+        !ownerChanged &&
         !errorMessage(persistError).includes(
           "administration_idempotency.idempotency_key",
         )
@@ -2635,9 +2789,37 @@ async function idempotentAdministration(
         context.requestJson,
       );
       if (concurrentReplay !== null) return concurrentReplay;
+      if (ownerChanged) {
+        const currentClaim = await administrationClaim(
+          database,
+          context.key,
+        );
+        if (
+          currentClaim !== null &&
+          currentClaim.operation === context.operation &&
+          currentClaim.request_json === context.requestJson
+        ) {
+          return pendingAdministrationOperation(
+            context,
+            currentClaim,
+          );
+        }
+      }
     }
     throw error;
   }
+}
+
+function isReplaySafeAdministrationOperation(
+  operation: string,
+): boolean {
+  return [
+    "start_ingestion_run",
+    "retry_ingestion_run",
+    "approve_ingestion_run",
+    "reject_ingestion_run",
+    "retry_publication_cleanup",
+  ].includes(operation);
 }
 
 function isAdministrationInProgress(
@@ -2652,25 +2834,45 @@ function isAdministrationInProgress(
 async function claimAdministration(
   database: D1Database,
   context: IdempotencyContext,
-): Promise<boolean> {
+): Promise<{
+  claim: IdempotencyClaimRow;
+  owner: IdempotencyClaimOwner | null;
+}> {
+  const ownerToken = `administration-claim:${crypto.randomUUID()}`;
+  const expiresAt = new Date(
+    Date.parse(context.observedAt) + publicationLeaseMilliseconds,
+  ).toISOString();
   try {
-    await database
+    const inserted = await database
       .prepare(
         `INSERT INTO administration_idempotency_claims (
           idempotency_key,
           operation,
           request_json,
-          claimed_at
-        ) VALUES (?, ?, ?, ?)`,
+          claimed_at,
+          owner_token,
+          claim_version,
+          claim_expires_at
+        ) VALUES (?, ?, ?, ?, ?, 1, ?)
+        RETURNING operation, request_json, claimed_at,
+          owner_token, claim_version, claim_expires_at`,
       )
       .bind(
         context.key,
         context.operation,
         context.requestJson,
         context.observedAt,
+        ownerToken,
+        expiresAt,
       )
-      .run();
-    return true;
+      .first<IdempotencyClaimRow>();
+    if (inserted === null) {
+      throw new Error("The administration claim was not inserted.");
+    }
+    return {
+      claim: inserted,
+      owner: { ownerToken, version: inserted.claim_version },
+    };
   } catch (error) {
     if (
       errorMessage(error).includes(
@@ -2680,7 +2882,104 @@ async function claimAdministration(
         "administration_idempotency_completed",
       )
     ) {
-      return false;
+      const prior = await administrationClaim(database, context.key);
+      if (prior === null) {
+        const replay = await replayAdministration(
+          database,
+          context.key,
+          context.operation,
+          context.requestJson,
+        );
+        if (replay !== null) {
+          return {
+            claim: {
+              operation: context.operation,
+              request_json: context.requestJson,
+              claimed_at: context.observedAt,
+              owner_token: ownerToken,
+              claim_version: 0,
+              claim_expires_at: context.observedAt,
+            },
+            owner: null,
+          };
+        }
+        throw new Error(
+          "The administration idempotency claim changed without an outcome.",
+        );
+      }
+      if (
+        prior.operation !== context.operation ||
+        prior.request_json !== context.requestJson
+      ) {
+        throw new AdministrationProblem(
+          409,
+          "idempotency_key_reused",
+          "The idempotency key was already used for a different administration request.",
+        );
+      }
+      if (
+        !isIsoInstant(prior.claim_expires_at) ||
+        Date.parse(context.observedAt) <
+          Date.parse(prior.claim_expires_at)
+      ) {
+        return { claim: prior, owner: null };
+      }
+      const takenOver = await database
+        .prepare(
+          `UPDATE administration_idempotency_claims
+          SET claimed_at = ?,
+              owner_token = ?,
+              claim_version = claim_version + 1,
+              claim_expires_at = ?
+          WHERE idempotency_key = ?
+            AND operation = ?
+            AND request_json = ?
+            AND owner_token = ?
+            AND claim_version = ?
+            AND claim_expires_at = ?
+          RETURNING operation, request_json, claimed_at,
+            owner_token, claim_version, claim_expires_at`,
+        )
+        .bind(
+          context.observedAt,
+          ownerToken,
+          expiresAt,
+          context.key,
+          context.operation,
+          context.requestJson,
+          prior.owner_token,
+          prior.claim_version,
+          prior.claim_expires_at,
+        )
+        .first<IdempotencyClaimRow>();
+      if (takenOver === null) {
+        const winner = await administrationClaim(
+          database,
+          context.key,
+        );
+        if (winner === null) {
+          const replay = await replayAdministration(
+            database,
+            context.key,
+            context.operation,
+            context.requestJson,
+          );
+          if (replay !== null) {
+            return { claim: prior, owner: null };
+          }
+          throw new Error(
+            "The administration claim takeover changed without an outcome.",
+          );
+        }
+        return { claim: winner, owner: null };
+      }
+      return {
+        claim: takenOver,
+        owner: {
+          ownerToken,
+          version: takenOver.claim_version,
+        },
+      };
     }
     throw error;
   }
@@ -2692,12 +2991,40 @@ async function administrationClaim(
 ): Promise<IdempotencyClaimRow | null> {
   return database
     .prepare(
-      `SELECT operation, request_json, claimed_at
+      `SELECT
+        operation,
+        request_json,
+        claimed_at,
+        owner_token,
+        claim_version,
+        claim_expires_at
       FROM administration_idempotency_claims
       WHERE idempotency_key = ?`,
     )
     .bind(key)
     .first<IdempotencyClaimRow>();
+}
+
+async function currentAdministrationClaimOwner(
+  database: D1Database,
+  key: string,
+  operation: string,
+  requestJson: string,
+): Promise<IdempotencyClaimOwner | null> {
+  const claim = await administrationClaim(database, key);
+  if (claim === null) return null;
+  if (
+    claim.operation !== operation ||
+    claim.request_json !== requestJson
+  ) {
+    throw new Error(
+      "The administration claim does not match its domain operation.",
+    );
+  }
+  return {
+    ownerToken: claim.owner_token,
+    version: claim.claim_version,
+  };
 }
 
 function pendingAdministrationOperation(
@@ -2718,6 +3045,7 @@ function pendingAdministrationOperation(
     status: "in_progress",
     idempotency_key: context.key,
     claimed_at: claim.claimed_at,
+    retry_after: claim.claim_expires_at,
     ...(runId === null ? {} : { run_id: runId }),
     links: {
       ...(runId === null
@@ -2731,8 +3059,13 @@ function pendingAdministrationOperation(
 async function releaseAdministrationClaim(
   database: D1Database,
   context: IdempotencyContext,
+  owner: IdempotencyClaimOwner,
 ): Promise<void> {
-  await administrationClaimDeleteStatement(database, context).run();
+  await administrationClaimDeleteStatement(
+    database,
+    context,
+    owner,
+  ).run();
 }
 
 function administrationClaimDeleteStatement(
@@ -2742,15 +3075,26 @@ function administrationClaimDeleteStatement(
     operation: string;
     requestJson: string;
   },
+  owner: IdempotencyClaimOwner | null,
 ): D1PreparedStatement {
   return database
     .prepare(
       `DELETE FROM administration_idempotency_claims
       WHERE idempotency_key = ?
         AND operation = ?
-        AND request_json = ?`,
+        AND request_json = ?
+        AND (? IS NULL OR owner_token = ?)
+        AND (? IS NULL OR claim_version = ?)`,
     )
-    .bind(context.key, context.operation, context.requestJson);
+    .bind(
+      context.key,
+      context.operation,
+      context.requestJson,
+      owner?.ownerToken ?? null,
+      owner?.ownerToken ?? null,
+      owner?.version ?? null,
+      owner?.version ?? null,
+    );
 }
 
 async function replayLegacyAdministration(
@@ -2885,6 +3229,7 @@ function idempotencyCompletionStatements(
     response: Record<string, unknown>;
     status: number;
     createdAt: string;
+    claimOwner?: IdempotencyClaimOwner | null;
   },
 ): D1PreparedStatement[] {
   return [
@@ -2896,8 +3241,10 @@ function idempotencyCompletionStatements(
         response_json,
         http_status,
         outcome,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, 'success', ?)`,
+        created_at,
+        claim_owner_token,
+        claim_version
+      ) VALUES (?, ?, ?, ?, ?, 'success', ?, ?, ?)`,
     ).bind(
       input.key,
       input.operation,
@@ -2905,8 +3252,14 @@ function idempotencyCompletionStatements(
       canonicalJson(input.response),
       input.status,
       input.createdAt,
+      input.claimOwner?.ownerToken ?? null,
+      input.claimOwner?.version ?? null,
     ),
-    administrationClaimDeleteStatement(database, input),
+    administrationClaimDeleteStatement(
+      database,
+      input,
+      input.claimOwner ?? null,
+    ),
   ];
 }
 
