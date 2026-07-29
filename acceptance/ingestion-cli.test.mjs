@@ -66,6 +66,9 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
           diagnostics: {
             catalogue_revision_count: 1,
             catalogue_export_count: 1,
+            catalogue_export_object_count: 12,
+            orphaned_catalogue_export_object_count: 2,
+            pending_publication_cleanup_count: 1,
           },
           recent_runs: [run],
         }),
@@ -93,6 +96,9 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.equal(status.code, 0, status.stderr);
   assert.match(status.stdout, /Catalogue Revision: catrev_cli_demo/);
   assert.match(status.stdout, /Mutation safe: yes/);
+  assert.match(status.stdout, /export_objects: 12/);
+  assert.match(status.stdout, /orphaned_export_objects: 2/);
+  assert.match(status.stdout, /pending_publication_cleanups: 1/);
   assert.match(
     status.stdout,
     /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/,

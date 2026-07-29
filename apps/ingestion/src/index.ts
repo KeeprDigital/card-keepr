@@ -123,8 +123,7 @@ export default {
           "expected_current_revision_id",
           "idempotency_key",
         ]);
-        return Response.json(
-          await approveRun(
+        const result = await approveRun(
             env.CATALOGUE_DB,
             env.CATALOGUE_EXPORTS,
             decodeURIComponent(approvalMatch[1]!),
@@ -140,8 +139,15 @@ export default {
               idempotency_key: requiredString(body, "idempotency_key"),
             },
             observedAt,
-          ),
-        );
+          );
+        return Response.json(result, {
+          status:
+            result.contract ===
+              "card-keepr-administration-operation@1" &&
+            result.status === "in_progress"
+              ? 202
+              : 200,
+        });
       }
 
       const rejectionMatch =

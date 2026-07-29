@@ -96,6 +96,9 @@ type PublicationCleanupRow = {
   failure_code: string | null;
   last_attempt_at: string | null;
   completed_at: string | null;
+  not_before: string;
+  idempotency_key: string | null;
+  request_json: string | null;
 };
 
 type IdempotencyContext = {
@@ -298,9 +301,8 @@ export async function administrationStatus(
     recentRuns,
     revisionCount,
     exportCount,
-    publishedRevisionIds,
-    exportObjects,
-    cleanupRows,
+    cleanupCount,
+    objectDiagnostics,
   ] =
     await Promise.all([
       currentCatalogueState(database),
@@ -326,23 +328,14 @@ export async function administrationStatus(
         .prepare("SELECT COUNT(*) AS count FROM catalogue_exports")
         .first<{ count: number }>(),
       database
-        .prepare("SELECT id FROM catalogue_revisions")
-        .all<{ id: string }>(),
-      listAllCatalogueExportObjects(catalogueExports),
-      database
         .prepare(
-          `SELECT *
+          `SELECT COUNT(*) AS count
           FROM ingestion_publication_cleanup
-          ORDER BY ingestion_run_id`,
+          WHERE state IN ('pending', 'failed')`,
         )
-        .all<PublicationCleanupRow>(),
+        .first<{ count: number }>(),
+      catalogueExportObjectDiagnostics(database, catalogueExports),
     ]);
-  const cleanupByRun = new Map(
-    cleanupRows.results.map((cleanup) => [
-      cleanup.ingestion_run_id,
-      cleanup,
-    ]),
-  );
   const active =
     operation.active_ingestion_run_id === null
       ? null
@@ -350,6 +343,13 @@ export async function administrationStatus(
           database,
           operation.active_ingestion_run_id,
         );
+  const cleanupByRun = await publicationCleanupsForRuns(
+    database,
+    [
+      ...recentRuns.results.map((run) => run.id),
+      ...(active === null ? [] : [active.id]),
+    ],
+  );
   return {
     contract: "card-keepr-administration-status@1",
     safe_state: {
@@ -368,16 +368,11 @@ export async function administrationStatus(
     diagnostics: {
       catalogue_revision_count: revisionCount?.count ?? 0,
       catalogue_export_count: exportCount?.count ?? 0,
-      catalogue_export_object_count: exportObjects.length,
+      catalogue_export_object_count:
+        objectDiagnostics.objectCount,
       orphaned_catalogue_export_object_count:
-        orphanedCatalogueExportObjectCount(
-          exportObjects,
-          publishedRevisionIds.results.map((row) => row.id),
-        ),
-      pending_publication_cleanup_count: cleanupRows.results.filter(
-        (cleanup) =>
-          cleanup.state === "pending" || cleanup.state === "failed",
-      ).length,
+        objectDiagnostics.orphanedObjectCount,
+      pending_publication_cleanup_count: cleanupCount?.count ?? 0,
     },
     recent_runs: recentRuns.results.map((run) =>
       publicRun(run, cleanupByRun.get(run.id) ?? null),
@@ -492,11 +487,9 @@ async function approveRunAttempt(
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
   if (run.state === "publishing") {
-    return waitForOriginalApproval(
-      database,
+    return approvalInProgress(
       run,
       request.idempotency_key,
-      requestJson,
     );
   }
   assertRunIsApprovable(run, request);
@@ -571,17 +564,21 @@ async function approveRunAttempt(
   } catch (error) {
     const reserved = await requiredRun(database, run.id);
     if (reserved.state === "publishing") {
-      return waitForOriginalApproval(
-        database,
+      return approvalInProgress(
         reserved,
         request.idempotency_key,
-        requestJson,
       );
     }
     await throwApprovalFailure(database, run, error, now);
   }
   try {
-    await storeAndVerifyExport(catalogueExports, catalogueExport.objects);
+    await storeAndVerifyExport(
+      database,
+      catalogueExports,
+      run.id,
+      revisionId,
+      catalogueExport.objects,
+    );
     if (
       !(await isExactVerifiedExport(
         catalogueExports,
@@ -1239,7 +1236,10 @@ async function reservePublication(
 }
 
 async function storeAndVerifyExport(
+  database: D1Database,
   bucket: R2Bucket,
+  runId: string,
+  revisionId: string,
   objects: readonly {
     key: string;
     bytes: Uint8Array;
@@ -1248,6 +1248,11 @@ async function storeAndVerifyExport(
   }[],
 ): Promise<void> {
   for (const object of objects) {
+    await assertPublicationWriterActive(
+      database,
+      runId,
+      revisionId,
+    );
     const expectedDigest = await sha256(object.bytes);
     const existing = await bucket.get(object.key);
     if (existing !== null) {
@@ -1277,6 +1282,31 @@ async function storeAndVerifyExport(
     ) {
       throw new Error("Catalogue Export object verification failed");
     }
+    await assertPublicationWriterActive(
+      database,
+      runId,
+      revisionId,
+    );
+  }
+}
+
+async function assertPublicationWriterActive(
+  database: D1Database,
+  runId: string,
+  revisionId: string,
+): Promise<void> {
+  const reservation = await database
+    .prepare(
+      `SELECT id
+      FROM ingestion_runs
+      WHERE id = ?
+        AND state = 'publishing'
+        AND publication_revision_id = ?`,
+    )
+    .bind(runId, revisionId)
+    .first<{ id: string }>();
+  if (reservation === null) {
+    throw new Error("publication_writer_fenced");
   }
 }
 
@@ -1469,7 +1499,7 @@ async function reconcileAbandonedPublication(
     const revisionId = run.publication_revision_id;
     const objectKeys =
       revisionId !== null &&
-      /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(revisionId)
+      isOpaqueIdentity(revisionId)
         ? await listCatalogueExportPrefix(bucket, revisionId)
         : [];
     await failReservedPublication(
@@ -1524,8 +1554,8 @@ async function reconcileReservedPublication(
       run.expected_current_revision_id ||
     approval.approved_at !== publishedAt ||
     !isIsoInstant(publishedAt) ||
-    !/^[a-f0-9]{64}$/.test(manifestDigest) ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(revisionId) ||
+    !isSha256Digest(manifestDigest) ||
+    !isOpaqueIdentity(revisionId) ||
     !isExactStringTuple(
       JSON.parse(run.selected_games_json),
       candidate.selected_games,
@@ -1682,7 +1712,7 @@ async function failReservedPublication(
   );
   if (
     run.candidate_digest === null ||
-    !/^[a-f0-9]{64}$/.test(run.candidate_digest)
+    !isSha256Digest(run.candidate_digest)
   ) {
     throw new Error(
       "The reserved publication candidate digest is invalid.",
@@ -1741,11 +1771,18 @@ async function failReservedPublication(
           attempts,
           failure_code,
           last_attempt_at,
-          completed_at
-        ) VALUES (?, 'pending', ?, 0, NULL, NULL, NULL)
+          completed_at,
+          not_before,
+          idempotency_key,
+          request_json
+        ) VALUES (?, 'pending', ?, 0, NULL, NULL, NULL, ?, NULL, NULL)
         ON CONFLICT (ingestion_run_id) DO NOTHING`,
       )
-      .bind(run.id, canonicalJson([...new Set(objectKeys)].sort())),
+      .bind(
+        run.id,
+        canonicalJson([...new Set(objectKeys)].sort()),
+        publicationCleanupNotBefore(run, terminalAt),
+      ),
   ]);
 }
 
@@ -1775,6 +1812,19 @@ async function attemptPublicationCleanup(
     );
   }
   const run = await requiredRun(database, runId);
+  if (!isIsoInstant(cleanup.not_before)) {
+    throw new Error(
+      "The persisted publication cleanup fence is invalid.",
+    );
+  }
+  if (Date.parse(observedAt) < Date.parse(cleanup.not_before)) {
+    throw new AdministrationProblem(
+      409,
+      "publication_cleanup_fenced",
+      "Publication cleanup is fenced until the publication writer lease and quiescence window expire.",
+      false,
+    );
+  }
   if (run.state !== "failed") {
     throw new AdministrationProblem(
       409,
@@ -1800,6 +1850,7 @@ async function attemptPublicationCleanup(
         409,
         "publication_cleanup_in_progress",
         "The abandoned Catalogue Export cleanup is already in progress.",
+        cleanup.idempotency_key !== idempotency?.key,
       );
     }
   }
@@ -1823,11 +1874,19 @@ async function attemptPublicationCleanup(
           attempts = attempts + 1,
           failure_code = NULL,
           last_attempt_at = ?,
-          object_keys_json = ?
+          object_keys_json = ?,
+          idempotency_key = ?,
+          request_json = ?
       WHERE ingestion_run_id = ?
         AND state IN ('pending', 'failed', 'cleaning')`,
     )
-    .bind(observedAt, canonicalJson(keys), runId)
+    .bind(
+      observedAt,
+      canonicalJson(keys),
+      idempotency?.key ?? null,
+      idempotency?.requestJson ?? null,
+      runId,
+    )
     .run();
   try {
     if (keys.length > 0) await bucket.delete(keys);
@@ -1895,6 +1954,20 @@ function requiredPublicationValue(
   return value;
 }
 
+function publicationCleanupNotBefore(
+  run: RunRow,
+  terminalAt: string,
+): string {
+  const reconcileAt =
+    run.publication_reconcile_after === null
+      ? Date.parse(terminalAt)
+      : Date.parse(run.publication_reconcile_after);
+  return new Date(
+    Math.max(Date.parse(terminalAt), reconcileAt) +
+      publicationLeaseMilliseconds,
+  ).toISOString();
+}
+
 async function validatedFixtureCandidate(
   request: StartRunRequest,
 ): Promise<{ candidate: FixtureCandidate; digest: string }> {
@@ -1925,31 +1998,75 @@ async function currentCatalogueState(
   return state;
 }
 
-async function listAllCatalogueExportObjects(
+async function catalogueExportObjectDiagnostics(
+  database: D1Database,
   bucket: R2Bucket,
-): Promise<string[]> {
-  const keys: string[] = [];
+): Promise<{
+  objectCount: number;
+  orphanedObjectCount: number;
+}> {
+  let objectCount = 0;
+  let orphanedObjectCount = 0;
   let cursor: string | undefined;
   do {
     const page = await bucket.list({
       prefix: "catalogue-exports/",
+      limit: 1_000,
       ...(cursor === undefined ? {} : { cursor }),
     });
-    keys.push(...page.objects.map((object) => object.key));
+    objectCount += page.objects.length;
+    const revisionIds = [
+      ...new Set(
+        page.objects.flatMap((object) => {
+          const [, revisionId] = object.key.split("/", 3);
+          return revisionId === undefined ? [] : [revisionId];
+        }),
+      ),
+    ];
+    const published = new Set<string>();
+    for (let index = 0; index < revisionIds.length; index += 50) {
+      const chunk = revisionIds.slice(index, index + 50);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const matches = await database
+        .prepare(
+          `SELECT id
+          FROM catalogue_revisions
+          WHERE id IN (${placeholders})`,
+        )
+        .bind(...chunk)
+        .all<{ id: string }>();
+      for (const match of matches.results) published.add(match.id);
+    }
+    orphanedObjectCount += page.objects.filter((object) => {
+      const [, revisionId] = object.key.split("/", 3);
+      return revisionId === undefined || !published.has(revisionId);
+    }).length;
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor !== undefined);
-  return keys;
+  return { objectCount, orphanedObjectCount };
 }
 
-function orphanedCatalogueExportObjectCount(
-  keys: readonly string[],
-  publishedRevisionIds: readonly string[],
-): number {
-  const published = new Set(publishedRevisionIds);
-  return keys.filter((key) => {
-    const [, revisionId] = key.split("/", 3);
-    return revisionId === undefined || !published.has(revisionId);
-  }).length;
+async function publicationCleanupsForRuns(
+  database: D1Database,
+  runIds: readonly string[],
+): Promise<Map<string, PublicationCleanupRow>> {
+  const uniqueRunIds = [...new Set(runIds)].slice(0, 21);
+  if (uniqueRunIds.length === 0) return new Map();
+  const placeholders = uniqueRunIds.map(() => "?").join(", ");
+  const cleanups = await database
+    .prepare(
+      `SELECT *
+      FROM ingestion_publication_cleanup
+      WHERE ingestion_run_id IN (${placeholders})`,
+    )
+    .bind(...uniqueRunIds)
+    .all<PublicationCleanupRow>();
+  return new Map(
+    cleanups.results.map((cleanup) => [
+      cleanup.ingestion_run_id,
+      cleanup,
+    ]),
+  );
 }
 
 async function currentOperationState(
@@ -2061,7 +2178,93 @@ async function replayAdministration(
       persisted.detail,
     );
   }
-  return decodePublicRunDocument(persisted);
+  const result = decodePublicRunDocument(persisted);
+  assertSuccessfulReplayCorrelation(
+    result,
+    prior,
+    key,
+    requestJson,
+  );
+  return result;
+}
+
+function assertSuccessfulReplayCorrelation(
+  run: Record<string, unknown>,
+  prior: IdempotencyRow,
+  key: string,
+  requestJson: string,
+): void {
+  const request = parseJson(
+    requestJson,
+    "Administration idempotency request",
+  );
+  const expectedStatus =
+    prior.operation === "start_ingestion_run" ||
+    prior.operation === "retry_ingestion_run"
+      ? 201
+      : 200;
+  let correlated = false;
+  if (isRecord(request)) {
+    if (prior.operation === "start_ingestion_run") {
+      correlated =
+        hasOnlyKeys(request, ["fixture", "selected_games"]) &&
+        request.fixture === "first-catalogue" &&
+        isExactStringTuple(request.selected_games, ["one-piece"]) &&
+        run.idempotency_key === key &&
+        run.linked_run_id === null &&
+        run.state === "awaiting_approval";
+    } else if (prior.operation === "retry_ingestion_run") {
+      correlated =
+        hasOnlyKeys(request, ["source_run_id"]) &&
+        typeof request.source_run_id === "string" &&
+        run.linked_run_id === request.source_run_id &&
+        run.idempotency_key === key &&
+        run.state === "awaiting_approval";
+    } else if (prior.operation === "approve_ingestion_run") {
+      correlated =
+        hasOnlyKeys(request, [
+          "run_id",
+          "candidate_digest",
+          "expected_current_revision_id",
+        ]) &&
+        run.id === request.run_id &&
+        run.state === "published" &&
+        isRecord(run.approval) &&
+        run.approval.candidate_digest ===
+          request.candidate_digest &&
+        run.approval.expected_current_revision_id ===
+          request.expected_current_revision_id;
+    } else if (prior.operation === "reject_ingestion_run") {
+      correlated =
+        hasOnlyKeys(request, ["run_id", "candidate_digest"]) &&
+        run.id === request.run_id &&
+        run.state === "rejected" &&
+        Array.isArray(run.approval_history) &&
+        run.approval_history.length === 1 &&
+        isRecord(run.approval_history[0]) &&
+        run.approval_history[0].action === "rejected" &&
+        run.approval_history[0].candidate_digest ===
+          request.candidate_digest;
+    } else if (
+      prior.operation === "retry_publication_cleanup"
+    ) {
+      correlated =
+        hasOnlyKeys(request, ["run_id"]) &&
+        run.id === request.run_id &&
+        run.state === "failed" &&
+        isRecord(run.publication_cleanup) &&
+        run.publication_cleanup.state === "completed";
+    }
+  }
+  if (
+    prior.outcome !== "success" ||
+    prior.http_status !== expectedStatus ||
+    !correlated
+  ) {
+    throw new Error(
+      "The persisted administration success outcome does not match its request.",
+    );
+  }
 }
 
 async function idempotentAdministration(
@@ -2180,12 +2383,10 @@ async function replayLegacyAdministration(
   );
 }
 
-async function waitForOriginalApproval(
-  database: D1Database,
+function approvalInProgress(
   run: RunRow,
   idempotencyKey: string,
-  requestJson: string,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   if (run.approval_idempotency_key !== idempotencyKey) {
     throw new AdministrationProblem(
       409,
@@ -2193,25 +2394,18 @@ async function waitForOriginalApproval(
       "The Ingestion Run already has a publication in progress.",
     );
   }
-  const maximumAttempts = 25;
-  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
-    const replay = await replayAdministration(
-      database,
-      idempotencyKey,
-      "approve_ingestion_run",
-      requestJson,
-    );
-    if (replay !== null) return replay;
-    if (attempt + 1 < maximumAttempts) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 200));
-    }
-  }
-  throw new AdministrationProblem(
-    409,
-    "publication_in_progress",
-    "The original approval is still publishing; retry the identical request.",
-    false,
-  );
+  return {
+    contract: "card-keepr-administration-operation@1",
+    operation: "approve_ingestion_run",
+    status: "in_progress",
+    run_id: run.id,
+    idempotency_key: idempotencyKey,
+    retry_after: run.publication_reconcile_after,
+    links: {
+      run: `/v1/ingestion-runs/${run.id}`,
+      status: "/v1/status",
+    },
+  };
 }
 
 async function replayAfterConflict(
@@ -2225,7 +2419,8 @@ async function replayAfterConflict(
     !errorMessage(error).includes(
       "administration_idempotency.idempotency_key",
     ) &&
-    !errorMessage(error).includes("active_ingestion_run")
+    !errorMessage(error).includes("active_ingestion_run") &&
+    !errorMessage(error).includes("publication_writer_fenced")
   ) {
     return null;
   }
@@ -2887,6 +3082,7 @@ function publicPublicationCleanup(
           failure_code: cleanup.failure_code,
           last_attempt_at: cleanup.last_attempt_at,
           completed_at: cleanup.completed_at,
+          not_before: cleanup.not_before,
         },
   );
 }
@@ -3034,6 +3230,7 @@ function decodePublicationCleanup(
       "failure_code",
       "last_attempt_at",
       "completed_at",
+      "not_before",
     ]) ||
     typeof value.state !== "string" ||
     !["pending", "cleaning", "completed", "failed"].includes(
@@ -3045,6 +3242,7 @@ function decodePublicationCleanup(
     !isNullableString(value.failure_code) ||
     !isNullableIsoInstant(value.last_attempt_at) ||
     !isNullableIsoInstant(value.completed_at) ||
+    !isIsoInstant(value.not_before) ||
     (value.state === "pending" &&
       (value.attempts !== 0 ||
         value.last_attempt_at !== null ||
@@ -3074,6 +3272,7 @@ function decodePublicationCleanup(
     failure_code: value.failure_code,
     last_attempt_at: value.last_attempt_at,
     completed_at: value.completed_at,
+    not_before: value.not_before,
   };
 }
 
@@ -3123,6 +3322,12 @@ function assertPublicRunCrossFieldInvariants(
         value.candidate_digest ||
         decoded.approval.expected_current_revision_id !==
           value.expected_current_revision_id ||
+        typeof value.approval_deadline !== "string" ||
+        Date.parse(decoded.approval.approved_at) >=
+          Date.parse(value.approval_deadline) ||
+        !["publishing", "published", "failed"].includes(
+          String(state),
+        ) ||
         decoded.approvalHistory.length !== 1 ||
         canonicalJson(decoded.approvalHistory[0]) !==
           canonicalJson(decoded.approval))) ||
@@ -3145,13 +3350,37 @@ function assertPublicRunCrossFieldInvariants(
       decoded.approvalHistory.length !== 0) ||
     (decoded.reservation !== null &&
       (decoded.approval === null ||
+        !["publishing", "published", "failed"].includes(
+          String(state),
+        ) ||
         decoded.reservation.started_at !==
-          decoded.approval.approved_at)) ||
+          decoded.approval.approved_at ||
+        typeof decoded.reservation.started_at !== "string" ||
+        typeof decoded.reservation.reconcile_after !== "string" ||
+        Date.parse(decoded.reservation.reconcile_after) -
+          Date.parse(decoded.reservation.started_at) !==
+          publicationLeaseMilliseconds)) ||
     (state === "publishing" &&
       (decoded.approval === null ||
         decoded.reservation === null)) ||
     (decoded.cleanup !== null &&
-      (state !== "failed" || decoded.reservation === null)) ||
+      (state !== "failed" ||
+        decoded.reservation === null ||
+        typeof decoded.cleanup.not_before !== "string" ||
+        typeof decoded.reservation.reconcile_after !== "string" ||
+        typeof value.terminal_at !== "string" ||
+        Date.parse(decoded.cleanup.not_before) -
+          Math.max(
+            Date.parse(decoded.reservation.reconcile_after),
+            Date.parse(value.terminal_at),
+          ) !==
+          publicationLeaseMilliseconds)) ||
+    (state === "failed" &&
+      decoded.reservation !== null &&
+      decoded.cleanup === null) ||
+    (state === "failed" &&
+      (decoded.approval === null) !==
+        (decoded.reservation === null)) ||
     (state === "failed" &&
       (typeof value.failure_code !== "string" ||
         value.failure_code.length === 0)) ||
@@ -3270,11 +3499,7 @@ function terminalProgress(
 }
 
 function assertOpaqueId(value: string, field: string): void {
-  if (
-    value.length < 1 ||
-    value.length > 200 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
-  ) {
+  if (!isOpaqueIdentity(value)) {
     throw new AdministrationProblem(
       422,
       "invalid_parameter",
@@ -3284,7 +3509,7 @@ function assertOpaqueId(value: string, field: string): void {
 }
 
 function assertSha256(value: string, field: string): void {
-  if (!/^[a-f0-9]{64}$/.test(value)) {
+  if (!isSha256Digest(value)) {
     throw new AdministrationProblem(
       422,
       "invalid_parameter",

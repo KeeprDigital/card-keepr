@@ -344,12 +344,24 @@ test("identical concurrent approvals replay one original publication result", as
       "approve-concurrently",
     ),
   ]);
-  expect(approvals.map(({ response }) => response.status)).toEqual([
-    200,
-    200,
-  ]);
-  expect(approvals[1].document).toEqual(approvals[0].document);
-  expect(approvals[0].document).toMatchObject({
+  expect(
+    approvals.every(({ response }) =>
+      [200, 202].includes(response.status),
+    ),
+  ).toBe(true);
+  const original = approvals.find(
+    ({ response }) => response.status === 200,
+  );
+  expect(original).toBeDefined();
+  const replay = await approve(
+    runId,
+    digest,
+    expectedRevision,
+    "approve-concurrently",
+  );
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(original?.document);
+  expect(replay.document).toMatchObject({
     id: runId,
     state: "published",
   });
@@ -432,6 +444,75 @@ test("a partial persisted success cannot masquerade as an original run result", 
   expect(replay.document).toMatchObject({
     code: "internal_error",
   });
+});
+
+test("successful replay status, request correlation, and state legality are exact", async () => {
+  const started = await startRun("start-replay-correlation-source");
+  const requestJson =
+    `{"fixture":"first-catalogue","selected_games":["one-piece"]}`;
+  const createdAt = "2026-07-29T00:00:00.000Z";
+  const cases = [
+    {
+      key: "start-invalid-success-status",
+      status: 200,
+      response: started.document,
+    },
+    {
+      key: "start-mismatched-success-run",
+      status: 201,
+      response: started.document,
+    },
+    {
+      key: "start-impossible-success-state",
+      status: 201,
+      response: {
+        ...started.document,
+        idempotency_key: "start-impossible-success-state",
+        approval: {
+          action: "approved",
+          approved_at: requiredDocumentString(
+            started.document,
+            "started_at",
+          ),
+          candidate_digest: requiredDocumentString(
+            started.document,
+            "candidate_digest",
+          ),
+          expected_current_revision_id: requiredDocumentString(
+            started.document,
+            "expected_current_revision_id",
+          ),
+        },
+        approval_history: [],
+      },
+    },
+  ];
+  for (const testCase of cases) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO administration_idempotency (
+        idempotency_key,
+        operation,
+        request_json,
+        response_json,
+        http_status,
+        outcome,
+        created_at
+      ) VALUES (?, 'start_ingestion_run', ?, ?, ?, 'success', ?)`,
+    )
+      .bind(
+        testCase.key,
+        requestJson,
+        JSON.stringify(testCase.response),
+        testCase.status,
+        createdAt,
+      )
+      .run();
+    const replay = await startRun(testCase.key);
+    expect(replay.response.status).toBe(500);
+    expect(replay.document).toMatchObject({
+      code: "internal_error",
+    });
+  }
 });
 
 test("rejection is terminal and retry creates a fresh linked run", async () => {
@@ -707,6 +788,20 @@ test("an interrupted publication fails atomically and leaves cleanup independent
   );
   expect(replacement.response.status).toBe(201);
 
+  testObservedAt = "2026-07-29T00:10:00.000Z";
+  const cleanupAttempts = await Promise.all([
+    administrationRequest(
+      `/v1/ingestion-runs/${runId}/publication-cleanup`,
+      { idempotency_key: "cleanup-interrupted-publication" },
+    ),
+    administrationRequest(
+      `/v1/ingestion-runs/${runId}/publication-cleanup`,
+      { idempotency_key: "cleanup-interrupted-publication" },
+    ),
+  ]);
+  expect(
+    cleanupAttempts.some(({ response }) => response.status === 200),
+  ).toBe(true);
   const cleanup = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
     { idempotency_key: "cleanup-interrupted-publication" },
@@ -757,9 +852,6 @@ test("an interrupted publication finalizes only its exact verified export", asyn
     revisionId,
     testObservedAt,
   );
-  for (const object of catalogueExport.objects) {
-    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
-  }
   const reconcileAfter = "2026-07-29T01:05:00.000Z";
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE ingestion_runs
@@ -795,6 +887,32 @@ test("an interrupted publication finalizes only its exact verified export", asyn
       runId,
     )
     .run();
+  const inProgress = await approve(
+    runId,
+    digest,
+    expectedRevision,
+    approvalKey,
+  );
+  expect(inProgress.response.status).toBe(202);
+  expect(inProgress.document).toMatchObject({
+    contract: "card-keepr-administration-operation@1",
+    operation: "approve_ingestion_run",
+    status: "in_progress",
+    run_id: runId,
+    idempotency_key: approvalKey,
+    retry_after: reconcileAfter,
+  });
+  const inProgressReplay = await approve(
+    runId,
+    digest,
+    expectedRevision,
+    approvalKey,
+  );
+  expect(inProgressReplay.response.status).toBe(202);
+  expect(inProgressReplay.document).toEqual(inProgress.document);
+  for (const object of catalogueExport.objects) {
+    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+  }
   const listed = await testEnv.CATALOGUE_EXPORTS.list({
     prefix: `catalogue-exports/${revisionId}/`,
   });
@@ -924,6 +1042,19 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
     `catalogue-exports/${revisionId}/late-unexpected.bin`,
     new Uint8Array([4, 5, 6]),
   );
+  const fencedCleanup = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-unexpected-recovery-key" },
+  );
+  expect(fencedCleanup.response.status).toBe(409);
+  expect(fencedCleanup.document).toMatchObject({
+    code: "publication_cleanup_fenced",
+  });
+  await testEnv.CATALOGUE_EXPORTS.put(
+    `catalogue-exports/${revisionId}/late-in-flight.bin`,
+    new Uint8Array([7, 8, 9]),
+  );
+  testObservedAt = "2026-07-29T03:10:00.000Z";
   const cleanup = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
     { idempotency_key: "cleanup-unexpected-recovery-key" },

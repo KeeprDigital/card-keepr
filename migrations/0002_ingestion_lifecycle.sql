@@ -76,7 +76,10 @@ CREATE TABLE ingestion_publication_cleanup (
   attempts INTEGER NOT NULL DEFAULT 0,
   failure_code TEXT,
   last_attempt_at TEXT,
-  completed_at TEXT
+  completed_at TEXT,
+  not_before TEXT NOT NULL,
+  idempotency_key TEXT,
+  request_json TEXT
 );
 
 UPDATE ingestion_runs

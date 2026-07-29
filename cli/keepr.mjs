@@ -489,6 +489,17 @@ function formatStatus(document) {
       diagnostics.catalogue_export_count ?? "unknown"
     } exports`,
   );
+  lines.push(
+    `export_objects: ${
+      diagnostics.catalogue_export_object_count ?? "unknown"
+    }`,
+    `orphaned_export_objects: ${
+      diagnostics.orphaned_catalogue_export_object_count ?? "unknown"
+    }`,
+    `pending_publication_cleanups: ${
+      diagnostics.pending_publication_cleanup_count ?? "unknown"
+    }`,
+  );
   const freshness = Array.isArray(document.source_freshness)
     ? document.source_freshness
     : [];
