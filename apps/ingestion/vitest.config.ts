@@ -16,6 +16,7 @@ export default defineConfig({
         configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
       },
       miniflare: {
+        d1Databases: ["LEGACY_DB"],
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_CLOCK_MODE: "request",

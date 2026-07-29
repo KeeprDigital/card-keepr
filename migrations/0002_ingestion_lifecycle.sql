@@ -34,6 +34,9 @@ ADD COLUMN publication_reconcile_after TEXT;
 ALTER TABLE ingestion_runs
 ADD COLUMN publication_manifest_digest TEXT;
 
+ALTER TABLE ingestion_runs
+ADD COLUMN publication_writer_token TEXT;
+
 CREATE TABLE administration_idempotency (
   idempotency_key TEXT PRIMARY KEY,
   operation TEXT NOT NULL,
@@ -79,8 +82,20 @@ CREATE TABLE ingestion_publication_cleanup (
   completed_at TEXT,
   not_before TEXT NOT NULL,
   idempotency_key TEXT,
-  request_json TEXT
+  request_json TEXT,
+  claim_token TEXT,
+  claim_version INTEGER NOT NULL DEFAULT 0,
+  claim_expires_at TEXT
 );
+
+UPDATE ingestion_runs
+SET approval_json = json_set(
+  approval_json,
+  '$.action',
+  'approved'
+)
+WHERE approval_json IS NOT NULL
+  AND json_type(approval_json, '$.action') IS NULL;
 
 UPDATE ingestion_runs
 SET progress_json = CASE state
@@ -116,9 +131,48 @@ WHERE approval_json IS NOT NULL;
 
 UPDATE ingestion_runs
 SET publication_outcome = 'revision',
-    resulting_revision_id = published_revision_id
+    resulting_revision_id = published_revision_id,
+    freshness_checked_at = COALESCE(
+      terminal_at,
+      json_extract(approval_json, '$.approved_at'),
+      started_at
+    ),
+    publication_revision_id = published_revision_id,
+    publication_started_at =
+      json_extract(approval_json, '$.approved_at'),
+    publication_reconcile_after = strftime(
+      '%Y-%m-%dT%H:%M:%fZ',
+      json_extract(approval_json, '$.approved_at'),
+      '+5 minutes'
+    ),
+    publication_manifest_digest = export_manifest_digest,
+    publication_writer_token = 'writer:' || published_revision_id
 WHERE state = 'published'
   AND published_revision_id IS NOT NULL;
+
+UPDATE ingestion_runs
+SET failure_code = 'legacy_ingestion_failure'
+WHERE state = 'failed'
+  AND failure_code IS NULL;
+
+INSERT INTO source_freshness (
+  game,
+  area,
+  checked_at,
+  ingestion_run_id
+)
+SELECT
+  game.value,
+  'cards-and-printings',
+  run.freshness_checked_at,
+  run.id
+FROM ingestion_runs AS run,
+  json_each(run.selected_games_json) AS game
+WHERE run.state = 'published'
+  AND run.freshness_checked_at IS NOT NULL
+ON CONFLICT (game, area) DO UPDATE SET
+  checked_at = excluded.checked_at,
+  ingestion_run_id = excluded.ingestion_run_id;
 
 CREATE TRIGGER record_initial_ingestion_state
 AFTER INSERT ON ingestion_runs
@@ -255,6 +309,28 @@ BEGIN
   SELECT RAISE(ABORT, 'administration_idempotency_immutable');
 END;
 
+CREATE TRIGGER guard_cleanup_idempotency_completion
+BEFORE INSERT ON administration_idempotency
+WHEN NEW.operation = 'retry_publication_cleanup'
+  AND NEW.outcome = 'success'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM ingestion_publication_cleanup AS cleanup
+    WHERE cleanup.ingestion_run_id =
+      json_extract(NEW.request_json, '$.run_id')
+      AND cleanup.state = 'completed'
+      AND cleanup.idempotency_key = NEW.idempotency_key
+      AND cleanup.request_json = NEW.request_json
+      AND cleanup.claim_token IS NULL
+      AND cleanup.claim_version = json_extract(
+        NEW.response_json,
+        '$.publication_cleanup.generation'
+      )
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'cleanup_completion_claim_changed');
+END;
+
 CREATE TRIGGER guard_no_change_result_update
 BEFORE UPDATE ON ingestion_no_change_results
 BEGIN
@@ -325,7 +401,8 @@ BEFORE UPDATE OF
   publication_revision_id,
   publication_started_at,
   publication_reconcile_after,
-  publication_manifest_digest
+  publication_manifest_digest,
+  publication_writer_token
 ON ingestion_runs
 WHEN OLD.state IN (
   'publishing',
@@ -347,6 +424,8 @@ WHEN OLD.state IN (
       IS NOT NEW.publication_reconcile_after
     OR OLD.publication_manifest_digest
       IS NOT NEW.publication_manifest_digest
+    OR OLD.publication_writer_token
+      IS NOT NEW.publication_writer_token
   )
 BEGIN
   SELECT RAISE(ABORT, 'reserved_approval_immutable');

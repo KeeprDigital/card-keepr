@@ -61,6 +61,7 @@ type RunRow = {
   publication_started_at: string | null;
   publication_reconcile_after: string | null;
   publication_manifest_digest: string | null;
+  publication_writer_token: string | null;
 };
 
 type CatalogueStateRow = {
@@ -99,6 +100,9 @@ type PublicationCleanupRow = {
   not_before: string;
   idempotency_key: string | null;
   request_json: string | null;
+  claim_token: string | null;
+  claim_version: number;
+  claim_expires_at: string | null;
 };
 
 type IdempotencyContext = {
@@ -489,7 +493,8 @@ async function approveRunAttempt(
   if (run.state === "publishing") {
     return approvalInProgress(
       run,
-      request.idempotency_key,
+      request,
+      requestJson,
     );
   }
   assertRunIsApprovable(run, request);
@@ -545,6 +550,7 @@ async function approveRunAttempt(
 
   const candidate = parseCandidate(run);
   const revisionId = `catrev_${crypto.randomUUID()}`;
+  const writerToken = publicationWriterToken(revisionId);
   const catalogueExport = await buildCatalogueExport(
     candidate,
     request.candidate_digest,
@@ -559,6 +565,7 @@ async function approveRunAttempt(
       request.idempotency_key,
       revisionId,
       catalogueExport.manifest.manifest_sha256,
+      writerToken,
       now,
     );
   } catch (error) {
@@ -566,7 +573,8 @@ async function approveRunAttempt(
     if (reserved.state === "publishing") {
       return approvalInProgress(
         reserved,
-        request.idempotency_key,
+        request,
+        requestJson,
       );
     }
     await throwApprovalFailure(database, run, error, now);
@@ -577,6 +585,7 @@ async function approveRunAttempt(
       catalogueExports,
       run.id,
       revisionId,
+      writerToken,
       catalogueExport.objects,
     );
     if (
@@ -839,6 +848,7 @@ async function startPreparedRun(
     publication_started_at: null,
     publication_reconcile_after: null,
     publication_manifest_digest: null,
+    publication_writer_token: null,
   });
 
   try {
@@ -1194,6 +1204,7 @@ async function reservePublication(
   idempotencyKey: string,
   revisionId: string,
   manifestDigest: string,
+  writerToken: string,
   startedAt: string,
 ): Promise<void> {
   const reconcileAfter = new Date(
@@ -1210,7 +1221,8 @@ async function reservePublication(
           publication_revision_id = ?,
           publication_started_at = ?,
           publication_reconcile_after = ?,
-          publication_manifest_digest = ?
+          publication_manifest_digest = ?,
+          publication_writer_token = ?
       WHERE id = ? AND state = 'awaiting_approval'
       RETURNING id`,
     )
@@ -1223,6 +1235,7 @@ async function reservePublication(
       startedAt,
       reconcileAfter,
       manifestDigest,
+      writerToken,
       runId,
     )
     .first<{ id: string }>();
@@ -1240,6 +1253,7 @@ async function storeAndVerifyExport(
   bucket: R2Bucket,
   runId: string,
   revisionId: string,
+  writerToken: string,
   objects: readonly {
     key: string;
     bytes: Uint8Array;
@@ -1252,6 +1266,7 @@ async function storeAndVerifyExport(
       database,
       runId,
       revisionId,
+      writerToken,
     );
     const expectedDigest = await sha256(object.bytes);
     const existing = await bucket.get(object.key);
@@ -1286,6 +1301,9 @@ async function storeAndVerifyExport(
       database,
       runId,
       revisionId,
+      writerToken,
+      bucket,
+      object.key,
     );
   }
 }
@@ -1294,20 +1312,121 @@ async function assertPublicationWriterActive(
   database: D1Database,
   runId: string,
   revisionId: string,
+  writerToken: string,
+  bucket?: R2Bucket,
+  lateObjectKey?: string,
 ): Promise<void> {
   const reservation = await database
     .prepare(
       `SELECT id
       FROM ingestion_runs
       WHERE id = ?
-        AND state = 'publishing'
-        AND publication_revision_id = ?`,
+        AND (
+          state = 'publishing'
+          OR (? = 1 AND state = 'published')
+        )
+        AND publication_revision_id = ?
+        AND publication_writer_token = ?`,
     )
-    .bind(runId, revisionId)
+    .bind(
+      runId,
+      bucket === undefined ? 0 : 1,
+      revisionId,
+      writerToken,
+    )
     .first<{ id: string }>();
   if (reservation === null) {
+    if (bucket !== undefined && lateObjectKey !== undefined) {
+      await compensateLatePublicationWrite(
+        database,
+        bucket,
+        runId,
+        lateObjectKey,
+      );
+    }
     throw new Error("publication_writer_fenced");
   }
+}
+
+function publicationWriterToken(revisionId: string): string {
+  return `writer:${revisionId}`;
+}
+
+async function compensateLatePublicationWrite(
+  database: D1Database,
+  bucket: R2Bucket,
+  runId: string,
+  objectKey: string,
+): Promise<void> {
+  try {
+    await bucket.delete(objectKey);
+    if ((await bucket.get(objectKey)) === null) return;
+  } catch {
+    // Persisting cleanup ownership below is the fail-closed fallback.
+  }
+  const run = await requiredRun(database, runId);
+  if (run.state !== "failed" || run.terminal_at === null) {
+    throw new Error(
+      "The late publication write could not be attached to terminal cleanup.",
+    );
+  }
+  const failureAt = run.terminal_at;
+  await database
+    .prepare(
+      `INSERT INTO ingestion_publication_cleanup (
+        ingestion_run_id,
+        state,
+        object_keys_json,
+        attempts,
+        failure_code,
+        last_attempt_at,
+        completed_at,
+        not_before,
+        idempotency_key,
+        request_json,
+        claim_token,
+        claim_version,
+        claim_expires_at
+      ) VALUES (
+        ?, 'failed', json_array(?), 1,
+        'late_publication_write', ?, NULL, ?,
+        NULL, NULL, NULL, 1, NULL
+      )
+      ON CONFLICT (ingestion_run_id) DO UPDATE SET
+        state = 'failed',
+        object_keys_json = (
+          SELECT json_group_array(object_key)
+          FROM (
+            SELECT value AS object_key
+            FROM json_each(
+              ingestion_publication_cleanup.object_keys_json
+            )
+            UNION
+            SELECT excluded_key.object_key
+            FROM (SELECT ? AS object_key) AS excluded_key
+            ORDER BY object_key
+          )
+        ),
+        attempts = MAX(ingestion_publication_cleanup.attempts, 1),
+        failure_code = 'late_publication_write',
+        last_attempt_at = ?,
+        completed_at = NULL,
+        idempotency_key = NULL,
+        request_json = NULL,
+        claim_token = NULL,
+        claim_version =
+          ingestion_publication_cleanup.claim_version + 1,
+        claim_expires_at = NULL`,
+    )
+    .bind(
+      runId,
+      objectKey,
+      failureAt,
+      publicationCleanupNotBefore(run, failureAt),
+      objectKey,
+      failureAt,
+    )
+    .run();
 }
 
 async function commitVerifiedPublication(
@@ -1556,6 +1675,8 @@ async function reconcileReservedPublication(
     !isIsoInstant(publishedAt) ||
     !isSha256Digest(manifestDigest) ||
     !isOpaqueIdentity(revisionId) ||
+    run.publication_writer_token !==
+      publicationWriterToken(revisionId) ||
     !isExactStringTuple(
       JSON.parse(run.selected_games_json),
       candidate.selected_games,
@@ -1796,7 +1917,7 @@ async function attemptPublicationCleanup(
     requestJson: string;
   },
 ): Promise<Record<string, unknown> | null> {
-  const cleanup = await database
+  let cleanup = await database
     .prepare(
       `SELECT *
       FROM ingestion_publication_cleanup
@@ -1840,19 +1961,13 @@ async function attemptPublicationCleanup(
     );
   }
   if (cleanup.state === "cleaning") {
-    const retryAfter =
-      cleanup.last_attempt_at === null
-        ? Number.NEGATIVE_INFINITY
-        : Date.parse(cleanup.last_attempt_at) +
-          publicationLeaseMilliseconds;
-    if (Date.parse(observedAt) < retryAfter) {
-      throw new AdministrationProblem(
-        409,
-        "publication_cleanup_in_progress",
-        "The abandoned Catalogue Export cleanup is already in progress.",
-        cleanup.idempotency_key !== idempotency?.key,
-      );
-    }
+    const operation = activeCleanupOperation(
+      cleanup,
+      run,
+      idempotency,
+      observedAt,
+    );
+    if (operation !== null) return operation;
   }
   const recordedKeys = parseCleanupKeys(
     cleanup.object_keys_json,
@@ -1867,7 +1982,11 @@ async function attemptPublicationCleanup(
     revisionId,
   );
   const keys = [...new Set([...recordedKeys, ...observedKeys])].sort();
-  await database
+  const claimToken = `cleanup-claim:${crypto.randomUUID()}`;
+  const claimExpiresAt = new Date(
+    Date.parse(observedAt) + publicationLeaseMilliseconds,
+  ).toISOString();
+  const claimed = await database
     .prepare(
       `UPDATE ingestion_publication_cleanup
       SET state = 'cleaning',
@@ -1876,32 +1995,66 @@ async function attemptPublicationCleanup(
           last_attempt_at = ?,
           object_keys_json = ?,
           idempotency_key = ?,
-          request_json = ?
+          request_json = ?,
+          claim_token = ?,
+          claim_version = claim_version + 1,
+          claim_expires_at = ?
       WHERE ingestion_run_id = ?
-        AND state IN ('pending', 'failed', 'cleaning')`,
+        AND claim_version = ?
+        AND (
+          state IN ('pending', 'failed')
+          OR (
+            state = 'cleaning'
+            AND claim_expires_at IS NOT NULL
+            AND claim_expires_at <= ?
+          )
+        )
+      RETURNING *`,
     )
     .bind(
       observedAt,
       canonicalJson(keys),
       idempotency?.key ?? null,
       idempotency?.requestJson ?? null,
+      claimToken,
+      claimExpiresAt,
       runId,
+      cleanup.claim_version,
+      observedAt,
     )
-    .run();
+    .first<PublicationCleanupRow>();
+  if (claimed === null) {
+    cleanup = await requiredPublicationCleanup(database, runId);
+    const operation = activeCleanupOperation(
+      cleanup,
+      run,
+      idempotency,
+      observedAt,
+    );
+    if (operation !== null) return operation;
+    throw new AdministrationProblem(
+      409,
+      "publication_cleanup_claim_changed",
+      "Publication cleanup ownership changed; retry the request.",
+      false,
+    );
+  }
   try {
-    if (keys.length > 0) await bucket.delete(keys);
+    await deleteR2KeysInBatches(bucket, keys);
     if (
       (await listCatalogueExportPrefix(bucket, revisionId)).length > 0
     ) {
       throw new Error("Catalogue Export cleanup verification failed");
     }
     const completedCleanup: PublicationCleanupRow = {
-      ...cleanup,
+      ...claimed,
       state: "completed",
-      attempts: cleanup.attempts + 1,
       failure_code: null,
       last_attempt_at: observedAt,
       completed_at: observedAt,
+      claim_token: null,
+      claim_version: claimed.claim_version + 1,
+      claim_expires_at: null,
     };
     const result = publicRun(run, completedCleanup);
     await database.batch([
@@ -1909,9 +2062,20 @@ async function attemptPublicationCleanup(
         `UPDATE ingestion_publication_cleanup
         SET state = 'completed',
             failure_code = NULL,
-            completed_at = ?
-        WHERE ingestion_run_id = ? AND state = 'cleaning'`,
-      ).bind(observedAt, runId),
+            completed_at = ?,
+            claim_token = NULL,
+            claim_version = claim_version + 1,
+            claim_expires_at = NULL
+        WHERE ingestion_run_id = ?
+          AND state = 'cleaning'
+          AND claim_token = ?
+          AND claim_version = ?`,
+      ).bind(
+        observedAt,
+        runId,
+        claimToken,
+        claimed.claim_version,
+      ),
       ...(idempotency === undefined
         ? []
         : [
@@ -1931,16 +2095,88 @@ async function attemptPublicationCleanup(
       .prepare(
         `UPDATE ingestion_publication_cleanup
         SET state = 'failed',
-            failure_code = 'publication_cleanup_failed'
-        WHERE ingestion_run_id = ? AND state = 'cleaning'`,
+            failure_code = 'publication_cleanup_failed',
+            claim_token = NULL,
+            claim_version = claim_version + 1,
+            claim_expires_at = NULL
+        WHERE ingestion_run_id = ?
+          AND state = 'cleaning'
+          AND claim_token = ?
+          AND claim_version = ?`,
       )
-      .bind(runId)
+      .bind(runId, claimToken, claimed.claim_version)
       .run();
     throw new AdministrationProblem(
       500,
       "publication_cleanup_failed",
       "The abandoned Catalogue Export objects could not be removed.",
     );
+  }
+}
+
+function activeCleanupOperation(
+  cleanup: PublicationCleanupRow,
+  run: RunRow,
+  idempotency: { key: string; requestJson: string } | undefined,
+  observedAt: string,
+): Record<string, unknown> | null {
+  if (
+    cleanup.state !== "cleaning" ||
+    cleanup.claim_token === null ||
+    !isIsoInstant(cleanup.claim_expires_at) ||
+    Date.parse(observedAt) >= Date.parse(cleanup.claim_expires_at)
+  ) {
+    return null;
+  }
+  if (
+    idempotency !== undefined &&
+    cleanup.idempotency_key === idempotency.key
+  ) {
+    if (cleanup.request_json !== idempotency.requestJson) {
+      throw new AdministrationProblem(
+        409,
+        "idempotency_key_reused",
+        "The idempotency key was already used for a different administration request.",
+      );
+    }
+    return {
+      contract: "card-keepr-administration-operation@1",
+      operation: "retry_publication_cleanup",
+      status: "in_progress",
+      run_id: run.id,
+      idempotency_key: idempotency.key,
+      retry_after: cleanup.claim_expires_at,
+      links: {
+        run: `/v1/ingestion-runs/${run.id}`,
+        status: "/v1/status",
+      },
+    };
+  }
+  throw new AdministrationProblem(
+    409,
+    "publication_cleanup_in_progress",
+    "The abandoned Catalogue Export cleanup is already in progress.",
+    cleanup.idempotency_key !== null,
+  );
+}
+
+async function requiredPublicationCleanup(
+  database: D1Database,
+  runId: string,
+): Promise<PublicationCleanupRow> {
+  const cleanup = await publicationCleanup(database, runId);
+  if (cleanup === null) {
+    throw new Error("The publication cleanup claim disappeared.");
+  }
+  return cleanup;
+}
+
+async function deleteR2KeysInBatches(
+  bucket: R2Bucket,
+  keys: readonly string[],
+): Promise<void> {
+  for (let index = 0; index < keys.length; index += 1_000) {
+    await bucket.delete(keys.slice(index, index + 1_000));
   }
 }
 
@@ -2179,7 +2415,8 @@ async function replayAdministration(
     );
   }
   const result = decodePublicRunDocument(persisted);
-  assertSuccessfulReplayCorrelation(
+  await assertSuccessfulReplayCorrelation(
+    database,
     result,
     prior,
     key,
@@ -2188,12 +2425,13 @@ async function replayAdministration(
   return result;
 }
 
-function assertSuccessfulReplayCorrelation(
+async function assertSuccessfulReplayCorrelation(
+  database: D1Database,
   run: Record<string, unknown>,
   prior: IdempotencyRow,
   key: string,
   requestJson: string,
-): void {
+): Promise<void> {
   const request = parseJson(
     requestJson,
     "Administration idempotency request",
@@ -2248,12 +2486,19 @@ function assertSuccessfulReplayCorrelation(
     } else if (
       prior.operation === "retry_publication_cleanup"
     ) {
+      const currentCleanup =
+        typeof request.run_id === "string"
+          ? await publicationCleanup(database, request.run_id)
+          : null;
       correlated =
         hasOnlyKeys(request, ["run_id"]) &&
         run.id === request.run_id &&
         run.state === "failed" &&
         isRecord(run.publication_cleanup) &&
-        run.publication_cleanup.state === "completed";
+        run.publication_cleanup.state === "completed" &&
+        currentCleanup?.state === "completed" &&
+        currentCleanup.claim_version ===
+          run.publication_cleanup.generation;
     }
   }
   if (
@@ -2385,21 +2630,46 @@ async function replayLegacyAdministration(
 
 function approvalInProgress(
   run: RunRow,
-  idempotencyKey: string,
+  request: ApproveRunRequest,
+  requestJson: string,
 ): Record<string, unknown> {
-  if (run.approval_idempotency_key !== idempotencyKey) {
+  const reservedRequestJson = canonicalJson({
+    run_id: run.id,
+    candidate_digest: run.candidate_digest,
+    expected_current_revision_id:
+      run.expected_current_revision_id,
+  });
+  if (
+    run.approval_idempotency_key !== request.idempotency_key ||
+    run.candidate_digest !== request.candidate_digest ||
+    run.expected_current_revision_id !==
+      request.expected_current_revision_id ||
+    reservedRequestJson !== requestJson
+  ) {
     throw new AdministrationProblem(
       409,
-      "publication_in_progress",
-      "The Ingestion Run already has a publication in progress.",
+      run.approval_idempotency_key === request.idempotency_key
+        ? "idempotency_key_reused"
+        : "publication_in_progress",
+      run.approval_idempotency_key === request.idempotency_key
+        ? "The idempotency key was already used for a different administration request."
+        : "The Ingestion Run already has a publication in progress.",
     );
+  }
+  const approval = parseApproval(run.approval_json);
+  if (
+    approval.candidate_digest !== request.candidate_digest ||
+    approval.expected_current_revision_id !==
+      request.expected_current_revision_id
+  ) {
+    throw new Error("The reserved approval request is invalid.");
   }
   return {
     contract: "card-keepr-administration-operation@1",
     operation: "approve_ingestion_run",
     status: "in_progress",
     run_id: run.id,
-    idempotency_key: idempotencyKey,
+    idempotency_key: request.idempotency_key,
     retry_after: run.publication_reconcile_after,
     links: {
       run: `/v1/ingestion-runs/${run.id}`,
@@ -3057,6 +3327,7 @@ function publicPublicationReservation(
     row.publication_started_at,
     row.publication_reconcile_after,
     row.publication_manifest_digest,
+    row.publication_writer_token,
   ];
   return decodePublicationReservation(
     values.every((value) => value === null)
@@ -3066,6 +3337,7 @@ function publicPublicationReservation(
           started_at: row.publication_started_at,
           reconcile_after: row.publication_reconcile_after,
           manifest_digest: row.publication_manifest_digest,
+          writer_token: row.publication_writer_token,
         },
   );
 }
@@ -3083,6 +3355,7 @@ function publicPublicationCleanup(
           last_attempt_at: cleanup.last_attempt_at,
           completed_at: cleanup.completed_at,
           not_before: cleanup.not_before,
+          generation: cleanup.claim_version,
         },
   );
 }
@@ -3198,6 +3471,7 @@ function decodePublicationReservation(
       "started_at",
       "reconcile_after",
       "manifest_digest",
+      "writer_token",
     ]) ||
     typeof value.revision_id !== "string" ||
     !isOpaqueIdentity(value.revision_id) ||
@@ -3206,7 +3480,9 @@ function decodePublicationReservation(
     Date.parse(value.reconcile_after) <
       Date.parse(value.started_at) ||
     typeof value.manifest_digest !== "string" ||
-    !isSha256Digest(value.manifest_digest)
+    !isSha256Digest(value.manifest_digest) ||
+    typeof value.writer_token !== "string" ||
+    value.writer_token !== publicationWriterToken(value.revision_id)
   ) {
     throw new Error("The persisted publication reservation is invalid.");
   }
@@ -3215,6 +3491,7 @@ function decodePublicationReservation(
     started_at: value.started_at,
     reconcile_after: value.reconcile_after,
     manifest_digest: value.manifest_digest,
+    writer_token: value.writer_token,
   };
 }
 
@@ -3231,6 +3508,7 @@ function decodePublicationCleanup(
       "last_attempt_at",
       "completed_at",
       "not_before",
+      "generation",
     ]) ||
     typeof value.state !== "string" ||
     !["pending", "cleaning", "completed", "failed"].includes(
@@ -3243,6 +3521,9 @@ function decodePublicationCleanup(
     !isNullableIsoInstant(value.last_attempt_at) ||
     !isNullableIsoInstant(value.completed_at) ||
     !isIsoInstant(value.not_before) ||
+    typeof value.generation !== "number" ||
+    !Number.isInteger(value.generation) ||
+    value.generation < 0 ||
     (value.state === "pending" &&
       (value.attempts !== 0 ||
         value.last_attempt_at !== null ||
@@ -3273,6 +3554,7 @@ function decodePublicationCleanup(
     last_attempt_at: value.last_attempt_at,
     completed_at: value.completed_at,
     not_before: value.not_before,
+    generation: value.generation,
   };
 }
 

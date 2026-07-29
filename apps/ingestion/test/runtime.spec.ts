@@ -7,9 +7,16 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
+import {
+  administrationStatus as administrationStatusDirect,
+  approveRun as approveRunDirect,
+  retryPublicationCleanup as retryPublicationCleanupDirect,
+  showRun as showRunDirect,
+} from "../../../src/catalogue/ingestion";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
+  LEGACY_DB: D1Database;
 };
 let requestSequence = 0;
 let testObservedAt: string | null = null;
@@ -55,6 +62,169 @@ test("the administration authentication boundary runs in the Workers runtime", a
     contract: "card-keepr-runtime-health@1",
     runtime: "ingestion",
     status: "ok",
+  });
+});
+
+test("a legacy published run upgrades to the strict lifecycle representation without losing its approval audit", async () => {
+  const legacyDatabase = testEnv.LEGACY_DB;
+  await applyD1Migrations(legacyDatabase, [
+    testEnv.TEST_MIGRATIONS[0]!,
+  ]);
+  const legacyRunId = "run_legacy_published";
+  const legacyRevisionId = "catrev_legacy_published";
+  const candidate = await fixtureCandidate("first-catalogue", [
+    "one-piece",
+  ]);
+  const candidateCreatedAt = "2026-07-29T01:00:00.000Z";
+  const approvedAt = "2026-07-29T01:01:00.000Z";
+  const terminalAt = "2026-07-29T01:02:00.000Z";
+  const deadline = "2026-08-05T01:00:00.000Z";
+  const candidateDigest = candidate.digest;
+  const manifestDigest = "b".repeat(64);
+  const legacyApproval = {
+    approved_at: approvedAt,
+    candidate_digest: candidateDigest,
+    expected_current_revision_id: "catrev_spine_000",
+  };
+  await legacyDatabase.batch([
+    legacyDatabase
+      .prepare(
+        `INSERT INTO ingestion_runs (
+          id,
+          state,
+          selected_games_json,
+          started_at,
+          expected_current_revision_id,
+          linked_run_id,
+          idempotency_key,
+          candidate_digest,
+          candidate_created_at,
+          approval_deadline,
+          approval_json,
+          published_revision_id,
+          export_manifest_digest,
+          terminal_at,
+          candidate_json,
+          approval_idempotency_key
+        ) VALUES (
+          ?, 'awaiting_approval', ?, ?, 'catrev_spine_000',
+          NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?
+        )`,
+      )
+      .bind(
+        legacyRunId,
+        JSON.stringify(["one-piece"]),
+        candidateCreatedAt,
+        "start-legacy-published",
+        candidateDigest,
+        candidateCreatedAt,
+        deadline,
+        JSON.stringify(legacyApproval),
+        JSON.stringify(candidate.candidate),
+        "approve-legacy-published",
+      ),
+    legacyDatabase
+      .prepare(
+        `UPDATE operation_state
+        SET active_ingestion_run_id = ?
+        WHERE singleton = 1`,
+      )
+      .bind(legacyRunId),
+  ]);
+  await legacyDatabase
+    .prepare(
+      `INSERT INTO catalogue_revisions (
+        id,
+        ingestion_run_id,
+        published_at,
+        content_digest,
+        expected_previous_revision_id,
+        approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
+    )
+    .bind(
+      legacyRevisionId,
+      legacyRunId,
+      terminalAt,
+      candidateDigest,
+      candidateDigest,
+    )
+    .run();
+  await legacyDatabase.batch([
+    legacyDatabase
+      .prepare(
+        `UPDATE ingestion_runs
+        SET state = 'published',
+            published_revision_id = ?,
+            export_manifest_digest = ?,
+            terminal_at = ?
+        WHERE id = ?`,
+      )
+      .bind(
+        legacyRevisionId,
+        manifestDigest,
+        terminalAt,
+        legacyRunId,
+      ),
+    legacyDatabase
+      .prepare(
+        `UPDATE catalogue_state
+        SET current_revision_id = ?,
+            published_at = ?
+        WHERE singleton = 1`,
+      )
+      .bind(legacyRevisionId, terminalAt),
+    legacyDatabase.prepare(
+      `UPDATE operation_state
+      SET active_ingestion_run_id = NULL
+      WHERE singleton = 1`,
+    ),
+  ]);
+
+  await applyD1Migrations(legacyDatabase, [
+    testEnv.TEST_MIGRATIONS[1]!,
+  ]);
+  const upgraded = await showRunDirect(
+    legacyDatabase,
+    testEnv.CATALOGUE_EXPORTS,
+    legacyRunId,
+    terminalAt,
+  );
+  expect(upgraded).toMatchObject({
+    id: legacyRunId,
+    state: "published",
+    approval: {
+      action: "approved",
+      approved_at: approvedAt,
+    },
+    approval_history: [
+      {
+        action: "approved",
+        approved_at: approvedAt,
+      },
+    ],
+    freshness_checked_at: terminalAt,
+    publication_reservation: {
+      revision_id: legacyRevisionId,
+      started_at: approvedAt,
+      writer_token: `writer:${legacyRevisionId}`,
+    },
+    publication_cleanup: null,
+  });
+  const status = await administrationStatusDirect(
+    legacyDatabase,
+    testEnv.CATALOGUE_EXPORTS,
+    terminalAt,
+  );
+  expect(status).toMatchObject({
+    source_freshness: [
+      {
+        game: "one-piece",
+        area: "cards-and-printings",
+        checked_at: terminalAt,
+        ingestion_run_id: legacyRunId,
+      },
+    ],
   });
 });
 
@@ -683,7 +853,8 @@ test("an interrupted publication fails atomically and leaves cleanup independent
         publication_revision_id = ?,
         publication_started_at = ?,
         publication_reconcile_after = ?,
-        publication_manifest_digest = ?
+        publication_manifest_digest = ?,
+        publication_writer_token = ?
     WHERE id = ? AND state = 'awaiting_approval'`,
   )
     .bind(
@@ -704,6 +875,7 @@ test("an interrupted publication fails atomically and leaves cleanup independent
       testObservedAt,
       reconcileAfter,
       "f".repeat(64),
+      `writer:${revisionId}`,
       runId,
     )
     .run();
@@ -789,22 +961,56 @@ test("an interrupted publication fails atomically and leaves cleanup independent
   expect(replacement.response.status).toBe(201);
 
   testObservedAt = "2026-07-29T00:10:00.000Z";
-  const cleanupAttempts = await Promise.all([
-    administrationRequest(
-      `/v1/ingestion-runs/${runId}/publication-cleanup`,
-      { idempotency_key: "cleanup-interrupted-publication" },
-    ),
-    administrationRequest(
-      `/v1/ingestion-runs/${runId}/publication-cleanup`,
-      { idempotency_key: "cleanup-interrupted-publication" },
-    ),
-  ]);
-  expect(
-    cleanupAttempts.some(({ response }) => response.status === 200),
-  ).toBe(true);
-  const cleanup = await administrationRequest(
+  await testEnv.CATALOGUE_EXPORTS.put(
+    `catalogue-exports/${revisionId}/abandoned.bin`,
+    new Uint8Array([1]),
+  );
+  const deleteStarted = deferred<void>();
+  const releaseDelete = deferred<void>();
+  const stalledCleanupBucket = proxyR2Bucket(
+    testEnv.CATALOGUE_EXPORTS,
+    {
+      async delete(keys) {
+        deleteStarted.resolve(undefined);
+        await releaseDelete.promise;
+        return testEnv.CATALOGUE_EXPORTS.delete(keys);
+      },
+    },
+  );
+  const staleCleanup = retryPublicationCleanupDirect(
+    testEnv.CATALOGUE_DB,
+    stalledCleanupBucket,
+    runId,
+    { idempotency_key: "cleanup-interrupted-publication" },
+    testObservedAt,
+  );
+  await deleteStarted.promise;
+  const inProgressCleanup = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
     { idempotency_key: "cleanup-interrupted-publication" },
+  );
+  expect(inProgressCleanup.response.status).toBe(202);
+  expect(inProgressCleanup.document).toMatchObject({
+    contract: "card-keepr-administration-operation@1",
+    operation: "retry_publication_cleanup",
+    status: "in_progress",
+    run_id: runId,
+    idempotency_key: "cleanup-interrupted-publication",
+    retry_after: "2026-07-29T00:15:00.000Z",
+  });
+  const competingCleanup = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-competing-claim" },
+  );
+  expect(competingCleanup.response.status).toBe(409);
+  expect(competingCleanup.document).toMatchObject({
+    code: "publication_cleanup_in_progress",
+  });
+
+  testObservedAt = "2026-07-29T00:15:00.000Z";
+  const cleanup = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/publication-cleanup`,
+    { idempotency_key: "cleanup-expired-claim-takeover" },
   );
   expect(cleanup.response.status).toBe(200);
   expect(cleanup.document).toMatchObject({
@@ -812,13 +1018,17 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     failure_code: "publication_abandoned",
     publication_cleanup: {
       state: "completed",
-      attempts: 2,
+      attempts: 3,
       failure_code: null,
     },
   });
+  releaseDelete.resolve(undefined);
+  await expect(staleCleanup).rejects.toMatchObject({
+    code: "publication_cleanup_failed",
+  });
   const cleanupReplay = await administrationRequest(
     `/v1/ingestion-runs/${runId}/publication-cleanup`,
-    { idempotency_key: "cleanup-interrupted-publication" },
+    { idempotency_key: "cleanup-expired-claim-takeover" },
   );
   expect(cleanupReplay.document).toEqual(cleanup.document);
 });
@@ -863,7 +1073,8 @@ test("an interrupted publication finalizes only its exact verified export", asyn
         publication_revision_id = ?,
         publication_started_at = ?,
         publication_reconcile_after = ?,
-        publication_manifest_digest = ?
+        publication_manifest_digest = ?,
+        publication_writer_token = ?
     WHERE id = ? AND state = 'awaiting_approval'`,
   )
     .bind(
@@ -884,6 +1095,7 @@ test("an interrupted publication finalizes only its exact verified export", asyn
       testObservedAt,
       reconcileAfter,
       catalogueExport.manifest.manifest_sha256,
+      `writer:${revisionId}`,
       runId,
     )
     .run();
@@ -910,6 +1122,16 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   );
   expect(inProgressReplay.response.status).toBe(202);
   expect(inProgressReplay.document).toEqual(inProgress.document);
+  const changedInFlightReuse = await approve(
+    runId,
+    "0".repeat(64),
+    expectedRevision,
+    approvalKey,
+  );
+  expect(changedInFlightReuse.response.status).toBe(409);
+  expect(changedInFlightReuse.document).toMatchObject({
+    code: "idempotency_key_reused",
+  });
   for (const object of catalogueExport.objects) {
     await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
   }
@@ -948,6 +1170,157 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   );
   expect(replay.response.status).toBe(200);
   expect(replay.document).toEqual(reconciled.document);
+});
+
+test("a stalled late publication write reopens completed cleanup when exact compensation fails", async () => {
+  const startedAt = "2026-07-29T02:00:00.000Z";
+  const reconcileAt = "2026-07-29T02:05:00.000Z";
+  const cleanupAt = "2026-07-29T02:10:00.000Z";
+  testObservedAt = startedAt;
+  const priorCurrentRevision = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT revision.id, revision.content_digest
+    FROM catalogue_state AS state
+    JOIN catalogue_revisions AS revision
+      ON revision.id = state.current_revision_id
+    WHERE state.singleton = 1`,
+  ).first<{ id: string; content_digest: string }>();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions
+      SET content_digest = ?
+      WHERE id = ?`,
+    )
+      .bind("0".repeat(64), priorCurrentRevision.id)
+      .run();
+  }
+  const started = await startRun("start-stalled-late-writer");
+  const runId = requiredDocumentString(started.document, "id");
+  const candidateDigest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const putStarted = deferred<string>();
+  const releasePut = deferred<void>();
+  let lateObjectKey: string | null = null;
+  const stalledBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async put(
+      key: string,
+      value:
+        | ReadableStream
+        | ArrayBuffer
+        | ArrayBufferView
+        | string
+        | null
+        | Blob,
+      options?: R2PutOptions,
+    ) {
+      lateObjectKey = key;
+      putStarted.resolve(key);
+      await releasePut.promise;
+      return testEnv.CATALOGUE_EXPORTS.put(
+        key,
+        value,
+        options,
+      );
+    },
+    async delete() {
+      throw new Error("synthetic late compensation failure");
+    },
+  });
+  const approval = approveRunDirect(
+    testEnv.CATALOGUE_DB,
+    stalledBucket,
+    runId,
+    {
+      candidate_digest: candidateDigest,
+      expected_current_revision_id: expectedRevision,
+      idempotency_key: "approve-stalled-late-writer",
+    },
+    startedAt,
+  );
+  await putStarted.promise;
+
+  const failed = await showRunDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    reconcileAt,
+  );
+  expect(failed).toMatchObject({
+    state: "failed",
+    publication_cleanup: { state: "pending", generation: 0 },
+  });
+  const completed = await retryPublicationCleanupDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    { idempotency_key: "cleanup-before-late-write" },
+    cleanupAt,
+  );
+  expect(completed).toMatchObject({
+    publication_cleanup: { state: "completed" },
+  });
+
+  releasePut.resolve(undefined);
+  await expect(approval).rejects.toMatchObject({
+    code: "publication_abandoned",
+  });
+  expect(lateObjectKey).not.toBeNull();
+  expect(
+    await testEnv.CATALOGUE_EXPORTS.get(lateObjectKey!),
+  ).not.toBeNull();
+  const reopened = await showRunDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    cleanupAt,
+  );
+  expect(reopened).toMatchObject({
+    publication_cleanup: {
+      state: "failed",
+      failure_code: "late_publication_write",
+    },
+  });
+  await expect(
+    retryPublicationCleanupDirect(
+      testEnv.CATALOGUE_DB,
+      testEnv.CATALOGUE_EXPORTS,
+      runId,
+      { idempotency_key: "cleanup-before-late-write" },
+      cleanupAt,
+    ),
+  ).rejects.toThrow(
+    "persisted administration success outcome does not match",
+  );
+  const recovered = await retryPublicationCleanupDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    { idempotency_key: "cleanup-after-late-write" },
+    "2026-07-29T02:11:00.000Z",
+  );
+  expect(recovered).toMatchObject({
+    publication_cleanup: { state: "completed" },
+  });
+  expect(
+    await testEnv.CATALOGUE_EXPORTS.get(lateObjectKey!),
+  ).toBeNull();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions
+      SET content_digest = ?
+      WHERE id = ?`,
+    )
+      .bind(
+        priorCurrentRevision.content_digest,
+        priorCurrentRevision.id,
+      )
+      .run();
+  }
 });
 
 test("unexpected recovery keys fail publication and are all removed by cleanup", async () => {
@@ -1006,7 +1379,8 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
         publication_revision_id = ?,
         publication_started_at = ?,
         publication_reconcile_after = ?,
-        publication_manifest_digest = ?
+        publication_manifest_digest = ?,
+        publication_writer_token = ?
     WHERE id = ? AND state = 'awaiting_approval'`,
   )
     .bind(
@@ -1027,6 +1401,7 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
       testObservedAt,
       reconcileAfter,
       catalogueExport.manifest.manifest_sha256,
+      `writer:${revisionId}`,
       runId,
     )
     .run();
@@ -1053,6 +1428,14 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
   await testEnv.CATALOGUE_EXPORTS.put(
     `catalogue-exports/${revisionId}/late-in-flight.bin`,
     new Uint8Array([7, 8, 9]),
+  );
+  await Promise.all(
+    Array.from({ length: 1_001 }, (_, index) =>
+      testEnv.CATALOGUE_EXPORTS.put(
+        `catalogue-exports/${revisionId}/bulk-late-${String(index).padStart(4, "0")}.bin`,
+        new Uint8Array([index % 256]),
+      ),
+    ),
   );
   testObservedAt = "2026-07-29T03:10:00.000Z";
   const cleanup = await administrationRequest(
@@ -1259,4 +1642,46 @@ function requiredDocumentNumber(
     throw new Error(`${field} is not a number`);
   }
   return value;
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve(value: T) {
+      resolvePromise!(value);
+    },
+  };
+}
+
+function proxyR2Bucket(
+  bucket: R2Bucket,
+  overrides: {
+    put?: (
+      ...arguments_: Parameters<R2Bucket["put"]>
+    ) => ReturnType<R2Bucket["put"]>;
+    delete?: (
+      ...arguments_: Parameters<R2Bucket["delete"]>
+    ) => ReturnType<R2Bucket["delete"]>;
+  },
+): R2Bucket {
+  return new Proxy(bucket, {
+    get(target, property) {
+      const override =
+        property === "put"
+          ? overrides.put
+          : property === "delete"
+            ? overrides.delete
+            : undefined;
+      if (override !== undefined) return override;
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }

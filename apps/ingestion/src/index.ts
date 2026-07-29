@@ -209,20 +209,26 @@ export default {
       if (request.method === "POST" && cleanupMatch !== null) {
         const body = await readAdministrationBody(request);
         assertOnlyFields(body, ["idempotency_key"]);
-        return Response.json(
-          await retryPublicationCleanup(
-            env.CATALOGUE_DB,
-            env.CATALOGUE_EXPORTS,
-            decodeURIComponent(cleanupMatch[1]!),
-            {
-              idempotency_key: requiredString(
-                body,
-                "idempotency_key",
-              ),
-            },
-            observedAt,
-          ),
+        const result = await retryPublicationCleanup(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(cleanupMatch[1]!),
+          {
+            idempotency_key: requiredString(
+              body,
+              "idempotency_key",
+            ),
+          },
+          observedAt,
         );
+        return Response.json(result, {
+          status:
+            result.contract ===
+              "card-keepr-administration-operation@1" &&
+            result.status === "in_progress"
+              ? 202
+              : 200,
+        });
       }
 
       const runMatch = /^\/v1\/ingestion-runs\/([^/]+)$/.exec(
