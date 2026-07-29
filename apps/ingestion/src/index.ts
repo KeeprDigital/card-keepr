@@ -1,8 +1,11 @@
 import { authenticateBearer } from "../../../src/http/authentication";
 import {
   AdministrationProblem,
+  administrationStatus,
   approveRun,
   inspectCandidate,
+  rejectRun,
+  retryRun,
   showRun,
   startFixtureRun,
 } from "../../../src/catalogue/ingestion";
@@ -70,6 +73,12 @@ export default {
         );
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/status") {
+        return Response.json(
+          await administrationStatus(env.CATALOGUE_DB),
+        );
+      }
+
       const candidateMatch =
         /^\/v1\/ingestion-runs\/([^/]+)\/candidate$/.exec(url.pathname);
       if (request.method === "GET" && candidateMatch !== null) {
@@ -102,6 +111,49 @@ export default {
               idempotency_key: requiredString(body, "idempotency_key"),
             },
           ),
+        );
+      }
+
+      const rejectionMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/rejection$/.exec(
+          url.pathname,
+        );
+      if (request.method === "POST" && rejectionMatch !== null) {
+        const body = await readAdministrationBody(request);
+        return Response.json(
+          await rejectRun(
+            env.CATALOGUE_DB,
+            decodeURIComponent(rejectionMatch[1]!),
+            {
+              candidate_digest: requiredString(
+                body,
+                "candidate_digest",
+              ),
+              idempotency_key: requiredString(
+                body,
+                "idempotency_key",
+              ),
+            },
+          ),
+        );
+      }
+
+      const retryMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/retry$/.exec(url.pathname);
+      if (request.method === "POST" && retryMatch !== null) {
+        const body = await readAdministrationBody(request);
+        return Response.json(
+          await retryRun(
+            env.CATALOGUE_DB,
+            decodeURIComponent(retryMatch[1]!),
+            {
+              idempotency_key: requiredString(
+                body,
+                "idempotency_key",
+              ),
+            },
+          ),
+          { status: 201 },
         );
       }
 

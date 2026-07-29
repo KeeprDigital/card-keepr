@@ -16,6 +16,17 @@ async function main(arguments_, environment) {
     }
     return health(environment, json);
   }
+  if (arguments_[0] === "status") {
+    if (arguments_.slice(1).some((option) => option !== "--json")) {
+      return usageFailure(json);
+    }
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/status",
+      "GET",
+    );
+  }
 
   if (isCommand(arguments_, "run", "start")) {
     return startRun(arguments_.slice(2), environment, json);
@@ -28,6 +39,12 @@ async function main(arguments_, environment) {
   }
   if (isCommand(arguments_, "run", "approve")) {
     return approveRun(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "run", "reject")) {
+    return rejectRun(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "run", "retry")) {
+    return retryRun(arguments_.slice(2), environment, json);
   }
 
   return usageFailure(json);
@@ -164,6 +181,65 @@ async function approveRun(arguments_, environment, json) {
     {
       candidate_digest: candidateDigest,
       expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
+async function rejectRun(arguments_, environment, json) {
+  const options = parseOptions(
+    arguments_,
+    [
+      "--run-id",
+      "--candidate-digest",
+      "--idempotency-key",
+    ],
+    ["--yes"],
+  );
+  const runId = options.values["--run-id"];
+  const candidateDigest = options.values["--candidate-digest"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    candidateDigest === undefined ||
+    idempotencyKey === undefined ||
+    !options.flags.has("--yes")
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/rejection`,
+    "POST",
+    {
+      candidate_digest: candidateDigest,
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
+async function retryRun(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/retry`,
+    "POST",
+    {
       idempotency_key: idempotencyKey,
     },
   );
@@ -332,7 +408,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | run start | run show | candidate inspect | run approve",
+        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry",
     },
     2,
   );
@@ -348,13 +424,119 @@ function exitCodeForStatus(status) {
 }
 
 function formatAdministrationResult(document) {
+  if (document.contract === "card-keepr-administration-status@1") {
+    return formatStatus(document);
+  }
   if (document.state && document.id) {
-    return `Ingestion Run ${document.id}: ${document.state}`;
+    return formatRun(document);
   }
   if (document.run_id && document.candidate_digest) {
     return `Candidate ${document.candidate_digest} for Ingestion Run ${document.run_id}`;
   }
   return JSON.stringify(document);
+}
+
+function formatStatus(document) {
+  const safeState = document.safe_state ?? {};
+  const lines = [
+    `Catalogue Revision: ${safeState.current_revision_id ?? "unknown"}`,
+    `Recovery health: ${safeState.recovery_health ?? "unknown"}`,
+    `Mutation safe: ${safeState.mutation_safe === true ? "yes" : "no"}`,
+    `Active Ingestion Run: ${
+      safeState.active_ingestion_run_id ?? "none"
+    }`,
+  ];
+  const diagnostics = document.diagnostics ?? {};
+  lines.push(
+    `Catalogue diagnostics: ${
+      diagnostics.catalogue_revision_count ?? "unknown"
+    } revisions, ${
+      diagnostics.catalogue_export_count ?? "unknown"
+    } exports`,
+  );
+  const freshness = Array.isArray(document.source_freshness)
+    ? document.source_freshness
+    : [];
+  lines.push("Source freshness:");
+  if (freshness.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const item of freshness) {
+      lines.push(
+        `  ${item.game}/${item.area}: ${item.checked_at} (${item.ingestion_run_id})`,
+      );
+    }
+  }
+  const recentRuns = Array.isArray(document.recent_runs)
+    ? document.recent_runs
+    : [];
+  lines.push("Recent Ingestion Runs:");
+  if (recentRuns.length === 0) {
+    lines.push("  none");
+  } else {
+    for (const run of recentRuns) {
+      lines.push(
+        `  ${run.id}: ${run.state} (${
+          run.progress?.current_stage ?? "unknown progress"
+        })`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+function formatRun(document) {
+  const lines = [
+    `Ingestion Run ${document.id}: ${document.state}`,
+    `Progress: ${document.progress?.current_stage ?? "unknown"}`,
+  ];
+  const completed = Array.isArray(document.progress?.completed_stages)
+    ? document.progress.completed_stages
+    : [];
+  lines.push(
+    `Completed stages: ${
+      completed.length === 0 ? "none" : completed.join(", ")
+    }`,
+  );
+  const warnings = Array.isArray(document.warnings)
+    ? document.warnings
+    : [];
+  if (warnings.length === 0) {
+    lines.push("Warnings: none");
+  } else {
+    for (const warning of warnings) {
+      lines.push(
+        `Warning: ${warning.code ?? "unspecified"}${
+          warning.detail ? ` — ${warning.detail}` : ""
+        }`,
+      );
+    }
+  }
+  lines.push(`Failure: ${document.failure_code ?? "none"}`);
+  const history = Array.isArray(document.approval_history)
+    ? document.approval_history
+    : [];
+  lines.push(
+    `Approval history: ${history.length} ${
+      history.length === 1 ? "decision" : "decisions"
+    }`,
+  );
+  for (const decision of history) {
+    lines.push(
+      `  ${decision.action ?? "decision"} at ${
+        decision.approved_at ?? decision.rejected_at ?? "unknown"
+      }`,
+    );
+  }
+  lines.push(
+    `Publication outcome: ${document.publication_outcome ?? "none"}`,
+  );
+  lines.push(
+    `Resulting Catalogue Revision: ${
+      document.resulting_revision_id ?? "none"
+    }`,
+  );
+  return lines.join("\n");
 }
 
 async function checkRuntime(runtime) {
