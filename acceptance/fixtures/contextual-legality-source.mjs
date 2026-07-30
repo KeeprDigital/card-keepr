@@ -1,15 +1,43 @@
-export function contextualLegalityDocument(region, representable = true) {
+export function contextualLegalityDocument(
+  region,
+  representable = true,
+  membershipVariant = null,
+) {
   const numbers =
     region === "EN-ASIA"
-      ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
+      ? [
+          "GD30-001",
+          "GD30-002",
+          "GD30-003",
+          "GD30-004",
+          "GD30-005",
+        ]
       : ["GD30-001"];
   const cards = numbers.map(gundamObservation);
+  const legalityRules = rules(region).map((rule) => ({
+    ...rule,
+    representable,
+  }));
+  if (membershipVariant !== null) {
+    const membership = legalityRules.find(
+      (rule) => rule.id === "legality_rule_asia_membership",
+    );
+    membership.effect =
+      membershipVariant === "unknown-attribute"
+        ? {
+            type: "membership",
+            attribute: "traitz",
+            includes_any: ["Earth Federation"],
+          }
+        : {
+            type: "membership",
+            attribute: "colours",
+            includes_any: ["bluue"],
+          };
+  }
   return {
     cards,
-    legality_rules: rules(region).map((rule) => ({
-      ...rule,
-      representable,
-    })),
+    legality_rules: legalityRules,
     legality_completeness: completeEvidence(),
   };
 }
@@ -120,6 +148,31 @@ function rules(region) {
         reason: "The event-tier scope is absent from the official notice.",
       },
     },
+    {
+      ...base,
+      id: "legality_rule_asia_nullable_membership",
+      card_numbers: ["GD30-005"],
+      official_wording:
+        "Cards with the published link condition are eligible for this event.",
+      effect: {
+        type: "membership",
+        attribute: "link_condition",
+        includes_any: ["Earth Federation"],
+      },
+    },
+    ...[
+      "Order-A",
+      "Order.A",
+      "Order:A",
+      "Order_A",
+      "Order_a",
+    ].map((id) => ({
+      ...base,
+      id,
+      card_numbers: ["GD30-005"],
+      official_wording: `${id} is an ordering fixture rule.`,
+      effect: { type: "eligible" },
+    })),
   ];
 }
 

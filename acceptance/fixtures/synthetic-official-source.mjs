@@ -168,6 +168,7 @@ export default {
         contextualLegalityDocument(
           "EN-ASIA",
           url.searchParams.get("representable") !== "false",
+          url.searchParams.get("membership"),
         ),
       );
     }

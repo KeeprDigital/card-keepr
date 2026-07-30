@@ -16,6 +16,7 @@ export function legalityRuleExportRecords(candidate: FixtureCandidate) {
     effective_from: rule.effective_from,
     effective_until: rule.effective_until,
     kind: legalityExportKind(rule.effect),
+    effect: rule.effect,
     card_ids: legalityRuleCardIds(rule),
     official_wording: rule.official_wording,
   }));

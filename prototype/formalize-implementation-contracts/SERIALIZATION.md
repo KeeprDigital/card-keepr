@@ -7,6 +7,11 @@ component for every component declared by that schema version. Empty components
 are present with zero records. A successful no-change Ingestion Run produces no
 export.
 
+New exports use schema major 2 so `LegalityRuleRecord.effect` retains the exact
+normalized discriminated rule and every operand. Schema-major-1 manifests and
+components remain revision-addressed, immutable, and readable; they are never
+rewritten during the upgrade.
+
 ## Records and component order
 
 Each component contains exactly one JSON object per line, validated against the

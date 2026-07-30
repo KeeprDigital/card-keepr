@@ -1,12 +1,16 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
-import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
+import manifestSchemaV1 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
+import manifestSchemaV2 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
+import recordSchemaV1 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
+import recordSchemaV2 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v2.schema.json";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
-const validateManifest = ajv.compile(manifestSchema);
-const validateRecord = ajv.compile(recordSchema);
+ajv.addSchema(manifestSchemaV1);
+ajv.addSchema(recordSchemaV1);
+const validateManifest = ajv.compile(manifestSchemaV2);
+const validateRecord = ajv.compile(recordSchemaV2);
 
 export function verifyExportManifest(manifest: unknown): void {
   assertValid(validateManifest, manifest, "manifest");

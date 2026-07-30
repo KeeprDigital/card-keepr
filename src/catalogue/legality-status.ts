@@ -205,6 +205,9 @@ function evaluate(
       return "indeterminate";
     case "membership": {
       const value = card.game_data.attributes[effect.attribute];
+      if (value === null || value === undefined) {
+        return "indeterminate";
+      }
       const values = Array.isArray(value) ? value : [value];
       return values.some(
         (candidate) =>
@@ -281,6 +284,16 @@ function parseQuery(url: URL): {
     }
   }
   const cardId = requiredParameter(url, "card_id");
+  if (
+    cardId.length > 200 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cardId)
+  ) {
+    throw new LegalityStatusProblem(
+      400,
+      "invalid_parameter",
+      "card_id must be an opaque identity of at most 200 characters.",
+    );
+  }
   const on = requiredParameter(url, "on");
   const format = requiredParameter(url, "format");
   if (!validDate(on)) {

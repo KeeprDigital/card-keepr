@@ -93,6 +93,29 @@ test("every Card collection shape returns the normative 503 while the current pr
   }
 });
 
+test("Legality Status rejects a malformed Card identity before lookup", async () => {
+  for (const cardId of [
+    "card id with spaces",
+    `card_${"x".repeat(196)}`,
+  ]) {
+    const response = await exports.default.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/legality-status?card_id=${encodeURIComponent(cardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
+        {
+          headers: {
+            authorization: "Bearer vitest-api-key",
+            "cf-connecting-ip": "203.0.113.20",
+          },
+        },
+      ),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+    });
+  }
+});
+
 test("the public Printing response validates full Distribution Context objects", async () => {
   const document = {
     type: "printing",

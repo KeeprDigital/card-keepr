@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-record@2",
+  "title": "Card Keepr Catalogue Export record v2",
+  "oneOf": [
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/SupportedGameRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/GameProfileRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/CardRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/PrintingRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/PrintingImageRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ProductRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ReleaseRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/DistributionContextRecord"
+    },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ErratumRecord"
+    },
+    { "$ref": "#/$defs/LegalityRuleRecord" },
+    {
+      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/RelationshipRecord"
+    }
+  ],
+  "$defs": {
+    "LegalityRuleEffect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "eligible" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "ban" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "maximum_copies"],
+          "properties": {
+            "type": { "const": "copy_limit" },
+            "maximum_copies": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "with_card_ids"],
+          "properties": {
+            "type": { "const": "prohibited_combination" },
+            "with_card_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "attribute", "includes_any"],
+          "properties": {
+            "type": { "const": "membership" },
+            "attribute": {
+              "type": "string",
+              "minLength": 1
+            },
+            "includes_any": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "eligible_blocks"],
+          "properties": {
+            "type": { "const": "rotation" },
+            "eligible_blocks": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "legal_from"],
+          "properties": {
+            "type": { "const": "release_timing" },
+            "legal_from": {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/Date"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "reason"],
+          "properties": {
+            "type": { "const": "unresolved" },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "LegalityRuleRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "region",
+        "format",
+        "event_tier",
+        "effective_from",
+        "effective_until",
+        "kind",
+        "effect",
+        "card_ids",
+        "official_wording"
+      ],
+      "properties": {
+        "type": { "const": "legality_rule" },
+        "id": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/SupportedGame"
+        },
+        "region": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/Locale"
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_tier": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/NullableText"
+        },
+        "effective_from": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/Date"
+        },
+        "effective_until": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/NullableDate"
+        },
+        "kind": {
+          "enum": [
+            "eligible",
+            "restricted",
+            "not_legal",
+            "combination",
+            "conditional",
+            "rotation",
+            "release",
+            "indeterminate"
+          ]
+        },
+        "effect": { "$ref": "#/$defs/LegalityRuleEffect" },
+        "card_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
+          }
+        },
+        "official_wording": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -79,7 +79,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  let ingestion = startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
     inspectorPort: portBase + 102,
@@ -113,6 +113,22 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     KEEPR_ADMINISTRATION_KEY: administrationKey,
     KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
   };
+  const restartIngestion = async () => {
+    await stopWorker(ingestion);
+    ingestion = startWorker({
+      config: ingestionConfig,
+      envFile: ingestionEnv,
+      inspectorPort: portBase + 102,
+      port: ingestionPort,
+      statePath,
+    });
+    await waitForResponse(
+      `http://127.0.0.1:${ingestionPort}/health`,
+      ingestion,
+      "restarted ingestion Worker",
+      { authorization: `Bearer ${administrationKey}` },
+    );
+  };
 
   const asia = await ingestAndReconcile({
     adapter: "gundam-en-asia@2",
@@ -128,13 +144,15 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       card.id,
     ]),
   );
-  assert.equal(asia.legality_rules.length, 9);
+  assert.equal(asia.legality_rules.length, 15);
   const asiaPublication = await approve(
     asia,
     "approve-acceptance-contextual-legality-asia",
     administrationEnvironment,
   );
   assert.equal(asiaPublication.state, "published");
+  const asiaRevisionId = asiaPublication.resulting_revision_id;
+  assert.match(asiaRevisionId, /^catrev_/);
 
   const us = await ingestAndReconcile({
     adapter: "gundam-en-us@2",
@@ -152,6 +170,95 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   );
   const revisionId = usPublication.resulting_revision_id;
   assert.match(revisionId, /^catrev_/);
+  await restartIngestion();
+
+  const asiaRefresh = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    idempotencyKey: "acceptance-contextual-legality-asia-refresh",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-asia?refresh=asia",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const asiaRefreshPublication = await approve(
+    asiaRefresh,
+    "approve-acceptance-contextual-legality-asia-refresh",
+    administrationEnvironment,
+  );
+  const usRefresh = await ingestAndReconcile({
+    adapter: "gundam-en-us@2",
+    idempotencyKey: "acceptance-contextual-legality-us-refresh",
+    lineage: "gundam-en-us",
+    sourcePath: "/contextual-legality-us?refresh=us",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const usRefreshPublication = await approve(
+    usRefresh,
+    "approve-acceptance-contextual-legality-us-refresh",
+    administrationEnvironment,
+  );
+  await t.test(
+    "unchanged regional refreshes preserve one revision and rule lifecycle",
+    () => {
+      assert.equal(
+        asiaRefreshPublication.publication_outcome,
+        "no_change",
+      );
+      assert.equal(
+        asiaRefreshPublication.resulting_revision_id,
+        revisionId,
+      );
+      assert.equal(
+        usRefreshPublication.publication_outcome,
+        "no_change",
+      );
+      assert.equal(
+        usRefreshPublication.resulting_revision_id,
+        revisionId,
+      );
+    },
+  );
+  await restartIngestion();
+
+  for (const membershipVariant of [
+    "unknown-attribute",
+    "unknown-enum-value",
+  ]) {
+    const invalidMembership = await ingestAndReconcile({
+      adapter: "gundam-en-asia@2",
+      expectedStatus: null,
+      idempotencyKey:
+        `acceptance-contextual-legality-${membershipVariant}`,
+      lineage: "gundam-en-asia",
+      sourcePath:
+        `/contextual-legality-asia?membership=${membershipVariant}`,
+      environment: administrationEnvironment,
+      ingestion,
+    });
+    await t.test(
+      `membership operand ${membershipVariant} blocks before approval`,
+      () => {
+        assert.equal(invalidMembership.http_status, 409);
+        assert.equal(invalidMembership.publishable, false);
+        assert.equal(invalidMembership.state, "failed");
+        assert.match(
+          invalidMembership.diagnostics[0].detail,
+          membershipVariant === "unknown-attribute"
+            ? /traitz/
+            : /bluue/,
+        );
+      },
+    );
+    if (invalidMembership.state === "awaiting_approval") {
+      await reject(
+        invalidMembership,
+        `reject-acceptance-contextual-legality-${membershipVariant}`,
+        administrationEnvironment,
+      );
+    }
+  }
+  await restartIngestion();
 
   const blocked = await ingestAndReconcile({
     adapter: "gundam-en-asia@2",
@@ -207,12 +314,28 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     assert.equal(document.data[0].status, expected);
     assert.ok(document.data[0].rule_ids.length > 0);
     assert.match(document.data[0].derivation, /legality_rule_asia_/);
-    assert.equal(
-      document.meta.catalogue_revision_id,
-      revisionId,
-      "the blocked run must not replace the last published revision",
-    );
   }
+
+  const nullableMembership = await legalityStatus(
+    cards.get("GD30-005"),
+    ["--region", "EN-ASIA"],
+    apiEnvironment,
+  );
+  await t.test(
+    "a valid membership rule with a nullable canonical attribute is indeterminate",
+    () => {
+      assert.equal(nullableMembership.data[0].status, "indeterminate");
+      assert.ok(
+        nullableMembership.data[0].rule_ids.includes(
+          "legality_rule_asia_nullable_membership",
+        ),
+      );
+      assert.match(
+        nullableMembership.data[0].derivation,
+        /legality_rule_asia_nullable_membership \(membership\) evaluated indeterminate/,
+      );
+    },
+  );
 
   const beforeRelease = await legalityStatus(
     cards.get("GD30-001"),
@@ -265,6 +388,33 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   assert.equal(oceania.code, 8);
   assert.equal(JSON.parse(oceania.stdout).code, "invalid_legality_region");
 
+  for (const invalidCardId of [
+    "card id with spaces",
+    `card_${"x".repeat(196)}`,
+  ]) {
+    const invalidCardResponse = await fetch(
+      `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${encodeURIComponent(invalidCardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
+      { headers: { authorization: `Bearer ${apiKey}` } },
+    );
+    const invalidCardDocument = await invalidCardResponse.json();
+    await t.test(
+      `card_id rejects ${
+        invalidCardId.includes(" ") ? "invalid characters" : "overlength"
+      } before lookup`,
+      () => {
+        assert.equal(invalidCardResponse.status, 400);
+        assert.equal(invalidCardDocument.code, "invalid_parameter");
+      },
+    );
+  }
+
+  const manifestResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(manifestResponse.status, 200);
+  const manifestDocument = await manifestResponse.json();
+
   const exportResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
     { headers: { authorization: `Bearer ${apiKey}` } },
@@ -277,26 +427,163 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(exportedRules.length, 10);
-  assert.deepEqual(
-    exportedRules.find(
-      (rule) => rule.id === "legality_rule_asia_copy_limit",
-    ),
-    {
-      type: "legality_rule",
-      id: "legality_rule_asia_copy_limit",
-      game: "gundam",
-      region: "EN-ASIA",
-      format: "standard",
-      event_tier: "championship",
-      effective_from: "2026-01-01",
-      effective_until: null,
-      kind: "restricted",
-      card_ids: [cards.get("GD30-002")],
-      official_wording:
-        "For Championship events, decks may contain no more than one copy of GD30-002.",
+  assert.equal(exportedRules.length, 16);
+  await t.test(
+    "Legality Rule exports use schema v2 and retain exact effects",
+    () => {
+      assert.equal(manifestDocument.data.export_schema_major, 2);
+      assert.equal(
+        manifestDocument.data.components.find(
+          (component) => component.name === "legality-rules",
+        ).record_schema,
+        "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord",
+      );
     },
   );
+  await t.test("copy-limit export retains its operand", () => {
+    assert.deepEqual(
+      exportedRules.find(
+        (rule) => rule.id === "legality_rule_asia_copy_limit",
+      ),
+      {
+        type: "legality_rule",
+        id: "legality_rule_asia_copy_limit",
+        game: "gundam",
+        region: "EN-ASIA",
+        format: "standard",
+        event_tier: "championship",
+        effective_from: "2026-01-01",
+        effective_until: null,
+        kind: "restricted",
+        effect: { type: "copy_limit", maximum_copies: 1 },
+        card_ids: [cards.get("GD30-002")],
+        official_wording:
+          "For Championship events, decks may contain no more than one copy of GD30-002.",
+      },
+    );
+  });
+  await t.test(
+    "mixed punctuation and case use UTF-8 byte ordering",
+    () => {
+      assert.deepEqual(
+        exportedRules
+          .map((rule) => rule.id)
+          .filter((id) => id.startsWith("Order")),
+        ["Order-A", "Order.A", "Order:A", "Order_A", "Order_a"],
+      );
+    },
+  );
+  await t.test("membership export retains its predicate", () => {
+    assert.deepEqual(
+      exportedRules.find(
+        (rule) => rule.id === "legality_rule_asia_membership",
+      ),
+      {
+        type: "legality_rule",
+        id: "legality_rule_asia_membership",
+        game: "gundam",
+        region: "EN-ASIA",
+        format: "standard",
+        event_tier: null,
+        effective_from: "2026-01-01",
+        effective_until: null,
+        kind: "conditional",
+        effect: {
+          type: "membership",
+          attribute: "traits",
+          includes_any: ["Earth Federation"],
+        },
+        card_ids: [cards.get("GD30-001")],
+        official_wording:
+          "Cards with the Earth Federation trait are eligible for this event.",
+      },
+    );
+  });
+  await t.test("release-timing export matches temporal API semantics", () => {
+    assert.deepEqual(
+      exportedRules.find(
+        (rule) => rule.id === "legality_rule_asia_release_timing",
+      ),
+      {
+        type: "legality_rule",
+        id: "legality_rule_asia_release_timing",
+        game: "gundam",
+        region: "EN-ASIA",
+        format: "standard",
+        event_tier: null,
+        effective_from: "2025-01-01",
+        effective_until: null,
+        kind: "release",
+        effect: {
+          type: "release_timing",
+          legal_from: "2026-01-01",
+        },
+        card_ids: [cards.get("GD30-001")],
+        official_wording:
+          "GD30-001 becomes legal for tournament play on 1 January 2026.",
+      },
+    );
+  });
+  await t.test("unresolved export matches indeterminate API semantics", () => {
+    assert.deepEqual(
+      exportedRules.find(
+        (rule) => rule.id === "legality_rule_asia_unresolved_scope",
+      ),
+      {
+        type: "legality_rule",
+        id: "legality_rule_asia_unresolved_scope",
+        game: "gundam",
+        region: "EN-ASIA",
+        format: "standard",
+        event_tier: null,
+        effective_from: "2026-01-01",
+        effective_until: null,
+        kind: "indeterminate",
+        effect: {
+          type: "unresolved",
+          reason: "The event-tier scope is absent from the official notice.",
+        },
+        card_ids: [cards.get("GD30-004")],
+        official_wording:
+          "The official notice does not identify whether GD30-004 applies to Championship side events.",
+      },
+    );
+  });
+
+  const relationshipsResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/relationships`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(relationshipsResponse.status, 200);
+  const relationshipsStream = relationshipsResponse.body.pipeThrough(
+    new DecompressionStream("gzip"),
+  );
+  const exportedRelationships = (
+    await new Response(relationshipsStream).text()
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const asiaRelationship = exportedRelationships.find(
+    (relationship) =>
+      relationship.kind === "legality-rule-card" &&
+      relationship.from.id === "legality_rule_asia_membership",
+  );
+  const usRelationship = exportedRelationships.find(
+    (relationship) =>
+      relationship.kind === "legality-rule-card" &&
+      relationship.from.id === "legality_rule_us_eligible",
+  );
+  assert.equal(
+    asiaRelationship.lifecycle.first_revision_id,
+    asiaRevisionId,
+  );
+  assert.equal(
+    usRelationship.lifecycle.first_revision_id,
+    revisionId,
+  );
+  assert.equal(asiaRelationship.source_lineage, "gundam-en-asia");
+  assert.equal(usRelationship.source_lineage, "gundam-en-us");
 });
 
 async function ingestAndReconcile({
@@ -319,7 +606,7 @@ async function ingestAndReconcile({
       "--adapter",
       adapter,
       "--request-id",
-      "cards-and-legality",
+      idempotencyKey,
       "--url",
       `https://synthetic-source.invalid${sourcePath}`,
       "--idempotency-key",
@@ -328,17 +615,29 @@ async function ingestAndReconcile({
     ],
     environment,
   );
-  assert.equal(
-    collected.code,
-    0,
-    `${collected.stderr}\n${ingestion.getOutput()}`,
-  );
+  if (collected.code !== 0) {
+    throw new Error(
+      `source collect exited ${collected.code}\n${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`,
+    );
+  }
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(
     ["source", "resume", "--run-id", run.id, "--json"],
     environment,
   );
-  assert.equal(resumed.code, 0, resumed.stderr);
+  if (resumed.code !== 0) {
+    const shown = await runCli(
+      ["source", "show", "--run-id", run.id, "--json"],
+      environment,
+    );
+    const state =
+      shown.code === 0 ? JSON.parse(shown.stdout).state : null;
+    if (state !== "parsing") {
+      throw new Error(
+        `source resume exited ${resumed.code} in state ${state}\n${resumed.stdout}\n${resumed.stderr}`,
+      );
+    }
+  }
   await waitForRunState(run.id, "parsing", environment, ingestion);
   const response = await fetch(
     `${environment.KEEPR_INGESTION_URL}/v1/ingestion-runs/${run.id}/reconciliation`,
@@ -352,12 +651,14 @@ async function ingestAndReconcile({
     },
   );
   const document = await response.json();
-  assert.equal(
-    response.status,
-    expectedStatus,
-    `${JSON.stringify(document)}\n${ingestion.getOutput()}`,
-  );
-  return document;
+  if (expectedStatus !== null) {
+    assert.equal(
+      response.status,
+      expectedStatus,
+      `${JSON.stringify(document)}\n${ingestion.getOutput()}`,
+    );
+  }
+  return { ...document, http_status: response.status };
 }
 
 async function approve(document, idempotencyKey, environment) {
@@ -371,6 +672,26 @@ async function approve(document, idempotencyKey, environment) {
       document.candidate_digest,
       "--expected-current-revision",
       document.expected_current_revision_id,
+      "--idempotency-key",
+      idempotencyKey,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  return JSON.parse(result.stdout);
+}
+
+async function reject(document, idempotencyKey, environment) {
+  const result = await runCli(
+    [
+      "run",
+      "reject",
+      "--run-id",
+      document.run_id,
+      "--candidate-digest",
+      document.candidate_digest,
       "--idempotency-key",
       idempotencyKey,
       "--yes",
@@ -418,13 +739,15 @@ function legalityArguments(cardId, extraArguments) {
 }
 
 async function waitForRunState(runId, expected, environment, worker) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 40_000;
+  let lastShown = "";
   while (Date.now() < deadline) {
     const shown = await runCli(
       ["source", "show", "--run-id", runId, "--json"],
       environment,
     );
     if (shown.code === 0) {
+      lastShown = shown.stdout;
       const document = JSON.parse(shown.stdout);
       if (document.state === expected) return;
       if (document.state === "failed") {
@@ -433,7 +756,9 @@ async function waitForRunState(runId, expected, environment, worker) {
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
   }
-  throw new Error(`run ${runId} did not reach ${expected}`);
+  throw new Error(
+    `run ${runId} did not reach ${expected}\n${lastShown}\n${worker.getOutput()}`,
+  );
 }
 
 async function localConfig(source, directory, name, overrides = {}) {

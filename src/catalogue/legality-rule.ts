@@ -3,6 +3,8 @@ import type {
   FixtureCard,
   SupportedGame,
 } from "./fixture";
+import { validateMembershipPredicate } from "./reconciliation-profile";
+import { compareUtf8 } from "./serialization";
 
 export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
 
@@ -88,6 +90,13 @@ export function resolveLegalityRuleCards(
       throw new Error(`Duplicate Legality Rule identity ${rule.id}.`);
     }
     identities.add(rule.id);
+    if (rule.effect.type === "membership") {
+      validateMembershipPredicate(
+        `${rule.game}@1`,
+        rule.effect.attribute,
+        rule.effect.includes_any,
+      );
+    }
     const cardIds = rule.card_numbers.map((number) =>
       requiredCardId(cardsByNumber, rule.game, number),
     );
@@ -110,23 +119,45 @@ export function legalityRulesForCandidate(
   sourceLineage: string,
   incoming: readonly LegalityRule[],
 ): LegalityRule[] {
+  const priorById = new Map(
+    (prior?.legality_rules ?? []).map((rule) => [rule.id, rule]),
+  );
+  const observed = incoming.map((rule) => {
+    const priorRule = priorById.get(rule.id);
+    const firstRevisionId =
+      rule.first_revision_id ?? priorRule?.first_revision_id;
+    return firstRevisionId === undefined
+      ? rule
+      : { ...rule, first_revision_id: firstRevisionId };
+  });
   return [
     ...(prior?.legality_rules ?? []).filter(
       (rule) => rule.source_lineage !== sourceLineage,
     ),
-    ...incoming,
-  ].sort((left, right) => left.id.localeCompare(right.id));
+    ...observed,
+  ].sort((left, right) => compareUtf8(left.id, right.id));
 }
 
 export function legalityExportKind(
   effect: LegalityRuleEffect,
-): "eligible" | "restricted" | "not_legal" | "combination" | "rotation" {
+):
+  | "eligible"
+  | "restricted"
+  | "not_legal"
+  | "combination"
+  | "conditional"
+  | "rotation"
+  | "release"
+  | "indeterminate" {
   switch (effect.type) {
     case "eligible":
-    case "membership":
-    case "release_timing":
-    case "unresolved":
       return "eligible";
+    case "membership":
+      return "conditional";
+    case "release_timing":
+      return "release";
+    case "unresolved":
+      return "indeterminate";
     case "copy_limit":
       return "restricted";
     case "ban":
@@ -146,7 +177,7 @@ export function legalityRuleCardIds(rule: LegalityRule): string[] {
         ? rule.effect.with_card_ids
         : []),
     ]),
-  ].sort();
+  ].sort(compareUtf8);
 }
 
 function parseRule(
@@ -385,7 +416,7 @@ function requiredStrings(
   ) {
     throw new Error(`${name} must be an array of non-empty strings.`);
   }
-  return [...new Set(value)].sort();
+  return [...new Set(value)].sort(compareUtf8);
 }
 
 function requiredOpaqueId(value: unknown, name: string): string {

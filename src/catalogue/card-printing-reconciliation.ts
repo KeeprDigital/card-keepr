@@ -1491,6 +1491,18 @@ function semanticCatalogueCandidate(
     errata: (candidate.errata ?? []).map((erratum) =>
       JSON.parse(canonicalErratum(erratum))
     ),
+    legality_rules: (candidate.legality_rules ?? []).map((rule) => {
+      const {
+        source_lineage: _sourceLineage,
+        source_snapshot_id: _sourceSnapshotId,
+        source_observation_set_id: _sourceObservationSetId,
+        source_observation_id: _sourceObservationId,
+        first_revision_id: _firstRevisionId,
+        last_observed_revision_id: _lastObservedRevisionId,
+        ...semanticRule
+      } = rule;
+      return semanticRule;
+    }),
   };
 }
 
@@ -1532,7 +1544,6 @@ function groupPlansByLineage<
     left.localeCompare(right),
   );
 }
-
 function compareCanonical(
   left: Record<string, unknown>,
   right: Record<string, unknown>,

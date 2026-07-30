@@ -51,7 +51,10 @@ Omitting `--region` returns each applicable regional result separately.
 Every result includes the applicable Legality Rule IDs and an auditable
 derivation. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
-`relationships` component.
+`relationships` component. Newly generated exports use schema major 2 and
+retain each rule's complete normalized `effect`, including every operand and
+unresolved reason. Historical schema-major-1 artifacts remain immutable and
+readable.
 
 Migration `0008_legality_rules.sql` adds canonical provenance retention and
 the revision-scoped rule snapshot used by the API. Apply it before deploying
