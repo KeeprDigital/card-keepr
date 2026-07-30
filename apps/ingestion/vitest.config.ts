@@ -950,6 +950,8 @@ function reconciliationSourceDocument(scenario: string) {
   const canonical = scenario.startsWith("canonical");
   const incompleteAppearance = scenario === "incomplete-appearance";
   const setCountMismatch = scenario === "set-count-mismatch";
+  const productReleaseCatalogue =
+    productReleaseCatalogueForScenario(scenario);
   if (scenario === "withdrawal-conflict") {
     const observation = printingObservation({
       game: "one-piece",
@@ -1358,56 +1360,17 @@ function reconciliationSourceDocument(scenario: string) {
                   distribution_contexts: ["championship-2026-pack"],
                   source_buckets: ["starter-deck-card-list"],
                 }
+            : scenario === "product-typed-relationships"
+              ? {
+                  products: ["CODE-X"],
+                  distribution_contexts: ["typed-context"],
+                  source_buckets: ["typed-source-bucket"],
+                }
             : undefined,
         }),
-        ...(scenario === "product-release"
-          ? {
-              product_release_catalogue: {
-                products: [
-                  {
-                    official_code: "ST-15",
-                    name: "Starter Deck RED Edward.Newgate",
-                    releases: [
-                      {
-                        region: "EN-OCEANIA",
-                        date: { precision: "month", value: "2026-09" },
-                        status: "announced",
-                      },
-                    ],
-                  },
-                ],
-                distribution_contexts: [
-                  {
-                    key: "championship-2026-pack",
-                    kind: "tournament_pack",
-                    label: "Championship 2026 Participation Pack",
-                    product_key: "ST-15",
-                    evidence_category: "derived",
-                  },
-                ],
-                relationships: [
-                  {
-                    kind: "printing-product",
-                    target_key: "ST-15",
-                    evidence_category: "explicit",
-                    resolution: "explicit",
-                  },
-                  {
-                    kind: "printing-distribution-context",
-                    target_key: "championship-2026-pack",
-                    evidence_category: "derived",
-                    resolution: "deterministic",
-                  },
-                  {
-                    kind: "printing-product",
-                    target_key: "ST-15 fuzzy label",
-                    evidence_category: "derived",
-                    resolution: "fuzzy",
-                  },
-                ],
-              },
-            }
-          : {}),
+        ...(productReleaseCatalogue === undefined
+          ? {}
+          : { product_release_catalogue: productReleaseCatalogue }),
         ...(unknownVocabulary
           ? { new_official_label: "Bandai-added-value" }
           : {}),
@@ -1432,6 +1395,207 @@ function reconciliationSourceDocument(scenario: string) {
       },
     ],
   };
+}
+
+function productReleaseCatalogueForScenario(
+  scenario: string,
+): Record<string, unknown> | undefined {
+  const officialReference = (value: string) => ({
+    kind: "official_code",
+    value,
+  });
+  if (scenario === "product-release") {
+    return {
+      products: [
+        {
+          reference: officialReference("ST-15"),
+          official_code: "ST-15",
+          name: "Starter Deck RED Edward.Newgate",
+          releases: [
+            {
+              region: "EN-OCEANIA",
+              date: { precision: "month", value: "2026-09" },
+              status: "announced",
+            },
+          ],
+        },
+      ],
+      distribution_contexts: [
+        {
+          key: "championship-2026-pack",
+          kind: "tournament_pack",
+          label: "Championship 2026 Participation Pack",
+          product_reference: officialReference("ST-15"),
+          product_key: "ST-15",
+          evidence_category: "derived",
+        },
+      ],
+      relationships: [
+        {
+          kind: "printing-product",
+          product_reference: officialReference("ST-15"),
+          target_key: "ST-15",
+          evidence_category: "explicit",
+          resolution: "explicit",
+        },
+        {
+          kind: "printing-distribution-context",
+          context_key: "championship-2026-pack",
+          target_key: "championship-2026-pack",
+          evidence_category: "derived",
+          resolution: "deterministic",
+        },
+        {
+          kind: "printing-product",
+          product_reference: {
+            kind: "name",
+            value: "ST-15 fuzzy label",
+          },
+          target_key: "ST-15 fuzzy label",
+          evidence_category: "derived",
+          resolution: "fuzzy",
+        },
+      ],
+    };
+  }
+  if (scenario === "product-conflict-a" || scenario === "product-conflict-b") {
+    const second = scenario.endsWith("-b");
+    return {
+      products: [
+        {
+          reference: officialReference("ST-CONFLICT"),
+          official_code: "ST-CONFLICT",
+          name: second ? "Conflicting Starter B" : "Conflicting Starter A",
+          releases: [
+            {
+              region: "EN-OCEANIA",
+              date: second
+                ? { precision: "day", value: "2026-10-17" }
+                : { precision: "month", value: "2026-10" },
+              status: second ? "released" : "announced",
+            },
+          ],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [],
+    };
+  }
+  if (scenario === "product-typed-relationships") {
+    return {
+      products: [
+        {
+          reference: officialReference("CODE-X"),
+          official_code: "CODE-X",
+          name: "Official Code Product",
+          releases: [],
+        },
+        {
+          reference: { kind: "name", value: "CODE-X" },
+          official_code: null,
+          name: "CODE-X",
+          releases: [],
+        },
+      ],
+      distribution_contexts: [
+        {
+          key: "typed-context",
+          kind: "promotion",
+          label: "Typed relationship context",
+          product_reference: officialReference("CODE-X"),
+          evidence_category: "explicit",
+        },
+      ],
+      relationships: [
+        {
+          kind: "printing-product",
+          product_reference: officialReference("CODE-X"),
+          evidence_category: "explicit",
+          resolution: "explicit",
+        },
+        {
+          kind: "printing-distribution-context",
+          context_key: "typed-context",
+          evidence_category: "derived",
+          resolution: "deterministic",
+        },
+        {
+          kind: "distribution-context-product",
+          context_key: "typed-context",
+          product_reference: officialReference("CODE-X"),
+          evidence_category: "explicit",
+          resolution: "explicit",
+        },
+        {
+          kind: "product-card",
+          product_reference: { kind: "name", value: "CODE-X" },
+          card_reference: { kind: "current_card" },
+          evidence_category: "derived",
+          resolution: "deterministic",
+        },
+      ],
+    };
+  }
+  if (
+    scenario === "product-standalone-v1" ||
+    scenario === "product-standalone-v2" ||
+    scenario === "product-standalone-withdrawn"
+  ) {
+    return {
+      products: [
+        {
+          reference: officialReference("ST-STANDALONE"),
+          official_code: "ST-STANDALONE",
+          name:
+            scenario === "product-standalone-v1"
+              ? "Standalone Product"
+              : "Renamed Standalone Product",
+          releases: [],
+          ...(scenario === "product-standalone-withdrawn"
+            ? {
+                withdrawal: {
+                  state: "withdrawn",
+                  effective_at: "2026-11-01T00:00:00.000Z",
+                  evidence: "Official Product withdrawal notice",
+                },
+              }
+            : {}),
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [],
+    };
+  }
+  if (scenario === "product-standalone-missing") {
+    return {
+      products: [],
+      distribution_contexts: [],
+      relationships: [],
+    };
+  }
+  if (scenario === "product-invalid-resolution") {
+    return {
+      products: [
+        {
+          reference: officialReference("ST-INVALID"),
+          official_code: "ST-INVALID",
+          name: "Invalid Resolution Product",
+          releases: [],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [
+        {
+          kind: "printing-product",
+          product_reference: officialReference("ST-INVALID"),
+          target_key: "ST-INVALID",
+          evidence_category: "derived",
+          resolution: "guessed",
+        },
+      ],
+    };
+  }
+  return undefined;
 }
 
 function printingObservation(input: {

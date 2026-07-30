@@ -3294,6 +3294,277 @@ test("a complete Product fixture publishes separated release and distribution re
   ).toBe(false);
 });
 
+test("conflicting Product and Release facts remain null with source-backed disagreements", async () => {
+  const run = await collectRequests(
+    [
+      { id: "product-a", scenario: "product-conflict-a" },
+      { id: "product-b", scenario: "product-conflict-b" },
+    ],
+    "product-conflicting-facts",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  const product = requiredFirst(reconciled.document, "products");
+  expect(product).toMatchObject({
+    official_code: "ST-CONFLICT",
+    name: null,
+    releases: [
+      {
+        region: "EN-OCEANIA",
+        date: { precision: null, value: null },
+        status: null,
+      },
+    ],
+    disagreements: expect.arrayContaining([
+      expect.objectContaining({
+        path: "/data/name",
+        status: "unresolved",
+        candidates: expect.arrayContaining([
+          {
+            value: "Conflicting Starter A",
+            observation_id: expect.stringMatching(/^srcobs_/),
+          },
+          {
+            value: "Conflicting Starter B",
+            observation_id: expect.stringMatching(/^srcobs_/),
+          },
+        ]),
+      }),
+      expect.objectContaining({
+        path: "/data/releases/0/status",
+        status: "unresolved",
+        candidates: expect.arrayContaining([
+          {
+            value: "announced",
+            observation_id: expect.stringMatching(/^srcobs_/),
+          },
+          {
+            value: "released",
+            observation_id: expect.stringMatching(/^srcobs_/),
+          },
+        ]),
+      }),
+    ]),
+    included: expect.arrayContaining([
+      expect.objectContaining({
+        type: "source_observation",
+        id: expect.stringMatching(/^srcobs_/),
+        captured_at: expect.any(String),
+        source: "one-piece-en",
+      }),
+    ]),
+  });
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const exported = (
+    await exportComponentRecords(revisionId, "products")
+  ).find((candidate) => candidate.official_code === "ST-CONFLICT");
+  expect(exported).toMatchObject({
+    official_code: "ST-CONFLICT",
+    name: null,
+  });
+  const release = (
+    await exportComponentRecords(revisionId, "releases")
+  ).find((candidate) => candidate.product_id === exported?.id);
+  expect(release).toMatchObject({
+    region: "EN-OCEANIA",
+    date: { precision: null, value: null },
+    status: null,
+  });
+});
+
+test("accepted typed Product relationships persist without code/name namespace collisions", async () => {
+  const run = await collect(
+    "/reconciliation/product-typed-relationships",
+    "product-typed-relationships",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  const revisionId = requiredString(
+    (await approve(reconciled.document)).document,
+    "resulting_revision_id",
+  );
+  const [products, contexts, relationships, cards] = await Promise.all([
+    exportComponentRecords(revisionId, "products"),
+    exportComponentRecords(revisionId, "distribution-contexts"),
+    exportComponentRecords(revisionId, "relationships"),
+    exportComponentRecords(revisionId, "cards"),
+  ]);
+  const coded = products.find(
+    (candidate) => candidate.official_code === "CODE-X",
+  );
+  const named = products.find(
+    (candidate) =>
+      candidate.official_code === null && candidate.name === "CODE-X",
+  );
+  expect(coded?.id).toEqual(expect.any(String));
+  expect(named?.id).toEqual(expect.any(String));
+  expect(coded?.id).not.toBe(named?.id);
+  const context = contexts.find(
+    (candidate) => candidate.label === "Typed relationship context",
+  );
+  expect(context).toMatchObject({ product_id: coded?.id });
+  expect(relationships).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "printing-product",
+        to: { type: "product", id: coded?.id },
+        evidence_category: "explicit",
+        source_lineage: "one-piece-en",
+        source_observation_ids: [expect.stringMatching(/^srcobs_/)],
+      }),
+      expect.objectContaining({
+        kind: "printing-distribution-context",
+        to: { type: "distribution_context", id: context?.id },
+        evidence_category: "derived",
+      }),
+      expect.objectContaining({
+        kind: "distribution-context-product",
+        from: { type: "distribution_context", id: context?.id },
+        to: { type: "product", id: coded?.id },
+        evidence_category: "explicit",
+      }),
+      expect.objectContaining({
+        kind: "product-card",
+        from: { type: "product", id: named?.id },
+        to: { type: "card", id: expect.any(String) },
+        evidence_category: "derived",
+      }),
+    ]),
+  );
+  const productCard = relationships.find(
+    (relationship) =>
+      relationship.kind === "product-card" &&
+      (relationship.from as Record<string, unknown>).id === named?.id,
+  );
+  expect(
+    cards.some(
+      (candidate) =>
+        candidate.id ===
+        (productCard?.to as Record<string, unknown> | undefined)?.id,
+    ),
+  ).toBe(true);
+  expect(JSON.stringify({ products, contexts, relationships })).not.toContain(
+    "typed-source-bucket",
+  );
+});
+
+test("standalone Product lifecycle survives rename, disappearance, and explicit withdrawal", async () => {
+  const firstRun = await collect(
+    "/reconciliation/product-standalone-v1",
+    "product-standalone-v1",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  const firstRevision = requiredString(
+    (await approve(firstCandidate.document)).document,
+    "resulting_revision_id",
+  );
+
+  const secondRun = await collect(
+    "/reconciliation/product-standalone-v2",
+    "product-standalone-v2",
+  );
+  const secondCandidate = await reconcile(secondRun.id);
+  const secondRevision = requiredString(
+    (await approve(secondCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  const secondProduct = (
+    await exportComponentRecords(secondRevision, "products")
+  ).find((candidate) => candidate.official_code === "ST-STANDALONE");
+  expect(secondProduct).toMatchObject({
+    name: "Renamed Standalone Product",
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: secondRevision,
+      withdrawn: false,
+    },
+  });
+
+  const missingRun = await collect(
+    "/reconciliation/product-standalone-missing",
+    "product-standalone-missing",
+  );
+  const missingCandidate = await reconcile(missingRun.id);
+  expect(missingCandidate.response.status).toBe(200);
+  expect(
+    Array.isArray(missingCandidate.document.warnings)
+      ? missingCandidate.document.warnings
+      : [],
+  ).toContainEqual(
+    expect.objectContaining({
+      code: "product_not_observed",
+      product_id: secondProduct?.id,
+    }),
+  );
+  const missingRevision = requiredString(
+    (await approve(missingCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  const carried = (
+    await exportComponentRecords(missingRevision, "products")
+  ).find((candidate) => candidate.id === secondProduct?.id);
+  expect(carried).toMatchObject({
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: secondRevision,
+      withdrawn: false,
+    },
+  });
+
+  const withdrawnRun = await collect(
+    "/reconciliation/product-standalone-withdrawn",
+    "product-standalone-withdrawn",
+  );
+  const withdrawnCandidate = await reconcile(withdrawnRun.id);
+  const withdrawnRevision = requiredString(
+    (await approve(withdrawnCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  const withdrawn = (
+    await exportComponentRecords(withdrawnRevision, "products")
+  ).find((candidate) => candidate.id === secondProduct?.id);
+  expect(withdrawn).toMatchObject({
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: withdrawnRevision,
+      withdrawn: true,
+      withdrawal: {
+        revision_id: withdrawnRevision,
+        evidence: expect.objectContaining({
+          assertion: "withdrawn",
+          source_observation_id: expect.stringMatching(/^srcobs_/),
+        }),
+      },
+    },
+  });
+});
+
+test("unknown Product relationship resolution fails closed", async () => {
+  const run = await collect(
+    "/reconciliation/product-invalid-resolution",
+    "product-invalid-resolution",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(409);
+  expect(reconciled.document).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [
+      expect.objectContaining({
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining(
+          "Product relationship resolution is invalid",
+        ),
+      }),
+    ],
+  });
+});
+
 async function collect(
   path: string,
   key: string,

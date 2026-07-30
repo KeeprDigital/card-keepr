@@ -86,6 +86,17 @@ export async function buildCatalogueExport(
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     products?: Readonly<Record<string, NormalizedLifecycle>>;
+    productRelationships?: Readonly<
+      Record<
+        string,
+        {
+          first_revision_id: string;
+          last_observed_revision_id: string;
+          current: boolean;
+          last_missing_revision_id: string | null;
+        }
+      >
+    >;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
@@ -249,6 +260,17 @@ async function exportRecords(
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     products?: Readonly<Record<string, NormalizedLifecycle>>;
+    productRelationships?: Readonly<
+      Record<
+        string,
+        {
+          first_revision_id: string;
+          last_observed_revision_id: string;
+          current: boolean;
+          last_missing_revision_id: string | null;
+        }
+      >
+    >;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
@@ -331,7 +353,10 @@ async function exportRecords(
         name: relationship.relationship_value,
         lifecycle:
           lifecycles?.products?.[
-            productLifecycleKey(card.game, relationship.relationship_value)
+            inferredProductLifecycleKey(
+              card.game,
+              relationship.relationship_value,
+            )
           ] ?? {
             first_revision_id: relationship.first_revision_id,
             last_observed_revision_id:
@@ -348,12 +373,7 @@ async function exportRecords(
       official_code: product.official_code,
       name: product.name,
       lifecycle:
-        lifecycles?.products?.[
-          productLifecycleKey(
-            product.game,
-            product.official_code ?? product.name,
-          )
-        ] ?? defaultLifecycle,
+        lifecycles?.products?.[product.id] ?? defaultLifecycle,
     })),
   ]);
   const inferredDistributionContexts =
@@ -419,8 +439,9 @@ async function exportRecords(
     "distribution-contexts": distributionContexts,
     errata: [],
     "legality-rules": [],
-    relationships: identifiedRelationships
-      .map(({ printing, card, relationship, relationshipId, targetId }) => ({
+    relationships: uniqueById([
+      ...identifiedRelationships
+      .map(({ printing, relationship, relationshipId, targetId }) => ({
         type: "relationship",
         id: relationshipId,
         kind:
@@ -435,18 +456,7 @@ async function exportRecords(
               : "distribution_context",
           id: targetId,
         },
-        evidence_category:
-          candidate.product_relationships?.find(
-            (candidateRelationship) =>
-              candidateRelationship.resolution === "canonical" &&
-              candidateRelationship.game === card.game &&
-              candidateRelationship.target_key ===
-                relationship.relationship_value &&
-              candidateRelationship.kind ===
-                (relationship.relationship_kind === "product"
-                  ? "printing-product"
-                  : "printing-distribution-context"),
-          )?.evidence_category ?? "explicit",
+        evidence_category: "explicit" as const,
         source_lineage: relationship.source_lineage,
         source_observation_ids: relationship.source_observation_ids,
         relationship_value: relationship.relationship_value,
@@ -459,11 +469,43 @@ async function exportRecords(
             relationship.last_missing_revision_id,
         },
       }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
+      .filter(
+        (relationship) =>
+          !(candidate.product_relationships ?? []).some(
+            (declared) =>
+              declared.kind === relationship.kind &&
+              declared.source_lineage === relationship.source_lineage &&
+              canonicalJson(declared.from) ===
+                canonicalJson(relationship.from) &&
+              canonicalJson(declared.to) === canonicalJson(relationship.to),
+          ),
+      ),
+      ...(candidate.product_relationships ?? []).map((relationship) => ({
+        type: "relationship" as const,
+        id: relationship.id,
+        kind: relationship.kind,
+        from: relationship.from,
+        to: relationship.to,
+        evidence_category: relationship.evidence_category,
+        source_lineage: relationship.source_lineage,
+        source_observation_ids: relationship.source_observation_ids,
+        relationship_value: relationship.relationship_value,
+        lifecycle:
+          lifecycles?.productRelationships?.[relationship.id] ?? {
+            first_revision_id: revisionId,
+            last_observed_revision_id: revisionId,
+            current: relationship.observed,
+            last_missing_revision_id: null,
+          },
+      })),
+    ]),
   };
 }
 
-function productLifecycleKey(game: string, officialCode: string): string {
+function inferredProductLifecycleKey(
+  game: string,
+  officialCode: string,
+): string {
   return canonicalJson([game, officialCode]);
 }
 

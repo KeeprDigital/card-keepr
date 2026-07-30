@@ -389,13 +389,60 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
 
-  const productCatalogue = await reconcileProductReleaseCatalogue(
-    priorCandidate,
-    retained.observations.map(
-      (observation) => observation.productReleaseValue,
-    ),
-    retained.supportedGame,
-  );
+  let productCatalogue: Awaited<
+    ReturnType<typeof reconcileProductReleaseCatalogue>
+  > = {
+    products: [...(priorCandidate?.products ?? [])],
+    observedProducts: [],
+    distribution_contexts: [
+      ...(priorCandidate?.distribution_contexts ?? []),
+    ],
+    product_relationships: [
+      ...(priorCandidate?.product_relationships ?? []),
+    ],
+    productSurfaceObserved: false,
+    warnings: [] as Record<string, unknown>[],
+  };
+  try {
+    const plansByObservationId = new Map(
+      plans.map((plan) => [plan.sourceObservationId, plan]),
+    );
+    productCatalogue = await reconcileProductReleaseCatalogue(
+      priorCandidate,
+      retained.observations.map((observation) => {
+        const plan = plansByObservationId.get(
+          observation.sourceObservationId,
+        );
+        if (plan === undefined) {
+          throw new Error(
+            "Product evidence has no reconciliation entity plan.",
+          );
+        }
+        return {
+          value: observation.productReleaseValue,
+          sourceObservationId: observation.sourceObservationId,
+          sourceObservationSetId: observation.sourceObservationSetId,
+          sourceSnapshotId: observation.sourceSnapshotId,
+          sourceLineage: retained.sourceLineage,
+          capturedAt: observation.sourceCapturedAt,
+          currentCardId: plan.cardId,
+          currentPrintingId: plan.printingId,
+        };
+      }),
+      retained.supportedGame,
+    );
+  } catch (error) {
+    diagnostics.push({
+      code: "retained_evidence_invalid",
+      source_observation_id: null,
+      locator: null,
+      candidate_printing_ids: [],
+      detail:
+        error instanceof Error
+          ? error.message
+          : "Retained Product evidence is invalid.",
+    });
+  }
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
     selected_games: [
@@ -413,6 +460,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     products: productCatalogue.products,
     distribution_contexts: productCatalogue.distribution_contexts,
     product_relationships: productCatalogue.product_relationships,
+    product_observed_games: productCatalogue.productSurfaceObserved
+      ? [retained.supportedGame]
+      : [],
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (
@@ -500,6 +550,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       source_observation_set_id: retained.observationSetId,
       cards: observedCards,
       printings: observedPrintings,
+      products: productCatalogue.observedProducts,
       diagnostics: stableDiagnostics,
       warnings,
     };
@@ -528,6 +579,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     source_observation_set_id: retained.observationSetId,
     cards: observedCards,
     printings: observedPrintings,
+    products: productCatalogue.observedProducts,
     diagnostics: [],
     warnings,
   };

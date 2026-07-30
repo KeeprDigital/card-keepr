@@ -293,7 +293,7 @@
         "id": { "$ref": "#/$defs/OpaqueId" },
         "game": { "$ref": "#/$defs/SupportedGame" },
         "official_code": { "$ref": "#/$defs/NullableText" },
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "$ref": "#/$defs/NullableText" },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }
     },
@@ -311,11 +311,21 @@
           "additionalProperties": false,
           "required": ["precision", "value"],
           "properties": {
-            "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
+            "precision": {
+              "oneOf": [
+                { "enum": ["day", "month", "quarter", "year", "unknown"] },
+                { "type": "null" }
+              ]
+            },
             "value": { "$ref": "#/$defs/NullableText" }
           }
         },
-        "status": { "enum": ["announced", "released"] }
+        "status": {
+          "oneOf": [
+            { "enum": ["announced", "released"] },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "DistributionContextRecord": {

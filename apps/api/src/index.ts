@@ -123,7 +123,7 @@ const apiWorker = {
       if (request.method === "GET" && url.pathname === "/v1/products") {
         return withCorsHeaders(
           request,
-          await currentProductsResponse(env.CATALOGUE_DB, url),
+          await currentProductsResponse(env.CATALOGUE_DB, request),
         );
       }
 
@@ -132,7 +132,7 @@ const apiWorker = {
         const response = await currentProductResponse(
           env.CATALOGUE_DB,
           decodeURIComponent(productMatch[1]!),
-          url,
+          request,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }

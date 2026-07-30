@@ -23,6 +23,7 @@ export type FixtureCandidate = {
   products?: readonly CatalogueProduct[];
   distribution_contexts?: readonly CatalogueDistributionContext[];
   product_relationships?: readonly ProductRelationship[];
+  product_observed_games?: readonly SupportedGame[];
 };
 
 export type FixtureCard = {

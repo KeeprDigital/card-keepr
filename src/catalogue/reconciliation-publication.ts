@@ -24,6 +24,10 @@ import {
   retainedPayload,
 } from "./reconciliation-payload";
 import { canonicalJson } from "./serialization";
+import {
+  productReleaseLifecyclePlan,
+  type ProductRelationshipLifecycle,
+} from "./product-release-publication";
 
 export type NormalizedLifecycle = {
   first_revision_id: string;
@@ -56,6 +60,10 @@ export type ReconciliationPublicationPlan = {
   cardLifecycles: Record<string, NormalizedLifecycle>;
   printingLifecycles: Record<string, NormalizedLifecycle>;
   productLifecycles: Record<string, NormalizedLifecycle>;
+  productRelationshipLifecycles: Record<
+    string,
+    ProductRelationshipLifecycle
+  >;
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   locatorEvidence: Record<string, LocatorEvidenceCollection>;
   statements: D1PreparedStatement[];
@@ -132,6 +140,7 @@ export async function reconciliationPublication(
     cardLifecycles: {},
     printingLifecycles: {},
     productLifecycles: {},
+    productRelationshipLifecycles: {},
     relationshipEvidence: {},
     locatorEvidence: {},
     statements: [],
@@ -292,13 +301,25 @@ export async function reconciliationPublication(
     context.source_lineage,
     revisionId,
   );
-  result.productLifecycles = await aggregateProductLifecycles(
+  const productReleaseLifecycles = await productReleaseLifecyclePlan(
     database,
     candidate,
-    result.relationshipEvidence,
     revisionId,
-    revisionOrder,
   );
+  const inferredProductLifecycles =
+    await aggregateInferredProductLifecycles(
+      database,
+      candidate,
+      result.relationshipEvidence,
+      revisionId,
+      revisionOrder,
+    );
+  result.productLifecycles = {
+    ...inferredProductLifecycles,
+    ...productReleaseLifecycles.products,
+  };
+  result.productRelationshipLifecycles =
+    productReleaseLifecycles.relationships;
   result.statements.push(
     ...publicationStatements(
       database,
@@ -310,7 +331,7 @@ export async function reconciliationPublication(
   return result;
 }
 
-async function aggregateProductLifecycles(
+async function aggregateInferredProductLifecycles(
   database: D1Database,
   candidate: FixtureCandidate,
   relationships: Readonly<Record<string, readonly RelationshipEvidence[]>>,
@@ -327,7 +348,17 @@ async function aggregateProductLifecycles(
     if (game === undefined) continue;
     for (const relationship of relationships[printing.id] ?? []) {
       if (relationship.relationship_kind !== "product") continue;
-      const key = productLifecycleKey(game, relationship.relationship_value);
+      const declared = candidate.products?.some(
+        (product) =>
+          product.game === game &&
+          (product.official_code === relationship.relationship_value ||
+            product.name === relationship.relationship_value),
+      );
+      if (declared === true) continue;
+      const key = inferredProductLifecycleKey(
+        game,
+        relationship.relationship_value,
+      );
       grouped.set(key, [
         ...(grouped.get(key) ?? []),
         {
@@ -361,7 +392,9 @@ async function aggregateProductLifecycles(
           .bind(id)
           .first<{ published_at: string }>();
         if (row === null) {
-          throw new Error("A Product lifecycle revision is unavailable.");
+          throw new Error(
+            "An inferred Product lifecycle revision is unavailable.",
+          );
         }
         revisionOrders.set(id, row.published_at);
       }),
@@ -408,7 +441,10 @@ function revisionOrderKey(
   return canonicalJson([orders.get(revisionId) ?? "", revisionId]);
 }
 
-function productLifecycleKey(game: string, officialCode: string): string {
+function inferredProductLifecycleKey(
+  game: string,
+  officialCode: string,
+): string {
   return canonicalJson([game, officialCode]);
 }
 

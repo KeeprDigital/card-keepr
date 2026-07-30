@@ -13,6 +13,10 @@ const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
+  const seeded = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT 1 AS present FROM catalogue_revisions WHERE id = 'catrev_products'",
+  ).first<{ present: number }>();
+  if (seeded !== null) return;
   const product = {
     type: "product",
     id: "product_st15",
@@ -97,9 +101,22 @@ beforeEach(async () => {
     ).bind("a".repeat(64), "a".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_products (
-         catalogue_revision_id, product_id, document_json
-       ) VALUES ('catrev_products', 'product_st15', ?)`,
-    ).bind(JSON.stringify(product)),
+         catalogue_revision_id, product_id, supported_game, official_code,
+         name, search_text, release_regions_json, document_json
+       ) VALUES (
+         'catrev_products', 'product_st15', 'one-piece', 'ST-15',
+         'Starter Deck RED Edward.Newgate',
+         'st-15 starter deck red edward.newgate',
+         '["EN-OCEANIA"]', ?
+       )`,
+    ).bind(
+      JSON.stringify({
+        data: product,
+        included: [],
+        provenance: {},
+        disagreements: [],
+      }),
+    ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
          catalogue_revision_id, printing_id, card_id, document_json
@@ -171,15 +188,209 @@ test("authenticated Product reads preserve regional precision and announced stat
   });
 });
 
-function api(path: string): Promise<Response> {
+test("Product conditional reads return 304 for matching revision ETags", async () => {
+  for (const path of ["/v1/products?q=st-15", "/v1/products/product_st15"]) {
+    const first = await api(path);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("etag");
+    expect(etag).toMatch(/^".+"$/);
+    const conditional = await api(path, { "if-none-match": etag! });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe("");
+    expect(conditional.headers.get("etag")).toBe(etag);
+    expect(conditional.headers.get("x-catalogue-revision")).toBe(
+      "catrev_products",
+    );
+  }
+});
+
+test("Product detail returns revision-pinned immutable provenance and disagreements", async () => {
+  const unresolved = {
+    data: {
+      type: "product",
+      id: "product_unresolved",
+      game: "one-piece",
+      official_code: "ST-UNRESOLVED",
+      name: null,
+      releases: [
+        {
+          id: "release_st15_oceania",
+          region: "EN-OCEANIA",
+          date: { precision: "month", value: "2026-09" },
+          status: null,
+        },
+      ],
+      lifecycle: {
+        first_revision_id: "catrev_products",
+        last_observed_revision_id: "catrev_products",
+        withdrawn: false,
+      },
+      links: { self: "/v1/products/product_unresolved" },
+    },
+    included: [
+      {
+        type: "source_observation",
+        id: "srcobs_product_a",
+        captured_at: "2025-12-15T03:04:05.000Z",
+        source: "one-piece-en",
+      },
+      {
+        type: "source_observation",
+        id: "srcobs_product_b",
+        captured_at: "2025-12-16T04:05:06.000Z",
+        source: "one-piece-en",
+      },
+    ],
+    provenance: {
+      "/data/official_code": ["srcobs_product_a", "srcobs_product_b"],
+      "/data/releases/0/date/value": ["srcobs_product_a"],
+    },
+    disagreements: [
+      {
+        path: "/data/name",
+        status: "unresolved",
+        candidates: [
+          { value: "Starter Deck A", observation_id: "srcobs_product_a" },
+          { value: "Starter Deck B", observation_id: "srcobs_product_b" },
+        ],
+      },
+      {
+        path: "/data/releases/0/status",
+        status: "unresolved",
+        candidates: [
+          { value: "announced", observation_id: "srcobs_product_a" },
+          { value: "released", observation_id: "srcobs_product_b" },
+        ],
+      },
+    ],
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO revision_products (
+       catalogue_revision_id, product_id, supported_game, official_code,
+       name, search_text, release_regions_json, document_json
+     ) VALUES (
+       'catrev_products', 'product_unresolved', 'one-piece',
+       'ST-UNRESOLVED', NULL, 'st-unresolved', '["EN-OCEANIA"]', ?
+     )`,
+  )
+    .bind(JSON.stringify(unresolved))
+    .run();
+
+  try {
+    const response = await api(
+      "/v1/products/product_unresolved?include=evidence,disagreements",
+    );
+    expect(response.status).toBe(200);
+    const document = await response.json();
+    expectSchema("ProductDocument", document);
+    expect(document).toMatchObject(unresolved);
+  } finally {
+    await testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM revision_products
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND product_id = 'product_unresolved'`,
+    ).run();
+  }
+});
+
+test("Product cursors pin the route and preserve filtered keyset order", async () => {
+  const earlier = {
+    type: "product",
+    id: "product_st14",
+    game: "one-piece",
+    official_code: "ST-14",
+    name: "Starter Deck 14",
+    releases: [
+      {
+        id: "release_st14_oceania",
+        region: "EN-OCEANIA",
+        date: { precision: "day", value: "2026-08-01" },
+        status: "released",
+      },
+    ],
+    lifecycle: {
+      first_revision_id: "catrev_products",
+      last_observed_revision_id: "catrev_products",
+      withdrawn: false,
+    },
+    links: { self: "/v1/products/product_st14" },
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO revision_products (
+       catalogue_revision_id, product_id, supported_game, official_code,
+       name, search_text, release_regions_json, document_json
+     ) VALUES (
+       'catrev_products', 'product_st14', 'one-piece', 'ST-14',
+       'Starter Deck 14', 'st-14 starter deck 14', '["EN-OCEANIA"]', ?
+     )`,
+  )
+    .bind(
+      JSON.stringify({
+        data: earlier,
+        included: [],
+        provenance: {},
+        disagreements: [],
+      }),
+    )
+    .run();
+
+  const firstResponse = await api(
+    "/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1",
+  );
+  expect(firstResponse.status).toBe(200);
+  const first = await firstResponse.json<{
+    data: { id: string }[];
+    page: { next_cursor: string };
+  }>();
+  expect(first.data.map(({ id }) => id)).toEqual(["product_st14"]);
+  const second = await api(
+    `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(first.page.next_cursor)}`,
+  );
+  expect(second.status).toBe(200);
+  await expect(second.json()).resolves.toMatchObject({
+    data: [{ id: "product_st15" }],
+  });
+
+  const forged = decodeCursor(first.page.next_cursor);
+  const wrongRoute = encodeCursor({ ...forged, route: "/v1/cards" });
+  const rejected = await api(
+    `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(wrongRoute)}`,
+  );
+  expect(rejected.status).toBe(400);
+  await expect(rejected.json()).resolves.toMatchObject({
+    code: "invalid_cursor",
+  });
+});
+
+function api(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://card-keepr.invalid${path}`, {
       headers: {
         authorization: "Bearer vitest-api-key",
         "cf-connecting-ip": "203.0.113.28",
+        ...headers,
       },
     }),
   );
+}
+
+function decodeCursor(value: string): Record<string, unknown> {
+  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = base64.padEnd(
+    base64.length + ((4 - (base64.length % 4)) % 4),
+    "=",
+  );
+  return JSON.parse(atob(padded)) as Record<string, unknown>;
+}
+
+function encodeCursor(value: unknown): string {
+  return btoa(JSON.stringify(value))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 function expectSchema(definition: string, value: unknown): void {

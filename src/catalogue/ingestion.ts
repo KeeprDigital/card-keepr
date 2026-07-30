@@ -649,6 +649,8 @@ async function approveRunAttempt(
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
           products: reconciliation.productLifecycles,
+          productRelationships:
+            reconciliation.productRelationshipLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
         },
@@ -1696,7 +1698,11 @@ async function commitVerifiedPublication(
     database,
     input.candidate,
     revisionId,
-    input.reconciliation?.productLifecycles,
+    {
+      products: input.reconciliation?.productLifecycles ?? {},
+      relationships:
+        input.reconciliation?.productRelationshipLifecycles ?? {},
+    },
   );
   const revisionCardStatements = byteBoundedJsonArrays(
     cardDocuments.map(({ card, document }) => ({
@@ -1959,6 +1965,8 @@ async function reconcileReservedPublication(
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
           products: reconciliation.productLifecycles,
+          productRelationships:
+            reconciliation.productRelationshipLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
         },

@@ -14,6 +14,7 @@ type EvidenceRow = {
   request_id: string;
   observation_set_id: string;
   source_snapshot_id: string;
+  retrieved_at: string;
   source_lineage: string;
   supported_game: string;
   game_profile_version: string;
@@ -50,6 +51,7 @@ export async function retainedReconciliationObservation(
           snapshots.request_id,
           observations.id AS observation_set_id,
           observations.source_snapshot_id,
+          snapshots.retrieved_at,
           observations.source_lineage,
           observations.supported_game,
           observations.game_profile_version,
@@ -160,6 +162,7 @@ export async function retainedReconciliationObservation(
           ...parseReconciliationObservation(wrapped.id, wrapped.value),
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
+          sourceCapturedAt: row.retrieved_at,
         };
       })
       .sort((left, right) =>

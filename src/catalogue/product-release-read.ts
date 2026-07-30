@@ -4,10 +4,33 @@ type ProductRow = {
   published_at: string;
 };
 
+type ProductOrderValue = {
+  id: string;
+  game: string;
+  official_code: string | null;
+  name: string | null;
+};
+
+type ProductEnvelope = {
+  data: ProductOrderValue & {
+    releases: { region: string }[];
+  } & Record<string, unknown>;
+  included: unknown[];
+  provenance: Record<string, string[]>;
+  disagreements: unknown[];
+};
+
+const productRoute = "/v1/products";
+const productOrder =
+  "supported-game,official-code-null-last,name-null-last,id";
+
 export class ProductReadProblem extends Error {
   constructor(
     readonly status: 400 | 409,
-    readonly code: "invalid_parameter" | "invalid_cursor" | "cursor_revision_unavailable",
+    readonly code:
+      | "invalid_parameter"
+      | "invalid_cursor"
+      | "cursor_revision_unavailable",
     message: string,
   ) {
     super(message);
@@ -17,8 +40,9 @@ export class ProductReadProblem extends Error {
 export async function currentProductResponse(
   database: D1Database,
   productId: string,
-  url?: URL,
+  request: Request,
 ): Promise<Response | null> {
+  const url = new URL(request.url);
   const row = await database
     .prepare(
       `SELECT product.document_json, catalogue.current_revision_id,
@@ -31,42 +55,45 @@ export async function currentProductResponse(
     .bind(productId)
     .first<ProductRow>();
   if (row === null) return null;
-  const data = JSON.parse(row.document_json) as {
-    official_code: string | null;
-    name: string;
-    releases: unknown[];
-  };
-  const include = new Set(
-    (url?.searchParams.get("include") ?? "")
-      .split(",")
-      .filter((value) => value.length > 0),
+  const include = includeProjection(url);
+  const envelope = productEnvelope(row.document_json);
+  const etag = quotedEtag(
+    `product:${productId}:${row.current_revision_id}:${[
+      ...include,
+    ].sort().join(",")}`,
   );
-  if ([...include].some((value) => value !== "evidence" && value !== "disagreements")) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product include projection is invalid.",
-    );
+  if (ifNoneMatch(request, etag)) {
+    return notModified(etag, row.current_revision_id);
   }
-  const evidence = include.has("evidence")
-    ? await productEvidence(database, data.official_code ?? data.name, row)
-    : null;
-  return productResponse(
-    data,
-    row,
-    `/v1/products/${encodeURIComponent(productId)}`,
-    `product:${productId}:${row.current_revision_id}`,
+  return Response.json(
     {
-      ...(evidence === null ? {} : evidence),
-      ...(include.has("disagreements") ? { disagreements: [] } : {}),
+      data: envelope.data,
+      ...(include.has("evidence")
+        ? {
+            included: envelope.included,
+            provenance: envelope.provenance,
+          }
+        : {}),
+      ...(include.has("disagreements")
+        ? { disagreements: envelope.disagreements }
+        : {}),
+      meta: {
+        catalogue_revision_id: row.current_revision_id,
+        published_at: row.published_at,
+      },
+      links: { self: `${url.pathname}${url.search}` },
+    },
+    {
+      headers: productHeaders(row.current_revision_id, etag),
     },
   );
 }
 
 export async function currentProductsResponse(
   database: D1Database,
-  url: URL,
+  request: Request,
 ): Promise<Response> {
+  const url = new URL(request.url);
   const state = await database
     .prepare(
       `SELECT current_revision_id, published_at
@@ -80,43 +107,83 @@ export async function currentProductsResponse(
   const region = url.searchParams.get("release_region");
   assertFilter(game, region);
   const filters = { q, game, region, limit };
-  const after = parseCursor(url.searchParams.get("after"), state.current_revision_id, filters);
+  const after = parseCursor(
+    url.searchParams.get("after"),
+    state.current_revision_id,
+    filters,
+  );
+  const etag = quotedEtag(
+    `products:${state.current_revision_id}:${JSON.stringify({
+      route: productRoute,
+      ordering: productOrder,
+      filters,
+      after,
+    })}`,
+  );
+  if (ifNoneMatch(request, etag)) {
+    return notModified(etag, state.current_revision_id);
+  }
   const rows = await database
     .prepare(
       `SELECT document_json
        FROM revision_products
-       WHERE catalogue_revision_id = ?`,
+       WHERE catalogue_revision_id = ?
+         AND (? IS NULL OR supported_game = ?)
+         AND (? IS NULL OR instr(search_text, ?) > 0)
+         AND (
+           ? IS NULL OR EXISTS (
+             SELECT 1 FROM json_each(release_regions_json)
+             WHERE value = ?
+           )
+         )
+         AND (
+           ? = 0 OR (
+             supported_game,
+             official_code IS NULL,
+             coalesce(official_code, ''),
+             name IS NULL,
+             coalesce(name, ''),
+             product_id
+           ) > (?, ?, ?, ?, ?, ?)
+         )
+       ORDER BY supported_game,
+                official_code IS NULL,
+                official_code,
+                name IS NULL,
+                name,
+                product_id
+       LIMIT ?`,
     )
-    .bind(state.current_revision_id)
+    .bind(
+      state.current_revision_id,
+      game,
+      game,
+      q,
+      q,
+      region,
+      region,
+      after === null ? 0 : 1,
+      after?.game ?? "",
+      after?.official_code === null ? 1 : 0,
+      after?.official_code ?? "",
+      after?.name === null ? 1 : 0,
+      after?.name ?? "",
+      after?.id ?? "",
+      limit + 1,
+    )
     .all<{ document_json: string }>();
-  const selected = rows.results
-    .map(({ document_json }) => JSON.parse(document_json) as {
-      id: string;
-      game: string;
-      official_code: string | null;
-      name: string;
-      releases: { region: string }[];
-    })
-    .filter(
-      (product) =>
-        (game === null || product.game === game) &&
-        (region === null ||
-          product.releases.some((release) => release.region === region)) &&
-        (q === null ||
-          product.name.toLocaleLowerCase().includes(q) ||
-          product.official_code?.toLocaleLowerCase().includes(q) === true),
-    )
-    .sort(productOrder)
-    .filter((product) =>
-      after === null ? true : productOrder(product, after) > 0,
-    );
+  const selected = rows.results.map(
+    ({ document_json }) => productEnvelope(document_json).data,
+  );
   const data = selected.slice(0, limit);
   const next =
     selected.length > limit
       ? encodeCursor({
+          route: productRoute,
+          ordering: productOrder,
           revision: state.current_revision_id,
           filters,
-          last: data.at(-1)!,
+          last: orderValue(data.at(-1)!),
         })
       : null;
   return Response.json(
@@ -127,83 +194,69 @@ export async function currentProductsResponse(
         published_at: state.published_at,
       },
       page: { limit, next_cursor: next },
-      links: { self: `/v1/products${url.search}` },
+      links: { self: `${url.pathname}${url.search}` },
     },
     {
-      headers: {
-        "cache-control": "private, no-cache",
-        etag: `"products:${state.current_revision_id}:${url.search}"`,
-        "x-catalogue-revision": state.current_revision_id,
-      },
+      headers: productHeaders(state.current_revision_id, etag),
     },
   );
 }
 
-function productResponse(
-  data: unknown,
-  state: { current_revision_id: string; published_at: string },
-  self: string,
-  etag: string,
-  sidecars: Record<string, unknown>,
-): Response {
-  return Response.json(
-    {
-      data,
-      ...sidecars,
-      meta: {
-        catalogue_revision_id: state.current_revision_id,
-        published_at: state.published_at,
-      },
-      links: { self },
-    },
-    {
-      headers: {
-        "cache-control": "private, no-cache",
-        etag: `"${etag}"`,
-        "x-catalogue-revision": state.current_revision_id,
-      },
-    },
-  );
-}
-
-async function productEvidence(
-  database: D1Database,
-  relationshipValue: string,
-  state: { current_revision_id: string; published_at: string },
-): Promise<Record<string, unknown>> {
-  const rows = await database
-    .prepare(
-      `SELECT DISTINCT source_observation_id, source_lineage
-       FROM reconciled_printing_memberships
-       WHERE relationship_kind = 'product' AND relationship_value = ?
-       ORDER BY source_observation_id`,
-    )
-    .bind(relationshipValue)
-    .all<{ source_observation_id: string; source_lineage: string }>();
-  if (rows.results.length === 0) {
-    return { included: [], provenance: {} };
+function productEnvelope(documentJson: string): ProductEnvelope {
+  const parsed = JSON.parse(documentJson) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("A revision-pinned Product document is invalid.");
   }
-  const ids = rows.results.map(({ source_observation_id }) => source_observation_id);
+  const value = parsed as Record<string, unknown>;
+  const data =
+    value.data !== null &&
+    typeof value.data === "object" &&
+    !Array.isArray(value.data)
+      ? (value.data as ProductEnvelope["data"])
+      : (value as ProductEnvelope["data"]);
+  if (
+    typeof data.id !== "string" ||
+    typeof data.game !== "string" ||
+    (data.official_code !== null &&
+      typeof data.official_code !== "string") ||
+    (data.name !== null && typeof data.name !== "string") ||
+    !Array.isArray(data.releases)
+  ) {
+    throw new Error("A revision-pinned Product document is invalid.");
+  }
   return {
-    included: rows.results.map((evidence) => ({
-      type: "source_observation",
-      id: evidence.source_observation_id,
-      captured_at: state.published_at,
-      source: evidence.source_lineage,
-    })),
-    provenance: {
-      "/data/official_code": ids,
-      "/data/name": ids,
-      ...Object.fromEntries(
-        ids.length === 0
-          ? []
-          : [
-              ["/data/releases/0/date/value", ids],
-              ["/data/releases/0/status", ids],
-            ],
-      ),
-    },
+    data,
+    included: Array.isArray(value.included) ? value.included : [],
+    provenance:
+      value.provenance !== null &&
+      typeof value.provenance === "object" &&
+      !Array.isArray(value.provenance)
+        ? (value.provenance as Record<string, string[]>)
+        : {},
+    disagreements: Array.isArray(value.disagreements)
+      ? value.disagreements
+      : [],
   };
+}
+
+function includeProjection(url: URL): Set<string> {
+  const include = new Set(
+    (url.searchParams.get("include") ?? "")
+      .split(",")
+      .filter((value) => value.length > 0),
+  );
+  if (
+    [...include].some(
+      (value) => value !== "evidence" && value !== "disagreements",
+    )
+  ) {
+    throw new ProductReadProblem(
+      400,
+      "invalid_parameter",
+      "Product include projection is invalid.",
+    );
+  }
+  return include;
 }
 
 function parseLimit(value: string | null): number {
@@ -219,29 +272,16 @@ function parseLimit(value: string | null): number {
   return parsed;
 }
 
-type ProductOrderValue = {
-  id: string;
-  game: string;
-  official_code: string | null;
-  name: string;
-};
-
-function productOrder(left: ProductOrderValue, right: ProductOrderValue): number {
-  return (
-    left.game.localeCompare(right.game) ||
-    Number(left.official_code === null) - Number(right.official_code === null) ||
-    (left.official_code ?? "").localeCompare(right.official_code ?? "") ||
-    left.name.localeCompare(right.name) ||
-    left.id.localeCompare(right.id)
-  );
-}
-
 function assertFilter(game: string | null, region: string | null): void {
   if (
     game !== null &&
     !["one-piece", "fusion-world", "digimon", "gundam"].includes(game)
   ) {
-    throw new ProductReadProblem(400, "invalid_parameter", "Product game is invalid.");
+    throw new ProductReadProblem(
+      400,
+      "invalid_parameter",
+      "Product game is invalid.",
+    );
   }
   if (
     region !== null &&
@@ -258,10 +298,17 @@ function assertFilter(game: string | null, region: string | null): void {
 function parseCursor(
   value: string | null,
   currentRevision: string,
-  filters: { q: string | null; game: string | null; region: string | null; limit: number },
+  filters: {
+    q: string | null;
+    game: string | null;
+    region: string | null;
+    limit: number;
+  },
 ): ProductOrderValue | null {
   if (value === null) return null;
   let cursor: {
+    route?: unknown;
+    ordering?: unknown;
     revision?: unknown;
     filters?: unknown;
     last?: unknown;
@@ -280,7 +327,15 @@ function parseCursor(
       ),
     ) as typeof cursor;
   } catch {
-    throw new ProductReadProblem(400, "invalid_cursor", "Product cursor is invalid.");
+    throw invalidCursor();
+  }
+  if (
+    cursor.route !== productRoute ||
+    cursor.ordering !== productOrder ||
+    JSON.stringify(cursor.filters) !== JSON.stringify(filters) ||
+    !validOrderValue(cursor.last)
+  ) {
+    throw invalidCursor();
   }
   if (cursor.revision !== currentRevision) {
     throw new ProductReadProblem(
@@ -289,26 +344,85 @@ function parseCursor(
       "The Product cursor Catalogue Revision is unavailable.",
     );
   }
-  if (JSON.stringify(cursor.filters) !== JSON.stringify(filters) || !validOrderValue(cursor.last)) {
-    throw new ProductReadProblem(400, "invalid_cursor", "Product cursor is invalid.");
-  }
   return cursor.last;
+}
+
+function invalidCursor(): ProductReadProblem {
+  return new ProductReadProblem(
+    400,
+    "invalid_cursor",
+    "Product cursor is invalid.",
+  );
 }
 
 function encodeCursor(value: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 function validOrderValue(value: unknown): value is ProductOrderValue {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
   const product = value as Record<string, unknown>;
   return (
     typeof product.id === "string" &&
     typeof product.game === "string" &&
-    (product.official_code === null || typeof product.official_code === "string") &&
-    typeof product.name === "string"
+    (product.official_code === null ||
+      typeof product.official_code === "string") &&
+    (product.name === null || typeof product.name === "string")
   );
+}
+
+function orderValue(value: ProductOrderValue): ProductOrderValue {
+  return {
+    id: value.id,
+    game: value.game,
+    official_code: value.official_code,
+    name: value.name,
+  };
+}
+
+function quotedEtag(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `"${btoa(binary)}"`;
+}
+
+function ifNoneMatch(request: Request, etag: string): boolean {
+  const header = request.headers.get("if-none-match");
+  if (header === null) return false;
+  const comparable = etag.replace(/^W\//u, "");
+  return header
+    .split(",")
+    .map((value) => value.trim())
+    .some(
+      (value) =>
+        value === "*" || value.replace(/^W\//u, "") === comparable,
+    );
+}
+
+function notModified(etag: string, revisionId: string): Response {
+  return new Response(null, {
+    status: 304,
+    headers: productHeaders(revisionId, etag),
+  });
+}
+
+function productHeaders(revisionId: string, etag: string): HeadersInit {
+  return {
+    "cache-control": "private, no-cache",
+    etag,
+    "x-catalogue-revision": revisionId,
+  };
 }

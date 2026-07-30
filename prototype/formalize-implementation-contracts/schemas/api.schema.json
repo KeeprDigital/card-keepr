@@ -363,7 +363,12 @@
       "additionalProperties": false,
       "required": ["precision", "value"],
       "properties": {
-        "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
+        "precision": {
+          "oneOf": [
+            { "enum": ["day", "month", "quarter", "year", "unknown"] },
+            { "type": "null" }
+          ]
+        },
         "value": {
           "oneOf": [{ "type": "string" }, { "type": "null" }]
         }
@@ -377,7 +382,12 @@
         "id": { "$ref": "#/$defs/OpaqueId" },
         "region": { "$ref": "#/$defs/Region" },
         "date": { "$ref": "#/$defs/ReleaseDate" },
-        "status": { "enum": ["announced", "released"] }
+        "status": {
+          "oneOf": [
+            { "enum": ["announced", "released"] },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "Product": {
@@ -391,7 +401,12 @@
         "official_code": {
           "oneOf": [{ "type": "string" }, { "type": "null" }]
         },
-        "name": { "type": "string", "minLength": 1 },
+        "name": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
         "releases": {
           "type": "array",
           "items": { "$ref": "#/$defs/Release" }
