@@ -7,6 +7,10 @@ import {
 import type {
   CredentialConsumerProofRequestClaims,
 } from "../../../src/credentials/consumer-proof";
+import {
+  exactManagementTokenPolicy,
+  exactTokenPolicy,
+} from "../../../src/credentials/cloudflare-authority.mjs";
 
 type ObservationResponse = {
   status: number;
@@ -250,67 +254,4 @@ async function cloudflareJson(
   } catch {
     return null;
   }
-}
-
-function exactTokenPolicy(
-  token: any,
-  permission: string,
-  cloudflareAccountId: string,
-): boolean {
-  return exactPolicy(
-    token,
-    [permission],
-    cloudflareAccountId,
-  );
-}
-
-function exactManagementTokenPolicy(
-  token: any,
-  permissions: unknown,
-  cloudflareAccountId: string,
-): boolean {
-  return (
-    Array.isArray(permissions) &&
-    permissions.length > 0 &&
-    permissions.every((permission) => typeof permission === "string") &&
-    exactPolicy(token, permissions, cloudflareAccountId)
-  );
-}
-
-function exactPolicy(
-  token: any,
-  permissions: string[],
-  cloudflareAccountId: string,
-): boolean {
-  if (
-    !Array.isArray(token?.policies) ||
-    token.policies.length !== 1
-  ) {
-    return false;
-  }
-  const policy = token.policies[0];
-  const groups = policy?.permission_groups;
-  const resources = policy?.resources;
-  if (
-    policy?.effect !== "allow" ||
-    !Array.isArray(groups) ||
-    groups.length !== permissions.length ||
-    resources === null ||
-    typeof resources !== "object" ||
-    Array.isArray(resources)
-  ) {
-    return false;
-  }
-  const actual = groups.map((group: any) => group?.name).sort();
-  const expected = [...permissions].sort();
-  const entries = Object.entries(resources);
-  return (
-    actual.every((permission: unknown, index: number) =>
-      permission === expected[index]
-    ) &&
-    entries.length === 1 &&
-    entries[0]?.[0] ===
-      `com.cloudflare.api.account.${cloudflareAccountId}` &&
-    entries[0]?.[1] === "*"
-  );
 }

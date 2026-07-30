@@ -7,6 +7,18 @@ export function verifyD1DatabaseMetadata(
   databaseId: string,
 ): boolean;
 
+export function exactTokenPolicy(
+  token: unknown,
+  permission: string,
+  cloudflareAccountId: string,
+): boolean;
+
+export function exactManagementTokenPolicy(
+  token: unknown,
+  permissions: unknown,
+  cloudflareAccountId: string,
+): boolean;
+
 export function disposableProbeStatements(
   planDigest: string,
   challenge: string,

@@ -17,6 +17,9 @@ import {
   executeCredentialBoundary,
   mayReleaseExecutionClaim,
 } from "./credential-boundary.mjs";
+import {
+  githubAppKeyFingerprint,
+} from "../src/credentials/github-app-auth.mjs";
 
 export async function runCredentialCommand(
   arguments_,
@@ -68,6 +71,8 @@ async function mutate(
       options.values["--disposable-d1-database-id"],
     github_repository_id:
       options.values["--github-repository-id"],
+    github_app_id:
+      options.values["--github-app-id"],
     github_installation_id:
       options.values["--github-installation-id"],
     github_environment_id:
@@ -144,7 +149,9 @@ async function mutate(
   if (
     credentialClass === "github_deployment_token" &&
     !equalFingerprint(
-      fingerprint(secrets.values.github_management_credential),
+      githubAppKeyFingerprint(
+        secrets.values.github_management_credential,
+      ),
       options.values[
         "--expected-github-management-fingerprint"
       ],
@@ -378,6 +385,7 @@ function parseMutation(arguments_) {
     "--catalogue-d1-database-id",
     "--disposable-d1-database-id",
     "--github-repository-id",
+    "--github-app-id",
     "--github-installation-id",
     "--github-environment-id",
     "--github-workflow-id",

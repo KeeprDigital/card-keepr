@@ -22,6 +22,7 @@ const context = {
   catalogueD1DatabaseId: "00000000-0000-0000-0000-000000000001",
   disposableD1DatabaseId: "00000000-0000-0000-0000-000000000002",
   githubRepositoryId: "1313489088",
+  githubAppId: "11111111",
   githubInstallationId: "22222222",
   githubEnvironmentId: "33333333",
   githubWorkflowId: "44444444",
@@ -111,7 +112,7 @@ test("GitHub management authority is a separate fingerprint-bound secret before 
         "replacement-github-deployment",
       ),
       githubManagementCredentialId:
-        "github-app-installation:22222222",
+        "github-app:11111111:installation:22222222",
       githubManagementCredentialFingerprint:
         fingerprint("different-github-management"),
       idempotencyKey: "github-management-negative-001",
@@ -694,6 +695,8 @@ function mutationArguments(input) {
     context.disposableD1DatabaseId,
     "--github-repository-id",
     context.githubRepositoryId,
+    "--github-app-id",
+    context.githubAppId,
     "--github-installation-id",
     context.githubInstallationId,
     "--github-environment-id",
@@ -806,6 +809,7 @@ function productionTargetIdentity() {
       "card-keepr-evidence-host",
     ],
     github_repository_id: context.githubRepositoryId,
+    github_app_id: context.githubAppId,
     github_installation_id: context.githubInstallationId,
     github_environment_id: context.githubEnvironmentId,
     github_workflow_id: context.githubWorkflowId,

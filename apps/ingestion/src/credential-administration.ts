@@ -31,7 +31,8 @@ export async function handleCredentialExecutionCapability(
   attestationKey: string,
   consumerProofKey: string,
   cloudflareObservationToken: string,
-  githubObservationToken: string,
+  githubAppPrivateKey: string,
+  githubAppId: string,
   githubWorkflowId: string,
   githubObservationActor: string,
 ): Promise<Response | null> {
@@ -97,9 +98,11 @@ export async function handleCredentialExecutionCapability(
             const github = await observeGithubCredentialRuns(
               plan,
               expected,
-              githubObservationToken,
+              githubAppPrivateKey,
+              githubAppId,
               githubWorkflowId,
               githubObservationActor,
+              observedAt,
             );
             return github === null
               ? null

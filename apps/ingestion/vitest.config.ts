@@ -3,12 +3,19 @@ import {
   readD1Migrations,
 } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
+import { generateKeyPairSync } from "node:crypto";
 import { defineConfig } from "vitest/config";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
+const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+}).privateKey.export({
+  type: "pkcs8",
+  format: "pem",
+}).toString();
 
 export default defineConfig({
   plugins: [
@@ -29,14 +36,14 @@ export default defineConfig({
             "vitest-consumer-proof-key",
           CLOUDFLARE_OBSERVATION_TOKEN:
             "vitest-cloudflare-observation-token",
-          GITHUB_OBSERVATION_TOKEN:
-            "vitest-github-observation-token",
+          GITHUB_APP_PRIVATE_KEY: githubAppTestPrivateKey,
           GITHUB_OBSERVATION_ACTOR: "keepr-rotation[bot]",
           D1_VERIFICATION_TOKEN:
             "vitest-d1-verification-token-active",
           D1_VERIFICATION_TOKEN_REPLACEMENT:
             "vitest-d1-verification-token-replacement",
           GITHUB_REPOSITORY_ID: "1313489088",
+          GITHUB_APP_ID: "11111111",
           GITHUB_INSTALLATION_ID: "22222222",
           GITHUB_ENVIRONMENT_ID: "33333333",
           GITHUB_WORKFLOW_ID: "44444444",
@@ -153,12 +160,15 @@ export default defineConfig({
             if (url.pathname === "/repositories/1313489088") {
               return Response.json({ id: 1313489088 });
             }
-            if (url.pathname.endsWith("/environments/production")) {
+            if (
+              url.pathname ===
+              "/repos/KeeprDigital/card-keepr/environments/production"
+            ) {
               return Response.json({ id: 33333333 });
             }
             if (
               url.pathname ===
-              "/repositories/1313489088/actions/workflows/44444444"
+              "/repos/KeeprDigital/card-keepr/actions/workflows/44444444"
             ) {
               return Response.json({
                 id: 44444444,

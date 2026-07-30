@@ -81,7 +81,8 @@ const ingestionWorker = {
           env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
           env.CREDENTIAL_CONSUMER_PROOF_KEY,
           env.CLOUDFLARE_OBSERVATION_TOKEN,
-          env.GITHUB_OBSERVATION_TOKEN,
+          env.GITHUB_APP_PRIVATE_KEY,
+          env.GITHUB_APP_ID,
           env.GITHUB_WORKFLOW_ID,
           env.GITHUB_OBSERVATION_ACTOR,
         );
@@ -138,6 +139,7 @@ const ingestionWorker = {
           disposable_d1_database_id:
             env.DISPOSABLE_D1_DATABASE_ID,
           github_repository_id: env.GITHUB_REPOSITORY_ID,
+          github_app_id: env.GITHUB_APP_ID,
           github_installation_id: env.GITHUB_INSTALLATION_ID,
           github_environment_id: env.GITHUB_ENVIRONMENT_ID,
           github_workflow_id: env.GITHUB_WORKFLOW_ID,

@@ -103,7 +103,7 @@ export function createCloudflareProvider({
         permission:
           credentialClass === "d1_export_token"
             ? "D1 Read"
-            : "D1 Edit",
+            : "D1 Write",
         planDigest,
         challenge,
       });

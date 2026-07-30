@@ -10,6 +10,9 @@ import {
 import {
   observeGithubCredentialRuns,
 } from "../src/github-credential-observation";
+import {
+  githubAppKeyFingerprint,
+} from "../../../src/credentials/github-app-auth.mjs";
 
 declare global {
   interface __BaseEnv_Env {
@@ -325,12 +328,14 @@ test("GitHub final evidence is independently read from an exact successful workf
     plan_nonce: "b".repeat(64),
     execution_started_at: started,
     github_management_credential_id:
-      "github-app-installation:22222222",
+      "github-app:11111111:installation:22222222",
     github_management_required_permission:
-      "github-app-installation:22222222" +
+      "github-app:11111111:installation:22222222" +
       ":repository:1313489088:environment:33333333" +
       ":workflow:44444444" +
       ":actions=write,contents=read,environments=write,metadata=read",
+    github_management_credential_fingerprint:
+      githubAppKeyFingerprint(env.GITHUB_APP_PRIVATE_KEY),
   } as never;
   const expected = [{
     slot: "b",
@@ -397,10 +402,17 @@ test("GitHub final evidence is independently read from an exact successful workf
     if (pathname === "/repositories/1313489088") {
       return { id: 1313489088 };
     }
-    if (pathname.endsWith("/environments/production")) {
+    if (
+      pathname ===
+      "/repos/KeeprDigital/card-keepr/environments/production"
+    ) {
       return { id: 33333333 };
     }
-    if (pathname.includes("/actions/workflows/44444444")) {
+    if (
+      pathname.includes(
+        "/repos/KeeprDigital/card-keepr/actions/workflows/44444444",
+      )
+    ) {
       if (pathname.endsWith("44444444")) {
         return {
           id: 44444444,
@@ -422,10 +434,13 @@ test("GitHub final evidence is independently read from an exact successful workf
     observeGithubCredentialRuns(
       plan,
       expected,
-      "server-owned-github-observation-token",
+      env.GITHUB_APP_PRIVATE_KEY,
+      "11111111",
       "44444444",
       "keepr-rotation[bot]",
+      "2026-07-29T00:03:00.000Z",
       request,
+      () => "fresh-server-minted-github-app-jwt",
     );
   await expect(observe(exactRun)).resolves.toHaveLength(1);
   await expect(observe({
@@ -520,6 +535,90 @@ test("the durable public sequence is installed then verified then issuer-old rev
     revokedPlan,
     await signedAttestation(revokedPlan, "unusable"),
   );
+  await expect(revoked.json()).resolves.toMatchObject({
+    state: "old_revoked",
+  });
+});
+
+test("GitHub install, delayed reconciliation, verify, and revoke mint fresh App JWTs from stable key identity", async () => {
+  const installInput = await planInput(
+    "install",
+    "github_deployment_token",
+    0,
+    "credrot_github_delayed_lifecycle",
+  );
+  const installPlan = await reserve(
+    installInput,
+    "2026-07-29T00:00:00.000Z",
+  );
+  await execute(installPlan, "2026-07-29T00:00:30.000Z");
+  const installed = await finalize(
+    installPlan,
+    await signedAttestation(
+      installPlan,
+      "usable",
+      "2026-07-29T00:01:00.000Z",
+    ),
+    "2026-07-29T00:01:00.000Z",
+  );
+  expect(installed.status).toBe(200);
+
+  const verifyInput = await planInput(
+    "verify",
+    "github_deployment_token",
+    1,
+    installInput.rotation_id,
+    installInput.old_fingerprint,
+    installInput.replacement_fingerprint,
+  );
+  const verifyPlan = await reserve(
+    verifyInput,
+    "2026-07-29T01:00:00.000Z",
+  );
+  await execute(verifyPlan, "2026-07-29T01:00:30.000Z");
+  await execute(
+    verifyPlan,
+    "2026-07-29T01:11:00.000Z",
+    "b".repeat(64),
+  );
+  expect(verifyPlan).toMatchObject({
+    execution_attempt: 2,
+    execution_mode: "reconciliation",
+  });
+  const verified = await finalize(
+    verifyPlan,
+    await signedAttestation(
+      verifyPlan,
+      "usable",
+      "2026-07-29T01:11:30.000Z",
+    ),
+    "2026-07-29T01:11:30.000Z",
+  );
+  expect(verified.status).toBe(200);
+
+  const revokeInput = await planInput(
+    "revoke",
+    "github_deployment_token",
+    2,
+    installInput.rotation_id,
+    installInput.old_fingerprint,
+    installInput.replacement_fingerprint,
+  );
+  const revokePlan = await reserve(
+    revokeInput,
+    "2026-07-29T02:00:00.000Z",
+  );
+  await execute(revokePlan, "2026-07-29T02:00:30.000Z");
+  const revoked = await finalize(
+    revokePlan,
+    await signedAttestation(
+      revokePlan,
+      "unusable",
+      "2026-07-29T02:01:00.000Z",
+    ),
+    "2026-07-29T02:01:00.000Z",
+  );
+  expect(revoked.status).toBe(200);
   await expect(revoked.json()).resolves.toMatchObject({
     state: "old_revoked",
   });
@@ -871,7 +970,7 @@ const identities = {
     owning_boundary: "disposable_verification",
     verification_target:
       `cloudflare-account:${accountId}:d1:00000000-0000-0000-0000-000000000002:write-rollback-probe`,
-    required_permission: "D1 Edit",
+    required_permission: "D1 Write",
   },
   github_deployment_token: {
     resource_identity:
@@ -942,6 +1041,7 @@ function productionTargetIdentity(): string {
       "card-keepr-evidence-host",
     ],
     github_repository_id: "1313489088",
+    github_app_id: "11111111",
     github_installation_id: "22222222",
     github_environment_id: "33333333",
     github_workflow_id: "44444444",
@@ -1065,11 +1165,11 @@ async function planInput(
     management_credential_id: "provider-token:management-id",
     github_management_credential_id:
       credentialClass === "github_deployment_token"
-        ? "github-app-installation:22222222"
+        ? "github-app:11111111:installation:22222222"
         : "not-applicable",
     github_management_credential_fingerprint:
       credentialClass === "github_deployment_token"
-        ? await fingerprint("github-management-token")
+        ? githubAppKeyFingerprint(env.GITHUB_APP_PRIVATE_KEY)
         : `sha256:${"0".repeat(64)}`,
     idempotency_key: `${action}-${credentialClass}-${generation}`,
   };

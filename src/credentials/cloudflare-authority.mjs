@@ -36,6 +36,75 @@ export function verifyD1DatabaseMetadata(document, databaseId) {
   );
 }
 
+export function exactTokenPolicy(
+  token,
+  permission,
+  cloudflareAccountId,
+) {
+  return exactAccountTokenPolicy(
+    token,
+    [permission],
+    cloudflareAccountId,
+  );
+}
+
+export function exactManagementTokenPolicy(
+  token,
+  permissions,
+  cloudflareAccountId,
+) {
+  return (
+    Array.isArray(permissions) &&
+    permissions.length > 0 &&
+    permissions.every(
+      (permission) => typeof permission === "string",
+    ) &&
+    exactAccountTokenPolicy(
+      token,
+      permissions,
+      cloudflareAccountId,
+    )
+  );
+}
+
+function exactAccountTokenPolicy(
+  token,
+  permissions,
+  cloudflareAccountId,
+) {
+  if (
+    !Array.isArray(token?.policies) ||
+    token.policies.length !== 1
+  ) {
+    return false;
+  }
+  const policy = token.policies[0];
+  const groups = policy?.permission_groups;
+  const resources = policy?.resources;
+  if (
+    policy?.effect !== "allow" ||
+    !Array.isArray(groups) ||
+    groups.length !== permissions.length ||
+    resources === null ||
+    typeof resources !== "object" ||
+    Array.isArray(resources)
+  ) {
+    return false;
+  }
+  const actual = groups.map((group) => group?.name).sort();
+  const expected = [...permissions].sort();
+  const entries = Object.entries(resources);
+  return (
+    actual.every(
+      (permission, index) => permission === expected[index],
+    ) &&
+    entries.length === 1 &&
+    entries[0][0] ===
+      `com.cloudflare.api.account.${cloudflareAccountId}` &&
+    entries[0][1] === "*"
+  );
+}
+
 export function disposableProbeStatements(planDigest, challenge) {
   if (
     !/^[0-9a-f]{64}$/.test(planDigest) ||
@@ -85,7 +154,7 @@ export async function probeD1Credential({
       };
     }
   }
-  if (permission !== "D1 Edit") {
+  if (permission !== "D1 Write") {
     return {
       ok: false,
       mutation_started: false,

@@ -4,6 +4,9 @@ import {
   githubManagementPermissionPolicy,
   parseGithubManagementPermissionPolicy,
 } from "../src/credentials/credential-catalogue.mjs";
+import {
+  createGithubAppJwt,
+} from "../src/credentials/github-app-auth.mjs";
 
 const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
@@ -30,13 +33,15 @@ export function githubExecutionPlanMatches(plan) {
   return (
     plan.credential_class === "github_deployment_token" &&
     plan.github_management_credential_id ===
-      `github-app-installation:${policy.github_installation_id}` &&
+      `github-app:${policy.github_app_id}` +
+        `:installation:${policy.github_installation_id}` &&
     plan.resource_identity ===
       `github-repository:${policy.github_repository_id}` +
       `:installation:${policy.github_installation_id}` +
       `:environment:${policy.github_environment_id}` +
       `:workflow:${policy.github_workflow_id}` &&
     target.github_repository_id === policy.github_repository_id &&
+    target.github_app_id === policy.github_app_id &&
     target.github_installation_id === policy.github_installation_id &&
     target.github_environment_id === policy.github_environment_id &&
     target.github_workflow_id === policy.github_workflow_id
@@ -44,13 +49,21 @@ export function githubExecutionPlanMatches(plan) {
 }
 
 export async function verifyGithubManagementAuthority({
-  credential,
+  privateKey,
+  appId,
+  observedAt,
   installationId,
   repositoryId,
   environmentId,
   workflowId,
   requiredPolicy,
 }) {
+  const credential = createGithubAppJwt(
+    privateKey,
+    appId,
+    observedAt,
+  );
+  if (credential === null) return null;
   const installation = await githubRequest(
     credential,
     `/app/installations/${installationId}`,
@@ -127,6 +140,7 @@ export async function verifyGithubManagementAuthority({
     return null;
   }
   const expectedPolicy = githubManagementPermissionPolicy({
+    github_app_id: appId,
     github_installation_id: installationId,
     github_repository_id: repositoryId,
     github_environment_id: environmentId,

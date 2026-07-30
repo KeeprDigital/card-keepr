@@ -89,7 +89,7 @@ export const credentialClassDefinitions = Object.freeze({
     resource_name: "disposable-verification",
     database_context_key: "disposable_d1_database_id",
     verification_operation: "write-rollback-probe",
-    required_permission: "D1 Edit",
+    required_permission: "D1 Write",
     management_permissions: [
       "Account API Tokens Read",
       "Account API Tokens Write",
@@ -141,7 +141,8 @@ export function isCredentialClass(value) {
 
 export function githubManagementPermissionPolicy(context) {
   return (
-    `github-app-installation:${context.github_installation_id}` +
+    `github-app:${context.github_app_id}` +
+    `:installation:${context.github_installation_id}` +
     `:repository:${context.github_repository_id}` +
     `:environment:${context.github_environment_id}` +
     `:workflow:${context.github_workflow_id}` +
@@ -151,16 +152,17 @@ export function githubManagementPermissionPolicy(context) {
 
 export function parseGithubManagementPermissionPolicy(value) {
   const match =
-    /^github-app-installation:([1-9][0-9]*):repository:([1-9][0-9]*):environment:([1-9][0-9]*):workflow:([1-9][0-9]*):actions=write,contents=read,environments=write,metadata=read$/.exec(
+    /^github-app:([1-9][0-9]*):installation:([1-9][0-9]*):repository:([1-9][0-9]*):environment:([1-9][0-9]*):workflow:([1-9][0-9]*):actions=write,contents=read,environments=write,metadata=read$/.exec(
       value ?? "",
     );
   return match === null
     ? null
     : {
-        github_installation_id: match[1],
-        github_repository_id: match[2],
-        github_environment_id: match[3],
-        github_workflow_id: match[4],
+        github_app_id: match[1],
+        github_installation_id: match[2],
+        github_repository_id: match[3],
+        github_environment_id: match[4],
+        github_workflow_id: match[5],
       };
 }
 
@@ -173,6 +175,7 @@ export function resolveCredentialIdentity(credentialClass, context) {
     !validUuid(context.disposable_d1_database_id) ||
     ![
       context.github_repository_id,
+      context.github_app_id,
       context.github_installation_id,
       context.github_environment_id,
       context.github_workflow_id,
@@ -249,7 +252,8 @@ export function resolveCredentialIdentity(credentialClass, context) {
     fixed_old_issuer_credential_id: null,
     fixed_replacement_issuer_credential_id: null,
     fixed_github_management_credential_id:
-      `github-app-installation:${context.github_installation_id}`,
+      `github-app:${context.github_app_id}` +
+      `:installation:${context.github_installation_id}`,
   };
 }
 
@@ -281,6 +285,7 @@ function productionTargetIdentity(context) {
       "card-keepr-evidence-host",
     ],
     github_repository_id: context.github_repository_id,
+    github_app_id: context.github_app_id,
     github_installation_id: context.github_installation_id,
     github_environment_id: context.github_environment_id,
     github_workflow_id: context.github_workflow_id,

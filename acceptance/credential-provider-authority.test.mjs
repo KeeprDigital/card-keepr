@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { generateKeyPairSync } from "node:crypto";
 import {
   executeCredentialBoundary,
   mayReleaseExecutionClaim,
@@ -178,7 +179,7 @@ test("an owned stale D1 probe is cleaned and retried while an unrelated probe is
   const owned = await probeD1Credential({
     accountId: "0123456789abcdef0123456789abcdef",
     databaseId: "00000000-0000-0000-0000-000000000002",
-    permission: "D1 Edit",
+    permission: "D1 Write",
     planDigest,
     challenge,
     request: async (_path, init) => {
@@ -210,7 +211,7 @@ test("an owned stale D1 probe is cleaned and retried while an unrelated probe is
   const unrelated = await probeD1Credential({
     accountId: "0123456789abcdef0123456789abcdef",
     databaseId: "00000000-0000-0000-0000-000000000002",
-    permission: "D1 Edit",
+    permission: "D1 Write",
     planDigest,
     challenge,
     request: async (_path, init) => {
@@ -271,6 +272,7 @@ test("reconciliation safely retries after every consumer installation step", asy
 
 test("the canonical GitHub deployment authority policy is executable and rejects drift", () => {
   const context = {
+    github_app_id: "11111111",
     github_installation_id: "22222222",
     github_repository_id: "1313489088",
     github_environment_id: "33333333",
@@ -279,7 +281,7 @@ test("the canonical GitHub deployment authority policy is executable and rejects
   const policy = githubManagementPermissionPolicy(context);
   assert.equal(
     policy,
-    "github-app-installation:22222222" +
+    "github-app:11111111:installation:22222222" +
       ":repository:1313489088" +
       ":environment:33333333" +
       ":workflow:44444444" +
@@ -304,7 +306,7 @@ test("the canonical GitHub deployment authority policy is executable and rejects
   const executionPlan = {
     credential_class: "github_deployment_token",
     github_management_credential_id:
-      "github-app-installation:22222222",
+      "github-app:11111111:installation:22222222",
     github_management_required_permission: policy,
     resource_identity:
       "github-repository:1313489088:installation:22222222:environment:33333333:workflow:44444444",
@@ -323,7 +325,15 @@ test("the canonical GitHub deployment authority policy is executable and rejects
     githubExecutionPlanMatches({
       ...executionPlan,
       github_management_credential_id:
-        "github-app-installation:999",
+        "github-app:999:installation:22222222",
+    }),
+    false,
+  );
+  assert.equal(
+    githubExecutionPlanMatches({
+      ...executionPlan,
+      github_management_credential_id:
+        "github-app:11111111:installation:999",
     }),
     false,
   );
@@ -391,30 +401,30 @@ test("token policy rejects read-only, broad, wrong-account, and wrong-class scop
     ],
   });
   assert.equal(
-    exactTokenPolicy(policy("D1 Edit"), "D1 Edit", accountId),
+    exactTokenPolicy(policy("D1 Write"), "D1 Write", accountId),
     true,
   );
   assert.equal(
-    exactTokenPolicy(policy("D1 Read"), "D1 Edit", accountId),
+    exactTokenPolicy(policy("D1 Read"), "D1 Write", accountId),
     false,
   );
   assert.equal(
     exactTokenPolicy(
       {
         policies: [
-          ...policy("D1 Edit").policies,
+          ...policy("D1 Write").policies,
           ...policy("Workers Scripts Write").policies,
         ],
       },
-      "D1 Edit",
+      "D1 Write",
       accountId,
     ),
     false,
   );
   assert.equal(
     exactTokenPolicy(
-      policy("D1 Edit", "ffffffffffffffffffffffffffffffff"),
-      "D1 Edit",
+      policy("D1 Write", "ffffffffffffffffffffffffffffffff"),
+      "D1 Write",
       accountId,
     ),
     false,
@@ -422,7 +432,7 @@ test("token policy rejects read-only, broad, wrong-account, and wrong-class scop
   assert.equal(
     exactTokenPolicy(
       policy("Workers Scripts Write"),
-      "D1 Edit",
+      "D1 Write",
       accountId,
     ),
     false,
@@ -580,6 +590,13 @@ test("GitHub management authority binds exact installation, repository, environm
 
 test("GitHub authority authenticates the exact installation and mints one exact repository token", async () => {
   const originalFetch = globalThis.fetch;
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+  const privateKeyPem = privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }).toString();
   const permissions = {
     actions: "write",
     contents: "read",
@@ -636,13 +653,15 @@ test("GitHub authority authenticates the exact installation and mints one exact 
   };
   try {
     const requiredPolicy =
-      "github-app-installation:22222222" +
+      "github-app:11111111:installation:22222222" +
       ":repository:1313489088" +
       ":environment:33333333" +
       ":workflow:44444444" +
       ":actions=write,contents=read,environments=write,metadata=read";
     const authority = await verifyGithubManagementAuthority({
-      credential: "github-app-jwt",
+      privateKey: privateKeyPem,
+      appId: "11111111",
+      observedAt: "2026-07-29T00:00:00.000Z",
       installationId: "22222222",
       repositoryId: "1313489088",
       environmentId: "33333333",
@@ -658,14 +677,37 @@ test("GitHub authority authenticates the exact installation and mints one exact 
       repository_ids: [1313489088],
       permissions,
     });
-    assert.equal(
-      requests[0].init.headers.authorization,
-      "Bearer github-app-jwt",
+    const firstJwt = requests[0].init.headers.authorization
+      .replace(/^Bearer /u, "");
+    const firstClaims = JSON.parse(
+      Buffer.from(firstJwt.split(".")[1], "base64url").toString(),
     );
+    assert.equal(firstClaims.iss, "11111111");
+    assert.equal(firstClaims.iat, 1785283140);
+    assert.equal(firstClaims.exp, 1785283800);
     assert.equal(
       requests[2].init.headers.authorization,
       "Bearer installation-token-exact-authority",
     );
+    requests.length = 0;
+    await verifyGithubManagementAuthority({
+      privateKey: privateKeyPem,
+      appId: "11111111",
+      observedAt: "2026-07-29T00:30:00.000Z",
+      installationId: "22222222",
+      repositoryId: "1313489088",
+      environmentId: "33333333",
+      workflowId: "44444444",
+      requiredPolicy,
+    });
+    const freshJwt = requests[0].init.headers.authorization
+      .replace(/^Bearer /u, "");
+    const freshClaims = JSON.parse(
+      Buffer.from(freshJwt.split(".")[1], "base64url").toString(),
+    );
+    assert.equal(freshClaims.iat, 1785284940);
+    assert.equal(freshClaims.exp, 1785285600);
+    assert.notEqual(freshJwt, firstJwt);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -696,6 +738,27 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
   assert.match(
     workflow,
     /test "\$\{GITHUB_ACTOR\}" = "\$\{EXPECTED_ACTOR\}"/u,
+  );
+  assert.match(
+    workflow,
+    /accounts\/\$\{EXPECTED_ACCOUNT_ID\}\/workers\/scripts\/card-keepr-ingestion\/deployments/u,
+  );
+  assert.doesNotMatch(workflow, /\/workers\/services\//u);
+  assert.equal(
+    (
+      workflow.match(
+        /test "\$\(jq -r '\.result\.deployments \| type' <<<"\$\{deployments\}"\)" = "array"/gu,
+      ) ?? []
+    ).length,
+    2,
+  );
+  assert.equal(
+    (
+      workflow.match(
+        /test "\$\(jq -r '\.result\.deployments \| length > 0' <<<"\$\{deployments\}"\)" = "true"/gu,
+      ) ?? []
+    ).length,
+    2,
   );
 });
 
@@ -762,6 +825,7 @@ test("API and administration issuer identities are fixed catalogue secret slots"
     disposable_d1_database_id:
       "00000000-0000-0000-0000-000000000002",
     github_repository_id: "1313489088",
+    github_app_id: "11111111",
     github_installation_id: "22222222",
     github_environment_id: "33333333",
     github_workflow_id: "44444444",

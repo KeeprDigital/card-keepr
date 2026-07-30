@@ -1,8 +1,15 @@
 import {
   cloudflareJson,
+  exactManagementTokenPolicy,
+  exactTokenPolicy,
   verifyCloudflareEnvelope,
   verifyD1DatabaseMetadata,
 } from "../src/credentials/cloudflare-authority.mjs";
+
+export {
+  exactManagementTokenPolicy,
+  exactTokenPolicy,
+};
 
 export async function classifyTokenLookup(response, tokenId) {
   const document = await cloudflareJson(response);
@@ -48,76 +55,4 @@ export function classifySecretList(result) {
   return names.every((name) => typeof name === "string")
     ? { kind: "present", names }
     : { kind: "failure" };
-}
-
-export function exactTokenPolicy(
-  token,
-  permission,
-  cloudflareAccountId,
-) {
-  if (!Array.isArray(token.policies) || token.policies.length !== 1) {
-    return false;
-  }
-  const policy = token.policies[0];
-  const groups = policy?.permission_groups;
-  const resources = policy?.resources;
-  if (
-    resources === null ||
-    typeof resources !== "object" ||
-    Array.isArray(resources)
-  ) {
-    return false;
-  }
-  const entries = Object.entries(resources);
-  return (
-    policy?.effect === "allow" &&
-    Array.isArray(groups) &&
-    groups.length === 1 &&
-    groups[0]?.name === permission &&
-    entries.length === 1 &&
-    entries[0][0] ===
-      `com.cloudflare.api.account.${cloudflareAccountId}` &&
-    entries[0][1] === "*"
-  );
-}
-
-export function exactManagementTokenPolicy(
-  token,
-  permissions,
-  cloudflareAccountId,
-) {
-  if (
-    !Array.isArray(permissions) ||
-    permissions.length === 0 ||
-    !Array.isArray(token.policies) ||
-    token.policies.length !== 1
-  ) {
-    return false;
-  }
-  const policy = token.policies[0];
-  const groups = policy?.permission_groups;
-  const resources = policy?.resources;
-  if (
-    policy?.effect !== "allow" ||
-    !Array.isArray(groups) ||
-    groups.length !== permissions.length ||
-    resources === null ||
-    typeof resources !== "object" ||
-    Array.isArray(resources)
-  ) {
-    return false;
-  }
-  const actualPermissions = groups.map((group) => group?.name).sort();
-  const expectedPermissions = [...permissions].sort();
-  const entries = Object.entries(resources);
-  return (
-    actualPermissions.every(
-      (permission, index) =>
-        permission === expectedPermissions[index],
-    ) &&
-    entries.length === 1 &&
-    entries[0][0] ===
-      `com.cloudflare.api.account.${cloudflareAccountId}` &&
-    entries[0][1] === "*"
-  );
 }

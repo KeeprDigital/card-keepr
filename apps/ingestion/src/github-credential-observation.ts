@@ -7,6 +7,10 @@ import type {
 import {
   parseGithubManagementPermissionPolicy,
 } from "../../../src/credentials/credential-catalogue.mjs";
+import {
+  createGithubAppJwt,
+  githubAppKeyFingerprint,
+} from "../../../src/credentials/github-app-auth.mjs";
 
 const repository = "KeeprDigital/card-keepr";
 
@@ -15,27 +19,36 @@ export async function observeGithubCredentialRuns(
   expected: Array<
     CredentialConsumerProofRequestClaims & { request_token: string }
   >,
-  observationToken: string,
+  appPrivateKey: string,
+  appId: string,
   workflowId: string,
   expectedActor: string,
+  observedAt: string,
   request: (
     token: string,
     pathname: string,
     init?: RequestInit,
   ) => Promise<any | null> = githubJson,
+  mintJwt: (
+    privateKey: string,
+    appId: string,
+    observedAt: string,
+  ) => string | null = createGithubAppJwt,
 ): Promise<unknown[] | null> {
   const authority =
     parseGithubManagementPermissionPolicy(
       plan.github_management_required_permission,
     );
   if (
-    observationToken.length < 20 ||
+    appPrivateKey.length < 20 ||
+    authority?.github_app_id !== appId ||
     !/^[1-9][0-9]*$/.test(workflowId) ||
     !safeBotActor(expectedActor) ||
     plan.execution_started_at === null ||
     authority === null ||
     plan.github_management_credential_id !==
-      `github-app-installation:${authority.github_installation_id}` ||
+      `github-app:${appId}` +
+        `:installation:${authority.github_installation_id}` ||
     authority.github_workflow_id !== workflowId
   ) {
     return null;
@@ -46,6 +59,18 @@ export async function observeGithubCredentialRuns(
     environments: "write",
     metadata: "read",
   };
+  if (
+    plan.github_management_credential_fingerprint !==
+      githubAppKeyFingerprint(appPrivateKey)
+  ) {
+    return null;
+  }
+  const observationToken = mintJwt(
+    appPrivateKey,
+    appId,
+    observedAt,
+  );
+  if (observationToken === null) return null;
   const installation = await request(
     observationToken,
     `/app/installations/${authority.github_installation_id}`,
@@ -94,13 +119,11 @@ export async function observeGithubCredentialRuns(
     ),
     request(
       installationToken,
-      `/repositories/${authority.github_repository_id}` +
-        "/environments/production",
+      `/repos/${repository}/environments/production`,
     ),
     request(
       installationToken,
-      `/repositories/${authority.github_repository_id}` +
-        `/actions/workflows/${workflowId}`,
+      `/repos/${repository}/actions/workflows/${workflowId}`,
     ),
     request(
       installationToken,

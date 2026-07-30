@@ -131,7 +131,7 @@ The five credential classes are distinct:
 1. browser-visible API bearer traffic gate — API Worker only;
 2. high-entropy ingestion administration key — ingestion Worker and owner CLI;
 3. D1 export token — ingestion runtime, export operation only;
-4. D1 disposable-verification token with Account D1 Edit — ingestion runtime
+4. D1 disposable-verification token with Account D1 Write — ingestion runtime
    only, never API Worker or deployment workflow; and
 5. Cloudflare deployment token — manually dispatched release workflow only.
 

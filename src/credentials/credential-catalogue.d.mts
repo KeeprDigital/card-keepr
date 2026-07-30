@@ -8,6 +8,7 @@ export type CredentialDeploymentContext = {
   catalogue_d1_database_id: string;
   disposable_d1_database_id: string;
   github_repository_id: string;
+  github_app_id: string;
   github_installation_id: string;
   github_environment_id: string;
   github_workflow_id: string;
@@ -66,6 +67,7 @@ export function githubManagementPermissionPolicy(
   context: Pick<
     CredentialDeploymentContext,
     | "github_repository_id"
+    | "github_app_id"
     | "github_installation_id"
     | "github_environment_id"
     | "github_workflow_id"
@@ -77,6 +79,7 @@ export function parseGithubManagementPermissionPolicy(
 ): Pick<
   CredentialDeploymentContext,
   | "github_repository_id"
+  | "github_app_id"
   | "github_installation_id"
   | "github_environment_id"
   | "github_workflow_id"

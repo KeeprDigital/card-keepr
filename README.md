@@ -135,19 +135,21 @@ than reusing the checked-in Cloudflare placeholders:
   `card-keepr-catalogue-exports`, and `card-keepr-backups` R2 buckets;
 - the `card-keepr-evidence-ingestion` and `card-keepr-evidence-host`
   Workflows;
-- the numeric GitHub repository, GitHub App installation, production
+- the numeric GitHub repository, GitHub App, App installation, production
   environment, and credential-boundary workflow IDs.
 
 Replace `CLOUDFLARE_ACCOUNT_ID`, both D1 IDs, and all GitHub numeric IDs in
 `apps/ingestion/wrangler.jsonc`. The checked-in GitHub repository ID
 `1313489088` is the authoritative ID for `KeeprDigital/card-keepr`; the
-installation, environment, and workflow values remain `0` until those
+App, installation, environment, and workflow values remain `0` until those
 resources are provisioned. A zero or non-numeric value intentionally prevents
 credential-rotation execution.
 
-Record the GitHub App installation ID and resolve the remaining GitHub IDs.
-Credential rotation receives a short-lived GitHub App JWT as its management
-credential. The provider first queries that exact installation, requires
+Record the GitHub App and installation IDs and resolve the remaining GitHub
+IDs. Credential rotation receives the App private key through its secret
+descriptor, binds the App ID and SPKI public-key fingerprint in the plan, and
+mints a fresh short-lived JWT in memory. The provider queries that exact
+installation, requires
 selected-repository access and the exact configured permissions, then mints an
 installation token scoped to the one configured repository and those same
 permissions. Use the minted token to verify the repository, environment,
@@ -177,7 +179,7 @@ account-scoped because
 Cloudflare API-token policy resources do not support a D1-database resource
 scope; Keepr therefore enforces the exact account, permission, configured
 database ID, and request path for every operation. D1 export proof is a
-non-mutating metadata read. D1 edit proof uses a challenge-owned table in the
+non-mutating metadata read. D1 write proof uses a challenge-owned table in the
 configured disposable database and always attempts exact cleanup.
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
@@ -186,11 +188,12 @@ allowlist to the exact owner origins before deploying. API and administration
 bearer replacements use token68 characters and must encode at least 128 bits
 (22 characters without padding). Set `CREDENTIAL_CONSUMER_PROOF_KEY` on both
 Workers and set `CREDENTIAL_BOUNDARY_ATTESTATION_KEY` only on the ingestion
-Worker. Also set `GITHUB_OBSERVATION_TOKEN` only on ingestion to a server-owned
-GitHub App credential for the configured installation. The ingestion Worker
-verifies the installation's exact policy, mints an exact one-repository token,
-and uses it to observe exact successful credential-probe runs independently
-of the mutation caller. Set
+Worker. Set `GITHUB_APP_ID` to the stable GitHub App ID and
+`GITHUB_APP_PRIVATE_KEY` only on ingestion to the App's PEM private key. The
+ingestion Worker verifies that stable key fingerprint against the plan, mints
+a fresh short-lived App JWT for each observation, verifies the installation's
+exact policy, then mints an exact one-repository token. No private key or JWT
+plaintext is persisted or returned. Set
 `GITHUB_OBSERVATION_ACTOR` to the exact GitHub App bot login that owns those
 runs. Set `CLOUDFLARE_OBSERVATION_TOKEN` only on ingestion to an independently
 managed observation token with account-token read and Worker-secret metadata

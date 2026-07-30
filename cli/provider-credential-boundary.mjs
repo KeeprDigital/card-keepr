@@ -279,7 +279,9 @@ async function execute(journal) {
   const githubAuthority =
     credentialClass === "github_deployment_token"
       ? await verifyGithubManagementAuthority({
-          credential: secrets.github_management_credential,
+          privateKey: secrets.github_management_credential,
+          appId: productionTarget.github_app_id,
+          observedAt: new Date().toISOString(),
           installationId:
             productionTarget.github_installation_id,
           repositoryId: productionTarget.github_repository_id,
