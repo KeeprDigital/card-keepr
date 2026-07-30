@@ -96,12 +96,21 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
   });
   await execute(plan, executionStartedAt);
   const blockedIngestion = await administrationRequest(
-    "/v1/ingestion-runs",
+    "/v1/ingestion-runs/evidence",
     "POST",
     {
-      fixture: "first-catalogue",
-      selected_games: ["one-piece"],
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-json-document@1",
       idempotency_key: "blocked-by-credential-execution",
+      requests: [
+        {
+          id: "cards",
+          method: "GET",
+          url: "https://official-source.invalid/reconciliation/base",
+          headers: { accept: "application/json" },
+        },
+      ],
     },
   );
   expect(blockedIngestion.status).toBe(409);
