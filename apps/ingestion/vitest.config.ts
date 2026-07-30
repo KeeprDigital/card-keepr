@@ -467,6 +467,77 @@ function reconciliationSourceDocument(scenario: string) {
       })),
     };
   }
+  if (scenario === "scale-1001-products") {
+    return {
+      cards: Array.from({ length: 1_001 }, (_, index) => {
+        const sequence = String(index + 1).padStart(4, "0");
+        const productCode = `SC-${sequence}`;
+        const reference = {
+          kind: "official_code",
+          value: productCode,
+        };
+        return {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "card_number",
+              value: `OP21-${sequence}`,
+            },
+            name: `Scale card ${sequence}`,
+            effective_rules_text: "Scale export rule.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: {
+                card_type: "leader",
+                colours: [],
+                cost: null,
+                life: 0,
+                battle_attributes: [],
+                power: null,
+                counter: null,
+                traits: [],
+                block_icons: [],
+                effect_text: null,
+                trigger_text: null,
+              },
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: [],
+          },
+          product_release_catalogue: {
+            products: [
+              {
+                reference,
+                official_code: productCode,
+                name: `Scale Product ${sequence} ${deterministicNoise(index + 1, 3_800)}`,
+                releases: [
+                  {
+                    region: "EN-OCEANIA",
+                    date: { precision: "month", value: "2026-12" },
+                    status: "announced",
+                  },
+                ],
+              },
+            ],
+            distribution_contexts: [
+              {
+                key: `scale-context-${sequence}`,
+                kind: "promotion",
+                label: `Scale Context ${sequence} ${deterministicNoise(index + 2_000, 3_800)}`,
+                product_reference: reference,
+                evidence_category: "explicit",
+              },
+            ],
+            relationships: [],
+          },
+        };
+      }),
+    };
+  }
   if (scenario === "multi-printing") {
     const base = printingObservation({
       game: "one-piece",
@@ -952,6 +1023,81 @@ function reconciliationSourceDocument(scenario: string) {
   const setCountMismatch = scenario === "set-count-mismatch";
   const productReleaseCatalogue =
     productReleaseCatalogueForScenario(scenario);
+  if (
+    scenario === "gundam-product-asia" ||
+    scenario === "gundam-product-us" ||
+    scenario === "gundam-product-asia-missing"
+  ) {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "gundam",
+            profile: "gundam@1",
+            cardNumber: "GD90-001",
+            name: "Cross-lineage Product Card",
+            cardAttributes: {
+              card_type: "unit",
+              colours: ["blue"],
+              level: 4,
+              cost: 3,
+              block_icon: "1",
+              effect_text: "Official effect",
+              zone: "space",
+              traits: ["Earth Federation"],
+              link_condition: null,
+              ap: 3,
+              hp: 4,
+              series_titles: ["Mobile Suit Gundam"],
+            },
+            printingAttributes: { alternate_art: false },
+            locator: `/official/gundam/${scenario}`,
+            variantKey: "base",
+            lineageMarker: "gundam-product",
+          }),
+          ...(productReleaseCatalogue === undefined
+            ? {}
+            : { product_release_catalogue: productReleaseCatalogue }),
+        },
+      ],
+    };
+  }
+  if (scenario === "digimon-product-unknown-region") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "digimon",
+            profile: "digimon@1",
+            cardNumber: "BT99-001",
+            name: "Unknown-region Product Card",
+            cardAttributes: {
+              card_type: "digimon",
+              colours: ["blue"],
+              level: 4,
+              play_cost: 5,
+              use_cost: null,
+              dp: 6_000,
+              form: "Champion",
+              attribute: "Data",
+              traits: ["Test"],
+              digivolution_requirements: [],
+              text_sections: [],
+              dual_colours: [],
+              dual_cost: null,
+              link_dp: null,
+            },
+            printingAttributes: { alternative_art: false },
+            locator: "/official/digimon/product-unknown-region",
+            lineageMarker: "digimon-product",
+          }),
+          ...(productReleaseCatalogue === undefined
+            ? {}
+            : { product_release_catalogue: productReleaseCatalogue }),
+        },
+      ],
+    };
+  }
   if (scenario === "withdrawal-conflict") {
     const observation = printingObservation({
       game: "one-piece",
@@ -1593,6 +1739,55 @@ function productReleaseCatalogueForScenario(
           resolution: "guessed",
         },
       ],
+    };
+  }
+  if (scenario === "gundam-product-asia-missing") {
+    return {
+      products: [],
+      distribution_contexts: [],
+      relationships: [],
+    };
+  }
+  if (scenario === "gundam-product-asia" || scenario === "gundam-product-us") {
+    const region =
+      scenario === "gundam-product-asia" ? "EN-ASIA" : "EN-US";
+    return {
+      products: [
+        {
+          reference: officialReference("GD-CROSS"),
+          official_code: "GD-CROSS",
+          name: "Cross-lineage Product",
+          releases: [
+            {
+              region,
+              date: { precision: "day", value: "2026-12-01" },
+              status: "released",
+            },
+          ],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [],
+    };
+  }
+  if (scenario === "digimon-product-unknown-region") {
+    return {
+      products: [
+        {
+          reference: officialReference("BT-UNKNOWN"),
+          official_code: "BT-UNKNOWN",
+          name: "Unknown-region Product",
+          releases: [
+            {
+              region: "unknown",
+              date: { precision: "unknown", value: null },
+              status: "announced",
+            },
+          ],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [],
     };
   }
   return undefined;

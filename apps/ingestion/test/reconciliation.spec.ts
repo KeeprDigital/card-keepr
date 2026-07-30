@@ -435,7 +435,13 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     )
     .run();
   for (const object of catalogueExport.objects) {
-    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+    const body = object.body();
+    await Promise.all([
+      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, {
+        sha256: object.sha256,
+      }),
+      body.completed,
+    ]);
   }
 
   const recovered = await post(
@@ -3542,6 +3548,172 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
       },
     },
   });
+}, 45_000);
+
+test("Product observations and disappearance remain scoped to their Source Lineage", async () => {
+  const asiaSource = {
+    game: "gundam",
+    lineage: "gundam-en-asia",
+    adapter: "fixture-gundam-en-asia-json@1",
+  };
+  const usSource = {
+    game: "gundam",
+    lineage: "gundam-en-us",
+    adapter: "fixture-gundam-en-us-json@1",
+  };
+  const asiaRun = await collect(
+    "/reconciliation/gundam-product-asia",
+    "gundam-product-asia",
+    asiaSource,
+  );
+  const asiaCandidate = await reconcile(asiaRun.id);
+  const asiaApproval = await approve(asiaCandidate.document);
+  if (asiaApproval.response.status !== 200) {
+    throw new Error(JSON.stringify(asiaApproval.document));
+  }
+  const asiaRevision = requiredString(
+    asiaApproval.document,
+    "resulting_revision_id",
+  );
+
+  const usRun = await collect(
+    "/reconciliation/gundam-product-us",
+    "gundam-product-us",
+    usSource,
+  );
+  const usCandidate = await reconcile(usRun.id);
+  const combined = requiredFirst(usCandidate.document, "products");
+  expect(combined.releases).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ region: "EN-ASIA" }),
+      expect.objectContaining({ region: "EN-US" }),
+    ]),
+  );
+  expect(combined.included).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ source: "gundam-en-asia" }),
+      expect.objectContaining({ source: "gundam-en-us" }),
+    ]),
+  );
+  expect(
+    new Set(
+      Object.values(
+        combined.provenance as Record<string, string[]>,
+      ).flat(),
+    ).size,
+  ).toBeGreaterThanOrEqual(2);
+  const usRevision = requiredString(
+    (await approve(usCandidate.document)).document,
+    "resulting_revision_id",
+  );
+
+  const asiaMissingRun = await collect(
+    "/reconciliation/gundam-product-asia-missing",
+    "gundam-product-asia-missing",
+    asiaSource,
+  );
+  const asiaMissing = await reconcile(asiaMissingRun.id);
+  const missingRevision = requiredString(
+    (await approve(asiaMissing.document)).document,
+    "resulting_revision_id",
+  );
+  const storedProduct = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json
+     FROM revision_products
+     WHERE catalogue_revision_id = ?
+       AND official_code = 'GD-CROSS'`,
+  )
+    .bind(missingRevision)
+    .first<{ document_json: string }>();
+  const carried = JSON.parse(
+    storedProduct?.document_json ?? "{}",
+  ) as Record<string, unknown>;
+  expect(carried).toMatchObject({
+    data: {
+      releases: [expect.objectContaining({ region: "EN-US" })],
+    },
+    included: [
+      expect.objectContaining({ source: "gundam-en-us" }),
+    ],
+  });
+  expect(
+    JSON.stringify(carried).includes("gundam-en-asia"),
+  ).toBe(false);
+  const exported = (
+    await exportComponentRecords(missingRevision, "products")
+  ).find((product) => product.official_code === "GD-CROSS");
+  expect(exported).toMatchObject({
+    lifecycle: {
+      first_revision_id: asiaRevision,
+      last_observed_revision_id: usRevision,
+      withdrawn: false,
+    },
+  });
+});
+
+test("Product freshness is emitted only for an actually checked Product surface", async () => {
+  const checkedRun = await collect(
+    "/reconciliation/product-standalone-v1",
+    "product-freshness-checked",
+  );
+  const checkedCandidate = await reconcile(checkedRun.id);
+  const checkedRevision = requiredString(
+    (await approve(checkedCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  expect((await exportManifest(checkedRevision)).source_freshness).toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+    }),
+  );
+
+  const noCheckRun = await collect(
+    "/reconciliation/base",
+    "product-freshness-no-check",
+  );
+  const noCheckCandidate = await reconcile(noCheckRun.id);
+  const noCheckRevision = requiredString(
+    (await approve(noCheckCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  expect((await exportManifest(noCheckRevision)).source_freshness).not.toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+    }),
+  );
+  expect(
+    await exportComponentRecords(noCheckRevision, "products"),
+  ).toContainEqual(
+    expect.objectContaining({ official_code: "ST-STANDALONE" }),
+  );
+});
+
+test("a Digimon Release with unknown region remains schema-valid in the export", async () => {
+  const run = await collect(
+    "/reconciliation/digimon-product-unknown-region",
+    "digimon-product-unknown-region",
+    {
+      game: "digimon",
+      lineage: "digimon-en",
+      adapter: "fixture-digimon-json@1",
+    },
+  );
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  const revisionId = requiredString(
+    (await approve(candidate.document)).document,
+    "resulting_revision_id",
+  );
+  expect(
+    await exportComponentRecords(revisionId, "releases"),
+  ).toContainEqual(
+    expect.objectContaining({
+      region: "unknown",
+      date: { precision: "unknown", value: null },
+    }),
+  );
 });
 
 test("unknown Product relationship resolution fails closed", async () => {
@@ -3564,6 +3736,62 @@ test("unknown Product relationship resolution fails closed", async () => {
     ],
   });
 });
+
+test("a Product-heavy export publishes bounded verified R2 components", async () => {
+  const run = await collect(
+    "/reconciliation/scale-1001-products",
+    "bounded-export-scale-1001-products",
+    undefined,
+    45_000,
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const [products, releases, contexts, manifest] = await Promise.all([
+    exportComponentRecords(revisionId, "products"),
+    exportComponentRecords(revisionId, "releases"),
+    exportComponentRecords(revisionId, "distribution-contexts"),
+    exportManifest(revisionId),
+  ]);
+  const scaleProducts = products.filter(({ official_code }) =>
+    /^SC-[0-9]{4}$/u.test(String(official_code)),
+  );
+  expect(scaleProducts).toHaveLength(1_001);
+  const scaleProductIds = new Set(
+    scaleProducts.map(({ id }) => String(id)),
+  );
+  expect(
+    releases.filter(({ product_id }) =>
+      scaleProductIds.has(String(product_id)),
+    ),
+  ).toHaveLength(1_001);
+  expect(
+    contexts.filter(({ product_id }) =>
+      scaleProductIds.has(String(product_id)),
+    ),
+  ).toHaveLength(1_001);
+  const productBytes = manifest.components
+    .filter(({ name }) =>
+      ["products", "releases", "distribution-contexts"].includes(name),
+    )
+    .reduce((total, component) => total + component.uncompressed_bytes, 0);
+  expect(productBytes).toBeGreaterThan(8 * 1024 * 1024);
+  for (const component of manifest.components) {
+    const key =
+      `catalogue-exports/${revisionId}/components/` +
+      `${component.compressed_sha256}.ndjson.gz`;
+    const stored = await testEnv.CATALOGUE_EXPORTS.head(key);
+    expect(stored?.size).toBe(component.compressed_bytes);
+    expect(stored?.checksums.sha256).toBeDefined();
+  }
+}, 120_000);
 
 async function collect(
   path: string,
@@ -3794,6 +4022,12 @@ async function exportManifest(revisionId: string): Promise<{
     game: string;
     area: string;
     checked_at: string;
+  }[];
+  components: {
+    name: string;
+    uncompressed_bytes: number;
+    compressed_bytes: number;
+    compressed_sha256: string;
   }[];
 }> {
   const exportRow = await testEnv.CATALOGUE_DB.prepare(

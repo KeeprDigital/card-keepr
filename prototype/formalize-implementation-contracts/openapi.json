@@ -164,7 +164,7 @@
           {
             "name": "release_region",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Region" }
+            "schema": { "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion" }
           },
           { "$ref": "#/components/parameters/Limit" },
           { "$ref": "#/components/parameters/After" },
@@ -284,7 +284,7 @@
           {
             "name": "release_region",
             "in": "query",
-            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Region" }
+            "schema": { "$ref": "./schemas/api.schema.json#/$defs/ReleaseRegion" }
           },
           { "$ref": "#/components/parameters/Limit" },
           { "$ref": "#/components/parameters/After" },

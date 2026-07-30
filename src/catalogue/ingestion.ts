@@ -2,6 +2,7 @@ import {
   buildCatalogueExport,
   distributionContextExportId,
   type BuiltCatalogueExport,
+  type ExportObject,
 } from "./export";
 import {
   FixtureInputError,
@@ -1443,12 +1444,7 @@ async function storeAndVerifyExport(
   runId: string,
   revisionId: string,
   writerToken: string,
-  objects: readonly {
-    key: string;
-    bytes: Uint8Array;
-    contentType: string;
-    contentEncoding?: string;
-  }[],
+  objects: readonly ExportObject[],
 ): Promise<void> {
   for (const object of objects) {
     await assertPublicationWriterActive(
@@ -1457,33 +1453,28 @@ async function storeAndVerifyExport(
       revisionId,
       writerToken,
     );
-    const expectedDigest = await sha256(object.bytes);
-    const existing = await bucket.get(object.key);
+    const existing = await bucket.head(object.key);
     if (existing !== null) {
-      if (existing.size !== object.bytes.byteLength) {
-        throw new Error("Immutable Catalogue Export object changed");
-      }
-      const existingDigest = await sha256(await existing.arrayBuffer());
-      if (existingDigest !== expectedDigest) {
+      if (!(await storedExportObjectMatches(bucket, object))) {
         throw new Error("Immutable Catalogue Export object changed");
       }
       continue;
     }
-    await bucket.put(object.key, object.bytes, {
-      httpMetadata: {
-        contentType: object.contentType,
-        ...(object.contentEncoding === undefined
-          ? {}
-          : { contentEncoding: object.contentEncoding }),
-        cacheControl: "private, max-age=31536000, immutable",
-      },
-    });
-    const stored = await bucket.get(object.key);
-    if (
-      stored === null ||
-      stored.size !== object.bytes.byteLength ||
-      (await sha256(await stored.arrayBuffer())) !== expectedDigest
-    ) {
+    const body = object.body();
+    await Promise.all([
+      bucket.put(object.key, body.readable, {
+        sha256: object.sha256,
+        httpMetadata: {
+          contentType: object.contentType,
+          ...(object.contentEncoding === undefined
+            ? {}
+            : { contentEncoding: object.contentEncoding }),
+          cacheControl: "private, max-age=31536000, immutable",
+        },
+      }),
+      body.completed,
+    ]);
+    if (!(await storedExportObjectMatches(bucket, object))) {
       throw new Error("Catalogue Export object verification failed");
     }
     await assertPublicationWriterActive(
@@ -2086,17 +2077,32 @@ async function isExactVerifiedExport(
     return false;
   }
   for (const object of catalogueExport.objects) {
-    const stored = await bucket.get(object.key);
-    if (
-      stored === null ||
-      stored.size !== object.bytes.byteLength ||
-      (await sha256(await stored.arrayBuffer())) !==
-        (await sha256(object.bytes))
-    ) {
+    if (!(await storedExportObjectMatches(bucket, object))) {
       return false;
     }
   }
   return true;
+}
+
+async function storedExportObjectMatches(
+  bucket: R2Bucket,
+  expected: ExportObject,
+): Promise<boolean> {
+  const stored = await bucket.head(expected.key);
+  if (stored === null || stored.size !== expected.byteLength) return false;
+  const checksum = stored.checksums.toJSON().sha256;
+  if (checksum !== undefined) return checksum === expected.sha256;
+  const body = await bucket.get(expected.key);
+  if (body === null) return false;
+  const digest = new crypto.DigestStream("SHA-256");
+  await body.body.pipeTo(digest);
+  return digestHex(await digest.digest) === expected.sha256;
+}
+
+function digestHex(digest: ArrayBuffer): string {
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function publicationFailureProblem(error: unknown): AdministrationProblem {
@@ -3712,18 +3718,26 @@ function isFixtureCandidate(
 ): value is FixtureCandidate {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, [
-      "fixture",
-      "selected_games",
-      "cards",
-      "printings",
-    ]) ||
+    !hasRequiredAndAllowedKeys(
+      value,
+      ["fixture", "selected_games", "cards", "printings"],
+      [
+        "fixture",
+        "selected_games",
+        "cards",
+        "printings",
+        "products",
+        "distribution_contexts",
+        "product_relationships",
+        "product_observed_games",
+        "product_observed_lineages",
+      ],
+    ) ||
     value.fixture !== "first-catalogue" ||
     !Array.isArray(value.selected_games) ||
     value.selected_games.length === 0 ||
     !value.selected_games.every(isSupportedGame) ||
     !Array.isArray(value.cards) ||
-    value.cards.length === 0 ||
     !Array.isArray(value.printings)
   ) {
     return false;
@@ -3758,7 +3772,7 @@ function isFixtureCandidate(
     }
     cardIds.add(card.id);
   }
-  return value.printings.every((printing) => {
+  const printingsValid = value.printings.every((printing) => {
     if (
       !isRecord(printing) ||
       !hasOnlyKeys(printing, [
@@ -3790,6 +3804,25 @@ function isFixtureCandidate(
         isRecord(printing.game_data.attributes))
     );
   });
+  return (
+    printingsValid &&
+    (value.products === undefined ||
+      (Array.isArray(value.products) && value.products.every(isRecord))) &&
+    (value.distribution_contexts === undefined ||
+      (Array.isArray(value.distribution_contexts) &&
+        value.distribution_contexts.every(isRecord))) &&
+    (value.product_relationships === undefined ||
+      (Array.isArray(value.product_relationships) &&
+        value.product_relationships.every(isRecord))) &&
+    (value.product_observed_games === undefined ||
+      (Array.isArray(value.product_observed_games) &&
+        value.product_observed_games.every(isSupportedGame))) &&
+    (value.product_observed_lineages === undefined ||
+      (Array.isArray(value.product_observed_lineages) &&
+        value.product_observed_lineages.every(
+          (lineage) => typeof lineage === "string" && lineage.length > 0,
+        )))
+  );
 }
 
 function validOfficialIdentity(
@@ -3834,6 +3867,18 @@ function hasOnlyKeys(
   return (
     keys.length === expected.length &&
     keys.every((key) => expected.includes(key))
+  );
+}
+
+function hasRequiredAndAllowedKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  allowed: readonly string[],
+): boolean {
+  const keys = Object.keys(value);
+  return (
+    required.every((key) => keys.includes(key)) &&
+    keys.every((key) => allowed.includes(key))
   );
 }
 

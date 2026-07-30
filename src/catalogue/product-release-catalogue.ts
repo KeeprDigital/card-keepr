@@ -53,6 +53,7 @@ export type CatalogueProduct = {
   included: ProductEvidenceResource[];
   provenance: Record<string, string[]>;
   disagreements: ProductDisagreement[];
+  source_observations?: ProductSourceObservation[];
 };
 
 export type CatalogueRelease = {
@@ -80,6 +81,7 @@ export type CatalogueDistributionContext = {
   product_id: string | null;
   evidence_category: EvidenceCategory;
   observed: boolean;
+  source_lineages?: string[];
 };
 
 export type ProductEntityReference = {
@@ -116,7 +118,7 @@ export type ProductReleaseEvidenceInput = {
   currentPrintingId: string | null;
 };
 
-type ObservedProduct = {
+export type ProductSourceObservation = {
   reference: ProductReference;
   id: string;
   officialCode: string | null;
@@ -130,6 +132,8 @@ type ObservedProduct = {
   withdrawal: ProductWithdrawal | null;
   evidence: ProductEvidenceResource;
 };
+
+type ObservedProduct = ProductSourceObservation;
 
 type ParsedObservation = {
   products: ObservedProduct[];
@@ -160,47 +164,91 @@ export async function reconcileProductReleaseCatalogue(
   const observedSurface = evidenceInputs.some(
     ({ value }) => value !== undefined,
   );
-  const observedProducts = resolveObservedProducts(
-    observations.flatMap(({ products }) => products),
-    game,
+  const currentObservations = observations.flatMap(
+    ({ products }) => products,
   );
   const observedProductIds = new Set(
-    observedProducts.map((product) => product.id),
+    currentObservations.map((product) => product.id),
+  );
+  const checkedLineages = new Set(
+    observedSurface
+      ? evidenceInputs.map(({ sourceLineage }) => sourceLineage)
+      : [],
+  );
+  const priorObservations = (prior?.products ?? [])
+    .filter((product) => product.game === game)
+    .flatMap(sourceObservationsForProduct);
+  const preservedObservations = priorObservations.filter(
+    ({ evidence }) => !checkedLineages.has(evidence.source),
+  );
+  const resolvedProducts = resolveObservedProducts(
+    [...preservedObservations, ...currentObservations],
+    game,
+  ).map((product) => ({
+    ...product,
+    observed: observedProductIds.has(product.id),
+  }));
+  const resolvedProductIds = new Set(
+    resolvedProducts.map((product) => product.id),
   );
   const disappearedProducts = (prior?.products ?? []).filter(
     (product) =>
       observedSurface &&
       product.game === game &&
-      !observedProductIds.has(product.id),
+      !observedProductIds.has(product.id) &&
+      sourceObservationsForProduct(product).some(({ evidence }) =>
+        checkedLineages.has(evidence.source),
+      ),
   );
   const products = uniqueById([
     ...(prior?.products ?? [])
       .filter(
         (product) =>
           product.game !== game ||
-          !observedSurface ||
-          !observedProductIds.has(product.id),
+          !resolvedProductIds.has(product.id),
       )
-      .map((product) => ({ ...product, observed: false })),
-    ...observedProducts,
+      .map((product) => ({
+        ...product,
+        observed: false,
+        source_observations:
+          product.game === game && observedSurface
+            ? sourceObservationsForProduct(product).filter(
+                ({ evidence }) => !checkedLineages.has(evidence.source),
+              )
+            : product.source_observations,
+      })),
+    ...resolvedProducts,
   ]);
-  const observedContexts = uniqueById(
+  const observedProducts = products.filter((product) =>
+    observedProductIds.has(product.id),
+  );
+  const observedContexts = aggregateContexts(
     observations.flatMap(({ distributionContexts }) => distributionContexts),
   );
   const observedContextIds = new Set(
     observedContexts.map((context) => context.id),
   );
-  const distributionContexts = uniqueById([
-    ...(prior?.distribution_contexts ?? [])
-      .filter(
-        (context) =>
-          context.game !== game ||
-          !observedSurface ||
-          !observedContextIds.has(context.id),
-      )
-      .map((context) => ({ ...context, observed: false })),
+  const preservedContexts = (prior?.distribution_contexts ?? []).flatMap(
+    (context) => {
+      if (context.game !== game || !observedSurface) return [context];
+      if (context.source_lineages === undefined) return [context];
+      const sourceLineages = (context.source_lineages ?? []).filter(
+        (lineage) => !checkedLineages.has(lineage),
+      );
+      return sourceLineages.length === 0
+        ? []
+        : [{ ...context, source_lineages: sourceLineages }];
+    },
+  );
+  const distributionContexts = aggregateContexts([
+    ...preservedContexts,
     ...observedContexts,
-  ]);
+  ]).map((context) => ({
+    ...context,
+    observed:
+      observedContextIds.has(context.id) ||
+      (context.source_lineages?.length ?? 0) > 0,
+  }));
   const observedRelationships = aggregateRelationships(
     observations.flatMap(({ relationships }) => relationships),
   );
@@ -213,9 +261,16 @@ export async function reconcileProductReleaseCatalogue(
         (relationship) =>
           relationship.game !== game ||
           !observedSurface ||
+          !checkedLineages.has(relationship.source_lineage) ||
           !observedRelationshipIds.has(relationship.id),
       )
-      .map((relationship) => ({ ...relationship, observed: false })),
+      .map((relationship) => ({
+        ...relationship,
+        observed:
+          relationship.game !== game ||
+          !observedSurface ||
+          !checkedLineages.has(relationship.source_lineage),
+      })),
     ...observedRelationships,
   ]);
   return {
@@ -229,6 +284,10 @@ export async function reconcileProductReleaseCatalogue(
       ...disappearedProducts.map((product) => ({
         code: "product_not_observed",
         product_id: product.id,
+        source_lineages: sourceObservationsForProduct(product)
+          .map(({ evidence }) => evidence.source)
+          .filter((lineage) => checkedLineages.has(lineage))
+          .sort(),
         detail:
           "The Product was not observed in this complete run; it remains historical and is not withdrawn.",
       })),
@@ -322,6 +381,7 @@ async function parseProductReleaseObservation(
       product_id: linkedProduct?.id ?? null,
       evidence_category: evidenceCategory(context.evidence_category),
       observed: true,
+      source_lineages: [input.sourceLineage],
     };
     distributionContexts.push(parsed);
     contextsByKey.set(key, parsed);
@@ -535,7 +595,62 @@ function resolveProduct(
     disagreements: disagreements.sort((left, right) =>
       left.path.localeCompare(right.path),
     ),
+    source_observations: [...observations].sort((left, right) =>
+      canonicalJson([
+        left.evidence.source,
+        left.evidence.id,
+      ]).localeCompare(
+        canonicalJson([
+          right.evidence.source,
+          right.evidence.id,
+        ]),
+      ),
+    ),
   };
+}
+
+function sourceObservationsForProduct(
+  product: CatalogueProduct,
+): ProductSourceObservation[] {
+  if (product.source_observations !== undefined) {
+    return product.source_observations;
+  }
+  return product.included.map((evidence) => ({
+    reference: product.reference,
+    id: product.id,
+    officialCode: product.official_code,
+    name: product.name ?? product.reference.value,
+    releases: product.releases.map((release) => ({
+      region: release.region,
+      precision: release.date.precision ?? "unknown",
+      value: release.date.value,
+      status: release.status ?? "announced",
+    })),
+    withdrawal:
+      product.withdrawal?.evidence.source_lineage === evidence.source
+        ? product.withdrawal
+        : null,
+    evidence,
+  }));
+}
+
+function aggregateContexts(
+  contexts: readonly CatalogueDistributionContext[],
+): CatalogueDistributionContext[] {
+  const grouped = new Map<string, CatalogueDistributionContext[]>();
+  for (const context of contexts) {
+    grouped.set(context.id, [...(grouped.get(context.id) ?? []), context]);
+  }
+  return [...grouped.values()]
+    .map((values) => ({
+      ...values.at(-1)!,
+      source_lineages: [
+        ...new Set(
+          values.flatMap(({ source_lineages }) => source_lineages ?? []),
+        ),
+      ].sort(),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function resolveFact<T extends { evidence: ProductEvidenceResource }, V>(

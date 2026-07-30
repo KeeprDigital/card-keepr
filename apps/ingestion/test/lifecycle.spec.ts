@@ -1224,7 +1224,13 @@ test("an interrupted publication finalizes only its exact verified export", asyn
     code: "idempotency_key_reused",
   });
   for (const object of catalogueExport.objects) {
-    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+    const body = object.body();
+    await Promise.all([
+      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, {
+        sha256: object.sha256,
+      }),
+      body.completed,
+    ]);
   }
   const listed = await testEnv.CATALOGUE_EXPORTS.list({
     prefix: `catalogue-exports/${revisionId}/`,
@@ -1236,7 +1242,7 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   );
   for (const object of catalogueExport.objects) {
     expect((await testEnv.CATALOGUE_EXPORTS.get(object.key))?.size).toBe(
-      object.bytes.byteLength,
+      object.byteLength,
     );
   }
 
@@ -1657,7 +1663,13 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
     testObservedAt,
   );
   for (const object of catalogueExport.objects) {
-    await testEnv.CATALOGUE_EXPORTS.put(object.key, object.bytes);
+    const body = object.body();
+    await Promise.all([
+      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, {
+        sha256: object.sha256,
+      }),
+      body.completed,
+    ]);
   }
   await testEnv.CATALOGUE_EXPORTS.put(
     `catalogue-exports/${revisionId}/unexpected.bin`,

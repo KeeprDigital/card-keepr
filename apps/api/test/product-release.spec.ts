@@ -293,6 +293,66 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
   }
 });
 
+test("an explicitly unknown Release region is readable and schema-valid", async () => {
+  const product = {
+    type: "product",
+    id: "product_unknown_region",
+    game: "digimon",
+    official_code: "BT-UNKNOWN",
+    name: "Unknown-region Product",
+    releases: [
+      {
+        id: "release_unknown_region",
+        region: "unknown",
+        date: { precision: "unknown", value: null },
+        status: "announced",
+      },
+    ],
+    lifecycle: {
+      first_revision_id: "catrev_products",
+      last_observed_revision_id: "catrev_products",
+      withdrawn: false,
+    },
+    links: { self: "/v1/products/product_unknown_region" },
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO revision_products (
+       catalogue_revision_id, product_id, supported_game, official_code,
+       name, search_text, release_regions_json, document_json
+     ) VALUES (
+       'catrev_products', 'product_unknown_region', 'digimon',
+       'BT-UNKNOWN', 'Unknown-region Product',
+       'bt-unknown unknown-region product', '["unknown"]', ?
+     )`,
+  )
+    .bind(
+      JSON.stringify({
+        data: product,
+        included: [],
+        provenance: {},
+        disagreements: [],
+      }),
+    )
+    .run();
+
+  try {
+    const detail = await api("/v1/products/product_unknown_region");
+    expect(detail.status).toBe(200);
+    expectSchema("ProductDocument", await detail.json());
+    const filtered = await api(
+      "/v1/products?game=digimon&release_region=unknown",
+    );
+    expect(filtered.status).toBe(200);
+    expectSchema("ProductCollection", await filtered.json());
+  } finally {
+    await testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM revision_products
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND product_id = 'product_unknown_region'`,
+    ).run();
+  }
+});
+
 test("Product cursors pin the route and preserve filtered keyset order", async () => {
   const earlier = {
     type: "product",

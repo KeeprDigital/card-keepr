@@ -8,16 +8,12 @@ addFormats(ajv);
 const validateManifest = ajv.compile(manifestSchema);
 const validateRecord = ajv.compile(recordSchema);
 
-export function verifyExportSchemas(
-  manifest: unknown,
-  componentRecords: readonly (readonly unknown[])[],
-): void {
+export function verifyExportManifest(manifest: unknown): void {
   assertValid(validateManifest, manifest, "manifest");
-  for (const records of componentRecords) {
-    for (const record of records) {
-      assertValid(validateRecord, record, "record");
-    }
-  }
+}
+
+export function verifyExportRecord(record: unknown): void {
+  assertValid(validateRecord, record, "record");
 }
 
 function assertValid(

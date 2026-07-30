@@ -24,6 +24,9 @@
     "Region": {
       "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
     },
+    "ReleaseRegion": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
+    },
     "Meta": {
       "type": "object",
       "additionalProperties": false,
@@ -380,7 +383,7 @@
       "required": ["id", "region", "date", "status"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
-        "region": { "$ref": "#/$defs/Region" },
+        "region": { "$ref": "#/$defs/ReleaseRegion" },
         "date": { "$ref": "#/$defs/ReleaseDate" },
         "status": {
           "oneOf": [

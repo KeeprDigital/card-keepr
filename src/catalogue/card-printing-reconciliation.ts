@@ -463,6 +463,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     product_observed_games: productCatalogue.productSurfaceObserved
       ? [retained.supportedGame]
       : [],
+    product_observed_lineages: productCatalogue.productSurfaceObserved
+      ? [retained.sourceLineage]
+      : [],
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (

@@ -57,6 +57,9 @@ export async function productReleaseLifecyclePlan(
     ),
   ]);
   const observedGames = new Set(candidate.product_observed_games ?? []);
+  const observedLineages = new Set(
+    candidate.product_observed_lineages ?? [],
+  );
   return {
     products: Object.fromEntries(
       products.map((product) => {
@@ -99,22 +102,30 @@ export async function productReleaseLifecyclePlan(
     relationships: Object.fromEntries(
       relationships.map((relationship) => {
         const existing = existingRelationships.get(relationship.id);
+        const lineageObserved =
+          observedLineages.size === 0
+            ? observedGames.has(relationship.game)
+            : observedLineages.has(relationship.source_lineage);
         const disappeared =
-          !relationship.observed && observedGames.has(relationship.game);
+          !relationship.observed &&
+          observedGames.has(relationship.game) &&
+          lineageObserved;
         return [
           relationship.id,
           {
             first_revision_id:
               existing?.first_revision_id ?? revisionId,
-            last_observed_revision_id: relationship.observed
+            last_observed_revision_id:
+              relationship.observed && lineageObserved
               ? revisionId
               : existing?.last_observed_revision_id ?? revisionId,
-            current: relationship.observed
-              ? true
+            current: lineageObserved
+              ? relationship.observed
               : disappeared
                 ? false
                 : existing?.current === 1,
-            last_missing_revision_id: relationship.observed
+            last_missing_revision_id:
+              relationship.observed && lineageObserved
               ? null
               : disappeared
                 ? revisionId

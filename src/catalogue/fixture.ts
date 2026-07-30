@@ -24,6 +24,7 @@ export type FixtureCandidate = {
   distribution_contexts?: readonly CatalogueDistributionContext[];
   product_relationships?: readonly ProductRelationship[];
   product_observed_games?: readonly SupportedGame[];
+  product_observed_lineages?: readonly string[];
 };
 
 export type FixtureCard = {

@@ -285,7 +285,7 @@ function assertFilter(game: string | null, region: string | null): void {
   }
   if (
     region !== null &&
-    !["EN-OCEANIA", "EN-ASIA", "EN-US"].includes(region)
+    !["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"].includes(region)
   ) {
     throw new ProductReadProblem(
       400,

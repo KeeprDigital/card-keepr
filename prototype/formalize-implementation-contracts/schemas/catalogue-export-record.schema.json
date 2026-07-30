@@ -29,7 +29,10 @@
     "SupportedGame": {
       "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
     },
-    "Locale": {
+    "Region": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
+    },
+    "ReleaseRegion": {
       "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
     },
     "Date": {
@@ -187,7 +190,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/Locale" }
+          "items": { "$ref": "#/$defs/Region" }
         },
         "game_profile": { "type": "string", "minLength": 1 }
       }
@@ -305,7 +308,7 @@
         "type": { "const": "release" },
         "id": { "$ref": "#/$defs/OpaqueId" },
         "product_id": { "$ref": "#/$defs/OpaqueId" },
-        "region": { "$ref": "#/$defs/Locale" },
+        "region": { "$ref": "#/$defs/ReleaseRegion" },
         "date": {
           "type": "object",
           "additionalProperties": false,
@@ -387,7 +390,7 @@
         "type": { "const": "legality_rule" },
         "id": { "$ref": "#/$defs/OpaqueId" },
         "game": { "$ref": "#/$defs/SupportedGame" },
-        "region": { "$ref": "#/$defs/Locale" },
+        "region": { "$ref": "#/$defs/Region" },
         "format": { "type": "string", "minLength": 1 },
         "event_tier": { "$ref": "#/$defs/NullableText" },
         "effective_from": { "$ref": "#/$defs/Date" },

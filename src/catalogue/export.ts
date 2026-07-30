@@ -5,7 +5,10 @@ import type {
   RelationshipEvidence,
 } from "./reconciliation-publication";
 import { exportedGameProfileSchema } from "./reconciliation-profile";
-import { verifyExportSchemas } from "./export-validation";
+import {
+  verifyExportManifest,
+  verifyExportRecord,
+} from "./export-validation";
 import {
   canonicalJson,
   sha256,
@@ -27,11 +30,15 @@ const componentDefinitions = [
   ["relationships", "RelationshipRecord", "id:utf8"],
 ] as const;
 const maximumExportRecordBytes = 524_288;
-const targetExportChunkBytes = 262_144;
 
 export type ExportObject = {
   key: string;
-  bytes: Uint8Array;
+  byteLength: number;
+  sha256: string;
+  body: () => {
+    readable: ReadableStream<Uint8Array>;
+    completed: Promise<void>;
+  };
   contentType: string;
   contentEncoding?: string;
 };
@@ -102,7 +109,7 @@ export async function buildCatalogueExport(
   },
   sourceFreshness?: Readonly<Partial<Record<SupportedGame, string>>>,
 ): Promise<BuiltCatalogueExport> {
-  const records = await exportRecords(
+  const recordFactories = await exportRecordFactories(
     candidate,
     catalogueRevisionId,
     lifecycles,
@@ -111,30 +118,33 @@ export async function buildCatalogueExport(
   const objects: ExportObject[] = [];
 
   for (const [name, schemaDefinition, order] of componentDefinitions) {
-    const componentRecords = records[name];
-    const { uncompressed, compressed } =
-      await chunkedComponentBytes(componentRecords);
-    const [contentDigest, compressedDigest] = await Promise.all([
-      sha256(uncompressed),
-      sha256(compressed),
-    ]);
-    const key = `catalogue-exports/${catalogueRevisionId}/components/${compressedDigest}.ndjson.gz`;
+    const records = recordFactories[name];
+    const analysis = await analyseComponent(records);
+    const key = `catalogue-exports/${catalogueRevisionId}/components/${analysis.compressedSha256}.ndjson.gz`;
     components.push({
       name,
       media_type: "application/x-ndjson",
       compression: "gzip",
       record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/${schemaDefinition}`,
       order,
-      records: componentRecords.length,
-      uncompressed_bytes: uncompressed.byteLength,
-      content_sha256: contentDigest,
-      compressed_bytes: compressed.byteLength,
-      compressed_sha256: compressedDigest,
+      records: analysis.records,
+      uncompressed_bytes: analysis.uncompressedBytes,
+      content_sha256: analysis.contentSha256,
+      compressed_bytes: analysis.compressedBytes,
+      compressed_sha256: analysis.compressedSha256,
       content_url: `/v1/catalogue-exports/${catalogueRevisionId}/components/${name}`,
     });
     objects.push({
       key,
-      bytes: compressed,
+      byteLength: analysis.compressedBytes,
+      sha256: analysis.compressedSha256,
+      body: () =>
+        fixedLengthBody(
+          catalogueRecordStream(records()).pipeThrough(
+            new CompressionStream("gzip"),
+          ),
+          analysis.compressedBytes,
+        ),
       contentType: "application/x-ndjson",
       contentEncoding: "gzip",
     });
@@ -157,7 +167,7 @@ export async function buildCatalogueExport(
         area: "cards-and-printings" as const,
         checked_at: sourceFreshness?.[game] ?? publishedAt,
       },
-      ...((candidate.products ?? []).some((product) => product.game === game)
+      ...(candidate.product_observed_games?.includes(game)
         ? [
             {
               game,
@@ -177,15 +187,16 @@ export async function buildCatalogueExport(
     ...manifestWithPlaceholder,
     manifest_sha256: manifestDigest,
   };
-  verifyExportSchemas(
-    manifest,
-    componentDefinitions.map(([name]) => records[name]),
-  );
+  verifyExportManifest(manifest);
   const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
   const manifestKey = `catalogue-exports/${catalogueRevisionId}/manifest.json`;
+  const manifestObjectDigest = await sha256(manifestBytes);
   const manifestObject = {
     key: manifestKey,
-    bytes: manifestBytes,
+    byteLength: manifestBytes.byteLength,
+    sha256: manifestObjectDigest,
+    body: () =>
+      fixedLengthBody(byteStream(manifestBytes), manifestBytes.byteLength),
     contentType: "application/json",
   };
   const boundedObjects = [...objects, manifestObject];
@@ -198,62 +209,120 @@ export async function buildCatalogueExport(
   };
 }
 
-async function chunkedComponentBytes(records: readonly unknown[]): Promise<{
-  uncompressed: Uint8Array;
-  compressed: Uint8Array;
+type ExportRecordFactory = () => Iterable<unknown>;
+
+async function analyseComponent(
+  records: ExportRecordFactory,
+): Promise<{
+  records: number;
+  uncompressedBytes: number;
+  contentSha256: string;
+  compressedBytes: number;
+  compressedSha256: string;
 }> {
-  const chunks: Uint8Array[] = [];
-  let current: Uint8Array[] = [];
-  let currentBytes = 0;
-  for (const record of records) {
-    const bytes = utf8(`${canonicalJson(record)}\n`);
-    if (bytes.byteLength > maximumExportRecordBytes) {
-      throw new Error("One Catalogue Export record exceeds 512 KiB.");
+  const statistics = { records: 0 };
+  const contentDigest = new crypto.DigestStream("SHA-256");
+  const compressedDigest = new crypto.DigestStream("SHA-256");
+  const compression = new CompressionStream("gzip");
+  const contentWriter = contentDigest.getWriter();
+  const compressionWriter = compression.writable.getWriter();
+  const compressed = compression.readable.pipeTo(compressedDigest);
+  const reader = catalogueRecordStream(
+    records(),
+    statistics,
+  ).getReader();
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      await Promise.all([
+        contentWriter.write(next.value),
+        compressionWriter.write(next.value),
+      ]);
     }
-    if (
-      current.length > 0 &&
-      currentBytes + bytes.byteLength > targetExportChunkBytes
-    ) {
-      chunks.push(concatenateBytes(current));
-      current = [];
-      currentBytes = 0;
-    }
-    current.push(bytes);
-    currentBytes += bytes.byteLength;
+    await Promise.all([
+      contentWriter.close(),
+      compressionWriter.close(),
+    ]);
+    await compressed;
+  } catch (error) {
+    await Promise.allSettled([
+      reader.cancel(error),
+      contentWriter.abort(error),
+      compressionWriter.abort(error),
+      compressed,
+    ]);
+    throw error;
   }
-  if (current.length > 0) chunks.push(concatenateBytes(current));
-  if (chunks.length === 0) chunks.push(new Uint8Array());
-  const uncompressed = concatenateBytes(chunks);
+  const [contentSha256, compressedSha256] = await Promise.all([
+    contentDigest.digest,
+    compressedDigest.digest,
+  ]);
   return {
-    uncompressed,
-    compressed: await gzipChunks(chunks),
+    records: statistics.records,
+    uncompressedBytes: Number(contentDigest.bytesWritten),
+    contentSha256: digestHex(contentSha256),
+    compressedBytes: Number(compressedDigest.bytesWritten),
+    compressedSha256: digestHex(compressedSha256),
   };
 }
 
-async function gzipChunks(
-  chunks: readonly Uint8Array[],
-): Promise<Uint8Array> {
-  const stream = new CompressionStream("gzip");
-  const writer = stream.writable.getWriter();
-  const compressed = new Response(stream.readable).arrayBuffer();
-  for (const chunk of chunks) await writer.write(chunk);
-  await writer.close();
-  return new Uint8Array(await compressed);
+function catalogueRecordStream(
+  records: Iterable<unknown>,
+  statistics?: { records: number },
+): ReadableStream<Uint8Array> {
+  const iterator = records[Symbol.iterator]();
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = iterator.next();
+      if (next.done) {
+        controller.close();
+        return;
+      }
+      verifyExportRecord(next.value);
+      const bytes = utf8(`${canonicalJson(next.value)}\n`);
+      if (bytes.byteLength > maximumExportRecordBytes) {
+        controller.error(
+          new Error("One Catalogue Export record exceeds 512 KiB."),
+        );
+        return;
+      }
+      if (statistics !== undefined) statistics.records += 1;
+      controller.enqueue(bytes);
+    },
+  });
 }
 
-function concatenateBytes(values: readonly Uint8Array[]): Uint8Array {
-  const result = new Uint8Array(
-    values.reduce((total, value) => total + value.byteLength, 0),
-  );
-  let offset = 0;
-  for (const value of values) {
-    result.set(value, offset);
-    offset += value.byteLength;
-  }
-  return result;
+function byteStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
 }
 
-async function exportRecords(
+function fixedLengthBody(
+  source: ReadableStream<Uint8Array>,
+  byteLength: number,
+): {
+  readable: ReadableStream<Uint8Array>;
+  completed: Promise<void>;
+} {
+  const fixed = new FixedLengthStream(byteLength);
+  return {
+    readable: fixed.readable,
+    completed: source.pipeTo(fixed.writable),
+  };
+}
+
+function digestHex(digest: ArrayBuffer): string {
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function exportRecordFactories(
   candidate: FixtureCandidate,
   revisionId: string,
   lifecycles?: {
@@ -275,7 +344,7 @@ async function exportRecords(
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
 ): Promise<
-  Record<(typeof componentDefinitions)[number][0], readonly unknown[]>
+  Record<(typeof componentDefinitions)[number][0], ExportRecordFactory>
 > {
   const defaultLifecycle = {
     first_revision_id: revisionId,
@@ -402,22 +471,22 @@ async function exportRecords(
     })),
   ]);
   return {
-    "supported-games": candidate.selected_games.map((game) => ({
+    "supported-games": () => candidate.selected_games.map((game) => ({
         type: "supported_game",
         ...supportedGameExport(game),
       })),
-    "game-profiles": candidate.selected_games.map((game) => ({
+    "game-profiles": () => candidate.selected_games.map((game) => ({
         type: "game_profile",
         profile: `${game}@1`,
         game,
         schema: exportedGameProfileSchema(`${game}@1`),
       })),
-    cards: candidate.cards.map((card) => ({
+    cards: () => candidate.cards.map((card) => ({
       type: "card",
       ...card,
       lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
     })),
-    printings: candidate.printings.map((printing) => ({
+    printings: () => candidate.printings.map((printing) => ({
       type: "printing",
       ...printing,
       locator_evidence: lifecycles?.locators?.[printing.id] ?? {
@@ -426,9 +495,9 @@ async function exportRecords(
       },
       lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
     })),
-    "printing-images": [],
-    products,
-    releases: (candidate.products ?? [])
+    "printing-images": () => [],
+    products: () => products,
+    releases: () => (candidate.products ?? [])
       .flatMap((product) =>
         product.releases.map((release) => ({
           type: "release",
@@ -436,10 +505,10 @@ async function exportRecords(
         })),
       )
       .sort((left, right) => left.id.localeCompare(right.id)),
-    "distribution-contexts": distributionContexts,
-    errata: [],
-    "legality-rules": [],
-    relationships: uniqueById([
+    "distribution-contexts": () => distributionContexts,
+    errata: () => [],
+    "legality-rules": () => [],
+    relationships: () => uniqueById([
       ...identifiedRelationships
       .map(({ printing, relationship, relationshipId, targetId }) => ({
         type: "relationship",
