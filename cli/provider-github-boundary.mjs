@@ -5,6 +5,12 @@ const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
 const probeWorkflow = "credential-boundary-probe.yml";
 const githubApi = "https://api.github.com";
+const exactInstallationPermissions = Object.freeze({
+  actions: "write",
+  contents: "read",
+  environments: "write",
+  metadata: "read",
+});
 
 export async function verifyGithubManagementAuthority({
   credential,
@@ -14,6 +20,47 @@ export async function verifyGithubManagementAuthority({
   workflowId,
   requiredPolicy,
 }) {
+  const installation = await githubRequest(
+    credential,
+    `/app/installations/${installationId}`,
+  );
+  if (
+    !installation.ok ||
+    installation.document?.id !== Number(installationId) ||
+    installation.document?.repository_selection !== "selected" ||
+    !exactObject(
+      installation.document?.permissions,
+      exactInstallationPermissions,
+    )
+  ) {
+    return null;
+  }
+  const minted = await githubRequest(
+    credential,
+    `/app/installations/${installationId}/access_tokens`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        repository_ids: [Number(repositoryId)],
+        permissions: exactInstallationPermissions,
+      }),
+    },
+  );
+  if (
+    !minted.ok ||
+    typeof minted.document?.token !== "string" ||
+    minted.document.token.length < 20 ||
+    !exactObject(
+      minted.document.permissions,
+      exactInstallationPermissions,
+    ) ||
+    !Array.isArray(minted.document.repositories) ||
+    minted.document.repositories.length !== 1 ||
+    minted.document.repositories[0]?.id !== Number(repositoryId)
+  ) {
+    return null;
+  }
+  const installationToken = minted.document.token;
   const [
     repositories,
     repositoryDocument,
@@ -22,17 +69,17 @@ export async function verifyGithubManagementAuthority({
     viewer,
   ] =
     await Promise.all([
-      githubRequest(credential, "/installation/repositories"),
-      githubRequest(credential, `/repositories/${repositoryId}`),
+      githubRequest(installationToken, "/installation/repositories"),
+      githubRequest(installationToken, `/repositories/${repositoryId}`),
       githubRequest(
-        credential,
+        installationToken,
         `/repos/${repository}/environments/${environmentName}`,
       ),
       githubRequest(
-        credential,
+        installationToken,
         `/repos/${repository}/actions/workflows/${workflowId}`,
       ),
-      githubRequest(credential, "/graphql", {
+      githubRequest(installationToken, "/graphql", {
         method: "POST",
         body: JSON.stringify({
           query: "query { viewer { login } }",
@@ -55,6 +102,7 @@ export async function verifyGithubManagementAuthority({
     `:workflow:${workflowId}` +
     ":actions=write,contents=read,environments=write,metadata=read";
   const authority = {
+    installation: installation.document,
     repositories: repositories.document,
     repository: repositoryDocument.document,
     environment: environment.document,
@@ -79,6 +127,7 @@ export async function verifyGithubManagementAuthority({
     repositories_count: 1,
     permission_policy: requiredPolicy,
     expected_actor: viewer.document.data.viewer.login,
+    installation_token: installationToken,
   };
 }
 
@@ -91,27 +140,20 @@ export function githubAuthorityMatches({
   viewer,
   expected,
 }) {
-  if (repositories !== undefined) {
-    return (
-      repositories?.repository_selection === "selected" &&
-      repositories?.total_count === 1 &&
-      Array.isArray(repositories.repositories) &&
-      repositories.repositories.length === 1 &&
-      repositories.repositories[0]?.id ===
-        Number(expected.repositoryId) &&
-      safeBotActor(viewer?.data?.viewer?.login) &&
-      exactGithubTargets(
-        repositoryDocument,
-        environment,
-        workflow,
-        expected,
-      )
-    );
-  }
   return (
     installation?.id === Number(expected.installationId) &&
-    (expected.permissions === undefined ||
-      exactObject(installation.permissions, expected.permissions)) &&
+    installation?.repository_selection === "selected" &&
+    exactObject(
+      installation.permissions,
+      expected.permissions ?? exactInstallationPermissions,
+    ) &&
+    repositories?.repository_selection === "selected" &&
+    repositories?.total_count === 1 &&
+    Array.isArray(repositories.repositories) &&
+    repositories.repositories.length === 1 &&
+    repositories.repositories[0]?.id ===
+      Number(expected.repositoryId) &&
+    safeBotActor(viewer?.data?.viewer?.login) &&
     exactGithubTargets(
       repositoryDocument,
       environment,

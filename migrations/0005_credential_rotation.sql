@@ -48,6 +48,7 @@ CREATE TABLE credential_rotation_plans (
   execution_owner_hash TEXT,
   execution_capability_hash TEXT,
   execution_capability_consumed_at TEXT,
+  boundary_attestation_issued_at TEXT,
   finalized_at TEXT,
   attestation_digest TEXT
 );
@@ -173,6 +174,8 @@ WHEN OLD.status = 'executing' AND NEW.status = 'finalized'
   AND (
     NEW.attestation_digest IS NULL
     OR NEW.finalized_at IS NULL
+    OR NEW.execution_capability_consumed_at IS NULL
+    OR NEW.boundary_attestation_issued_at IS NULL
     OR NOT EXISTS (
       SELECT 1
       FROM operation_state AS operation

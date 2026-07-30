@@ -78,6 +78,7 @@ const ingestionWorker = {
           request,
           env.CATALOGUE_DB,
           administrationObservedAt(request, env),
+          env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
         );
       if (executionCapability !== null) return executionCapability;
       const rateLimited = await rateLimitFailure(

@@ -9,7 +9,7 @@ import {
 } from "./cloudflare-authority.mjs";
 
 type ConsumerProofEnvironment = {
-  CREDENTIAL_BOUNDARY_ATTESTATION_KEY: string;
+  CREDENTIAL_CONSUMER_PROOF_KEY: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CATALOGUE_D1_DATABASE_ID?: string;
   DISPOSABLE_D1_DATABASE_ID?: string;
@@ -45,7 +45,7 @@ export async function handleCredentialConsumerProof(
   }
   const supplied = request.headers.get("x-keepr-boundary-signature");
   const expected = await hmac(
-    environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+    environment.CREDENTIAL_CONSUMER_PROOF_KEY,
     text,
   );
   if (
@@ -97,7 +97,7 @@ export async function handleCredentialConsumerProof(
       body.challenge,
       body.slot as string,
       "unusable",
-      environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+      environment.CREDENTIAL_CONSUMER_PROOF_KEY,
     );
   }
   if (
@@ -112,13 +112,17 @@ export async function handleCredentialConsumerProof(
       { status: 409 },
     );
   }
-  const capable =
+  const capability =
     credentialClass === "api_bearer_key" ||
     credentialClass === "ingestion_admin_key"
-      ? await normalBearerProbe(
-          secret,
-          credentialClass as CredentialClass,
-        )
+      ? {
+          ok: await normalBearerProbe(
+            secret,
+            credentialClass as CredentialClass,
+          ),
+          mutation_started: false,
+          cleanup: "not-applicable",
+        }
       : await probeD1Capability(
           credentialClass,
           secret,
@@ -126,9 +130,21 @@ export async function handleCredentialConsumerProof(
           body.expected_fingerprint.slice("sha256:".length),
           body.challenge,
         );
-  if (!capable) {
+  if (!capability.ok) {
+    const unresolvedMutation =
+      capability.mutation_started &&
+      capability.cleanup !== "complete";
     return Response.json(
-      { code: "credential_capability_mismatch" },
+      {
+        code: "credential_capability_mismatch",
+        journal: {
+          contract: "card-keepr-provider-mutation-journal@1",
+          mutation_started: unresolvedMutation,
+          steps: [
+            `consumer-proof-cleanup:${capability.cleanup}`,
+          ],
+        },
+      },
       { status: 409 },
     );
   }
@@ -138,7 +154,7 @@ export async function handleCredentialConsumerProof(
     body.challenge,
     body.slot as string,
     "usable",
-    environment.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+    environment.CREDENTIAL_CONSUMER_PROOF_KEY,
   );
 }
 
@@ -185,7 +201,11 @@ async function probeD1Capability(
   environment: ConsumerProofEnvironment,
   planDigest: string,
   challenge: string,
-): Promise<boolean> {
+): Promise<{
+  ok: boolean;
+  mutation_started: boolean;
+  cleanup: string;
+}> {
   const definition = credentialClassDefinitions[credentialClass];
   const databaseId = environment[
     definition.database_environment_key as keyof ConsumerProofEnvironment
@@ -194,7 +214,11 @@ async function probeD1Capability(
     environment.CLOUDFLARE_ACCOUNT_ID === undefined ||
     databaseId === undefined
   ) {
-    return false;
+    return {
+      ok: false,
+      mutation_started: false,
+      cleanup: "not-started",
+    };
   }
   const result = await probeD1Credential({
     request: (pathname: string, init?: RequestInit) =>
@@ -212,7 +236,7 @@ async function probeD1Capability(
     planDigest,
     challenge,
   });
-  return result.ok;
+  return result;
 }
 
 async function sha256(value: string): Promise<string> {

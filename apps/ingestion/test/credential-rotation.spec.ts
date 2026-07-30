@@ -147,13 +147,29 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
   const fabricated = await finalize(plan, `v1.${base64Url("{}")}.${"0".repeat(64)}`);
   expect(fabricated.status).toBe(409);
   await expect(fabricated.json()).resolves.toMatchObject({
-    code: "invalid_boundary_attestation",
+    code: "credential_provider_execution_required",
   });
 
+  const synthetic = await locallySignedAttestation(
+    plan,
+    "usable",
+    finalizedAt,
+  );
+  await consumeExecutionCapability(plan, finalizedAt);
+  const skippedProvider = await finalize(
+    plan,
+    synthetic,
+    finalizedAt,
+  );
+  expect(skippedProvider.status).toBe(409);
+  await expect(skippedProvider.json()).resolves.toMatchObject({
+    code: "credential_provider_execution_required",
+  });
   const attestation = await signedAttestation(
     plan,
     "usable",
     finalizedAt,
+    true,
   );
   const finalized = await finalize(
     plan,
@@ -465,6 +481,53 @@ test("execution capabilities are plan-bound and consumed exactly once before pro
     },
   );
   expect(replay.status).toBe(409);
+});
+
+test("an expired execution capability cannot be consumed or finalized", async () => {
+  const plan = await reserve(
+    await planInput(
+      "install",
+      "d1_export_token",
+      0,
+      "credrot_expired_execution_capability",
+    ),
+    "2026-07-29T00:00:00.000Z",
+  );
+  await execute(plan, "2026-07-29T00:01:00.000Z");
+  const expired = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/execution-capability`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+    },
+    undefined,
+    "2026-07-29T00:12:00.000Z",
+  );
+  expect(expired.status).toBe(409);
+  await expect(expired.json()).resolves.toMatchObject({
+    code: "invalid_execution_capability",
+  });
+});
+
+test("a failed D1 consumer proof reports unresolved cleanup mutation", async () => {
+  const response = await consumerProofRequest(
+    "d1_verification_token",
+    await fingerprint(
+      "vitest-d1-verification-token-replacement",
+    ),
+    "a".repeat(64),
+  );
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "credential_capability_mismatch",
+    journal: {
+      contract: "card-keepr-provider-mutation-journal@1",
+      mutation_started: true,
+      steps: ["consumer-proof-cleanup:failed"],
+    },
+  });
 });
 
 test("API, administration, and provider credentials complete two A/B generations without reusing a live slot", async () => {
@@ -815,8 +878,37 @@ async function signedAttestation(
   plan: PlanDocument,
   oldStatus: "usable" | "unusable",
   observedAt = new Date().toISOString(),
+  capabilityAlreadyConsumed = false,
 ): Promise<string> {
-  const payload = {
+  const facts = boundaryFacts(plan, oldStatus, observedAt);
+  if (!capabilityAlreadyConsumed) {
+    await consumeExecutionCapability(plan, observedAt);
+  }
+  const response = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+      facts,
+    },
+    undefined,
+    observedAt,
+  );
+  expect(response.status).toBe(200);
+  const document = await response.json<{
+    boundary_attestation: string;
+  }>();
+  return document.boundary_attestation;
+}
+
+function boundaryFacts(
+  plan: PlanDocument,
+  oldStatus: "usable" | "unusable",
+  observedAt: string,
+): Record<string, unknown> {
+  return {
     version: 1,
     plan_id: plan.id,
     plan_digest: plan.plan_digest,
@@ -857,6 +949,14 @@ async function signedAttestation(
     execution_attempt: plan.execution_attempt,
     execution_mode: plan.execution_mode,
   };
+}
+
+async function locallySignedAttestation(
+  plan: PlanDocument,
+  oldStatus: "usable" | "unusable",
+  observedAt: string,
+): Promise<string> {
+  const payload = boundaryFacts(plan, oldStatus, observedAt);
   const encoded = base64Url(JSON.stringify(payload));
   const key = await crypto.subtle.importKey(
     "raw",
@@ -874,6 +974,24 @@ async function signedAttestation(
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
   return `v1.${encoded}.${hex}`;
+}
+
+async function consumeExecutionCapability(
+  plan: PlanDocument,
+  observedAt?: string,
+): Promise<void> {
+  const response = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/execution-capability`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+    },
+    undefined,
+    observedAt,
+  );
+  expect(response.status).toBe(200);
 }
 
 function base64Url(value: string): string {
@@ -925,7 +1043,7 @@ async function consumerProofRequest(
   });
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode("vitest-boundary-attestation-key"),
+    new TextEncoder().encode("vitest-consumer-proof-key"),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],

@@ -25,6 +25,12 @@ export default defineConfig({
           ADMINISTRATION_CLOCK_MODE: "request",
           CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
             "vitest-boundary-attestation-key",
+          CREDENTIAL_CONSUMER_PROOF_KEY:
+            "vitest-consumer-proof-key",
+          D1_VERIFICATION_TOKEN:
+            "vitest-d1-verification-token-active",
+          D1_VERIFICATION_TOKEN_REPLACEMENT:
+            "vitest-d1-verification-token-replacement",
           GITHUB_REPOSITORY_ID: "1313489088",
           GITHUB_INSTALLATION_ID: "22222222",
           GITHUB_ENVIRONMENT_ID: "33333333",
@@ -33,6 +39,24 @@ export default defineConfig({
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/query")
+          ) {
+            const body = await request.clone().json<{
+              sql?: string;
+            }>();
+            if (body.sql?.startsWith("CREATE TABLE")) {
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            return Response.json(
+              { success: false, errors: [{ code: 9000 }] },
+              { status: 500 },
+            );
+          }
           if (!url.hostname.endsWith("official-source.invalid")) {
             return new Response("unknown synthetic Official Source", {
               status: 404,

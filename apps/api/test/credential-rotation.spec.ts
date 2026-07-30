@@ -147,7 +147,7 @@ async function consumerProof(
 async function hmac(value: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode("vitest-boundary-attestation-key"),
+    new TextEncoder().encode("vitest-consumer-proof-key"),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],

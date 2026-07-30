@@ -1,4 +1,4 @@
 # Copy to .dev.vars and replace this non-secret type-generation placeholder.
 API_BEARER_KEY=generated-type-placeholder
 API_BEARER_KEY_REPLACEMENT=generated-type-placeholder-replacement
-CREDENTIAL_BOUNDARY_ATTESTATION_KEY=generated-type-placeholder-attestation
+CREDENTIAL_CONSUMER_PROOF_KEY=generated-type-placeholder-consumer-proof

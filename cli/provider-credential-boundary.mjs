@@ -24,36 +24,49 @@ import {
   verifyGithubManagementAuthority,
 } from "./provider-github-boundary.mjs";
 
-const [
-  action,
-  planId,
-  planDigest,
-  planNonce,
-  credentialClass,
-  cloudflareAccountId,
-  resourceIdentity,
-  owningBoundary,
-  verificationTarget,
-  productionTargetIdentity,
-  requiredPermission,
-  cloudflareManagementRequiredPermissions,
-  consumerInstallationIdentity,
-  executionMode,
-  executionAttempt,
-  oldFingerprint,
-  replacementFingerprint,
-  oldIssuerCredentialId,
-  replacementIssuerCredentialId,
-  managementCredentialId,
-  githubManagementCredentialId,
-  githubManagementCredentialFingerprint,
-  githubManagementRequiredPermission,
-  oldConsumerSlot,
-  replacementConsumerSlot,
-  executionCapability,
-  executionValidationUrl,
-] = process.argv.slice(2);
-const secrets = await readInput();
+const envelope = await readInput();
+const plan =
+  envelope?.contract === "card-keepr-provider-request@1" &&
+  envelope.plan !== null &&
+  typeof envelope.plan === "object" &&
+  envelope.secrets !== null &&
+  typeof envelope.secrets === "object"
+    ? envelope.plan
+    : {};
+const secrets = envelope?.secrets ?? {};
+const action = plan.action;
+const planId = plan.id;
+const planDigest = plan.plan_digest;
+const planNonce = plan.plan_nonce;
+const credentialClass = plan.credential_class;
+const cloudflareAccountId = plan.cloudflare_account_id;
+const resourceIdentity = plan.resource_identity;
+const owningBoundary = plan.owning_boundary;
+const verificationTarget = plan.verification_target;
+const productionTargetIdentity = plan.production_target_identity;
+const requiredPermission = plan.required_permission;
+const cloudflareManagementRequiredPermissions =
+  plan.cloudflare_management_required_permissions;
+const consumerInstallationIdentity =
+  plan.consumer_installation_identity;
+const executionMode = plan.execution_mode;
+const executionAttempt = String(plan.execution_attempt ?? "");
+const oldFingerprint = plan.old_fingerprint;
+const replacementFingerprint = plan.replacement_fingerprint;
+const oldIssuerCredentialId = plan.old_issuer_credential_id;
+const replacementIssuerCredentialId =
+  plan.replacement_issuer_credential_id;
+const managementCredentialId = plan.management_credential_id;
+const githubManagementCredentialId =
+  plan.github_management_credential_id;
+const githubManagementCredentialFingerprint =
+  plan.github_management_credential_fingerprint;
+const githubManagementRequiredPermission =
+  plan.github_management_required_permission;
+const oldConsumerSlot = plan.old_consumer_slot;
+const replacementConsumerSlot = plan.replacement_consumer_slot;
+const executionCapability = plan.execution_capability;
+const executionValidationUrl = plan.execution_validation_url;
 const definition = isCredentialClass(credentialClass)
   ? credentialClassDefinitions[credentialClass]
   : undefined;
@@ -281,14 +294,29 @@ async function execute(journal) {
   ) {
     return { ok: false };
   }
+  const githubAuthorityEvidence =
+    githubAuthority === null
+      ? null
+      : Object.fromEntries(
+          Object.entries(githubAuthority).filter(
+            ([key]) => key !== "installation_token",
+          ),
+        );
+  if (githubAuthority !== null) {
+    secrets.github_management_credential =
+      githubAuthority.installation_token;
+  }
 
   let scopeEvidence = {
     permission: requiredPermission,
     resource: resourceIdentity,
     provider: definition.consumer_provider,
-    ...(githubAuthority === null
+    ...(githubAuthorityEvidence === null
       ? {}
-      : { github_management_authority: githubAuthority }),
+      : {
+          github_management_authority:
+            githubAuthorityEvidence,
+        }),
   };
   if (tokenClass) {
     const replacementRecord = await cloudflare.tokenDetails(
@@ -311,9 +339,12 @@ async function execute(journal) {
       policies: replacement.policies,
       status: replacement.status,
       resource: resourceIdentity,
-      ...(githubAuthority === null
+      ...(githubAuthorityEvidence === null
         ? {}
-        : { github_management_authority: githubAuthority }),
+        : {
+            github_management_authority:
+              githubAuthorityEvidence,
+          }),
     };
     if (action === "verify") {
       const oldRecord = await cloudflare.tokenDetails(

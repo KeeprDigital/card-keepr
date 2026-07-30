@@ -7,10 +7,10 @@ export async function executeCredentialBoundary(
   secrets,
   environment,
 ) {
-  const attestationKey = secrets.boundary_attestation_key;
+  const consumerProofKey = secrets.consumer_proof_key;
   if (
-    typeof attestationKey !== "string" ||
-    attestationKey.length < 32
+    typeof consumerProofKey !== "string" ||
+    consumerProofKey.length < 32
   ) {
     return boundaryFailure(false);
   }
@@ -56,42 +56,16 @@ export async function executeCredentialBoundary(
   const executor = fileURLToPath(
     new URL("./credential-boundary-attestor.mjs", import.meta.url),
   );
-  const arguments_ = [
-    executor,
-    plan.action,
-    plan.id,
-    plan.plan_digest,
-    plan.plan_nonce,
-    plan.credential_class,
-    plan.cloudflare_account_id,
-    plan.resource_identity,
-    plan.owning_boundary,
-    plan.verification_target,
-    plan.production_target_identity,
-    plan.required_permission,
-    plan.cloudflare_management_required_permissions,
-    plan.consumer_installation_identity,
-    plan.execution_mode,
-    String(plan.execution_attempt),
-    plan.old_fingerprint,
-    plan.replacement_fingerprint,
-    plan.old_issuer_credential_id,
-    plan.replacement_issuer_credential_id,
-    plan.management_credential_id,
-    plan.github_management_credential_id,
-    plan.github_management_credential_fingerprint,
-    plan.github_management_required_permission,
-    plan.old_consumer_slot,
-    plan.replacement_consumer_slot,
-    plan.execution_capability,
-    plan.execution_validation_url,
-  ];
   const input = JSON.stringify(providerSecrets);
   const result = await run(
     process.execPath,
-    arguments_,
+    [executor],
     input,
-    attestationKey,
+    consumerProofKey,
+    JSON.stringify({
+      contract: "card-keepr-credential-boundary-plan@1",
+      plan,
+    }),
     subprocessEnvironment(environment),
   );
   let document;
@@ -216,12 +190,12 @@ function subprocessEnvironment(environment) {
   );
 }
 
-function run(command, arguments_, input, key, environment) {
+function run(command, arguments_, input, key, planEnvelope, environment) {
   return new Promise((resolveRun) => {
     const child = spawn(command, arguments_, {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       env: environment,
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
     });
     let stdout = "";
     child.stdout.setEncoding("utf8");
@@ -240,5 +214,6 @@ function run(command, arguments_, input, key, environment) {
     });
     child.stdin.end(input);
     child.stdio[3].end(key);
+    child.stdio[4].end(planEnvelope);
   });
 }

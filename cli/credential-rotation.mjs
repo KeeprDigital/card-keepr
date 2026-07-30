@@ -90,7 +90,7 @@ async function mutate(
   const secretFields = [
     "administration_key",
     "management_credential",
-    "boundary_attestation_key",
+    "consumer_proof_key",
     ...(credentialClass === "github_deployment_token"
       ? ["github_management_credential"]
       : []),

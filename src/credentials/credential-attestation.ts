@@ -60,6 +60,27 @@ type BoundaryAttestation = {
   execution_mode: string;
 };
 
+export async function signCredentialBoundaryFacts(
+  plan: BoundaryAttestationPlan,
+  facts: unknown,
+  key: string,
+  observedAt: string,
+): Promise<string | null> {
+  const encoded = base64Url(
+    new TextEncoder().encode(JSON.stringify(facts)),
+  );
+  const attestation =
+    `v1.${encoded}.${await hmacHex(key, encoded)}`;
+  return (await credentialBoundaryAttestationFailure(
+    plan,
+    attestation,
+    key,
+    observedAt,
+  )) === null
+    ? attestation
+    : null;
+}
+
 export async function credentialBoundaryAttestationFailure(
   plan: BoundaryAttestationPlan,
   encoded: string,
@@ -227,6 +248,15 @@ function base64UrlBytes(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) =>
     character.charCodeAt(0),
   );
+}
+
+function base64Url(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 function canonicalTimestamp(value: string): boolean {

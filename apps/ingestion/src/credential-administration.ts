@@ -4,6 +4,7 @@ import {
   CredentialRotationProblem,
   finalizeCredentialRotationPlan,
   isCredentialClass,
+  issueCredentialBoundaryAttestation,
   reserveCredentialRotationPlan,
   releaseCredentialRotationPlanExecution,
   showCredentialRotation,
@@ -18,13 +19,58 @@ export async function handleCredentialExecutionCapability(
   request: Request,
   database: D1Database,
   observedAt: string,
+  attestationKey: string,
 ): Promise<Response | null> {
+  const url = new URL(request.url);
   const match =
     /^\/v1\/credential-rotation-plans\/([^/]+)\/execution-capability$/.exec(
-      new URL(request.url).pathname,
+      url.pathname,
     );
-  if (request.method !== "POST" || match === null) return null;
+  const attestationMatch =
+    /^\/v1\/credential-rotation-plans\/([^/]+)\/boundary-attestation$/.exec(
+      url.pathname,
+    );
+  if (
+    request.method !== "POST" ||
+    (match === null && attestationMatch === null)
+  ) {
+    return null;
+  }
   const body = await readBody(request);
+  if (attestationMatch !== null) {
+    assertOnlyFields(body, [
+      "plan_digest",
+      "execution_attempt",
+      "execution_capability",
+      "facts",
+    ]);
+    const facts = body.facts;
+    if (
+      facts === null ||
+      typeof facts !== "object" ||
+      Array.isArray(facts)
+    ) {
+      throw new CredentialRotationProblem(
+        422,
+        "invalid_parameter",
+        "facts must be an object",
+      );
+    }
+    return Response.json({
+      contract: "card-keepr-boundary-attestation@1",
+      boundary_attestation:
+        await issueCredentialBoundaryAttestation(
+          database,
+          decodeURIComponent(attestationMatch[1]!),
+          requiredSha256(body, "plan_digest"),
+          requiredInteger(body, "execution_attempt"),
+          requiredOwnerToken(body, "execution_capability"),
+          facts,
+          attestationKey,
+          observedAt,
+        ),
+    });
+  }
   assertOnlyFields(body, [
     "plan_digest",
     "execution_attempt",
@@ -32,7 +78,7 @@ export async function handleCredentialExecutionCapability(
   ]);
   await consumeCredentialRotationExecutionCapability(
     database,
-    decodeURIComponent(match[1]!),
+    decodeURIComponent(match![1]!),
     requiredSha256(body, "plan_digest"),
     requiredInteger(body, "execution_attempt"),
     requiredOwnerToken(body, "execution_capability"),

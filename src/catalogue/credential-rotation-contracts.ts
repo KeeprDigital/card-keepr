@@ -67,6 +67,7 @@ export type CredentialRotationPlanRow = Omit<
   execution_owner_hash: string | null;
   execution_capability_hash: string | null;
   execution_capability_consumed_at: string | null;
+  boundary_attestation_issued_at: string | null;
   finalized_at: string | null;
   attestation_digest: string | null;
 };

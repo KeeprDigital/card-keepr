@@ -17,6 +17,7 @@ import {
 import {
   githubAuthorityMatches,
   probeGithubInstalledSecret,
+  verifyGithubManagementAuthority,
 } from "../cli/provider-github-boundary.mjs";
 import {
   classifySecretList,
@@ -324,7 +325,19 @@ test("GitHub management authority binds exact installation, repository, environm
     suppliedPolicy: "exact-policy",
   };
   const authority = {
-    installation: { id: 22222222, permissions },
+    installation: {
+      id: 22222222,
+      repository_selection: "selected",
+      permissions,
+    },
+    repositories: {
+      repository_selection: "selected",
+      total_count: 1,
+      repositories: [{ id: 1313489088 }],
+    },
+    viewer: {
+      data: { viewer: { login: "keepr-rotation[bot]" } },
+    },
     repository: { id: 1313489088 },
     environment: { id: 33333333, name: "production" },
     workflow: {
@@ -337,15 +350,6 @@ test("GitHub management authority binds exact installation, repository, environm
   assert.equal(githubAuthorityMatches(authority), true);
   const installationTokenAuthority = {
     ...authority,
-    installation: undefined,
-    repositories: {
-      repository_selection: "selected",
-      total_count: 1,
-      repositories: [{ id: 1313489088 }],
-    },
-    viewer: {
-      data: { viewer: { login: "keepr-rotation[bot]" } },
-    },
   };
   assert.equal(
     githubAuthorityMatches(installationTokenAuthority),
@@ -359,6 +363,13 @@ test("GitHub management authority binds exact installation, repository, environm
         total_count: 2,
         repositories: [{ id: 1313489088 }, { id: 999 }],
       },
+    }),
+    false,
+  );
+  assert.equal(
+    githubAuthorityMatches({
+      ...installationTokenAuthority,
+      installation: undefined,
     }),
     false,
   );
@@ -395,6 +406,99 @@ test("GitHub management authority binds exact installation, repository, environm
     }),
     false,
   );
+});
+
+test("GitHub authority authenticates the exact installation and mints one exact repository token", async () => {
+  const originalFetch = globalThis.fetch;
+  const permissions = {
+    actions: "write",
+    contents: "read",
+    environments: "write",
+    metadata: "read",
+  };
+  const requests = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const pathname = new URL(url).pathname;
+    requests.push({ pathname, init });
+    if (pathname === "/app/installations/22222222") {
+      return jsonResponse(200, {
+        id: 22222222,
+        repository_selection: "selected",
+        permissions,
+      });
+    }
+    if (
+      pathname ===
+      "/app/installations/22222222/access_tokens"
+    ) {
+      return jsonResponse(201, {
+        token: "installation-token-exact-authority",
+        permissions,
+        repositories: [{ id: 1313489088 }],
+      });
+    }
+    if (pathname === "/installation/repositories") {
+      return jsonResponse(200, {
+        repository_selection: "selected",
+        total_count: 1,
+        repositories: [{ id: 1313489088 }],
+      });
+    }
+    if (pathname === "/repositories/1313489088") {
+      return jsonResponse(200, { id: 1313489088 });
+    }
+    if (pathname.endsWith("/environments/production")) {
+      return jsonResponse(200, {
+        id: 33333333,
+        name: "production",
+      });
+    }
+    if (pathname.endsWith("/actions/workflows/44444444")) {
+      return jsonResponse(200, {
+        id: 44444444,
+        path: ".github/workflows/credential-boundary-probe.yml",
+        state: "active",
+      });
+    }
+    return jsonResponse(200, {
+      data: { viewer: { login: "keepr-rotation[bot]" } },
+    });
+  };
+  try {
+    const requiredPolicy =
+      "github-app-installation:22222222" +
+      ":repository:1313489088" +
+      ":environment:33333333" +
+      ":workflow:44444444" +
+      ":actions=write,contents=read,environments=write,metadata=read";
+    const authority = await verifyGithubManagementAuthority({
+      credential: "github-app-jwt",
+      installationId: "22222222",
+      repositoryId: "1313489088",
+      environmentId: "33333333",
+      workflowId: "44444444",
+      requiredPolicy,
+    });
+    assert.equal(
+      authority?.installation_token,
+      "installation-token-exact-authority",
+    );
+    const mint = JSON.parse(requests[1].init.body);
+    assert.deepEqual(mint, {
+      repository_ids: [1313489088],
+      permissions,
+    });
+    assert.equal(
+      requests[0].init.headers.authorization,
+      "Bearer github-app-jwt",
+    );
+    assert.equal(
+      requests[2].init.headers.authorization,
+      "Bearer installation-token-exact-authority",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("the GitHub installed-secret workflow retains semantic slots and exact actor validation", () => {
@@ -600,6 +704,14 @@ test("production provider cannot self-sign or be replaced through environment", 
     "utf8",
   );
   assert.doesNotMatch(boundary, /KEEPR_CREDENTIAL_BOUNDARY_EXECUTOR/);
+  assert.doesNotMatch(attestor, /process\.argv/u);
+  assert.doesNotMatch(provider, /process\.argv/u);
+  assert.match(boundary, /\[executor\],\s*\n\s*input/u);
+  assert.match(
+    boundary,
+    /card-keepr-credential-boundary-plan@1/u,
+  );
+  assert.match(provider, /card-keepr-provider-request@1/u);
   assert.doesNotMatch(
     provider,
     /CREDENTIAL_BOUNDARY_ATTESTATION_KEY|createHmac/,
@@ -666,8 +778,8 @@ test("attacker-controlled cwd provider and attestor files are ignored", async (t
         github_management_required_permission: "not-applicable",
       },
       {
-        boundary_attestation_key:
-          "attacker-cwd-test-boundary-key-000000",
+        consumer_proof_key:
+          "attacker-cwd-test-consumer-key-00000",
         management_credential: "not-used",
         old_secret: "not-used",
         replacement_secret: "not-used",

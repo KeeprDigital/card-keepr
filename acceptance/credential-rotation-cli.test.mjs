@@ -900,8 +900,8 @@ async function runCli(arguments_, environment_, secrets) {
   });
   child.stdin.end(JSON.stringify({
     ...secrets,
-    boundary_attestation_key:
-      "acceptance-boundary-attestation-key-0001",
+    consumer_proof_key:
+      "acceptance-consumer-proof-key-000001",
   }));
   let stdout = "";
   let stderr = "";

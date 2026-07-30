@@ -8,6 +8,7 @@ import {
 } from "../credentials/credential-catalogue.mjs";
 import {
   credentialBoundaryAttestationFailure,
+  signCredentialBoundaryFacts,
 } from "../credentials/credential-attestation";
 import type {
   AuthenticationRow,
@@ -390,6 +391,17 @@ export async function finalizeCredentialRotationPlan(
       "The credential transition plan is no longer executable.",
     );
   }
+  if (
+    plan.execution_capability_consumed_at === null ||
+    plan.boundary_attestation_issued_at === null ||
+    plan.execution_expires_at === null ||
+    plan.execution_expires_at <= observedAt
+  ) {
+    throw problem(
+      "credential_provider_execution_required",
+      "Finalization requires a live provider execution and a server-issued attestation.",
+    );
+  }
   const attestationFailure =
     await credentialBoundaryAttestationFailure(
       plan,
@@ -608,9 +620,10 @@ export async function beginCredentialRotationPlanExecution(
       `UPDATE credential_rotation_plans
        SET status = 'executing', execution_started_at = ?,
            execution_expires_at = ?, execution_attempt =
-             execution_attempt + 1, execution_owner_hash = ?,
+           execution_attempt + 1, execution_owner_hash = ?,
            execution_capability_hash = ?,
-           execution_capability_consumed_at = NULL
+           execution_capability_consumed_at = NULL,
+           boundary_attestation_issued_at = NULL
        WHERE id = ?
          AND execution_attempt = ?
          AND (
@@ -748,6 +761,7 @@ export async function consumeCredentialRotationExecutionCapability(
        SET execution_capability_consumed_at = ?
        WHERE id = ? AND status = 'executing'
          AND plan_digest = ? AND execution_attempt = ?
+         AND execution_expires_at > ?
          AND execution_capability_consumed_at IS NULL
          AND execution_capability_hash = ?`,
     )
@@ -756,6 +770,7 @@ export async function consumeCredentialRotationExecutionCapability(
       planId,
       planDigest,
       executionAttempt,
+      observedAt,
       capabilityHash,
     )
     .run();
@@ -765,6 +780,84 @@ export async function consumeCredentialRotationExecutionCapability(
       "The execution capability is invalid, expired, or consumed.",
     );
   }
+}
+
+export async function issueCredentialBoundaryAttestation(
+  database: D1Database,
+  planId: string,
+  planDigest: string,
+  executionAttempt: number,
+  capability: string,
+  facts: unknown,
+  attestationKey: string,
+  observedAt: string,
+): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(capability)) {
+    throw problem(
+      "invalid_execution_capability",
+      "The execution capability is invalid.",
+    );
+  }
+  const plan = await requiredPlan(database, planId);
+  const capabilityHash = await secretHash(capability);
+  if (
+    plan.status !== "executing" ||
+    plan.execution_attempt !== executionAttempt ||
+    plan.execution_capability_hash === null ||
+    plan.execution_capability_consumed_at === null ||
+    plan.boundary_attestation_issued_at !== null ||
+    plan.execution_expires_at === null ||
+    plan.execution_expires_at <= observedAt ||
+    !(await fixedHashEqual(plan.plan_digest, planDigest)) ||
+    !(await fixedHashEqual(
+      plan.execution_capability_hash,
+      capabilityHash,
+    ))
+  ) {
+    throw problem(
+      "invalid_execution_capability",
+      "The execution capability is invalid, expired, or not consumed.",
+    );
+  }
+  const attestation = await signCredentialBoundaryFacts(
+    plan,
+    facts,
+    attestationKey,
+    observedAt,
+  );
+  if (attestation === null) {
+    throw problem(
+      "credential_boundary_mismatch",
+      "The owning-boundary facts do not match the reserved transition.",
+    );
+  }
+  const result = await database
+    .prepare(
+      `UPDATE credential_rotation_plans
+       SET boundary_attestation_issued_at = ?
+       WHERE id = ? AND status = 'executing'
+         AND plan_digest = ? AND execution_attempt = ?
+         AND execution_expires_at > ?
+         AND execution_capability_consumed_at IS NOT NULL
+         AND boundary_attestation_issued_at IS NULL
+         AND execution_capability_hash = ?`,
+    )
+    .bind(
+      observedAt,
+      planId,
+      planDigest,
+      executionAttempt,
+      observedAt,
+      capabilityHash,
+    )
+    .run();
+  if (result.meta.changes !== 1) {
+    throw problem(
+      "credential_mutation_conflict",
+      "The boundary attestation changed concurrently.",
+    );
+  }
+  return attestation;
 }
 
 export async function releaseCredentialRotationPlanExecution(
@@ -814,7 +907,8 @@ export async function releaseCredentialRotationPlanExecution(
            execution_expires_at = NULL, execution_attempt = 0,
            execution_owner_hash = NULL,
            execution_capability_hash = NULL,
-           execution_capability_consumed_at = NULL, expires_at = ?
+           execution_capability_consumed_at = NULL,
+           boundary_attestation_issued_at = NULL, expires_at = ?
        WHERE id = ? AND status = 'executing'
          AND execution_attempt = ? AND execution_owner_hash = ?
          AND plan_digest = ?`,
