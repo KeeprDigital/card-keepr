@@ -7,13 +7,6 @@ export async function executeCredentialBoundary(
   secrets,
   environment,
 ) {
-  const consumerProofKey = secrets.consumer_proof_key;
-  if (
-    typeof consumerProofKey !== "string" ||
-    consumerProofKey.length < 32
-  ) {
-    return boundaryFailure(false);
-  }
   const providerSecrets = {
     ...(secrets.old_secret === undefined
       ? {}
@@ -61,7 +54,6 @@ export async function executeCredentialBoundary(
     process.execPath,
     [executor],
     input,
-    consumerProofKey,
     JSON.stringify({
       contract: "card-keepr-credential-boundary-plan@1",
       plan,
@@ -190,12 +182,12 @@ function subprocessEnvironment(environment) {
   );
 }
 
-function run(command, arguments_, input, key, planEnvelope, environment) {
+function run(command, arguments_, input, planEnvelope, environment) {
   return new Promise((resolveRun) => {
     const child = spawn(command, arguments_, {
       cwd: fileURLToPath(new URL("../", import.meta.url)),
       env: environment,
-      stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
     });
     let stdout = "";
     child.stdout.setEncoding("utf8");
@@ -213,7 +205,6 @@ function run(command, arguments_, input, key, planEnvelope, environment) {
       resolveRun({ code: code ?? 1, stdout });
     });
     child.stdin.end(input);
-    child.stdio[3].end(key);
-    child.stdio[4].end(planEnvelope);
+    child.stdio[3].end(planEnvelope);
   });
 }

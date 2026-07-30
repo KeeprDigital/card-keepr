@@ -14,12 +14,22 @@ import type {
   CredentialDeploymentContext,
 } from "../../../src/credentials/credential-catalogue.mjs";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
+import {
+  credentialConsumerProofRequests,
+} from "../../../src/credentials/consumer-proof";
+import {
+  observeGithubCredentialRuns,
+} from "./github-credential-observation";
 
 export async function handleCredentialExecutionCapability(
   request: Request,
   database: D1Database,
   observedAt: string,
   attestationKey: string,
+  consumerProofKey: string,
+  githubObservationToken: string,
+  githubWorkflowId: string,
+  githubObservationActor: string,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const match =
@@ -42,18 +52,14 @@ export async function handleCredentialExecutionCapability(
       "plan_digest",
       "execution_attempt",
       "execution_capability",
-      "facts",
+      "consumer_proofs",
     ]);
-    const facts = body.facts;
-    if (
-      facts === null ||
-      typeof facts !== "object" ||
-      Array.isArray(facts)
-    ) {
+    const consumerProofs = body.consumer_proofs;
+    if (!Array.isArray(consumerProofs)) {
       throw new CredentialRotationProblem(
         422,
         "invalid_parameter",
-        "facts must be an object",
+        "consumer_proofs must be an array",
       );
     }
     return Response.json({
@@ -65,9 +71,18 @@ export async function handleCredentialExecutionCapability(
           requiredSha256(body, "plan_digest"),
           requiredInteger(body, "execution_attempt"),
           requiredOwnerToken(body, "execution_capability"),
-          facts,
+          consumerProofs,
           attestationKey,
+          consumerProofKey,
           observedAt,
+          (plan, expected) =>
+            observeGithubCredentialRuns(
+              plan,
+              expected,
+              githubObservationToken,
+              githubWorkflowId,
+              githubObservationActor,
+            ),
         ),
     });
   }
@@ -96,6 +111,7 @@ export async function handleCredentialAdministration(
   observedAt: string,
   context: CredentialDeploymentContext,
   attestationKey: string,
+  consumerProofKey: string,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const planExecution =
@@ -109,16 +125,22 @@ export async function handleCredentialAdministration(
       "execution_owner_token",
       "expected_execution_attempt",
     ]);
-    return Response.json(
-      await beginCredentialRotationPlanExecution(
-        database,
-        decodeURIComponent(planExecution[1]!),
-        requiredSha256(body, "plan_digest"),
-        requiredOwnerToken(body),
-        requiredInteger(body, "expected_execution_attempt"),
-        observedAt,
-      ),
+    const plan = await beginCredentialRotationPlanExecution(
+      database,
+      decodeURIComponent(planExecution[1]!),
+      requiredSha256(body, "plan_digest"),
+      requiredOwnerToken(body),
+      requiredInteger(body, "expected_execution_attempt"),
+      observedAt,
     );
+    return Response.json({
+      ...plan,
+      consumer_proof_requests:
+        await credentialConsumerProofRequests(
+          plan,
+          consumerProofKey,
+        ),
+    });
   }
   const planFinalization =
     /^\/v1\/credential-rotation-plans\/([^/]+)\/finalization$/.exec(

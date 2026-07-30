@@ -142,6 +142,31 @@ export function isCredentialClass(value) {
   return credentialClasses.includes(value);
 }
 
+export function githubManagementPermissionPolicy(context) {
+  return (
+    `github-app-installation:${context.github_installation_id}` +
+    `:repository:${context.github_repository_id}` +
+    `:environment:${context.github_environment_id}` +
+    `:workflow:${context.github_workflow_id}` +
+    ":actions=write,contents=read,environments=write,metadata=read"
+  );
+}
+
+export function parseGithubManagementPermissionPolicy(value) {
+  const match =
+    /^github-app-installation:([1-9][0-9]*):repository:([1-9][0-9]*):environment:([1-9][0-9]*):workflow:([1-9][0-9]*):actions=write,contents=read,environments=write,metadata=read$/.exec(
+      value ?? "",
+    );
+  return match === null
+    ? null
+    : {
+        github_installation_id: match[1],
+        github_repository_id: match[2],
+        github_environment_id: match[3],
+        github_workflow_id: match[4],
+      };
+}
+
 export function resolveCredentialIdentity(credentialClass, context) {
   const definition = credentialClassDefinitions[credentialClass];
   if (
@@ -221,11 +246,7 @@ export function resolveCredentialIdentity(credentialClass, context) {
     production_target_identity:
       productionTargetIdentity(context),
     github_management_required_permission:
-      `github-app-installation:${context.github_installation_id}` +
-      `:repository:${context.github_repository_id}` +
-      `:environment:${context.github_environment_id}` +
-      `:workflow:${context.github_workflow_id}` +
-      ":actions=write,contents=read,environments=write,metadata=read",
+      githubManagementPermissionPolicy(context),
     cloudflare_management_required_permissions:
       definition.management_permissions,
     fixed_old_issuer_credential_id: null,

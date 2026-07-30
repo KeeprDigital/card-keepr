@@ -23,6 +23,95 @@ type ConsumerProofEnvironment = {
   D1_VERIFICATION_TOKEN?: string;
 };
 
+export type CredentialConsumerProofRequestClaims = {
+  plan_id: string;
+  plan_digest: string;
+  plan_nonce: string;
+  credential_class: CredentialClass;
+  expected_fingerprint: string;
+  slot: "a" | "b";
+  expected_status: "usable" | "unusable";
+  replacement_issuer_credential_id: string;
+  github_management_credential_fingerprint: string;
+  github_management_required_permission: string;
+};
+
+export type CredentialConsumerProof = {
+  contract: "card-keepr-credential-consumer-proof@1";
+  credential_class: CredentialClass;
+  expected_fingerprint: string;
+  challenge: string;
+  slot: "a" | "b";
+  status: "usable" | "unusable";
+  proof: string;
+};
+
+export async function credentialConsumerProofRequests(
+  plan: {
+    id: string;
+    plan_digest: string;
+    plan_nonce: string;
+    action: string;
+    credential_class: CredentialClass;
+    old_fingerprint: string;
+    replacement_fingerprint: string;
+    old_consumer_slot: "a" | "b";
+    replacement_consumer_slot: "a" | "b";
+    old_issuer_credential_id: string;
+    replacement_issuer_credential_id: string;
+    github_management_credential_fingerprint: string;
+    github_management_required_permission: string;
+  },
+  key: string,
+): Promise<Array<CredentialConsumerProofRequestClaims & {
+  request_token: string;
+}>> {
+  const requests = [
+    {
+      expected_fingerprint: plan.replacement_fingerprint,
+      slot: plan.replacement_consumer_slot,
+      expected_status: "usable" as const,
+      replacement_issuer_credential_id:
+        plan.replacement_issuer_credential_id,
+    },
+    ...(plan.action === "verify"
+      ? [{
+          expected_fingerprint: plan.old_fingerprint,
+          slot: plan.old_consumer_slot,
+          expected_status: "usable" as const,
+          replacement_issuer_credential_id:
+            plan.old_issuer_credential_id,
+        }]
+      : []),
+    ...(plan.action === "revoke"
+      ? [{
+          expected_fingerprint: plan.old_fingerprint,
+          slot: plan.old_consumer_slot,
+          expected_status: "unusable" as const,
+          replacement_issuer_credential_id:
+            plan.old_issuer_credential_id,
+        }]
+      : []),
+  ];
+  return Promise.all(requests.map(async (request) => {
+    const claims: CredentialConsumerProofRequestClaims = {
+      plan_id: plan.id,
+      plan_digest: plan.plan_digest,
+      plan_nonce: plan.plan_nonce,
+      credential_class: plan.credential_class,
+      ...request,
+      github_management_credential_fingerprint:
+        plan.github_management_credential_fingerprint,
+      github_management_required_permission:
+        plan.github_management_required_permission,
+    };
+    return {
+      ...claims,
+      request_token: await signedRequestToken(claims, key),
+    };
+  }));
+}
+
 export async function handleCredentialConsumerProof(
   request: Request,
   environment: ConsumerProofEnvironment,
@@ -39,35 +128,25 @@ export async function handleCredentialConsumerProof(
   ) {
     return null;
   }
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > 16_384) {
+  const text = await readBoundedText(request, 16_384);
+  if (text === null) {
     return Response.json({ code: "request_too_large" }, { status: 413 });
   }
-  const supplied = request.headers.get("x-keepr-boundary-signature");
-  const expected = await hmac(
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return Response.json({ code: "invalid_parameter" }, { status: 422 });
+  }
+  const claims = await verifiedRequestToken(
+    body.request_token,
     environment.CREDENTIAL_CONSUMER_PROOF_KEY,
-    text,
   );
-  if (
-    supplied === null ||
-    !(await fixedHexEqual(supplied, expected))
-  ) {
+  if (claims === null) {
     return Response.json(
       { code: "invalid_boundary_challenge" },
       { status: 401 },
     );
-  }
-  let body: {
-    credential_class?: unknown;
-    expected_fingerprint?: unknown;
-    challenge?: unknown;
-    slot?: unknown;
-    expected_status?: unknown;
-  };
-  try {
-    body = JSON.parse(text) as typeof body;
-  } catch {
-    return Response.json({ code: "invalid_parameter" }, { status: 422 });
   }
   const credentialClass = body.credential_class;
   if (
@@ -78,7 +157,12 @@ export async function handleCredentialConsumerProof(
     typeof body.challenge !== "string" ||
     !/^[0-9a-f]{64}$/.test(body.challenge) ||
     !["a", "b"].includes(String(body.slot)) ||
-    !["usable", "unusable"].includes(String(body.expected_status))
+    !["usable", "unusable"].includes(String(body.expected_status)) ||
+    credentialClass !== claims.credential_class ||
+    body.expected_fingerprint !== claims.expected_fingerprint ||
+    body.challenge !== claims.plan_digest ||
+    body.slot !== claims.slot ||
+    body.expected_status !== claims.expected_status
   ) {
     return Response.json({ code: "identity_conflict" }, { status: 409 });
   }
@@ -156,6 +240,120 @@ export async function handleCredentialConsumerProof(
     "usable",
     environment.CREDENTIAL_CONSUMER_PROOF_KEY,
   );
+}
+
+export async function credentialConsumerProofMatches(
+  proof: unknown,
+  claims: CredentialConsumerProofRequestClaims,
+  key: string,
+): Promise<boolean> {
+  if (
+    proof === null ||
+    typeof proof !== "object" ||
+    Array.isArray(proof)
+  ) {
+    return false;
+  }
+  const candidate = proof as Record<string, unknown>;
+  const expected = await hmac(
+    key,
+    `${claims.credential_class}\0${claims.expected_fingerprint}` +
+      `\0${claims.plan_digest}\0${claims.slot}` +
+      `\0${claims.expected_status}`,
+  );
+  return (
+    candidate.contract ===
+      "card-keepr-credential-consumer-proof@1" &&
+    candidate.credential_class === claims.credential_class &&
+    candidate.expected_fingerprint ===
+      claims.expected_fingerprint &&
+    candidate.challenge === claims.plan_digest &&
+    candidate.slot === claims.slot &&
+    candidate.status === claims.expected_status &&
+    typeof candidate.proof === "string" &&
+    await fixedHexEqual(candidate.proof, expected)
+  );
+}
+
+async function signedRequestToken(
+  claims: CredentialConsumerProofRequestClaims,
+  key: string,
+): Promise<string> {
+  const encoded = base64Url(
+    new TextEncoder().encode(JSON.stringify(claims)),
+  );
+  return `v1.${encoded}.${await hmac(key, `request\0${encoded}`)}`;
+}
+
+async function verifiedRequestToken(
+  value: unknown,
+  key: string,
+): Promise<CredentialConsumerProofRequestClaims | null> {
+  if (typeof value !== "string") return null;
+  const match =
+    /^v1\.([A-Za-z0-9_-]{32,4096})\.([0-9a-f]{64})$/.exec(value);
+  if (
+    match === null ||
+    !(await fixedHexEqual(
+      match[2]!,
+      await hmac(key, `request\0${match[1]!}`),
+    ))
+  ) {
+    return null;
+  }
+  let claims: CredentialConsumerProofRequestClaims;
+  try {
+    claims = JSON.parse(
+      new TextDecoder().decode(base64UrlBytes(match[1]!)),
+    ) as CredentialConsumerProofRequestClaims;
+  } catch {
+    return null;
+  }
+  return (
+    typeof claims.plan_id === "string" &&
+    /^[0-9a-f]{64}$/.test(claims.plan_digest) &&
+    /^[0-9a-f]{64}$/.test(claims.plan_nonce) &&
+    credentialClassDefinitions[claims.credential_class] !== undefined &&
+    /^sha256:[0-9a-f]{64}$/.test(claims.expected_fingerprint) &&
+    ["a", "b"].includes(claims.slot) &&
+    ["usable", "unusable"].includes(claims.expected_status) &&
+    typeof claims.replacement_issuer_credential_id === "string" &&
+    typeof claims.github_management_credential_fingerprint === "string" &&
+    typeof claims.github_management_required_permission === "string"
+  )
+    ? claims
+    : null;
+}
+
+async function readBoundedText(
+  request: Request,
+  maximumBytes: number,
+): Promise<string | null> {
+  const declared = request.headers.get("content-length");
+  if (
+    declared !== null &&
+    /^[0-9]+$/.test(declared) &&
+    Number.parseInt(declared, 10) > maximumBytes
+  ) {
+    await request.body?.cancel();
+    return null;
+  }
+  const reader = request.body?.getReader();
+  if (reader === undefined) return "";
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let text = "";
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    bytesRead += chunk.value.byteLength;
+    if (bytesRead > maximumBytes) {
+      await reader.cancel();
+      return null;
+    }
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 async function proofResponse(
@@ -284,4 +482,25 @@ function hex(value: Uint8Array): string {
   return Array.from(value)
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function base64UrlBytes(value: string): Uint8Array {
+  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = base64.padEnd(
+    base64.length + ((4 - (base64.length % 4)) % 4),
+    "=",
+  );
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) =>
+    character.charCodeAt(0),
+  );
+}
+
+function base64Url(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }

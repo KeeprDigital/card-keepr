@@ -127,6 +127,8 @@ test("API and administration replacements reject whitespace and controls before 
     ["api_bearer_key", "unicode-\u00e9-secret"],
     ["ingestion_admin_key", "comma,invalid"],
     ["api_bearer_key", "short"],
+    ["api_bearer_key", "abcdefghijklmn========"],
+    ["ingestion_admin_key", "abcdefghijklmnopqrstu="],
   ]) {
     const oldSecret = `valid-old-${credentialClass}`;
     const result = await runCli(
@@ -898,11 +900,7 @@ async function runCli(arguments_, environment_, secrets) {
     env: { ...process.env, ...environment_ },
     stdio: ["pipe", "pipe", "pipe"],
   });
-  child.stdin.end(JSON.stringify({
-    ...secrets,
-    consumer_proof_key:
-      "acceptance-consumer-proof-key-000001",
-  }));
+  child.stdin.end(JSON.stringify(secrets));
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");

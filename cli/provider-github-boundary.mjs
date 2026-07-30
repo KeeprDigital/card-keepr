@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import sodium from "libsodium-wrappers";
+import {
+  githubManagementPermissionPolicy,
+  parseGithubManagementPermissionPolicy,
+} from "../src/credentials/credential-catalogue.mjs";
 
 const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
@@ -11,6 +15,33 @@ const exactInstallationPermissions = Object.freeze({
   environments: "write",
   metadata: "read",
 });
+
+export function githubExecutionPlanMatches(plan) {
+  const policy = parseGithubManagementPermissionPolicy(
+    plan?.github_management_required_permission,
+  );
+  if (policy === null) return false;
+  let target;
+  try {
+    target = JSON.parse(plan.production_target_identity);
+  } catch {
+    return false;
+  }
+  return (
+    plan.credential_class === "github_deployment_token" &&
+    plan.github_management_credential_id ===
+      `github-app-installation:${policy.github_installation_id}` &&
+    plan.resource_identity ===
+      `github-repository:${policy.github_repository_id}` +
+      `:installation:${policy.github_installation_id}` +
+      `:environment:${policy.github_environment_id}` +
+      `:workflow:${policy.github_workflow_id}` &&
+    target.github_repository_id === policy.github_repository_id &&
+    target.github_installation_id === policy.github_installation_id &&
+    target.github_environment_id === policy.github_environment_id &&
+    target.github_workflow_id === policy.github_workflow_id
+  );
+}
 
 export async function verifyGithubManagementAuthority({
   credential,
@@ -95,12 +126,12 @@ export async function verifyGithubManagementAuthority({
   ) {
     return null;
   }
-  const expectedPolicy =
-    `github-app-installation:${installationId}` +
-    `:repository:${repositoryId}` +
-    `:environment:${environmentId}` +
-    `:workflow:${workflowId}` +
-    ":actions=write,contents=read,environments=write,metadata=read";
+  const expectedPolicy = githubManagementPermissionPolicy({
+    github_installation_id: installationId,
+    github_repository_id: repositoryId,
+    github_environment_id: environmentId,
+    github_workflow_id: workflowId,
+  });
   const authority = {
     installation: installation.document,
     repositories: repositories.document,
@@ -255,6 +286,8 @@ export async function probeGithubInstalledSecret({
   planNonce,
   secretSlot,
   expectedActor,
+  expectedStatus = "usable",
+  expectedFingerprint,
   credential,
   workflowId,
 }) {
@@ -264,7 +297,12 @@ export async function probeGithubInstalledSecret({
       : secretSlot === "b"
         ? "replacement"
         : null;
-  if (workflowSlot === null || !safeBotActor(expectedActor)) {
+  if (
+    workflowSlot === null ||
+    !safeBotActor(expectedActor) ||
+    !["usable", "unusable"].includes(expectedStatus) ||
+    !/^sha256:[0-9a-f]{64}$/.test(expectedFingerprint ?? "")
+  ) {
     return null;
   }
   const head = await githubRequest(
@@ -276,7 +314,7 @@ export async function probeGithubInstalledSecret({
     return null;
   }
   const runTitle =
-    `credential-boundary-probe-${workflowSlot}-${replacementIssuerCredentialId}-${planNonce}-${planDigest}`;
+    `credential-boundary-probe-${workflowSlot}-${replacementIssuerCredentialId}-${expectedStatus}-${expectedFingerprint}-${planDigest}`;
   const dispatchedAfter = new Date().toISOString();
   const dispatched = await githubRequest(
     credential,
@@ -292,6 +330,8 @@ export async function probeGithubInstalledSecret({
           plan_nonce: planNonce,
           expected_head_sha: expectedHeadSha,
           expected_actor: expectedActor,
+          expected_status: expectedStatus,
+          expected_fingerprint: expectedFingerprint,
           secret_slot: workflowSlot,
         },
       }),

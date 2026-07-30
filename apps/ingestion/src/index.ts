@@ -79,6 +79,10 @@ const ingestionWorker = {
           env.CATALOGUE_DB,
           administrationObservedAt(request, env),
           env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+          env.CREDENTIAL_CONSUMER_PROOF_KEY,
+          env.GITHUB_OBSERVATION_TOKEN,
+          env.GITHUB_WORKFLOW_ID,
+          env.GITHUB_OBSERVATION_ACTOR,
         );
       if (executionCapability !== null) return executionCapability;
       const rateLimited = await rateLimitFailure(
@@ -138,6 +142,7 @@ const ingestionWorker = {
           github_workflow_id: env.GITHUB_WORKFLOW_ID,
         },
         env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+        env.CREDENTIAL_CONSUMER_PROOF_KEY,
       );
       if (credentialResponse !== null) return credentialResponse;
 

@@ -4,6 +4,12 @@ import {
   type D1Migration,
 } from "cloudflare:test";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import {
+  credentialConsumerProofRequests,
+} from "../../../src/credentials/consumer-proof";
+import {
+  observeGithubCredentialRuns,
+} from "../src/github-credential-observation";
 
 declare global {
   interface __BaseEnv_Env {
@@ -207,6 +213,119 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
   await expect(tampered.json()).resolves.toMatchObject({
     code: "credential_attestation_replayed",
   });
+});
+
+test("caller-authored provider facts cannot be exchanged for a server attestation", async () => {
+  const observedAt = "2026-07-29T00:04:00.000Z";
+  const plan = await reserve(
+    await planInput(
+      "install",
+      "api_bearer_key",
+      0,
+      "credrot_caller_authored_facts",
+    ),
+  );
+  await execute(plan, observedAt);
+  await consumeExecutionCapability(plan, observedAt);
+  const response = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+      facts: boundaryFacts(plan, "usable", observedAt),
+    },
+    undefined,
+    observedAt,
+  );
+  expect(response.status).toBe(422);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "invalid_parameter",
+  });
+  const forgedProof = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+      consumer_proofs: [{
+        contract: "card-keepr-credential-consumer-proof@1",
+        credential_class: plan.credential_class,
+        expected_fingerprint: plan.replacement_fingerprint,
+        challenge: plan.plan_digest,
+        slot: plan.replacement_consumer_slot,
+        status: "usable",
+        proof: "0".repeat(64),
+      }],
+    },
+    undefined,
+    observedAt,
+  );
+  expect(forgedProof.status).toBe(409);
+  await expect(forgedProof.json()).resolves.toMatchObject({
+    code: "credential_provider_execution_required",
+  });
+  const skipped = await finalize(
+    plan,
+    await locallySignedAttestation(plan, "usable", observedAt),
+    observedAt,
+  );
+  expect(skipped.status).toBe(409);
+  await expect(skipped.json()).resolves.toMatchObject({
+    code: "credential_provider_execution_required",
+  });
+});
+
+test("GitHub final evidence is independently read from an exact successful workflow run", async () => {
+  const digest = "a".repeat(64);
+  const started = "2026-07-29T00:01:00.000Z";
+  const plan = {
+    plan_digest: digest,
+    plan_nonce: "b".repeat(64),
+    execution_started_at: started,
+  } as never;
+  const expected = [{
+    slot: "b",
+    expected_status: "usable",
+    replacement_issuer_credential_id: "provider-token:new",
+    expected_fingerprint: `sha256:${"c".repeat(64)}`,
+  }] as never;
+  const title =
+    `credential-boundary-probe-replacement-provider-token:new-usable-sha256:${"c".repeat(64)}-${digest}`;
+  const exactRun = {
+    id: 42,
+    workflow_id: 44444444,
+    event: "workflow_dispatch",
+    display_title: title,
+    head_sha: "d".repeat(40),
+    created_at: "2026-07-29T00:02:00.000Z",
+    status: "completed",
+    conclusion: "success",
+    actor: { login: "keepr-rotation[bot]" },
+  };
+  const observe = (run: typeof exactRun) =>
+    observeGithubCredentialRuns(
+      plan,
+      expected,
+      "server-owned-github-observation-token",
+      "44444444",
+      "keepr-rotation[bot]",
+      async (_token, pathname) =>
+        pathname.endsWith("/git/ref/heads/main")
+          ? { object: { sha: "d".repeat(40) } }
+          : { workflow_runs: [run] },
+    );
+  await expect(observe(exactRun)).resolves.toHaveLength(1);
+  await expect(observe({
+    ...exactRun,
+    actor: { login: "attacker[bot]" },
+  })).resolves.toBeNull();
+  await expect(observe({
+    ...exactRun,
+    display_title: `${title}-forged`,
+  })).resolves.toBeNull();
 });
 
 test("the durable public sequence is installed then verified then issuer-old revoked", async () => {
@@ -648,6 +767,14 @@ type PlanDocument = Record<string, unknown> & {
   github_management_credential_id: string;
   github_management_credential_fingerprint: string;
   github_management_required_permission: string;
+  consumer_proof_requests?: Array<{
+    credential_class: CredentialClass;
+    expected_fingerprint: string;
+    plan_digest: string;
+    slot: "a" | "b";
+    expected_status: "usable" | "unusable";
+    request_token: string;
+  }>;
 };
 
 function productionTargetIdentity(): string {
@@ -880,10 +1007,27 @@ async function signedAttestation(
   observedAt = new Date().toISOString(),
   capabilityAlreadyConsumed = false,
 ): Promise<string> {
-  const facts = boundaryFacts(plan, oldStatus, observedAt);
   if (!capabilityAlreadyConsumed) {
     await consumeExecutionCapability(plan, observedAt);
   }
+  const consumerProofs = await Promise.all(
+    (plan.consumer_proof_requests ?? []).map(
+      async (request) => ({
+        contract: "card-keepr-credential-consumer-proof@1",
+        credential_class: request.credential_class,
+        expected_fingerprint: request.expected_fingerprint,
+        challenge: request.plan_digest,
+        slot: request.slot,
+        status: request.expected_status,
+        proof: await consumerProofHmac(
+          `${request.credential_class}\0` +
+          `${request.expected_fingerprint}\0` +
+          `${request.plan_digest}\0${request.slot}\0` +
+          request.expected_status,
+        ),
+      }),
+    ),
+  );
   const response = await administrationRequest(
     `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
     "POST",
@@ -891,7 +1035,7 @@ async function signedAttestation(
       plan_digest: plan.plan_digest,
       execution_attempt: plan.execution_attempt,
       execution_capability: plan.execution_capability,
-      facts,
+      consumer_proofs: consumerProofs,
     },
     undefined,
     observedAt,
@@ -1034,13 +1178,51 @@ async function consumerProofRequest(
   expectedFingerprint: string,
   challenge: string,
 ): Promise<Response> {
+  const requestToken = (
+    await credentialConsumerProofRequests(
+      {
+        id: "credplan_ingestion_consumer_proof",
+        plan_digest: challenge,
+        plan_nonce: "c".repeat(64),
+        action: "install",
+        credential_class: credentialClass as CredentialClass,
+        old_fingerprint: `sha256:${"1".repeat(64)}`,
+        replacement_fingerprint: expectedFingerprint,
+        old_consumer_slot: "a",
+        replacement_consumer_slot: "b",
+        old_issuer_credential_id: "provider-token:old",
+        replacement_issuer_credential_id:
+          "provider-token:replacement",
+        github_management_credential_fingerprint:
+          `sha256:${"0".repeat(64)}`,
+        github_management_required_permission: "not-applicable",
+      },
+      "vitest-consumer-proof-key",
+    )
+  )[0]!.request_token;
   const body = JSON.stringify({
     credential_class: credentialClass,
     expected_fingerprint: expectedFingerprint,
     challenge,
     slot: "b",
     expected_status: "usable",
+    request_token: requestToken,
   });
+  return exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body,
+      },
+    ),
+  );
+}
+
+async function consumerProofHmac(value: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode("vitest-consumer-proof-key"),
@@ -1051,25 +1233,11 @@ async function consumerProofRequest(
   const signature = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(body),
+    new TextEncoder().encode(value),
   );
-  return exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/credential-consumer-proof",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-keepr-boundary-signature": Array.from(
-            new Uint8Array(signature),
-          )
-            .map((byte) => byte.toString(16).padStart(2, "0"))
-            .join(""),
-        },
-        body,
-      },
-    ),
-  );
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function fingerprint(secret: string): Promise<string> {

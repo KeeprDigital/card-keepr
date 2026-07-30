@@ -27,6 +27,9 @@ export default defineConfig({
             "vitest-boundary-attestation-key",
           CREDENTIAL_CONSUMER_PROOF_KEY:
             "vitest-consumer-proof-key",
+          GITHUB_OBSERVATION_TOKEN:
+            "vitest-github-observation-token",
+          GITHUB_OBSERVATION_ACTOR: "keepr-rotation[bot]",
           D1_VERIFICATION_TOKEN:
             "vitest-d1-verification-token-active",
           D1_VERIFICATION_TOKEN_REPLACEMENT:

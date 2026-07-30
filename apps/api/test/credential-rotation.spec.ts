@@ -4,6 +4,9 @@ import {
   type D1Migration,
 } from "cloudflare:test";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import {
+  credentialConsumerProofRequests,
+} from "../../../src/credentials/consumer-proof";
 
 declare global {
   interface __BaseEnv_Env {
@@ -108,6 +111,41 @@ test("the signed consumer challenge proves the exact installed API value through
   });
 });
 
+test("consumer proof rejects declared and streamed bodies beyond 16 KiB before buffering", async () => {
+  const declared = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": "16385",
+        },
+        body: "{}",
+      },
+    ),
+  );
+  expect(declared.status).toBe(413);
+
+  const streamed = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(10_000));
+            controller.enqueue(new Uint8Array(7_000));
+            controller.close();
+          },
+        }),
+      },
+    ),
+  );
+  expect(streamed.status).toBe(413);
+});
+
 async function healthStatus(secret: string): Promise<number> {
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/health", {
@@ -128,6 +166,27 @@ async function consumerProof(
     challenge,
     slot: "b",
     expected_status: "usable",
+    request_token: (
+      await credentialConsumerProofRequests(
+        {
+          id: "credplan_api_consumer_proof",
+          plan_digest: challenge,
+          plan_nonce: "c".repeat(64),
+          action: "install",
+          credential_class: "api_bearer_key",
+          old_fingerprint: `sha256:${"1".repeat(64)}`,
+          replacement_fingerprint: expectedFingerprint,
+          old_consumer_slot: "a",
+          replacement_consumer_slot: "b",
+          old_issuer_credential_id: "worker-secret:old",
+          replacement_issuer_credential_id: "worker-secret:replacement",
+          github_management_credential_fingerprint:
+            `sha256:${"0".repeat(64)}`,
+          github_management_required_permission: "not-applicable",
+        },
+        "vitest-consumer-proof-key",
+      )
+    )[0]!.request_token,
   });
   return exports.default.fetch(
     new Request(
@@ -136,30 +195,11 @@ async function consumerProof(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-keepr-boundary-signature": await hmac(body),
         },
         body,
       },
     ),
   );
-}
-
-async function hmac(value: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode("vitest-consumer-proof-key"),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(value),
-  );
-  return Array.from(new Uint8Array(signature))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 async function seedRotation(

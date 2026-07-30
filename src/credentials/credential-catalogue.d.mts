@@ -62,6 +62,26 @@ export function isCredentialClass(
   value: string,
 ): value is CredentialClass;
 
+export function githubManagementPermissionPolicy(
+  context: Pick<
+    CredentialDeploymentContext,
+    | "github_repository_id"
+    | "github_installation_id"
+    | "github_environment_id"
+    | "github_workflow_id"
+  >,
+): string;
+
+export function parseGithubManagementPermissionPolicy(
+  value: string,
+): Pick<
+  CredentialDeploymentContext,
+  | "github_repository_id"
+  | "github_installation_id"
+  | "github_environment_id"
+  | "github_workflow_id"
+> | null;
+
 export function resolveCredentialIdentity(
   credentialClass: CredentialClass,
   context: CredentialDeploymentContext,

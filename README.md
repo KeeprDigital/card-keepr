@@ -185,10 +185,20 @@ allowlist to the exact owner origins before deploying. API and administration
 bearer replacements use token68 characters and must encode at least 128 bits
 (22 characters without padding). Set `CREDENTIAL_CONSUMER_PROOF_KEY` on both
 Workers and set `CREDENTIAL_BOUNDARY_ATTESTATION_KEY` only on the ingestion
-Worker. The attestation key is server-owned and never enters the CLI or a child
-process. Credential CLI input is provided through its secret file descriptor
-and includes only the shared consumer-proof key. The CLI passes a validated,
-versioned plan envelope on a dedicated descriptor; neither the plan nor its
-single-use execution capability appears in child-process arguments. After the
-provider and consumer proofs succeed, the ingestion Worker consumes that
-capability and issues the final boundary attestation.
+Worker. Also set `GITHUB_OBSERVATION_TOKEN` only on ingestion to a read-only
+credential restricted to workflow-run and repository-ref reads for
+`KeeprDigital/card-keepr`. The ingestion Worker uses it to observe exact
+successful credential-probe runs independently of the mutation caller. Set
+`GITHUB_OBSERVATION_ACTOR` to the exact GitHub App bot login that owns those
+runs.
+
+The attestation and consumer-proof keys are server-owned and never enter the
+CLI or a child process. Credential CLI input is provided through its secret
+file descriptor and contains only the credentials needed for the requested
+provider mutation. The ingestion Worker issues plan-bound consumer-proof
+request tokens; the API and ingestion consumers sign observations that the
+caller cannot forge. The CLI passes a validated, versioned plan envelope on a
+dedicated descriptor; neither the plan nor its single-use execution capability
+appears in child-process arguments. After trusted consumer observations
+succeed, ingestion derives the facts itself and issues the final boundary
+attestation. Caller-authored provider facts are never signed.

@@ -90,7 +90,6 @@ async function mutate(
   const secretFields = [
     "administration_key",
     "management_credential",
-    "consumer_proof_key",
     ...(credentialClass === "github_deployment_token"
       ? ["github_management_credential"]
       : []),
@@ -481,7 +480,7 @@ function safeBearerSecret(value) {
     typeof value === "string" &&
     value.length >= 22 &&
     value.length <= 4096 &&
-    /^[A-Za-z0-9\-._~+/]+={0,8}$/u.test(value)
+    /^[A-Za-z0-9\-._~+/]+$/u.test(value)
   );
 }
 

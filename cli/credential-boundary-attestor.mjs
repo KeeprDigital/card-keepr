@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
   createHash,
-  createHmac,
   timingSafeEqual,
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -12,7 +11,8 @@ import {
 
 const input = await readInput();
 let consumerJournal = null;
-const planEnvelope = readDescriptorJson(4);
+const consumerProofDocuments = [];
+const planEnvelope = readDescriptorJson(3);
 const plan =
   planEnvelope?.contract ===
     "card-keepr-credential-boundary-plan@1" &&
@@ -20,18 +20,8 @@ const plan =
   typeof planEnvelope.plan === "object"
     ? planEnvelope.plan
     : null;
-let key;
-try {
-  key = readFileSync(3, "utf8");
-} catch {
-  key = null;
-}
 
-if (
-  plan === null ||
-  typeof key !== "string" ||
-  key.length < 32
-) {
+if (plan === null) {
   process.exitCode = 2;
 } else {
   const provider = await runProvider(plan, input);
@@ -44,7 +34,7 @@ if (
       provider.document.plan_digest,
       plan.plan_digest,
     ) ||
-    !(await verifyInstalledConsumer(plan, facts, input, key))
+    !(await verifyInstalledConsumer(plan, facts, input))
   ) {
     process.stdout.write(`${JSON.stringify({
       ok: false,
@@ -58,7 +48,7 @@ if (
     process.exitCode = 9;
   } else {
     const boundaryAttestation =
-      await requestServerAttestation(plan, facts);
+      await requestServerAttestation(plan);
     if (boundaryAttestation === null) {
       process.stdout.write(`${JSON.stringify({
         ok: false,
@@ -123,7 +113,6 @@ async function verifyInstalledConsumer(
   plan,
   facts,
   input,
-  key,
 ) {
   const credentialClass = plan.credential_class;
   if (credentialClass === "github_deployment_token") {
@@ -132,7 +121,7 @@ async function verifyInstalledConsumer(
         ? "active"
         : "replacement";
     const expectedEvidence =
-      `credential-boundary-probe-${replacementWorkflowSlot}-${plan.replacement_issuer_credential_id}-${plan.plan_nonce}-${plan.plan_digest}` +
+      `credential-boundary-probe-${replacementWorkflowSlot}-${plan.replacement_issuer_credential_id}-usable-${plan.replacement_fingerprint}-${plan.plan_digest}` +
       `\0${facts.consumer_proof_head_sha}\0${facts.consumer_proof_id}\0${facts.consumer_proof_actor}`;
     const replacementMatches =
       facts.consumer_proof_contract ===
@@ -148,11 +137,11 @@ async function verifyInstalledConsumer(
           .digest("hex")}`,
       );
     if (!replacementMatches) return false;
-    if (plan.action !== "verify") return true;
+    if (!["verify", "revoke"].includes(plan.action)) return true;
     const oldWorkflowSlot =
       plan.old_consumer_slot === "a" ? "active" : "replacement";
     const expectedOldEvidence =
-      `credential-boundary-probe-${oldWorkflowSlot}-${plan.old_issuer_credential_id}-${plan.plan_nonce}-${plan.plan_digest}` +
+      `credential-boundary-probe-${oldWorkflowSlot}-${plan.old_issuer_credential_id}-${plan.action === "revoke" ? "unusable" : "usable"}-${plan.old_fingerprint}-${plan.plan_digest}` +
       `\0${facts.old_consumer_proof_head_sha}\0${facts.old_consumer_proof_id}\0${facts.old_consumer_proof_actor}`;
     return (
       facts.old_consumer_proof_contract ===
@@ -203,42 +192,16 @@ async function verifyInstalledConsumer(
   const worker =
     credentialClassDefinitions[credentialClass]?.consumer_worker_name;
   if (typeof worker !== "string") return false;
-  const probes = [
-    {
-      slot: plan.replacement_consumer_slot,
-      status: "usable",
-      fingerprint: plan.replacement_fingerprint,
-    },
-    ...(plan.action === "verify"
-      ? [
-          {
-            slot: plan.old_consumer_slot,
-            status: "usable",
-            fingerprint: plan.old_fingerprint,
-          },
-        ]
-      : []),
-    ...(plan.action === "revoke"
-      ? [
-          {
-            slot: plan.old_consumer_slot,
-            status: "unusable",
-            fingerprint: plan.old_fingerprint,
-          },
-        ]
-      : []),
-  ];
-  for (const requested of probes) {
+  if (!Array.isArray(plan.consumer_proof_requests)) return false;
+  for (const requested of plan.consumer_proof_requests) {
     const body = JSON.stringify({
       credential_class: credentialClass,
-      expected_fingerprint: requested.fingerprint,
+      expected_fingerprint: requested.expected_fingerprint,
       challenge: plan.plan_digest,
       slot: requested.slot,
-      expected_status: requested.status,
+      expected_status: requested.expected_status,
+      request_token: requested.request_token,
     });
-    const signature = createHmac("sha256", key)
-      .update(body)
-      .digest("hex");
     try {
       response = await fetch(
         `https://${worker}.${subdomainDocument.result.subdomain}.workers.dev/v1/credential-consumer-proof`,
@@ -246,7 +209,6 @@ async function verifyInstalledConsumer(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-keepr-boundary-signature": signature,
           },
           body,
           signal: AbortSignal.timeout(15_000),
@@ -265,25 +227,21 @@ async function verifyInstalledConsumer(
       return false;
     }
     const proof = await response.json();
-    const expectedProof = createHmac("sha256", key)
-      .update(
-        `${credentialClass}\0${requested.fingerprint}\0${plan.plan_digest}\0${requested.slot}\0${requested.status}`,
-      )
-      .digest("hex");
     if (
       proof?.contract !== "card-keepr-credential-consumer-proof@1" ||
       proof.credential_class !== credentialClass ||
       !safeFingerprintEqual(
         proof.expected_fingerprint,
-        requested.fingerprint,
+        requested.expected_fingerprint,
       ) ||
       !safeDigestEqual(proof.challenge, plan.plan_digest) ||
       proof.slot !== requested.slot ||
-      proof.status !== requested.status ||
-      !safeDigestEqual(proof.proof, expectedProof)
+      proof.status !== requested.expected_status ||
+      !/^[0-9a-f]{64}$/.test(proof.proof ?? "")
     ) {
       return false;
     }
+    consumerProofDocuments.push(proof);
   }
   return true;
 }
@@ -295,7 +253,7 @@ function safeBotActor(value) {
   );
 }
 
-async function requestServerAttestation(plan, facts) {
+async function requestServerAttestation(plan) {
   let url;
   try {
     url = new URL(plan.execution_validation_url);
@@ -313,7 +271,7 @@ async function requestServerAttestation(plan, facts) {
         plan_digest: plan.plan_digest,
         execution_attempt: plan.execution_attempt,
         execution_capability: plan.execution_capability,
-        facts,
+        consumer_proofs: consumerProofDocuments,
       }),
       signal: AbortSignal.timeout(15_000),
     });

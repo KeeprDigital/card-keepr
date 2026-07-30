@@ -13,7 +13,6 @@ export function disposableProbeStatements(
 ): Readonly<{
   table: string;
   create: string;
-  write: string;
   read: string;
   drop: string;
 }>;

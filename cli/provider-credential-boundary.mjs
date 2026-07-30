@@ -17,7 +17,11 @@ import {
   createCloudflareProvider,
 } from "./provider-cloudflare-boundary.mjs";
 import {
+  reconcileConsumerInstallation,
+} from "./provider-reconciliation.mjs";
+import {
   deleteGithubConsumerSecret,
+  githubExecutionPlanMatches,
   listGithubConsumerSecrets,
   probeGithubInstalledSecret,
   setGithubConsumerSecret,
@@ -109,9 +113,7 @@ if (
         fingerprint(secrets.github_management_credential),
         githubManagementCredentialFingerprint,
       ) ||
-      !safeIdentity(githubManagementCredentialId) ||
-      githubManagementRequiredPermission !==
-        "github-actions-secrets:write:KeeprDigital/card-keepr:environment:production")) ||
+      !githubExecutionPlanMatches(plan))) ||
   (credentialClass !== "github_deployment_token" &&
     (githubManagementCredentialId !== "not-applicable" ||
       githubManagementCredentialFingerprint !==
@@ -237,7 +239,7 @@ async function consumeExecutionCapability() {
 }
 
 async function execute(journal) {
-  if (action === "install" && executionMode === "mutation") {
+  if (action === "install") {
     if (
       typeof secrets.old_secret !== "string" ||
       typeof secrets.replacement_secret !== "string" ||
@@ -362,7 +364,7 @@ async function execute(journal) {
         return { ok: false };
       }
     }
-    if (action === "install" && executionMode === "mutation") {
+    if (action === "install") {
       const [verified, oldVerified, oldDetails] = await Promise.all([
         cloudflare.verifyToken(secrets.replacement_secret),
         cloudflare.verifyToken(secrets.old_secret),
@@ -427,17 +429,24 @@ async function execute(journal) {
     action === "install" &&
     executionMode === "reconciliation"
   ) {
-    const listed = await listConsumerSecrets(definition);
-    if (listed.kind !== "present") return { ok: false };
-    if (!listed.names.includes(replacementSecretName)) return { ok: false };
-    if (
-      !listed.names.includes(marker) &&
-      !(await putConsumerSecret(definition, marker, planId))
-    ) {
+    if (!(await reconcileConsumerInstallation({
+      replacementName: replacementSecretName,
+      markerName: marker,
+      putReplacement: () => putConsumerSecret(
+        definition,
+        replacementSecretName,
+        secrets.replacement_secret,
+      ),
+      putMarker: () =>
+        putConsumerSecret(definition, marker, planId),
+      verify: () => consumerHasSecrets(definition, [
+        replacementSecretName,
+        marker,
+      ]),
+      recordMutation: (step) =>
+        recordMutation(journal, step),
+    }))) {
       return { ok: false };
-    }
-    if (!listed.names.includes(marker)) {
-      recordMutation(journal, `consumer-marker-put:${marker}`);
     }
   }
   if (!(await consumerHasSecrets(definition, [
@@ -454,6 +463,8 @@ async function execute(journal) {
           planDigest,
           planNonce,
           secretSlot: replacementConsumerSlot,
+          expectedStatus: "usable",
+          expectedFingerprint: replacementFingerprint,
           expectedActor: githubAuthority.expected_actor,
           credential: secrets.github_management_credential,
           workflowId: productionTarget.github_workflow_id,
@@ -470,6 +481,8 @@ async function execute(journal) {
       planDigest,
       planNonce,
       secretSlot: oldConsumerSlot,
+      expectedStatus: "usable",
+      expectedFingerprint: oldFingerprint,
       expectedActor: githubAuthority.expected_actor,
       credential: secrets.github_management_credential,
       workflowId: productionTarget.github_workflow_id,
@@ -531,6 +544,33 @@ async function execute(journal) {
       return { ok: false };
     }
     recordMutation(journal, `consumer-secret-delete:${oldSecretName}`);
+    if (credentialClass === "github_deployment_token") {
+      const oldConsumerProof = await probeGithubInstalledSecret({
+        cloudflareAccountId,
+        replacementIssuerCredentialId: oldIssuerCredentialId,
+        planDigest,
+        planNonce,
+        secretSlot: oldConsumerSlot,
+        expectedStatus: "unusable",
+        expectedFingerprint: oldFingerprint,
+        expectedActor: githubAuthority.expected_actor,
+        credential: secrets.github_management_credential,
+        workflowId: productionTarget.github_workflow_id,
+      });
+      if (oldConsumerProof === null) return { ok: false };
+      Object.assign(consumerProof, {
+        old_consumer_proof_contract:
+          oldConsumerProof.consumer_proof_contract,
+        old_consumer_proof_id:
+          oldConsumerProof.consumer_proof_id,
+        old_consumer_proof_head_sha:
+          oldConsumerProof.consumer_proof_head_sha,
+        old_consumer_proof_actor:
+          oldConsumerProof.consumer_proof_actor,
+        old_consumer_proof_digest:
+          oldConsumerProof.consumer_proof_digest,
+      });
+    }
   }
 
   return {

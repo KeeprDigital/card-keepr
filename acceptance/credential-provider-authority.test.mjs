@@ -15,6 +15,10 @@ import {
   mayReleaseExecutionClaim,
 } from "../cli/credential-boundary.mjs";
 import {
+  reconcileConsumerInstallation,
+} from "../cli/provider-reconciliation.mjs";
+import {
+  githubExecutionPlanMatches,
   githubAuthorityMatches,
   probeGithubInstalledSecret,
   verifyGithubManagementAuthority,
@@ -30,10 +34,13 @@ import {
 import {
   credentialClasses,
   credentialClassDefinitions,
+  githubManagementPermissionPolicy,
+  parseGithubManagementPermissionPolicy,
   resolveCredentialIdentity,
 } from "../src/credentials/credential-catalogue.mjs";
 import {
   disposableProbeStatements,
+  probeD1Credential,
   verifyCloudflareEnvelope,
   verifyD1DatabaseMetadata,
 } from "../src/credentials/cloudflare-authority.mjs";
@@ -154,9 +161,172 @@ test("disposable probes are challenge-owned, collision-failing, and cleanup-addr
   assert.notEqual(first.table, second.table);
   assert.match(first.create, /^CREATE TABLE "__keepr_probe_[0-9a-f]{32}"/u);
   assert.doesNotMatch(first.create, /IF NOT EXISTS/u);
-  assert.match(first.write, new RegExp(first.table, "u"));
+  assert.match(first.create, /AS SELECT \? AS owner$/u);
   assert.match(first.read, new RegExp(first.table, "u"));
   assert.match(first.drop, new RegExp(first.table, "u"));
+});
+
+test("an owned stale D1 probe is cleaned and retried while an unrelated probe is retained", async () => {
+  const planDigest = "a".repeat(64);
+  const challenge = "b".repeat(64);
+  const statements = disposableProbeStatements(
+    planDigest,
+    challenge,
+  );
+  const ownedCalls = [];
+  let createAttempt = 0;
+  const owned = await probeD1Credential({
+    accountId: "0123456789abcdef0123456789abcdef",
+    databaseId: "00000000-0000-0000-0000-000000000002",
+    permission: "D1 Edit",
+    planDigest,
+    challenge,
+    request: async (_path, init) => {
+      const { sql } = JSON.parse(init.body);
+      ownedCalls.push(sql);
+      if (sql === statements.create && createAttempt++ === 0) {
+        return jsonResponse(409, { success: false });
+      }
+      if (sql === statements.read) {
+        return jsonResponse(200, {
+          success: true,
+          result: [{ results: [{ owner: challenge }] }],
+        });
+      }
+      return jsonResponse(200, {
+        success: true,
+        result: [{ success: true }],
+      });
+    },
+  });
+  assert.equal(owned.ok, true);
+  assert.equal(
+    ownedCalls.filter((sql) => sql === statements.create).length,
+    2,
+  );
+  assert.ok(ownedCalls.includes(statements.drop));
+
+  const unrelatedCalls = [];
+  const unrelated = await probeD1Credential({
+    accountId: "0123456789abcdef0123456789abcdef",
+    databaseId: "00000000-0000-0000-0000-000000000002",
+    permission: "D1 Edit",
+    planDigest,
+    challenge,
+    request: async (_path, init) => {
+      const { sql } = JSON.parse(init.body);
+      unrelatedCalls.push(sql);
+      if (sql === statements.create) {
+        return jsonResponse(409, { success: false });
+      }
+      return jsonResponse(200, {
+        success: true,
+        result: [{ results: [{ owner: "c".repeat(64) }] }],
+      });
+    },
+  });
+  assert.equal(unrelated.ok, false);
+  assert.equal(unrelatedCalls.includes(statements.drop), false);
+});
+
+test("reconciliation safely retries after every consumer installation step", async () => {
+  for (const failedStep of ["replacement", "marker", "verify"]) {
+    let firstAttempt = true;
+    const installed = new Set();
+    const run = async () => {
+      const journal = [];
+      const ok = await reconcileConsumerInstallation({
+        replacementName: "REPLACEMENT",
+        markerName: "MARKER",
+        putReplacement: async () => {
+          if (firstAttempt && failedStep === "replacement") {
+            return false;
+          }
+          installed.add("REPLACEMENT");
+          return true;
+        },
+        putMarker: async () => {
+          if (firstAttempt && failedStep === "marker") return false;
+          installed.add("MARKER");
+          return true;
+        },
+        verify: async () =>
+          !(firstAttempt && failedStep === "verify") &&
+          installed.has("REPLACEMENT") &&
+          installed.has("MARKER"),
+        recordMutation: (step) => journal.push(step),
+      });
+      return { ok, journal };
+    };
+    assert.equal((await run()).ok, false);
+    firstAttempt = false;
+    const retried = await run();
+    assert.equal(retried.ok, true);
+    assert.deepEqual(retried.journal, [
+      "consumer-secret-put:REPLACEMENT",
+      "consumer-marker-put:MARKER",
+    ]);
+  }
+});
+
+test("the canonical GitHub deployment authority policy is executable and rejects drift", () => {
+  const context = {
+    github_installation_id: "22222222",
+    github_repository_id: "1313489088",
+    github_environment_id: "33333333",
+    github_workflow_id: "44444444",
+  };
+  const policy = githubManagementPermissionPolicy(context);
+  assert.equal(
+    policy,
+    "github-app-installation:22222222" +
+      ":repository:1313489088" +
+      ":environment:33333333" +
+      ":workflow:44444444" +
+      ":actions=write,contents=read,environments=write,metadata=read",
+  );
+  assert.deepEqual(
+    parseGithubManagementPermissionPolicy(policy),
+    context,
+  );
+  assert.equal(
+    parseGithubManagementPermissionPolicy(
+      policy.replace("actions=write", "actions=read"),
+    ),
+    null,
+  );
+  assert.equal(
+    parseGithubManagementPermissionPolicy(
+      `${policy},administration=write`,
+    ),
+    null,
+  );
+  const executionPlan = {
+    credential_class: "github_deployment_token",
+    github_management_credential_id:
+      "github-app-installation:22222222",
+    github_management_required_permission: policy,
+    resource_identity:
+      "github-repository:1313489088:installation:22222222:environment:33333333:workflow:44444444",
+    production_target_identity: JSON.stringify(context),
+  };
+  assert.equal(githubExecutionPlanMatches(executionPlan), true);
+  assert.equal(
+    githubExecutionPlanMatches({
+      ...executionPlan,
+      github_management_required_permission:
+        policy.replace("workflow:44444444", "workflow:999"),
+    }),
+    false,
+  );
+  assert.equal(
+    githubExecutionPlanMatches({
+      ...executionPlan,
+      github_management_credential_id:
+        "github-app-installation:999",
+    }),
+    false,
+  );
 });
 
 test("D1 export verification accepts exact read-only database metadata and never starts an export", async () => {
@@ -538,7 +708,7 @@ test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong
       workflow_runs: [{
         id: 1234,
         display_title:
-          `credential-boundary-probe-active-provider-token-new-${"b".repeat(64)}-${"c".repeat(64)}`,
+          `credential-boundary-probe-active-provider-token-new-usable-sha256:${"d".repeat(64)}-${"c".repeat(64)}`,
         head_sha: "a".repeat(40),
         created_at: "9999-12-31T23:59:59.999Z",
         status: "completed",
@@ -555,6 +725,7 @@ test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong
       planNonce: "b".repeat(64),
       secretSlot: "a",
       expectedActor: "keepr-rotation[bot]",
+      expectedFingerprint: `sha256:${"d".repeat(64)}`,
       credential: "github-installation-token",
       workflowId: "44444444",
     });
@@ -564,6 +735,11 @@ test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong
     assert.equal(
       dispatch.inputs.expected_actor,
       "keepr-rotation[bot]",
+    );
+    assert.equal(dispatch.inputs.expected_status, "usable");
+    assert.equal(
+      dispatch.inputs.expected_fingerprint,
+      `sha256:${"d".repeat(64)}`,
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -716,10 +892,9 @@ test("production provider cannot self-sign or be replaced through environment", 
     provider,
     /CREDENTIAL_BOUNDARY_ATTESTATION_KEY|createHmac/,
   );
-  assert.match(
-    attestor,
-    /readFileSync\(3,\s*"utf8"\)/,
-  );
+  assert.match(attestor, /readDescriptorJson\(3\)/u);
+  assert.doesNotMatch(boundary, /consumer_proof_key/u);
+  assert.doesNotMatch(attestor, /consumer.?proof.?key/iu);
   assert.doesNotMatch(
     attestor,
     /process\.env\.KEEPR_CREDENTIAL_BOUNDARY_ATTESTATION_KEY/,
@@ -778,8 +953,6 @@ test("attacker-controlled cwd provider and attestor files are ignored", async (t
         github_management_required_permission: "not-applicable",
       },
       {
-        consumer_proof_key:
-          "attacker-cwd-test-consumer-key-00000",
         management_credential: "not-used",
         old_secret: "not-used",
         replacement_secret: "not-used",

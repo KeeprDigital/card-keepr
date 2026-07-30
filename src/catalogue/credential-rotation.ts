@@ -10,6 +10,10 @@ import {
   credentialBoundaryAttestationFailure,
   signCredentialBoundaryFacts,
 } from "../credentials/credential-attestation";
+import {
+  credentialConsumerProofMatches,
+  credentialConsumerProofRequests,
+} from "../credentials/consumer-proof";
 import type {
   AuthenticationRow,
   CredentialRotationDocument,
@@ -788,9 +792,16 @@ export async function issueCredentialBoundaryAttestation(
   planDigest: string,
   executionAttempt: number,
   capability: string,
-  facts: unknown,
+  suppliedProofs: unknown,
   attestationKey: string,
+  consumerProofKey: string,
   observedAt: string,
+  observeGithub: (
+    plan: CredentialRotationPlanRow,
+    expected: Awaited<
+      ReturnType<typeof credentialConsumerProofRequests>
+    >,
+  ) => Promise<unknown[] | null>,
 ): Promise<string> {
   if (!/^[0-9a-f]{64}$/.test(capability)) {
     throw problem(
@@ -819,6 +830,52 @@ export async function issueCredentialBoundaryAttestation(
       "The execution capability is invalid, expired, or not consumed.",
     );
   }
+  const expectedProofs = await credentialConsumerProofRequests(
+    plan,
+    consumerProofKey,
+  );
+  const githubEvidence =
+    plan.credential_class === "github_deployment_token"
+      ? await observeGithub(plan, expectedProofs)
+      : null;
+  const proofs =
+    plan.credential_class === "github_deployment_token"
+      ? githubEvidence ?? []
+      : Array.isArray(suppliedProofs)
+        ? suppliedProofs
+        : [];
+  const signedProofsValid =
+    plan.credential_class === "github_deployment_token"
+      ? githubEvidence !== null &&
+        githubEvidence.length === expectedProofs.length
+      : proofs.length === expectedProofs.length &&
+        (await Promise.all(expectedProofs.map(async (expected) => {
+          const proof = proofs.find((candidate) =>
+            candidate !== null &&
+            typeof candidate === "object" &&
+            !Array.isArray(candidate) &&
+            (candidate as Record<string, unknown>).slot ===
+              expected.slot &&
+            (candidate as Record<string, unknown>).status ===
+              expected.expected_status
+          );
+          return credentialConsumerProofMatches(
+            proof,
+            expected,
+            consumerProofKey,
+          );
+        }))).every(Boolean);
+  if (!signedProofsValid) {
+    throw problem(
+      "credential_provider_execution_required",
+      "Trusted consumer observations are required before attestation.",
+    );
+  }
+  const facts = await serverObservedBoundaryFacts(
+    plan,
+    proofs,
+    observedAt,
+  );
   const attestation = await signCredentialBoundaryFacts(
     plan,
     facts,
@@ -858,6 +915,56 @@ export async function issueCredentialBoundaryAttestation(
     );
   }
   return attestation;
+}
+
+async function serverObservedBoundaryFacts(
+  plan: CredentialRotationPlanRow,
+  proofs: unknown[],
+  observedAt: string,
+): Promise<Record<string, unknown>> {
+  return {
+    version: 1,
+    plan_id: plan.id,
+    plan_digest: plan.plan_digest,
+    plan_nonce: plan.plan_nonce,
+    action: plan.action,
+    credential_class: plan.credential_class,
+    cloudflare_account_id: plan.cloudflare_account_id,
+    resource_identity: plan.resource_identity,
+    verification_target: plan.verification_target,
+    production_target_identity: plan.production_target_identity,
+    required_permission: plan.required_permission,
+    cloudflare_management_required_permissions:
+      plan.cloudflare_management_required_permissions,
+    consumer_installation_identity:
+      plan.consumer_installation_identity,
+    old_consumer_slot: plan.old_consumer_slot,
+    replacement_consumer_slot: plan.replacement_consumer_slot,
+    old_fingerprint: plan.old_fingerprint,
+    replacement_fingerprint: plan.replacement_fingerprint,
+    installed_fingerprint: plan.replacement_fingerprint,
+    old_issuer_credential_id: plan.old_issuer_credential_id,
+    replacement_issuer_credential_id:
+      plan.replacement_issuer_credential_id,
+    management_credential_id: plan.management_credential_id,
+    github_management_credential_id:
+      plan.github_management_credential_id,
+    github_management_credential_fingerprint:
+      plan.github_management_credential_fingerprint,
+    github_management_required_permission:
+      plan.github_management_required_permission,
+    consumer_installation_id:
+      plan.consumer_installation_identity,
+    scope_evidence_digest:
+      `sha256:${await secretHash(JSON.stringify(proofs))}`,
+    old_credential_status:
+      plan.action === "revoke" ? "unusable" : "usable",
+    replacement_credential_status: "usable",
+    observed_at: observedAt,
+    execution_attempt: plan.execution_attempt,
+    execution_mode:
+      plan.execution_attempt === 1 ? "mutation" : "reconciliation",
+  };
 }
 
 export async function releaseCredentialRotationPlanExecution(

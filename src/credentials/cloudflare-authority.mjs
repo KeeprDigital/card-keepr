@@ -48,10 +48,7 @@ export function disposableProbeStatements(planDigest, challenge) {
   const quoted = `"${table}"`;
   return Object.freeze({
     table,
-    create:
-      `CREATE TABLE ${quoted} (` +
-      "owner TEXT PRIMARY KEY CHECK(length(owner) = 64))",
-    write: `INSERT INTO ${quoted} (owner) VALUES (?)`,
+    create: `CREATE TABLE ${quoted} AS SELECT ? AS owner`,
     read: `SELECT owner FROM ${quoted}`,
     drop: `DROP TABLE ${quoted}`,
   });
@@ -118,9 +115,27 @@ export async function probeD1Credential({
     cleanup: "not-started",
   };
   try {
-    const creation = await query(statements.create);
+    let creation = await query(statements.create, [challenge]);
     if (!creation.ok) {
-      return outcome;
+      const stale = await query(statements.read);
+      const staleRows = resultRows(stale.document);
+      if (
+        !stale.ok ||
+        staleRows.length !== 1 ||
+        staleRows[0]?.owner !== challenge
+      ) {
+        return outcome;
+      }
+      outcome = {
+        ok: false,
+        mutation_started: true,
+        cleanup: "pending",
+      };
+      const staleDrop = await query(statements.drop);
+      outcome.cleanup = staleDrop.ok ? "complete" : "failed";
+      if (!staleDrop.ok) return outcome;
+      creation = await query(statements.create, [challenge]);
+      if (!creation.ok) return outcome;
     }
     created = true;
     outcome = {
@@ -128,18 +143,12 @@ export async function probeD1Credential({
       mutation_started: true,
       cleanup: "pending",
     };
-    const written = await query(statements.write, [challenge]);
-    if (written.ok) {
-      const read = await query(statements.read);
-      const rows = Array.isArray(read.document?.result)
-        ? read.document.result.flatMap((entry) =>
-            Array.isArray(entry?.results) ? entry.results : [])
-        : [];
-      outcome.ok =
-        read.ok &&
-        rows.length === 1 &&
-        rows[0]?.owner === challenge;
-    }
+    const read = await query(statements.read);
+    const rows = resultRows(read.document);
+    outcome.ok =
+      read.ok &&
+      rows.length === 1 &&
+      rows[0]?.owner === challenge;
   } catch {
     outcome.ok = false;
   } finally {
@@ -154,4 +163,11 @@ export async function probeD1Credential({
   }
   outcome.ok = outcome.ok && outcome.cleanup === "complete";
   return outcome;
+}
+
+function resultRows(document) {
+  return Array.isArray(document?.result)
+    ? document.result.flatMap((entry) =>
+        Array.isArray(entry?.results) ? entry.results : [])
+    : [];
 }
