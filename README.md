@@ -66,26 +66,30 @@ Catalogue Revision still match. Publication verifies the deterministic
 Catalogue Export before atomically advancing the D1 current-revision pointer.
 
 An Ingestion Run persists its Official Source evidence plan before any network
-access, then starts its durable collection phase explicitly. The registry-bound
-adapter version and credential-free HTTPS request are fixed in the plan:
+access, then starts its durable collection phase explicitly. Production JSON
+Card adapters remain unavailable until an exact Bandai Card-list surface is
+implemented. The installed production Errata adapter is fixed to Bandai's
+exact English Errata URL:
 
 ```sh
 npm run keepr -- source collect \
   --game one-piece \
   --lineage one-piece-en \
-  --adapter one-piece-json-document@1 \
-  --request-id cards \
-  --url https://www.example.invalid/official/cards.json \
+  --adapter one-piece-official-errata-html@1 \
+  --request-id errata \
+  --url https://en.onepiece-cardgame.com/rules/errata_card/ \
   --idempotency-key source_collection_001 \
   --json
 
 npm run keepr -- source resume --run-id RUN_ID --json
 npm run keepr -- source show --run-id RUN_ID
+PRODUCTION_TARGET="$(npm run --silent keepr -- status --json | jq -c .production_target)"
 npm run keepr -- run reconcile \
   --run-id RUN_ID \
   --expected-current-revision CATREV_ID \
   --idempotency-key reconcile_RUN_ID \
   --environment production \
+  --confirm "$PRODUCTION_TARGET" \
   --yes \
   --json
 ```
@@ -95,10 +99,13 @@ A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with
 `snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@1`.
-Reconciliation is an authenticated owner action and requires both the explicit
-production target and confirmation flags shown above. Before sending the
-mutation, the CLI resolves the named production Ingestion Run and requires its
-bound expected Catalogue Revision to match the supplied value.
+Reconciliation is an authenticated owner action. Before sending the mutation,
+the CLI resolves the named production Ingestion Run, its bound Catalogue
+Revision, and the exact Cloudflare account, Worker scripts, D1 databases, and
+R2 buckets returned by production status. `--confirm` must equal that complete
+resolved target document; absent or altered confirmation performs no mutation.
+An accepted Workflow that is not yet terminal exits `10`; exact replays return
+`0` only after terminal output is available.
 
 After applying the Errata/search migration to a database that already contains
 Catalogue Revisions, run the bounded, idempotent search repair until its JSON
@@ -110,15 +117,19 @@ npm run keepr -- catalogue search repair \
   --expected-current-revision CURRENT_CATREV_ID \
   --idempotency-key repair_CATREV_ID \
   --environment production \
+  --confirm "$PRODUCTION_TARGET" \
   --yes \
   --json
 ```
 
-Card search repair is limited to the current Catalogue Revision and its two
-immediate predecessors. Run the command again with a new idempotency key for
-each bounded step until it reports `"complete": true`. Legacy revisions outside
-that retained window stay archived and cannot be repaired. Newly published
-revisions write their search material and availability marker atomically.
+Card search repair is limited to the authoritative retained chain returned by
+production status: the current Catalogue Revision and its two immediate
+predecessors. It does not infer that chain from the bounded recent-run
+diagnostics. Run the command again with a new idempotency key for each bounded
+step until it reports `"complete": true`. Legacy revisions outside that
+retained window stay archived and cannot be repaired. Newly published revisions
+write their selective literal n-gram search material and availability marker
+atomically.
 
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably

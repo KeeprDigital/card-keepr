@@ -217,6 +217,26 @@ test("a legacy published run upgrades to the strict lifecycle representation wit
     legacyDatabase,
     testEnv.CATALOGUE_EXPORTS,
     terminalAt,
+    {
+      cloudflare_account_id: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+      d1_databases: [
+        {
+          name: "card-keepr-catalogue",
+          id: testEnv.CATALOGUE_D1_DATABASE_ID,
+        },
+        {
+          name: "card-keepr-disposable-verification",
+          id: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        },
+      ],
+      r2_buckets: [
+        "card-keepr-evidence",
+        "card-keepr-printing-images",
+        "card-keepr-catalogue-exports",
+        "card-keepr-backups",
+      ],
+    },
   );
   expect(status).toMatchObject({
     source_freshness: [
@@ -1820,6 +1840,26 @@ test("an unchanged successful retry advances freshness without another revision 
   expect(status.response.status).toBe(200);
   expect(status.document).toMatchObject({
     contract: "card-keepr-administration-status@1",
+    production_target: {
+      cloudflare_account_id: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+      d1_databases: [
+        {
+          name: "card-keepr-catalogue",
+          id: testEnv.CATALOGUE_D1_DATABASE_ID,
+        },
+        {
+          name: "card-keepr-disposable-verification",
+          id: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        },
+      ],
+      r2_buckets: [
+        "card-keepr-evidence",
+        "card-keepr-printing-images",
+        "card-keepr-catalogue-exports",
+        "card-keepr-backups",
+      ],
+    },
     safe_state: {
       current_revision_id: revisionId,
       active_ingestion_run_id: null,
@@ -1833,6 +1873,14 @@ test("an unchanged successful retry advances freshness without another revision 
       },
     ],
   });
+  const repairableRevisions =
+    status.document.repairable_catalogue_revision_ids;
+  if (!Array.isArray(repairableRevisions)) {
+    throw new Error("status retained revision chain is invalid");
+  }
+  expect(repairableRevisions[0]).toBe(revisionId);
+  expect(repairableRevisions.length).toBeGreaterThanOrEqual(1);
+  expect(repairableRevisions.length).toBeLessThanOrEqual(3);
   const diagnostics = status.document.diagnostics;
   const expectedNewRevision =
     firstPublished.document.publication_outcome === "revision" ? 1 : 0;

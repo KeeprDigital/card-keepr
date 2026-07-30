@@ -6,6 +6,27 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 const root = resolve(import.meta.dirname, "..");
+const productionTarget = {
+  cloudflare_account_id: "0123456789abcdef0123456789abcdef",
+  worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+  d1_databases: [
+    {
+      name: "card-keepr-catalogue",
+      id: "00000000-0000-0000-0000-000000000001",
+    },
+    {
+      name: "card-keepr-disposable-verification",
+      id: "00000000-0000-0000-0000-000000000002",
+    },
+  ],
+  r2_buckets: [
+    "card-keepr-evidence",
+    "card-keepr-printing-images",
+    "card-keepr-catalogue-exports",
+    "card-keepr-backups",
+  ],
+};
+const productionConfirmation = JSON.stringify(productionTarget);
 const run = {
   id: "run_cli_demo",
   state: "failed",
@@ -137,6 +158,257 @@ test("CLI search repair requires explicit production selection and confirmation"
   });
 });
 
+test("CLI production mutation requires exact resolved Cloudflare target confirmation before POST", async (t) => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: {
+          current_revision_id: "catrev_cli_demo",
+        },
+        repairable_catalogue_revision_ids: [
+          "catrev_cli_demo",
+          "catrev_cli_previous",
+          "catrev_cli_second_previous",
+        ],
+        recent_runs: [],
+      }));
+      return;
+    }
+    if (request.method === "GET") {
+      response.end(JSON.stringify(run));
+      return;
+    }
+    response.end(JSON.stringify({
+      contract: "card-keepr-card-search-repair@1",
+      complete: true,
+      processed_cards: 1,
+      revisions_available: 3,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+
+  const unconfirmed = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "reconcile-cli-unconfirmed",
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(unconfirmed.code, 2, unconfirmed.stderr);
+  assert.deepEqual(JSON.parse(unconfirmed.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "confirmation_required",
+    detail:
+      `Resolved production target ${productionConfirmation}. ` +
+      `Re-run with --confirm '${productionConfirmation}'.`,
+  });
+  assert.equal(
+    requests.filter(({ method }) => method === "POST").length,
+    0,
+  );
+
+  const wronglyConfirmed = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--target-revision",
+      "catrev_cli_second_previous",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "repair-cli-wrong-confirmation",
+      "--environment",
+      "production",
+      "--confirm",
+      `${productionConfirmation}altered`,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(wronglyConfirmed.code, 2, wronglyConfirmed.stderr);
+  assert.equal(
+    JSON.parse(wronglyConfirmed.stdout).code,
+    "confirmation_required",
+  );
+  assert.equal(
+    requests.filter(({ method }) => method === "POST").length,
+    0,
+  );
+
+  const confirmed = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--target-revision",
+      "catrev_cli_second_previous",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "repair-cli-confirmed-target",
+      "--environment",
+      "production",
+      "--confirm",
+      productionConfirmation,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(confirmed.code, 0, confirmed.stderr);
+  assert.equal(
+    requests.filter(({ method }) => method === "POST").length,
+    1,
+  );
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-search-materialization/repair",
+    body: {
+      target_revision_id: "catrev_cli_second_previous",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "repair-cli-confirmed-target",
+    },
+  });
+});
+
+test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10", async (t) => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: {
+          current_revision_id: "catrev_cli_demo",
+        },
+        repairable_catalogue_revision_ids: ["catrev_cli_demo"],
+      }));
+      return;
+    }
+    if (request.method === "GET") {
+      response.end(JSON.stringify(run));
+      return;
+    }
+    response.statusCode = 202;
+    response.end(JSON.stringify({
+      contract: "card-keepr-reconciliation-workflow@1",
+      ingestion_run_id: "run_cli_demo",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "reconcile-cli-running",
+      workflow_instance_id: "reconcile-cli-running-instance",
+      status: "running",
+      output: null,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+
+  const result = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "reconcile-cli-running",
+      "--environment",
+      "production",
+      "--confirm",
+      productionConfirmation,
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
+
+  assert.equal(result.code, 10, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-reconciliation-workflow@1",
+    ingestion_run_id: "run_cli_demo",
+    expected_current_revision_id: "catrev_cli_demo",
+    idempotency_key: "reconcile-cli-running",
+    workflow_instance_id: "reconcile-cli-running-instance",
+    status: "running",
+    output: null,
+  });
+  assert.deepEqual(requests, [
+    {
+      method: "GET",
+      path: "/v1/ingestion-runs/run_cli_demo",
+      body: null,
+    },
+    {
+      method: "GET",
+      path: "/v1/status",
+      body: null,
+    },
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/reconciliation",
+      body: {
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "reconcile-cli-running",
+      },
+    },
+  ]);
+});
+
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -152,6 +424,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       response.end(
         JSON.stringify({
           contract: "card-keepr-administration-status@1",
+          production_target: productionTarget,
           safe_state: {
             current_revision_id: "catrev_cli_demo",
             recovery_health: "healthy",
@@ -174,6 +447,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
             orphaned_catalogue_export_object_count: 2,
             pending_publication_cleanup_count: 1,
           },
+          repairable_catalogue_revision_ids: ["catrev_cli_demo"],
           recent_runs: [run],
         }),
       );
@@ -189,6 +463,12 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
         }),
       );
       return;
+    }
+    if (
+      request.url ===
+      "/v1/ingestion-runs/run_cli_demo/collection/resume"
+    ) {
+      response.statusCode = 202;
     }
     response.end(JSON.stringify(run));
   });
@@ -258,6 +538,8 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       "reconcile-cli-demo",
       "--environment",
       "production",
+      "--confirm",
+      productionConfirmation,
       "--yes",
       "--json",
     ],
@@ -278,6 +560,8 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       "repair-cli-demo",
       "--environment",
       "production",
+      "--confirm",
+      productionConfirmation,
       "--yes",
       "--json",
     ],
@@ -334,10 +618,30 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
-  assert.deepEqual(requests.slice(-7), [
+  const resumed = await runCli(
+    [
+      "source",
+      "resume",
+      "--run-id",
+      "run_cli_demo",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(
+    resumed.code,
+    0,
+    "non-Workflow administration requests retain their established exit code",
+  );
+  assert.deepEqual(requests.slice(-9), [
     {
       method: "GET",
       path: "/v1/ingestion-runs/run_cli_demo",
+      body: null,
+    },
+    {
+      method: "GET",
+      path: "/v1/status",
       body: null,
     },
     {
@@ -384,6 +688,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       body: {
         idempotency_key: "cleanup-cli-demo",
       },
+    },
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/resume",
+      body: null,
     },
   ]);
 

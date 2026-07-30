@@ -36,7 +36,13 @@ type SectionDraft = {
 };
 
 type PairDraft = {
+  ordinal: number;
   labelParts: string[];
+  valueParts: string[];
+};
+
+type NoticeDraft = {
+  ordinal: number;
   valueParts: string[];
 };
 
@@ -45,8 +51,11 @@ type EntryDraft = {
   sectionSourceId: string | null;
   sectionPublishedOn: string | null;
   headingParts: string[];
+  headingCount: number;
   imagePaths: string[];
   pairs: PairDraft[];
+  notices: NoticeDraft[];
+  nextWordingOrdinal: number;
   allTextParts: string[];
 };
 
@@ -66,7 +75,10 @@ export async function parseOnePieceOfficialErrataHtml(
   let activeHeading: string[] | null = null;
   let activeLabel: string[] | null = null;
   let activeValue: string[] | null = null;
-  let declaredRecordCount = 0;
+  let activeNotice: string[] | null = null;
+  let matchedEntryCount = 0;
+  let inventoriedHeadingCount = 0;
+  const inventoriedModalTargets: string[] = [];
 
   const rewriter = new HTMLRewriter()
     .on("h3.pageTit", {
@@ -104,6 +116,25 @@ export async function parseOnePieceOfficialErrataHtml(
       text(text) {
         sections.at(-1)?.publishedOnParts.push(text.text);
       },
+    })
+    .on(".contentsWrap h5.smallTitRed", {
+      element() {
+        inventoriedHeadingCount += 1;
+      },
+    })
+    .on(".contentsWrap a.modalOpen", {
+      element(element) {
+        const target = element.getAttribute("data-src");
+        if (
+          target === null ||
+          !/^#[A-Za-z][A-Za-z0-9_-]+$/.test(target)
+        ) {
+          return parseFailure(
+            "An Official Errata modal inventory target is invalid.",
+          );
+        }
+        inventoriedModalTargets.push(target);
+      },
     });
   const entryHandler: HTMLRewriterElementContentHandlers = {
     element(element) {
@@ -118,11 +149,14 @@ export async function parseOnePieceOfficialErrataHtml(
           ? null
           : normalizedText(section.publishedOnParts),
         headingParts: [],
+        headingCount: 0,
         imagePaths: [],
         pairs: [],
+        notices: [],
+        nextWordingOrdinal: 0,
         allTextParts: [],
       };
-      declaredRecordCount += 1;
+      matchedEntryCount += 1;
       activeEntry = entry;
       element.onEndTag(() => {
         if (activeEntry !== entry) {
@@ -143,6 +177,7 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum Card heading is unavailable.",
         );
       }
+      activeEntry.headingCount += 1;
       activeHeading = activeEntry.headingParts;
       element.onEndTag(() => {
         activeHeading = null;
@@ -173,7 +208,12 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum field label is invalid.",
         );
       }
-      const pair: PairDraft = { labelParts: [], valueParts: [] };
+      const pair: PairDraft = {
+        ordinal: activeEntry.nextWordingOrdinal,
+        labelParts: [],
+        valueParts: [],
+      };
+      activeEntry.nextWordingOrdinal += 1;
       activeEntry.pairs.push(pair);
       activeLabel = pair.labelParts;
       element.onEndTag(() => {
@@ -206,6 +246,28 @@ export async function parseOnePieceOfficialErrataHtml(
       activeValue?.push("\n");
     },
   };
+  const noticeHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (activeEntry === null || activeNotice !== null) {
+        return parseFailure(
+          "An Official Erratum notice is invalid.",
+        );
+      }
+      const notice: NoticeDraft = {
+        ordinal: activeEntry.nextWordingOrdinal,
+        valueParts: [],
+      };
+      activeEntry.nextWordingOrdinal += 1;
+      activeEntry.notices.push(notice);
+      activeNotice = notice.valueParts;
+      element.onEndTag(() => {
+        activeNotice = null;
+      });
+    },
+    text(text) {
+      activeNotice?.push(text.text);
+    },
+  };
   for (const entrySelector of entrySelectors) {
     rewriter
       .on(entrySelector, entryHandler)
@@ -214,7 +276,11 @@ export async function parseOnePieceOfficialErrataHtml(
       .on(`${entrySelector} .typographicalImg img`, imageHandler)
       .on(`${entrySelector} dl > dt`, labelHandler)
       .on(`${entrySelector} dl > dd`, valueHandler)
-      .on(`${entrySelector} dl > dd br`, valueBreakHandler);
+      .on(`${entrySelector} dl > dd br`, valueBreakHandler)
+      .on(
+        `${entrySelector} ul.commonNoticeList > li`,
+        noticeHandler,
+      );
   }
 
   const parsed = rewriter.transform(
@@ -242,8 +308,15 @@ export async function parseOnePieceOfficialErrataHtml(
     return parseFailure("The Official Errata page title is unavailable.");
   }
   if (
-    declaredRecordCount === 0 ||
-    observations.length !== declaredRecordCount
+    inventoriedHeadingCount === 0 ||
+    matchedEntryCount !== inventoriedHeadingCount ||
+    observations.length !== inventoriedHeadingCount ||
+    inventoriedModalTargets.some(
+      (target) =>
+        !observations.some(
+          (observation) => observation.source.fragment === target,
+        ),
+    )
   ) {
     return parseFailure(
       "The Official Errata entry enumeration is incomplete.",
@@ -255,6 +328,11 @@ export async function parseOnePieceOfficialErrataHtml(
 function parsedEntry(
   entry: EntryDraft,
 ): OnePieceOfficialErratumObservation {
+  if (entry.headingCount !== 1) {
+    return parseFailure(
+      "An Official Erratum must contain exactly one Card heading.",
+    );
+  }
   const headingLines = normalizedLines(entry.headingParts);
   const embeddedDate = headingLines.length > 1
     ? publishedDate(headingLines[0] ?? "")
@@ -286,15 +364,21 @@ function parsedEntry(
     return parseFailure("An Official Erratum source fragment is invalid.");
   }
   const pairs = entry.pairs.map((pair) => ({
+    ordinal: pair.ordinal,
     label: normalizedText(pair.labelParts),
     value: normalizedLines(pair.valueParts).join("\n"),
+  }));
+  const notices = entry.notices.map((notice) => ({
+    ordinal: notice.ordinal,
+    value: normalizedText(notice.valueParts),
   }));
   if (
     pairs.length < 2 ||
     pairs.some((pair) =>
       !["Note:", "Before:", "After:"].includes(pair.label) ||
       pair.value.length === 0
-    )
+    ) ||
+    notices.some((notice) => notice.value.length === 0)
   ) {
     return parseFailure(
       "An Official Erratum contains an unsupported field.",
@@ -307,6 +391,16 @@ function parsedEntry(
       "An Official Erratum must contain exactly one Before/After pair.",
     );
   }
+  const officialWording = [
+    ...pairs.map((pair) => ({
+      ordinal: pair.ordinal,
+      value: `${pair.label} ${pair.value}`,
+    })),
+    ...notices,
+  ]
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map(({ value }) => value)
+    .join("\n");
   return {
     kind: "official_erratum",
     game: "one-piece",
@@ -321,7 +415,7 @@ function parsedEntry(
     effective_from: null,
     observed_printed_rules_text: before,
     corrected_rules_text: after,
-    official_wording: `Before: ${before}\nAfter: ${after}`,
+    official_wording: officialWording,
     applies_to_parallel_printings:
       /\bAlso applies to parallel card version\./i.test(
         normalizedText(entry.allTextParts),

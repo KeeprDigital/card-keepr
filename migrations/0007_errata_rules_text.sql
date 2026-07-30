@@ -134,7 +134,9 @@ CREATE TABLE revision_card_search_terms (
   catalogue_revision_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
   term TEXT NOT NULL CHECK (
-    length(term) > 0 AND length(term) <= 128
+    (substr(term, 1, 3) = 'g1:' AND length(term) = 4)
+    OR (substr(term, 1, 3) = 'g2:' AND length(term) = 5)
+    OR (substr(term, 1, 3) = 'g3:' AND length(term) = 6)
   ),
   sort_game TEXT NOT NULL,
   sort_identity_kind TEXT NOT NULL,

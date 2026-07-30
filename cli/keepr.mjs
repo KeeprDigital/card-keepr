@@ -339,6 +339,7 @@ async function reconcileRun(arguments_, environment, json) {
       "--expected-current-revision",
       "--idempotency-key",
       "--environment",
+      "--confirm",
     ],
     ["--yes"],
   );
@@ -347,6 +348,7 @@ async function reconcileRun(arguments_, environment, json) {
     options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
   if (
     options.error !== null ||
     runId === undefined ||
@@ -369,7 +371,13 @@ async function reconcileRun(arguments_, environment, json) {
     runId,
     expectedCurrentRevision,
   );
-  if (resolved !== 0) return resolved;
+  if (typeof resolved === "number") return resolved;
+  const confirmed = confirmProductionTarget(
+    json,
+    resolved.productionTarget,
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
   return administrationRequest(
     environment,
     json,
@@ -390,6 +398,7 @@ async function repairCatalogueSearch(arguments_, environment, json) {
       "--expected-current-revision",
       "--idempotency-key",
       "--environment",
+      "--confirm",
     ],
     ["--yes"],
   );
@@ -398,6 +407,7 @@ async function repairCatalogueSearch(arguments_, environment, json) {
     options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
   if (
     options.error !== null ||
     targetRevision === undefined ||
@@ -420,7 +430,13 @@ async function repairCatalogueSearch(arguments_, environment, json) {
     targetRevision,
     expectedCurrentRevision,
   );
-  if (resolved !== 0) return resolved;
+  if (typeof resolved === "number") return resolved;
+  const confirmed = confirmProductionTarget(
+    json,
+    resolved.productionTarget,
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
   return administrationRequest(
     environment,
     json,
@@ -621,7 +637,12 @@ async function administrationRequest(
   } else {
     process.stdout.write(`${formatAdministrationResult(document)}\n`);
   }
-  return 0;
+  return document.contract ===
+      "card-keepr-reconciliation-workflow@1" &&
+      (observed.responseStatus === 202 ||
+        document.status !== "complete")
+    ? 10
+    : 0;
 }
 
 async function fetchAdministrationDocument(
@@ -698,7 +719,12 @@ async function fetchAdministrationDocument(
       document: null,
     };
   }
-  return { error: null, exitCode: 0, document };
+  return {
+    error: null,
+    exitCode: 0,
+    responseStatus: response.status,
+    document,
+  };
 }
 
 async function resolveReconciliationTarget(
@@ -722,13 +748,37 @@ async function resolveReconciliationTarget(
       "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
     );
   }
-  return 0;
+  return resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
 }
 
 async function resolveSearchRepairTarget(
   environment,
   json,
   targetRevision,
+  expectedCurrentRevision,
+) {
+  const resolved = await resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  if (!resolved.repairableRevisionIds.includes(targetRevision)) {
+    return resolvedTargetFailure(
+      json,
+      "The target Catalogue Revision was not resolved from the authoritative retained revision chain.",
+    );
+  }
+  return resolved;
+}
+
+async function resolveProductionStatus(
+  environment,
+  json,
   expectedCurrentRevision,
 ) {
   const status = await fetchAdministrationDocument(
@@ -746,23 +796,112 @@ async function resolveSearchRepairTarget(
       }, not ${expectedCurrentRevision}.`,
     );
   }
-  const recentRuns = Array.isArray(status.document?.recent_runs)
-    ? status.document.recent_runs
-    : [];
-  const targetResolved = targetRevision === currentRevision ||
-    recentRuns.some(
-      (run) =>
-        run !== null &&
-        typeof run === "object" &&
-        run.resulting_revision_id === targetRevision,
-    );
-  if (!targetResolved) {
-    return resolvedTargetFailure(
+  const productionTarget = validatedProductionTarget(
+    status.document?.production_target,
+  );
+  const repairableRevisionIds =
+    status.document?.repairable_catalogue_revision_ids;
+  if (
+    productionTarget === null ||
+    !Array.isArray(repairableRevisionIds) ||
+    repairableRevisionIds.length < 1 ||
+    repairableRevisionIds.length > 3 ||
+    repairableRevisionIds[0] !== currentRevision ||
+    !repairableRevisionIds.every(
+      (revision) =>
+        typeof revision === "string" &&
+        /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision),
+    )
+  ) {
+    return writeFailure(
       json,
-      "The target Catalogue Revision was not resolved from production status.",
+      {
+        code: "invalid_administration_contract",
+        detail:
+          "Production status did not expose exact Cloudflare target identities and the authoritative retained revision chain.",
+      },
+      8,
     );
   }
-  return 0;
+  return { productionTarget, repairableRevisionIds };
+}
+
+function confirmProductionTarget(json, productionTarget, confirmation) {
+  const required = JSON.stringify(productionTarget);
+  if (confirmation === required) return 0;
+  return writeFailure(
+    json,
+    {
+      code: "confirmation_required",
+      detail:
+        `Resolved production target ${required}. ` +
+        `Re-run with --confirm '${required}'.`,
+    },
+    2,
+  );
+}
+
+function validatedProductionTarget(value) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !sameKeys(value, [
+      "cloudflare_account_id",
+      "worker_scripts",
+      "d1_databases",
+      "r2_buckets",
+    ]) ||
+    !/^[0-9a-f]{32}$/.test(value.cloudflare_account_id ?? "") ||
+    !sameStringArray(
+      value.worker_scripts,
+      ["card-keepr-api", "card-keepr-ingestion"],
+    ) ||
+    !sameStringArray(
+      value.r2_buckets,
+      [
+        "card-keepr-evidence",
+        "card-keepr-printing-images",
+        "card-keepr-catalogue-exports",
+        "card-keepr-backups",
+      ],
+    ) ||
+    !Array.isArray(value.d1_databases) ||
+    value.d1_databases.length !== 2
+  ) {
+    return null;
+  }
+  const expectedDatabaseNames = [
+    "card-keepr-catalogue",
+    "card-keepr-disposable-verification",
+  ];
+  for (const [index, database] of value.d1_databases.entries()) {
+    if (
+      database === null ||
+      typeof database !== "object" ||
+      Array.isArray(database) ||
+      !sameKeys(database, ["name", "id"]) ||
+      database.name !== expectedDatabaseNames[index] ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+        database.id ?? "",
+      )
+    ) {
+      return null;
+    }
+  }
+  return value;
+}
+
+function sameKeys(value, expected) {
+  const keys = Object.keys(value).sort();
+  return keys.length === expected.length &&
+    expected.slice().sort().every((key, index) => key === keys[index]);
+}
+
+function sameStringArray(value, expected) {
+  return Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((item, index) => item === expected[index]);
 }
 
 function writeObservedFailure(observed, json) {

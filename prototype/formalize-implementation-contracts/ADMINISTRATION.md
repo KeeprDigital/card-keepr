@@ -20,9 +20,12 @@ Read-only commands never prompt. Every production-changing command:
   or stdin descriptor, never an argument; and
 - returns stable JSON with `--json` and the exit codes below.
 
-`--yes` is accepted only with all applicable target identities, expected
-revision, content or backup digest, and an idempotency key. A mismatch fails
-closed.
+`--yes` is accepted only with `--confirm` equal to the complete resolved
+production-target JSON where applicable, plus the expected revision, content
+or backup digest, and an idempotency key. The production-target document binds
+the Cloudflare account, both Worker scripts, both D1 databases, and every
+private R2 bucket. Missing, partial, reordered, or altered confirmation fails
+before mutation.
 
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale
@@ -66,6 +69,12 @@ request is exactly `{expected_current_revision_id, idempotency_key}` and is
 bound to the run identity in the route. An exact replay observes the same
 Workflow instance; reuse of the idempotency key for another run or expected
 revision fails closed.
+HTTP `202`, and exact replays whose Workflow remains queued, running, waiting,
+or paused, exit `10`. Only a terminal result exits `0`. A paused exact instance
+is resumed. An errored or terminated instance deterministically consumes any
+retained reconciliation result, or idempotently finalizes the run as failed
+and releases its global mutation lock when no result was committed. This also
+recovers a Workflow whose failure-finalization step itself exhausted retries.
 
 `catalogue search repair` performs one resumable, byte-bounded repair step. Its
 request is exactly
@@ -75,6 +84,8 @@ limited to that revision plus its two immediate predecessors. Every unfinished
 replay atomically rechecks the retained expected-current guard before claiming
 another step. An exact completed replay returns the persisted result; a stale
 expected revision or conflicting idempotency request fails closed.
+The CLI resolves that repair window from the authoritative retained revision
+chain in production status, never from the bounded recent-run diagnostic list.
 
 ## Catalogue Export deletion
 

@@ -9,6 +9,10 @@ import {
   onePieceOfficialErrataHtml,
   onePieceOfficialErrataShapeDriftHtml,
 } from "./one-piece-official-errata-html";
+import {
+  startEvidenceRun,
+  type StartEvidenceRunRequest,
+} from "../../src/catalogue/source-evidence";
 
 export {
   EvidenceHostWorkflow,
@@ -38,6 +42,21 @@ export class AcceptanceShapeDriftOfficialSourceTransport
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (
+      request.method === "POST" &&
+      url.pathname === "/acceptance/synthetic-evidence" &&
+      request.headers.get("authorization") ===
+        `Bearer ${env.ADMINISTRATION_KEY}`
+    ) {
+      return Response.json(
+        await startEvidenceRun(
+          env.CATALOGUE_DB,
+          await request.json<StartEvidenceRunRequest>(),
+          "synthetic_fixture",
+        ),
+        { status: 201 },
+      );
+    }
     return (
       url.pathname.startsWith("/v1/ingestion-runs/") ||
       url.pathname === "/v1/status" ||

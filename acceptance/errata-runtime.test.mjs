@@ -170,8 +170,11 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   };
   const initialStatus = await runCli(["status", "--json"], cliEnvironment);
   assert.equal(initialStatus.code, 0, initialStatus.stderr);
-  const bootstrapRevision = JSON.parse(initialStatus.stdout).safe_state
-    .current_revision_id;
+  const initialStatusDocument = JSON.parse(initialStatus.stdout);
+  const bootstrapRevision =
+    initialStatusDocument.safe_state.current_revision_id;
+  cliEnvironment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION =
+    JSON.stringify(initialStatusDocument.production_target);
   const repaired = await runCli(
     [
       "catalogue",
@@ -185,6 +188,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
       "repair-bootstrap-search",
       "--environment",
       "production",
+      "--confirm",
+      cliEnvironment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION,
       "--yes",
       "--json",
     ],
@@ -193,12 +198,12 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(repaired.code, 0, repaired.stderr);
   assert.equal(JSON.parse(repaired.stdout).complete, true);
 
-  const seedRun = await collectSource(
+  const seedRun = await collectFixtureSource(
     {
-      adapter: "one-piece-json-document@1",
+      adapter: "fixture-one-piece-json@1",
       idempotencyKey: "seed-published-errata-targets",
       requestId: "published-card-list",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: "https://synthetic-fixture.invalid/card-list",
     },
     cliEnvironment,
   );
@@ -379,6 +384,10 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(exportedErratum.target_type, "card");
   assert.equal(exportedErratum.effective_from, null);
   assert.match(
+    exportedErratum.official_wording,
+    /^Note: This correction applies in every game format\.\nBefore: .+\nAfter: .+$/s,
+  );
+  assert.match(
     exportedErratum.corrected_value,
     /DON!! cards: Select up to 1 \{Egghead\} type card/,
   );
@@ -435,6 +444,37 @@ async function collectSource(input, environment) {
   return JSON.parse(result.stdout);
 }
 
+async function collectFixtureSource(input, environment) {
+  const response = await fetch(
+    new URL(
+      "/acceptance/synthetic-evidence",
+      environment.KEEPR_INGESTION_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: input.adapter,
+        idempotency_key: input.idempotencyKey,
+        requests: [{
+          id: input.requestId,
+          method: "GET",
+          url: input.url,
+          headers: { accept: "application/json" },
+        }],
+      }),
+    },
+  );
+  const document = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(document));
+  return document;
+}
+
 async function resumeAndWait(runId, environment, runtime) {
   const resumed = await runCli(
     ["source", "resume", "--run-id", runId, "--json"],
@@ -465,17 +505,19 @@ async function reconcileAndWait(
         idempotencyKey,
         "--environment",
         "production",
+        "--confirm",
+        environment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION,
         "--yes",
         "--json",
       ],
       environment,
     );
-    if (result.code !== 0) {
+    if (result.code === 10) {
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
     }
     assert.equal(
-      result.code,
-      0,
+      result.code === 0 || result.code === 10,
+      true,
       `${result.stdout}\n${result.stderr}\n${runtime.getOutput()}`,
     );
     const workflow = JSON.parse(result.stdout);

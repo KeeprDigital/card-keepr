@@ -62,12 +62,26 @@ describe("Errata rules-text lifecycle", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "retained_evidence_invalid",
-          detail: expect.stringContaining(
-            "exact Source Adapter coverage",
-          ),
+          detail:
+            "Retained Source Observation Set provenance is invalid.",
         }),
       ]),
     );
+    const terminal = await get(`/v1/ingestion-runs/${runId}`);
+    expect(terminal.document).toMatchObject({ state: "failed" });
+    expect(terminal.document).not.toHaveProperty("publication_outcome");
+    expect(terminal.document).not.toHaveProperty("published_revision_id");
+    expect(terminal.document).not.toHaveProperty("resulting_revision_id");
+    const status = await get("/v1/status");
+    expect(status.document).toMatchObject({
+      safe_state: {
+        current_revision_id: requiredString(
+          started.document,
+          "expected_current_revision_id",
+        ),
+        active_ingestion_run_id: null,
+      },
+    });
   });
 
   test("raw Errata NDJSON bytes follow the manifest id:utf8 ordering contract", async () => {

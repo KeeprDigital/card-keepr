@@ -15,8 +15,13 @@ JSON Card document. The versioned HTML adapter structurally enumerates both
 dated detail entries and historical modal entries inside the page's bounded
 content region. It requires the dated section or modal heading, Card heading,
 correction image, and exact `Before:`/`After:` pair for every enumerated entry;
-the declared and parsed counts must match, and unrelated footer or rules-change
-content is excluded. Its dedicated Erratum observation keeps the page's
+an independent inventory of Card headings and modal links must match the
+recognized entry containers and parsed observations, so a new container shape
+cannot disappear merely because known shapes remain. Unrelated footer or
+rules-change content is excluded. `Note:` fields and common notice qualifiers
+are retained with the `Before:`/`After:` fields in source order as
+`official_wording`; an unknown field fails closed. Its dedicated Erratum
+observation keeps the page's
 published date separate from `effective_from`: a dated page heading does not
 invent an official applicability date, so `effective_from` remains `null`
 unless the source explicitly supplies one. `Before:` is observed Printed Rules
@@ -34,8 +39,8 @@ Each Erratum object conforms to
 - `effective_from` is an inclusive `YYYY-MM-DD` official applicability date,
   or `null` only when the Official Source publishes no date. A Catalogue
   candidate evaluates it against the reconciliation clock.
-- `official_wording` is the non-empty correction notice published by the
-  Official Source.
+- `official_wording` is the complete non-empty correction notice published by
+  the Official Source, including modeled qualifiers in source order.
 - `corrected_value` is the exact non-empty corrected text, or `null` when the
   Official Source explicitly removes Effective Rules Text.
 

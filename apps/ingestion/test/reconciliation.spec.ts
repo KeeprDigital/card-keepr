@@ -487,6 +487,115 @@ test("exhausted reconciliation retries fail the run and release the global mutat
   );
 });
 
+test("an exact replay terminalizes a run when Workflow failure-finalization itself exhausts", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "workflow-finalization-exhausted",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  let instanceStatus: Awaited<ReturnType<WorkflowInstance["status"]>> = {
+    status: "running",
+  };
+  const instance = {
+    status: async () => instanceStatus,
+    resume: async () => {
+      instanceStatus = { status: "running" };
+    },
+  } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async () => instance,
+    get: async () => instance,
+  } as unknown as Workflow<ReconciliationWorkflowParams>;
+  const input = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: "workflow-finalization-exhausted-request",
+  };
+  const accepted = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T01:00:00.000Z",
+  );
+  expect(accepted.document.status).toBe("running");
+
+  const exhaustingStep = {
+    do: async (name: string) => {
+      throw new Error(
+        name.startsWith("finalize")
+          ? "injected failure-finalization exhaustion"
+          : "injected reconciliation exhaustion",
+      );
+    },
+  } as unknown as WorkflowStep;
+  await expect(
+    runReconciliationWorkflow(
+      testEnv,
+      {
+        payload: {
+          ...input,
+          observed_at: "2026-07-31T01:00:00.000Z",
+        },
+      } as WorkflowEvent<ReconciliationWorkflowParams>,
+      exhaustingStep,
+    ),
+  ).rejects.toThrow("injected failure-finalization exhaustion");
+  instanceStatus = {
+    status: "errored",
+    error: {
+      name: "Error",
+      message: "injected failure-finalization exhaustion",
+    },
+  };
+
+  const recovered = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T02:00:00.000Z",
+  );
+  expect(recovered.document).toMatchObject({
+    status: "complete",
+    output: {
+      run_id: run.id,
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "reconciliation_workflow_failed",
+          detail: "injected failure-finalization exhaustion",
+        }),
+      ],
+    },
+  });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
+    )
+      .bind(run.id)
+      .first(),
+  ).resolves.toMatchObject({
+    state: "failed",
+    failure_code: "reconciliation_workflow_failed",
+  });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
+    ).first(),
+  ).resolves.toMatchObject({ active_ingestion_run_id: null });
+
+  const exactReplay = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T03:00:00.000Z",
+  );
+  expect(exactReplay.document).toEqual(recovered.document);
+});
+
 test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
   const status = await get("/v1/status");
   const safeState = requiredRecord(status.document.safe_state, "safe_state");
@@ -4001,15 +4110,27 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
           AND card_id IN (
             SELECT CAST(value AS TEXT) FROM json_each(?)
           )) AS term_count,
+       (SELECT MAX(length(term)) FROM revision_card_search_terms
+        WHERE catalogue_revision_id = ?) AS maximum_term_length,
        (SELECT SUM(length(CAST(search_text AS BLOB)))
         FROM revision_card_search_chunks
         WHERE catalogue_revision_id = ?) AS chunk_bytes`,
   )
-    .bind(revisionId, JSON.stringify(publicCardIds), revisionId)
-    .first<{ term_count: number; chunk_bytes: number }>();
+    .bind(
+      revisionId,
+      JSON.stringify(publicCardIds),
+      revisionId,
+      revisionId,
+    )
+    .first<{
+      term_count: number;
+      maximum_term_length: number;
+      chunk_bytes: number;
+    }>();
   expect(searchMaterialization?.term_count).toBeLessThanOrEqual(
-    48 * 1_001,
+    256 * 1_001,
   );
+  expect(searchMaterialization?.maximum_term_length).toBeLessThanOrEqual(6);
   expect(searchMaterialization?.chunk_bytes).toBeLessThan(
     16 * 1024 * 1024,
   );

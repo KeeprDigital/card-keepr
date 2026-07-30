@@ -1207,7 +1207,7 @@ function reconciliationSourceDocument(scenario: string) {
             value: `OP20-${String(index + 1).padStart(4, "0")}`,
           },
           name: `S${index + 1}`,
-          effective_rules_text: deterministicNoise(index + 1, 9_000),
+          effective_rules_text: `Scale-search rules ${index + 1}`,
           game_data: {
             profile: "one-piece@1",
             attributes: {
@@ -1220,7 +1220,7 @@ function reconciliationSourceDocument(scenario: string) {
               counter: null,
               traits: [],
               block_icons: [],
-              effect_text: null,
+              effect_text: deterministicNoise(index + 1, 9_000),
               trigger_text: null,
             },
           },

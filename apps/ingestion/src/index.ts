@@ -380,6 +380,29 @@ const ingestionWorker = {
             env.CATALOGUE_DB,
             env.CATALOGUE_EXPORTS,
             observedAt,
+            {
+              cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+              worker_scripts: [
+                "card-keepr-api",
+                "card-keepr-ingestion",
+              ],
+              d1_databases: [
+                {
+                  name: "card-keepr-catalogue",
+                  id: env.CATALOGUE_D1_DATABASE_ID,
+                },
+                {
+                  name: "card-keepr-disposable-verification",
+                  id: env.DISPOSABLE_D1_DATABASE_ID,
+                },
+              ],
+              r2_buckets: [
+                "card-keepr-evidence",
+                "card-keepr-printing-images",
+                "card-keepr-catalogue-exports",
+                "card-keepr-backups",
+              ],
+            },
           ),
         );
       }

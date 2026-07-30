@@ -10,10 +10,9 @@ export type CardSearchChunk = Readonly<{
   text: string;
 }>;
 
-// Keep one compact, indexed candidate signature per observed hash bucket.
-// Exact matching still happens against field-separated search chunks, so
-// collisions affect only candidate-set size rather than search semantics.
-const candidateBucketCount = 16;
+// Literal normalized grams keep the indexed candidate set selective. Exact
+// matching still happens against field-separated search chunks so a shared
+// trigram can never become a false-positive Card result.
 const maximumGramLength = 3;
 // Unicode NFKC expands one scalar to at most 18 scalars in the runtime's
 // Unicode data. A 500-scalar query therefore remains below this overlap.
@@ -40,7 +39,7 @@ export function cardSearchTerms(searchDocument: string): string[] {
         length <= maximumGramLength && index + length <= points.length;
         length += 1
       ) {
-        terms.add(searchBucket(points.slice(index, index + length).join("")));
+        terms.add(literalGram(points.slice(index, index + length).join("")));
       }
     }
   }
@@ -78,7 +77,7 @@ export function cardSearchQuery(
   if (text.length === 0) return null;
   return {
     text,
-    anchorTerm: searchBucket(
+    anchorTerm: literalGram(
       [...text].slice(0, maximumGramLength).join(""),
     ),
   };
@@ -101,16 +100,8 @@ function searchFields(document: string): readonly string[] {
   return parsed;
 }
 
-function searchBucket(value: string): string {
-  let hash = 0x811c9dc5;
-  for (const point of value) {
-    const codePoint = point.codePointAt(0)!;
-    hash ^= codePoint;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `g${[...value].length}:${
-    String(hash % candidateBucketCount).padStart(4, "0")
-  }`;
+function literalGram(value: string): string {
+  return `g${[...value].length}:${value}`;
 }
 
 function normalizeSearchText(value: string): string {

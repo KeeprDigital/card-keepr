@@ -1,5 +1,6 @@
 import { AdministrationProblem } from "./ingestion";
 import {
+  failReconciliationWorkflow,
   retainedReconciliationResult,
 } from "./reconciliation-candidate-store";
 import { canonicalJson, sha256Text } from "./serialization";
@@ -187,6 +188,33 @@ async function publicWorkflowRequest(
     }
   }
   status ??= await instance.status();
+  if (status.status === "paused") {
+    try {
+      await instance.resume();
+    } catch {
+      // A concurrent replay may already have resumed the exact instance.
+    }
+    status = await instance.status();
+  }
+  if (
+    status.status === "errored" ||
+    status.status === "terminated"
+  ) {
+    return {
+      contract: "card-keepr-reconciliation-workflow@1",
+      ingestion_run_id: request.ingestion_run_id,
+      expected_current_revision_id: request.expected_current_revision_id,
+      idempotency_key: request.idempotency_key,
+      workflow_instance_id: request.workflow_instance_id,
+      status: "complete",
+      output: await recoverTerminalWorkflow(
+        database,
+        request,
+        status.error?.message ??
+          `The reconciliation Workflow became ${status.status}.`,
+      ),
+    };
+  }
   const output = status.status === "complete"
     ? await workflowOutput(database, request, status.output)
     : null;
@@ -199,6 +227,36 @@ async function publicWorkflowRequest(
     status: status.status,
     output,
   };
+}
+
+async function recoverTerminalWorkflow(
+  database: D1Database,
+  request: ReconciliationWorkflowRequestRow,
+  detail: string,
+): Promise<Record<string, unknown>> {
+  const run = await database
+    .prepare(
+      `SELECT candidate_digest
+       FROM ingestion_runs
+       WHERE id = ?`,
+    )
+    .bind(request.ingestion_run_id)
+    .first<{ candidate_digest: string | null }>();
+  if (run === null) {
+    throw new Error("The reconciliation Workflow run is unavailable.");
+  }
+  if (run.candidate_digest !== null) {
+    return retainedReconciliationResult(
+      database,
+      request.ingestion_run_id,
+    );
+  }
+  return failReconciliationWorkflow(
+    database,
+    request.ingestion_run_id,
+    request.observed_at,
+    detail,
+  );
 }
 
 async function workflowOutput(

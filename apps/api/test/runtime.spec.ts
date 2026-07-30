@@ -10,6 +10,7 @@ import { beforeEach, expect, test } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
   cardSearchChunks,
+  cardSearchQuery,
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
@@ -569,6 +570,67 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   await expect(response.json()).resolves.toMatchObject({
     data: [{ id: "card_unicode_search" }],
   });
+});
+
+test("Card search uses selective literal trigrams before exact substring filtering", async () => {
+  const ordinaryCards = Array.from({ length: 200 }, (_, index) =>
+    apiCard({
+      id: `card_selectivity_${String(index).padStart(3, "0")}`,
+      cardNumber: `OP31-${String(index).padStart(3, "0")}`,
+      name: `Ordinary leader number ${index}`,
+      effectiveRulesText:
+        "Activate Main Once Per Turn: draw one card from your deck.",
+    })
+  );
+  const selected = apiCard({
+    id: "card_selectivity_quartz",
+    cardNumber: "OP31-999",
+    name: "Quartz Vanguard",
+    effectiveRulesText:
+      "Activate Main: reveal the quartz marker from your deck.",
+  });
+  await seedApiRevision({
+    revisionId: "catrev_selective_trigrams",
+    runId: "run_selective_trigrams",
+    cards: [...ordinaryCards, selected],
+  });
+
+  const query = cardSearchQuery("quartz");
+  expect(query).toEqual({ text: "quartz", anchorTerm: "g3:qua" });
+  const candidates = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(DISTINCT card_id) AS count
+     FROM revision_card_search_terms
+     WHERE catalogue_revision_id = ? AND term = ?`,
+  )
+    .bind("catrev_selective_trigrams", query!.anchorTerm)
+    .first<{ count: number }>();
+  expect(candidates?.count).toBe(1);
+
+  const matched = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=uart", {
+      headers: apiHeaders("203.0.113.61"),
+    }),
+  );
+  expect(matched.status).toBe(200);
+  await expect(matched.json()).resolves.toMatchObject({
+    data: [{ id: "card_selectivity_quartz" }],
+  });
+  const collisionWithoutSubstring = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?q=quarx", {
+      headers: apiHeaders("203.0.113.62"),
+    }),
+  );
+  expect(collisionWithoutSubstring.status).toBe(200);
+  await expect(collisionWithoutSubstring.json()).resolves.toMatchObject({
+    data: [],
+  });
+
+  const repeated = cardSearchTerms(cardSearchText({
+    official_identity: { value: "A" },
+    name: "A".repeat(50_000),
+    effective_rules_text: "A".repeat(50_000),
+  }));
+  expect(repeated).toEqual(["g1:a", "g2:aa", "g3:aaa"]);
 });
 
 test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {

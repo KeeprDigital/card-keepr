@@ -351,7 +351,16 @@ export async function showRun(
 export async function administrationStatus(
   database: D1Database,
   catalogueExports: R2Bucket,
-  observedAt = new Date().toISOString(),
+  observedAt: string,
+  productionTarget: Readonly<{
+    cloudflare_account_id: string;
+    worker_scripts: readonly string[];
+    d1_databases: readonly Readonly<{
+      name: string;
+      id: string;
+    }>[];
+    r2_buckets: readonly string[];
+  }>,
 ): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, observedAt);
   await reconcileAbandonedPublication(
@@ -368,6 +377,7 @@ export async function administrationStatus(
     exportCount,
     cleanupCount,
     objectDiagnostics,
+    repairableRevisions,
   ] =
     await Promise.all([
       currentCatalogueState(database),
@@ -400,6 +410,25 @@ export async function administrationStatus(
         )
         .first<{ count: number }>(),
       catalogueExportObjectDiagnostics(database, catalogueExports),
+      database
+        .prepare(
+          `WITH RECURSIVE retained(revision_id, depth) AS (
+             SELECT state.current_revision_id, 0
+             FROM catalogue_state AS state
+             WHERE state.singleton = 1
+             UNION ALL
+             SELECT revision.expected_previous_revision_id,
+                    retained.depth + 1
+             FROM retained
+             JOIN catalogue_revisions AS revision
+               ON revision.id = retained.revision_id
+             WHERE retained.depth < 2
+           )
+           SELECT revision_id, depth
+           FROM retained
+           ORDER BY depth`,
+        )
+        .all<{ revision_id: string; depth: number }>(),
     ]);
   const active =
     operation.active_ingestion_run_id === null
@@ -417,6 +446,7 @@ export async function administrationStatus(
   );
   return {
     contract: "card-keepr-administration-status@1",
+    production_target: productionTarget,
     safe_state: {
       current_revision_id: catalogue.current_revision_id,
       recovery_health: operation.recovery_health,
@@ -439,6 +469,8 @@ export async function administrationStatus(
         objectDiagnostics.orphanedObjectCount,
       pending_publication_cleanup_count: cleanupCount?.count ?? 0,
     },
+    repairable_catalogue_revision_ids:
+      repairableRevisions.results.map(({ revision_id }) => revision_id),
     recent_runs: recentRuns.results.map((run) =>
       publicRun(run, cleanupByRun.get(run.id) ?? null),
     ),

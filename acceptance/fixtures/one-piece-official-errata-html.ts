@@ -37,6 +37,8 @@ export const onePieceOfficialErrataHtml = `<!doctype html>
                   <div class="typographicalImg spWidthM centering"><img src="/images/rules/cards/20250516/OP07-097_p2.png" alt="OP09-058"></div>
                 </div>
                 <dl>
+                  <dt class="txtBlack mtS">Note:</dt>
+                  <dd>This correction applies in every game format.</dd>
                   <dt class="txtBlack mtS">Before:</dt>
                   <dd>This Leader cannot attack.<br>[Activate: Main] [Once Per Turn] You may rest 1 of your DON!! cards Select up to 1 {Egghead} typSelectup to 1 {Egghead} type card with a cost of 5 or less from your hand and play it or add it to the top of your Life cards face-up.</dd>
                   <dt class="txtBlack mtS">After:</dt>
@@ -108,6 +110,6 @@ export const onePieceOfficialErrataHtml = `<!doctype html>
 
 export const onePieceOfficialErrataShapeDriftHtml =
   onePieceOfficialErrataHtml.replace(
-    '<dt class="txtBlack mtS">After:</dt>',
-    '<dt class="txtBlack mtS">Corrected wording:</dt>',
+    '<div class="detailCol mtS">',
+    '<div class="errataEntry mtS">',
   );
