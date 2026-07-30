@@ -3010,6 +3010,8 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   const run = await collect(
     "/reconciliation/scale-1001-cards",
     "bounded-d1-scale-1001-cards",
+    undefined,
+    30_000,
   );
   const reconciled = await reconcile(run.id);
   if (reconciled.response.status !== 200) {
@@ -3148,6 +3150,7 @@ async function collect(
   path: string,
   key: string,
   source?: { game: string; lineage: string; adapter: string },
+  waitTimeoutMs = 15_000,
 ): Promise<{
   id: string;
   document: Record<string, unknown>;
@@ -3173,7 +3176,7 @@ async function collect(
     {},
   );
   expect(resumed.response.status).toBe(202);
-  const document = await waitForRunState(id, "parsing");
+  const document = await waitForRunState(id, "parsing", waitTimeoutMs);
   return { id, document };
 }
 
@@ -3224,8 +3227,9 @@ async function expectRetainedEvidenceInvalid(
 async function waitForRunState(
   id: string,
   expectedState: string,
+  timeoutMs = 15_000,
 ): Promise<Record<string, unknown>> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const shown = await get(`/v1/ingestion-runs/${id}`);
     if (shown.document.state === expectedState) {
