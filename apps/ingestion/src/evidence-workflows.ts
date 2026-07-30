@@ -167,89 +167,135 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
     step: WorkflowStep,
   ): Promise<unknown> {
     const { ingestion_run_id: runId, hostname } = event.payload;
-    const requests = await step.do(
-      "load hostname evidence requests",
-      deterministicDatabaseStep,
-      () => pendingEvidenceRequests(this.env.CATALOGUE_DB, runId, hostname),
-    );
-    for (const request of requests) {
-      for (;;) {
-        const prepared = await step.do(
-          `prepare ${request.request_id}`,
-          deterministicDatabaseStep,
-          async () =>
-            prepareCaptureAttempt(
-              this.env.CATALOGUE_DB,
-              await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
-              request,
-            ),
-        );
-        if (prepared.kind === "done") break;
-        let result: CaptureTransportResult;
-        if (prepared.kind === "captured") {
-          result = await parseStep(step, this.env, runId, request, prepared);
-        } else {
-          const pacingDelay = await step.do(
-            `read pacing deadline for ${request.request_id}`,
+    let stage = 0;
+    for (;;) {
+      const requests = await step.do(
+        `load hostname evidence requests stage ${stage}`,
+        deterministicDatabaseStep,
+        () => pendingEvidenceRequests(this.env.CATALOGUE_DB, runId, hostname),
+      );
+      for (const request of requests) {
+        for (;;) {
+          const prepared = await step.do(
+            `prepare ${request.request_id}`,
             deterministicDatabaseStep,
-            () => hostPacingDelay(this.env.CATALOGUE_DB, hostname),
-          );
-          if (pacingDelay > 0) {
-            await step.sleep(`pace ${request.request_id}`, pacingDelay);
-          }
-          result = await step.do(
-            `transport ${request.request_id} attempt ${prepared.attempt_number}`,
-            transportStep,
             async () =>
-              capturePreparedAttempt(
+              prepareCaptureAttempt(
                 this.env.CATALOGUE_DB,
-                this.env.EVIDENCE_OBJECTS,
-                this.env.OFFICIAL_SOURCE_TRANSPORT,
                 await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
                 request,
-                prepared,
               ),
           );
-          if (result.request_made) {
-            await step.do(
-              `advance pacing for ${request.request_id} attempt ${prepared.attempt_number}`,
+          if (prepared.kind === "done") break;
+          let result: CaptureTransportResult;
+          if (prepared.kind === "captured") {
+            result = await parseStep(step, this.env, runId, request, prepared);
+          } else {
+            const pacingDelay = await step.do(
+              `read pacing deadline for ${request.request_id}`,
               deterministicDatabaseStep,
-              () => advanceHostPacing(this.env.CATALOGUE_DB, hostname),
+              () => hostPacingDelay(this.env.CATALOGUE_DB, hostname),
             );
-          }
-          if (result.kind === "uploaded") {
+            if (pacingDelay > 0) {
+              await step.sleep(`pace ${request.request_id}`, pacingDelay);
+            }
             result = await step.do(
-              `commit ${request.request_id} attempt ${prepared.attempt_number}`,
-              deterministicDatabaseStep,
+              `transport ${request.request_id} attempt ${prepared.attempt_number}`,
+              transportStep,
               async () =>
-                completeUploadedCapture(
+                capturePreparedAttempt(
                   this.env.CATALOGUE_DB,
+                  this.env.EVIDENCE_OBJECTS,
+                  this.env.OFFICIAL_SOURCE_TRANSPORT,
                   await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
                   request,
-                  result.kind === "uploaded"
-                    ? result.attempt_id
-                    : prepared.attempt_id,
+                  prepared,
                 ),
             );
+            if (result.request_made) {
+              await step.do(
+                `advance pacing for ${request.request_id} attempt ${prepared.attempt_number}`,
+                deterministicDatabaseStep,
+                () => advanceHostPacing(this.env.CATALOGUE_DB, hostname),
+              );
+            }
+            if (result.kind === "uploaded") {
+              result = await step.do(
+                `commit ${request.request_id} attempt ${prepared.attempt_number}`,
+                deterministicDatabaseStep,
+                async () =>
+                  completeUploadedCapture(
+                    this.env.CATALOGUE_DB,
+                    await requiredEvidenceRun(this.env.CATALOGUE_DB, runId),
+                    request,
+                    result.kind === "uploaded"
+                      ? result.attempt_id
+                      : prepared.attempt_id,
+                  ),
+              );
+            }
+            if (result.kind === "captured") {
+              result = await parseStep(
+                step,
+                this.env,
+                runId,
+                request,
+                result,
+              );
+            }
           }
-          if (result.kind === "captured") {
-            result = await parseStep(
-              step,
-              this.env,
-              runId,
-              request,
-              result,
+          if (result.kind === "done") break;
+          if (result.kind === "wait") {
+            await step.sleep(
+              `retry ${request.request_id}`,
+              result.wait_ms,
             );
           }
         }
-        if (result.kind === "done") break;
-        if (result.kind === "wait") {
-          await step.sleep(
-            `retry ${request.request_id}`,
-            result.wait_ms,
-          );
-        }
       }
+      const pending = await step.do(
+        `load discovered evidence hostnames stage ${stage}`,
+        deterministicDatabaseStep,
+        () => pendingEvidenceRequests(this.env.CATALOGUE_DB, runId),
+      );
+      const localPending = pending.filter(
+        (request) => new URL(request.url).hostname === hostname,
+      );
+      if (localPending.length > 0) {
+        stage += 1;
+        continue;
+      }
+      const discoveredHostnames = [
+        ...new Set(
+          pending
+            .filter(
+              (request) => request.discovered_from_request_id !== null,
+            )
+            .map((request) => new URL(request.url).hostname)
+            .filter((candidate) => candidate !== hostname),
+        ),
+      ].sort();
+      if (discoveredHostnames.length > 0) {
+        await step.do(
+          `start discovered hostname workflows stage ${stage}`,
+          deterministicDatabaseStep,
+          async () => {
+            await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
+              await Promise.all(
+                discoveredHostnames.map(async (candidate) => ({
+                  id: await evidenceHostWorkflowId(runId, candidate),
+                  params: {
+                    ingestion_run_id: runId,
+                    hostname: candidate,
+                  },
+                })),
+              ),
+            );
+            return discoveredHostnames;
+          },
+        );
+      }
+      break;
     }
     await step.do(
       "finalize ingestion collection phase",

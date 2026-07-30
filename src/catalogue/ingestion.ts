@@ -1595,7 +1595,7 @@ async function storeAndVerifyPrintingImages(
     }
     const existing = await bucket.head(image.object_key);
     if (existing !== null) {
-      assertStoredPrintingImage(existing, image);
+      await assertStoredPrintingImage(bucket, existing, image);
       continue;
     }
     const stored = await bucket.put(image.object_key, bytes, {
@@ -1612,10 +1612,10 @@ async function storeAndVerifyPrintingImages(
       if (concurrent === null) {
         throw new Error("Immutable Printing Image write conflict.");
       }
-      assertStoredPrintingImage(concurrent, image);
+      await assertStoredPrintingImage(bucket, concurrent, image);
       continue;
     }
-    assertStoredPrintingImage(stored, image);
+    await assertStoredPrintingImage(bucket, stored, image);
   }
 }
 
@@ -1630,14 +1630,28 @@ function decodeBase64Bytes(value: string): Uint8Array {
   }
 }
 
-function assertStoredPrintingImage(
+async function assertStoredPrintingImage(
+  bucket: R2Bucket,
   object: R2Object,
   image: NonNullable<FixtureCandidate["printing_images"]>[number],
-): void {
-  if (
-    object.size !== image.content_byte_length ||
-    object.customMetadata?.sha256 !== image.content_sha256
-  ) {
+): Promise<void> {
+  if (object.size !== image.content_byte_length) {
+    throw new Error("Immutable Printing Image object key collision.");
+  }
+  const storedChecksum = object.checksums.toJSON().sha256;
+  if (storedChecksum !== undefined) {
+    if (storedChecksum !== image.content_sha256) {
+      throw new Error("Immutable Printing Image object key collision.");
+    }
+    return;
+  }
+  const body = await bucket.get(image.object_key);
+  if (body === null) {
+    throw new Error("Immutable Printing Image object disappeared.");
+  }
+  const digest = new crypto.DigestStream("SHA-256");
+  await body.body.pipeTo(digest);
+  if (digestHex(await digest.digest) !== image.content_sha256) {
     throw new Error("Immutable Printing Image object key collision.");
   }
 }

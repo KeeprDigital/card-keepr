@@ -122,6 +122,15 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     /Resulting Catalogue Revision: catrev_cli_demo/,
   );
 
+  const requestCountBeforeRemovedMutation = requests.length;
+  const removedReconcile = await runCli(
+    ["run", "reconcile", "--run-id", "run_cli_demo", "--json"],
+    environment,
+  );
+  assert.equal(removedReconcile.code, 2);
+  assert.match(removedReconcile.stdout, /usage_error/u);
+  assert.equal(requests.length, requestCountBeforeRemovedMutation);
+
   const rejected = await runCli(
     [
       "run",

@@ -25,11 +25,19 @@ export type OfficialRawAdapterContract = {
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly unknown[];
+  discoverRequests: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string; requestId?: string },
+  ) => readonly {
+    role: "listing" | "detail" | "product_detail" | "image";
+    url: string;
+    headers: Record<string, string>;
+  }[];
 };
 
 const rawContractDefinitions = [
   {
-    adapterVersion: "one-piece-json-document@2",
+    adapterVersion: "one-piece-en@1",
     sourceLineage: "one-piece-en",
     supportedGame: "one-piece",
     format: "one-piece",
@@ -172,6 +180,12 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           definition.sourceLineage,
           definition.requiredSurfaces,
         ),
+        discoverRequests: bandaiRequestDiscovery(
+          definition.format,
+          definition.sourceLineage,
+          definition.requiredSurfaces,
+          definition.urls,
+        ),
       }),
     ),
   );
@@ -196,6 +210,294 @@ export function officialSourceDiscoveryRequests(
     url: contract.requestUrlForSurface(surface),
     headers: { accept: "text/html" },
   }));
+}
+
+function bandaiRequestDiscovery(
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): OfficialRawAdapterContract["discoverRequests"] {
+  return (bytes, context) => {
+    if (context.requestId?.includes(":image:")) return [];
+    const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
+      .toLowerCase();
+    if (mediaType !== "text/html") return [];
+    const html = decodeUtf8(bytes, "request discovery");
+    const initialSurface = dynamicRequestRole(context.requestId) === null
+      ? surfaceFromContext(
+          context,
+          sourceLineage,
+          requiredSurfaces,
+          urls,
+        )
+      : null;
+    const current = new URL(context.url);
+    const candidates: {
+      role: "listing" | "detail" | "product_detail" | "image";
+      url: string;
+      headers: Record<string, string>;
+    }[] = [];
+    if (initialSurface !== null) {
+      const structured = bandaiJsonLdPayload(
+        html,
+        sourceLineage,
+        initialSurface,
+      );
+      if (structured !== null) {
+        candidates.push(
+          ...structuredImageUrls(structured, current, sourceLineage).map(
+            (url) => ({
+              role: "image" as const,
+              url,
+              headers: {
+                accept:
+                  "image/avif,image/webp,image/png,image/jpeg,image/gif",
+              },
+            }),
+          ),
+        );
+      }
+    }
+    if (initialSurface !== null && isDiscoverySurface(initialSurface)) {
+      candidates.push(
+        ...discoveredPartitionRequests(format, html, current).map((url) => ({
+          role: "listing" as const,
+          url,
+          headers: { accept: "text/html" },
+        })),
+      );
+    }
+    for (const match of html.matchAll(
+      /<(a|img|source)\b([^>]*?)>/giu,
+    )) {
+      const tag = match[1]!.toLowerCase();
+      const attributes = match[2]!;
+      const rawUrl =
+        tag === "a"
+          ? htmlAttribute(attributes, "href")
+          : htmlAttribute(attributes, "data-src") ??
+            htmlAttribute(attributes, "src");
+      if (
+        rawUrl === null ||
+        rawUrl.startsWith("#") ||
+        /^(?:data|javascript|mailto|tel):/iu.test(rawUrl)
+      ) {
+        continue;
+      }
+      let resolved: URL;
+      try {
+        resolved = new URL(decodeHtmlText(rawUrl), current);
+      } catch {
+        continue;
+      }
+      resolved.hash = "";
+      if (
+        resolved.protocol !== "https:" ||
+        !officialHostname(sourceLineage, resolved.hostname) ||
+        resolved.href === current.href
+      ) {
+        continue;
+      }
+      const role =
+        tag === "img" || tag === "source" ||
+          /\.(?:avif|gif|jpe?g|png|webp)(?:$|\?)/iu.test(resolved.href)
+          ? "image"
+          : discoveredHtmlRole(
+              format,
+              initialSurface,
+              resolved,
+            );
+      if (role === null) continue;
+      candidates.push({
+        role,
+        url: resolved.href,
+        headers: {
+          accept: role === "image"
+            ? "image/avif,image/webp,image/png,image/jpeg,image/gif"
+            : "text/html",
+        },
+      });
+    }
+    return [
+      ...new Map(
+        candidates.map((candidate) => [
+          `${candidate.role}:${candidate.url}`,
+          candidate,
+        ]),
+      ).values(),
+    ].sort((left, right) =>
+      `${left.role}:${left.url}`.localeCompare(`${right.role}:${right.url}`)
+    );
+  };
+}
+
+function structuredImageUrls(
+  value: unknown,
+  base: URL,
+  sourceLineage: string,
+): string[] {
+  const discovered: string[] = [];
+  const visit = (item: unknown): void => {
+    if (typeof item === "string") {
+      if (/\.(?:avif|gif|jpe?g|png|webp)(?:$|\?)/iu.test(item)) {
+        const url = new URL(item, base);
+        if (
+          url.protocol === "https:" &&
+          officialHostname(sourceLineage, url.hostname)
+        ) {
+          discovered.push(url.href);
+        }
+      }
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (isPlainRecord(item)) Object.values(item).forEach(visit);
+  };
+  visit(value);
+  return [...new Set(discovered)].sort();
+}
+
+function discoveredPartitionRequests(
+  format: DiscoveryFormat,
+  html: string,
+  current: URL,
+): string[] {
+  const selectedKeys =
+    format === "one-piece"
+      ? ["series", "recording"]
+      : format === "fusion-world"
+        ? ["card_type", "colour", "color", "cost"]
+        : format === "digimon"
+          ? [
+              "version",
+              "category",
+              "cardcategory",
+              "card_type",
+              "colour",
+              "color",
+            ]
+          : ["package"];
+  const values = [...html.matchAll(
+    /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
+  )]
+    .map((match) => {
+      const attributes = match[1]!;
+      const key =
+        htmlAttribute(attributes, "name") ??
+        htmlAttribute(attributes, "id");
+      if (key === null || !selectedKeys.includes(key.toLowerCase())) {
+        return null;
+      }
+      const options = [...match[2]!.matchAll(
+        /<option\b[^>]*\bvalue=["']([^"']+)["'][^>]*>/giu,
+      )]
+        .map((option) => decodeHtmlText(option[1]!).trim())
+        .filter((value) =>
+          value.length > 0 && !/^(?:all|0|-)$/iu.test(value)
+        );
+      return options.length === 0
+        ? null
+        : { key: key.toLowerCase(), options: [...new Set(options)].sort() };
+    })
+    .filter(
+      (entry): entry is { key: string; options: string[] } => entry !== null,
+    )
+    .sort(
+      (left, right) =>
+        selectedKeys.indexOf(left.key) - selectedKeys.indexOf(right.key),
+    );
+  if (values.length === 0) return [];
+  let partitions: Record<string, string>[] = [{}];
+  for (const facet of values) {
+    partitions = partitions.flatMap((partition) =>
+      facet.options.map((value) => ({
+        ...partition,
+        [facet.key]: value,
+      }))
+    );
+  }
+  return partitions.map((partition) => {
+    const url = new URL(current);
+    for (const [key, value] of Object.entries(partition)) {
+      url.searchParams.set(key, value);
+    }
+    return url.href;
+  });
+}
+
+function htmlAttribute(attributes: string, name: string): string | null {
+  const match = attributes.match(
+    new RegExp(`\\b${name}=["']([^"']+)["']`, "iu"),
+  );
+  return match?.[1] ?? null;
+}
+
+function dynamicRequestRole(
+  requestId: string | undefined,
+): "listing" | "detail" | "product_detail" | "image" | null {
+  const match = requestId?.match(
+    /:(listing|detail|product_detail|image):[a-f0-9]{64}$/u,
+  );
+  return match?.[1] as ReturnType<typeof dynamicRequestRole> ?? null;
+}
+
+function discoveredHtmlRole(
+  format: DiscoveryFormat,
+  initialSurface: string | null,
+  url: URL,
+): "listing" | "detail" | "product_detail" | null {
+  const target = `${url.pathname}${url.search}`;
+  if (
+    initialSurface === "products" ||
+    initialSurface === "releases" ||
+    /\/products?\//iu.test(target)
+  ) {
+    return /(?:detail|products?\/[^/?]+|products?\.php\?.*\bid=)/iu.test(
+        target,
+      )
+      ? "product_detail"
+      : /(?:page|paged|offset)=\d+/iu.test(target)
+        ? "listing"
+        : null;
+  }
+  if (/(?:detailSearch|card[_-]?(?:detail|id)|popup)=/iu.test(target)) {
+    return "detail";
+  }
+  if (
+    /\/cards?\/[^/?]+/iu.test(target) ||
+    /\/cardlist\/card\//iu.test(target)
+  ) {
+    return "detail";
+  }
+  if (
+    /(?:page|paged|offset)=\d+/iu.test(target) ||
+    (format === "fusion-world" &&
+      /(?:card_type|colour|color|cost)=/iu.test(target)) ||
+    (format === "digimon" &&
+      /(?:category|cardcategory|colour|color|version)=/iu.test(target)) ||
+    (format === "gundam" && /(?:package|page)=/iu.test(target))
+  ) {
+    return "listing";
+  }
+  return null;
+}
+
+function officialHostname(sourceLineage: string, hostname: string): boolean {
+  const expected =
+    sourceLineage === "one-piece-en"
+      ? ["onepiece-cardgame.com"]
+      : sourceLineage === "fusion-world-en"
+        ? ["dbs-cardgame.com"]
+        : sourceLineage === "digimon-en"
+          ? ["digimoncard.com"]
+          : ["gundam-gcg.com"];
+  return expected.some((suffix) =>
+    hostname === suffix || hostname.endsWith(`.${suffix}`)
+  );
 }
 
 function exactSurfaceUrl(
@@ -226,14 +528,28 @@ function bandaiSnapshotDecoder(
   urls: Readonly<Record<string, string>>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
-    const surface = surfaceFromContext(
-      context,
-      sourceLineage,
-      requiredSurfaces,
-      urls,
-    );
+    const dynamicRole = dynamicRequestRole(context.requestId);
     const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
       .toLowerCase();
+    if (dynamicRole === "image") {
+      if (
+        mediaType === undefined ||
+        !mediaType.startsWith("image/") ||
+        bytes.byteLength === 0
+      ) {
+        throw new Error(
+          "Official Printing Image request did not retain non-empty image bytes.",
+        );
+      }
+      return [];
+    }
+    const surface = dynamicRole ??
+      surfaceFromContext(
+        context,
+        sourceLineage,
+        requiredSurfaces,
+        urls,
+      );
     if (mediaType !== "text/html") {
       throw new Error(
         `Official Source ${surface} must be captured as text/html.`,
@@ -258,6 +574,25 @@ function bandaiSnapshotDecoder(
         surface,
         structuredPayload,
       );
+    }
+    if (dynamicRole === "detail") {
+      return [
+        parseBandaiCardDetail(
+          html,
+          format,
+          sourceLineage,
+          context.url,
+        ),
+      ];
+    }
+    if (dynamicRole === "product_detail") {
+      return [
+        parseBandaiProductDetail(
+          html,
+          sourceLineage,
+          context.url,
+        ),
+      ];
     }
     const parsed =
       format === "one-piece" && surface === "card-list"
@@ -450,7 +785,31 @@ function parseOnePieceBandaiCardList(
     const effect = requiredNullableText(field("text"), "Official effect");
     const setLabel = field("getInfo") ?? "Unclassified Card List";
     const colour = requiredNullableText(field("color"), "Official colour");
-    const artworkFingerprint = `official-url:${imageUrl}`;
+    const variant =
+      locator === cardNumber ? "base" : locator.slice(cardNumber.length);
+    const artworkFingerprint = `material:${JSON.stringify(stableValue({
+      card_number: cardNumber,
+      rarity,
+      card_type: cardType,
+      name,
+      set_label: setLabel,
+      variant,
+    }))}`;
+    const printedFieldsDigest = `printed-material:${
+      JSON.stringify(stableValue({
+        card_number: cardNumber,
+        rarity,
+        card_type: cardType,
+        rules: effect ?? "",
+        colour,
+        cost: field("cost"),
+        attribute: field("attribute"),
+        power: field("power"),
+        counter: field("counter"),
+        feature: field("feature"),
+        block: field("block"),
+      }))
+    }`;
     const detail = {
       path: locator,
       number: cardNumber,
@@ -475,9 +834,8 @@ function parseOnePieceBandaiCardList(
       product_codes: [],
       distribution: {
         code: `card-set:${setLabel}`,
-        kind: "product",
+        kind: "source_bucket",
         label: setLabel,
-        product_label: setLabel,
       },
       printing: {
         rarity: rarity.length === 0 ? null : rarity,
@@ -487,9 +845,9 @@ function parseOnePieceBandaiCardList(
         attributes: { illustration_types: [] },
       },
       printed_rules: effect ?? "",
-      variant: locator === cardNumber ? "base" : locator.slice(cardNumber.length),
+      variant,
       artwork_fingerprint: artworkFingerprint,
-      printed_fields_digest: `official-card-list:${locator}`,
+      printed_fields_digest: printedFieldsDigest,
       image: imageUrl,
       images: [{
         role: "front",
@@ -523,6 +881,287 @@ function parseOnePieceBandaiCardList(
   };
 }
 
+function parseBandaiCardDetail(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const field = (names: readonly string[]): string | null =>
+    names
+      .map((name) => labelledHtmlValue(html, name))
+      .find((value) => value !== null) ?? null;
+  const pageText = htmlText(html);
+  const cardNumber =
+    field(["Card Number", "Card No.", "Card No", "No."]) ??
+    pageText.match(/\b[A-Z]{1,6}\d{0,2}-\d{2,5}\b/u)?.[0] ??
+    null;
+  const name =
+    field(["Card Name", "Name"]) ??
+    htmlText(
+      html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/iu)?.[1] ??
+        html.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/iu)?.[1] ??
+        "",
+    );
+  const cardType = field(["Card Type", "Type", "Category"]);
+  const colour = field(["Color", "Colour"]);
+  const rules =
+    field(["Effect", "Skill", "Card Text", "Text"]) ?? "";
+  if (
+    cardNumber === null ||
+    name.length === 0 ||
+    cardType === null ||
+    colour === null
+  ) {
+    throw new Error(
+      `${sourceLineage} Card detail is missing Card Number, name, Card Type, or Color.`,
+    );
+  }
+  const imageUrls = [...html.matchAll(
+    /<img\b[^>]*\b(?:data-src|src)=["']([^"']+\.(?:avif|gif|jpe?g|png|webp)(?:\?[^"']*)?)["']/giu,
+  )]
+    .map((match) => new URL(decodeHtmlText(match[1]!), requestUrl).href)
+    .filter((url) => officialHostname(sourceLineage, new URL(url).hostname));
+  if (imageUrls.length === 0) {
+    throw new Error(`${sourceLineage} Card detail has no Printing Image URL.`);
+  }
+  const locator =
+    htmlAttribute(
+      html.match(/<[^>]*\bdata-(?:card-id|popup-id|detail-search)=["'][^"']+["'][^>]*>/iu)?.[0] ??
+        "",
+      "data-card-id",
+    ) ??
+    htmlAttribute(
+      html.match(/<[^>]*\bdata-popup-id=["'][^"']+["'][^>]*>/iu)?.[0] ?? "",
+      "data-popup-id",
+    ) ??
+    htmlAttribute(
+      html.match(/<[^>]*\bdata-detail-search=["'][^"']+["'][^>]*>/iu)?.[0] ??
+        "",
+      "data-detail-search",
+    ) ??
+    [...new URL(requestUrl).searchParams.entries()]
+      .find(([key]) =>
+        /^(?:card(?:id|no|number)?|detailSearch|id|popup)$/iu.test(key)
+      )?.[1] ??
+    cardNumber;
+  const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
+  const colours = colour === "-"
+    ? format === "fusion-world" || format === "gundam"
+      ? ["colourless"]
+      : []
+    : colour.split(/[\/,]/u).map((value) => value.trim().toLowerCase());
+  const attributes =
+    format === "one-piece"
+      ? {
+          card_type: normalizedType,
+          colours,
+          cost: integerOrNull(field(["Cost"])),
+          life: normalizedType === "leader"
+            ? integerOrNull(field(["Life"]))
+            : null,
+          battle_attributes: textValues(field(["Attribute"])),
+          power: integerOrNull(field(["Power"])),
+          counter: integerOrNull(field(["Counter"])),
+          traits: textValues(field(["Type", "Traits"])),
+          block_icons: textValues(field(["Block icon", "Block"])),
+          effect_text: rules.length === 0 ? null : rules,
+          trigger_text: field(["Trigger"]),
+        }
+      : format === "fusion-world"
+        ? {
+            card_type: normalizedType,
+            colours,
+            cost: integerOrNull(field(["Cost"])),
+            specified_cost: [],
+            power: integerOrNull(field(["Power"])),
+            combo_power: integerOrNull(field(["Combo Power"])),
+            traits: textValues(field(["Special Trait", "Traits"])),
+            skills: [
+              ...(rules.length === 0
+                ? []
+                : [{ kind: "ordinary", text: rules }]),
+            ],
+            ...(normalizedType === "leader"
+              ? {
+                  leader_faces: ["front", "back"].map((role) => ({
+                    role,
+                    name,
+                    power: integerOrNull(field(["Power"])),
+                    traits: textValues(field(["Special Trait", "Traits"])),
+                    skills: [],
+                  })),
+                }
+              : {}),
+          }
+        : format === "digimon"
+          ? {
+              card_type: normalizedType,
+              colours,
+              level: integerOrNull(field(["Level"])),
+              play_cost: integerOrNull(field(["Play Cost"])),
+              use_cost: integerOrNull(field(["Use Cost"])),
+              dp: integerOrNull(field(["DP"])),
+              form: field(["Form"]),
+              attribute: field(["Attribute"]),
+              traits: textValues(field(["Type", "Traits"])),
+              digivolution_requirements: [],
+              text_sections: [
+                ...(rules.length === 0
+                  ? []
+                  : [{ kind: "effect", text: rules }]),
+              ],
+            }
+          : {
+              card_type: normalizedType,
+              colours,
+              level: integerOrNull(field(["Level"])),
+              cost: integerOrNull(field(["Cost"])),
+              block_icon: field(["Block", "Block icon"]),
+              effect_text: rules.length === 0 ? null : rules,
+              zone: field(["Zone"]),
+              traits: textValues(field(["Trait", "Traits"])),
+              link_condition: field(["Link"]),
+              ap: integerOrNull(field(["AP"])),
+              hp: integerOrNull(field(["HP"])),
+              series_titles: textValues(field(["Title", "Series"])),
+            };
+  const materialFacts = stableValue({
+    card_number: cardNumber,
+    name,
+    card_type: normalizedType,
+    colours,
+    image_roles:
+      format === "fusion-world" && normalizedType === "leader"
+        ? ["front", "back"]
+        : ["front"],
+  });
+  const artworkFingerprint = `material:${JSON.stringify(materialFacts)}`;
+  const detail = {
+    path: locator,
+    number: cardNumber,
+    title: name,
+    rules,
+    profile: `${format}@1`,
+    attributes,
+    product_codes: [],
+    distribution: {
+      code: `detail:${new URL(requestUrl).pathname}`,
+      kind: "source_bucket",
+      label: field(["Where to get it", "Card Set(s)"]) ?? "Card detail",
+    },
+    printing: {
+      rarity: field(["Rarity"]),
+      normalizedRarity: field(["Rarity"])?.toLowerCase() ?? null,
+      attributes:
+        format === "digimon"
+          ? { alternative_art: false }
+          : format === "gundam"
+            ? { alternate_art: false }
+            : format === "one-piece"
+              ? { illustration_types: [] }
+              : {},
+    },
+    printed_rules: rules,
+    variant: locator === cardNumber
+      ? "base"
+      : locator.slice(cardNumber.length) || locator,
+    artwork_fingerprint: artworkFingerprint,
+    printed_fields_digest: `printed-material:${
+      JSON.stringify(stableValue({ rules, attributes }))
+    }`,
+    image: imageUrls[0]!,
+    images: imageUrls.map((url, index) => ({
+      role:
+        format === "fusion-world" &&
+          normalizedType === "leader" &&
+          index === 1
+          ? "back"
+          : index === 0
+            ? "front"
+            : "other",
+      source_url: url,
+      artwork_fingerprint: artworkFingerprint,
+    })),
+  };
+  return cardObservation(
+    detail,
+    [],
+    new Map(),
+    { revision: "captured-by-policy-surface", entries: [] },
+    { revision: "captured-by-policy-surface", entries: [] },
+    format === "one-piece"
+      ? "one-piece"
+      : format === "fusion-world"
+        ? "fusion-world"
+        : format === "digimon"
+          ? "digimon"
+          : "gundam",
+  );
+}
+
+function parseBandaiProductDetail(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const code =
+    labelledHtmlValue(html, "Product Code") ??
+    htmlText(html).match(/\b[A-Z]{1,6}\d{0,2}-\d{2,5}\b/u)?.[0] ??
+    null;
+  const title = htmlText(
+    html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/iu)?.[1] ??
+      html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ??
+      "",
+  );
+  if (code === null || title.length === 0) {
+    throw new Error(
+      `${sourceLineage} Product detail is missing its official code or title.`,
+    );
+  }
+  const product = { code, title };
+  const releaseDate = labelledHtmlValue(html, "Release Date");
+  const releases = new Map<string, Record<string, unknown>[]>();
+  if (releaseDate !== null) {
+    releases.set(code, [{
+      event_key: new URL(requestUrl).href,
+      region: labelledHtmlValue(html, "Region") ?? "unknown",
+      precision: /^\d{4}-\d{2}-\d{2}$/u.test(releaseDate) ? "day" : "unknown",
+      date: releaseDate,
+      status: labelledHtmlValue(html, "Status") ?? "announced",
+    }]);
+  }
+  return productOnlyObservation(
+    product,
+    releases,
+    { revision: "captured-by-policy-surface", entries: [] },
+    { revision: "captured-by-policy-surface", entries: [] },
+  );
+}
+
+function labelledHtmlValue(html: string, label: string): string | null {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const patterns = [
+    new RegExp(
+      `<(?:dt|th|h[1-6]|span|div)\\b[^>]*>\\s*${escaped}\\s*:?\\s*</(?:dt|th|h[1-6]|span|div)>\\s*<(?:dd|td|div|span)\\b[^>]*>([\\s\\S]*?)</(?:dd|td|div|span)>`,
+      "iu",
+    ),
+    new RegExp(
+      `<[^>]*\\bdata-field=["']${escaped}["'][^>]*>([\\s\\S]*?)</[^>]+>`,
+      "iu",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const value = html.match(pattern)?.[1];
+    if (value !== undefined) {
+      const text = htmlText(value);
+      if (text.length > 0 && text !== "-") return text;
+      if (text === "-") return "-";
+    }
+  }
+  return null;
+}
+
 function parseBandaiSurfaceCoverage(
   html: string,
   sourceLineage: string,
@@ -530,12 +1169,21 @@ function parseBandaiSurfaceCoverage(
   url: string,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
+  if (
+    surface === "listing" &&
+    /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu
+      .test(text)
+  ) {
+    throw new Error(
+      "Official Source leaf partition still displays its result-cap signal.",
+    );
+  }
   const surfacePublicationPattern =
     surface === "products" || surface === "releases"
       ? /(PRODUCT|RELEASE)/iu
       : surface === "errata"
         ? /ERRATA/iu
-        : isDiscoverySurface(surface)
+        : isDiscoverySurface(surface) || surface === "listing"
           ? /CARD/iu
           : /(RULE|RESTRICTION|BANNED|LIMITED|BLOCK)/iu;
   if (
@@ -563,6 +1211,20 @@ function parseBandaiSurfaceCoverage(
       label: htmlText(match[2]!),
     }))
     .filter(({ value, label }) => value.length > 0 || label.length > 0);
+  const publicationEntries = [...html.matchAll(
+    /<(?:article|li|tr)\b[^>]*>([\s\S]*?)<\/(?:article|li|tr)>/giu,
+  )]
+    .map((match) => htmlText(match[1]!))
+    .filter((entry) => entry.length > 0);
+  if (
+    publicationLinks.length === 0 &&
+    discoveredOptions.length === 0 &&
+    publicationEntries.length === 0
+  ) {
+    throw new Error(
+      `Official Source ${surface} has no structural publication entries.`,
+    );
+  }
   return {
     observations: [{
       completeness: completeObservation(),
@@ -581,6 +1243,7 @@ function parseBandaiSurfaceCoverage(
       ),
       publication_links: publicationLinks,
       discovered_options: discoveredOptions,
+      publication_entries: publicationEntries,
     },
     consumedFields: [
       "source_lineage",
@@ -589,6 +1252,7 @@ function parseBandaiSurfaceCoverage(
       "document_title",
       "publication_links",
       "discovered_options",
+      "publication_entries",
     ],
   };
 }
@@ -607,10 +1271,13 @@ function htmlText(value: string): string {
   return decodeHtmlText(
     value
       .replace(/<br\b[^>]*>/giu, "\n")
+      .replace(/<\/(?:p|div|li|section|article|h[1-6])\s*>/giu, "\n")
       .replace(/<[^>]+>/gu, " "),
   )
-    .replace(/\s+/gu, " ")
-    .trim();
+    .split(/\r?\n/u)
+    .map((line) => line.replace(/[^\S\r\n]+/gu, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
 }
 
 function decodeHtmlText(value: string): string {
@@ -2085,6 +2752,7 @@ function cardObservation(
     distribution.code,
     "Official Distribution code",
   );
+  const sourceBucket = distribution.kind === "source_bucket";
   const distributionProductReference =
     distribution.product_reference === undefined
       ? null
@@ -2125,7 +2793,7 @@ function cardObservation(
       },
     ];
   });
-  if (detail.printing !== undefined) {
+  if (detail.printing !== undefined && !sourceBucket) {
     relationships.push({
       kind: "printing-distribution-context",
       context_key: distributionCode,
@@ -2133,7 +2801,7 @@ function cardObservation(
       resolution: "deterministic",
     });
   }
-  if (distributionProductReference !== null) {
+  if (!sourceBucket && distributionProductReference !== null) {
     relationships.push({
       kind: "distribution-context-product",
       context_key: distributionCode,
@@ -2141,7 +2809,10 @@ function cardObservation(
       evidence_category: "explicit",
       resolution: "explicit",
     });
-  } else if (typeof distribution.product_label === "string") {
+  } else if (
+    !sourceBucket &&
+    typeof distribution.product_label === "string"
+  ) {
     relationships.push({
       kind: "distribution-context-product",
       context_key: distributionCode,
@@ -2235,19 +2906,21 @@ function cardObservation(
     memberships: {
       products: [],
       distribution_contexts: [],
-      source_buckets: [],
+      source_buckets: sourceBucket ? [distributionCode] : [],
     },
     product_release_catalogue: {
       ...productCatalogue,
-      distribution_contexts: [{
-        key: distributionCode,
-        kind: distribution.kind,
-        label: distribution.label,
-        ...(distributionProductReference === null
-          ? {}
-          : { product_reference: distributionProductReference }),
-        evidence_category: "explicit",
-      }],
+      distribution_contexts: sourceBucket
+        ? []
+        : [{
+            key: distributionCode,
+            kind: distribution.kind,
+            label: distribution.label,
+            ...(distributionProductReference === null
+              ? {}
+              : { product_reference: distributionProductReference }),
+            evidence_category: "explicit",
+          }],
       relationships,
     },
     source_sidecar: sourceSidecar(detail, products, legality, errata),
@@ -2327,24 +3000,76 @@ function sourceSidecar(
   legality: Record<string, unknown>,
   errata: Record<string, unknown>,
 ) {
+  const productFieldCoverage = products.flatMap((product, index) => {
+    const productPath = `products[${index}]`;
+    const consumed = ["code", "title", "distribution"].flatMap((field) =>
+      product[field] === undefined
+        ? []
+        : leafPaths(product[field], `${productPath}.${field}`)
+    );
+    const unmapped = Object.entries(product)
+      .filter(([field]) =>
+        field !== "code" && field !== "title" && field !== "distribution"
+      )
+      .flatMap(([field, value]) =>
+        leafEntries(
+          value,
+          `source_sidecar.raw.${productPath}.${field}`,
+        )
+      );
+    return [{ consumed, unmapped }];
+  });
   return {
     raw: { detail, products, legality, errata },
     consumed_fields: [
       "detail.number",
       "detail.title",
       "detail.rules",
-      "products[].code",
-      "products[].title",
+      ...productFieldCoverage.flatMap(({ consumed }) => consumed),
     ],
-    unmapped_optional_fields: products.flatMap((product, index) =>
-      product.campaign_note === undefined
-        ? []
-        : [{
-            path: `source_sidecar.raw.products[${index}].campaign_note`,
-            value: product.campaign_note,
-          }]
+    unmapped_optional_fields: productFieldCoverage.flatMap(
+      ({ unmapped }) => unmapped,
     ),
   };
+}
+
+function leafPaths(value: unknown, path: string): string[] {
+  if (Array.isArray(value)) {
+    return value.length === 0
+      ? [path]
+      : value.flatMap((item, index) => leafPaths(item, `${path}[${index}]`));
+  }
+  if (isPlainRecord(value)) {
+    const entries = Object.entries(value);
+    return entries.length === 0
+      ? [path]
+      : entries.flatMap(([field, item]) =>
+          leafPaths(item, `${path}.${field}`)
+        );
+  }
+  return [path];
+}
+
+function leafEntries(
+  value: unknown,
+  path: string,
+): { path: string; value: unknown }[] {
+  if (Array.isArray(value)) {
+    return value.length === 0
+      ? [{ path, value }]
+      : value.flatMap((item, index) =>
+          leafEntries(item, `${path}[${index}]`)
+        );
+  }
+  if (isPlainRecord(value)) {
+    const entries = Object.entries(value);
+    return entries.length === 0
+      ? [{ path, value }]
+      : entries.flatMap(([field, item]) =>
+          leafEntries(item, `${path}.${field}`)
+        );
+  }
+  return [{ path, value }];
 }
 
 function requiredSurface(value: unknown, name: string) {
@@ -2411,6 +3136,10 @@ function requiredRecord(value: unknown, name: string): Record<string, unknown> {
     throw new Error(`${name} is invalid.`);
   }
   return value as Record<string, unknown>;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function requiredArray(value: unknown, name: string): unknown[] {

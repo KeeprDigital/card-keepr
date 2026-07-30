@@ -87,7 +87,7 @@ An interrupted collection phase resumes against its persisted request plan.
 A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with
-`snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-json-document@2`.
+`snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@1`.
 
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably

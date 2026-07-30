@@ -32,7 +32,7 @@ INSERT INTO source_adapter_versions (
     'one-piece-card-document@1'
   ),
   (
-    'one-piece-json-document@2',
+    'one-piece-en@1',
     'one-piece-en',
     'one-piece',
     'one-piece@1',

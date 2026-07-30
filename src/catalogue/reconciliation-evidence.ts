@@ -28,12 +28,20 @@ type EvidenceRow = {
   plan_origin: string;
 };
 
+type PrintingImageSnapshotRow = {
+  request_url: string;
+  media_type: string | null;
+  content_digest: string;
+  content_byte_length: number;
+  content_object_key: string;
+};
+
 export async function retainedReconciliationObservation(
   database: D1Database,
   evidenceObjects: R2Bucket,
   runId: string,
 ) {
-  const [requests, observations] = await Promise.all([
+  const [requests, observations, printingImageSnapshots] = await Promise.all([
     database
       .prepare(
         `SELECT request_id, sequence_number, state, source_snapshot_id
@@ -73,6 +81,25 @@ export async function retainedReconciliationObservation(
       )
       .bind(runId)
       .all<EvidenceRow>(),
+    database
+      .prepare(
+        `SELECT
+          snapshot.request_url,
+          snapshot.media_type,
+          snapshot.content_digest,
+          snapshot.content_byte_length,
+          snapshot.content_object_key
+         FROM source_snapshots AS snapshot
+         JOIN source_requests AS request
+           ON request.ingestion_run_id = snapshot.ingestion_run_id
+          AND request.request_id = snapshot.request_id
+         WHERE snapshot.ingestion_run_id = ?
+           AND request.request_role = 'image'
+           AND request.state = 'observed'
+         ORDER BY snapshot.request_url`,
+      )
+      .bind(runId)
+      .all<PrintingImageSnapshotRow>(),
   ]);
   if (requests.results.length === 0) {
     throw new Error(
@@ -138,6 +165,14 @@ export async function retainedReconciliationObservation(
       retainedObservationDocument(evidenceObjects, row),
     ),
   );
+  const retainedImages = new Map(
+    await Promise.all(
+      printingImageSnapshots.results.map(async (row) => [
+        row.request_url,
+        await retainedPrintingImage(evidenceObjects, row),
+      ] as const),
+    ),
+  );
   const observationIds = new Set<string>();
   const merged = documents.flatMap((document, index) => {
     const row = orderedRows[index]!;
@@ -153,7 +188,10 @@ export async function retainedReconciliationObservation(
         }
         observationIds.add(wrapped.id);
         return {
-          ...parseReconciliationObservation(wrapped.id, wrapped.value),
+          ...parseReconciliationObservation(
+            wrapped.id,
+            attachRetainedPrintingImages(wrapped.value, retainedImages),
+          ),
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
           sourceCapturedAt: row.retrieved_at,
@@ -184,6 +222,179 @@ export async function retainedReconciliationObservation(
     })),
     observations: merged,
   };
+}
+
+function attachRetainedPrintingImages(
+  value: unknown,
+  images: ReadonlyMap<
+    string,
+    {
+      media_type: string;
+      width: number;
+      height: number;
+      content_sha256: string;
+      content_base64: string;
+    }
+  >,
+): unknown {
+  if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
+  const declared = value.appearance_evidence.images;
+  if (!Array.isArray(declared)) return value;
+  return {
+    ...value,
+    appearance_evidence: {
+      ...value.appearance_evidence,
+      images: declared.map((item) => {
+        if (!isRecord(item) || typeof item.source_url !== "string") return item;
+        const retained = images.get(item.source_url);
+        return retained === undefined ? item : { ...item, ...retained };
+      }),
+    },
+  };
+}
+
+async function retainedPrintingImage(
+  evidenceObjects: R2Bucket,
+  row: PrintingImageSnapshotRow,
+): Promise<{
+  media_type: string;
+  width: number;
+  height: number;
+  content_sha256: string;
+  content_base64: string;
+}> {
+  if (row.media_type === null || !row.media_type.startsWith("image/")) {
+    throw new Error("Retained Printing Image media type is invalid.");
+  }
+  const object = await evidenceObjects.get(row.content_object_key);
+  if (object === null || object.size !== row.content_byte_length) {
+    throw new Error("Retained Printing Image bytes are unavailable.");
+  }
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if ((await sha256(bytes)) !== row.content_digest) {
+    throw new Error("Retained Printing Image digest is invalid.");
+  }
+  const dimensions = imageDimensions(bytes, row.media_type);
+  return {
+    media_type: row.media_type,
+    width: dimensions.width,
+    height: dimensions.height,
+    content_sha256: row.content_digest,
+    content_base64: base64(bytes),
+  };
+}
+
+function imageDimensions(
+  bytes: Uint8Array,
+  mediaType: string,
+): { width: number; height: number } {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (
+    mediaType === "image/png" &&
+    bytes.byteLength >= 24 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return {
+      width: view.getUint32(16),
+      height: view.getUint32(20),
+    };
+  }
+  if (
+    mediaType === "image/gif" &&
+    bytes.byteLength >= 10 &&
+    String.fromCharCode(...bytes.subarray(0, 3)) === "GIF"
+  ) {
+    return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  }
+  if (
+    (mediaType === "image/jpeg" || mediaType === "image/jpg") &&
+    bytes.byteLength >= 4 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8
+  ) {
+    let offset = 2;
+    while (offset + 8 < bytes.byteLength) {
+      if (bytes[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = bytes[offset + 1]!;
+      const length = view.getUint16(offset + 2);
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        return {
+          height: view.getUint16(offset + 5),
+          width: view.getUint16(offset + 7),
+        };
+      }
+      if (length < 2) break;
+      offset += 2 + length;
+    }
+  }
+  if (
+    mediaType === "image/webp" &&
+    bytes.byteLength >= 30 &&
+    String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
+  ) {
+    const chunk = String.fromCharCode(...bytes.subarray(12, 16));
+    if (chunk === "VP8X") {
+      return {
+        width: 1 + uint24le(bytes, 24),
+        height: 1 + uint24le(bytes, 27),
+      };
+    }
+    if (chunk === "VP8 " && bytes.byteLength >= 30) {
+      return {
+        width: view.getUint16(26, true) & 0x3fff,
+        height: view.getUint16(28, true) & 0x3fff,
+      };
+    }
+    if (chunk === "VP8L" && bytes.byteLength >= 25 && bytes[20] === 0x2f) {
+      const bits = view.getUint32(21, true);
+      return {
+        width: 1 + (bits & 0x3fff),
+        height: 1 + ((bits >>> 14) & 0x3fff),
+      };
+    }
+  }
+  if (mediaType === "image/avif") {
+    for (let offset = 4; offset + 16 <= bytes.byteLength; offset += 1) {
+      if (
+        bytes[offset] === 0x69 &&
+        bytes[offset + 1] === 0x73 &&
+        bytes[offset + 2] === 0x70 &&
+        bytes[offset + 3] === 0x65
+      ) {
+        return {
+          width: view.getUint32(offset + 8),
+          height: view.getUint32(offset + 12),
+        };
+      }
+    }
+  }
+  throw new Error("Retained Printing Image dimensions are unsupported.");
+}
+
+function uint24le(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! | (bytes[offset + 1]! << 8) |
+    (bytes[offset + 2]! << 16);
+}
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
 }
 
 async function retainedObservationDocument(

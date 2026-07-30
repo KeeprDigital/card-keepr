@@ -545,6 +545,23 @@ export function productReleasePublicationStatements(
     ),
     ...statements(
       database,
+      productDocuments.map(({ product }) => ({
+        product_id: product.id,
+        search_text: [product.official_code, product.name]
+          .filter((value): value is string => value !== null)
+          .join("\n")
+          .toLocaleLowerCase(),
+      })),
+      `INSERT INTO revision_products_fts (
+         catalogue_revision_id, product_id, search_text
+       )
+       SELECT ?, json_extract(value, '$.product_id'),
+              json_extract(value, '$.search_text')
+       FROM json_each(?)`,
+      revisionId,
+    ),
+    ...statements(
+      database,
       relationshipDocuments.map(({ relationship, document }) => ({
         relationship_id: relationship.id,
         document_json: JSON.stringify(document),

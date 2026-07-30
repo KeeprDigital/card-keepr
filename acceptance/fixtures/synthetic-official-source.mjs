@@ -47,6 +47,14 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
+      if (url.pathname.includes("/images/")) {
+        return new Response(onePixelPng(), {
+          headers: {
+            "content-type": "image/png",
+            etag: `"${officialLineage}-image-v1"`,
+          },
+        });
+      }
       return new Response(
         officialBandaiDataset(officialLineage, transportOutcome),
         {
@@ -640,6 +648,9 @@ function upstreamProduct(lineage, product) {
     ...(product.distribution === undefined
       ? {}
       : { distribution: product.distribution }),
+    ...(product.vendor_metadata === undefined
+      ? {}
+      : { vendor_metadata: product.vendor_metadata }),
   };
   if (lineage === "one-piece-en") {
     return {
@@ -703,6 +714,7 @@ function upstreamRelease(lineage, release, index) {
 }
 
 function upstreamDetail(lineage, detail) {
+  const image = officialImageUrl(lineage, detail.image);
   const shared = {
     profile: detail.profile,
     product_codes: detail.product_codes,
@@ -739,7 +751,7 @@ function upstreamDetail(lineage, detail) {
       "Block icon": attributes.block_icons,
       Effect: detail.rules,
       Trigger: attributes.trigger_text,
-      image_url: detail.image,
+      image_url: image,
       ...shared,
     };
   }
@@ -763,13 +775,13 @@ function upstreamDetail(lineage, detail) {
         : { leader_faces: attributes.leader_faces }),
       image_urls: leader
         ? [
-            { role: "front", url: detail.image },
+            { role: "front", url: image },
             {
               role: "back",
-              url: detail.image.replace(".png", "-back.png"),
+              url: image.replace(".png", "-back.png"),
             },
           ]
-        : [{ role: "front", url: detail.image }],
+        : [{ role: "front", url: image }],
       ...shared,
     };
   }
@@ -793,7 +805,7 @@ function upstreamDetail(lineage, detail) {
       "DUAL Cost": attributes.dual_cost,
       "Link DP": attributes.link_dp,
       Effect: detail.rules,
-      image_url: detail.image,
+      image_url: image,
       ...shared,
     };
   }
@@ -813,9 +825,31 @@ function upstreamDetail(lineage, detail) {
     AP: attributes.ap,
     HP: attributes.hp,
     Title: attributes.series_titles,
-    image_url: detail.image,
+    image_url: image,
     ...shared,
   };
+}
+
+function officialImageUrl(lineage, original) {
+  const name = new URL(original).pathname.split("/").pop();
+  if (lineage === "one-piece-en") {
+    return `https://en.onepiece-cardgame.com/images/${name}`;
+  }
+  if (lineage === "fusion-world-en") {
+    return `https://www.dbs-cardgame.com/fw/images/${name}`;
+  }
+  if (lineage === "digimon-en") {
+    return `https://world.digimoncard.com/images/${name}`;
+  }
+  const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
+  return `https://www.gundam-gcg.com/${locale}/images/${name}`;
+}
+
+function onePixelPng() {
+  const binary = atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  );
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function policyPublication(lineage, surface) {
@@ -843,6 +877,11 @@ export function officialDiscoveryDocument(input) {
     code: input.productCode,
     title: input.productName,
     campaign_note: "Optional Official Source marketing copy",
+    vendor_metadata: {
+      merchandising: {
+        channel_code: "official-web",
+      },
+    },
   };
   const products = [product, ...input.extraProducts];
   const releases = [

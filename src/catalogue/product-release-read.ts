@@ -117,6 +117,7 @@ export async function currentProductsResponse(
   if (state === null) throw new Error("Catalogue state is unavailable");
   const limit = parseLimit(url.searchParams.get("limit"));
   const q = parseQuery(url);
+  const fts = q === null ? null : ftsQuery(q);
   const game = url.searchParams.get("game");
   const region = url.searchParams.get("release_region");
   assertFilter(game, region);
@@ -159,7 +160,14 @@ export async function currentProductsResponse(
        FROM revision_products
        WHERE catalogue_revision_id = ?
          AND (? IS NULL OR supported_game = ?)
-         AND (? IS NULL OR instr(search_text, ?) > 0)
+         AND (
+           ? IS NULL OR product_id IN (
+             SELECT product_id
+             FROM revision_products_fts
+             WHERE catalogue_revision_id = ?
+               AND search_text MATCH ?
+           )
+         )
          AND (
            ? IS NULL OR EXISTS (
              SELECT 1 FROM json_each(release_regions_json)
@@ -189,7 +197,8 @@ export async function currentProductsResponse(
       game,
       game,
       q,
-      q,
+      revisionId,
+      fts,
       region,
       region,
       after === null ? 0 : 1,
@@ -238,6 +247,19 @@ export async function currentProductsResponse(
       headers: productHeaders(revisionId, etag),
     },
   );
+}
+
+function ftsQuery(value: string): string {
+  const tokens = value.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (tokens.length === 0) {
+    throw new ProductReadProblem(
+      400,
+      "invalid_parameter",
+      "Product search query has no searchable terms.",
+    );
+  }
+  return tokens.map((token) => `"${token.replaceAll("\"", "\"\"")}"*`)
+    .join(" AND ");
 }
 
 function productEnvelope(documentJson: string): ProductEnvelope {

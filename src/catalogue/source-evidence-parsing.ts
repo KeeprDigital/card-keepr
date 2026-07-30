@@ -54,11 +54,11 @@ export async function parseSnapshot(
     supportedGame: snapshot.supported_game,
     gameProfileVersion: snapshot.game_profile_version,
   });
-  if (snapshot.content_byte_length > adapter.maximumJsonBytes) {
+  if (snapshot.content_byte_length > adapter.maximumSnapshotBytes) {
     throw new AdministrationProblem(
       422,
       "source_parse_too_large",
-      "The Source Snapshot exceeds the adapter's bounded JSON parse limit.",
+      "The Source Snapshot exceeds the adapter's bounded parse limit.",
     );
   }
   const operation = await prepareParseOperation(
@@ -163,6 +163,55 @@ export async function parseSnapshot(
       .run();
   }
   return finalizeParseOperation(database, operation.id, snapshot);
+}
+
+export async function discoverSnapshotRequests(
+  database: D1Database,
+  evidenceObjects: R2Bucket,
+  snapshotId: string,
+  adapterVersion: string,
+): Promise<readonly {
+  role: "listing" | "detail" | "product_detail" | "image";
+  url: string;
+  headers: Record<string, string>;
+}[]> {
+  const snapshot = await database
+    .prepare("SELECT * FROM source_snapshots WHERE id = ?")
+    .bind(snapshotId)
+    .first<SnapshotRow>();
+  if (snapshot === null) {
+    throw new Error("Source Snapshot disappeared before request discovery.");
+  }
+  const adapter = requiredSourceAdapter(adapterVersion);
+  assertAdapterBinding(adapter, {
+    sourceLineage: snapshot.source_lineage,
+    supportedGame: snapshot.supported_game,
+    gameProfileVersion: snapshot.game_profile_version,
+  });
+  if (adapter.discoverRequests === undefined) return [];
+  const object = await evidenceObjects.get(snapshot.content_object_key);
+  if (object === null || object.size !== snapshot.content_byte_length) {
+    throw new Error("Source Snapshot bytes are unavailable or truncated");
+  }
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if ((await sha256(bytes)) !== snapshot.content_digest) {
+    throw new Error("Source Snapshot bytes failed digest verification");
+  }
+  try {
+    return adapter.discoverRequests(bytes, {
+      mediaType: snapshot.media_type,
+      url: snapshot.request_url,
+      requestId: snapshot.request_id,
+    });
+  } catch (error) {
+    throw new AdministrationProblem(
+      422,
+      "source_discovery_failed",
+      error instanceof Error
+        ? error.message
+        : "The Official Source request graph could not be discovered.",
+    );
+  }
 }
 
 function observationEvidenceSummary(observations: readonly unknown[]) {

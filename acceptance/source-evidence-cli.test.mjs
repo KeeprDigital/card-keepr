@@ -118,9 +118,9 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     directory,
   );
   assert.equal(successful.failure_code, null);
-  assert.equal(successful.snapshots.length, 7);
-  assert.equal(successful.observation_sets.length, 7);
-  assert.equal(successful.diagnostics.length, 7);
+  assert.equal(successful.snapshots.length, 8);
+  assert.equal(successful.observation_sets.length, 8);
+  assert.equal(successful.diagnostics.length, 8);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
   const retained = await runCli(
@@ -153,7 +153,7 @@ async function collectResumeAndShow(
       plans: [{
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-json-document@2",
+        adapter_version: "one-piece-en@1",
         requests,
       }],
     }),

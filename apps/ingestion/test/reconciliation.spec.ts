@@ -783,7 +783,7 @@ test("production plans bind every request identity to its exact Official Source 
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-json-document@2",
+    adapter_version: "one-piece-en@1",
     idempotency_key: "forged-production-surface-url",
     requests,
   });
@@ -3167,7 +3167,7 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-json-document@2",
+    adapter_version: "one-piece-en@1",
     idempotency_key: "blocked-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -3398,6 +3398,10 @@ test("a Fusion Leader publishes immutable role-labelled Printing Images and expo
   );
   const candidate = await reconcile(run.id);
   expect(candidate.response.status).toBe(200);
+  const leaderPrintingId = requiredString(
+    requiredFirst(candidate.document, "printings"),
+    "id",
+  );
   const published = await approve(candidate.document);
   expect(
     published.response.status,
@@ -3407,10 +3411,9 @@ test("a Fusion Leader publishes immutable role-labelled Printing Images and expo
     published.document,
     "resulting_revision_id",
   );
-  const images = await exportComponentRecords(
-    revisionId,
-    "printing-images",
-  );
+  const images = (
+    await exportComponentRecords(revisionId, "printing-images")
+  ).filter(({ printing_id }) => printing_id === leaderPrintingId);
   expect(images).toEqual([
     expect.objectContaining({
       type: "printing_image",
@@ -4110,6 +4113,11 @@ test("Product observations and disappearance remain scoped to their Source Linea
       expect.objectContaining({ region: "EN-US" }),
     ]),
   );
+  expect(
+    new Set(
+      (combined.releases as Record<string, unknown>[]).map(({ id }) => id),
+    ).size,
+  ).toBe(2);
   expect(combined.included).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ source: "gundam-en-asia" }),

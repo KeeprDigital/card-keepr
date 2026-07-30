@@ -39,9 +39,6 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "run", "show")) {
     return showRun(arguments_.slice(2), environment, json);
   }
-  if (isCommand(arguments_, "run", "reconcile")) {
-    return reconcileRun(arguments_.slice(2), environment, json);
-  }
   if (isCommand(arguments_, "candidate", "inspect")) {
     return inspectCandidate(arguments_.slice(2), environment, json);
   }
@@ -170,21 +167,6 @@ async function showRun(arguments_, environment, json) {
     json,
     `/v1/ingestion-runs/${encodeURIComponent(runId)}`,
     "GET",
-  );
-}
-
-async function reconcileRun(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--run-id"]);
-  const runId = options.values["--run-id"];
-  if (options.error !== null || runId === undefined) {
-    return usageFailure(json);
-  }
-  return administrationRequest(
-    environment,
-    json,
-    `/v1/ingestion-runs/${encodeURIComponent(runId)}/reconciliation`,
-    "POST",
-    {},
   );
 }
 
@@ -629,7 +611,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | run start | run show | run reconcile | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

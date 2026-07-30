@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupportedGame } from "./fixture";
 import { canonicalJson, sha256Text } from "./serialization";
 
@@ -647,15 +648,21 @@ function resolveProduct(
   >();
   for (const product of observations) {
     for (const release of product.releases) {
-      releaseGroups.set(release.eventKey, [
-        ...(releaseGroups.get(release.eventKey) ?? []),
+      const groupIdentity = canonicalJson([
+        product.evidence.source,
+        release.region,
+        release.eventKey,
+      ]);
+      releaseGroups.set(groupIdentity, [
+        ...(releaseGroups.get(groupIdentity) ?? []),
         { release, product },
       ]);
     }
   }
   const releases = [...releaseGroups]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([eventKey, values], index) => {
+    .map(([groupIdentity, values], index) => {
+      const eventKey = values[0]!.release.eventKey;
       const factInputs = values.map(({ release, product }) => ({
         ...product,
         release,
@@ -689,7 +696,7 @@ function resolveProduct(
         disagreements,
       );
       return {
-        id: releaseIdFor(first.id, eventKey),
+        id: releaseIdFor(first.id, groupIdentity),
         event_key: eventKey,
         product_id: first.id,
         region: region ?? "unknown",
@@ -891,9 +898,18 @@ export async function distributionContextIdFor(
 
 function releaseIdFor(
   productId: string,
-  eventKey: string,
+  eventIdentity: string,
 ): string {
-  return `release_${productId}:${eventKey}`;
+  return `release_${
+    createHash("sha256")
+      .update(
+        canonicalJson({
+          product_id: productId,
+          event_identity: eventIdentity,
+        }),
+      )
+      .digest("hex")
+  }`;
 }
 
 async function relationshipIdFor(

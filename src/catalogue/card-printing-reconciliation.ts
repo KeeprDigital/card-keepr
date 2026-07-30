@@ -368,7 +368,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         const existingImage = printingImages.get(id);
         if (
           existingImage !== undefined &&
-          canonicalJson(existingImage) !== canonicalJson(candidateImage)
+          !printingImageEvidenceEquivalent(existingImage, candidateImage)
         ) {
           diagnostics.push({
             code: "retained_evidence_invalid",
@@ -379,7 +379,20 @@ export async function reconcileRetainedCardPrintingEvidence(
               "A Printing Image identity maps to conflicting immutable bytes or metadata.",
           });
         } else {
-          printingImages.set(id, candidateImage);
+          printingImages.set(
+            id,
+            existingImage === undefined
+              ? candidateImage
+              : {
+                  ...existingImage,
+                  source_url:
+                    existingImage.source_url.localeCompare(
+                      candidateImage.source_url,
+                    ) <= 0
+                      ? existingImage.source_url
+                      : candidateImage.source_url,
+                },
+          );
         }
       }
       if (
@@ -942,6 +955,17 @@ function semanticCatalogueCandidate(
     selected_games: candidate.selected_games,
     cards: candidate.cards,
     printings: candidate.printings,
+    printing_images: (candidate.printing_images ?? []).map((image) => ({
+      id: image.id,
+      printing_id: image.printing_id,
+      role: image.role,
+      media_type: image.media_type,
+      width: image.width,
+      height: image.height,
+      content_sha256: image.content_sha256,
+      content_byte_length: image.content_byte_length,
+      object_key: image.object_key,
+    })),
     products: (candidate.products ?? []).map((product) => ({
       reference: product.reference,
       id: product.id,
@@ -1221,6 +1245,15 @@ async function blockedResult(
     diagnostics: stable,
     warnings: [],
   };
+}
+
+function printingImageEvidenceEquivalent(
+  left: FixturePrintingImage,
+  right: FixturePrintingImage,
+): boolean {
+  const { source_url: _leftSourceUrl, ...leftEvidence } = left;
+  const { source_url: _rightSourceUrl, ...rightEvidence } = right;
+  return canonicalJson(leftEvidence) === canonicalJson(rightEvidence);
 }
 
 async function requiredActiveParsingRun(

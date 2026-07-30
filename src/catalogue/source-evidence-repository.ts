@@ -1,5 +1,5 @@
 import { AdministrationProblem } from "./ingestion";
-import { canonicalJson } from "./serialization";
+import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertIdentifier,
   parseEvidencePlans,
@@ -42,6 +42,19 @@ export type EvidenceRequestRow = {
   state: "pending" | "captured" | "observed" | "failed";
   source_snapshot_id: string | null;
   failure_code: string | null;
+  request_role:
+    | "surface"
+    | "listing"
+    | "detail"
+    | "product_detail"
+    | "image";
+  discovered_from_request_id: string | null;
+};
+
+export type DiscoveredEvidenceRequest = {
+  role: Exclude<EvidenceRequestRow["request_role"], "surface">;
+  url: string;
+  headers: Record<string, string>;
 };
 
 export type SnapshotRow = {
@@ -390,12 +403,111 @@ export function evidencePlanForRequest(
   const matches = parseEvidencePlans(run.request_plan_json).filter((plan) =>
     plan.requests.some(({ id }) => id === requestId),
   );
+  if (matches.length === 0) {
+    const lineage = requestId.split(":", 1)[0]!;
+    const dynamicMatches = parseEvidencePlans(run.request_plan_json).filter(
+      (plan) => plan.source_lineage === lineage,
+    );
+    if (dynamicMatches.length === 1) return dynamicMatches[0]!;
+  }
   if (matches.length !== 1) {
     throw new Error(
       `Source Request ${requestId} does not have exactly one Evidence Plan.`,
     );
   }
   return matches[0]!;
+}
+
+export async function appendDiscoveredEvidenceRequests(
+  database: D1Database,
+  run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
+  parent: EvidenceRequestRow,
+  discovered: readonly DiscoveredEvidenceRequest[],
+): Promise<readonly EvidenceRequestRow[]> {
+  const plan = evidencePlanForRequest(run, parent.request_id);
+  const count = await database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM source_requests
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(run.id)
+    .first<{ count: number }>();
+  if (
+    count === null ||
+    count.count + discovered.length > 5_000
+  ) {
+    throw new AdministrationProblem(
+      422,
+      "source_discovery_too_large",
+      "The Official Source request graph exceeds its bounded request limit.",
+    );
+  }
+  const inserted: EvidenceRequestRow[] = [];
+  for (const request of discovered) {
+    const digest = await sha256(
+      utf8(
+        canonicalJson({
+          source_lineage: plan.source_lineage,
+          role: request.role,
+          method: "GET",
+          url: new URL(request.url).href,
+          headers: request.headers,
+        }),
+      ),
+    );
+    const requestId = `${plan.source_lineage}:${request.role}:${digest}`;
+    const representationFingerprint = await sha256(
+      utf8(
+        canonicalJson({
+          method: "GET",
+          url: new URL(request.url).href,
+          headers: request.headers,
+        }),
+      ),
+    );
+    const sequenceNumber =
+      1_000_000 + Number.parseInt(digest.slice(0, 12), 16);
+    await database
+      .prepare(
+        `INSERT OR IGNORE INTO source_requests (
+          ingestion_run_id, request_id, sequence_number, method, url,
+          request_headers_json, representation_fingerprint, state,
+          source_snapshot_id, failure_code, request_role,
+          discovered_from_request_id
+        ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL, ?, ?)`,
+      )
+      .bind(
+        run.id,
+        requestId,
+        sequenceNumber,
+        new URL(request.url).href,
+        canonicalJson(request.headers),
+        representationFingerprint,
+        request.role,
+        parent.request_id,
+      )
+      .run();
+    const retained = await database
+      .prepare(
+        `SELECT * FROM source_requests
+         WHERE ingestion_run_id = ? AND request_id = ?`,
+      )
+      .bind(run.id, requestId)
+      .first<EvidenceRequestRow>();
+    if (
+      retained === null ||
+      retained.url !== new URL(request.url).href ||
+      retained.request_headers_json !== canonicalJson(request.headers) ||
+      retained.request_role !== request.role
+    ) {
+      throw new Error(
+        "Discovered Source Request identity collided with different immutable evidence.",
+      );
+    }
+    inserted.push(retained);
+  }
+  return inserted;
 }
 
 export async function requiredEvidenceRun(

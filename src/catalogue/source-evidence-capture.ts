@@ -6,8 +6,12 @@ import {
   parseStringRecord,
   responseVary,
 } from "./source-evidence-model";
-import { parseSnapshot } from "./source-evidence-parsing";
 import {
+  discoverSnapshotRequests,
+  parseSnapshot,
+} from "./source-evidence-parsing";
+import {
+  appendDiscoveredEvidenceRequests,
   evidencePlanForRequest,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
@@ -642,6 +646,18 @@ export async function parseCapturedRequest(
         intent: "collection",
         idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
       },
+    );
+    const discovered = await discoverSnapshotRequests(
+      database,
+      evidenceObjects,
+      snapshotId,
+      evidencePlan.adapter_version,
+    );
+    await appendDiscoveredEvidenceRequests(
+      database,
+      run,
+      sourceRequest,
+      discovered,
     );
     await database
       .prepare(

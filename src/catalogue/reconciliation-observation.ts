@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   FixtureCard,
   FixturePrintingImage,
@@ -552,7 +553,8 @@ function appearanceEvidence(
   if (!isRecord(value) || !Array.isArray(value.images)) {
     return { complete: false, images: [] };
   }
-  const roles = new Set<string>();
+  const declaredRoles = new Set<string>();
+  const capturedRoles = new Set<string>();
   const captured: Omit<
     FixturePrintingImage,
     "id" | "printing_id" | "object_key"
@@ -567,7 +569,10 @@ function appearanceEvidence(
     ) {
       return { complete: false, images: [] };
     }
-    roles.add(item.role);
+    if (declaredRoles.has(item.role)) {
+      return { complete: false, images: [] };
+    }
+    declaredRoles.add(item.role);
     if (
       typeof item.media_type === "string" &&
       item.media_type.startsWith("image/") &&
@@ -581,6 +586,10 @@ function appearanceEvidence(
       item.content_base64.length > 0
     ) {
       const bytes = decodeBase64(item.content_base64);
+      const contentDigest = createHash("sha256").update(bytes).digest("hex");
+      if (contentDigest !== item.content_sha256) {
+        return { complete: false, images: [] };
+      }
       captured.push({
         role: item.role,
         media_type: item.media_type as `image/${string}`,
@@ -591,12 +600,16 @@ function appearanceEvidence(
         source_url: item.source_url,
         content_base64: item.content_base64,
       });
+      capturedRoles.add(item.role);
     }
   }
-  const complete =
+  const requiredRoles =
     profile === "fusion-world@1" && cardAttributes.card_type === "leader"
-    ? roles.has("front") && roles.has("back")
-    : roles.has("front");
+      ? ["front", "back"]
+      : ["front"];
+  const complete =
+    captured.length === value.images.length &&
+    requiredRoles.every((role) => capturedRoles.has(role));
   return { complete, images: captured };
 }
 

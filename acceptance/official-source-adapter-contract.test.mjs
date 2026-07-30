@@ -34,10 +34,17 @@ test("production adapters derive coverage and preserve a raw sidecar", () => {
   );
   assert.deepEqual(
     observation.source_sidecar.unmapped_optional_fields,
-    [{
-      path: "source_sidecar.raw.products[0].campaign_note",
-      value: "Optional Official Source marketing copy",
-    }],
+    [
+      {
+        path: "source_sidecar.raw.products[0].campaign_note",
+        value: "Optional Official Source marketing copy",
+      },
+      {
+        path:
+          "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code",
+        value: "official-web",
+      },
+    ],
   );
   assert.equal(JSON.stringify(observation).includes("card_record"), false);
   assert.equal(JSON.stringify(observation).includes("product_record"), false);

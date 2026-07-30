@@ -582,7 +582,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-json-document@2",
+      adapter_version: "one-piece-en@1",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -1163,7 +1163,7 @@ function exactOnePiecePlan(idempotencyKey: string) {
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-json-document@2",
+    adapter_version: "one-piece-en@1",
     idempotency_key: idempotencyKey,
     requests: officialSourceDiscoveryRequests("one-piece-en").map(
       (request) => ({ ...request }),

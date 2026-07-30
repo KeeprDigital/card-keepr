@@ -162,6 +162,12 @@ beforeEach(async () => {
       }),
     ),
     testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_products_fts (
+         catalogue_revision_id, product_id, search_text
+       ) VALUES ('catrev_products', 'product_st15',
+                 'st-15 starter deck red edward.newgate')`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_cards (
          catalogue_revision_id, card_id, document_json
        ) VALUES ('catrev_products', ?, ?)`,

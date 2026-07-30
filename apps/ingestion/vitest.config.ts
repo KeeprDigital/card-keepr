@@ -4,6 +4,7 @@ import {
 } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
 import {
+  createHash,
   createHmac,
   generateKeyPairSync,
   timingSafeEqual,
@@ -321,7 +322,7 @@ export default defineConfig({
             url.hostname.endsWith("gundam-gcg.com")
           ) {
             return new Response(
-              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>Complete official policy surface.</main></html>",
+              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main><article>Complete official structural policy entry.</article></main></html>",
               {
                 headers: {
                   "content-type": "text/html; charset=utf-8",
@@ -662,12 +663,12 @@ function reconciliationSourceDocument(scenario: string) {
           },
           appearance_evidence: {
             images: [
-              {
-                role: "front",
-                source_url:
-                  "https://official-source.invalid/images/OP05-005-alt.png",
-                artwork_fingerprint: `sha256:${"d".repeat(64)}`,
-              },
+              fixturePrintingImage(
+                "front",
+                "https://official-source.invalid/images/OP05-005-alt.png",
+                `sha256:${"d".repeat(64)}`,
+                "multi-printing-alternate",
+              ),
             ],
           },
         },
@@ -717,12 +718,12 @@ function reconciliationSourceDocument(scenario: string) {
           },
           appearance_evidence: {
             images: [
-              {
-                role: "front",
-                source_url:
-                  "https://official-source.invalid/images/OP12-012-alt.png",
-                artwork_fingerprint: `sha256:${"f".repeat(64)}`,
-              },
+              fixturePrintingImage(
+                "front",
+                "https://official-source.invalid/images/OP12-012-alt.png",
+                `sha256:${"f".repeat(64)}`,
+                "product-lifecycle-alternate",
+              ),
             ],
           },
         },
@@ -758,12 +759,12 @@ function reconciliationSourceDocument(scenario: string) {
       },
       appearance_evidence: {
         images: [
-          {
-            role: "front",
-            source_url:
-              "https://official-source.invalid/images/OP10-010-alt.png",
-            artwork_fingerprint: `sha256:${"e".repeat(64)}`,
-          },
+          fixturePrintingImage(
+            "front",
+            "https://official-source.invalid/images/OP10-010-alt.png",
+            `sha256:${"e".repeat(64)}`,
+            "deterministic-alternate",
+          ),
         ],
       },
     };
@@ -2222,11 +2223,12 @@ function printingObservation(input: {
         ? { images: [] }
         : {
             images: [
-              {
-                role: "front",
-                source_url: `https://official-source.invalid/images/${input.cardNumber}.png`,
-                artwork_fingerprint: artworkFingerprint,
-              },
+              fixturePrintingImage(
+                "front",
+                `https://official-source.invalid/images/${input.cardNumber}.png`,
+                artworkFingerprint,
+                `${input.cardNumber}:${input.lineageMarker}`,
+              ),
             ],
           },
     completeness: completeEvidence(),
@@ -2236,6 +2238,25 @@ function printingObservation(input: {
         distribution_contexts: [],
         source_buckets: ["main-list"],
       },
+  };
+}
+
+function fixturePrintingImage(
+  role: "front" | "back" | "other",
+  sourceUrl: string,
+  artworkFingerprint: string,
+  marker: string,
+) {
+  const bytes = Buffer.from(`fixture-printing-image:${marker}`, "utf8");
+  return {
+    role,
+    source_url: sourceUrl,
+    artwork_fingerprint: artworkFingerprint,
+    media_type: "image/png",
+    width: 1,
+    height: 1,
+    content_sha256: createHash("sha256").update(bytes).digest("hex"),
+    content_base64: bytes.toString("base64"),
   };
 }
 

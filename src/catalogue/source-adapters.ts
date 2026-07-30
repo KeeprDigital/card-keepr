@@ -9,7 +9,7 @@ export type SourceAdapterRegistration = Readonly<{
   supportedGame: string;
   gameProfileVersion: string;
   parserContract: string;
-  maximumJsonBytes: number;
+  maximumSnapshotBytes: number;
   origin: "production" | "synthetic_fixture";
   reconciliationCoverage:
     | "official_source"
@@ -20,6 +20,14 @@ export type SourceAdapterRegistration = Readonly<{
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly unknown[];
+  discoverRequests?: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string; requestId?: string },
+  ) => readonly {
+    role: "listing" | "detail" | "product_detail" | "image";
+    url: string;
+    headers: Record<string, string>;
+  }[];
   requiredSurfaces?: readonly string[];
   requestUrlForSurface?: (surface: string) => string;
 }>;
@@ -58,10 +66,11 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         supportedGame: adapter.supportedGame,
         gameProfileVersion: `${adapter.supportedGame}@1`,
         parserContract: `${adapter.sourceLineage}-raw-surfaces@1`,
-        maximumJsonBytes: 1024 * 1024,
+        maximumSnapshotBytes: 16 * 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
         parseBytes: adapter.parseBytes,
+        discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
         requestUrlForSurface: adapter.requestUrlForSurface,
       })),
@@ -110,7 +119,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         },
       ].map((adapter) => ({
         ...adapter,
-        maximumJsonBytes:
+        maximumSnapshotBytes:
           adapter.adapterVersion === "one-piece-json-document@1"
             ? 1024 * 1024
             : 16 * 1024 * 1024,

@@ -51,7 +51,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-json-document@2",
+            "one-piece-en@1",
           ),
           officialPlan(
             "fusion-world",
@@ -79,7 +79,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-json-document@2",
+            "one-piece-en@1",
           ),
         ],
       }),
@@ -164,8 +164,8 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     cliEnvironment,
     ingestion,
   );
-  const reconciled = await runCli(
-    ["run", "reconcile", "--run-id", collectedRun.id, "--json"],
+  const reconciled = await reconcileWorkflowStage(
+    collectedRun.id,
     cliEnvironment,
   );
   const reconciliationDiagnostic =
@@ -199,6 +199,15 @@ test("the CLI publishes separated Product catalogue data consumed through authen
         code === "unknown_source_field" &&
         path === "source_sidecar.raw.products[0].campaign_note" &&
         raw_value === "Optional Official Source marketing copy",
+    ),
+  );
+  assert.ok(
+    reconciliation.warnings.some(
+      ({ code, path, raw_value }) =>
+        code === "unknown_source_field" &&
+        path ===
+          "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
+        raw_value === "official-web",
     ),
   );
   const printingId = reconciliation.printings[0].id;
@@ -295,11 +304,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-json-document@2",
+        adapter_version: "one-piece-en@1",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-json-document@2",
+          "one-piece-en@1",
         ).requests.map(({ id }) => id),
       },
       {
@@ -353,8 +362,8 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     cliEnvironment,
     ingestion,
   );
-  const multiReconciled = await runCli(
-    ["run", "reconcile", "--run-id", multiRun.id, "--json"],
+  const multiReconciled = await reconcileWorkflowStage(
+    multiRun.id,
     cliEnvironment,
   );
   assert.equal(
@@ -427,10 +436,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   await waitForRunState(carryRun.id, "parsing", cliEnvironment, ingestion);
   assert.equal(
     (
-      await runCli(
-        ["run", "reconcile", "--run-id", carryRun.id, "--json"],
-        cliEnvironment,
-      )
+      await reconcileWorkflowStage(carryRun.id, cliEnvironment)
     ).code,
     0,
   );
@@ -870,6 +876,29 @@ async function stopWorker(worker) {
     new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
   ]);
   if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
+}
+
+async function reconcileWorkflowStage(runId, environment) {
+  const response = await fetch(
+    `${environment.KEEPR_INGESTION_URL}/v1/ingestion-runs/${
+      encodeURIComponent(runId)
+    }/reconciliation`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        "cf-connecting-ip": "203.0.113.28",
+        "content-type": "application/json",
+      },
+      body: "{}",
+    },
+  );
+  const stdout = await response.text();
+  return {
+    code: response.ok ? 0 : 1,
+    stdout,
+    stderr: response.ok ? "" : stdout,
+  };
 }
 
 function runCli(arguments_, environment) {

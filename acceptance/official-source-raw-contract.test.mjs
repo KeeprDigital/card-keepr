@@ -93,8 +93,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   const adapter = officialRawAdapterContracts.find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
-  const observations = adapter.parseBytes(
-    new TextEncoder().encode(`
+  const bytes = new TextEncoder().encode(`
       <select id="series">
         <option value="569114">BOOSTER PACK -TEST- [OP99]</option>
       </select>
@@ -117,12 +116,14 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
             <div class="color"><h3>Color</h3>Red</div>
             <div class="block"><h3>Block icon</h3>1</div>
             <div class="feature"><h3>Type</h3>Test</div>
-            <div class="text"><h3>Effect</h3>Official effect</div>
+            <div class="text"><h3>Effect</h3>Official effect<br>Second section</div>
             <div class="getInfo"><h3>Card Set(s)</h3>Test Set [OP99]</div>
           </div></dd>
         </dl>
       </div>
-    `),
+    `);
+  const observations = adapter.parseBytes(
+    bytes,
     {
       mediaType: "text/html; charset=utf-8",
       url: "https://en.onepiece-cardgame.com/cardlist/",
@@ -133,6 +134,35 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   assert.equal(
     observations[0].appearance_evidence.images[0].source_url,
     "https://en.onepiece-cardgame.com/images/cardlist/card/OP99-001.png",
+  );
+  assert.equal(
+    observations[0].card.effective_rules_text,
+    "Official effect\nSecond section",
+  );
+  assert.deepEqual(
+    observations[0].memberships.source_buckets,
+    ["card-set:Test Set [OP99]"],
+  );
+  assert.deepEqual(
+    observations[0].product_release_catalogue.distribution_contexts,
+    [],
+  );
+  assert.doesNotMatch(
+    observations[0].identity_evidence.artwork_fingerprint,
+    /https?:|OP99-001\.png|#OP99-001/u,
+  );
+  assert.match(
+    observations[0].identity_evidence.printed_fields_digest,
+    /Official effect\\nSecond section/u,
+  );
+  assert.ok(
+    adapter.discoverRequests(bytes, {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+      requestId: "one-piece-en:card-list",
+    }).some(({ role, url }) =>
+      role === "listing" && new URL(url).searchParams.get("series") === "569114"
+    ),
   );
 });
 
@@ -164,6 +194,66 @@ test("every production lineage parses its exact real HTML policy surfaces", () =
     ]);
     assert.equal(retained.publication_links.length, 1);
   }
+});
+
+test("production coverage rejects keyword-only HTML without structural entries", () => {
+  for (const adapter of officialRawAdapterContracts) {
+    const surface = adapter.requiredSurfaces.find(
+      (candidate) =>
+        candidate !== "card-list" &&
+        candidate !== "card-search" &&
+        candidate !== "packages",
+    );
+    assert.ok(surface);
+    assert.throws(
+      () =>
+        adapter.parseBytes(
+          new TextEncoder().encode(
+            "<html><title>BANDAI CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title><main>Official publication.</main></html>",
+          ),
+          {
+            mediaType: "text/html; charset=utf-8",
+            url: adapter.requestUrlForSurface(surface),
+            requestId: `${adapter.sourceLineage}:${surface}`,
+          },
+        ),
+      /structural publication entries/iu,
+    );
+  }
+});
+
+test("production adapters discover staged detail, page, product, and image requests", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  assert.ok(adapter);
+  const requests = adapter.discoverRequests(
+    new TextEncoder().encode(`
+      <a href="/fw/en/cardlist/detail.php?cardId=FB01-001">Card detail</a>
+      <a href="/fw/en/cardlist/?card_type=leader&colour=red&cost=1&page=2">Next</a>
+      <a href="/fw/en/products/booster/fb01/">Product detail</a>
+      <img src="/fw/images/cards/FB01-001-front.png">
+    `),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("card-search"),
+      requestId: "fusion-world-en:card-search",
+    },
+  );
+  assert.deepEqual(
+    requests.map(({ role }) => role).sort(),
+    ["detail", "image", "listing", "product_detail"],
+  );
+  const image = requests.find(({ role }) => role === "image");
+  assert.ok(image);
+  assert.deepEqual(
+    adapter.parseBytes(new Uint8Array([1]), {
+      mediaType: "image/png",
+      url: image.url,
+      requestId: `fusion-world-en:image:${"a".repeat(64)}`,
+    }),
+    [],
+  );
 });
 
 test("the aggregate JSON adapter is fixture-only and cannot claim official coverage", () => {

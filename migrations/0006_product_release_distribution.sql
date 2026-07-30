@@ -1,5 +1,20 @@
 PRAGMA foreign_keys = ON;
 
+ALTER TABLE source_requests
+ADD COLUMN request_role TEXT NOT NULL DEFAULT 'surface'
+CHECK (
+  request_role IN (
+    'surface',
+    'listing',
+    'detail',
+    'product_detail',
+    'image'
+  )
+);
+
+ALTER TABLE source_requests
+ADD COLUMN discovered_from_request_id TEXT;
+
 CREATE TABLE revision_products (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   product_id TEXT NOT NULL,
@@ -26,6 +41,13 @@ ON revision_products (
 CREATE INDEX revision_products_region
 ON revision_products (catalogue_revision_id, release_regions_json);
 
+CREATE VIRTUAL TABLE revision_products_fts USING fts5(
+  catalogue_revision_id UNINDEXED,
+  product_id UNINDEXED,
+  search_text,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+
 CREATE TABLE reconciled_printing_images (
   id TEXT PRIMARY KEY,
   printing_id TEXT NOT NULL,
@@ -38,12 +60,15 @@ CREATE TABLE reconciled_printing_images (
     content_sha256 NOT GLOB '*[^0-9a-f]*'
   ),
   content_byte_length INTEGER NOT NULL CHECK (content_byte_length > 0),
-  object_key TEXT NOT NULL UNIQUE,
+  object_key TEXT NOT NULL,
   UNIQUE (printing_id, role, content_sha256)
 );
 
 CREATE INDEX reconciled_printing_images_printing
 ON reconciled_printing_images (printing_id, role, id);
+
+CREATE INDEX reconciled_printing_images_object
+ON reconciled_printing_images (object_key);
 
 CREATE TABLE revision_printing_images (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
@@ -213,7 +238,7 @@ WHERE adapter_version = 'one-piece-json-document@1';
 
 UPDATE source_adapter_versions
 SET parser_contract = 'one-piece-en-raw-surfaces@1'
-WHERE adapter_version = 'one-piece-json-document@2';
+WHERE adapter_version = 'one-piece-en@1';
 
 UPDATE source_adapter_versions
 SET parser_contract = 'fusion-world-en-raw-surfaces@1'
