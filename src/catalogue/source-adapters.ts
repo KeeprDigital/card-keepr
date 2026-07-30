@@ -40,6 +40,57 @@ const parseSourceDocument = (document: unknown): readonly unknown[] => {
   return [document];
 };
 
+const parseDigimonSourceDocument = (
+  document: unknown,
+): readonly unknown[] => {
+  if (
+    typeof document !== "object" ||
+    document === null ||
+    Array.isArray(document) ||
+    !Array.isArray(
+      (document as { official_records?: unknown }).official_records,
+    )
+  ) {
+    return parseSourceDocument(document);
+  }
+  return (document as { official_records: unknown[] }).official_records.map(
+    (value) => {
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        Array.isArray(value)
+      ) {
+        throw new Error("A Digimon discovery record is invalid.");
+      }
+      const record = value as Record<string, unknown>;
+      if (record.record_type === "product_announcement") {
+        return {
+          completeness: record.completeness,
+          product_release_catalogue: record.catalogue,
+        };
+      }
+      if (record.record_type === "card_product_listing") {
+        return {
+          completeness: record.completeness,
+          card: record.card,
+          memberships: record.memberships,
+          product_release_catalogue: record.catalogue,
+          ...(record.printing === undefined
+            ? {}
+            : { printing: record.printing }),
+          ...(record.identity_evidence === undefined
+            ? {}
+            : { identity_evidence: record.identity_evidence }),
+          ...(record.appearance_evidence === undefined
+            ? {}
+            : { appearance_evidence: record.appearance_evidence }),
+        };
+      }
+      throw new Error("A Digimon discovery record type is unsupported.");
+    },
+  );
+};
+
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
@@ -85,7 +136,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
-        parse: parseSourceDocument,
+        parse: parseDigimonSourceDocument,
       },
       {
         adapterVersion: "gundam-en-asia@1",

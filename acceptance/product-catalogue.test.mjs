@@ -66,7 +66,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   });
   await Promise.all([
     waitForHealth(
-      `http://127.0.0.1:${sourcePort}/product-only`,
+      `http://127.0.0.1:${sourcePort}/catalogue-discovery`,
       "",
       source,
     ),
@@ -93,7 +93,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "--request-id",
       "products-and-releases",
       "--url",
-      "https://synthetic-source.invalid/product-only",
+      "https://synthetic-source.invalid/catalogue-discovery",
       "--idempotency-key",
       "acceptance-product-collect",
       "--json",
@@ -127,10 +127,18 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     `${reconciled.stdout}\n${reconciled.stderr}\n${ingestion.getOutput()}`,
   );
   const reconciliation = JSON.parse(reconciled.stdout);
-  assert.equal(reconciliation.cards.length, 0);
+  assert.equal(reconciliation.cards.length, 1);
   assert.equal(reconciliation.printings.length, 0);
-  assert.equal(reconciliation.products.length, 1);
-  const productId = reconciliation.products[0].id;
+  assert.equal(reconciliation.products.length, 2);
+  const productOnly = reconciliation.products.find(
+    ({ official_code }) => official_code === "BT-PRODUCT-ONLY",
+  );
+  const cardBearing = reconciliation.products.find(
+    ({ official_code }) => official_code === "BT-CARD-BEARING",
+  );
+  assert.ok(productOnly);
+  assert.ok(cardBearing);
+  const productId = productOnly.id;
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", collectedRun.id, "--json"],
     cliEnvironment,
@@ -138,8 +146,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(inspected.code, 0, inspected.stderr);
   const inspection = JSON.parse(inspected.stdout);
   assert.equal(inspection.run_id, collectedRun.id);
-  assert.equal(inspection.diff.summary.cards_added, 0);
-  assert.deepEqual(inspection.diff.cards.added, []);
+  assert.equal(inspection.diff.summary.cards_added, 1);
   const approved = await runCli(
     [
       "run",
@@ -190,12 +197,18 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
+  const capturedAt =
+    catalogueDocument.data.last_successful_checks[0].checked_at;
   assert.deepEqual(catalogueDocument.data.last_successful_checks, [
     {
       game: "digimon",
+      area: "cards-and-printings",
+      checked_at: capturedAt,
+    },
+    {
+      game: "digimon",
       area: "products-and-releases",
-      checked_at:
-        catalogueDocument.data.last_successful_checks[0].checked_at,
+      checked_at: capturedAt,
     },
   ]);
   const productResponse = await fetch(
@@ -242,18 +255,31 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       exportRecords(apiPort, apiKey, revisionId, component),
     ),
   );
-  assert.equal(products.length, 1);
+  assert.equal(products.length, 2);
   assert.equal(releases.length, 1);
   assert.equal(contexts.length, 1);
-  assert.equal(products[0].id, productId);
-  assert.equal(products[0].releases, undefined);
+  assert.ok(products.some(({ id }) => id === productId));
+  assert.ok(products.every(({ releases: value }) => value === undefined));
   assert.equal(releases[0].product_id, productId);
   assert.equal(releases[0].region, "unknown");
   assert.equal(contexts[0].product_id, productId);
-  assert.equal(cards.length, 0);
-  assert.equal(relationships.length, 1);
-  assert.equal(relationships[0].kind, "distribution-context-product");
-  assert.equal(relationships[0].evidence_category, "explicit");
+  assert.equal(cards.length, 1);
+  assert.equal(relationships.length, 2);
+  assert.ok(
+    relationships.some(
+      ({ kind, evidence_category }) =>
+        kind === "distribution-context-product" &&
+        evidence_category === "explicit",
+    ),
+  );
+  assert.ok(
+    relationships.some(
+      ({ kind, from, to }) =>
+        kind === "product-card" &&
+        from.id === cardBearing.id &&
+        to.id === cards[0].id,
+    ),
+  );
 });
 
 async function exportRecords(port, apiKey, revisionId, component) {

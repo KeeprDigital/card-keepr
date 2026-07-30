@@ -1,5 +1,4 @@
 import { Readable } from "node:stream";
-import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { constants, createGzip } from "node:zlib";
 import type { FixtureCandidate, SupportedGame } from "./fixture";
 import type {
@@ -264,11 +263,9 @@ function deterministicGzipStream(
     memLevel: 8,
     strategy: constants.Z_FIXED,
   });
-  const compressed = Readable.toWeb(
-    Readable.fromWeb(
-      source as unknown as NodeReadableStream<Uint8Array>,
-    ).pipe(gzip),
-  ) as unknown as ReadableStream<Uint8Array>;
+  const compressed = nodeReadableToWeb(
+    Readable.from(webChunks(source)).pipe(gzip),
+  );
   let offset = 0;
   return compressed.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
@@ -282,6 +279,55 @@ function deterministicGzipStream(
       },
     }),
   );
+}
+
+async function* webChunks(
+  source: ReadableStream<Uint8Array>,
+): AsyncGenerator<Uint8Array> {
+  const reader = source.getReader();
+  let completed = false;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) {
+        completed = true;
+        return;
+      }
+      yield next.value;
+    }
+  } finally {
+    if (!completed) await reader.cancel();
+    reader.releaseLock();
+  }
+}
+
+function nodeReadableToWeb(
+  source: Readable,
+): ReadableStream<Uint8Array> {
+  const iterator = source[Symbol.asyncIterator]();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await iterator.next();
+        if (next.done) {
+          controller.close();
+        } else if (typeof next.value === "string") {
+          controller.enqueue(utf8(next.value));
+        } else if (next.value instanceof Uint8Array) {
+          controller.enqueue(next.value.slice());
+        } else {
+          throw new Error("The gzip stream emitted a non-byte chunk.");
+        }
+      } catch (error) {
+        source.destroy(error instanceof Error ? error : undefined);
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      source.destroy(reason instanceof Error ? reason : undefined);
+      await iterator.return?.();
+    },
+  });
 }
 
 function catalogueRecordStream(
@@ -542,7 +588,9 @@ async function exportRecordFactories(
               : "distribution_context",
           id: targetId,
         },
-        evidence_category: "explicit" as const,
+        // Legacy memberships carry only a value; their typed target IDs are
+        // deterministically derived above rather than explicit source facts.
+        evidence_category: "derived" as const,
         source_lineage: relationship.source_lineage,
         source_observation_ids: relationship.source_observation_ids,
         relationship_value: relationship.relationship_value,

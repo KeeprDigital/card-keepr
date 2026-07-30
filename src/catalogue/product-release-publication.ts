@@ -11,6 +11,13 @@ export type ProductRelationshipLifecycle = {
 
 export type ProductReleaseLifecyclePlan = {
   products: Record<string, NormalizedLifecycle>;
+  releases: Record<
+    string,
+    {
+      first_revision_id: string;
+      last_observed_revision_id: string;
+    }
+  >;
   relationships: Record<string, ProductRelationshipLifecycle>;
 };
 
@@ -31,6 +38,12 @@ type ExistingRelationshipRow = {
   last_missing_revision_id: string | null;
 };
 
+type ExistingReleaseRow = {
+  id: string;
+  first_revision_id: string;
+  last_observed_revision_id: string;
+};
+
 export async function productReleaseLifecyclePlan(
   database: D1Database,
   candidate: FixtureCandidate,
@@ -38,27 +51,59 @@ export async function productReleaseLifecyclePlan(
 ): Promise<ProductReleaseLifecyclePlan> {
   const products = candidate.products ?? [];
   const relationships = candidate.product_relationships ?? [];
-  const [existingProducts, existingRelationships] = await Promise.all([
-    rowsById<ExistingProductRow>(
-      database,
-      `SELECT id, first_revision_id, last_observed_revision_id,
-              withdrawn, withdrawal_revision_id, withdrawal_evidence_json
-       FROM reconciled_products
-       WHERE id IN (SELECT value FROM json_each(?))`,
-      products.map(({ id }) => id),
-    ),
-    rowsById<ExistingRelationshipRow>(
-      database,
-      `SELECT id, first_revision_id, last_observed_revision_id,
-              current, last_missing_revision_id
-       FROM reconciled_product_relationships
-       WHERE id IN (SELECT value FROM json_each(?))`,
-      relationships.map(({ id }) => id),
-    ),
-  ]);
+  const releases = products.flatMap((product) => product.releases);
+  const [existingProducts, existingReleases, existingRelationships] =
+    await Promise.all([
+      rowsById<ExistingProductRow>(
+        database,
+        `SELECT id, first_revision_id, last_observed_revision_id,
+                withdrawn, withdrawal_revision_id, withdrawal_evidence_json
+         FROM reconciled_products
+         WHERE id IN (SELECT value FROM json_each(?))`,
+        products.map(({ id }) => id),
+      ),
+      rowsById<ExistingReleaseRow>(
+        database,
+        `SELECT id, first_revision_id, last_observed_revision_id
+         FROM reconciled_releases
+         WHERE id IN (SELECT value FROM json_each(?))`,
+        releases.map(({ id }) => id),
+      ),
+      rowsById<ExistingRelationshipRow>(
+        database,
+        `SELECT id, first_revision_id, last_observed_revision_id,
+                current, last_missing_revision_id
+         FROM reconciled_product_relationships
+         WHERE id IN (SELECT value FROM json_each(?))`,
+        relationships.map(({ id }) => id),
+      ),
+    ]);
   const observedGames = new Set(candidate.product_observed_games ?? []);
   const observedLineages = new Set(
     candidate.product_observed_lineages ?? [],
+  );
+  const observedReleaseIds = new Set(
+    products.flatMap((product) => {
+      const sourceObservations = product.source_observations ?? [];
+      if (
+        sourceObservations.length === 0 ||
+        observedLineages.size === 0
+      ) {
+        return product.observed && observedGames.has(product.game)
+          ? product.releases.map(({ id }) => id)
+          : [];
+      }
+      const observedRegions = new Set(
+        sourceObservations
+          .filter(({ evidence }) => observedLineages.has(evidence.source))
+          .flatMap(({ releases: observed }) =>
+            observed.map(({ region }) => region),
+          ),
+      );
+      return product.releases
+        .filter(({ region }) => observedRegions.has(region))
+        .map(({ id }) => id);
+    }),
   );
   return {
     products: Object.fromEntries(
@@ -95,6 +140,21 @@ export async function productReleaseLifecyclePlan(
                       withdrawalEvidence,
                     ) as Record<string, unknown>,
                   },
+          },
+        ];
+      }),
+    ),
+    releases: Object.fromEntries(
+      releases.map((release) => {
+        const existing = existingReleases.get(release.id);
+        return [
+          release.id,
+          {
+            first_revision_id:
+              existing?.first_revision_id ?? revisionId,
+            last_observed_revision_id: observedReleaseIds.has(release.id)
+              ? revisionId
+              : existing?.last_observed_revision_id ?? revisionId,
           },
         ];
       }),
@@ -236,11 +296,16 @@ export function productReleasePublicationStatements(
     ...statements(
       database,
       products.flatMap((product) =>
-        product.releases.map((release) => ({
-          ...release,
-          first_revision_id: revisionId,
-          last_observed_revision_id: revisionId,
-        })),
+        product.releases.map((release) => {
+          const lifecycle = lifecycles.releases[release.id] ?? {
+            first_revision_id: revisionId,
+            last_observed_revision_id: revisionId,
+          };
+          return {
+            ...release,
+            ...lifecycle,
+          };
+        }),
       ),
       `INSERT INTO reconciled_releases (
          id, product_id, region, date_precision, date_value,

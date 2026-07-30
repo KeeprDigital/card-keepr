@@ -2,6 +2,7 @@ import {
   parseCatalogueRevisionId,
   parsePublicationInstant,
 } from "../http/catalogue";
+import { ifNoneMatch } from "../http/conditional";
 import { canonicalJson, sha256Text } from "./serialization";
 
 type CatalogueStateRow = {
@@ -181,7 +182,7 @@ export async function catalogueExportComponentResponse(
   if (component === undefined) return null;
 
   const etag = `"${component.compressed_sha256}"`;
-  if (request.headers.get("if-none-match") === etag) {
+  if (ifNoneMatch(request, etag)) {
     return new Response(null, {
       status: 304,
       headers: {

@@ -1699,6 +1699,19 @@ async function commitVerifiedPublication(
     revisionId,
     {
       products: input.reconciliation?.productLifecycles ?? {},
+      releases:
+        input.reconciliation?.releaseLifecycles ??
+        Object.fromEntries(
+          (input.candidate.products ?? []).flatMap((product) =>
+            product.releases.map((release) => [
+              release.id,
+              {
+                first_revision_id: revisionId,
+                last_observed_revision_id: revisionId,
+              },
+            ]),
+          ),
+        ),
       relationships:
         input.reconciliation?.productRelationshipLifecycles ?? {},
     },
@@ -3579,6 +3592,12 @@ function checkedFreshnessAreas(
   candidate: FixtureCandidate,
   checkedAt = "",
 ): SourceFreshness[] {
+  const capturedChecks = new Map(
+    (candidate.source_checks ?? []).map((check) => [
+      `${check.game}:${check.area}`,
+      check.checked_at,
+    ]),
+  );
   return games.flatMap((game) => {
     const supported = game as SupportedGame;
     const cardObservedGames =
@@ -3588,14 +3607,18 @@ function checkedFreshnessAreas(
         ? [{
             game: supported,
             area: "cards-and-printings" as const,
-            checked_at: checkedAt,
+            checked_at:
+              capturedChecks.get(`${supported}:cards-and-printings`) ??
+              checkedAt,
           }]
         : []),
       ...(candidate.product_observed_games?.includes(supported)
         ? [{
             game: supported,
             area: "products-and-releases" as const,
-            checked_at: checkedAt,
+            checked_at:
+              capturedChecks.get(`${supported}:products-and-releases`) ??
+              checkedAt,
           }]
         : []),
     ];
@@ -3626,7 +3649,10 @@ async function sourceFreshnessForExport(
     if (catalogueGames.includes(check.game)) {
       freshness.set(`${check.game}:${check.area}`, {
         ...check,
-        checked_at: publishedAt,
+        checked_at:
+          check.checked_at.length === 0
+            ? publishedAt
+            : check.checked_at,
       });
     }
   }

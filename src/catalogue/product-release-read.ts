@@ -1,3 +1,5 @@
+import { ifNoneMatch } from "../http/conditional";
+
 type ProductRow = {
   document_json: string;
   current_revision_id: string;
@@ -107,13 +109,29 @@ export async function currentProductsResponse(
   const region = url.searchParams.get("release_region");
   assertFilter(game, region);
   const filters = { q, game, region, limit };
-  const after = parseCursor(
-    url.searchParams.get("after"),
-    state.current_revision_id,
-    filters,
-  );
+  const cursor = parseCursor(url.searchParams.get("after"), filters);
+  const revisionId = cursor?.revision ?? state.current_revision_id;
+  const revision =
+    revisionId === state.current_revision_id
+      ? { published_at: state.published_at }
+      : await database
+          .prepare(
+            `SELECT published_at
+             FROM catalogue_revisions
+             WHERE id = ?`,
+          )
+          .bind(revisionId)
+          .first<{ published_at: string }>();
+  if (revision === null) {
+    throw new ProductReadProblem(
+      409,
+      "cursor_revision_unavailable",
+      "The Product cursor Catalogue Revision is unavailable.",
+    );
+  }
+  const after = cursor?.last ?? null;
   const etag = quotedEtag(
-    `products:${state.current_revision_id}:${JSON.stringify({
+    `products:${revisionId}:${JSON.stringify({
       route: productRoute,
       ordering: productOrder,
       filters,
@@ -121,7 +139,7 @@ export async function currentProductsResponse(
     })}`,
   );
   if (ifNoneMatch(request, etag)) {
-    return notModified(etag, state.current_revision_id);
+    return notModified(etag, revisionId);
   }
   const rows = await database
     .prepare(
@@ -155,7 +173,7 @@ export async function currentProductsResponse(
        LIMIT ?`,
     )
     .bind(
-      state.current_revision_id,
+      revisionId,
       game,
       game,
       q,
@@ -181,7 +199,7 @@ export async function currentProductsResponse(
       ? encodeCursor({
           route: productRoute,
           ordering: productOrder,
-          revision: state.current_revision_id,
+          revision: revisionId,
           filters,
           last: orderValue(data.at(-1)!),
         })
@@ -190,14 +208,14 @@ export async function currentProductsResponse(
     {
       data,
       meta: {
-        catalogue_revision_id: state.current_revision_id,
-        published_at: state.published_at,
+        catalogue_revision_id: revisionId,
+        published_at: revision.published_at,
       },
       page: { limit, next_cursor: next },
       links: { self: `${url.pathname}${url.search}` },
     },
     {
-      headers: productHeaders(state.current_revision_id, etag),
+      headers: productHeaders(revisionId, etag),
     },
   );
 }
@@ -297,14 +315,13 @@ function assertFilter(game: string | null, region: string | null): void {
 
 function parseCursor(
   value: string | null,
-  currentRevision: string,
   filters: {
     q: string | null;
     game: string | null;
     region: string | null;
     limit: number;
   },
-): ProductOrderValue | null {
+): { revision: string; last: ProductOrderValue } | null {
   if (value === null) return null;
   let cursor: {
     route?: unknown;
@@ -333,18 +350,12 @@ function parseCursor(
     cursor.route !== productRoute ||
     cursor.ordering !== productOrder ||
     JSON.stringify(cursor.filters) !== JSON.stringify(filters) ||
+    typeof cursor.revision !== "string" ||
     !validOrderValue(cursor.last)
   ) {
     throw invalidCursor();
   }
-  if (cursor.revision !== currentRevision) {
-    throw new ProductReadProblem(
-      409,
-      "cursor_revision_unavailable",
-      "The Product cursor Catalogue Revision is unavailable.",
-    );
-  }
-  return cursor.last;
+  return { revision: cursor.revision, last: cursor.last };
 }
 
 function invalidCursor(): ProductReadProblem {
@@ -397,19 +408,6 @@ function quotedEtag(value: string): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `"${btoa(binary)}"`;
-}
-
-function ifNoneMatch(request: Request, etag: string): boolean {
-  const header = request.headers.get("if-none-match");
-  if (header === null) return false;
-  const comparable = etag.replace(/^W\//u, "");
-  return header
-    .split(",")
-    .map((value) => value.trim())
-    .some(
-      (value) =>
-        value === "*" || value.replace(/^W\//u, "") === comparable,
-    );
 }
 
 function notModified(etag: string, revisionId: string): Response {

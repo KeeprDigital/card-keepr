@@ -268,6 +268,18 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
   });
   expect(unchanged.status).toBe(304);
   expect(await unchanged.text()).toBe("");
+
+  for (const value of [
+    `W/${changed.headers.get("etag")!}`,
+    `"unrelated", W/${changed.headers.get("etag")!}`,
+    "*",
+  ]) {
+    const conditional = await api("/v1/catalogue", {
+      "if-none-match": value,
+    });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe("");
+  }
 });
 
 test("Product detail returns revision-pinned immutable provenance and disagreements", async () => {
@@ -469,15 +481,32 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     page: { next_cursor: string };
   }>();
   expect(first.data.map(({ id }) => id)).toEqual(["product_st14"]);
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_spine_000'
+     WHERE singleton = 1`,
+  ).run();
   const second = await api(
     `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(first.page.next_cursor)}`,
   );
   expect(second.status).toBe(200);
   await expect(second.json()).resolves.toMatchObject({
     data: [{ id: "product_st15" }],
+    meta: { catalogue_revision_id: "catrev_products" },
   });
 
   const forged = decodeCursor(first.page.next_cursor);
+  const unavailableRevision = encodeCursor({
+    ...forged,
+    revision: "catrev_unavailable",
+  });
+  const unavailable = await api(
+    `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(unavailableRevision)}`,
+  );
+  expect(unavailable.status).toBe(409);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+  });
   const wrongRoute = encodeCursor({ ...forged, route: "/v1/cards" });
   const rejected = await api(
     `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(wrongRoute)}`,
@@ -486,6 +515,11 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   await expect(rejected.json()).resolves.toMatchObject({
     code: "invalid_cursor",
   });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_products'
+     WHERE singleton = 1`,
+  ).run();
 });
 
 function api(

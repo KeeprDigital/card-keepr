@@ -442,6 +442,13 @@ export async function reconcileRetainedCardPrintingEvidence(
           : "Retained Product evidence is invalid.",
     });
   }
+  const cardSurfaceObservations = retained.observations.filter(
+    (observation) =>
+      observation.candidateWithoutIdentities.card !== null,
+  );
+  const productSurfaceObservations = retained.observations.filter(
+    (observation) => observation.productReleaseValue !== undefined,
+  );
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
     selected_games: [
@@ -459,10 +466,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     products: productCatalogue.products,
     distribution_contexts: productCatalogue.distribution_contexts,
     product_relationships: productCatalogue.product_relationships,
-    card_observed_games: retained.observations.some(
-      (observation) =>
-        observation.candidateWithoutIdentities.card !== null,
-    )
+    card_observed_games: cardSurfaceObservations.length > 0
       ? [retained.supportedGame]
       : [],
     product_observed_games: productCatalogue.productSurfaceObserved
@@ -471,6 +475,22 @@ export async function reconcileRetainedCardPrintingEvidence(
     product_observed_lineages: productCatalogue.productSurfaceObserved
       ? [retained.sourceLineage]
       : [],
+    source_checks: [
+      ...(cardSurfaceObservations.length > 0
+        ? [{
+            game: retained.supportedGame,
+            area: "cards-and-printings" as const,
+            checked_at: latestCapture(cardSurfaceObservations),
+          }]
+        : []),
+      ...(productCatalogue.productSurfaceObserved
+        ? [{
+            game: retained.supportedGame,
+            area: "products-and-releases" as const,
+            checked_at: latestCapture(productSurfaceObservations),
+          }]
+        : []),
+    ],
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (
@@ -784,10 +804,7 @@ async function catalogueDataDigest(
       });
     }
   }
-  const {
-    card_observed_games: _cardObservedGames,
-    ...catalogueCandidate
-  } = candidate;
+  const catalogueCandidate = semanticCatalogueCandidate(candidate);
   return sha256Text(
     canonicalJson({
       catalogue_data: catalogueCandidate,
@@ -795,6 +812,58 @@ async function catalogueDataDigest(
       withdrawals: [...withdrawals.values()].sort(compareCanonical),
     }),
   );
+}
+
+function semanticCatalogueCandidate(
+  candidate: FixtureCandidate,
+): Record<string, unknown> {
+  return {
+    fixture: candidate.fixture,
+    selected_games: candidate.selected_games,
+    cards: candidate.cards,
+    printings: candidate.printings,
+    products: (candidate.products ?? []).map((product) => ({
+      reference: product.reference,
+      id: product.id,
+      game: product.game,
+      official_code: product.official_code,
+      name: product.name,
+      releases: product.releases,
+      observed: product.observed,
+      withdrawal:
+        product.withdrawal === null
+          ? null
+          : {
+              assertion: product.withdrawal.evidence.assertion,
+              effective_at: product.withdrawal.evidence.effective_at,
+              evidence: product.withdrawal.evidence.evidence,
+            },
+      disagreements: product.disagreements.map((disagreement) => ({
+        path: disagreement.path,
+        status: disagreement.status,
+        candidates: disagreement.candidates.map(({ value }) => ({ value })),
+      })),
+    })),
+    distribution_contexts: (candidate.distribution_contexts ?? []).map(
+      ({ source_lineages: _lineages, ...context }) =>
+        context,
+    ),
+    product_relationships: (candidate.product_relationships ?? []).map(
+      ({
+        source_observation_ids: _observationIds,
+        ...relationship
+      }) => relationship,
+    ),
+  };
+}
+
+function latestCapture(
+  observations: readonly { sourceCapturedAt: string }[],
+): string {
+  return observations
+    .map(({ sourceCapturedAt }) => sourceCapturedAt)
+    .sort()
+    .at(-1)!;
 }
 
 function compareCanonical(

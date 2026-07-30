@@ -1,0 +1,4 @@
+// Fixed independently reviewed bytes for the first gzip component emitted by
+// the empty one-piece catalogue fixture in the deterministic gzip test.
+export const EMPTY_CATALOGUE_GZIP_HEX =
+  "1f8b08000000000002ffab564a4fcc4d8d2f28ca4fcbcc4955b252cacf4bd52dc84c4d4e753054d251ca4c51b282a8c8cf4b8d078b2be92865a75622ab54d251ca4bcc0569f6cf4b5508000929382716a528b8834475948a4b0b0af28b4a5253e273f2931373528b95aca2955cfd74fd9d5d1dfd3c1d956275944a2a0b40fa112a41762ad5720100cb0a97ab9f000000";

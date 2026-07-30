@@ -6,17 +6,18 @@ import {
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import {
-  deterministicGzip,
-  sha256,
-} from "../../../src/catalogue/serialization";
+import { sha256 } from "../../../src/catalogue/serialization";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
-import type { FixtureCandidate } from "../../../src/catalogue/fixture";
+import type {
+  FixtureCandidate,
+  SupportedGame,
+} from "../../../src/catalogue/fixture";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
 } from "./fixture-plan-injection";
+import { EMPTY_CATALOGUE_GZIP_HEX } from "./deterministic-gzip-golden";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -49,6 +50,15 @@ test("retained immutable evidence publishes stable identities and warns when ear
   const firstRevision = requiredString(
     firstPublished.document,
     "resulting_revision_id",
+  );
+  expect(
+    await exportComponentRecords(firstRevision, "relationships"),
+  ).toContainEqual(
+    expect.objectContaining({
+      kind: "printing-product",
+      relationship_value: "product_op01",
+      evidence_category: "derived",
+    }),
   );
 
   const secondRun = await collect(
@@ -383,6 +393,23 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     approvedAt,
   );
   if (publication === null) throw new Error("publication plan missing");
+  const priorFreshness = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT game, area, checked_at
+     FROM source_freshness
+     WHERE area IN ('cards-and-printings', 'products-and-releases')`,
+  ).all<{
+    game: SupportedGame;
+    area: "cards-and-printings" | "products-and-releases";
+    checked_at: string;
+  }>();
+  const exactFreshness = new Map(
+    priorFreshness.results
+      .filter(({ game }) => candidate.selected_games.includes(game))
+      .map((check) => [`${check.game}:${check.area}`, check]),
+  );
+  for (const check of candidate.source_checks ?? []) {
+    exactFreshness.set(`${check.game}:${check.area}`, check);
+  }
   const catalogueExport = await buildCatalogueExport(
     candidate,
     persisted?.candidate_catalogue_digest ?? "",
@@ -392,9 +419,15 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
       cards: publication.cardLifecycles,
       printings: publication.printingLifecycles,
       products: publication.productLifecycles,
+      productRelationships: publication.productRelationshipLifecycles,
       relationships: publication.relationshipEvidence,
       locators: publication.locatorEvidence,
     },
+    [...exactFreshness.values()].sort(
+      (left, right) =>
+        left.game.localeCompare(right.game) ||
+        left.area.localeCompare(right.area),
+    ),
   );
   const approval = {
     action: "approved",
@@ -2187,6 +2220,13 @@ test("sequential selected-game publications retain the complete current catalogu
   expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(
     d1Cards.results.length,
   );
+  const fusionSnapshot = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT retrieved_at
+     FROM source_snapshots
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(fusionRun.id)
+    .first<{ retrieved_at: string }>();
   const secondManifest = await exportManifest(revisionId);
   expect(secondManifest.source_freshness).toEqual(
     expect.arrayContaining([
@@ -2200,7 +2240,7 @@ test("sequential selected-game publications retain the complete current catalogu
       {
         game: "fusion-world",
         area: "cards-and-printings",
-        checked_at: secondManifest.published_at,
+        checked_at: fusionSnapshot?.retrieved_at,
       },
     ]),
   );
@@ -3552,6 +3592,46 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   });
 }, 45_000);
 
+test("identical Product facts are a semantic no-change while source freshness advances", async () => {
+  const firstRun = await collect(
+    "/reconciliation/product-standalone-v1",
+    "product-semantic-first",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  const firstPublished = await approve(firstCandidate.document);
+  const revisionId = requiredString(
+    firstPublished.document,
+    "resulting_revision_id",
+  );
+  const firstFreshness = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT checked_at
+     FROM source_freshness
+     WHERE game = 'one-piece'
+       AND area = 'products-and-releases'`,
+  ).first<{ checked_at: string }>();
+
+  const secondRun = await collect(
+    "/reconciliation/product-standalone-v1",
+    "product-semantic-second",
+  );
+  const secondCandidate = await reconcile(secondRun.id);
+  expect(secondCandidate.document.candidate_digest).not.toBe(
+    firstCandidate.document.candidate_digest,
+  );
+  const secondPublished = await approve(secondCandidate.document);
+  expect(secondPublished.document).toMatchObject({
+    publication_outcome: "no_change",
+    resulting_revision_id: revisionId,
+  });
+  const secondFreshness = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT checked_at
+     FROM source_freshness
+     WHERE game = 'one-piece'
+       AND area = 'products-and-releases'`,
+  ).first<{ checked_at: string }>();
+  expect(secondFreshness?.checked_at).not.toBe(firstFreshness?.checked_at);
+}, 45_000);
+
 test("Product observations and disappearance remain scoped to their Source Lineage", async () => {
   const asiaSource = {
     game: "gundam",
@@ -3651,6 +3731,30 @@ test("Product observations and disappearance remain scoped to their Source Linea
       withdrawn: false,
     },
   });
+  const releases = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT region, first_revision_id, last_observed_revision_id
+     FROM reconciled_releases
+     WHERE product_id = ?
+     ORDER BY region`,
+  )
+    .bind(requiredString(exported ?? {}, "id"))
+    .all<{
+      region: string;
+      first_revision_id: string;
+      last_observed_revision_id: string;
+    }>();
+  expect(releases.results).toEqual([
+    {
+      region: "EN-ASIA",
+      first_revision_id: asiaRevision,
+      last_observed_revision_id: asiaRevision,
+    },
+    {
+      region: "EN-US",
+      first_revision_id: usRevision,
+      last_observed_revision_id: usRevision,
+    },
+  ]);
 });
 
 test("Product freshness is emitted only for an actually checked Product surface", async () => {
@@ -3663,12 +3767,21 @@ test("Product freshness is emitted only for an actually checked Product surface"
     (await approve(checkedCandidate.document)).document,
     "resulting_revision_id",
   );
-  expect((await exportManifest(checkedRevision)).source_freshness).toContainEqual(
-    expect.objectContaining({
-      game: "one-piece",
-      area: "products-and-releases",
-    }),
-  );
+  const checkedSnapshot = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT retrieved_at
+     FROM source_snapshots
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(checkedRun.id)
+    .first<{ retrieved_at: string }>();
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      `SELECT checked_at
+       FROM source_freshness
+       WHERE game = 'one-piece'
+         AND area = 'products-and-releases'`,
+    ).first<{ checked_at: string }>(),
+  ).toEqual({ checked_at: checkedSnapshot?.retrieved_at });
 
   const noCheckRun = await collect(
     "/reconciliation/base",
@@ -3815,7 +3928,7 @@ test.each([
   },
 );
 
-test("streamed catalogue gzip is byte-identical to the pinned deterministic profile", async () => {
+test("streamed catalogue gzip is byte-identical to the checked-in golden bytes", async () => {
   const built = await buildCatalogueExport(
     {
       fixture: "first-catalogue",
@@ -3839,15 +3952,9 @@ test("streamed catalogue gzip is byte-identical to the pinned deterministic prof
   const { readable, completed } = object.body();
   const bytes = new Uint8Array(await new Response(readable).arrayBuffer());
   await completed;
-  const raw = new Uint8Array(
-    await new Response(
-      new Blob([bytes]).stream().pipeThrough(
-        new DecompressionStream("gzip"),
-      ),
-    ).arrayBuffer(),
+  expect(Buffer.from(bytes).toString("hex")).toBe(
+    EMPTY_CATALOGUE_GZIP_HEX,
   );
-  const expected = deterministicGzip(raw);
-  expect(bytes).toEqual(expected);
   expect([...bytes.slice(0, 10)]).toEqual([
     0x1f, 0x8b, 0x08, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x02, 0xff,

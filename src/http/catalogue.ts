@@ -1,3 +1,5 @@
+import { ifNoneMatch } from "./conditional";
+
 declare const catalogueRevisionIdBrand: unique symbol;
 declare const publicationInstantBrand: unique symbol;
 
@@ -52,7 +54,7 @@ export function catalogueResponse(
     etag: `"${status.etag}"`,
     "x-catalogue-revision": status.revisionId,
   };
-  if (request?.headers.get("if-none-match") === headers.etag) {
+  if (request !== undefined && ifNoneMatch(request, headers.etag)) {
     return new Response(null, { status: 304, headers });
   }
   return Response.json(

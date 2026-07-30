@@ -26,6 +26,11 @@ export type FixtureCandidate = {
   card_observed_games?: readonly SupportedGame[];
   product_observed_games?: readonly SupportedGame[];
   product_observed_lineages?: readonly string[];
+  source_checks?: readonly {
+    game: SupportedGame;
+    area: "cards-and-printings" | "products-and-releases";
+    checked_at: string;
+  }[];
 };
 
 export type FixtureCard = {

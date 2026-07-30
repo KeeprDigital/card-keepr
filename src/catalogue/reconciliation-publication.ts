@@ -60,6 +60,13 @@ export type ReconciliationPublicationPlan = {
   cardLifecycles: Record<string, NormalizedLifecycle>;
   printingLifecycles: Record<string, NormalizedLifecycle>;
   productLifecycles: Record<string, NormalizedLifecycle>;
+  releaseLifecycles: Record<
+    string,
+    {
+      first_revision_id: string;
+      last_observed_revision_id: string;
+    }
+  >;
   productRelationshipLifecycles: Record<
     string,
     ProductRelationshipLifecycle
@@ -140,6 +147,7 @@ export async function reconciliationPublication(
     cardLifecycles: {},
     printingLifecycles: {},
     productLifecycles: {},
+    releaseLifecycles: {},
     productRelationshipLifecycles: {},
     relationshipEvidence: {},
     locatorEvidence: {},
@@ -318,6 +326,7 @@ export async function reconciliationPublication(
     ...inferredProductLifecycles,
     ...productReleaseLifecycles.products,
   };
+  result.releaseLifecycles = productReleaseLifecycles.releases;
   result.productRelationshipLifecycles =
     productReleaseLifecycles.relationships;
   result.statements.push(
