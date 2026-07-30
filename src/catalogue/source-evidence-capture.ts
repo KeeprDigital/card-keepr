@@ -8,6 +8,7 @@ import {
 } from "./source-evidence-model";
 import { parseSnapshot } from "./source-evidence-parsing";
 import {
+  evidencePlanForRequest,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
   type SnapshotRow,
@@ -504,6 +505,10 @@ export async function completeUploadedCapture(
   sourceRequest: EvidenceRequestRow,
   attemptId: string,
 ): Promise<CaptureTransportResult> {
+  const evidencePlan = evidencePlanForRequest(
+    run,
+    sourceRequest.request_id,
+  );
   const operation = await requiredCaptureOperation(database, attemptId);
   if (operation.state === "finalized") {
     return {
@@ -585,10 +590,10 @@ export async function completeUploadedCapture(
         operation.content_digest,
         operation.content_byte_length,
         contentObjectKey,
-        run.source_lineage,
-        run.supported_game,
-        run.game_profile_version,
-        run.adapter_version,
+        evidencePlan.source_lineage,
+        evidencePlan.supported_game,
+        evidencePlan.game_profile_version,
+        evidencePlan.adapter_version,
         operation.reused_source_snapshot_id,
       ),
     database
@@ -623,12 +628,16 @@ export async function parseCapturedRequest(
   sourceRequest: EvidenceRequestRow,
   snapshotId: string,
 ): Promise<CaptureTransportResult> {
+  const evidencePlan = evidencePlanForRequest(
+    run,
+    sourceRequest.request_id,
+  );
   try {
     await parseSnapshot(
       database,
       evidenceObjects,
       snapshotId,
-      run.adapter_version,
+      evidencePlan.adapter_version,
       {
         intent: "collection",
         idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
@@ -1097,6 +1106,7 @@ async function findReusableSnapshot(
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
 ): Promise<SnapshotRow | null> {
+  const evidencePlan = evidencePlanForRequest(run, request.request_id);
   const candidates = await database
     .prepare(
       `SELECT * FROM source_snapshots
@@ -1109,9 +1119,9 @@ async function findReusableSnapshot(
        ORDER BY retrieved_at DESC, id DESC LIMIT 10`,
     )
     .bind(
-      run.source_lineage,
+      evidencePlan.source_lineage,
       request.url,
-      run.adapter_version,
+      evidencePlan.adapter_version,
       request.representation_fingerprint,
     )
     .all<SnapshotRow>();

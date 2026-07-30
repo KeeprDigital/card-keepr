@@ -14,7 +14,7 @@ import {
   type PreparedCaptureAttempt,
 } from "../../../src/catalogue/source-evidence-capture";
 import {
-  parseEvidencePlan,
+  parseEvidencePlans,
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
 } from "../../../src/catalogue/source-evidence-model";
@@ -60,8 +60,10 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         return {
           allHostnames: [
             ...new Set(
-              parseEvidencePlan(run.request_plan_json).requests.map(
-                (request) => new URL(request.url).hostname,
+              parseEvidencePlans(run.request_plan_json).flatMap((plan) =>
+                plan.requests.map(
+                  (request) => new URL(request.url).hostname,
+                ),
               ),
             ),
           ].sort(),

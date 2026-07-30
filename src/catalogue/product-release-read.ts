@@ -83,7 +83,7 @@ export async function currentProductResponse(
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
       },
-      links: { self: `${url.pathname}${url.search}` },
+      links: { self: canonicalProductSelf(url, { include }) },
     },
     {
       headers: productHeaders(row.current_revision_id, etag),
@@ -104,7 +104,7 @@ export async function currentProductsResponse(
     .first<{ current_revision_id: string; published_at: string }>();
   if (state === null) throw new Error("Catalogue state is unavailable");
   const limit = parseLimit(url.searchParams.get("limit"));
-  const q = url.searchParams.get("q")?.trim().toLocaleLowerCase() ?? null;
+  const q = parseQuery(url);
   const game = url.searchParams.get("game");
   const region = url.searchParams.get("release_region");
   assertFilter(game, region);
@@ -212,7 +212,15 @@ export async function currentProductsResponse(
         published_at: revision.published_at,
       },
       page: { limit, next_cursor: next },
-      links: { self: `${url.pathname}${url.search}` },
+      links: {
+        self: canonicalProductSelf(url, {
+          q,
+          game,
+          region,
+          limit,
+          after: url.searchParams.get("after"),
+        }),
+      },
     },
     {
       headers: productHeaders(revisionId, etag),
@@ -258,12 +266,14 @@ function productEnvelope(documentJson: string): ProductEnvelope {
 }
 
 function includeProjection(url: URL): Set<string> {
-  const include = new Set(
-    (url.searchParams.get("include") ?? "")
-      .split(",")
-      .filter((value) => value.length > 0),
+  const rawValues = url.searchParams.getAll("include");
+  const values = rawValues.flatMap((value) =>
+    value.split(",").filter((item) => item.length > 0),
   );
+  const include = new Set(values);
   if (
+    rawValues.length > 1 ||
+    include.size !== values.length ||
     [...include].some(
       (value) => value !== "evidence" && value !== "disagreements",
     )
@@ -275,6 +285,55 @@ function includeProjection(url: URL): Set<string> {
     );
   }
   return include;
+}
+
+function parseQuery(url: URL): string | null {
+  const values = url.searchParams.getAll("q");
+  if (values.length === 0) return null;
+  const q = values[0]!.trim().toLocaleLowerCase();
+  if (values.length !== 1 || q.length < 1 || q.length > 500) {
+    throw new ProductReadProblem(
+      400,
+      "invalid_parameter",
+      "Product search query is invalid.",
+    );
+  }
+  return q;
+}
+
+function canonicalProductSelf(
+  url: URL,
+  representation:
+    | { include: ReadonlySet<string> }
+    | {
+        q: string | null;
+        game: string | null;
+        region: string | null;
+        limit: number;
+        after: string | null;
+      },
+): string {
+  const query = new URLSearchParams();
+  if ("include" in representation) {
+    const include = [...representation.include].sort();
+    if (include.length > 0) query.set("include", include.join(","));
+  } else {
+    if (representation.q !== null) query.set("q", representation.q);
+    if (representation.game !== null) query.set("game", representation.game);
+    if (representation.region !== null) {
+      query.set("release_region", representation.region);
+    }
+    if (representation.limit !== 50) {
+      query.set("limit", String(representation.limit));
+    }
+    if (representation.after !== null) {
+      query.set("after", representation.after);
+    }
+  }
+  const serialized = query.toString();
+  return serialized.length === 0
+    ? url.pathname
+    : `${url.pathname}?${serialized}`;
 }
 
 function parseLimit(value: string | null): number {

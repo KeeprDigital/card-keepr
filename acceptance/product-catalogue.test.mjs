@@ -24,6 +24,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const ingestionEnv = join(directory, "ingestion.env");
   const apiEnv = join(directory, "api.env");
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
+  const multiPlanPath = join(directory, "multi-source-plan.json");
   await Promise.all([
     writeFile(
       ingestionEnv,
@@ -31,6 +32,50 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       { mode: 0o600 },
     ),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
+    writeFile(
+      multiPlanPath,
+      JSON.stringify({
+        plans: [
+          {
+            supported_game: "one-piece",
+            source_lineage: "one-piece-en",
+            adapter_version: "one-piece-json-document@2",
+            requests: [{
+              id: "one-piece-products",
+              url: "https://synthetic-source.invalid/raw-one-piece-products",
+            }],
+          },
+          {
+            supported_game: "fusion-world",
+            source_lineage: "fusion-world-en",
+            adapter_version: "fusion-world-en@1",
+            requests: [{
+              id: "fusion-world-products",
+              url: "https://synthetic-source.invalid/raw-fusion-world-products",
+            }],
+          },
+          {
+            supported_game: "gundam",
+            source_lineage: "gundam-en-asia",
+            adapter_version: "gundam-en-asia@1",
+            requests: [{
+              id: "gundam-asia-products",
+              url: "https://synthetic-source.invalid/raw-gundam-asia-products",
+            }],
+          },
+          {
+            supported_game: "gundam",
+            source_lineage: "gundam-en-us",
+            adapter_version: "gundam-en-us@1",
+            requests: [{
+              id: "gundam-us-products",
+              url: "https://synthetic-source.invalid/raw-gundam-us-products",
+            }],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    ),
   ]);
   await applyMigrations(statePath);
   const config = JSON.parse(
@@ -173,8 +218,79 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`,
   );
   const published = JSON.parse(approved.stdout);
-  const revisionId = published.resulting_revision_id;
+  let revisionId = published.resulting_revision_id;
   assert.match(revisionId, /^catrev_/u);
+
+  const multiCollected = await runCli(
+    [
+      "source",
+      "collect",
+      "--plan-file",
+      multiPlanPath,
+      "--idempotency-key",
+      "acceptance-product-multi-plan",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(
+    multiCollected.code,
+    0,
+    `${multiCollected.stdout}\n${multiCollected.stderr}\n${ingestion.getOutput()}`,
+  );
+  const multiRun = JSON.parse(multiCollected.stdout);
+  const multiResumed = await runCli(
+    ["source", "resume", "--run-id", multiRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(multiResumed.code, 0, multiResumed.stderr);
+  await waitForRunState(
+    multiRun.id,
+    "parsing",
+    cliEnvironment,
+    ingestion,
+  );
+  const multiReconciled = await runCli(
+    ["run", "reconcile", "--run-id", multiRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(
+    multiReconciled.code,
+    0,
+    `${multiReconciled.stdout}\n${multiReconciled.stderr}\n${ingestion.getOutput()}`,
+  );
+  const multiInspectionResult = await runCli(
+    ["candidate", "inspect", "--run-id", multiRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(multiInspectionResult.code, 0, multiInspectionResult.stderr);
+  const multiInspection = JSON.parse(multiInspectionResult.stdout);
+  assert.equal(multiInspection.expected_current_revision_id, revisionId);
+  const multiApproved = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      multiRun.id,
+      "--candidate-digest",
+      multiInspection.candidate_digest,
+      "--expected-current-revision",
+      revisionId,
+      "--idempotency-key",
+      "acceptance-product-multi-approve",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(
+    multiApproved.code,
+    0,
+    `${multiApproved.stdout}\n${multiApproved.stderr}\n${ingestion.getOutput()}`,
+  );
+  const multiPublished = JSON.parse(multiApproved.stdout);
+  assert.notEqual(multiPublished.resulting_revision_id, revisionId);
+  revisionId = multiPublished.resulting_revision_id;
   await stopWorker(ingestion);
 
   const api = startWorker({
@@ -197,20 +313,26 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
-  const capturedAt =
-    catalogueDocument.data.last_successful_checks[0].checked_at;
-  assert.deepEqual(catalogueDocument.data.last_successful_checks, [
-    {
-      game: "digimon",
-      area: "cards-and-printings",
-      checked_at: capturedAt,
-    },
-    {
-      game: "digimon",
-      area: "products-and-releases",
-      checked_at: capturedAt,
-    },
-  ]);
+  const successfulChecks =
+    catalogueDocument.data.last_successful_checks;
+  assert.deepEqual(
+    successfulChecks.map(({ game, area }) => `${game}:${area}`),
+    [
+      "digimon:cards-and-printings",
+      "digimon:products-and-releases",
+      "fusion-world:cards-and-printings",
+      "fusion-world:products-and-releases",
+      "gundam:cards-and-printings",
+      "gundam:products-and-releases",
+      "one-piece:cards-and-printings",
+      "one-piece:products-and-releases",
+    ],
+  );
+  assert.ok(
+    successfulChecks.every(({ checked_at }) =>
+      Number.isFinite(Date.parse(checked_at))
+    ),
+  );
   const productResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/products/${productId}?include=evidence`,
     { headers },
@@ -255,16 +377,20 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       exportRecords(apiPort, apiKey, revisionId, component),
     ),
   );
-  assert.equal(products.length, 2);
-  assert.equal(releases.length, 1);
-  assert.equal(contexts.length, 1);
+  assert.equal(products.length, 5);
+  assert.equal(releases.length, 5);
+  assert.equal(contexts.length, 4);
   assert.ok(products.some(({ id }) => id === productId));
   assert.ok(products.every(({ releases: value }) => value === undefined));
-  assert.equal(releases[0].product_id, productId);
-  assert.equal(releases[0].region, "unknown");
-  assert.equal(contexts[0].product_id, productId);
-  assert.equal(cards.length, 1);
-  assert.equal(relationships.length, 2);
+  assert.ok(
+    releases.some(
+      (release) =>
+        release.product_id === productId &&
+        release.region === "unknown",
+    ),
+  );
+  assert.ok(contexts.some((context) => context.product_id === productId));
+  assert.equal(cards.length, 4);
   assert.ok(
     relationships.some(
       ({ kind, evidence_category }) =>
@@ -272,12 +398,30 @@ test("the CLI publishes separated Product catalogue data consumed through authen
         evidence_category === "explicit",
     ),
   );
+  for (const code of [
+    "OP-RAW-01",
+    "FB-RAW-01",
+    "GD-RAW-01",
+  ]) {
+    assert.ok(products.some(({ official_code }) => official_code === code));
+  }
+  const gundam = products.find(
+    ({ official_code }) => official_code === "GD-RAW-01",
+  );
+  assert.ok(gundam);
+  assert.deepEqual(
+    releases
+      .filter(({ product_id }) => product_id === gundam.id)
+      .map(({ region }) => region)
+      .sort(),
+    ["EN-ASIA", "EN-US"],
+  );
   assert.ok(
     relationships.some(
       ({ kind, from, to }) =>
         kind === "product-card" &&
         from.id === cardBearing.id &&
-        to.id === cards[0].id,
+        cards.some(({ id }) => id === to.id),
     ),
   );
 });

@@ -9,7 +9,12 @@ import {
   type PrintingCompatibility,
   type ProvenancedWithdrawal,
 } from "./reconciliation-model";
-import type { FixtureCandidate, FixtureCard, FixturePrinting } from "./fixture";
+import type {
+  FixtureCandidate,
+  FixtureCard,
+  FixturePrinting,
+  SupportedGame,
+} from "./fixture";
 import {
   compatiblePrintings,
   canonicalCardConflict,
@@ -116,6 +121,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceObservationSetId: string;
     sourceSnapshotId: string;
     sourceObservationId: string;
+    sourceLineage: string;
+    supportedGame: SupportedGame;
     cardId: string;
     printingId: string | null;
     locator: string | null;
@@ -132,7 +139,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceWarnings.push(...observation.sourceWarnings);
       continue;
     }
-    if (proposedCard.game !== retained.supportedGame) {
+    if (proposedCard.game !== observation.supportedGame) {
       diagnostics.push({
         code: "retained_evidence_invalid",
         source_observation_id: observation.sourceObservationId,
@@ -164,12 +171,12 @@ export async function reconcileRetainedCardPrintingEvidence(
       database,
       cardId,
       proposedCard,
-      retained.sourceLineage,
+      observation.sourceLineage,
     );
     const carriedCard = cards.get(cardId);
     const retainAsiaAuthority =
       proposedCard.game === "gundam" &&
-      retained.sourceLineage === "gundam-en-us" &&
+      observation.sourceLineage === "gundam-en-us" &&
       carriedCard !== undefined &&
       (await hasCardObservationFromLineage(
         database,
@@ -207,7 +214,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     if (proposedPrinting !== null) {
       compatibility = compatibilityFor(
         cardId,
-        retained.sourceLineage,
+        observation.sourceLineage,
         observation,
       );
       const locator = observation.locator;
@@ -215,10 +222,18 @@ export async function reconcileRetainedCardPrintingEvidence(
         throw new Error("A Printing observation has no locator.");
       }
       const compatibilityKey = canonicalJson(compatibility);
-      const localLocated = localLocators.get(locator);
+      const locatorKey = canonicalJson([
+        observation.sourceLineage,
+        locator,
+      ]);
+      const localLocated = localLocators.get(locatorKey);
       const [located, unfilteredDatabaseMatches, appearanceMatches] =
         await Promise.all([
-          printingAtLocator(database, retained.sourceLineage, locator),
+          printingAtLocator(
+            database,
+            observation.sourceLineage,
+            locator,
+          ),
           compatiblePrintings(database, compatibility),
           printingsWithAppearance(database, compatibility),
         ]);
@@ -270,7 +285,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           });
         } else if (
           !observation.demonstrablyNovel ||
-          !retained.structurallyComplete ||
+          !observation.structurallyComplete ||
           !observation.noveltyProofComplete
         ) {
           diagnostics.push({
@@ -284,17 +299,17 @@ export async function reconcileRetainedCardPrintingEvidence(
         }
       }
       localCompatibility.set(compatibilityKey, printingId);
-      localLocators.set(locator, { compatibility, printingId });
+      localLocators.set(locatorKey, { compatibility, printingId });
       const carriedPrinting = printings.get(printingId);
       const publishedPrintingConflict = await canonicalPrintingConflict(
         database,
         printingId,
         proposedPrinting,
-        retained.sourceLineage,
+        observation.sourceLineage,
       );
       const retainAsiaPrintingAuthority =
-        retained.supportedGame === "gundam" &&
-        retained.sourceLineage === "gundam-en-us" &&
+        observation.supportedGame === "gundam" &&
+        observation.sourceLineage === "gundam-en-us" &&
         carriedPrinting !== undefined &&
         (await hasPrintingLocatorFromLineage(
           database,
@@ -337,22 +352,22 @@ export async function reconcileRetainedCardPrintingEvidence(
         });
       }
       if (
-        retained.supportedGame === "gundam" &&
+        observation.supportedGame === "gundam" &&
         !(await hasOtherGundamLocaleEvidence(
           database,
           printingId,
-          retained.sourceLineage,
+          observation.sourceLineage,
         ))
       ) {
         sourceWarnings.push({
           code: "single_locale_gundam_printing",
           printing_id: printingId,
-          source_lineage: retained.sourceLineage,
+          source_lineage: observation.sourceLineage,
           detail:
             "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
         });
       }
-    } else if (!retained.structurallyComplete) {
+    } else if (!observation.structurallyComplete) {
       diagnostics.push({
         code: "printing_match_insufficient_evidence",
         source_observation_id: observation.sourceObservationId,
@@ -366,6 +381,8 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceObservationSetId: observation.sourceObservationSetId,
       sourceSnapshotId: observation.sourceSnapshotId,
       sourceObservationId: observation.sourceObservationId,
+      sourceLineage: observation.sourceLineage,
+      supportedGame: observation.supportedGame,
       cardId,
       printingId,
       locator: observation.locator,
@@ -378,7 +395,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           : {
               ...observation.withdrawal,
               assertion: "withdrawn",
-              source_lineage: retained.sourceLineage,
+              source_lineage: observation.sourceLineage,
               source_snapshot_id: observation.sourceSnapshotId,
               source_observation_set_id:
                 observation.sourceObservationSetId,
@@ -407,29 +424,70 @@ export async function reconcileRetainedCardPrintingEvidence(
     productSurfaceObserved: false,
     warnings: [] as Record<string, unknown>[],
   };
+  const observedProductGames = new Set<SupportedGame>();
+  const observedProductLineages = new Set<string>();
   try {
     const plansByObservationId = new Map(
       plans.map((plan) => [plan.sourceObservationId, plan]),
     );
-    productCatalogue = await reconcileProductReleaseCatalogue(
-      priorCandidate,
-      retained.observations.map((observation) => {
-        const plan = plansByObservationId.get(
-          observation.sourceObservationId,
-        );
-        return {
-          value: observation.productReleaseValue,
-          sourceObservationId: observation.sourceObservationId,
-          sourceObservationSetId: observation.sourceObservationSetId,
-          sourceSnapshotId: observation.sourceSnapshotId,
-          sourceLineage: retained.sourceLineage,
-          capturedAt: observation.sourceCapturedAt,
-          currentCardId: plan?.cardId ?? null,
-          currentPrintingId: plan?.printingId ?? null,
-        };
-      }),
-      retained.supportedGame,
-    );
+    const observationsByGame = new Map<
+      SupportedGame,
+      typeof retained.observations
+    >();
+    for (const observation of retained.observations) {
+      observationsByGame.set(observation.supportedGame, [
+        ...(observationsByGame.get(observation.supportedGame) ?? []),
+        observation,
+      ]);
+    }
+    for (const [game, gameObservations] of observationsByGame) {
+      const reconciled = await reconcileProductReleaseCatalogue(
+        productCatalogue,
+        gameObservations.map((observation) => {
+          const plan = plansByObservationId.get(
+            observation.sourceObservationId,
+          );
+          return {
+            value: observation.productReleaseValue,
+            sourceObservationId: observation.sourceObservationId,
+            sourceObservationSetId: observation.sourceObservationSetId,
+            sourceSnapshotId: observation.sourceSnapshotId,
+            sourceLineage: observation.sourceLineage,
+            capturedAt: observation.sourceCapturedAt,
+            currentCardId: plan?.cardId ?? null,
+            currentPrintingId: plan?.printingId ?? null,
+          };
+        }),
+        game,
+      );
+      productCatalogue = {
+        products: reconciled.products,
+        observedProducts: [
+          ...productCatalogue.observedProducts,
+          ...reconciled.observedProducts,
+        ],
+        distribution_contexts: reconciled.distribution_contexts,
+        product_relationships: reconciled.product_relationships,
+        productSurfaceObserved:
+          productCatalogue.productSurfaceObserved ||
+          reconciled.productSurfaceObserved,
+        warnings: [
+          ...productCatalogue.warnings,
+          ...reconciled.warnings,
+        ],
+      };
+      if (reconciled.productSurfaceObserved) {
+        observedProductGames.add(game);
+        gameObservations
+          .filter(
+            ({ productReleaseValue }) =>
+              productReleaseValue !== undefined,
+          )
+          .forEach(({ sourceLineage }) =>
+            observedProductLineages.add(sourceLineage),
+          );
+      }
+    }
   } catch (error) {
     diagnostics.push({
       code: "retained_evidence_invalid",
@@ -454,7 +512,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     selected_games: [
       ...new Set([
         ...(priorCandidate?.selected_games ?? []),
-        retained.supportedGame,
+        ...retained.observations.map(
+          ({ supportedGame }) => supportedGame,
+        ),
       ]),
     ].sort(),
     cards: [...cards.values()].sort((left, right) =>
@@ -466,57 +526,79 @@ export async function reconcileRetainedCardPrintingEvidence(
     products: productCatalogue.products,
     distribution_contexts: productCatalogue.distribution_contexts,
     product_relationships: productCatalogue.product_relationships,
-    card_observed_games: cardSurfaceObservations.length > 0
-      ? [retained.supportedGame]
-      : [],
-    product_observed_games: productCatalogue.productSurfaceObserved
-      ? [retained.supportedGame]
-      : [],
-    product_observed_lineages: productCatalogue.productSurfaceObserved
-      ? [retained.sourceLineage]
-      : [],
+    card_observed_games: [
+      ...new Set(
+        cardSurfaceObservations.map(
+          ({ supportedGame }) => supportedGame,
+        ),
+      ),
+    ].sort(),
+    product_observed_games: [...observedProductGames].sort(),
+    product_observed_lineages: [...observedProductLineages].sort(),
     source_checks: [
-      ...(cardSurfaceObservations.length > 0
-        ? [{
-            game: retained.supportedGame,
-            area: "cards-and-printings" as const,
-            checked_at: latestCapture(cardSurfaceObservations),
-          }]
-        : []),
-      ...(productCatalogue.productSurfaceObserved
-        ? [{
-            game: retained.supportedGame,
-            area: "products-and-releases" as const,
-            checked_at: latestCapture(productSurfaceObservations),
-          }]
-        : []),
+      ...groupObservationsByGame(cardSurfaceObservations).map(
+        ([game, observations]) => ({
+          game,
+          area: "cards-and-printings" as const,
+          checked_at: latestCapture(observations),
+        }),
+      ),
+      ...groupObservationsByGame(productSurfaceObservations).map(
+        ([game, observations]) => ({
+          game,
+          area: "products-and-releases" as const,
+          checked_at: latestCapture(observations),
+        }),
+      ),
     ],
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (
     await Promise.all(
-      [...groupedMemberships].map(([printingId, memberships]) =>
+      groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>
         relationshipDisappearanceWarnings(
           database,
           printingId,
-          retained.sourceLineage,
+          sourceLineage,
           memberships,
         ),
       ),
     )
   ).flat();
-  const disappearanceWarnings = await printingDisappearanceWarnings(
-    database,
-    retained.sourceLineage,
-    plans.flatMap((plan) =>
-      plan.printingId === null ? [] : [plan.printingId],
-    ),
+  const checkedSourceLineages = [
+    ...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage)),
+  ].sort();
+  const plansByLineage = checkedSourceLineages.map(
+    (sourceLineage) =>
+      [
+        sourceLineage,
+        plans.filter((plan) => plan.sourceLineage === sourceLineage),
+      ] as const,
   );
-  const cardWarnings = await cardDisappearanceWarnings(
-    database,
-    retained.sourceLineage,
-    plans.map((plan) => plan.cardId),
-  );
+  const disappearanceWarnings = (
+    await Promise.all(
+      plansByLineage.map(([lineage, lineagePlans]) =>
+        printingDisappearanceWarnings(
+          database,
+          lineage,
+          lineagePlans.flatMap((plan) =>
+            plan.printingId === null ? [] : [plan.printingId],
+          ),
+        ),
+      ),
+    )
+  ).flat();
+  const cardWarnings = (
+    await Promise.all(
+      plansByLineage.map(([lineage, lineagePlans]) =>
+        cardDisappearanceWarnings(
+          database,
+          lineage,
+          lineagePlans.map((plan) => plan.cardId),
+        ),
+      ),
+    )
+  ).flat();
   const warnings = [
     ...new Map(
       [
@@ -540,7 +622,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     database,
     candidate,
     plans,
-    retained.sourceLineage,
+    checkedSourceLineages,
   );
   const observedCards = [...cards.values()]
     .filter((card) => localCardFacts.has(card.id))
@@ -658,6 +740,8 @@ export async function showReconciledPrinting(
 function digestObservationPlans(
   plans: readonly {
     sourceObservationId: string;
+    sourceLineage: string;
+    supportedGame: SupportedGame;
     cardId: string;
     printingId: string | null;
     locator: string | null;
@@ -678,12 +762,13 @@ async function catalogueDataDigest(
   plans: readonly {
     cardId: string;
     printingId: string | null;
+    sourceLineage: string;
     locator: string | null;
     variantKey: string | null;
     memberships: Memberships;
     withdrawal: ProvenancedWithdrawal | null;
   }[],
-  observedSourceLineage: string,
+  checkedSourceLineages: readonly string[],
 ): Promise<string> {
   const printingIds = new Set(
     candidate.printings.map((printing) => printing.id),
@@ -724,10 +809,11 @@ async function catalogueDataDigest(
         .all<{ id: string; withdrawal_evidence_json: string | null }>(),
     ]);
   const memberships = new Map<string, Record<string, unknown>>();
+  const observedSourceLineages = new Set(checkedSourceLineages);
   for (const row of storedMemberships.results) {
     if (
       !printingIds.has(row.printing_id) ||
-      row.source_lineage === observedSourceLineage ||
+      observedSourceLineages.has(row.source_lineage) ||
       row.relationship_kind === "source_bucket"
     ) {
       continue;
@@ -775,7 +861,7 @@ async function catalogueDataDigest(
       ]) {
         const semantic = {
           printing_id: plan.printingId,
-          source_lineage: observedSourceLineage,
+          source_lineage: plan.sourceLineage,
           relationship_kind: membership.kind,
           relationship_value: membership.value,
         };
@@ -829,7 +915,6 @@ function semanticCatalogueCandidate(
       official_code: product.official_code,
       name: product.name,
       releases: product.releases,
-      observed: product.observed,
       withdrawal:
         product.withdrawal === null
           ? null
@@ -864,6 +949,36 @@ function latestCapture(
     .map(({ sourceCapturedAt }) => sourceCapturedAt)
     .sort()
     .at(-1)!;
+}
+
+function groupObservationsByGame<
+  T extends { supportedGame: SupportedGame },
+>(observations: readonly T[]): [SupportedGame, T[]][] {
+  const grouped = new Map<SupportedGame, T[]>();
+  for (const observation of observations) {
+    grouped.set(observation.supportedGame, [
+      ...(grouped.get(observation.supportedGame) ?? []),
+      observation,
+    ]);
+  }
+  return [...grouped].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+}
+
+function groupPlansByLineage<
+  T extends { sourceLineage: string },
+>(plans: readonly T[]): [string, T[]][] {
+  const grouped = new Map<string, T[]>();
+  for (const plan of plans) {
+    grouped.set(plan.sourceLineage, [
+      ...(grouped.get(plan.sourceLineage) ?? []),
+      plan,
+    ]);
+  }
+  return [...grouped].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
 }
 
 function compareCanonical(
@@ -1002,12 +1117,19 @@ function withdrawalConflictDiagnostics(
 function mergedPlanMemberships(
   plans: readonly {
     printingId: string | null;
+    sourceLineage: string;
     memberships: Memberships;
   }[],
-): Map<string, Memberships> {
+): {
+  printingId: string;
+  sourceLineage: string;
+  memberships: Memberships;
+}[] {
   const grouped = new Map<
     string,
     {
+      printingId: string;
+      sourceLineage: string;
       products: Set<string>;
       distributionContexts: Set<string>;
       sourceBuckets: Set<string>;
@@ -1015,7 +1137,10 @@ function mergedPlanMemberships(
   >();
   for (const plan of plans) {
     if (plan.printingId === null) continue;
-    const membership = grouped.get(plan.printingId) ?? {
+    const key = canonicalJson([plan.sourceLineage, plan.printingId]);
+    const membership = grouped.get(key) ?? {
+      printingId: plan.printingId,
+      sourceLineage: plan.sourceLineage,
       products: new Set<string>(),
       distributionContexts: new Set<string>(),
       sourceBuckets: new Set<string>(),
@@ -1029,18 +1154,17 @@ function mergedPlanMemberships(
     plan.memberships.source_buckets.forEach((value) =>
       membership.sourceBuckets.add(value),
     );
-    grouped.set(plan.printingId, membership);
+    grouped.set(key, membership);
   }
-  return new Map(
-    [...grouped].map(([printingId, membership]) => [
-      printingId,
-      {
-        products: [...membership.products].sort(),
-        distribution_contexts: [...membership.distributionContexts].sort(),
-        source_buckets: [...membership.sourceBuckets].sort(),
-      },
-    ]),
-  );
+  return [...grouped.values()].map((membership) => ({
+    sourceLineage: membership.sourceLineage,
+    printingId: membership.printingId,
+    memberships: {
+      products: [...membership.products].sort(),
+      distribution_contexts: [...membership.distributionContexts].sort(),
+      source_buckets: [...membership.sourceBuckets].sort(),
+    },
+  }));
 }
 
 async function blockedResult(

@@ -2,6 +2,7 @@ import { sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./fixture";
 import { requiredSourceAdapter } from "./source-adapters";
+import { evidencePlanForRequest } from "./source-evidence-repository";
 
 type PlannedRequestRow = {
   request_id: string;
@@ -23,10 +24,7 @@ type EvidenceRow = {
   content_byte_length: number;
   content_object_key: string;
   observation_count: number;
-  plan_source_lineage: string;
-  plan_supported_game: string;
-  plan_game_profile_version: string;
-  plan_adapter_version: string;
+  request_plan_json: string;
   plan_origin: string;
 };
 
@@ -60,10 +58,7 @@ export async function retainedReconciliationObservation(
           observations.content_byte_length,
           observations.content_object_key,
           observations.observation_count,
-          plan.source_lineage AS plan_source_lineage,
-          plan.supported_game AS plan_supported_game,
-          plan.game_profile_version AS plan_game_profile_version,
-          plan.adapter_version AS plan_adapter_version,
+          plan.request_plan_json,
           plan.plan_origin
          FROM source_observation_sets AS observations
          JOIN source_parse_operations AS parse
@@ -122,22 +117,21 @@ export async function retainedReconciliationObservation(
     return rows[0]!;
   });
   const first = orderedRows[0]!;
-  if (
-    orderedRows.some(
-      (row) =>
-        row.source_lineage !== first.source_lineage ||
-        row.supported_game !== first.supported_game ||
-        row.game_profile_version !== first.game_profile_version ||
-        row.adapter_version !== first.adapter_version ||
-        row.source_lineage !== row.plan_source_lineage ||
-        row.supported_game !== row.plan_supported_game ||
-        row.game_profile_version !== row.plan_game_profile_version ||
-        row.adapter_version !== row.plan_adapter_version,
-    )
-  ) {
-    throw new Error(
-      "Retained Source Observation Set provenance is inconsistent with its Evidence Plan.",
+  for (const row of orderedRows) {
+    const plan = evidencePlanForRequest(
+      { request_plan_json: row.request_plan_json },
+      row.request_id,
     );
+    if (
+      row.source_lineage !== plan.source_lineage ||
+      row.supported_game !== plan.supported_game ||
+      row.game_profile_version !== plan.game_profile_version ||
+      row.adapter_version !== plan.adapter_version
+    ) {
+      throw new Error(
+        "Retained Source Observation Set provenance is inconsistent with its Evidence Plan.",
+      );
+    }
   }
   const documents = await Promise.all(
     orderedRows.map((row) =>
@@ -163,6 +157,9 @@ export async function retainedReconciliationObservation(
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
           sourceCapturedAt: row.retrieved_at,
+          sourceLineage: row.source_lineage,
+          supportedGame: supportedGame(row.supported_game),
+          structurallyComplete: true,
         };
       })
       .sort((left, right) =>

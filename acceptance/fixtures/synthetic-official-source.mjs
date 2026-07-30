@@ -199,6 +199,16 @@ export default {
         { headers: { etag: '"synthetic-catalogue-discovery-v1"' } },
       );
     }
+    if (
+      [
+        "/raw-one-piece-products",
+        "/raw-fusion-world-products",
+        "/raw-gundam-asia-products",
+        "/raw-gundam-us-products",
+      ].includes(pathname)
+    ) {
+      return rawProductResponse(pathname);
+    }
     if (pathname === "/redirect") {
       return new Response(null, {
         status: 302,
@@ -214,3 +224,122 @@ export default {
     return new Response("not found", { status: 404 });
   },
 };
+
+function rawProductResponse(pathname) {
+  const definitions = {
+    "/raw-one-piece-products": {
+      wrapper: "official_card_results",
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP99-001",
+      productCode: "OP-RAW-01",
+      productName: "One Piece Raw Product",
+      region: "EN-OCEANIA",
+      attributes: {
+        card_type: "leader",
+        colours: ["red"],
+        cost: null,
+        life: 5,
+        battle_attributes: ["strike"],
+        power: 5000,
+        counter: null,
+        traits: ["Test"],
+        block_icons: ["1"],
+        effect_text: "Official effect",
+        trigger_text: null,
+      },
+    },
+    "/raw-fusion-world-products": {
+      wrapper: "card_items",
+      game: "fusion-world",
+      profile: "fusion-world@1",
+      cardNumber: "FB99-001",
+      productCode: "FB-RAW-01",
+      productName: "Fusion World Raw Product",
+      region: "EN-US",
+      attributes: {
+        card_type: "battle",
+        colours: ["red"],
+        cost: 1,
+        specified_cost: [{ colour: "red", count: 1 }],
+        power: 10000,
+        combo_power: 5000,
+        traits: ["Test"],
+        skills: [{ kind: "ordinary", text: "Official skill" }],
+      },
+    },
+    "/raw-gundam-asia-products": {
+      wrapper: "search_results",
+      game: "gundam",
+      profile: "gundam@1",
+      cardNumber: "GD99-001",
+      productCode: "GD-RAW-01",
+      productName: "Gundam Cross-region Raw Product",
+      region: "EN-ASIA",
+      attributes: gundamAttributes(),
+    },
+    "/raw-gundam-us-products": {
+      wrapper: "search_results",
+      game: "gundam",
+      profile: "gundam@1",
+      cardNumber: "GD99-001",
+      productCode: "GD-RAW-01",
+      productName: "Gundam Cross-region Raw Product",
+      region: "EN-US",
+      attributes: gundamAttributes(),
+    },
+  };
+  const definition = definitions[pathname];
+  const contextCode = `${definition.productCode}-distribution`;
+  const rawRecord = {
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+    card_record: {
+      number: definition.cardNumber,
+      name: `${definition.productName} Card`,
+      rules_text: "Official effective rules",
+      profile: definition.profile,
+      attributes: definition.attributes,
+    },
+    product_record: {
+      code: definition.productCode,
+      name: definition.productName,
+      release_region: definition.region,
+      release_date_precision: "day",
+      release_date: "2026-12-01",
+      release_status: "released",
+    },
+    distribution_record: {
+      code: contextCode,
+      kind: "product",
+      label: `${definition.productName} distribution`,
+    },
+    source_bucket: `${definition.productCode}-official-list`,
+  };
+  return Response.json(
+    { [definition.wrapper]: [rawRecord] },
+    { headers: { etag: `"${definition.productCode}-${definition.region}"` } },
+  );
+}
+
+function gundamAttributes() {
+  return {
+    card_type: "unit",
+    colours: ["blue"],
+    level: 4,
+    cost: 3,
+    block_icon: "1",
+    effect_text: "Official effect",
+    zone: "space",
+    traits: ["Earth Federation"],
+    link_condition: null,
+    ap: 3,
+    hp: 4,
+    series_titles: ["Mobile Suit Gundam"],
+  };
+}

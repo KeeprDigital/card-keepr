@@ -17,7 +17,10 @@ import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
 } from "./fixture-plan-injection";
-import { EMPTY_CATALOGUE_GZIP_HEX } from "./deterministic-gzip-golden";
+import {
+  EMPTY_CATALOGUE_GZIP_HEX,
+  GZIP_PROFILE_GOLDENS,
+} from "./deterministic-gzip-golden";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -3549,8 +3552,13 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
       product_id: secondProduct?.id,
     }),
   );
+  const missingPublication = await approve(missingCandidate.document);
+  expect(missingPublication.document).toMatchObject({
+    publication_outcome: "no_change",
+    resulting_revision_id: secondRevision,
+  });
   const missingRevision = requiredString(
-    (await approve(missingCandidate.document)).document,
+    missingPublication.document,
     "resulting_revision_id",
   );
   const carried = (
@@ -3591,6 +3599,194 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
     },
   });
 }, 45_000);
+
+test.each([
+  {
+    label: "inferred membership to typed evidence",
+    first: "product-identity-inferred",
+    second: "product-identity-typed",
+    firstMatch: (product: Record<string, unknown>) =>
+      product.official_code === "IDENTITY-INFERRED",
+    secondCode: "IDENTITY-INFERRED",
+  },
+  {
+    label: "name-only evidence to official code",
+    first: "product-identity-name",
+    second: "product-identity-coded",
+    firstMatch: (product: Record<string, unknown>) =>
+      product.official_code === null &&
+      product.name === "Name-to-code Identity Product",
+    secondCode: "IDENTITY-NAME-CODE",
+  },
+  {
+    label: "official Product rename",
+    first: "product-identity-rename-v1",
+    second: "product-identity-rename-v2",
+    firstMatch: (product: Record<string, unknown>) =>
+      product.official_code === "IDENTITY-RENAME",
+    secondCode: "IDENTITY-RENAME",
+  },
+])(
+  "Product identity and lifecycle survive $label",
+  async ({ first, second, firstMatch, secondCode }) => {
+    const firstRun = await collect(
+      `/reconciliation/${first}`,
+      `identity-${first}`,
+    );
+    const firstCandidate = await reconcile(firstRun.id);
+    const firstRevision = requiredString(
+      (await approve(firstCandidate.document)).document,
+      "resulting_revision_id",
+    );
+    const firstProduct = (
+      await exportComponentRecords(firstRevision, "products")
+    ).find(firstMatch);
+    expect(firstProduct).toBeDefined();
+    const firstId = requiredString(firstProduct ?? {}, "id");
+
+    const secondRun = await collect(
+      `/reconciliation/${second}`,
+      `identity-${second}`,
+    );
+    const secondCandidate = await reconcile(secondRun.id);
+    const secondRevision = requiredString(
+      (await approve(secondCandidate.document)).document,
+      "resulting_revision_id",
+    );
+    const secondProduct = (
+      await exportComponentRecords(secondRevision, "products")
+    ).find(({ official_code }) => official_code === secondCode);
+    expect(secondProduct).toMatchObject({
+      id: firstId,
+      lifecycle: {
+        first_revision_id: firstRevision,
+        last_observed_revision_id: secondRevision,
+        withdrawn: false,
+      },
+    });
+    const productRelationships = await exportComponentRecords(
+      secondRevision,
+      "relationships",
+    );
+    expect(
+      productRelationships.some((relationship) =>
+        [relationship.from, relationship.to].some(
+          (endpoint) =>
+            typeof endpoint === "object" &&
+            endpoint !== null &&
+            (endpoint as Record<string, unknown>).id === firstId,
+        ),
+      ),
+    ).toBe(true);
+  },
+  90_000,
+);
+
+test("same-name Products with different official codes remain distinct across revisions", async () => {
+  const firstRun = await collect(
+    "/reconciliation/product-identity-distinct-code-a",
+    "identity-distinct-code-a",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  const firstRevision = requiredString(
+    (await approve(firstCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  const firstProducts = await exportComponentRecords(
+    firstRevision,
+    "products",
+  );
+  const firstProduct = firstProducts.find(
+    ({ official_code }) => official_code === "IDENTITY-DISTINCT-A",
+  );
+  expect(firstProduct).toBeDefined();
+  const firstProductId = requiredString(firstProduct ?? {}, "id");
+  const firstRelationships = await exportComponentRecords(
+    firstRevision,
+    "relationships",
+  );
+  const firstRelationship = firstRelationships.find(
+    ({ kind, from }) =>
+      kind === "product-card" &&
+      typeof from === "object" &&
+      from !== null &&
+      (from as Record<string, unknown>).id === firstProductId,
+  );
+  expect(firstRelationship).toBeDefined();
+  const firstRelationshipId = requiredString(
+    firstRelationship ?? {},
+    "id",
+  );
+
+  const secondRun = await collect(
+    "/reconciliation/product-identity-distinct-code-b",
+    "identity-distinct-code-b",
+  );
+  const secondCandidate = await reconcile(secondRun.id);
+  const secondRevision = requiredString(
+    (await approve(secondCandidate.document)).document,
+    "resulting_revision_id",
+  );
+  const secondProducts = await exportComponentRecords(
+    secondRevision,
+    "products",
+  );
+  const carriedFirst = secondProducts.find(
+    ({ official_code }) => official_code === "IDENTITY-DISTINCT-A",
+  );
+  const distinctSecond = secondProducts.find(
+    ({ official_code }) => official_code === "IDENTITY-DISTINCT-B",
+  );
+  expect(carriedFirst).toMatchObject({
+    id: firstProductId,
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: firstRevision,
+      withdrawn: false,
+    },
+  });
+  expect(distinctSecond).toMatchObject({
+    lifecycle: {
+      first_revision_id: secondRevision,
+      last_observed_revision_id: secondRevision,
+      withdrawn: false,
+    },
+  });
+  const secondProductId = requiredString(distinctSecond ?? {}, "id");
+  expect(secondProductId).not.toBe(firstProductId);
+
+  const secondRelationships = await exportComponentRecords(
+    secondRevision,
+    "relationships",
+  );
+  expect(
+    secondRelationships.find(({ id }) => id === firstRelationshipId),
+  ).toMatchObject({
+    from: { type: "product", id: firstProductId },
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: firstRevision,
+      current: false,
+      last_missing_revision_id: secondRevision,
+    },
+  });
+  expect(
+    secondRelationships.find(
+      ({ kind, from }) =>
+        kind === "product-card" &&
+        typeof from === "object" &&
+        from !== null &&
+        (from as Record<string, unknown>).id === secondProductId,
+    ),
+  ).toMatchObject({
+    lifecycle: {
+      first_revision_id: secondRevision,
+      last_observed_revision_id: secondRevision,
+      current: true,
+      last_missing_revision_id: null,
+    },
+  });
+}, 90_000);
 
 test("identical Product facts are a semantic no-change while source freshness advances", async () => {
   const firstRun = await collect(
@@ -3962,6 +4158,98 @@ test("streamed catalogue gzip is byte-identical to the checked-in golden bytes",
   expect((bytes[10]! >> 1) & 0b11).toBe(0b01);
   expect(await sha256(bytes)).toBe(object.sha256);
 });
+
+test("deterministic gzip profile matches independent full-byte edge-case goldens", async () => {
+  const candidateProduct = (
+    id: string,
+    officialCode: string | null,
+    name: string | null,
+  ) => ({
+    reference: {
+      kind: officialCode === null ? "name" as const : "official_code" as const,
+      value: officialCode ?? name ?? id,
+    },
+    id,
+    game: "one-piece" as const,
+    official_code: officialCode,
+    name,
+    releases: [],
+    observed: true,
+    withdrawal: null,
+    included: [],
+    provenance: {},
+    disagreements: [],
+    source_observations: [],
+  });
+  const base = {
+    fixture: "first-catalogue" as const,
+    selected_games: ["one-piece" as const],
+    cards: [],
+    printings: [],
+    products: [],
+    distribution_contexts: [],
+    product_relationships: [],
+    product_observed_games: [],
+    product_observed_lineages: [],
+  };
+  const cases = [
+    {
+      name: "non_ascii_nfc" as const,
+      component: 5,
+      candidate: {
+        ...base,
+        products: [
+          candidateProduct("product_nfc", "NFC-1", "Café Étude"),
+        ],
+      },
+    },
+    {
+      name: "null_values" as const,
+      component: 5,
+      candidate: {
+        ...base,
+        products: [candidateProduct("product_null", null, null)],
+      },
+    },
+    {
+      name: "empty_component" as const,
+      component: 3,
+      candidate: base,
+    },
+    {
+      name: "multiple_deflate_blocks" as const,
+      component: 5,
+      candidate: {
+        ...base,
+        // 80,257 canonical UTF-8 bytes cross the fixed-Huffman reference
+        // encoder's DEFLATE block boundary.
+        products: [
+          candidateProduct(
+            "product_blocks",
+            "BLOCKS",
+            `Block ${"abcdef0123456789".repeat(5_000)}`,
+          ),
+        ],
+      },
+    },
+  ];
+  for (const fixture of cases) {
+    const built = await buildCatalogueExport(
+      fixture.candidate,
+      "b".repeat(64),
+      `catrev_gzip_${fixture.name}`,
+      "2026-07-30T01:02:03.000Z",
+    );
+    const object = built.objects[fixture.component];
+    if (object === undefined) throw new Error("gzip component missing");
+    const { readable, completed } = object.body();
+    const hex = Buffer.from(
+      await new Response(readable).arrayBuffer(),
+    ).toString("hex");
+    await completed;
+    expect(hex).toBe(GZIP_PROFILE_GOLDENS[fixture.name]);
+  }
+}, 45_000);
 
 test("a Product-heavy export publishes bounded verified R2 components", async () => {
   const run = await collect(

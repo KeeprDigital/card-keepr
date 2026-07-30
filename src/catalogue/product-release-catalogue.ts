@@ -158,8 +158,17 @@ export async function reconcileProductReleaseCatalogue(
   productSurfaceObserved: boolean;
   warnings: Record<string, unknown>[];
 }> {
-  const observations = await Promise.all(
+  const parsedObservations = await Promise.all(
     evidenceInputs.map((input) => parseProductReleaseObservation(input, game)),
+  );
+  const observations = await Promise.all(
+    parsedObservations.map((observation) =>
+      preservePublishedProductIdentity(
+        observation,
+        prior?.products ?? [],
+        game,
+      ),
+    ),
   );
   const observedSurface = evidenceInputs.some(
     ({ value }) => value !== undefined,
@@ -207,16 +216,7 @@ export async function reconcileProductReleaseCatalogue(
           product.game !== game ||
           !resolvedProductIds.has(product.id),
       )
-      .map((product) => ({
-        ...product,
-        observed: false,
-        source_observations:
-          product.game === game && observedSurface
-            ? sourceObservationsForProduct(product).filter(
-                ({ evidence }) => !checkedLineages.has(evidence.source),
-              )
-            : product.source_observations,
-      })),
+      .map((product) => ({ ...product, observed: false })),
     ...resolvedProducts,
   ]);
   const observedProducts = products.filter((product) =>
@@ -236,7 +236,7 @@ export async function reconcileProductReleaseCatalogue(
         (lineage) => !checkedLineages.has(lineage),
       );
       return sourceLineages.length === 0
-        ? []
+        ? [context]
         : [{ ...context, source_lineages: sourceLineages }];
     },
   );
@@ -267,9 +267,11 @@ export async function reconcileProductReleaseCatalogue(
       .map((relationship) => ({
         ...relationship,
         observed:
-          relationship.game !== game ||
-          !observedSurface ||
-          !checkedLineages.has(relationship.source_lineage),
+          relationship.game === game &&
+          observedSurface &&
+          checkedLineages.has(relationship.source_lineage)
+            ? false
+            : relationship.observed,
       })),
     ...observedRelationships,
   ]);
@@ -293,6 +295,106 @@ export async function reconcileProductReleaseCatalogue(
       })),
     ],
   };
+}
+
+async function preservePublishedProductIdentity(
+  observation: ParsedObservation,
+  priorProducts: readonly CatalogueProduct[],
+  game: SupportedGame,
+): Promise<ParsedObservation> {
+  const replacements = new Map<string, string>();
+  const warnings: Record<string, unknown>[] = [];
+  for (const product of observation.products) {
+    const gameProducts = priorProducts.filter(
+      (prior) => prior.game === game,
+    );
+    const officialCodeCandidates =
+      product.officialCode === null
+        ? []
+        : gameProducts.filter(
+            (prior) => prior.official_code === product.officialCode,
+          );
+    const candidates =
+      officialCodeCandidates.length > 0
+        ? officialCodeCandidates
+        : gameProducts.filter(
+            (prior) =>
+              (product.officialCode === null ||
+                prior.official_code === null) &&
+              normalizedProductName(prior.name) ===
+              normalizedProductName(product.name),
+          );
+    const candidateIds = [...new Set(candidates.map(({ id }) => id))];
+    if (candidateIds.length === 1) {
+      replacements.set(product.id, candidateIds[0]!);
+    } else if (candidateIds.length > 1) {
+      warnings.push({
+        code: "product_identity_unresolved",
+        official_code: product.officialCode,
+        name: product.name,
+        candidate_product_ids: candidateIds.sort(),
+        detail:
+          "The Product identity matched multiple published Products and remains unresolved.",
+      });
+    }
+  }
+  if (replacements.size === 0) {
+    return {
+      ...observation,
+      warnings: [...observation.warnings, ...warnings],
+    };
+  }
+  const products = observation.products.map((product) => ({
+    ...product,
+    id: replacements.get(product.id) ?? product.id,
+  }));
+  const distributionContexts = observation.distributionContexts.map(
+    (context) => ({
+      ...context,
+      product_id:
+        context.product_id === null
+          ? null
+          : replacements.get(context.product_id) ?? context.product_id,
+    }),
+  );
+  const relationships = await Promise.all(
+    observation.relationships.map(async (relationship) => {
+      const from = {
+        ...relationship.from,
+        id:
+          replacements.get(relationship.from.id) ??
+          relationship.from.id,
+      };
+      const to = {
+        ...relationship.to,
+        id: replacements.get(relationship.to.id) ?? relationship.to.id,
+      };
+      return {
+        ...relationship,
+        id: await relationshipIdFor(
+          game,
+          relationship.kind,
+          from,
+          to,
+          relationship.source_lineage,
+        ),
+        from,
+        to,
+      };
+    }),
+  );
+  return {
+    products,
+    distributionContexts,
+    relationships,
+    warnings: [...observation.warnings, ...warnings],
+  };
+}
+
+function normalizedProductName(value: string | null): string | null {
+  return value === null
+    ? null
+    : value.normalize("NFC").trim().toLocaleLowerCase();
 }
 
 async function parseProductReleaseObservation(
@@ -721,7 +823,11 @@ export async function productIdFor(
   reference: ProductReference,
 ): Promise<string> {
   return `product_${await sha256Text(
-    canonicalJson({ game, reference }),
+    canonicalJson(
+      reference.kind === "official_code"
+        ? { game, official_code: reference.value }
+        : { game, name_only: reference.value },
+    ),
   )}`;
 }
 

@@ -103,6 +103,19 @@ export async function reconciliationPublication(
     .bind(runId)
     .first<{ source_lineage: string }>();
   if (context === null) return null;
+  const evidencePartitions = await database
+    .prepare(
+      `SELECT DISTINCT source_lineage
+       FROM reconciliation_evidence_partitions
+       WHERE ingestion_run_id = ?
+       ORDER BY source_lineage`,
+    )
+    .bind(runId)
+    .all<{ source_lineage: string }>();
+  const observedSourceLineages =
+    evidencePartitions.results.length > 0
+      ? evidencePartitions.results.map(({ source_lineage }) => source_lineage)
+      : [context.source_lineage];
   const candidate = JSON.parse(
     await requiredRunCandidate(database, runId),
   ) as FixtureCandidate;
@@ -306,7 +319,7 @@ export async function reconciliationPublication(
     candidate,
     result,
     publicationRows,
-    context.source_lineage,
+    observedSourceLineages,
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(
@@ -463,7 +476,7 @@ async function retainCarriedLifecycles(
   candidate: FixtureCandidate,
   result: ReconciliationPublicationPlan,
   publicationRows: PublicationRows,
-  observedSourceLineage: string,
+  observedSourceLineages: readonly string[],
   revisionId: string,
 ): Promise<void> {
   const run = await database
@@ -505,10 +518,12 @@ async function retainCarriedLifecycles(
       result.cardLifecycles[row.id] = documentLifecycle(
         row.document_json,
       );
-      publicationRows.cardDeactivations.push({
-        card_id: row.id,
-        source_lineage: observedSourceLineage,
-      });
+      publicationRows.cardDeactivations.push(
+        ...observedSourceLineages.map((sourceLineage) => ({
+          card_id: row.id,
+          source_lineage: sourceLineage,
+        })),
+      );
     }
   }
   for (const row of printings.results) {
@@ -527,11 +542,11 @@ async function retainCarriedLifecycles(
       const carried = documentRelationshipEvidence(row.document_json);
       const omittedLineageWasCurrent = carried.some(
         (relationship) =>
-          relationship.source_lineage === observedSourceLineage &&
+          observedSourceLineages.includes(relationship.source_lineage) &&
           relationship.current,
       );
       result.relationshipEvidence[row.id] = carried.map((relationship) =>
-        relationship.source_lineage === observedSourceLineage &&
+        observedSourceLineages.includes(relationship.source_lineage) &&
         relationship.current
           ? {
               ...relationship,
@@ -541,16 +556,20 @@ async function retainCarriedLifecycles(
           : relationship,
       );
       if (omittedLineageWasCurrent) {
-        publicationRows.membershipDeactivations.push({
-          printing_id: row.id,
-          source_lineage: observedSourceLineage,
-        });
+        publicationRows.membershipDeactivations.push(
+          ...observedSourceLineages.map((sourceLineage) => ({
+            printing_id: row.id,
+            source_lineage: sourceLineage,
+          })),
+        );
       }
       if (omittedPrinting) {
-        publicationRows.locatorDeactivations.push({
-          printing_id: row.id,
-          source_lineage: observedSourceLineage,
-        });
+        publicationRows.locatorDeactivations.push(
+          ...observedSourceLineages.map((sourceLineage) => ({
+            printing_id: row.id,
+            source_lineage: sourceLineage,
+          })),
+        );
       }
     }
     if (
@@ -560,14 +579,15 @@ async function retainCarriedLifecycles(
       const carried = documentLocatorEvidence(row.document_json);
       result.locatorEvidence[row.id] = {
         current: carried.current.filter(
-          (locator) => locator.source_lineage !== observedSourceLineage,
+          (locator) =>
+            !observedSourceLineages.includes(locator.source_lineage),
         ),
         historical: [
           ...carried.historical,
           ...carried.current
             .filter(
               (locator) =>
-                locator.source_lineage === observedSourceLineage,
+                observedSourceLineages.includes(locator.source_lineage),
             )
             .map((locator) => ({
               ...locator,

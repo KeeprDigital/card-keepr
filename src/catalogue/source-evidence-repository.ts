@@ -2,11 +2,11 @@ import { AdministrationProblem } from "./ingestion";
 import { canonicalJson } from "./serialization";
 import {
   assertIdentifier,
-  parseEvidencePlan,
+  parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,
   type StartEvidenceRunRequest,
-  validateEvidencePlan,
+  validateEvidencePlans,
 } from "./source-evidence-model";
 import type { SourceAdapterRegistration } from "./source-adapters";
 
@@ -101,8 +101,11 @@ export async function startEvidenceRun(
   request: StartEvidenceRunRequest,
   planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<Record<string, unknown>> {
-  const { plan } = await validateEvidencePlan(request, planOrigin);
-  const planJson = canonicalJson(plan);
+  const plans = await validateEvidencePlans(request, planOrigin);
+  const firstPlan = plans[0]!;
+  const planJson = canonicalJson(
+    plans.length === 1 ? firstPlan : { plans },
+  );
   const replay = await evidenceRunByIdempotencyKey(
     database,
     request.idempotency_key,
@@ -133,7 +136,9 @@ export async function startEvidenceRun(
   const statements: D1PreparedStatement[] = [
     await ingestionRunInsert(database, {
       runId,
-      supportedGame: plan.supported_game,
+      supportedGames: [
+        ...new Set(plans.map(({ supported_game }) => supported_game)),
+      ].sort(),
       startedAt,
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
@@ -148,14 +153,14 @@ export async function startEvidenceRun(
       )
       .bind(
         runId,
-        plan.source_lineage,
-        plan.supported_game,
-        plan.game_profile_version,
-        plan.adapter_version,
+        firstPlan.source_lineage,
+        firstPlan.supported_game,
+        firstPlan.game_profile_version,
+        firstPlan.adapter_version,
         planJson,
         planOrigin,
       ),
-    ...requestStatements(database, runId, plan),
+    ...requestStatements(database, runId, plans),
     database
       .prepare(
         `UPDATE operation_state
@@ -229,7 +234,8 @@ export async function retryEvidenceRun(
     }
     return showEvidenceRun(database, replay.id);
   }
-  const plan = parseEvidencePlan(source.request_plan_json);
+  const plans = parseEvidencePlans(source.request_plan_json);
+  const firstPlan = plans[0]!;
   const operation = await database
     .prepare(
       "SELECT recovery_health FROM operation_state WHERE singleton = 1",
@@ -243,7 +249,9 @@ export async function retryEvidenceRun(
     await database.batch([
       await ingestionRunInsert(database, {
         runId,
-        supportedGame: plan.supported_game,
+        supportedGames: [
+          ...new Set(plans.map(({ supported_game }) => supported_game)),
+        ].sort(),
         startedAt,
         linkedRunId: source.id,
         idempotencyKey,
@@ -258,14 +266,14 @@ export async function retryEvidenceRun(
         )
         .bind(
           runId,
-          plan.source_lineage,
-          plan.supported_game,
-          plan.game_profile_version,
-          plan.adapter_version,
+          firstPlan.source_lineage,
+          firstPlan.supported_game,
+          firstPlan.game_profile_version,
+          firstPlan.adapter_version,
           source.request_plan_json,
           source.plan_origin,
         ),
-      ...requestStatements(database, runId, plan),
+      ...requestStatements(database, runId, plans),
       database
         .prepare(
           `UPDATE operation_state
@@ -350,27 +358,44 @@ function activeRunProblem(): AdministrationProblem {
 function requestStatements(
   database: D1Database,
   runId: string,
-  plan: EvidencePlan,
+  plans: readonly EvidencePlan[],
 ): D1PreparedStatement[] {
-  return plan.requests.map((sourceRequest, sequenceNumber) =>
-    database
-      .prepare(
-        `INSERT INTO source_requests (
-          ingestion_run_id, request_id, sequence_number, method, url,
-          request_headers_json, representation_fingerprint, state,
-          source_snapshot_id, failure_code
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)`,
-      )
-      .bind(
-        runId,
-        sourceRequest.id,
-        sequenceNumber,
-        sourceRequest.method,
-        sourceRequest.url,
-        canonicalJson(sourceRequest.headers),
-        sourceRequest.representation_fingerprint,
-      ),
+  return plans
+    .flatMap(({ requests }) => requests)
+    .map((sourceRequest, sequenceNumber) =>
+      database
+        .prepare(
+          `INSERT INTO source_requests (
+            ingestion_run_id, request_id, sequence_number, method, url,
+            request_headers_json, representation_fingerprint, state,
+            source_snapshot_id, failure_code
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)`,
+        )
+        .bind(
+          runId,
+          sourceRequest.id,
+          sequenceNumber,
+          sourceRequest.method,
+          sourceRequest.url,
+          canonicalJson(sourceRequest.headers),
+          sourceRequest.representation_fingerprint,
+        ),
+    );
+}
+
+export function evidencePlanForRequest(
+  run: Pick<IngestionEvidenceRow, "request_plan_json">,
+  requestId: string,
+): EvidencePlan {
+  const matches = parseEvidencePlans(run.request_plan_json).filter((plan) =>
+    plan.requests.some(({ id }) => id === requestId),
   );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Source Request ${requestId} does not have exactly one Evidence Plan.`,
+    );
+  }
+  return matches[0]!;
 }
 
 export async function requiredEvidenceRun(
@@ -680,7 +705,7 @@ async function ingestionRunInsert(
   database: D1Database,
   input: {
     runId: string;
-    supportedGame: string;
+    supportedGames: readonly string[];
     startedAt: string;
     linkedRunId: string | null;
     idempotencyKey: string;
@@ -688,7 +713,7 @@ async function ingestionRunInsert(
 ): Promise<D1PreparedStatement> {
   const baseValues = [
     input.runId,
-    canonicalJson([input.supportedGame]),
+    canonicalJson(input.supportedGames),
     input.startedAt,
     input.linkedRunId,
     input.idempotencyKey,

@@ -213,6 +213,48 @@ test("Product conditional reads return 304 for matching revision ETags", async (
   }
 });
 
+test("Product query and include parameters reject invalid public representations", async () => {
+  for (const path of [
+    "/v1/products?q=",
+    `/v1/products?q=${"x".repeat(501)}`,
+    "/v1/products/product_st15?include=evidence,evidence",
+  ]) {
+    const response = await api(path);
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain(
+      "application/problem+json",
+    );
+    await expect(response.json()).resolves.toEqual({
+      type: "https://card-keepr.invalid/problems/invalid_parameter",
+      title: "Invalid Product request",
+      status: 400,
+      code: "invalid_parameter",
+      detail: expect.any(String),
+      request_id: expect.any(String),
+    });
+  }
+});
+
+test("equal Product representation ETags identify byte-identical responses", async () => {
+  for (const [firstPath, secondPath] of [
+    [
+      "/v1/products?game=one-piece&q=st-15",
+      "/v1/products?q=st-15&game=one-piece",
+    ],
+    [
+      "/v1/products/product_st15?include=evidence,disagreements",
+      "/v1/products/product_st15?include=disagreements,evidence",
+    ],
+  ] as const) {
+    const first = await api(firstPath);
+    const second = await api(secondPath);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.headers.get("etag")).toBe(second.headers.get("etag"));
+    expect(await first.text()).toBe(await second.text());
+  }
+});
+
 test("Catalogue status exposes independently checked areas and freshness-sensitive ETags", async () => {
   const first = await api("/v1/catalogue");
   expect(first.status).toBe(200);
@@ -513,6 +555,155 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   );
   expect(rejected.status).toBe(400);
   await expect(rejected.json()).resolves.toMatchObject({
+    code: "invalid_cursor",
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_products'
+     WHERE singleton = 1`,
+  ).run();
+});
+
+test("Printing collection filters one revision-pinned keyset by Product and Release region", async () => {
+  const secondPrinting = {
+    type: "printing",
+    id: "printing_unrelated_us",
+    card_id: "card_unrelated_us",
+    rarity: { normalized: "rare", raw: "R" },
+    printed_rules_text: null,
+    game_data: null,
+    printing_images: [],
+    distribution_contexts: [],
+    relationship_evidence: [],
+    locator_evidence: { current: [], historical: [] },
+    lifecycle: {
+      first_revision_id: "catrev_products",
+      last_observed_revision_id: "catrev_products",
+      withdrawn: false,
+    },
+    links: { self: "/v1/printings/printing_unrelated_us" },
+  };
+  const usProduct = {
+    type: "product",
+    id: "product_us",
+    game: "one-piece",
+    official_code: "ST-US",
+    name: "US Product",
+    releases: [{
+      id: "release_us",
+      region: "EN-US",
+      date: { precision: "day", value: "2026-01-01" },
+      status: "released",
+    }],
+    lifecycle: secondPrinting.lifecycle,
+    links: { self: "/v1/products/product_us" },
+  };
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printings (
+         catalogue_revision_id, printing_id, card_id, document_json
+       ) VALUES ('catrev_products', ?, ?, ?)`,
+    ).bind(
+      secondPrinting.id,
+      secondPrinting.card_id,
+      JSON.stringify(secondPrinting),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_products (
+         catalogue_revision_id, product_id, supported_game, official_code,
+         name, search_text, release_regions_json, document_json
+       ) VALUES (
+         'catrev_products', 'product_us', 'one-piece', 'ST-US',
+         'US Product', 'st-us us product', '["EN-US"]', ?
+       )`,
+    ).bind(JSON.stringify({
+      data: usProduct,
+      included: [],
+      provenance: {},
+      disagreements: [],
+    })),
+    ...[
+      ["relationship_st15", "printing_st15_event", "product_st15"],
+      ["relationship_us", "printing_unrelated_us", "product_us"],
+    ].map(([id, printingId, productId]) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_product_relationships (
+           catalogue_revision_id, relationship_id, document_json
+         ) VALUES ('catrev_products', ?, ?)`,
+      ).bind(id, JSON.stringify({
+        type: "relationship",
+        id,
+        kind: "printing-product",
+        from: { type: "printing", id: printingId },
+        to: { type: "product", id: productId },
+        evidence_category: "explicit",
+        source_lineage: "one-piece-en",
+        source_observation_ids: ["srcobs_printing_filter"],
+        relationship_value: productId,
+        lifecycle: {
+          first_revision_id: "catrev_products",
+          last_observed_revision_id: "catrev_products",
+          current: true,
+          last_missing_revision_id: null,
+        },
+      })),
+    ),
+  ]);
+
+  const firstResponse = await api(
+    "/v1/printings?product_id=product_st15&release_region=EN-OCEANIA&limit=1",
+  );
+  expect(firstResponse.status).toBe(200);
+  const first = await firstResponse.json<{
+    data: { id: string }[];
+    page: { next_cursor: string | null };
+    meta: { catalogue_revision_id: string };
+  }>();
+  expect(first.data.map(({ id }) => id)).toEqual([
+    "printing_st15_event",
+  ]);
+  expect(first.meta.catalogue_revision_id).toBe("catrev_products");
+
+  const mismatched = await api(
+    "/v1/printings?product_id=product_st15&release_region=EN-US",
+  );
+  expect(mismatched.status).toBe(200);
+  await expect(mismatched.json()).resolves.toMatchObject({ data: [] });
+
+  const page = await api("/v1/printings?limit=1");
+  const cursor = (await page.json<{
+    page: { next_cursor: string };
+  }>()).page.next_cursor;
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_spine_000'
+     WHERE singleton = 1`,
+  ).run();
+  const retained = await api(
+    `/v1/printings?limit=1&after=${encodeURIComponent(cursor)}`,
+  );
+  expect(retained.status).toBe(200);
+  await expect(retained.json()).resolves.toMatchObject({
+    meta: { catalogue_revision_id: "catrev_products" },
+  });
+
+  for (const path of [
+    "/v1/printings?release_region=not-a-region",
+    "/v1/printings?limit=0",
+  ]) {
+    const response = await api(path);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+    });
+  }
+  const invalidCursor = await api(
+    `/v1/printings?limit=1&after=${encodeURIComponent(encodeCursor({
+      route: "/v1/products",
+    }))}`,
+  );
+  expect(invalidCursor.status).toBe(400);
+  await expect(invalidCursor.json()).resolves.toMatchObject({
     code: "invalid_cursor",
   });
   await testEnv.CATALOGUE_DB.prepare(

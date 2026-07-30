@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import {
   apiCapabilities,
@@ -333,16 +334,56 @@ async function collectSource(arguments_, environment, json) {
     "--adapter",
     "--request-id",
     "--url",
+    "--plan-file",
     "--idempotency-key",
   ]);
+  const planFile = options.values["--plan-file"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error === null &&
+    planFile !== undefined &&
+    idempotencyKey !== undefined &&
+    [
+      "--game",
+      "--lineage",
+      "--adapter",
+      "--request-id",
+      "--url",
+    ].every((option) => options.values[option] === undefined)
+  ) {
+    let planDocument;
+    try {
+      planDocument = JSON.parse(await readFile(planFile, "utf8"));
+    } catch {
+      return usageFailure(json);
+    }
+    if (
+      planDocument === null ||
+      typeof planDocument !== "object" ||
+      Array.isArray(planDocument) ||
+      !Array.isArray(planDocument.plans)
+    ) {
+      return usageFailure(json);
+    }
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/ingestion-runs/evidence",
+      "POST",
+      {
+        plans: planDocument.plans,
+        idempotency_key: idempotencyKey,
+      },
+    );
+  }
   const game = options.values["--game"];
   const lineage = options.values["--lineage"];
   const adapter = options.values["--adapter"];
   const requestId = options.values["--request-id"];
   const url = options.values["--url"];
-  const idempotencyKey = options.values["--idempotency-key"];
   if (
     options.error !== null ||
+    planFile !== undefined ||
     game === undefined ||
     lineage === undefined ||
     adapter === undefined ||

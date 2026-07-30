@@ -44,6 +44,14 @@ type ExistingReleaseRow = {
   last_observed_revision_id: string;
 };
 
+type InferredProductLifecycleRow = {
+  game: string;
+  official_code: string;
+  first_revision_id: string;
+  last_observed_revision_id: string;
+  last_published_at: string;
+};
+
 export async function productReleaseLifecyclePlan(
   database: D1Database,
   candidate: FixtureCandidate,
@@ -52,7 +60,12 @@ export async function productReleaseLifecyclePlan(
   const products = candidate.products ?? [];
   const relationships = candidate.product_relationships ?? [];
   const releases = products.flatMap((product) => product.releases);
-  const [existingProducts, existingReleases, existingRelationships] =
+  const [
+    existingProducts,
+    existingReleases,
+    existingRelationships,
+    inferredProductRows,
+  ] =
     await Promise.all([
       rowsById<ExistingProductRow>(
         database,
@@ -77,7 +90,68 @@ export async function productReleaseLifecyclePlan(
          WHERE id IN (SELECT value FROM json_each(?))`,
         relationships.map(({ id }) => id),
       ),
+      database
+        .prepare(
+          `SELECT card.supported_game AS game,
+                  membership.relationship_value AS official_code,
+                  membership.first_revision_id,
+                  membership.last_observed_revision_id,
+                  last_revision.published_at AS last_published_at
+           FROM reconciled_printing_memberships AS membership
+           JOIN reconciled_printings AS printing
+             ON printing.id = membership.printing_id
+           JOIN reconciled_cards AS card ON card.id = printing.card_id
+           JOIN catalogue_revisions AS first_revision
+             ON first_revision.id = membership.first_revision_id
+           JOIN catalogue_revisions AS last_revision
+             ON last_revision.id = membership.last_observed_revision_id
+           WHERE membership.relationship_kind = 'product'
+             AND membership.relationship_value IN (
+               SELECT value FROM json_each(?)
+             )
+           ORDER BY card.supported_game, membership.relationship_value,
+                    first_revision.published_at,
+                    membership.first_revision_id`,
+        )
+        .bind(
+          JSON.stringify(
+            products.flatMap(({ official_code }) =>
+              official_code === null ? [] : [official_code],
+            ),
+          ),
+        )
+        .all<InferredProductLifecycleRow>(),
     ]);
+  const inferredProductLifecycles = new Map<
+    string,
+    {
+      first_revision_id: string;
+      last_observed_revision_id: string;
+      last_order: string;
+    }
+  >();
+  for (const row of inferredProductRows.results) {
+    const key = JSON.stringify([row.game, row.official_code]);
+    const existing = inferredProductLifecycles.get(key);
+    const lastOrder = JSON.stringify([
+      row.last_published_at,
+      row.last_observed_revision_id,
+    ]);
+    inferredProductLifecycles.set(key, {
+      first_revision_id:
+        existing?.first_revision_id ?? row.first_revision_id,
+      last_observed_revision_id:
+        existing === undefined ||
+        lastOrder > existing.last_order
+          ? row.last_observed_revision_id
+          : existing.last_observed_revision_id,
+      last_order:
+        existing === undefined ||
+        lastOrder > existing.last_order
+          ? lastOrder
+          : existing.last_order,
+    });
+  }
   const observedGames = new Set(candidate.product_observed_games ?? []);
   const observedLineages = new Set(
     candidate.product_observed_lineages ?? [],
@@ -109,6 +183,12 @@ export async function productReleaseLifecyclePlan(
     products: Object.fromEntries(
       products.map((product) => {
         const existing = existingProducts.get(product.id);
+        const inferred =
+          product.official_code === null
+            ? undefined
+            : inferredProductLifecycles.get(
+                JSON.stringify([product.game, product.official_code]),
+              );
         const withdrawal = product.withdrawal;
         const withdrawn =
           existing?.withdrawn === 1 || withdrawal !== null;
@@ -125,10 +205,14 @@ export async function productReleaseLifecyclePlan(
           product.id,
           {
             first_revision_id:
-              existing?.first_revision_id ?? revisionId,
+              existing?.first_revision_id ??
+              inferred?.first_revision_id ??
+              revisionId,
             last_observed_revision_id: product.observed
               ? revisionId
-              : existing?.last_observed_revision_id ?? revisionId,
+              : existing?.last_observed_revision_id ??
+                inferred?.last_observed_revision_id ??
+                revisionId,
             withdrawn,
             withdrawal:
               withdrawalRevision === null ||

@@ -166,6 +166,16 @@ const ingestionWorker = {
         url.pathname === "/v1/ingestion-runs/evidence"
       ) {
         const body = await readAdministrationBody(request);
+        if (body.plans !== undefined) {
+          assertOnlyFields(body, ["plans", "idempotency_key"]);
+          return Response.json(
+            await startEvidenceRun(env.CATALOGUE_DB, {
+              plans: requiredEvidencePlans(body, "plans"),
+              idempotency_key: requiredString(body, "idempotency_key"),
+            }),
+            { status: 201 },
+          );
+        }
         assertOnlyFields(body, [
           "supported_game",
           "source_lineage",
@@ -556,6 +566,47 @@ function requiredStringArray(
     );
   }
   return value;
+}
+
+function requiredEvidencePlans(
+  body: Record<string, unknown>,
+  field: string,
+): {
+  supported_game: string;
+  source_lineage: string;
+  adapter_version: string;
+  requests: ReturnType<typeof requiredSourceRequests>;
+}[] {
+  const value = body[field];
+  if (!Array.isArray(value)) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_parameter",
+      `${field} must be an array.`,
+    );
+  }
+  return value.map((item, index) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new AdministrationProblem(
+        422,
+        "invalid_parameter",
+        `${field}[${index}] must be an object.`,
+      );
+    }
+    const plan = item as Record<string, unknown>;
+    assertOnlyFields(plan, [
+      "supported_game",
+      "source_lineage",
+      "adapter_version",
+      "requests",
+    ]);
+    return {
+      supported_game: requiredString(plan, "supported_game"),
+      source_lineage: requiredString(plan, "source_lineage"),
+      adapter_version: requiredString(plan, "adapter_version"),
+      requests: requiredSourceRequests(plan, "requests"),
+    };
+  });
 }
 
 function requiredSourceRequests(

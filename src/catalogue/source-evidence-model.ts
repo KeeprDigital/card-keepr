@@ -28,11 +28,10 @@ export type EvidencePlan = {
   requests: EvidencePlanRequest[];
 };
 
-export type StartEvidenceRunRequest = {
+export type EvidencePlanInput = {
   supported_game: string;
   source_lineage: string;
   adapter_version: string;
-  idempotency_key: string;
   requests: readonly {
     id: string;
     url: string;
@@ -40,6 +39,13 @@ export type StartEvidenceRunRequest = {
     headers?: Record<string, string>;
   }[];
 };
+
+export type StartEvidenceRunRequest =
+  | (EvidencePlanInput & { idempotency_key: string })
+  | {
+      plans: readonly EvidencePlanInput[];
+      idempotency_key: string;
+    };
 
 export type EvidenceParentWorkflowParams = {
   ingestion_run_id: string;
@@ -51,7 +57,7 @@ export type EvidenceHostWorkflowParams = {
 };
 
 export async function validateEvidencePlan(
-  request: StartEvidenceRunRequest,
+  request: EvidencePlanInput & { idempotency_key: string },
   planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<{
   plan: EvidencePlan;
@@ -138,6 +144,41 @@ export async function validateEvidencePlan(
   };
 }
 
+export async function validateEvidencePlans(
+  request: StartEvidenceRunRequest,
+  planOrigin: SourceAdapterRegistration["origin"] = "production",
+): Promise<EvidencePlan[]> {
+  assertIdentifier(request.idempotency_key, "idempotency_key");
+  const inputs = "plans" in request ? request.plans : [request];
+  if (inputs.length < 1 || inputs.length > 20) {
+    throw new AdministrationProblem(
+      422,
+      "invalid_parameter",
+      "plans must contain between 1 and 20 Evidence Plans.",
+    );
+  }
+  const plans: EvidencePlan[] = [];
+  const requestIds = new Set<string>();
+  for (const input of inputs) {
+    const { plan } = await validateEvidencePlan(
+      { ...input, idempotency_key: request.idempotency_key },
+      planOrigin,
+    );
+    for (const sourceRequest of plan.requests) {
+      if (requestIds.has(sourceRequest.id)) {
+        throw new AdministrationProblem(
+          422,
+          "invalid_parameter",
+          "Source Request identities must be unique across all Evidence Plans.",
+        );
+      }
+      requestIds.add(sourceRequest.id);
+    }
+    plans.push(plan);
+  }
+  return plans;
+}
+
 export async function representationFingerprint(input: {
   method: "GET";
   url: string;
@@ -185,6 +226,25 @@ export function parseEvidencePlan(json: string): EvidencePlan {
     adapter_version: value.adapter_version,
     requests,
   };
+}
+
+export function parseEvidencePlans(json: string): EvidencePlan[] {
+  const value: unknown = JSON.parse(json);
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Array.isArray((value as { plans?: unknown }).plans)
+  ) {
+    const plans = (value as { plans: unknown[] }).plans.map((plan) =>
+      parseEvidencePlan(JSON.stringify(plan)),
+    );
+    if (plans.length === 0) {
+      throw new Error("Stored ingestion evidence plan is invalid");
+    }
+    return plans;
+  }
+  return [parseEvidencePlan(json)];
 }
 
 export function assertIdentifier(value: string, field: string): void {

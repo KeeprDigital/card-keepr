@@ -1,4 +1,5 @@
 import { AdministrationProblem } from "./ingestion";
+import { productCatalogueAdapter } from "./product-release-source-adapters";
 
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
@@ -114,7 +115,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
-        parse: parseSourceDocument,
+        parse: productCatalogueAdapter("official_card_results", "one-piece"),
       },
       {
         adapterVersion: "fusion-world-en@1",
@@ -125,7 +126,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
-        parse: parseSourceDocument,
+        parse: productCatalogueAdapter("card_items", "fusion-world"),
       },
       {
         adapterVersion: "digimon-en@1",
@@ -147,7 +148,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
-        parse: parseSourceDocument,
+        parse: productCatalogueAdapter("search_results", "gundam"),
       },
       {
         adapterVersion: "gundam-en-us@1",
@@ -158,7 +159,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_source" as const,
-        parse: parseSourceDocument,
+        parse: productCatalogueAdapter("search_results", "gundam"),
       },
       ...[
         {

@@ -1552,6 +1552,13 @@ function reconciliationSourceDocument(scenario: string) {
                 distribution_contexts: ["context_event"],
                 source_buckets: ["promotion-list"],
               }
+            : scenario === "product-identity-inferred" ||
+                scenario === "product-identity-typed"
+              ? {
+                  products: ["IDENTITY-INFERRED"],
+                  distribution_contexts: [],
+                  source_buckets: ["identity-product-list"],
+                }
             : scenario === "product-release"
               ? {
                   products: ["ST-15"],
@@ -1762,6 +1769,65 @@ function productReleaseCatalogueForScenario(
       ],
       distribution_contexts: [],
       relationships: [],
+    };
+  }
+  if (
+    scenario === "product-identity-typed" ||
+    scenario === "product-identity-name" ||
+    scenario === "product-identity-coded" ||
+    scenario === "product-identity-distinct-code-a" ||
+    scenario === "product-identity-distinct-code-b" ||
+    scenario === "product-identity-rename-v1" ||
+    scenario === "product-identity-rename-v2"
+  ) {
+    const name =
+      scenario === "product-identity-rename-v2"
+        ? "Renamed Identity Product"
+        : scenario.startsWith("product-identity-rename")
+          ? "Original Identity Product"
+          : scenario.startsWith("product-identity-distinct-code")
+            ? "Same-name Distinct-code Product"
+          : scenario === "product-identity-name" ||
+              scenario === "product-identity-coded"
+            ? "Name-to-code Identity Product"
+            : "Inferred-to-typed Identity Product";
+    const officialCode =
+      scenario === "product-identity-name"
+        ? null
+        : scenario.startsWith("product-identity-rename")
+          ? "IDENTITY-RENAME"
+          : scenario === "product-identity-distinct-code-a"
+            ? "IDENTITY-DISTINCT-A"
+            : scenario === "product-identity-distinct-code-b"
+              ? "IDENTITY-DISTINCT-B"
+          : scenario === "product-identity-coded"
+            ? "IDENTITY-NAME-CODE"
+            : "IDENTITY-INFERRED";
+    return {
+      products: [
+        {
+          reference:
+            officialCode === null
+              ? { kind: "name", value: name }
+              : officialReference(officialCode),
+          official_code: officialCode,
+          name,
+          releases: [],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [
+        {
+          kind: "product-card",
+          product_reference:
+            officialCode === null
+              ? { kind: "name", value: name }
+              : officialReference(officialCode),
+          card_reference: { kind: "current_card" },
+          evidence_category: "explicit",
+          resolution: "explicit",
+        },
+      ],
     };
   }
   if (scenario === "product-standalone-missing") {

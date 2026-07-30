@@ -13,6 +13,10 @@ import {
   ProductReadProblem,
 } from "../../../src/catalogue/product-release-read";
 import {
+  currentPrintingsResponse,
+  PrintingCollectionReadProblem,
+} from "../../../src/catalogue/printing-collection-read";
+import {
   catalogueResponse,
 } from "../../../src/http/catalogue";
 import {
@@ -123,6 +127,13 @@ const apiWorker = {
         if (response !== null) return withCorsHeaders(request, response);
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/printings") {
+        return withCorsHeaders(
+          request,
+          await currentPrintingsResponse(env.CATALOGUE_DB, request),
+        );
+      }
+
       if (request.method === "GET" && url.pathname === "/v1/products") {
         return withCorsHeaders(
           request,
@@ -210,6 +221,21 @@ const apiWorker = {
               error.status === 409
                 ? "Cursor revision unavailable"
                 : "Invalid Product request",
+            detail: error.message,
+          }),
+        );
+      }
+      if (error instanceof PrintingCollectionReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title:
+              error.status === 409
+                ? "Cursor revision unavailable"
+                : "Invalid Printing request",
             detail: error.message,
           }),
         );
