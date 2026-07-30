@@ -142,6 +142,12 @@ verifying the replacement in their owning boundary before revocation. Secret
 values never appear in CLI arguments, output, logs, source, snapshots, or
 diagnostic bundles.
 
+Runtime bearer authentication requires the presented value to match a secret
+currently bound to the owning Worker. Catalogue rotation state can explicitly
+deny an `old_revoked` value, but it cannot keep a provider-removed binding
+alive; deletion therefore takes effect before an interrupted finalization is
+reconciled.
+
 ## Acceptance scenarios
 
 The executable state machine must demonstrate:

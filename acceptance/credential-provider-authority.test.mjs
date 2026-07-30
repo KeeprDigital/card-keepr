@@ -235,6 +235,82 @@ test("an owned stale D1 probe is cleaned and retried while an unrelated probe is
   assert.equal(unrelatedCalls.includes(statements.drop), false);
 });
 
+test("provider D1 probes retain mutation intent and reconcile lost CREATE and DROP responses", async () => {
+  const accountId = "0123456789abcdef0123456789abcdef";
+  const databaseId =
+    "00000000-0000-0000-0000-000000000002";
+  for (const lostResponse of [
+    "create",
+    "drop",
+    "drop-malformed-inspection",
+  ]) {
+    const tables = new Map();
+    const provider = createCloudflareProvider({
+      accountId,
+      resourceIdentity:
+        `cloudflare-account:${accountId}:d1:${databaseId}`,
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, init = {}) => {
+      const body = JSON.parse(init.body);
+      const table = /"(__keepr_probe_[0-9a-f]+)"/u.exec(
+        body.sql,
+      )?.[1];
+      if (body.sql.startsWith("CREATE TABLE")) {
+        tables.set(table, body.params[0]);
+        if (lostResponse === "create") {
+          throw new Error("CREATE response lost after apply");
+        }
+        return successfulD1Result();
+      }
+      if (body.sql.startsWith("SELECT owner")) {
+        return tables.has(table)
+          ? successfulD1Result([{ owner: tables.get(table) }])
+          : jsonResponse(400, { success: false });
+      }
+      if (body.sql.startsWith("DROP TABLE")) {
+        tables.delete(table);
+        if (lostResponse.startsWith("drop")) {
+          throw new Error("DROP response lost after apply");
+        }
+        return successfulD1Result();
+      }
+      if (body.sql.startsWith("SELECT name FROM sqlite_schema")) {
+        if (lostResponse === "drop-malformed-inspection") {
+          return successfulD1Result();
+        }
+        return successfulD1Result(
+          tables.has(body.params[0])
+            ? [{ name: body.params[0] }]
+            : [],
+        );
+      }
+      return jsonResponse(400, { success: false });
+    };
+    try {
+      const result = await provider.probeExactCapability(
+        "d1_verification_token",
+        "replacement-token",
+        "a".repeat(64),
+        lostResponse === "create"
+          ? "9".repeat(64)
+          : "8".repeat(64),
+      );
+      assert.deepEqual(result, {
+        ok: lostResponse === "drop",
+        mutation_started: true,
+        cleanup:
+          lostResponse === "drop-malformed-inspection"
+            ? "failed"
+            : "complete",
+      });
+      assert.equal(tables.size, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+});
+
 test("reconciliation safely retries after every consumer installation step", async () => {
   for (const failedStep of ["replacement", "marker", "verify"]) {
     let firstAttempt = true;
@@ -1257,5 +1333,15 @@ function jsonResponse(status, document) {
   return new Response(JSON.stringify(document), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+function successfulD1Result(results) {
+  return jsonResponse(200, {
+    success: true,
+    result: [{
+      success: true,
+      ...(results === undefined ? {} : { results }),
+    }],
   });
 }

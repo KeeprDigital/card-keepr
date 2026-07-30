@@ -120,6 +120,8 @@ export function disposableProbeStatements(planDigest, challenge) {
     create: `CREATE TABLE ${quoted} AS SELECT ? AS owner`,
     read: `SELECT owner FROM ${quoted}`,
     drop: `DROP TABLE ${quoted}`,
+    inspect:
+      "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?",
   });
 }
 
@@ -183,51 +185,101 @@ export async function probeD1Credential({
     mutation_started: false,
     cleanup: "not-started",
   };
-  try {
-    let creation = await query(statements.create, [challenge]);
-    if (!creation.ok) {
-      const stale = await query(statements.read);
-      const staleRows = resultRows(stale.document);
-      if (
-        !stale.ok ||
-        staleRows.length !== 1 ||
-        staleRows[0]?.owner !== challenge
-      ) {
-        return outcome;
-      }
-      outcome = {
-        ok: false,
-        mutation_started: true,
-        cleanup: "pending",
-      };
-      const staleDrop = await query(statements.drop);
-      outcome.cleanup = staleDrop.ok ? "complete" : "failed";
-      if (!staleDrop.ok) return outcome;
-      creation = await query(statements.create, [challenge]);
-      if (!creation.ok) return outcome;
+  const tableIsAbsent = async () => {
+    try {
+      const inspected = await query(
+        statements.inspect,
+        [statements.table],
+      );
+      const rows = resultRows(inspected.document);
+      return inspected.ok &&
+        rows !== null &&
+        rows.length === 0;
+    } catch {
+      return false;
     }
-    created = true;
-    outcome = {
-      ok: false,
-      mutation_started: true,
-      cleanup: "pending",
-    };
+  };
+  const dropOwnedTable = async () => {
+    outcome.mutation_started = true;
+    outcome.cleanup = "pending";
+    try {
+      const dropped = await query(statements.drop);
+      if (dropped.ok) {
+        outcome.cleanup = "complete";
+        return true;
+      }
+    } catch {
+      // The provider may have applied the DROP before losing its response.
+    }
+    const absent = await tableIsAbsent();
+    outcome.cleanup = absent ? "complete" : "failed";
+    return absent;
+  };
+  const cleanupExactOwnedTable = async () => {
+    outcome.mutation_started = true;
+    outcome.cleanup = "pending";
+    let observed;
+    try {
+      observed = await query(statements.read);
+    } catch {
+      outcome.cleanup = "failed";
+      return false;
+    }
+    const rows = resultRows(observed.document);
+    if (
+      !observed.ok ||
+      rows === null ||
+      rows.length !== 1 ||
+      rows[0]?.owner !== challenge
+    ) {
+      outcome.cleanup = "failed";
+      return false;
+    }
+    return dropOwnedTable();
+  };
+  const createOwnedTable = async () => {
+    outcome.mutation_started = true;
+    outcome.cleanup = "pending";
+    try {
+      return {
+        kind: "response",
+        result: await query(statements.create, [challenge]),
+      };
+    } catch {
+      await cleanupExactOwnedTable();
+      return { kind: "ambiguous" };
+    }
+  };
+
+  let creation = await createOwnedTable();
+  if (creation.kind === "ambiguous") return outcome;
+  if (!creation.result.ok) {
+    if (!(await cleanupExactOwnedTable())) return outcome;
+    creation = await createOwnedTable();
+    if (
+      creation.kind === "ambiguous" ||
+      !creation.result.ok
+    ) {
+      if (creation.kind === "response") {
+        await cleanupExactOwnedTable();
+      }
+      return outcome;
+    }
+  }
+  created = true;
+  try {
     const read = await query(statements.read);
     const rows = resultRows(read.document);
     outcome.ok =
       read.ok &&
+      rows !== null &&
       rows.length === 1 &&
       rows[0]?.owner === challenge;
   } catch {
     outcome.ok = false;
   } finally {
     if (created) {
-      try {
-        const dropped = await query(statements.drop);
-        outcome.cleanup = dropped.ok ? "complete" : "failed";
-      } catch {
-        outcome.cleanup = "failed";
-      }
+      await dropOwnedTable();
     }
   }
   outcome.ok = outcome.ok && outcome.cleanup === "complete";
@@ -235,8 +287,13 @@ export async function probeD1Credential({
 }
 
 function resultRows(document) {
-  return Array.isArray(document?.result)
-    ? document.result.flatMap((entry) =>
-        Array.isArray(entry?.results) ? entry.results : [])
-    : [];
+  if (
+    !Array.isArray(document?.result) ||
+    document.result.length === 0 ||
+    !document.result.every((entry) =>
+      Array.isArray(entry?.results))
+  ) {
+    return null;
+  }
+  return document.result.flatMap((entry) => entry.results);
 }

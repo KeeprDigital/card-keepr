@@ -245,15 +245,12 @@ export async function handleCredentialConsumerProof(
           body.challenge,
         );
   if (!capability.ok) {
-    const unresolvedMutation =
-      capability.mutation_started &&
-      capability.cleanup !== "complete";
     return Response.json(
       {
         code: "credential_capability_mismatch",
         journal: {
           contract: "card-keepr-provider-mutation-journal@1",
-          mutation_started: unresolvedMutation,
+          mutation_started: capability.mutation_started,
           steps: [
             `consumer-proof-cleanup:${capability.cleanup}`,
           ],

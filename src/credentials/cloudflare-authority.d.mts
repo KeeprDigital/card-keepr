@@ -27,6 +27,7 @@ export function disposableProbeStatements(
   create: string;
   read: string;
   drop: string;
+  inspect: string;
 }>;
 
 export function probeD1Credential(input: {

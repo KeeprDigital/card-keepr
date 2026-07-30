@@ -10,6 +10,8 @@ const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
+const ambiguousD1Tables = new Map<string, string>();
+const unconfirmedD1Drops = new Set<string>();
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
   modulusLength: 2048,
 }).privateKey.export({
@@ -57,8 +59,93 @@ export default defineConfig({
           ) {
             const body = await request.clone().json<{
               sql?: string;
+              params?: string[];
             }>();
+            const table = /"(__keepr_probe_[0-9a-f]+)"/u.exec(
+              body.sql ?? "",
+            )?.[1];
+            const owner = body.params?.[0];
+            if (
+              body.sql?.startsWith("CREATE TABLE") &&
+              table !== undefined &&
+              typeof owner === "string" &&
+              ["8".repeat(64), "9".repeat(64)].includes(
+                owner,
+              )
+            ) {
+              ambiguousD1Tables.set(table, owner);
+              if (owner === "9".repeat(64)) {
+                throw new Error("CREATE response lost after apply");
+              }
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            if (
+              body.sql?.startsWith("SELECT owner") &&
+              table !== undefined &&
+              ambiguousD1Tables.has(table)
+            ) {
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: [{
+                    owner: ambiguousD1Tables.get(table),
+                  }],
+                }],
+              });
+            }
+            if (
+              body.sql?.startsWith("DROP TABLE") &&
+              table !== undefined &&
+              ambiguousD1Tables.has(table)
+            ) {
+              const storedOwner = ambiguousD1Tables.get(table);
+              if (storedOwner === "8".repeat(64)) {
+                ambiguousD1Tables.delete(table);
+                unconfirmedD1Drops.add(table);
+                throw new Error("DROP response lost after apply");
+              }
+              if (storedOwner !== "9".repeat(64)) {
+                return Response.json(
+                  { success: false, errors: [{ code: 9000 }] },
+                  { status: 500 },
+                );
+              }
+              ambiguousD1Tables.delete(table);
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            if (
+              body.sql?.startsWith(
+                "SELECT name FROM sqlite_schema",
+              )
+            ) {
+              const inspected = body.params?.[0] ?? "";
+              if (unconfirmedD1Drops.delete(inspected)) {
+                return Response.json(
+                  { success: false, errors: [{ code: 9000 }] },
+                  { status: 500 },
+                );
+              }
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: ambiguousD1Tables.has(inspected)
+                    ? [{ name: inspected }]
+                    : [],
+                }],
+              });
+            }
             if (body.sql?.startsWith("CREATE TABLE")) {
+              if (table !== undefined && owner !== undefined) {
+                ambiguousD1Tables.set(table, owner);
+              }
               return Response.json({
                 success: true,
                 result: [{ success: true }],

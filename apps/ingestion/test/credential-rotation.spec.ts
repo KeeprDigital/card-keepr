@@ -13,6 +13,7 @@ import {
 import {
   githubAppKeyFingerprint,
 } from "../../../src/credentials/github-app-auth.mjs";
+import ingestionWorker from "../src/index";
 
 declare global {
   interface __BaseEnv_Env {
@@ -916,6 +917,77 @@ test("a failed D1 consumer proof reports unresolved cleanup mutation", async () 
   });
 });
 
+test.each([
+  ["CREATE", "9".repeat(64)],
+  ["DROP", "8".repeat(64)],
+])("consumer D1 proof retains intent after a lost %s response", async (
+  _operation,
+  challenge,
+) => {
+  const response = await consumerProofRequest(
+    "d1_verification_token",
+    await fingerprint(
+      "vitest-d1-verification-token-replacement",
+    ),
+    challenge,
+  );
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "credential_capability_mismatch",
+    journal: {
+      contract: "card-keepr-provider-mutation-journal@1",
+      mutation_started: true,
+      steps: [
+        `consumer-proof-cleanup:${
+          challenge === "8".repeat(64) ? "failed" : "complete"
+        }`,
+      ],
+    },
+  });
+});
+
+test("the live administration binding rejects an old key before revoke finalization and permits reconciliation", async () => {
+  await seedAdministrationAuthenticationRotation();
+  const deletedOldBinding = {
+    ...env,
+    ADMINISTRATION_KEY: undefined,
+  } as unknown as Env;
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT state FROM credential_rotations
+       WHERE id = 'credrot_admin_binding_authority'`,
+    ).first<{ state: string }>(),
+  ).resolves.toEqual({ state: "replacement_verified" });
+  expect(await directAdministrationHealthStatus(
+    "vitest-administration-key",
+    deletedOldBinding,
+  )).toBe(401);
+  expect(await directAdministrationHealthStatus(
+    "vitest-administration-key-replacement-slot",
+    deletedOldBinding,
+  )).toBe(200);
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE credential_rotations
+     SET state = 'old_revoked',
+         old_revoked_at = '2026-07-29T00:03:00.000Z'
+     WHERE id = 'credrot_admin_binding_authority'`,
+  ).run();
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT state FROM credential_rotations
+       WHERE id = 'credrot_admin_binding_authority'`,
+    ).first<{ state: string }>(),
+  ).resolves.toEqual({ state: "old_revoked" });
+  expect(await directAdministrationHealthStatus(
+    "vitest-administration-key",
+    deletedOldBinding,
+  )).toBe(401);
+  expect(await directAdministrationHealthStatus(
+    "vitest-administration-key-replacement-slot",
+    deletedOldBinding,
+  )).toBe(200);
+});
+
 test("API, administration, and provider credentials complete two A/B generations without reusing a live slot", async () => {
   for (const [classIndex, credentialClass] of ([
     "api_bearer_key",
@@ -1455,6 +1527,74 @@ async function administrationRequest(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
+}
+
+async function directAdministrationHealthStatus(
+  secret: string,
+  environment: Env,
+): Promise<number> {
+  const response = await ingestionWorker.fetch(
+    new Request("https://card-keepr.invalid/health", {
+      headers: {
+        authorization: `Bearer ${secret}`,
+        "cf-connecting-ip": `192.0.2.${requestAddress++}`,
+      },
+    }),
+    environment,
+  );
+  await response.body?.cancel();
+  return response.status;
+}
+
+async function seedAdministrationAuthenticationRotation(): Promise<void> {
+  const [oldHash, replacementHash] = await Promise.all([
+    fingerprint("vitest-administration-key"),
+    fingerprint(
+      "vitest-administration-key-replacement-slot",
+    ),
+  ]);
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO credential_rotations (
+      id, credential_class, state, environment,
+      resource_identity, owning_boundary, verification_target,
+      production_target_identity, required_permission,
+      cloudflare_management_required_permissions,
+      consumer_installation_identity,
+      old_consumer_slot, replacement_consumer_slot,
+      current_consumer_slot, old_issuer_credential_id,
+      replacement_issuer_credential_id, management_credential_id,
+      github_management_credential_id,
+      github_management_credential_fingerprint,
+      github_management_required_permission,
+      old_secret_hash, replacement_secret_hash, installed_at,
+      verified_at, install_idempotency_key,
+      install_request_digest, install_receipt
+    ) VALUES (
+      'credrot_admin_binding_authority',
+      'ingestion_admin_key', 'replacement_verified', 'production',
+      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion',
+      'ingestion_worker',
+      'cloudflare-account:0123456789abcdef0123456789abcdef:worker:card-keepr-ingestion:health',
+      ?, 'workers-secret:ingestion-administration',
+      '["Account API Tokens Read","Account API Tokens Write","Workers Scripts Write"]',
+      'worker-secret:card-keepr-ingestion:ADMINISTRATION_KEY_REPLACEMENT',
+      'a', 'b', 'a',
+      'wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY',
+      'wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY_REPLACEMENT',
+      'cloudflare-management-token', 'not-applicable',
+      'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      'not-applicable', ?, ?,
+      '2026-07-29T00:00:00.000Z',
+      '2026-07-29T00:01:00.000Z',
+      'install-admin-binding-authority', ?,
+      'receipt:admin-test-install'
+    )`,
+  ).bind(
+    productionTargetIdentity(),
+    oldHash.slice("sha256:".length),
+    replacementHash.slice("sha256:".length),
+    "a".repeat(64),
+  ).run();
 }
 
 async function consumerProofRequest(

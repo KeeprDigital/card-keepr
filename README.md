@@ -185,7 +185,10 @@ non-mutating metadata read. D1 write proof uses a challenge-owned table in the
 configured disposable database and always attempts exact cleanup.
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
-the ingestion Worker using `wrangler secret put`. Set the production CORS
+the ingestion Worker using `wrangler secret put`. Runtime authentication
+requires the presented key to remain present in that Worker's live secret
+bindings, so provider deletion takes effect even if catalogue finalization
+must be reconciled later. Set the production CORS
 allowlist to the exact owner origins before deploying. API and administration
 bearer replacements use token68 characters and must encode at least 128 bits
 (22 characters without padding). Set `CREDENTIAL_CONSUMER_PROOF_KEY` on both

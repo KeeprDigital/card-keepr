@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   credentialConsumerProofRequests,
 } from "../../../src/credentials/consumer-proof";
+import apiWorker from "../src/index";
 
 declare global {
   interface __BaseEnv_Env {
@@ -40,11 +41,13 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
   await seedRotation(
     "replacement_installed",
     "vitest-api-key",
-    "replacement-api-key",
+    "vitest-api-key-replacement-slot",
   );
 
   expect(await healthStatus("vitest-api-key")).toBe(200);
-  expect(await healthStatus("replacement-api-key")).toBe(200);
+  expect(
+    await healthStatus("vitest-api-key-replacement-slot"),
+  ).toBe(200);
 
   await env.CATALOGUE_DB.prepare(
     `UPDATE credential_rotations
@@ -53,7 +56,9 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
      WHERE id = 'credrot_api_overlap'`,
   ).run();
   expect(await healthStatus("vitest-api-key")).toBe(200);
-  expect(await healthStatus("replacement-api-key")).toBe(200);
+  expect(
+    await healthStatus("vitest-api-key-replacement-slot"),
+  ).toBe(200);
 
   await env.CATALOGUE_DB.prepare(
     `UPDATE credential_rotations
@@ -62,16 +67,29 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
      WHERE id = 'credrot_api_overlap'`,
   ).run();
   expect(await healthStatus("vitest-api-key")).toBe(401);
-  expect(await healthStatus("replacement-api-key")).toBe(200);
+  expect(
+    await healthStatus("vitest-api-key-replacement-slot"),
+  ).toBe(200);
 
   await seedRotation(
     "replacement_installed",
-    "replacement-api-key",
+    "vitest-api-key-replacement-slot",
     "next-api-key",
     "credrot_api_overlap_2",
   );
-  expect(await healthStatus("replacement-api-key")).toBe(200);
-  expect(await healthStatus("next-api-key")).toBe(200);
+  const secondGenerationBindings = {
+    ...env,
+    API_BEARER_KEY: "vitest-api-key-replacement-slot",
+    API_BEARER_KEY_REPLACEMENT: "next-api-key",
+  } as unknown as Env;
+  expect(await directApiHealthStatus(
+    "vitest-api-key-replacement-slot",
+    secondGenerationBindings,
+  )).toBe(200);
+  expect(await directApiHealthStatus(
+    "next-api-key",
+    secondGenerationBindings,
+  )).toBe(200);
   await env.CATALOGUE_DB.prepare(
     `UPDATE credential_rotations
      SET state = 'replacement_verified',
@@ -84,8 +102,90 @@ test("API bearer keys overlap until the verified old value is revoked", async ()
          old_revoked_at = '2026-07-29T00:04:00.000Z'
      WHERE id = 'credrot_api_overlap_2'`,
   ).run();
-  expect(await healthStatus("replacement-api-key")).toBe(401);
-  expect(await healthStatus("next-api-key")).toBe(200);
+  expect(await directApiHealthStatus(
+    "vitest-api-key-replacement-slot",
+    secondGenerationBindings,
+  )).toBe(401);
+  expect(await directApiHealthStatus(
+    "next-api-key",
+    secondGenerationBindings,
+  )).toBe(200);
+});
+
+test("the live Worker secret binding immediately governs revocation before catalogue finalization", async () => {
+  await seedRotation(
+    "replacement_verified",
+    "vitest-api-key",
+    "vitest-api-key-replacement-slot",
+    "credrot_api_binding_authority",
+  );
+  const deletedOldBinding = {
+    ...env,
+    API_BEARER_KEY: undefined,
+  } as unknown as Env;
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT state FROM credential_rotations
+       WHERE id = 'credrot_api_binding_authority'`,
+    ).first<{ state: string }>(),
+  ).resolves.toEqual({ state: "replacement_verified" });
+  expect(
+    await directApiHealthStatus(
+      "vitest-api-key",
+      deletedOldBinding,
+    ),
+  ).toBe(401);
+  expect(
+    await directApiHealthStatus(
+      "vitest-api-key-replacement-slot",
+      deletedOldBinding,
+    ),
+  ).toBe(200);
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE credential_rotations
+     SET state = 'old_revoked',
+         old_revoked_at = '2026-07-29T00:03:00.000Z'
+     WHERE id = 'credrot_api_binding_authority'`,
+  ).run();
+  await expect(
+    env.CATALOGUE_DB.prepare(
+      `SELECT state FROM credential_rotations
+       WHERE id = 'credrot_api_binding_authority'`,
+    ).first<{ state: string }>(),
+  ).resolves.toEqual({ state: "old_revoked" });
+  expect(
+    await directApiHealthStatus(
+      "vitest-api-key",
+      deletedOldBinding,
+    ),
+  ).toBe(401);
+  expect(
+    await directApiHealthStatus(
+      "vitest-api-key-replacement-slot",
+      deletedOldBinding,
+    ),
+  ).toBe(200);
+});
+
+test("an out-of-band removed old API binding fails closed during overlap", async () => {
+  await seedRotation(
+    "replacement_installed",
+    "vitest-api-key",
+    "vitest-api-key-replacement-slot",
+    "credrot_api_out_of_band_removal",
+  );
+  const removedOldBinding = {
+    ...env,
+    API_BEARER_KEY: undefined,
+  } as unknown as Env;
+  expect(await directApiHealthStatus(
+    "vitest-api-key",
+    removedOldBinding,
+  )).toBe(401);
+  expect(await directApiHealthStatus(
+    "vitest-api-key-replacement-slot",
+    removedOldBinding,
+  )).toBe(200);
 });
 
 test("the signed consumer challenge proves the exact installed API value through its authenticated boundary", async () => {
@@ -212,6 +312,20 @@ async function healthStatus(secret: string): Promise<number> {
   return response.status;
 }
 
+async function directApiHealthStatus(
+  secret: string,
+  environment: Env,
+): Promise<number> {
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/health", {
+      headers: { authorization: `Bearer ${secret}` },
+    }),
+    environment,
+  );
+  await response.body?.cancel();
+  return response.status;
+}
+
 async function consumerProof(
   expectedFingerprint: string,
   challenge: string,
@@ -328,7 +442,10 @@ async function seedRotation(
       ?,
       ?,
       'receipt:api-test-install',
-      NULL,
+      CASE WHEN ? = 'replacement_installed'
+        THEN NULL
+        ELSE '2026-07-29T00:01:00.000Z'
+      END,
       NULL
     )`,
   )
@@ -339,6 +456,7 @@ async function seedRotation(
       replacementHash,
       `install-${rotationId}`,
       "a".repeat(64),
+      state,
     )
     .run();
 }

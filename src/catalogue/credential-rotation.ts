@@ -1050,36 +1050,32 @@ export async function credentialSecretMatches(
   bootstrapSecrets: readonly (string | undefined)[],
 ): Promise<boolean> {
   const providedHash = await secretHash(providedSecret);
+  const boundMatches = await Promise.all(
+    bootstrapSecrets.map(async (bootstrap) =>
+      bootstrap !== undefined &&
+      fixedHashEqual(providedHash, await secretHash(bootstrap))
+    ),
+  );
+  if (!boundMatches.some(Boolean)) return false;
   const { results } = await database
     .prepare(
-      `SELECT state, old_secret_hash, replacement_secret_hash
+      `SELECT state, old_secret_hash
        FROM credential_rotations
        WHERE credential_class = ?
        ORDER BY installed_at DESC, id DESC
        LIMIT 1`,
     )
     .bind(credentialClass)
-    .all<AuthenticationRow>();
-  let active = false;
+    .all<Pick<AuthenticationRow, "state" | "old_secret_hash">>();
   let revoked = false;
   for (const row of results) {
-    const [oldMatch, replacementMatch] = await Promise.all([
-      fixedHashEqual(providedHash, row.old_secret_hash),
-      fixedHashEqual(providedHash, row.replacement_secret_hash),
-    ]);
+    const oldMatch = await fixedHashEqual(
+      providedHash,
+      row.old_secret_hash,
+    );
     if (oldMatch && row.state === "old_revoked") revoked = true;
-    if (oldMatch && row.state !== "old_revoked") active = true;
-    if (replacementMatch) active = true;
   }
-  for (const bootstrap of bootstrapSecrets) {
-    if (
-      bootstrap !== undefined &&
-      (await fixedHashEqual(providedHash, await secretHash(bootstrap)))
-    ) {
-      active = true;
-    }
-  }
-  return active && !revoked;
+  return !revoked;
 }
 
 function safeProviderIdentity(value: string): boolean {
