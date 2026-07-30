@@ -8,18 +8,34 @@ export type SourceAdapterRegistration = Readonly<{
   parserContract: string;
   maximumJsonBytes: number;
   origin: "production" | "synthetic_fixture";
-  reconciliationCoverage: "synthetic_fixture" | "unavailable";
+  reconciliationCoverage:
+    | "official_source"
+    | "synthetic_fixture"
+    | "unavailable";
   parse: (document: unknown) => readonly unknown[];
 }>;
 
-const parseCardDocument = (document: unknown): readonly unknown[] => {
+const parseSourceDocument = (document: unknown): readonly unknown[] => {
   if (
     typeof document === "object" &&
     document !== null &&
-    !Array.isArray(document) &&
-    Array.isArray((document as { cards?: unknown }).cards)
+    !Array.isArray(document)
   ) {
-    return (document as { cards: unknown[] }).cards;
+    const record = document as {
+      cards?: unknown;
+      product_surfaces?: unknown;
+    };
+    if (
+      Array.isArray(record.cards) ||
+      Array.isArray(record.product_surfaces)
+    ) {
+      return [
+        ...(Array.isArray(record.cards) ? record.cards : []),
+        ...(Array.isArray(record.product_surfaces)
+          ? record.product_surfaces
+          : []),
+      ];
+    }
   }
   return [document];
 };
@@ -35,8 +51,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       {
         adapterVersion: "one-piece-json-document@2",
@@ -46,8 +62,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       {
         adapterVersion: "fusion-world-en@1",
@@ -57,8 +73,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "fusion-world-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       {
         adapterVersion: "digimon-en@1",
@@ -68,8 +84,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "digimon-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       {
         adapterVersion: "gundam-en-asia@1",
@@ -79,8 +95,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       {
         adapterVersion: "gundam-en-us@1",
@@ -90,8 +106,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "gundam-card-document@1",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
-        reconciliationCoverage: "unavailable" as const,
-        parse: parseCardDocument,
+        reconciliationCoverage: "official_source" as const,
+        parse: parseSourceDocument,
       },
       ...[
         {
@@ -134,7 +150,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         reconciliationCoverage: "synthetic_fixture" as const,
-        parse: parseCardDocument,
+        parse: parseSourceDocument,
       })),
     ].map((adapter) => Object.freeze(adapter)),
   );

@@ -1,3 +1,6 @@
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { constants, createGzip } from "node:zlib";
 import type { FixtureCandidate, SupportedGame } from "./fixture";
 import type {
   NormalizedLifecycle,
@@ -48,6 +51,12 @@ export type BuiltCatalogueExport = {
   manifestBytes: Uint8Array;
   manifestKey: string;
   objects: readonly ExportObject[];
+};
+
+export type SourceFreshness = {
+  game: SupportedGame;
+  area: "cards-and-printings" | "products-and-releases";
+  checked_at: string;
 };
 
 type CatalogueExportManifest = {
@@ -107,7 +116,7 @@ export async function buildCatalogueExport(
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
-  sourceFreshness?: Readonly<Partial<Record<SupportedGame, string>>>,
+  sourceFreshness?: readonly SourceFreshness[],
 ): Promise<BuiltCatalogueExport> {
   const recordFactories = await exportRecordFactories(
     candidate,
@@ -140,9 +149,7 @@ export async function buildCatalogueExport(
       sha256: analysis.compressedSha256,
       body: () =>
         fixedLengthBody(
-          catalogueRecordStream(records()).pipeThrough(
-            new CompressionStream("gzip"),
-          ),
+          deterministicGzipStream(catalogueRecordStream(records())),
           analysis.compressedBytes,
         ),
       contentType: "application/x-ndjson",
@@ -161,22 +168,26 @@ export async function buildCatalogueExport(
     published_at: publishedAt,
     export_created_at: publishedAt,
     supported_games: candidate.selected_games,
-    source_freshness: candidate.selected_games.flatMap((game) => [
-      {
-        game,
-        area: "cards-and-printings" as const,
-        checked_at: sourceFreshness?.[game] ?? publishedAt,
-      },
-      ...(candidate.product_observed_games?.includes(game)
-        ? [
-            {
-              game,
-              area: "products-and-releases" as const,
-              checked_at: sourceFreshness?.[game] ?? publishedAt,
-            },
-          ]
-        : []),
-    ]),
+    source_freshness:
+      sourceFreshness === undefined
+        ? candidate.selected_games.flatMap((game) => [
+            ...((candidate.card_observed_games ??
+              candidate.selected_games).includes(game)
+              ? [{
+                  game,
+                  area: "cards-and-printings" as const,
+                  checked_at: publishedAt,
+                }]
+              : []),
+            ...(candidate.product_observed_games?.includes(game)
+              ? [{
+                  game,
+                  area: "products-and-releases" as const,
+                  checked_at: publishedAt,
+                }]
+              : []),
+          ])
+        : [...sourceFreshness],
     components,
     manifest_sha256: "0".repeat(64),
   };
@@ -223,37 +234,14 @@ async function analyseComponent(
   const statistics = { records: 0 };
   const contentDigest = new crypto.DigestStream("SHA-256");
   const compressedDigest = new crypto.DigestStream("SHA-256");
-  const compression = new CompressionStream("gzip");
-  const contentWriter = contentDigest.getWriter();
-  const compressionWriter = compression.writable.getWriter();
-  const compressed = compression.readable.pipeTo(compressedDigest);
-  const reader = catalogueRecordStream(
+  const [content, compressionInput] = catalogueRecordStream(
     records(),
     statistics,
-  ).getReader();
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      await Promise.all([
-        contentWriter.write(next.value),
-        compressionWriter.write(next.value),
-      ]);
-    }
-    await Promise.all([
-      contentWriter.close(),
-      compressionWriter.close(),
-    ]);
-    await compressed;
-  } catch (error) {
-    await Promise.allSettled([
-      reader.cancel(error),
-      contentWriter.abort(error),
-      compressionWriter.abort(error),
-      compressed,
-    ]);
-    throw error;
-  }
+  ).tee();
+  await Promise.all([
+    content.pipeTo(contentDigest),
+    deterministicGzipStream(compressionInput).pipeTo(compressedDigest),
+  ]);
   const [contentSha256, compressedSha256] = await Promise.all([
     contentDigest.digest,
     compressedDigest.digest,
@@ -265,6 +253,35 @@ async function analyseComponent(
     compressedBytes: Number(compressedDigest.bytesWritten),
     compressedSha256: digestHex(compressedSha256),
   };
+}
+
+function deterministicGzipStream(
+  source: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const gzip = createGzip({
+    level: 9,
+    windowBits: 15,
+    memLevel: 8,
+    strategy: constants.Z_FIXED,
+  });
+  const compressed = Readable.toWeb(
+    Readable.fromWeb(
+      source as unknown as NodeReadableStream<Uint8Array>,
+    ).pipe(gzip),
+  ) as unknown as ReadableStream<Uint8Array>;
+  let offset = 0;
+  return compressed.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        const portable = chunk.slice();
+        if (offset <= 9 && offset + portable.byteLength > 9) {
+          portable[9 - offset] = 0xff;
+        }
+        offset += portable.byteLength;
+        controller.enqueue(portable);
+      },
+    }),
+  );
 }
 
 function catalogueRecordStream(

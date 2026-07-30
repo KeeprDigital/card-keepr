@@ -3,6 +3,7 @@ import {
   distributionContextExportId,
   type BuiltCatalogueExport,
   type ExportObject,
+  type SourceFreshness,
 } from "./export";
 import {
   FixtureInputError,
@@ -594,6 +595,14 @@ async function approveRunAttempt(
     expected_current_revision_id:
       request.expected_current_revision_id,
   };
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      run.id,
+      "candidate",
+      run.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const currentRevision = await database
     .prepare(
       `SELECT content_digest
@@ -614,17 +623,9 @@ async function approveRunAttempt(
       approval,
       now,
       claimOwner,
+      candidate,
     );
   }
-
-  const candidate = JSON.parse(
-    await retainedPayload(
-      database,
-      run.id,
-      "candidate",
-      run.candidate_json,
-    ),
-  ) as FixtureCandidate;
   const revisionId = `catrev_${crypto.randomUUID()}`;
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(
@@ -636,7 +637,10 @@ async function approveRunAttempt(
   const sourceFreshness = await sourceFreshnessForExport(
     database,
     candidate.selected_games,
-    parseSelectedGames(run.selected_games_json),
+    checkedFreshnessAreas(
+      parseSelectedGames(run.selected_games_json),
+      candidate,
+    ),
     now,
   );
   const catalogueExport = await buildCatalogueExport(
@@ -1096,6 +1100,7 @@ async function publishNoChange(
   approval: Record<string, unknown>,
   now: string,
   claimOwner: IdempotencyClaimOwner,
+  candidate: FixtureCandidate,
 ): Promise<Record<string, unknown>> {
   const resultingRun = publicRun({
     ...run,
@@ -1152,9 +1157,12 @@ async function publishNoChange(
       ...(reconciliation?.statements ?? []),
       ...freshnessStatements(
         database,
-        parseSelectedGames(run.selected_games_json),
+        checkedFreshnessAreas(
+          parseSelectedGames(run.selected_games_json),
+          candidate,
+          now,
+        ),
         run.id,
-        now,
       ),
       database
         .prepare(
@@ -1779,9 +1787,12 @@ async function commitVerifiedPublication(
       ),
     ...freshnessStatements(
       database,
-      parseSelectedGames(input.run.selected_games_json),
+      checkedFreshnessAreas(
+        parseSelectedGames(input.run.selected_games_json),
+        input.candidate,
+        input.completedAt,
+      ),
       input.run.id,
-      input.completedAt,
     ),
     database
       .prepare(
@@ -1942,7 +1953,10 @@ async function reconcileReservedPublication(
   const sourceFreshness = await sourceFreshnessForExport(
     database,
     candidate.selected_games,
-    parseSelectedGames(run.selected_games_json),
+    checkedFreshnessAreas(
+      parseSelectedGames(run.selected_games_json),
+      candidate,
+    ),
     publishedAt,
   );
   const catalogueExport = await buildCatalogueExport(
@@ -3540,11 +3554,10 @@ function releaseRunLockStatement(
 
 function freshnessStatements(
   database: D1Database,
-  games: readonly string[],
+  checks: readonly SourceFreshness[],
   runId: string,
-  checkedAt: string,
 ): D1PreparedStatement[] {
-  return games.map((game) =>
+  return checks.map((check) =>
     database
       .prepare(
         `INSERT INTO source_freshness (
@@ -3552,41 +3565,76 @@ function freshnessStatements(
           area,
           checked_at,
           ingestion_run_id
-        ) VALUES (?, 'cards-and-printings', ?, ?)
+        ) VALUES (?, ?, ?, ?)
         ON CONFLICT (game, area) DO UPDATE SET
           checked_at = excluded.checked_at,
           ingestion_run_id = excluded.ingestion_run_id`,
       )
-      .bind(game, checkedAt, runId),
+      .bind(check.game, check.area, check.checked_at, runId),
   );
+}
+
+function checkedFreshnessAreas(
+  games: readonly string[],
+  candidate: FixtureCandidate,
+  checkedAt = "",
+): SourceFreshness[] {
+  return games.flatMap((game) => {
+    const supported = game as SupportedGame;
+    const cardObservedGames =
+      candidate.card_observed_games ?? candidate.selected_games;
+    return [
+      ...(cardObservedGames.includes(supported)
+        ? [{
+            game: supported,
+            area: "cards-and-printings" as const,
+            checked_at: checkedAt,
+          }]
+        : []),
+      ...(candidate.product_observed_games?.includes(supported)
+        ? [{
+            game: supported,
+            area: "products-and-releases" as const,
+            checked_at: checkedAt,
+          }]
+        : []),
+    ];
+  });
 }
 
 async function sourceFreshnessForExport(
   database: D1Database,
   catalogueGames: readonly SupportedGame[],
-  refreshedGames: readonly string[],
+  refreshedChecks: readonly SourceFreshness[],
   publishedAt: string,
-): Promise<Partial<Record<SupportedGame, string>>> {
+): Promise<SourceFreshness[]> {
   const prior = await database
     .prepare(
-      `SELECT game, checked_at
+      `SELECT game, area, checked_at
        FROM source_freshness
-       WHERE area = 'cards-and-printings'
-       ORDER BY game`,
+       WHERE area IN ('cards-and-printings', 'products-and-releases')
+       ORDER BY game, area`,
     )
-    .all<{ game: SupportedGame; checked_at: string }>();
-  const freshness: Partial<Record<SupportedGame, string>> = {};
+    .all<SourceFreshness>();
+  const freshness = new Map<string, SourceFreshness>();
   for (const row of prior.results) {
     if (catalogueGames.includes(row.game)) {
-      freshness[row.game] = row.checked_at;
+      freshness.set(`${row.game}:${row.area}`, row);
     }
   }
-  for (const game of refreshedGames) {
-    if (catalogueGames.includes(game as SupportedGame)) {
-      freshness[game as SupportedGame] = publishedAt;
+  for (const check of refreshedChecks) {
+    if (catalogueGames.includes(check.game)) {
+      freshness.set(`${check.game}:${check.area}`, {
+        ...check,
+        checked_at: publishedAt,
+      });
     }
   }
-  return freshness;
+  return [...freshness.values()].sort(
+    (left, right) =>
+      left.game.localeCompare(right.game) ||
+      left.area.localeCompare(right.area),
+  );
 }
 
 async function expireOverdueRuns(
@@ -3729,6 +3777,7 @@ function isFixtureCandidate(
         "products",
         "distribution_contexts",
         "product_relationships",
+        "card_observed_games",
         "product_observed_games",
         "product_observed_lineages",
       ],
@@ -3814,6 +3863,9 @@ function isFixtureCandidate(
     (value.product_relationships === undefined ||
       (Array.isArray(value.product_relationships) &&
         value.product_relationships.every(isRecord))) &&
+    (value.card_observed_games === undefined ||
+      (Array.isArray(value.card_observed_games) &&
+        value.card_observed_games.every(isSupportedGame))) &&
     (value.product_observed_games === undefined ||
       (Array.isArray(value.product_observed_games) &&
         value.product_observed_games.every(isSupportedGame))) &&

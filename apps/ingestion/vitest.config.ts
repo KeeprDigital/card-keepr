@@ -1015,6 +1015,58 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (scenario === "product-only-surface") {
+    return {
+      product_surfaces: [
+        {
+          completeness: completeEvidence(),
+          product_release_catalogue: {
+            products: [
+              {
+                reference: {
+                  kind: "official_code",
+                  value: "ST-PRODUCT-ONLY",
+                },
+                official_code: "ST-PRODUCT-ONLY",
+                name: "Product-only Official Source surface",
+                releases: [
+                  {
+                    region: "EN-OCEANIA",
+                    date: { precision: "quarter", value: "2027-Q1" },
+                    status: "announced",
+                  },
+                ],
+              },
+            ],
+            distribution_contexts: [
+              {
+                key: "product-only-announcement",
+                kind: "promotion",
+                label: "Product-only announcement",
+                product_reference: {
+                  kind: "official_code",
+                  value: "ST-PRODUCT-ONLY",
+                },
+                evidence_category: "explicit",
+              },
+            ],
+            relationships: [
+              {
+                kind: "distribution-context-product",
+                context_key: "product-only-announcement",
+                product_reference: {
+                  kind: "official_code",
+                  value: "ST-PRODUCT-ONLY",
+                },
+                evidence_category: "explicit",
+                resolution: "explicit",
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
   const conflict = scenario.startsWith("conflict");
   const newLocator = scenario === "new-locator";
   const unknownVocabulary = scenario === "unknown-vocabulary";
@@ -1737,6 +1789,31 @@ function productReleaseCatalogueForScenario(
           target_key: "ST-INVALID",
           evidence_category: "derived",
           resolution: "guessed",
+        },
+      ],
+    };
+  }
+  if (
+    scenario === "product-explicit-derived" ||
+    scenario === "product-deterministic-explicit"
+  ) {
+    const explicitResolution = scenario === "product-explicit-derived";
+    return {
+      products: [
+        {
+          reference: officialReference("ST-COUPLING"),
+          official_code: "ST-COUPLING",
+          name: "Coupling Product",
+          releases: [],
+        },
+      ],
+      distribution_contexts: [],
+      relationships: [
+        {
+          kind: "printing-product",
+          product_reference: officialReference("ST-COUPLING"),
+          evidence_category: explicitResolution ? "derived" : "explicit",
+          resolution: explicitResolution ? "explicit" : "deterministic",
         },
       ],
     };

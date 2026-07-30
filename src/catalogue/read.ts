@@ -2,10 +2,21 @@ import {
   parseCatalogueRevisionId,
   parsePublicationInstant,
 } from "../http/catalogue";
+import { canonicalJson, sha256Text } from "./serialization";
 
 type CatalogueStateRow = {
   current_revision_id: string;
   published_at: string;
+};
+
+type FreshnessRow = {
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  area:
+    | "cards-and-printings"
+    | "products-and-releases"
+    | "legality-rules"
+    | "errata";
+  checked_at: string;
 };
 
 type RevisionDocumentRow = CatalogueStateRow & {
@@ -33,15 +44,36 @@ type ExportManifest = {
 };
 
 export async function currentCatalogueStatus(database: D1Database) {
-  const state = await database
-    .prepare(
-      "SELECT current_revision_id, published_at FROM catalogue_state WHERE singleton = 1",
-    )
-    .first<CatalogueStateRow>();
+  const [state, freshness] = await Promise.all([
+    database
+      .prepare(
+        "SELECT current_revision_id, published_at FROM catalogue_state WHERE singleton = 1",
+      )
+      .first<CatalogueStateRow>(),
+    database
+      .prepare(
+        `SELECT game, area, checked_at
+         FROM source_freshness
+         ORDER BY game, area`,
+      )
+      .all<FreshnessRow>(),
+  ]);
   if (state === null) throw new Error("Catalogue state is unavailable");
+  const lastSuccessfulChecks = freshness.results.map((row) => ({
+    game: row.game,
+    area: row.area,
+    checked_at: parsePublicationInstant(row.checked_at),
+  }));
   return {
     revisionId: parseCatalogueRevisionId(state.current_revision_id),
     publishedAt: parsePublicationInstant(state.published_at),
+    lastSuccessfulChecks,
+    etag: await sha256Text(
+      canonicalJson({
+        revision_id: state.current_revision_id,
+        last_successful_checks: lastSuccessfulChecks,
+      }),
+    ),
   };
 }
 

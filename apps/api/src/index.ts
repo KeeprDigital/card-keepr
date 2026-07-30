@@ -96,7 +96,10 @@ const apiWorker = {
       if (request.method === "GET" && url.pathname === "/v1/catalogue") {
         return withCorsHeaders(
           request,
-          catalogueResponse(await currentCatalogueStatus(env.CATALOGUE_DB)),
+          catalogueResponse(
+            await currentCatalogueStatus(env.CATALOGUE_DB),
+            request,
+          ),
         );
       }
 

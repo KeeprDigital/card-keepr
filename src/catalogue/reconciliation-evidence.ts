@@ -212,11 +212,10 @@ async function retainedObservationDocument(
     document.supported_game !== row.supported_game ||
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
-    adapter.reconciliationCoverage !== "synthetic_fixture" ||
-    adapter.origin !== "synthetic_fixture" ||
-    row.plan_origin !== "synthetic_fixture" ||
+    adapter.reconciliationCoverage === "unavailable" ||
+    row.plan_origin !== adapter.origin ||
     !isRecord(document.coverage_proof) ||
-    document.coverage_proof.kind !== "synthetic_fixture" ||
+    document.coverage_proof.kind !== adapter.reconciliationCoverage ||
     document.coverage_proof.adapter_version !== adapter.adapterVersion ||
     document.coverage_proof.parser_contract !== adapter.parserContract ||
     !validEvidenceSummary(

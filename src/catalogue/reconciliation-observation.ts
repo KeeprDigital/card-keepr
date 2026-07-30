@@ -40,7 +40,7 @@ export type ReconciliationWarning = ProfileWarning;
 export type ParsedReconciliationObservation = Readonly<{
   sourceObservationId: string;
   candidateWithoutIdentities: {
-    card: Omit<FixtureCard, "id">;
+    card: Omit<FixtureCard, "id"> | null;
     printing: Omit<FixturePrinting, "id" | "card_id"> | null;
   };
   locator: string | null;
@@ -132,6 +132,41 @@ export function parseReconciliationObservation(
   value: unknown,
 ): ParsedReconciliationObservation {
   const record = requiredRecord(value, "Source Observation value");
+  if (record.card === undefined) {
+    if (record.product_release_catalogue === undefined) {
+      throw new Error(
+        "A retained observation requires Card or Product catalogue evidence.",
+      );
+    }
+    const warnings: ReconciliationWarning[] = [];
+    detectUnknownFields(
+      sourceObservationId,
+      "products-and-releases@1",
+      record,
+      new Set(["completeness", "product_release_catalogue"]),
+      "",
+      warnings,
+    );
+    return {
+      sourceObservationId,
+      candidateWithoutIdentities: { card: null, printing: null },
+      locator: null,
+      variantKey: null,
+      artworkFingerprint: null,
+      printedFieldsDigest: null,
+      treatment: null,
+      demonstrablyNovel: false,
+      noveltyProofComplete: true,
+      memberships: {
+        products: [],
+        distribution_contexts: [],
+        source_buckets: [],
+      },
+      withdrawal: null,
+      productReleaseValue: record.product_release_catalogue,
+      sourceWarnings: sortedWarnings(warnings),
+    };
+  }
   const rawCard = requiredRecord(record.card, "card");
   const gameData = requiredRecord(rawCard.game_data, "card.game_data");
   const profile = requiredString(gameData.profile, "card.game_data.profile");

@@ -6,6 +6,10 @@ import {
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
+import {
+  deterministicGzip,
+  sha256,
+} from "../../../src/catalogue/serialization";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import type { FixtureCandidate } from "../../../src/catalogue/fixture";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
@@ -694,7 +698,7 @@ test.each([
   },
 );
 
-test("production adapter placeholders fail closed without adapter-owned coverage proof", async () => {
+test("production adapters retain parser-bound coverage proof for reconciliation", async () => {
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
@@ -719,18 +723,16 @@ test("production adapter placeholders fail closed without adapter-owned coverage
   );
   expect(resumed.response.status).toBe(202);
   await waitForRunState(run.id, "parsing");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
-    diagnostics: [
-      {
-        code: "retained_evidence_invalid",
-        detail: expect.stringContaining(
-          "Source Observation Set provenance is invalid",
-        ),
-      },
-    ],
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document).toMatchObject({
+    state: "awaiting_approval",
+    publishable: true,
+    diagnostics: [],
+    cards: [expect.objectContaining({ game: "fusion-world" })],
+    printings: [expect.objectContaining({ card_id: expect.any(String) })],
   });
+  expect((await approve(reconciled.document)).response.status).toBe(200);
 });
 
 test("the production source-plan route rejects synthetic fixture adapters without creating provenance", async () => {
@@ -3677,11 +3679,17 @@ test("Product freshness is emitted only for an actually checked Product surface"
     (await approve(noCheckCandidate.document)).document,
     "resulting_revision_id",
   );
-  expect((await exportManifest(noCheckRevision)).source_freshness).not.toContainEqual(
-    expect.objectContaining({
-      game: "one-piece",
-      area: "products-and-releases",
-    }),
+  const carriedFreshness = (
+    await exportManifest(noCheckRevision)
+  ).source_freshness.find(
+    ({ game, area }) =>
+      game === "one-piece" && area === "products-and-releases",
+  );
+  expect(carriedFreshness).toEqual(
+    (await exportManifest(checkedRevision)).source_freshness.find(
+      ({ game, area }) =>
+        game === "one-piece" && area === "products-and-releases",
+    ),
   );
   expect(
     await exportComponentRecords(noCheckRevision, "products"),
@@ -3735,6 +3743,117 @@ test("unknown Product relationship resolution fails closed", async () => {
       }),
     ],
   });
+});
+
+test("Product-only Official Source surfaces reconcile without fabricating a Card", async () => {
+  const run = await collect(
+    "/reconciliation/product-only-surface",
+    "product-only-surface",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document).toMatchObject({
+    state: "awaiting_approval",
+    publishable: true,
+    cards: [],
+    printings: [],
+    products: [
+      expect.objectContaining({
+        official_code: "ST-PRODUCT-ONLY",
+        releases: [
+          expect.objectContaining({
+            status: "announced",
+            date: { precision: "quarter", value: "2027-Q1" },
+          }),
+        ],
+      }),
+    ],
+  });
+  const revisionId = requiredString(
+    (await approve(reconciled.document)).document,
+    "resulting_revision_id",
+  );
+  const exportedRelationships = await exportComponentRecords(
+    revisionId,
+    "relationships",
+  );
+  expect(exportedRelationships).toContainEqual(
+    expect.objectContaining({
+      kind: "distribution-context-product",
+      from: expect.objectContaining({ type: "distribution_context" }),
+      to: expect.objectContaining({ type: "product" }),
+      evidence_category: "explicit",
+      relationship_value: "ST-PRODUCT-ONLY",
+    }),
+  );
+});
+
+test.each([
+  ["product-explicit-derived", "explicit", "derived"],
+  ["product-deterministic-explicit", "deterministic", "explicit"],
+])(
+  "relationship resolution %s rejects contradictory evidence coupling",
+  async (scenario, resolution, category) => {
+    const run = await collect(
+      `/reconciliation/${scenario}`,
+      `coupling-${scenario}`,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(409);
+    expect(reconciled.document).toMatchObject({
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            `${resolution} resolution requires ${category === "derived" ? "explicit" : "derived"} evidence`,
+          ),
+        }),
+      ],
+    });
+  },
+);
+
+test("streamed catalogue gzip is byte-identical to the pinned deterministic profile", async () => {
+  const built = await buildCatalogueExport(
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      cards: [],
+      printings: [],
+      products: [],
+      distribution_contexts: [],
+      product_relationships: [],
+      product_observed_games: [],
+      product_observed_lineages: [],
+    },
+    "a".repeat(64),
+    "catrev_gzip_golden",
+    "2026-07-30T01:02:03.000Z",
+  );
+  const object = built.objects.find(({ contentEncoding }) =>
+    contentEncoding === "gzip"
+  );
+  if (object === undefined) throw new Error("gzip component missing");
+  const { readable, completed } = object.body();
+  const bytes = new Uint8Array(await new Response(readable).arrayBuffer());
+  await completed;
+  const raw = new Uint8Array(
+    await new Response(
+      new Blob([bytes]).stream().pipeThrough(
+        new DecompressionStream("gzip"),
+      ),
+    ).arrayBuffer(),
+  );
+  const expected = deterministicGzip(raw);
+  expect(bytes).toEqual(expected);
+  expect([...bytes.slice(0, 10)]).toEqual([
+    0x1f, 0x8b, 0x08, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x02, 0xff,
+  ]);
+  expect((bytes[10]! >> 1) & 0b11).toBe(0b01);
+  expect(await sha256(bytes)).toBe(object.sha256);
 });
 
 test("a Product-heavy export publishes bounded verified R2 components", async () => {

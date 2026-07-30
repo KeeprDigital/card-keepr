@@ -114,7 +114,7 @@ export type ProductReleaseEvidenceInput = {
   sourceSnapshotId: string;
   sourceLineage: string;
   capturedAt: string;
-  currentCardId: string;
+  currentCardId: string | null;
   currentPrintingId: string | null;
 };
 
@@ -415,6 +415,17 @@ async function parseProductReleaseObservation(
       });
       continue;
     }
+    const category = evidenceCategory(relationship.evidence_category);
+    if (resolution === "explicit" && category !== "explicit") {
+      throw new Error(
+        "An explicit resolution requires explicit evidence.",
+      );
+    }
+    if (resolution === "deterministic" && category !== "derived") {
+      throw new Error(
+        "A deterministic resolution requires derived evidence.",
+      );
+    }
     const product =
       reference === null
         ? null
@@ -446,7 +457,7 @@ async function parseProductReleaseObservation(
       kind === "printing-distribution-context"
         ? contextKey!
         : kind === "product-card"
-          ? input.currentCardId
+          ? input.currentCardId!
           : reference!.value;
     relationships.push({
       id: await relationshipIdFor(
@@ -459,7 +470,7 @@ async function parseProductReleaseObservation(
       game,
       kind,
       ...endpoints,
-      evidence_category: evidenceCategory(relationship.evidence_category),
+      evidence_category: category,
       resolution: "canonical",
       source_lineage: input.sourceLineage,
       source_observation_ids: [input.sourceObservationId],
@@ -779,8 +790,10 @@ function relationshipEndpoints(
       to: { type: "product", id: productId },
     };
   }
-  if (productId === null) {
-    throw new Error("A Product-to-Card relationship requires a Product.");
+  if (productId === null || input.currentCardId === null) {
+    throw new Error(
+      "A Product-to-Card relationship requires both entities.",
+    );
   }
   return {
     from: { type: "product", id: productId },
@@ -959,8 +972,10 @@ function evidenceCategory(value: unknown): EvidenceCategory {
   return value;
 }
 
-function relationshipResolution(value: unknown): "canonical" | "warning" {
-  if (value === "explicit" || value === "deterministic") return "canonical";
+function relationshipResolution(
+  value: unknown,
+): "explicit" | "deterministic" | "warning" {
+  if (value === "explicit" || value === "deterministic") return value;
   if (value === "ambiguous" || value === "fuzzy") return "warning";
   throw new Error("Product relationship resolution is invalid.");
 }

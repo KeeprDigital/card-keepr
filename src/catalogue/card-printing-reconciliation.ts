@@ -128,6 +128,10 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     const proposedCard = observation.candidateWithoutIdentities.card;
+    if (proposedCard === null) {
+      sourceWarnings.push(...observation.sourceWarnings);
+      continue;
+    }
     if (proposedCard.game !== retained.supportedGame) {
       diagnostics.push({
         code: "retained_evidence_invalid",
@@ -413,11 +417,6 @@ export async function reconcileRetainedCardPrintingEvidence(
         const plan = plansByObservationId.get(
           observation.sourceObservationId,
         );
-        if (plan === undefined) {
-          throw new Error(
-            "Product evidence has no reconciliation entity plan.",
-          );
-        }
         return {
           value: observation.productReleaseValue,
           sourceObservationId: observation.sourceObservationId,
@@ -425,8 +424,8 @@ export async function reconcileRetainedCardPrintingEvidence(
           sourceSnapshotId: observation.sourceSnapshotId,
           sourceLineage: retained.sourceLineage,
           capturedAt: observation.sourceCapturedAt,
-          currentCardId: plan.cardId,
-          currentPrintingId: plan.printingId,
+          currentCardId: plan?.cardId ?? null,
+          currentPrintingId: plan?.printingId ?? null,
         };
       }),
       retained.supportedGame,
@@ -460,6 +459,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     products: productCatalogue.products,
     distribution_contexts: productCatalogue.distribution_contexts,
     product_relationships: productCatalogue.product_relationships,
+    card_observed_games: retained.observations.some(
+      (observation) =>
+        observation.candidateWithoutIdentities.card !== null,
+    )
+      ? [retained.supportedGame]
+      : [],
     product_observed_games: productCatalogue.productSurfaceObserved
       ? [retained.supportedGame]
       : [],
@@ -779,9 +784,13 @@ async function catalogueDataDigest(
       });
     }
   }
+  const {
+    card_observed_games: _cardObservedGames,
+    ...catalogueCandidate
+  } = candidate;
   return sha256Text(
     canonicalJson({
-      catalogue_data: candidate,
+      catalogue_data: catalogueCandidate,
       current_memberships: [...memberships.values()].sort(compareCanonical),
       withdrawals: [...withdrawals.values()].sort(compareCanonical),
     }),

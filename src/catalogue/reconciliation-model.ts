@@ -60,6 +60,7 @@ export function compatibilityFor(
   observation: ParsedReconciliationObservation,
 ): PrintingCompatibility {
   if (
+    observation.candidateWithoutIdentities.card === null ||
     observation.candidateWithoutIdentities.printing === null ||
     observation.artworkFingerprint === null ||
     observation.printedFieldsDigest === null

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +12,7 @@ import addFormats from "ajv-formats";
 const root = resolve(import.meta.dirname, "..");
 const ingestionPort = 22_788;
 const apiPort = 22_789;
+const sourcePort = 22_790;
 
 test("the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(
@@ -22,6 +23,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const apiKey = randomUUID();
   const ingestionEnv = join(directory, "ingestion.env");
   const apiEnv = join(directory, "api.env");
+  const ingestionConfig = join(directory, "ingestion.wrangler.json");
   await Promise.all([
     writeFile(
       ingestionEnv,
@@ -31,44 +33,121 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
   ]);
   await applyMigrations(statePath);
-  const seeded = await seedProductCandidate(directory, statePath);
+  const config = JSON.parse(
+    await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
+  );
+  delete config.$schema;
+  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.d1_databases[0].migrations_dir = resolve(root, "migrations");
+  config.services = [
+    {
+      binding: "OFFICIAL_SOURCE_TRANSPORT",
+      service: "card-keepr-synthetic-official-source",
+    },
+  ];
+  await writeFile(ingestionConfig, JSON.stringify(config));
 
+  const source = startWorker({
+    config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
+    inspectorPort: 23_229,
+    port: sourcePort,
+    statePath: join(directory, "source-state"),
+  });
   const ingestion = startWorker({
-    config: "apps/ingestion/wrangler.jsonc",
+    config: ingestionConfig,
     envFile: ingestionEnv,
     inspectorPort: 23_230,
     port: ingestionPort,
     statePath,
   });
   t.after(async () => {
-    await stopWorker(ingestion);
+    await Promise.all([stopWorker(source), stopWorker(ingestion)]);
     await rm(directory, { recursive: true, force: true });
   });
-  await waitForHealth(
-    `http://127.0.0.1:${ingestionPort}/health`,
-    administrationKey,
-    ingestion,
-  );
+  await Promise.all([
+    waitForHealth(
+      `http://127.0.0.1:${sourcePort}/product-only`,
+      "",
+      source,
+    ),
+    waitForHealth(
+      `http://127.0.0.1:${ingestionPort}/health`,
+      administrationKey,
+      ingestion,
+    ),
+  ]);
   const cliEnvironment = {
     KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
+  const collected = await runCli(
+    [
+      "source",
+      "collect",
+      "--game",
+      "digimon",
+      "--lineage",
+      "digimon-en",
+      "--adapter",
+      "digimon-en@1",
+      "--request-id",
+      "products-and-releases",
+      "--url",
+      "https://synthetic-source.invalid/product-only",
+      "--idempotency-key",
+      "acceptance-product-collect",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(
+    collected.code,
+    0,
+    `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`,
+  );
+  const collectedRun = JSON.parse(collected.stdout);
+  const resumed = await runCli(
+    ["source", "resume", "--run-id", collectedRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(resumed.code, 0, resumed.stderr);
+  await waitForRunState(
+    collectedRun.id,
+    "parsing",
+    cliEnvironment,
+    ingestion,
+  );
+  const reconciled = await runCli(
+    ["run", "reconcile", "--run-id", collectedRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(
+    reconciled.code,
+    0,
+    `${reconciled.stdout}\n${reconciled.stderr}\n${ingestion.getOutput()}`,
+  );
+  const reconciliation = JSON.parse(reconciled.stdout);
+  assert.equal(reconciliation.cards.length, 0);
+  assert.equal(reconciliation.printings.length, 0);
+  assert.equal(reconciliation.products.length, 1);
+  const productId = reconciliation.products[0].id;
   const inspected = await runCli(
-    ["candidate", "inspect", "--run-id", seeded.runId, "--json"],
+    ["candidate", "inspect", "--run-id", collectedRun.id, "--json"],
     cliEnvironment,
   );
   assert.equal(inspected.code, 0, inspected.stderr);
   const inspection = JSON.parse(inspected.stdout);
-  assert.equal(inspection.run_id, seeded.runId);
-  assert.equal(inspection.candidate_digest, seeded.candidateDigest);
+  assert.equal(inspection.run_id, collectedRun.id);
+  assert.equal(inspection.diff.summary.cards_added, 0);
+  assert.deepEqual(inspection.diff.cards.added, []);
   const approved = await runCli(
     [
       "run",
       "approve",
       "--run-id",
-      seeded.runId,
+      collectedRun.id,
       "--candidate-digest",
-      seeded.candidateDigest,
+      inspection.candidate_digest,
       "--expected-current-revision",
       "catrev_spine_000",
       "--idempotency-key",
@@ -105,8 +184,22 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     api,
   );
   const headers = { authorization: `Bearer ${apiKey}` };
+  const catalogueResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue`,
+    { headers },
+  );
+  assert.equal(catalogueResponse.status, 200);
+  const catalogueDocument = await catalogueResponse.json();
+  assert.deepEqual(catalogueDocument.data.last_successful_checks, [
+    {
+      game: "digimon",
+      area: "products-and-releases",
+      checked_at:
+        catalogueDocument.data.last_successful_checks[0].checked_at,
+    },
+  ]);
   const productResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/products/${seeded.productId}?include=evidence`,
+    `http://127.0.0.1:${apiPort}/v1/products/${productId}?include=evidence`,
     { headers },
   );
   assert.equal(productResponse.status, 200);
@@ -132,128 +225,36 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ajv.errorsText(validateProduct.errors),
   );
   assert.equal(productDocument.data.releases[0].region, "unknown");
-  assert.deepEqual(productDocument.provenance["/data/official_code"], [
-    "srcobs_acceptance_product",
-  ]);
+  assert.equal(productDocument.data.releases[0].status, "announced");
+  assert.match(
+    productDocument.provenance["/data/official_code"][0],
+    /^srcobs_/u,
+  );
 
-  const [products, releases, contexts] = await Promise.all(
-    ["products", "releases", "distribution-contexts"].map((component) =>
+  const [products, releases, contexts, relationships, cards] = await Promise.all(
+    [
+      "products",
+      "releases",
+      "distribution-contexts",
+      "relationships",
+      "cards",
+    ].map((component) =>
       exportRecords(apiPort, apiKey, revisionId, component),
     ),
   );
   assert.equal(products.length, 1);
   assert.equal(releases.length, 1);
   assert.equal(contexts.length, 1);
-  assert.equal(products[0].id, seeded.productId);
+  assert.equal(products[0].id, productId);
   assert.equal(products[0].releases, undefined);
-  assert.equal(releases[0].product_id, seeded.productId);
+  assert.equal(releases[0].product_id, productId);
   assert.equal(releases[0].region, "unknown");
-  assert.equal(contexts[0].product_id, seeded.productId);
+  assert.equal(contexts[0].product_id, productId);
+  assert.equal(cards.length, 0);
+  assert.equal(relationships.length, 1);
+  assert.equal(relationships[0].kind, "distribution-context-product");
+  assert.equal(relationships[0].evidence_category, "explicit");
 });
-
-async function seedProductCandidate(directory, statePath) {
-  const runId = "run_acceptance_product";
-  const productId = "product_acceptance_unknown";
-  const candidate = {
-    fixture: "first-catalogue",
-    selected_games: ["digimon"],
-    cards: [],
-    printings: [],
-    products: [
-      {
-        reference: { kind: "official_code", value: "BT-UNKNOWN" },
-        id: productId,
-        game: "digimon",
-        official_code: "BT-UNKNOWN",
-        name: "Unknown-region Product",
-        releases: [
-          {
-            id: "release_acceptance_unknown",
-            product_id: productId,
-            region: "unknown",
-            date: { precision: "unknown", value: null },
-            status: "announced",
-          },
-        ],
-        observed: true,
-        withdrawal: null,
-        included: [
-          {
-            type: "source_observation",
-            id: "srcobs_acceptance_product",
-            captured_at: "2026-07-30T01:02:03.000Z",
-            source: "digimon-en",
-          },
-        ],
-        provenance: {
-          "/data/official_code": ["srcobs_acceptance_product"],
-          "/data/name": ["srcobs_acceptance_product"],
-          "/data/releases/0/date/precision": [
-            "srcobs_acceptance_product",
-          ],
-          "/data/releases/0/date/value": ["srcobs_acceptance_product"],
-          "/data/releases/0/status": ["srcobs_acceptance_product"],
-        },
-        disagreements: [],
-      },
-    ],
-    distribution_contexts: [
-      {
-        id: "distribution_context_acceptance",
-        game: "digimon",
-        key: "acceptance-promotion",
-        kind: "promotion",
-        label: "Acceptance promotion",
-        product_id: productId,
-        evidence_category: "explicit",
-        observed: true,
-      },
-    ],
-    product_relationships: [],
-    product_observed_games: ["digimon"],
-  };
-  const candidateDigest = sha256(canonicalJson(candidate));
-  const sqlPath = join(directory, "seed-product.sql");
-  await writeFile(
-    sqlPath,
-    `INSERT INTO ingestion_runs (
-       id, state, selected_games_json, started_at,
-       expected_current_revision_id, idempotency_key,
-       candidate_digest, candidate_catalogue_digest,
-       candidate_created_at, approval_deadline, candidate_json,
-       progress_json, warnings_json, approval_history_json
-     ) VALUES (
-       '${runId}', 'awaiting_approval', '["digimon"]',
-       '2026-07-30T01:02:03.000Z', 'catrev_spine_000',
-       'acceptance-product-seed', '${candidateDigest}', '${candidateDigest}',
-       '2026-07-30T01:02:03.000Z', '2026-08-06T01:02:03.000Z',
-       '${sqlText(JSON.stringify(candidate))}',
-       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}',
-       '[]', '[]'
-     );
-     UPDATE operation_state
-     SET active_ingestion_run_id = '${runId}'
-     WHERE singleton = 1;`,
-  );
-  const seeded = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "execute",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      "apps/ingestion/wrangler.jsonc",
-      "--persist-to",
-      statePath,
-      "--file",
-      sqlPath,
-    ],
-    processEnvironment(statePath),
-  );
-  assert.equal(seeded.code, 0, seeded.stderr || seeded.stdout);
-  return { runId, productId, candidateDigest };
-}
 
 async function exportRecords(port, apiKey, revisionId, component) {
   const response = await fetch(
@@ -299,8 +300,7 @@ function startWorker({ config, envFile, inspectorPort, port, statePath }) {
       "dev",
       "--config",
       config,
-      "--env-file",
-      envFile,
+      ...(envFile === undefined ? [] : ["--env-file", envFile]),
       "--local",
       "--ip",
       "127.0.0.1",
@@ -330,6 +330,29 @@ function startWorker({ config, envFile, inspectorPort, port, statePath }) {
     output += chunk;
   });
   return { process: child, getOutput: () => output };
+}
+
+async function waitForRunState(
+  runId,
+  expectedState,
+  environment,
+  worker,
+) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const shown = await runCli(
+      ["source", "show", "--run-id", runId, "--json"],
+      environment,
+    );
+    if (shown.code === 0) {
+      const document = JSON.parse(shown.stdout);
+      if (document.state === expectedState) return document;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  }
+  throw new Error(
+    `Run did not reach ${expectedState}\n${worker.getOutput()}`,
+  );
 }
 
 async function waitForHealth(url, key, worker) {
@@ -399,34 +422,4 @@ function processEnvironment(statePath) {
     ...environment,
     WRANGLER_LOG_PATH: join(statePath, "logs"),
   };
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort(compareUtf8)
-      .map(
-        (key) =>
-          `${JSON.stringify(key.normalize("NFC"))}:${canonicalJson(value[key])}`,
-      )
-      .join(",")}}`;
-  }
-  return typeof value === "string"
-    ? JSON.stringify(value.normalize("NFC"))
-    : JSON.stringify(value);
-}
-
-function compareUtf8(left, right) {
-  return Buffer.from(left).compare(Buffer.from(right));
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function sqlText(value) {
-  return value.replaceAll("'", "''");
 }

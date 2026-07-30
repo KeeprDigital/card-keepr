@@ -12,6 +12,16 @@ export type PublicationInstant = string & {
 type CatalogueStatus = {
   revisionId: CatalogueRevisionId;
   publishedAt: PublicationInstant;
+  lastSuccessfulChecks: readonly {
+    game: "one-piece" | "fusion-world" | "digimon" | "gundam";
+    area:
+      | "cards-and-printings"
+      | "products-and-releases"
+      | "legality-rules"
+      | "errata";
+    checked_at: PublicationInstant;
+  }[];
+  etag: string;
 };
 
 export function parseCatalogueRevisionId(value: string): CatalogueRevisionId {
@@ -32,15 +42,26 @@ export function parsePublicationInstant(value: string): PublicationInstant {
   return value as PublicationInstant;
 }
 
-export function catalogueResponse(status: CatalogueStatus): Response {
+export function catalogueResponse(
+  status: CatalogueStatus,
+  request?: Request,
+): Response {
   const currentExport = `/v1/catalogue-exports/${status.revisionId}`;
+  const headers = {
+    "cache-control": "private, no-cache",
+    etag: `"${status.etag}"`,
+    "x-catalogue-revision": status.revisionId,
+  };
+  if (request?.headers.get("if-none-match") === headers.etag) {
+    return new Response(null, { status: 304, headers });
+  }
   return Response.json(
     {
       data: {
         type: "catalogue",
         current_revision_id: status.revisionId,
         published_at: status.publishedAt,
-        last_successful_checks: [],
+        last_successful_checks: status.lastSuccessfulChecks,
         current_export: currentExport,
       },
       meta: {
@@ -56,11 +77,7 @@ export function catalogueResponse(status: CatalogueStatus): Response {
       },
     },
     {
-      headers: {
-        "cache-control": "private, no-cache",
-        etag: `"${status.revisionId}"`,
-        "x-catalogue-revision": status.revisionId,
-      },
+      headers,
     },
   );
 }

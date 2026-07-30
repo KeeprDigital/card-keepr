@@ -128,6 +128,15 @@ beforeEach(async () => {
            published_at = '2026-01-01T00:00:00.000Z'
        WHERE singleton = 1`,
     ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_freshness (
+         game, area, checked_at, ingestion_run_id
+       ) VALUES
+         ('one-piece', 'cards-and-printings',
+          '2026-01-01T01:00:00.000Z', 'run_products'),
+         ('one-piece', 'products-and-releases',
+          '2026-01-01T02:00:00.000Z', 'run_products')`,
+    ),
   ]);
 });
 
@@ -202,6 +211,63 @@ test("Product conditional reads return 304 for matching revision ETags", async (
       "catrev_products",
     );
   }
+});
+
+test("Catalogue status exposes independently checked areas and freshness-sensitive ETags", async () => {
+  const first = await api("/v1/catalogue");
+  expect(first.status).toBe(200);
+  const firstDocument = await first.json<{
+    data: {
+      current_revision_id: string;
+      last_successful_checks: {
+        game: string;
+        area: string;
+        checked_at: string;
+      }[];
+    };
+  }>();
+  expectSchema("CatalogueDocument", firstDocument);
+  expect(firstDocument.data.last_successful_checks).toEqual([
+    {
+      game: "one-piece",
+      area: "cards-and-printings",
+      checked_at: "2026-01-01T01:00:00.000Z",
+    },
+    {
+      game: "one-piece",
+      area: "products-and-releases",
+      checked_at: "2026-01-01T02:00:00.000Z",
+    },
+  ]);
+  const firstEtag = first.headers.get("etag");
+  expect(firstEtag).toMatch(/^".+"$/);
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE source_freshness
+     SET checked_at = '2026-01-02T02:00:00.000Z'
+     WHERE game = 'one-piece'
+       AND area = 'products-and-releases'`,
+  ).run();
+  const changed = await api("/v1/catalogue", {
+    "if-none-match": firstEtag!,
+  });
+  expect(changed.status).toBe(200);
+  expect(changed.headers.get("x-catalogue-revision")).toBe(
+    "catrev_products",
+  );
+  expect(changed.headers.get("etag")).not.toBe(firstEtag);
+  const changedDocument = await changed.json<{
+    data: { last_successful_checks: { checked_at: string }[] };
+  }>();
+  expect(
+    changedDocument.data.last_successful_checks.at(-1)?.checked_at,
+  ).toBe("2026-01-02T02:00:00.000Z");
+
+  const unchanged = await api("/v1/catalogue", {
+    "if-none-match": changed.headers.get("etag")!,
+  });
+  expect(unchanged.status).toBe(304);
+  expect(await unchanged.text()).toBe("");
 });
 
 test("Product detail returns revision-pinned immutable provenance and disagreements", async () => {
