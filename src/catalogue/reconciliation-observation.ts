@@ -57,6 +57,8 @@ export type ParsedReconciliationObservation = Readonly<{
 
 export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
+  state: "withdrawn";
+  effective_at: string;
   evidence: string;
 }>;
 
@@ -116,7 +118,12 @@ const membershipFields = new Set([
   "distribution_contexts",
   "source_buckets",
 ]);
-const withdrawalFields = new Set(["entity", "evidence"]);
+const withdrawalFields = new Set([
+  "entity",
+  "state",
+  "effective_at",
+  "evidence",
+]);
 
 export function parseReconciliationObservation(
   sourceObservationId: string,
@@ -492,8 +499,23 @@ function parseWithdrawal(
   if (!hasPrinting && record.entity !== "card") {
     throw new Error("A Card-only observation cannot withdraw a Printing.");
   }
+  if (record.state !== "withdrawn") {
+    throw new Error("withdrawal.state is invalid.");
+  }
+  const effectiveAt = requiredString(
+    record.effective_at,
+    "withdrawal.effective_at",
+  );
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(effectiveAt) ||
+    new Date(effectiveAt).toISOString() !== effectiveAt
+  ) {
+    throw new Error("withdrawal.effective_at must be an ISO instant.");
+  }
   return {
     entity: record.entity,
+    state: "withdrawn",
+    effective_at: effectiveAt,
     evidence: requiredString(record.evidence, "withdrawal.evidence"),
   };
 }

@@ -21,7 +21,6 @@ export default defineConfig({
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_CLOCK_MODE: "request",
-          TEST_FIXTURE_SOURCE_PLAN_KEY: "vitest-fixture-source-plan-key",
           TEST_MIGRATIONS: migrations,
         },
         outboundService: async (request) => {
@@ -179,6 +178,61 @@ function reconciliationSourceDocument(scenario: string) {
                 source_url:
                   "https://official-source.invalid/images/OP05-005-alt.png",
                 artwork_fingerprint: `sha256:${"d".repeat(64)}`,
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+  if (
+    scenario === "product-lifecycle-first" ||
+    scenario === "product-lifecycle-multiple"
+  ) {
+    const base = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber:
+        scenario === "product-lifecycle-first"
+          ? "OP11-011"
+          : "OP12-012",
+      name: "Product lifecycle Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: `/official/${scenario}/base`,
+      lineageMarker: scenario,
+      memberships: {
+        products: ["product_lifecycle_shared"],
+        distribution_contexts: [],
+        source_buckets: ["product-lifecycle"],
+      },
+    });
+    if (scenario === "product-lifecycle-first") {
+      return { cards: [base] };
+    }
+    return {
+      cards: [
+        base,
+        {
+          ...base,
+          identity_evidence: {
+            ...base.identity_evidence,
+            locator: `/official/${scenario}/alternate`,
+            artwork_fingerprint: `sha256:${"f".repeat(64)}`,
+            novelty_basis: {
+              ...base.identity_evidence.novelty_basis,
+              source_url:
+                "https://official-source.invalid/images/OP12-012-alt.png",
+              artwork_fingerprint: `sha256:${"f".repeat(64)}`,
+            },
+          },
+          appearance_evidence: {
+            images: [
+              {
+                role: "front",
+                source_url:
+                  "https://official-source.invalid/images/OP12-012-alt.png",
+                artwork_fingerprint: `sha256:${"f".repeat(64)}`,
               },
             ],
           },
@@ -586,6 +640,8 @@ function reconciliationSourceDocument(scenario: string) {
           ...observation,
           withdrawal: {
             entity: "printing",
+            state: "withdrawn",
+            effective_at: "2026-07-01T00:00:00.000Z",
             evidence: "Official withdrawal notice A",
           },
         },
@@ -593,13 +649,18 @@ function reconciliationSourceDocument(scenario: string) {
           ...observation,
           withdrawal: {
             entity: "printing",
+            state: "withdrawn",
+            effective_at: "2026-07-02T00:00:00.000Z",
             evidence: "Official withdrawal notice B",
           },
         },
       ],
     };
   }
-  if (scenario === "withdrawn-longitudinal") {
+  if (
+    scenario === "withdrawn-longitudinal" ||
+    scenario === "withdrawn-longitudinal-corroboration"
+  ) {
     return {
       cards: [
         {
@@ -615,7 +676,12 @@ function reconciliationSourceDocument(scenario: string) {
           }),
           withdrawal: {
             entity: "printing",
-            evidence: "Official withdrawal notice",
+            state: "withdrawn",
+            effective_at: "2026-07-03T00:00:00.000Z",
+            evidence:
+              scenario === "withdrawn-longitudinal-corroboration"
+                ? "Independent corroborating official notice"
+                : "Official withdrawal notice",
           },
         },
       ],
@@ -637,6 +703,8 @@ function reconciliationSourceDocument(scenario: string) {
           }),
           withdrawal: {
             entity: "printing",
+            state: "withdrawn",
+            effective_at: "2026-07-04T00:00:00.000Z",
             evidence: "A contradictory later official notice",
           },
         },
@@ -675,20 +743,39 @@ function reconciliationSourceDocument(scenario: string) {
   if (
     scenario === "gundam-authority-us" ||
     scenario === "gundam-authority-asia" ||
-    scenario === "gundam-authority-us-conflict"
+    scenario === "gundam-authority-us-conflict" ||
+    scenario === "gundam-conflict-us-first" ||
+    scenario === "gundam-conflict-asia-second" ||
+    scenario === "gundam-conflict-asia-first" ||
+    scenario === "gundam-conflict-us-second"
   ) {
+    const conflictPairOne =
+      scenario === "gundam-conflict-us-first" ||
+      scenario === "gundam-conflict-asia-second";
+    const conflictPairTwo =
+      scenario === "gundam-conflict-asia-first" ||
+      scenario === "gundam-conflict-us-second";
     return {
       cards: [
         printingObservation({
           game: "gundam",
           profile: "gundam@1",
-          cardNumber: "GD98-001",
+          cardNumber: conflictPairOne
+            ? "GD97-001"
+            : conflictPairTwo
+              ? "GD96-001"
+              : "GD98-001",
           name:
             scenario === "gundam-authority-asia"
-              ? "Authoritative Asia name"
+              ? "Formatting equivalent name"
               : scenario === "gundam-authority-us-conflict"
                 ? "Later contradictory US name"
-                : "Initial US name",
+                : scenario === "gundam-authority-us"
+                  ? "  Formatting   equivalent name  "
+                  : scenario === "gundam-conflict-asia-second" ||
+                      scenario === "gundam-conflict-us-second"
+                    ? "Substantive conflicting name"
+                    : "Initial canonical name",
           cardAttributes: {
             card_type: "unit",
             colours: ["blue"],
@@ -708,7 +795,13 @@ function reconciliationSourceDocument(scenario: string) {
           variantKey: "base",
           lineageMarker: "gundam-authority",
           memberships: {
-            products: ["product_gd98"],
+            products: [
+              conflictPairOne
+                ? "product_gd97"
+                : conflictPairTwo
+                  ? "product_gd96"
+                  : "product_gd98",
+            ],
             distribution_contexts: [],
             source_buckets: ["gundam-card-list"],
           },
@@ -789,6 +882,8 @@ function reconciliationSourceDocument(scenario: string) {
           ? {
               withdrawal: {
                 entity: "printing",
+                state: "withdrawn",
+                effective_at: "2026-07-01T00:00:00.000Z",
                 evidence: "Official withdrawal notice",
               },
             }

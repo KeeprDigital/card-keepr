@@ -106,10 +106,13 @@ it.
 ### DON!! exception
 
 The generic DON!! Card uses
-`{"kind":"functional_designation","value":"DON!!"}`, `card_type: "don"`, no
-catalogued Printings, and no Printing Image completeness promise. Official
-Product observations about DON!! designs remain source evidence and do not
-create Printings.
+`{"kind":"functional_designation","value":"DON!!"}` and `card_type: "don"`.
+Officially distinguished DON!! artworks or treatments may be catalogued as
+Printings when the ordinary exact identity evidence is present. Version 1
+coverage of those Printings and Printing Images is explicitly
+non-comprehensive: absence never proves that the DON!! Card has zero
+Printings. Product membership by itself remains Source Observation evidence
+and does not create a Printing.
 
 ## `fusion-world@1`
 
@@ -379,7 +382,8 @@ not independently make the candidate unpublishable.
 The executable prototype covers these contract boundaries:
 
 1. one One Piece Printing repeated across multiple Recordings;
-2. the generic DON!! Card with no Printing coverage;
+2. the generic DON!! Card with known Printings allowed but explicitly
+   non-comprehensive Printing and Printing Image coverage;
 3. a Fusion World Leader that exists only with a suffixed locator;
 4. a broad-query cap that blocks publication;
 5. a new Digimon mechanic retained raw as a warning;

@@ -36,6 +36,7 @@ export type { RelationshipEvidence } from "./reconciliation-relationships";
 export type ReconciliationPublicationPlan = {
   cardLifecycles: Record<string, NormalizedLifecycle>;
   printingLifecycles: Record<string, NormalizedLifecycle>;
+  productLifecycles: Record<string, NormalizedLifecycle>;
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   statements: D1PreparedStatement[];
 };
@@ -71,6 +72,7 @@ export async function reconciliationPublication(
   const result: ReconciliationPublicationPlan = {
     cardLifecycles: {},
     printingLifecycles: {},
+    productLifecycles: {},
     relationshipEvidence: {},
     statements: [],
   };
@@ -273,7 +275,116 @@ export async function reconciliationPublication(
     context.source_lineage,
     revisionId,
   );
+  result.productLifecycles = await aggregateProductLifecycles(
+    database,
+    candidate,
+    result.relationshipEvidence,
+    revisionId,
+    revisionOrder,
+  );
   return result;
+}
+
+async function aggregateProductLifecycles(
+  database: D1Database,
+  candidate: FixtureCandidate,
+  relationships: Readonly<Record<string, readonly RelationshipEvidence[]>>,
+  revisionId: string,
+  revisionOrder: string,
+): Promise<Record<string, NormalizedLifecycle>> {
+  const cards = new Map(candidate.cards.map((card) => [card.id, card]));
+  const grouped = new Map<
+    string,
+    { firstRevisionId: string; lastObservedRevisionId: string }[]
+  >();
+  for (const printing of candidate.printings) {
+    const game = cards.get(printing.card_id)?.game;
+    if (game === undefined) continue;
+    for (const relationship of relationships[printing.id] ?? []) {
+      if (relationship.relationship_kind !== "product") continue;
+      const key = productLifecycleKey(game, relationship.relationship_value);
+      grouped.set(key, [
+        ...(grouped.get(key) ?? []),
+        {
+          firstRevisionId: relationship.first_revision_id,
+          lastObservedRevisionId: relationship.last_observed_revision_id,
+        },
+      ]);
+    }
+  }
+  const revisionIds = [
+    ...new Set(
+      [...grouped.values()].flatMap((values) =>
+        values.flatMap((value) => [
+          value.firstRevisionId,
+          value.lastObservedRevisionId,
+        ]),
+      ),
+    ),
+  ];
+  const revisionOrders = new Map<string, string>([
+    [revisionId, revisionOrder],
+  ]);
+  await Promise.all(
+    revisionIds
+      .filter((id) => id !== revisionId)
+      .map(async (id) => {
+        const row = await database
+          .prepare(
+            "SELECT published_at FROM catalogue_revisions WHERE id = ?",
+          )
+          .bind(id)
+          .first<{ published_at: string }>();
+        if (row === null) {
+          throw new Error("A Product lifecycle revision is unavailable.");
+        }
+        revisionOrders.set(id, row.published_at);
+      }),
+  );
+  return Object.fromEntries(
+    [...grouped]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, values]) => {
+        const first = [...values].sort((left, right) =>
+          revisionOrderKey(
+            revisionOrders,
+            left.firstRevisionId,
+          ).localeCompare(
+            revisionOrderKey(revisionOrders, right.firstRevisionId),
+          ),
+        )[0]!;
+        const last = [...values].sort((left, right) =>
+          revisionOrderKey(
+            revisionOrders,
+            left.lastObservedRevisionId,
+          ).localeCompare(
+            revisionOrderKey(
+              revisionOrders,
+              right.lastObservedRevisionId,
+            ),
+          ),
+        ).at(-1)!;
+        return [
+          key,
+          {
+            first_revision_id: first.firstRevisionId,
+            last_observed_revision_id: last.lastObservedRevisionId,
+            withdrawn: false,
+          },
+        ];
+      }),
+  );
+}
+
+function revisionOrderKey(
+  orders: ReadonlyMap<string, string>,
+  revisionId: string,
+): string {
+  return canonicalJson([orders.get(revisionId) ?? "", revisionId]);
+}
+
+function productLifecycleKey(game: string, officialCode: string): string {
+  return canonicalJson([game, officialCode]);
 }
 
 async function retainCarriedLifecycles(
@@ -699,9 +810,9 @@ export async function withdrawalAssertionStatements(
           `INSERT INTO reconciled_withdrawal_assertions (
             entity_type, entity_id, source_lineage,
             source_snapshot_id, source_observation_set_id,
-            source_observation_id, assertion, effective,
+            source_observation_id, assertion, state, effective_at,
             evidence_json, published_catalogue_revision_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (
             entity_type, entity_id, source_observation_id
           ) DO NOTHING`,
@@ -714,7 +825,8 @@ export async function withdrawalAssertionStatements(
           withdrawal.source_observation_set_id,
           withdrawal.source_observation_id,
           withdrawal.assertion,
-          withdrawal.effective ? 1 : 0,
+          withdrawal.state,
+          withdrawal.effective_at,
           canonicalJson(withdrawal.evidence),
           publishedRevisionId,
         ),
@@ -751,17 +863,18 @@ function mergedWithdrawal(
         withdrawal.entity === entity ||
         withdrawal.entity === "card_and_printing",
     );
-  const unique = new Map(
-    withdrawals.map((withdrawal) => [
-      canonicalJson({
-        entity,
-        assertion: withdrawal.assertion,
-        effective: withdrawal.effective,
-        evidence: withdrawal.evidence,
-      }),
-      withdrawal,
-    ]),
-  );
+  const unique = new Map<string, ProvenancedWithdrawal>();
+  for (const withdrawal of [...withdrawals].sort((left, right) =>
+    canonicalJson(left).localeCompare(canonicalJson(right)),
+  )) {
+    const semantic = canonicalJson({
+      entity,
+      assertion: withdrawal.assertion,
+      state: withdrawal.state,
+      effective_at: withdrawal.effective_at,
+    });
+    if (!unique.has(semantic)) unique.set(semantic, withdrawal);
+  }
   if (unique.size > 1) {
     throw new Error("Conflicting explicit withdrawal evidence was retained.");
   }

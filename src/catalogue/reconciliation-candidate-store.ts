@@ -45,6 +45,7 @@ export async function persistReviewableCandidate(
     candidate: FixtureCandidate;
     digestPayloadJson: string;
     candidateDigest: string;
+    candidateCatalogueDigest: string;
     observedAt: string;
   },
 ): Promise<void> {
@@ -117,6 +118,7 @@ export async function persistReviewableCandidate(
          SET state = 'awaiting_approval',
              candidate_json = ?,
              candidate_digest = ?,
+             candidate_catalogue_digest = ?,
              candidate_created_at = ?,
              approval_deadline = ?,
              warnings_json = ?,
@@ -127,6 +129,7 @@ export async function persistReviewableCandidate(
       .bind(
         canonicalJson(input.candidate),
         input.candidateDigest,
+        input.candidateCatalogueDigest,
         input.observedAt,
         approvalDeadline,
         canonicalJson(runWarnings),

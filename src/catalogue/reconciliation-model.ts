@@ -21,7 +21,6 @@ export type {
 
 export type ProvenancedWithdrawal = Withdrawal & {
   assertion: "withdrawn";
-  effective: true;
   source_lineage: string;
   source_snapshot_id: string;
   source_observation_set_id: string;

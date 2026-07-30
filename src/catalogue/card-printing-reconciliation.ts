@@ -15,6 +15,7 @@ import {
   canonicalCardConflict,
   existingCard,
   gundamCrossLocaleEvidenceCompatible,
+  hasCurrentCardObservationFromLineage,
   hasOtherGundamLocaleEvidence,
   printingAtLocator,
   printingsWithAppearance,
@@ -144,14 +145,29 @@ export async function reconcileRetainedCardPrintingEvidence(
           "Known DON!! Printing evidence is retained when present, but Official Source coverage is incomplete and absence never proves zero Printings.",
       });
     }
-    const canonicalFacts = canonicalJson(proposedCard);
-    const priorFacts = localCardFacts.get(cardId);
     const publishedConflict = await canonicalCardConflict(
       database,
       cardId,
       proposedCard,
       retained.sourceLineage,
     );
+    const carriedCard = cards.get(cardId);
+    const retainAsiaAuthority =
+      proposedCard.game === "gundam" &&
+      retained.sourceLineage === "gundam-en-us" &&
+      carriedCard !== undefined &&
+      (await hasCurrentCardObservationFromLineage(
+        database,
+        cardId,
+        "gundam-en-asia",
+      ));
+    let acceptedCard = proposedCard;
+    if (retainAsiaAuthority) {
+      const { id: _carriedId, ...authoritativeCard } = carriedCard;
+      acceptedCard = authoritativeCard;
+    }
+    const canonicalFacts = canonicalJson(acceptedCard);
+    const priorFacts = localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
       (priorFacts !== undefined && priorFacts !== canonicalFacts)
@@ -167,7 +183,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     } else {
       localCardFacts.set(cardId, canonicalFacts);
-      cards.set(cardId, { id: cardId, ...proposedCard });
+      cards.set(cardId, { id: cardId, ...acceptedCard });
     }
 
     let compatibility: PrintingCompatibility | null = null;
@@ -312,7 +328,6 @@ export async function reconcileRetainedCardPrintingEvidence(
           : {
               ...observation.withdrawal,
               assertion: "withdrawn",
-              effective: true,
               source_lineage: retained.sourceLineage,
               source_snapshot_id: retained.sourceSnapshotId,
               source_observation_set_id: retained.observationSetId,
@@ -387,6 +402,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     observation_plans: digestObservationPlans(plans),
   });
   const candidateDigest = await sha256Text(digestPayloadJson);
+  const candidateCatalogueDigest = await catalogueDataDigest(
+    database,
+    candidate,
+    plans,
+    retained.sourceLineage,
+  );
   await persistReviewableCandidate(database, {
     runId,
     observationSetId: retained.observationSetId,
@@ -397,6 +418,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     candidate,
     digestPayloadJson,
     candidateDigest,
+    candidateCatalogueDigest,
     observedAt,
   });
   return {
@@ -467,27 +489,199 @@ function digestObservationPlans(
     withdrawal: ProvenancedWithdrawal | null;
   }[],
 ): Record<string, unknown>[] {
-  const semanticPlans = plans.map(
-    ({ sourceObservationId: _sourceObservationId, withdrawal, ...semantic }) => ({
-      ...semantic,
-      withdrawal:
-        withdrawal === null
-          ? null
-          : {
-              entity: withdrawal.entity,
-              assertion: withdrawal.assertion,
-              effective: withdrawal.effective,
-              evidence: withdrawal.evidence,
-            },
-    }),
-  );
-  return [
-    ...new Map(
-      semanticPlans.map((plan) => [canonicalJson(plan), plan]),
-    ).values(),
-  ].sort((left, right) =>
+  return [...plans].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
+}
+
+async function catalogueDataDigest(
+  database: D1Database,
+  candidate: FixtureCandidate,
+  plans: readonly {
+    cardId: string;
+    printingId: string | null;
+    locator: string | null;
+    variantKey: string | null;
+    memberships: Memberships;
+    withdrawal: ProvenancedWithdrawal | null;
+  }[],
+  observedSourceLineage: string,
+): Promise<string> {
+  const printingIds = new Set(
+    candidate.printings.map((printing) => printing.id),
+  );
+  const cardIds = new Set(candidate.cards.map((card) => card.id));
+  const [storedMemberships, storedLocators, storedCards, storedPrintings] =
+    await Promise.all([
+      database
+        .prepare(
+          `SELECT printing_id, source_lineage, relationship_kind,
+                  relationship_value
+           FROM reconciled_printing_memberships
+           WHERE current = 1
+           ORDER BY printing_id, source_lineage,
+                    relationship_kind, relationship_value`,
+        )
+        .all<{
+          printing_id: string;
+          source_lineage: string;
+          relationship_kind: string;
+          relationship_value: string;
+        }>(),
+      database
+        .prepare(
+          `SELECT printing_id, source_lineage, locator, variant_key
+           FROM reconciled_printing_locators
+           WHERE current = 1
+           ORDER BY printing_id, source_lineage, locator`,
+        )
+        .all<{
+          printing_id: string;
+          source_lineage: string;
+          locator: string;
+          variant_key: string | null;
+        }>(),
+      database
+        .prepare(
+          `SELECT id, withdrawal_evidence_json
+           FROM reconciled_cards
+           WHERE withdrawn = 1
+           ORDER BY id`,
+        )
+        .all<{ id: string; withdrawal_evidence_json: string | null }>(),
+      database
+        .prepare(
+          `SELECT id, withdrawal_evidence_json
+           FROM reconciled_printings
+           WHERE withdrawn = 1
+           ORDER BY id`,
+        )
+        .all<{ id: string; withdrawal_evidence_json: string | null }>(),
+    ]);
+  const memberships = new Map<string, Record<string, unknown>>();
+  for (const row of storedMemberships.results) {
+    if (
+      !printingIds.has(row.printing_id) ||
+      row.source_lineage === observedSourceLineage
+    ) {
+      continue;
+    }
+    const semantic = {
+      printing_id: row.printing_id,
+      source_lineage: row.source_lineage,
+      relationship_kind: row.relationship_kind,
+      relationship_value: row.relationship_value,
+    };
+    memberships.set(canonicalJson(semantic), semantic);
+  }
+  const locators = new Map<string, Record<string, unknown>>();
+  for (const row of storedLocators.results) {
+    if (
+      !printingIds.has(row.printing_id) ||
+      row.source_lineage === observedSourceLineage
+    ) {
+      continue;
+    }
+    const semantic = {
+      printing_id: row.printing_id,
+      source_lineage: row.source_lineage,
+      locator: row.locator,
+      variant_key: row.variant_key,
+    };
+    locators.set(canonicalJson(semantic), semantic);
+  }
+  const withdrawals = new Map<string, Record<string, unknown>>();
+  for (const [entityType, rows, identities] of [
+    ["card", storedCards.results, cardIds],
+    ["printing", storedPrintings.results, printingIds],
+  ] as const) {
+    for (const row of rows) {
+      if (!identities.has(row.id) || row.withdrawal_evidence_json === null) {
+        continue;
+      }
+      const evidence = JSON.parse(row.withdrawal_evidence_json) as
+        Record<string, unknown>;
+      const semantic = {
+        entity_type: entityType,
+        entity_id: row.id,
+        assertion: evidence.assertion,
+        state: evidence.state,
+        effective_at: evidence.effective_at,
+      };
+      withdrawals.set(`${entityType}:${row.id}`, semantic);
+    }
+  }
+  for (const plan of plans) {
+    if (plan.printingId !== null) {
+      for (const membership of [
+        ...plan.memberships.products.map((value) => ({
+          kind: "product",
+          value,
+        })),
+        ...plan.memberships.distribution_contexts.map((value) => ({
+          kind: "distribution_context",
+          value,
+        })),
+        ...plan.memberships.source_buckets.map((value) => ({
+          kind: "source_bucket",
+          value,
+        })),
+      ]) {
+        const semantic = {
+          printing_id: plan.printingId,
+          source_lineage: observedSourceLineage,
+          relationship_kind: membership.kind,
+          relationship_value: membership.value,
+        };
+        memberships.set(canonicalJson(semantic), semantic);
+      }
+      if (plan.locator !== null) {
+        const semantic = {
+          printing_id: plan.printingId,
+          source_lineage: observedSourceLineage,
+          locator: plan.locator,
+          variant_key: plan.variantKey,
+        };
+        locators.set(canonicalJson(semantic), semantic);
+      }
+    }
+    if (plan.withdrawal === null) continue;
+    const targets = [
+      ...(plan.withdrawal.entity === "card" ||
+      plan.withdrawal.entity === "card_and_printing"
+        ? [{ entityType: "card", entityId: plan.cardId }]
+        : []),
+      ...(plan.printingId !== null &&
+      (plan.withdrawal.entity === "printing" ||
+        plan.withdrawal.entity === "card_and_printing")
+        ? [{ entityType: "printing", entityId: plan.printingId }]
+        : []),
+    ];
+    for (const target of targets) {
+      withdrawals.set(`${target.entityType}:${target.entityId}`, {
+        entity_type: target.entityType,
+        entity_id: target.entityId,
+        assertion: plan.withdrawal.assertion,
+        state: plan.withdrawal.state,
+        effective_at: plan.withdrawal.effective_at,
+      });
+    }
+  }
+  return sha256Text(
+    canonicalJson({
+      catalogue_data: candidate,
+      current_memberships: [...memberships.values()].sort(compareCanonical),
+      current_locators: [...locators.values()].sort(compareCanonical),
+      withdrawals: [...withdrawals.values()].sort(compareCanonical),
+    }),
+  );
+}
+
+function compareCanonical(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): number {
+  return canonicalJson(left).localeCompare(canonicalJson(right));
 }
 
 async function publishedWithdrawalConflictDiagnostics(
@@ -517,7 +711,7 @@ async function publishedWithdrawalConflictDiagnostics(
     for (const target of targets) {
       const prior = await database
         .prepare(
-          `SELECT assertion, effective, evidence_json
+          `SELECT assertion, state, effective_at
            FROM reconciled_withdrawal_assertions
            WHERE entity_type = ? AND entity_id = ?
            ORDER BY published_catalogue_revision_id, source_observation_id`,
@@ -525,21 +719,21 @@ async function publishedWithdrawalConflictDiagnostics(
         .bind(target.entityType, target.entityId)
         .all<{
           assertion: string;
-          effective: number;
-          evidence_json: string;
+          state: string;
+          effective_at: string;
         }>();
       const proposedSemantic = canonicalJson({
         assertion: withdrawal.assertion,
-        effective: withdrawal.effective,
-        evidence: withdrawal.evidence,
+        state: withdrawal.state,
+        effective_at: withdrawal.effective_at,
       });
       if (
         prior.results.some(
           (row) =>
             canonicalJson({
               assertion: row.assertion,
-              effective: row.effective === 1,
-              evidence: JSON.parse(row.evidence_json),
+              state: row.state,
+              effective_at: row.effective_at,
             }) !== proposedSemantic,
         )
       ) {
@@ -570,7 +764,7 @@ function withdrawalConflictDiagnostics(
 ): Diagnostic[] {
   const assertions = new Map<
     string,
-    { evidence: Set<string>; observationIds: Set<string> }
+    { semantics: Set<string>; observationIds: Set<string> }
   >();
   for (const plan of plans) {
     const withdrawal = plan.withdrawal;
@@ -588,16 +782,22 @@ function withdrawalConflictDiagnostics(
     ];
     for (const target of targets) {
       const grouped = assertions.get(target) ?? {
-        evidence: new Set<string>(),
+        semantics: new Set<string>(),
         observationIds: new Set<string>(),
       };
-      grouped.evidence.add(withdrawal.evidence);
+      grouped.semantics.add(
+        canonicalJson({
+          assertion: withdrawal.assertion,
+          state: withdrawal.state,
+          effective_at: withdrawal.effective_at,
+        }),
+      );
       grouped.observationIds.add(plan.sourceObservationId);
       assertions.set(target, grouped);
     }
   }
   return [...assertions]
-    .filter(([, assertion]) => assertion.evidence.size > 1)
+    .filter(([, assertion]) => assertion.semantics.size > 1)
     .map(([target, assertion]) => ({
       code: "withdrawal_evidence_conflict" as const,
       source_observation_id: [...assertion.observationIds].sort()[0] ?? null,

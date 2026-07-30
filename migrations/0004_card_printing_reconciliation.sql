@@ -8,6 +8,92 @@ ALTER TABLE ingestion_evidence_plans
 ADD COLUMN plan_origin TEXT NOT NULL DEFAULT 'production'
 CHECK (plan_origin IN ('production', 'synthetic_fixture'));
 
+ALTER TABLE ingestion_runs
+ADD COLUMN candidate_catalogue_digest TEXT;
+
+DROP TRIGGER guard_candidate_finalization;
+
+CREATE TRIGGER guard_candidate_finalization
+BEFORE UPDATE OF state ON ingestion_runs
+WHEN OLD.state = 'reconciling'
+  AND NEW.state = 'awaiting_approval'
+  AND (
+    NEW.candidate_digest IS NULL
+    OR NEW.candidate_catalogue_digest IS NULL
+    OR NEW.candidate_created_at IS NULL
+    OR NEW.approval_deadline IS NULL
+    OR NEW.approval_deadline <> strftime(
+      '%Y-%m-%dT%H:%M:%fZ',
+      NEW.candidate_created_at,
+      '+7 days'
+    )
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'invalid_candidate_deadline');
+END;
+
+DROP TRIGGER guard_fixed_candidate;
+
+CREATE TRIGGER guard_fixed_candidate
+BEFORE UPDATE OF
+  candidate_digest,
+  candidate_catalogue_digest,
+  candidate_created_at,
+  approval_deadline,
+  expected_current_revision_id,
+  candidate_json,
+  selected_games_json,
+  warnings_json
+ON ingestion_runs
+WHEN OLD.state IN (
+  'awaiting_approval',
+  'publishing',
+  'published',
+  'rejected',
+  'expired',
+  'failed'
+)
+  AND (
+    OLD.candidate_digest IS NOT NEW.candidate_digest
+    OR OLD.candidate_catalogue_digest
+      IS NOT NEW.candidate_catalogue_digest
+    OR OLD.candidate_created_at IS NOT NEW.candidate_created_at
+    OR OLD.approval_deadline IS NOT NEW.approval_deadline
+    OR OLD.expected_current_revision_id
+      IS NOT NEW.expected_current_revision_id
+    OR OLD.candidate_json IS NOT NEW.candidate_json
+    OR OLD.selected_games_json IS NOT NEW.selected_games_json
+    OR OLD.warnings_json IS NOT NEW.warnings_json
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'candidate_immutable');
+END;
+
+DROP TRIGGER guard_no_change_result;
+
+CREATE TRIGGER guard_no_change_result
+BEFORE INSERT ON ingestion_no_change_results
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM ingestion_runs AS run
+  JOIN operation_state AS operation ON operation.singleton = 1
+  JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+  JOIN catalogue_revisions AS revision
+    ON revision.id = catalogue.current_revision_id
+  WHERE run.id = NEW.ingestion_run_id
+    AND run.state = 'awaiting_approval'
+    AND run.candidate_digest = NEW.candidate_digest
+    AND run.expected_current_revision_id = NEW.catalogue_revision_id
+    AND operation.active_ingestion_run_id = run.id
+    AND operation.recovery_health = 'healthy'
+    AND catalogue.current_revision_id = NEW.catalogue_revision_id
+    AND revision.content_digest = run.candidate_catalogue_digest
+    AND NEW.checked_at < run.approval_deadline
+)
+BEGIN
+  SELECT RAISE(ABORT, 'no_change_guard_failed');
+END;
+
 INSERT INTO source_adapter_versions (
   adapter_version,
   source_lineage,
@@ -206,7 +292,8 @@ CREATE TABLE reconciled_withdrawal_assertions (
     REFERENCES source_observation_sets(id),
   source_observation_id TEXT NOT NULL,
   assertion TEXT NOT NULL,
-  effective INTEGER NOT NULL CHECK (effective IN (0, 1)),
+  state TEXT NOT NULL CHECK (state = 'withdrawn'),
+  effective_at TEXT NOT NULL,
   evidence_json TEXT NOT NULL,
   published_catalogue_revision_id TEXT NOT NULL
     REFERENCES catalogue_revisions(id),

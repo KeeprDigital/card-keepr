@@ -13,7 +13,6 @@ import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,
   type ReconciliationPublicationPlan,
-  withdrawalAssertionStatements,
 } from "./reconciliation-publication";
 import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
@@ -51,6 +50,7 @@ type RunRow = {
   linked_run_id: string | null;
   idempotency_key: string;
   candidate_digest: string | null;
+  candidate_catalogue_digest: string | null;
   candidate_created_at: string | null;
   approval_deadline: string | null;
   approval_json: string | null;
@@ -577,7 +577,10 @@ async function approveRunAttempt(
     )
     .bind(catalogueState.current_revision_id)
     .first<{ content_digest: string }>();
-  if (currentRevision?.content_digest === request.candidate_digest) {
+  if (
+    run.candidate_catalogue_digest !== null &&
+    currentRevision?.content_digest === run.candidate_catalogue_digest
+  ) {
     return publishNoChange(
       database,
       run,
@@ -606,7 +609,7 @@ async function approveRunAttempt(
   );
   const catalogueExport = await buildCatalogueExport(
     candidate,
-    request.candidate_digest,
+    requiredCandidateCatalogueDigest(run),
     revisionId,
     now,
     reconciliation === null
@@ -614,6 +617,7 @@ async function approveRunAttempt(
       : {
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
+          products: reconciliation.productLifecycles,
           relationships: reconciliation.relationshipEvidence,
         },
     sourceFreshness,
@@ -898,6 +902,7 @@ async function startPreparedRun(
     linked_run_id: input.linkedRunId,
     idempotency_key: input.idempotencyKey,
     candidate_digest: input.candidateDigest,
+    candidate_catalogue_digest: input.candidateDigest,
     candidate_created_at: startedAt,
     approval_deadline: approvalDeadline,
     approval_json: null,
@@ -933,6 +938,7 @@ async function startPreparedRun(
             linked_run_id,
             idempotency_key,
             candidate_digest,
+            candidate_catalogue_digest,
             candidate_created_at,
             approval_deadline,
             approval_json,
@@ -950,7 +956,7 @@ async function startPreparedRun(
             freshness_checked_at
           ) VALUES (
             ?, 'planning', ?, ?, ?, ?, ?,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
             NULL, ?, '[]', '[]', NULL, NULL, NULL
           )`,
         )
@@ -981,12 +987,14 @@ async function startPreparedRun(
           `UPDATE ingestion_runs
           SET state = 'awaiting_approval',
               candidate_digest = ?,
+              candidate_catalogue_digest = ?,
               candidate_created_at = ?,
               approval_deadline = ?,
               progress_json = ?
           WHERE id = ? AND state = 'reconciling'`,
         )
         .bind(
+          input.candidateDigest,
           input.candidateDigest,
           startedAt,
           approvalDeadline,
@@ -1055,10 +1063,11 @@ async function publishNoChange(
     resulting_revision_id: request.expected_current_revision_id,
     freshness_checked_at: now,
   });
-  const withdrawalStatements = await withdrawalAssertionStatements(
+  const reconciliation = await reconciliationPublication(
     database,
     run.id,
     request.expected_current_revision_id,
+    now,
   );
   try {
     await database.batch([
@@ -1094,7 +1103,7 @@ async function publishNoChange(
           JSON.stringify(progressFor("publishing")),
           run.id,
         ),
-      ...withdrawalStatements,
+      ...(reconciliation?.statements ?? []),
       ...freshnessStatements(
         database,
         parseSelectedGames(run.selected_games_json),
@@ -1630,7 +1639,7 @@ async function commitVerifiedPublication(
         revisionId,
         input.run.id,
         publishedAt,
-        input.run.candidate_digest,
+        requiredCandidateCatalogueDigest(input.run),
         input.run.expected_current_revision_id,
         input.run.candidate_digest,
       ),
@@ -1847,7 +1856,7 @@ async function reconcileReservedPublication(
   );
   const catalogueExport = await buildCatalogueExport(
     candidate,
-    approval.candidate_digest,
+    requiredCandidateCatalogueDigest(run),
     revisionId,
     publishedAt,
     reconciliation === null
@@ -1855,6 +1864,7 @@ async function reconcileReservedPublication(
       : {
           cards: reconciliation.cardLifecycles,
           printings: reconciliation.printingLifecycles,
+          products: reconciliation.productLifecycles,
           relationships: reconciliation.relationshipEvidence,
         },
     sourceFreshness,
@@ -1917,6 +1927,16 @@ async function reconcileReservedPublication(
     observedAt,
     problem,
   );
+}
+
+function requiredCandidateCatalogueDigest(run: RunRow): string {
+  if (
+    run.candidate_catalogue_digest === null ||
+    !isSha256Digest(run.candidate_catalogue_digest)
+  ) {
+    throw new Error("The candidate Catalogue Data digest is invalid.");
+  }
+  return run.candidate_catalogue_digest;
 }
 
 async function listCatalogueExportPrefix(

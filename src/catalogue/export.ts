@@ -85,6 +85,7 @@ export async function buildCatalogueExport(
   lifecycles?: {
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
+    products?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
   sourceFreshness?: Readonly<Partial<Record<SupportedGame, string>>>,
@@ -196,6 +197,7 @@ async function exportRecords(
   lifecycles?: {
     cards: Readonly<Record<string, NormalizedLifecycle>>;
     printings: Readonly<Record<string, NormalizedLifecycle>>;
+    products?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
   },
 ): Promise<
@@ -259,12 +261,15 @@ async function exportRecords(
         game: card.game,
         official_code: relationship.relationship_value,
         name: relationship.relationship_value,
-        lifecycle: {
-          first_revision_id: relationship.first_revision_id,
-          last_observed_revision_id:
-            relationship.last_observed_revision_id,
-          withdrawn: false,
-        },
+        lifecycle:
+          lifecycles?.products?.[
+            productLifecycleKey(card.game, relationship.relationship_value)
+          ] ?? {
+            first_revision_id: relationship.first_revision_id,
+            last_observed_revision_id:
+              relationship.last_observed_revision_id,
+            withdrawn: false,
+          },
       })),
   );
   const distributionContexts = uniqueById(
@@ -340,6 +345,10 @@ async function exportRecords(
       }))
       .sort((left, right) => left.id.localeCompare(right.id)),
   };
+}
+
+function productLifecycleKey(game: string, officialCode: string): string {
+  return canonicalJson([game, officialCode]);
 }
 
 function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {

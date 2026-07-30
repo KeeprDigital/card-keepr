@@ -8,6 +8,8 @@ import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import type { FixtureCandidate } from "../../../src/catalogue/fixture";
+import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -241,7 +243,8 @@ test("retained immutable evidence publishes stable identities and warns when ear
         evidence: {
           entity: "printing",
           assertion: "withdrawn",
-          effective: true,
+          state: "withdrawn",
+          effective_at: "2026-07-01T00:00:00.000Z",
           evidence: "Official withdrawal notice",
           source_lineage: "one-piece-en",
           source_snapshot_id: expect.stringMatching(/^srcsnap_/),
@@ -268,7 +271,8 @@ test("retained immutable evidence publishes stable identities and warns when ear
           evidence: {
             entity: "printing",
             assertion: "withdrawn",
-            effective: true,
+            state: "withdrawn",
+            effective_at: "2026-07-01T00:00:00.000Z",
             evidence: "Official withdrawal notice",
             source_lineage: "one-piece-en",
             source_snapshot_id: expect.stringMatching(/^srcsnap_/),
@@ -308,10 +312,14 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     "expected_current_revision_id",
   );
   const persisted = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT candidate_json FROM ingestion_runs WHERE id = ?",
+    `SELECT candidate_json, candidate_catalogue_digest
+     FROM ingestion_runs WHERE id = ?`,
   )
     .bind(run.id)
-    .first<{ candidate_json: string }>();
+    .first<{
+      candidate_json: string;
+      candidate_catalogue_digest: string;
+    }>();
   const candidate = JSON.parse(
     persisted?.candidate_json ?? "{}",
   ) as FixtureCandidate;
@@ -330,12 +338,13 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   if (publication === null) throw new Error("publication plan missing");
   const catalogueExport = await buildCatalogueExport(
     candidate,
-    digest,
+    persisted?.candidate_catalogue_digest ?? "",
     revisionId,
     approvedAt,
     {
       cards: publication.cardLifecycles,
       printings: publication.printingLifecycles,
+      products: publication.productLifecycles,
       relationships: publication.relationshipEvidence,
     },
   );
@@ -679,28 +688,13 @@ test("the production source-plan route rejects synthetic fixture adapters withou
   expect(retained?.count).toBe(0);
 });
 
-test("the test-only fixture route compares its secret without accepting prefix or length variants", async () => {
-  for (const attemptedKey of [
-    "vitest-fixture-source-plan-ke",
-    "vitest-fixture-source-plan-key!",
-    "vitest-fixture-source-plan-kex",
-  ]) {
-    const blocked = await request(
-      "/v1/internal/fixture-ingestion-runs/evidence",
-      {
-        supported_game: "one-piece",
-        source_lineage: "one-piece-en",
-        adapter_version: "fixture-one-piece-json@1",
-        idempotency_key: `fixture-secret-${attemptedKey.length}-${attemptedKey.at(-1)}`,
-        requests: [],
-      },
-      {
-        "x-card-keepr-fixture-source-plan-key": attemptedKey,
-      },
-    );
-    expect(blocked.response.status).toBe(404);
-    expect(blocked.document).toMatchObject({ code: "route_not_found" });
-  }
+test("the production Worker has no route capable of injecting synthetic fixture plans", async () => {
+  const blocked = await post(
+    "/v1/internal/fixture-ingestion-runs/evidence",
+    {},
+  );
+  expect(blocked.response.status).toBe(404);
+  expect(blocked.document).toMatchObject({ code: "not_found" });
 });
 
 test("one complete retained set can publish multiple Printings without collapsing their identities", async () => {
@@ -718,6 +712,44 @@ test("one complete retained set can publish multiple Printings without collapsin
   expect(new Set(printingIds).size).toBe(2);
   const published = await approve(reconciled.document);
   expect(published.response.status).toBe(200);
+});
+
+test("Product lifecycle aggregates every related Printing deterministically", async () => {
+  const firstRun = await collect(
+    "/reconciliation/product-lifecycle-first",
+    "reconcile-product-lifecycle-first",
+  );
+  const first = await reconcile(firstRun.id);
+  const firstPublished = await approve(first.document);
+  const firstRevision = requiredString(
+    firstPublished.document,
+    "resulting_revision_id",
+  );
+
+  const multipleRun = await collect(
+    "/reconciliation/product-lifecycle-multiple",
+    "reconcile-product-lifecycle-multiple",
+  );
+  const multiple = await reconcile(multipleRun.id);
+  const multiplePublished = await approve(multiple.document);
+  const latestRevision = requiredString(
+    multiplePublished.document,
+    "resulting_revision_id",
+  );
+  const product = (
+    await exportComponentRecords(latestRevision, "products")
+  ).find(
+    (record) =>
+      record.game === "one-piece" &&
+      record.official_code === "product_lifecycle_shared",
+  );
+  expect(product).toMatchObject({
+    lifecycle: {
+      first_revision_id: firstRevision,
+      last_observed_revision_id: latestRevision,
+      withdrawn: false,
+    },
+  });
 });
 
 test("the profile registry strips and warns on unknown nested fields while enforcing exact numeric types", async () => {
@@ -931,12 +963,12 @@ test("withdrawal assertions are longitudinal, append-only, and preserve the firs
   );
 
   const repeatRun = await collect(
-    "/reconciliation/withdrawn-longitudinal",
+    "/reconciliation/withdrawn-longitudinal-corroboration",
     "reconcile-withdrawal-longitudinal-repeat",
   );
   const repeat = await reconcile(repeatRun.id);
   expect(repeat.response.status).toBe(200);
-  expect(repeat.document.candidate_digest).toBe(
+  expect(repeat.document.candidate_digest).not.toBe(
     first.document.candidate_digest,
   );
   const repeated = await approve(repeat.document);
@@ -1164,7 +1196,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   }
 }, 20_000);
 
-test("Gundam EN-ASIA canonical facts win independent of source run order", async () => {
+test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
   const usRun = await collect(
     "/reconciliation/gundam-authority-us",
     "reconcile-gundam-authority-us-first",
@@ -1190,11 +1222,11 @@ test("Gundam EN-ASIA canonical facts win independent of source run order", async
   expect(asia.response.status).toBe(200);
   expect(requiredFirst(asia.document, "cards")).toMatchObject({
     id: requiredString(requiredFirst(us.document, "cards"), "id"),
-    name: "Authoritative Asia name",
+    name: "Formatting equivalent name",
   });
   await approve(asia.document);
 
-  const conflictRun = await collect(
+  const laterUsRun = await collect(
     "/reconciliation/gundam-authority-us-conflict",
     "reconcile-gundam-authority-us-conflict",
     {
@@ -1203,16 +1235,67 @@ test("Gundam EN-ASIA canonical facts win independent of source run order", async
       adapter: "fixture-gundam-en-us-json@1",
     },
   );
-  const conflict = await reconcile(conflictRun.id);
-  expect(conflict.response.status).toBe(409);
-  expect(conflict.document).toMatchObject({
+  const laterUs = await reconcile(laterUsRun.id);
+  expect(laterUs.response.status).toBe(409);
+  expect(laterUs.document).toMatchObject({
     diagnostics: [
       expect.objectContaining({ code: "canonical_card_conflict" }),
     ],
   });
-});
 
-test("repeated semantically identical retained evidence keeps one candidate digest and records no change", async () => {
+  for (const sequence of [
+    [
+      "gundam-conflict-us-first",
+      "gundam-en-us",
+      "fixture-gundam-en-us-json@1",
+      "gundam-conflict-asia-second",
+      "gundam-en-asia",
+      "fixture-gundam-en-asia-json@1",
+    ],
+    [
+      "gundam-conflict-asia-first",
+      "gundam-en-asia",
+      "fixture-gundam-en-asia-json@1",
+      "gundam-conflict-us-second",
+      "gundam-en-us",
+      "fixture-gundam-en-us-json@1",
+    ],
+  ] as const) {
+    const [firstScenario, firstLineage, firstAdapter, secondScenario, secondLineage, secondAdapter] =
+      sequence;
+    const firstRun = await collect(
+      `/reconciliation/${firstScenario}`,
+      `reconcile-${firstScenario}`,
+      {
+        game: "gundam",
+        lineage: firstLineage,
+        adapter: firstAdapter,
+      },
+    );
+    const first = await reconcile(firstRun.id);
+    expect(first.response.status).toBe(200);
+    await approve(first.document);
+
+    const secondRun = await collect(
+      `/reconciliation/${secondScenario}`,
+      `reconcile-${secondScenario}`,
+      {
+        game: "gundam",
+        lineage: secondLineage,
+        adapter: secondAdapter,
+      },
+    );
+    const second = await reconcile(secondRun.id);
+    expect(second.response.status).toBe(409);
+    expect(second.document).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({ code: "canonical_card_conflict" }),
+      ],
+    });
+  }
+}, 20_000);
+
+test("fresh provenance changes the approval digest but records semantic no-change", async () => {
   const firstRun = await collect(
     "/reconciliation/repeatable",
     "reconcile-repeatable-first",
@@ -1229,7 +1312,7 @@ test("repeated semantically identical retained evidence keeps one candidate dige
     "reconcile-repeatable-second",
   );
   const second = await reconcile(secondRun.id);
-  expect(second.document.candidate_digest).toBe(
+  expect(second.document.candidate_digest).not.toBe(
     first.document.candidate_digest,
   );
   const secondPublished = await approve(second.document);
@@ -1239,7 +1322,7 @@ test("repeated semantically identical retained evidence keeps one candidate dige
   });
 });
 
-test("reversing retained observation order preserves the candidate digest and relationship result", async () => {
+test("reversed retained observation provenance preserves the semantic relationship result", async () => {
   const forwardRun = await collect(
     "/reconciliation/deterministic-forward",
     "reconcile-deterministic-forward",
@@ -1256,7 +1339,7 @@ test("reversing retained observation order preserves the candidate digest and re
     "reconcile-deterministic-reverse",
   );
   const reverse = await reconcile(reverseRun.id);
-  expect(reverse.document.candidate_digest).toBe(
+  expect(reverse.document.candidate_digest).not.toBe(
     forward.document.candidate_digest,
   );
   const repeated = await approve(reverse.document);
@@ -1461,6 +1544,81 @@ test("sequential selected-game publications retain the complete current catalogu
     )
     .map(({ to }) => (to as Record<string, unknown>).id);
   expect(new Set(productTargets).size).toBe(2);
+
+  const refreshRun = await collect(
+    "/reconciliation/base",
+    "reconcile-union-one-piece-refresh",
+  );
+  const refresh = await reconcile(refreshRun.id);
+  const retainedPlan = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id
+     FROM reconciliation_candidates
+     WHERE ingestion_run_id = ?
+     ORDER BY source_observation_id
+     LIMIT 1`,
+  )
+    .bind(refreshRun.id)
+    .first<{ source_observation_id: string }>();
+  const digests = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT run.candidate_digest, run.candidate_catalogue_digest,
+            revision.content_digest
+     FROM ingestion_runs AS run
+     JOIN catalogue_revisions AS revision ON revision.id = ?
+     WHERE run.id = ?`,
+  )
+    .bind(revisionId, refreshRun.id)
+    .first<{
+      candidate_digest: string;
+      candidate_catalogue_digest: string;
+      content_digest: string;
+    }>();
+  expect(digests?.candidate_digest).toBe(
+    requiredString(refresh.document, "candidate_digest"),
+  );
+  expect(digests?.candidate_catalogue_digest).toBe(
+    digests?.content_digest,
+  );
+  const refreshed = await approve(refresh.document);
+  expect(refreshed.document).toMatchObject({
+    publication_outcome: "no_change",
+    resulting_revision_id: revisionId,
+  });
+  const refreshedCardObservation = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id, catalogue_revision_id, current
+     FROM reconciled_card_observations
+     WHERE card_id = ? AND source_lineage = 'one-piece-en' AND current = 1`,
+  )
+    .bind(requiredString(onePieceCard, "id"))
+    .first<{
+      source_observation_id: string;
+      catalogue_revision_id: string;
+      current: number;
+    }>();
+  expect(refreshedCardObservation).toEqual({
+    source_observation_id: retainedPlan?.source_observation_id,
+    catalogue_revision_id: revisionId,
+    current: 1,
+  });
+  const refreshedMembership = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id, last_observed_revision_id, current
+     FROM reconciled_printing_memberships
+     WHERE printing_id = ?
+       AND source_lineage = 'one-piece-en'
+       AND relationship_kind = 'product'
+       AND relationship_value = 'product_op01'
+       AND current = 1`,
+  )
+    .bind(requiredString(onePiecePrinting, "id"))
+    .first<{
+      source_observation_id: string;
+      last_observed_revision_id: string;
+      current: number;
+    }>();
+  expect(refreshedMembership).toEqual({
+    source_observation_id: retainedPlan?.source_observation_id,
+    last_observed_revision_id: revisionId,
+    current: 1,
+  });
 });
 
 test("candidate inspection reports stable reconciliation matches rather than every entity as added", async () => {
@@ -1758,15 +1916,15 @@ function post(pathname: string, body: Record<string, unknown>) {
   return request(pathname, body);
 }
 
-function postFixtureEvidence(body: Record<string, unknown>) {
-  return request(
-    "/v1/internal/fixture-ingestion-runs/evidence",
+async function postFixtureEvidence(body: StartEvidenceRunRequest) {
+  const document = await injectFixtureEvidencePlan(
+    testEnv.CATALOGUE_DB,
     body,
-    {
-      "x-card-keepr-fixture-source-plan-key":
-        "vitest-fixture-source-plan-key",
-    },
   );
+  return {
+    response: new Response(null, { status: 201 }),
+    document,
+  };
 }
 
 async function request(

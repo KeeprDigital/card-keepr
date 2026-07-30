@@ -201,6 +201,23 @@ export async function hasOtherGundamLocaleEvidence(
   return row !== null;
 }
 
+export async function hasCurrentCardObservationFromLineage(
+  database: D1Database,
+  cardId: string,
+  sourceLineage: string,
+): Promise<boolean> {
+  const row = await database
+    .prepare(
+      `SELECT card_id
+       FROM reconciled_card_observations
+       WHERE card_id = ? AND source_lineage = ? AND current = 1
+       LIMIT 1`,
+    )
+    .bind(cardId, sourceLineage)
+    .first<{ card_id: string }>();
+  return row !== null;
+}
+
 export async function canonicalCardConflict(
   database: D1Database,
   cardId: string,
@@ -233,7 +250,10 @@ export async function canonicalCardConflict(
     effective_rules_text: proposed.effective_rules_text,
     game_data: proposed.game_data,
   };
-  if (canonicalJson(currentCanonical) === canonicalJson(proposedCanonical)) {
+  if (
+    canonicalJson(normalizedFormatting(currentCanonical)) ===
+    canonicalJson(normalizedFormatting(proposedCanonical))
+  ) {
     return null;
   }
   const authorities = await database
@@ -245,23 +265,28 @@ export async function canonicalCardConflict(
     .bind(cardId)
     .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
-  if (proposed.game === "gundam") {
-    if (sourceLineage === "gundam-en-asia") return null;
-    if (
-      sourceLineage === "gundam-en-us" &&
-      authorities.results.some(
-        ({ source_lineage }) => source_lineage === "gundam-en-asia",
-      )
-    ) {
-      return "The retained Card facts conflict across source lineages; authoritative Gundam EN-ASIA evidence wins.";
-    }
-  }
   return authorities.results.length > 0 &&
     authorities.results.every(
       (authority) => authority.source_lineage === sourceLineage,
     )
     ? null
     : "The retained Card facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
+}
+
+function normalizedFormatting(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.trim().replace(/\s+/g, " ");
+  }
+  if (Array.isArray(value)) return value.map(normalizedFormatting);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [
+        key,
+        normalizedFormatting(nested),
+      ]),
+    );
+  }
+  return value;
 }
 
 function compatibilityValues(
