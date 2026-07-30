@@ -555,7 +555,7 @@ function parseOfficialErratumObservation(
     source.fragment,
     "Official Erratum source fragment",
   );
-  if (!/^#errata_[A-Za-z0-9_-]+$/.test(fragment)) {
+  if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
     throw new Error("Official Erratum source fragment is invalid.");
   }
   const completeness = requiredRecord(

@@ -22,11 +22,13 @@ export type SourceAdapterRegistration = Readonly<{
     | "synthetic_errata_fixture"
     | "synthetic_fixture"
     | "unavailable";
-  parse?: (document: unknown) => readonly unknown[];
+  parse?: (
+    document: unknown,
+  ) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly unknown[];
+  ) => readonly unknown[] | Promise<readonly unknown[]>;
   discoverRequests?: (
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },

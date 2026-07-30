@@ -27,12 +27,18 @@ ALTER TABLE reconciliation_candidates
   ADD COLUMN observation_kind TEXT NOT NULL DEFAULT 'card_printing'
   CHECK (observation_kind IN ('card_printing', 'official_erratum'));
 
+ALTER TABLE reconciliation_candidates
+  ADD COLUMN source_card_facts_json TEXT CHECK (
+    source_card_facts_json IS NULL OR json_valid(source_card_facts_json)
+  );
+
 CREATE TABLE reconciliation_workflow_requests (
   idempotency_key TEXT PRIMARY KEY,
   ingestion_run_id TEXT NOT NULL UNIQUE
     REFERENCES ingestion_runs(id),
   expected_current_revision_id TEXT NOT NULL,
   request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  workflow_params_json TEXT NOT NULL CHECK (json_valid(workflow_params_json)),
   workflow_instance_id TEXT NOT NULL UNIQUE,
   observed_at TEXT NOT NULL
 );

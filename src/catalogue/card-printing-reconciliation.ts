@@ -33,6 +33,7 @@ import {
   failReconciliation,
   persistBlockedCandidate,
   persistReviewableCandidate,
+  retainedReconciliationResult,
 } from "./reconciliation-candidate-store";
 import {
   cardDisappearanceWarnings,
@@ -80,6 +81,8 @@ export async function reconcileRetainedCardPrintingEvidence(
   runId: string,
   observedAt: string,
 ): Promise<Record<string, unknown>> {
+  const replay = await finalizedReconciliationResult(database, runId);
+  if (replay !== null) return replay;
   const run = await requiredActiveParsingRun(database, runId);
   let retained: Awaited<
     ReturnType<typeof retainedReconciliationObservation>
@@ -144,6 +147,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     compatibility: PrintingCompatibility | null;
     memberships: Memberships;
     withdrawal: ProvenancedWithdrawal | null;
+    sourceCardFactsJson: string | null;
   }[] = [];
   const sourceWarnings: Record<string, unknown>[] = [];
   const observedErrata: CatalogueErratum[] = [];
@@ -514,6 +518,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       variantKey: observation.variantKey,
       compatibility,
       memberships: observation.memberships,
+      sourceCardFactsJson: canonicalJson(proposedCard),
       withdrawal:
         observation.withdrawal === null
           ? null
@@ -644,6 +649,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         locator: null,
         variantKey: null,
         compatibility: null,
+        sourceCardFactsJson: null,
         memberships: {
           products: [],
           distribution_contexts: [],
@@ -860,6 +866,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     (plan) => plan.observationKind === "card_printing",
   );
   const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
+  const errataOnlyEvidence = retained.reconciliationCoverage ===
+      "official_errata" ||
+    retained.reconciliationCoverage === "synthetic_errata_fixture";
   const relationshipWarnings = (
     await Promise.all(
       groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>
@@ -872,9 +881,13 @@ export async function reconcileRetainedCardPrintingEvidence(
       ),
     )
   ).flat();
-  const checkedSourceLineages = [
-    ...new Set(retained.partitions.map(({ sourceLineage }) => sourceLineage)),
-  ].sort();
+  const checkedSourceLineages = errataOnlyEvidence
+    ? []
+    : [
+        ...new Set(
+          retained.partitions.map(({ sourceLineage }) => sourceLineage),
+        ),
+      ].sort();
   const plansByLineage = checkedSourceLineages.map(
     (sourceLineage) =>
       [
@@ -908,6 +921,19 @@ export async function reconcileRetainedCardPrintingEvidence(
       ),
     )
   ).flat();
+  const erratumWarnings = errataOnlyEvidence
+    ? [
+        ...new Set(
+          retained.partitions.map(({ sourceLineage }) => sourceLineage),
+        ),
+      ].flatMap((sourceLineage) =>
+        erratumDisappearanceWarnings(
+          priorCandidate?.errata ?? [],
+          observedErrata,
+          sourceLineage,
+        )
+      )
+    : [];
   const warnings = [
     ...new Map(
       [
@@ -916,6 +942,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ...disappearanceWarnings,
         ...cardWarnings,
         ...productCatalogue.warnings,
+        ...erratumWarnings,
       ].map((warning) => [canonicalJson(warning), warning]),
     ).values(),
   ].sort((left, right) =>
@@ -1055,6 +1082,44 @@ function fillAuthorityGaps<T>(authority: T, fallback: T): T {
       fillAuthorityGaps(authoritative[field], corroborating[field]),
     ]),
   ) as T;
+}
+
+function erratumDisappearanceWarnings(
+  priorErrata: readonly CatalogueErratum[],
+  observedErrata: readonly CatalogueErratum[],
+  sourceLineage: string,
+): Record<string, unknown>[] {
+  const observedIds = new Set(observedErrata.map((erratum) => erratum.id));
+  return priorErrata
+    .filter(
+      (erratum) =>
+        !observedIds.has(erratum.id) &&
+        erratum.provenance.some(
+          (provenance) =>
+            provenance.source_lineage === sourceLineage,
+        ),
+    )
+    .map((erratum) => ({
+      code: "erratum_not_observed",
+      erratum_id: erratum.id,
+      source_lineage: sourceLineage,
+      detail:
+        "The previously published Erratum was not present in this complete Official Errata observation; it was retained without advancing its last-observed revision.",
+    }));
+}
+
+async function finalizedReconciliationResult(
+  database: D1Database,
+  runId: string,
+): Promise<Record<string, unknown> | null> {
+  const row = await database
+    .prepare("SELECT state FROM ingestion_runs WHERE id = ?")
+    .bind(runId)
+    .first<{ state: string }>();
+  return row !== null &&
+      (row.state === "awaiting_approval" || row.state === "failed")
+    ? retainedReconciliationResult(database, runId)
+    : null;
 }
 
 function reconciliationDigestPayload(input: {

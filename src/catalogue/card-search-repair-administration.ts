@@ -44,20 +44,40 @@ export async function runGuardedCardSearchRepair(
   } else {
     const target = await database
       .prepare(
-        `SELECT state.current_revision_id, revision.id AS target_revision_id
+        `WITH RECURSIVE retained(revision_id, depth) AS (
+           SELECT state.current_revision_id, 0
+           FROM catalogue_state AS state
+           WHERE state.singleton = 1
+           UNION ALL
+           SELECT revision.expected_previous_revision_id,
+                  retained.depth + 1
+           FROM retained
+           JOIN catalogue_revisions AS revision
+             ON revision.id = retained.revision_id
+           WHERE retained.depth < 2
+         )
+         SELECT state.current_revision_id,
+                EXISTS (
+                  SELECT 1 FROM catalogue_revisions AS revision
+                  WHERE revision.id = ?
+                ) AS target_exists,
+                EXISTS (
+                  SELECT 1 FROM retained
+                  WHERE revision_id = ?
+                ) AS target_retained
          FROM catalogue_state AS state
-         LEFT JOIN catalogue_revisions AS revision ON revision.id = ?
          WHERE state.singleton = 1`,
       )
-      .bind(input.target_revision_id)
+      .bind(input.target_revision_id, input.target_revision_id)
       .first<{
         current_revision_id: string;
-        target_revision_id: string | null;
+        target_exists: number;
+        target_retained: number;
       }>();
     if (
       target === null ||
       (
-        target.target_revision_id === null &&
+        target.target_exists !== 1 &&
         target.current_revision_id !== input.target_revision_id
       )
     ) {
@@ -74,6 +94,13 @@ export async function runGuardedCardSearchRepair(
         409,
         "current_revision_mismatch",
         "The expected current Catalogue Revision is stale.",
+      );
+    }
+    if (target.target_retained !== 1) {
+      throw new AdministrationProblem(
+        409,
+        "catalogue_revision_not_repairable",
+        "Card search repair is limited to the current Catalogue Revision and its two immediate predecessors.",
       );
     }
     await database
@@ -115,6 +142,13 @@ export async function runGuardedCardSearchRepair(
          AND (
            claim_token IS NULL
            OR claim_expires_at <= ?
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM catalogue_state AS state
+           WHERE state.singleton = 1
+             AND state.current_revision_id =
+                   catalogue_search_repair_requests.expected_current_revision_id
          )`,
     )
     .bind(
@@ -131,6 +165,23 @@ export async function runGuardedCardSearchRepair(
     );
     if (observed?.result_json !== null && observed !== null) {
       return parseRepairResult(observed.result_json);
+    }
+    const current = await database
+      .prepare(
+        `SELECT current_revision_id
+         FROM catalogue_state
+         WHERE singleton = 1`,
+      )
+      .first<{ current_revision_id: string }>();
+    if (
+      current?.current_revision_id !==
+        input.expected_current_revision_id
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "current_revision_mismatch",
+        "The expected current Catalogue Revision is stale.",
+      );
     }
     throw new AdministrationProblem(
       409,

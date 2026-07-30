@@ -3,10 +3,17 @@ import {
   env,
   type D1Migration,
 } from "cloudflare:test";
-import { exports } from "cloudflare:workers";
+import {
+  exports,
+  type WorkflowEvent,
+  type WorkflowStep,
+} from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import { sha256 } from "../../../src/catalogue/serialization";
+import {
+  canonicalJson,
+  sha256,
+} from "../../../src/catalogue/serialization";
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
@@ -29,6 +36,9 @@ import {
   EMPTY_CATALOGUE_GZIP_HEX,
   GZIP_PROFILE_GOLDENS,
 } from "./deterministic-gzip-golden";
+import {
+  runReconciliationWorkflow,
+} from "../src/reconciliation-workflow";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -152,6 +162,7 @@ test("an exact reconciliation replay observes without creating or executing the 
   const createIds: string[] = [];
   const getIds: string[] = [];
   let durableOutput: { result_json: string } | null = null;
+  let instanceExists = false;
   const instance = {
     status: async () =>
       durableOutput === null
@@ -164,6 +175,7 @@ test("an exact reconciliation replay observes without creating or executing the 
       if (createIds.length > 1) {
         throw new Error("duplicate Workflow execution");
       }
+      instanceExists = true;
       const result = await reconcileRetainedCardPrintingEvidence(
         testEnv.CATALOGUE_DB,
         testEnv.EVIDENCE_OBJECTS,
@@ -184,7 +196,11 @@ test("an exact reconciliation replay observes without creating or executing the 
     },
     get: async (id: string) => {
       getIds.push(id);
-      return instance;
+      return instanceExists
+        ? instance
+        : {
+          status: async () => ({ status: "unknown" }),
+        } as unknown as WorkflowInstance;
     },
   } as unknown as Workflow<ReconciliationWorkflowParams>;
   const input = {
@@ -240,6 +256,235 @@ test("an exact reconciliation replay observes without creating or executing the 
   ).toMatchObject({
     active_ingestion_run_id: null,
   });
+});
+
+test("an exact reconciliation replay recreates a deterministically bound instance after create loss", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "workflow-create-loss-recovery",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  const createParams: ReconciliationWorkflowParams[] = [];
+  let instanceExists = false;
+  const instance = {
+    status: async () => ({ status: "running" }),
+  } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async (
+      input: { id: string; params: ReconciliationWorkflowParams },
+    ) => {
+      createParams.push(input.params);
+      if (createParams.length === 1) {
+        throw new Error("injected create response loss");
+      }
+      instanceExists = true;
+      return instance;
+    },
+    get: async () => {
+      if (!instanceExists) throw new Error("instance not found");
+      return instance;
+    },
+  } as unknown as Workflow<ReconciliationWorkflowParams>;
+  const input = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: "workflow-create-loss-recovery-request",
+  };
+
+  await expect(
+    startOrObserveReconciliationWorkflow(
+      testEnv.CATALOGUE_DB,
+      workflow,
+      input,
+      "2026-07-31T01:00:00.000Z",
+    ),
+  ).rejects.toThrow("instance not found");
+  const replay = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T02:00:00.000Z",
+  );
+
+  expect(replay.created).toBe(false);
+  expect(createParams).toEqual([
+    {
+      ...input,
+      observed_at: "2026-07-31T01:00:00.000Z",
+    },
+    {
+      ...input,
+      observed_at: "2026-07-31T01:00:00.000Z",
+    },
+  ]);
+  const stored = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT workflow_params_json
+     FROM reconciliation_workflow_requests
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(run.id)
+    .first<{ workflow_params_json: string }>();
+  expect(JSON.parse(stored?.workflow_params_json ?? "null")).toEqual(
+    createParams[0],
+  );
+  const reconciled = await reconcileRetainedCardPrintingEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    run.id,
+    "2026-07-31T01:00:00.000Z",
+  );
+  expect(
+    (await post(
+      `/v1/ingestion-runs/${run.id}/rejection`,
+      {
+        candidate_digest: requiredString(reconciled, "candidate_digest"),
+        idempotency_key: "reject-workflow-create-loss-recovery",
+      },
+    )).response.status,
+  ).toBe(200);
+});
+
+test("reconciliation commit success survives lost step output without repeating semantic work", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "workflow-output-loss-recovery",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  let reconciliationAttempts = 0;
+  const step = {
+    do: async (
+      name: string,
+      _config: unknown,
+      callback: () => Promise<string>,
+    ) => {
+      if (
+        name ===
+          "reconcile retained Card, Printing, and Erratum evidence"
+      ) {
+        reconciliationAttempts += 1;
+        await callback();
+        reconciliationAttempts += 1;
+      }
+      return callback();
+    },
+  } as unknown as WorkflowStep;
+  const output = await runReconciliationWorkflow(
+    testEnv,
+    {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: expectedCurrentRevisionId,
+        idempotency_key: "workflow-output-loss-recovery-request",
+        observed_at: "2026-07-31T01:00:00.000Z",
+      },
+    } as WorkflowEvent<ReconciliationWorkflowParams>,
+    step,
+  );
+
+  expect(reconciliationAttempts).toBe(2);
+  expect(JSON.parse(output.result_json)).toMatchObject({
+    contract: "card-keepr-reconciliation-workflow-result@1",
+    run_id: run.id,
+    candidate_digest: expect.any(String),
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
+    state: "awaiting_approval",
+  });
+  const durable = JSON.parse(output.result_json) as Record<string, unknown>;
+  expect(
+    (await post(
+      `/v1/ingestion-runs/${run.id}/rejection`,
+      {
+        candidate_digest: requiredString(durable, "candidate_digest"),
+        idempotency_key: "reject-workflow-output-loss-recovery",
+      },
+    )).response.status,
+  ).toBe(200);
+});
+
+test("exhausted reconciliation retries fail the run and release the global mutation lock", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "workflow-exhausted-retries",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  const step = {
+    do: async (
+      name: string,
+      _config: unknown,
+      callback: () => Promise<string>,
+    ) => {
+      if (
+        name ===
+          "reconcile retained Card, Printing, and Erratum evidence"
+      ) {
+        throw new Error("injected exhausted retry limit");
+      }
+      return callback();
+    },
+  } as unknown as WorkflowStep;
+  const output = await runReconciliationWorkflow(
+    testEnv,
+    {
+      payload: {
+        ingestion_run_id: run.id,
+        expected_current_revision_id: expectedCurrentRevisionId,
+        idempotency_key: "workflow-exhausted-retries-request",
+        observed_at: "2026-07-31T01:00:00.000Z",
+      },
+    } as WorkflowEvent<ReconciliationWorkflowParams>,
+    step,
+  );
+
+  expect(JSON.parse(output.result_json)).toMatchObject({
+    result: {
+      run_id: run.id,
+      state: "failed",
+      diagnostics: [
+        expect.objectContaining({
+          code: "reconciliation_workflow_failed",
+        }),
+      ],
+    },
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
+    state: "failed",
+  });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
+    )
+      .bind(run.id)
+      .first(),
+  ).resolves.toMatchObject({
+    state: "failed",
+    failure_code: "reconciliation_workflow_failed",
+  });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
+    ).first(),
+  ).resolves.toMatchObject({ active_ingestion_run_id: null });
+  const status = await get("/v1/status");
+  expect(status.response.status).toBe(200);
+  expect(status.document.recent_runs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: run.id,
+        state: "failed",
+        failure_code: "reconciliation_workflow_failed",
+      }),
+    ]),
+  );
 });
 
 test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
@@ -5548,6 +5793,95 @@ test("a Product-heavy export publishes bounded verified R2 components", async ()
     expect(stored?.checksums.sha256).toBeDefined();
   }
 }, 120_000);
+
+test("Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+  const publishScenario = async (sequence: number) => {
+    const run = await collect(
+      `/reconciliation/search-repair-retention-${sequence}`,
+      `repair-retention-${sequence}`,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(200);
+    const published = await approve(reconciled.document);
+    expect(published.response.status).toBe(200);
+    return requiredString(published.document, "resulting_revision_id");
+  };
+  const revisionLineage = () =>
+    testEnv.CATALOGUE_DB.prepare(
+      `WITH RECURSIVE lineage(revision_id, depth) AS (
+         SELECT current_revision_id, 0
+         FROM catalogue_state
+         WHERE singleton = 1
+         UNION ALL
+         SELECT revision.expected_previous_revision_id,
+                lineage.depth + 1
+         FROM lineage
+         JOIN catalogue_revisions AS revision
+           ON revision.id = lineage.revision_id
+         WHERE lineage.depth < 4
+       )
+       SELECT revision_id, depth
+       FROM lineage
+       ORDER BY depth`,
+    ).all<{ revision_id: string; depth: number }>();
+  let lineage = (await revisionLineage()).results;
+  for (let sequence = 1; lineage.length < 5; sequence += 1) {
+    await publishScenario(sequence);
+    lineage = (await revisionLineage()).results;
+  }
+  const currentRevisionId = lineage[0]!.revision_id;
+  const retained = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      target_revision_id: lineage[2]!.revision_id,
+      expected_current_revision_id: currentRevisionId,
+      idempotency_key: "repair-retained-second-predecessor",
+    },
+  );
+  expect(retained.response.status).toBe(200);
+
+  const archived = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      target_revision_id: lineage[3]!.revision_id,
+      expected_current_revision_id: currentRevisionId,
+      idempotency_key: "reject-archived-repair-target",
+    },
+  );
+  expect(archived.response.status).toBe(409);
+  expect(archived.document).toMatchObject({
+    code: "catalogue_revision_not_repairable",
+  });
+
+  const unfinishedRequest = {
+    target_revision_id: currentRevisionId,
+    expected_current_revision_id: currentRevisionId,
+    idempotency_key: "stale-unfinished-repair-replay",
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_search_repair_requests (
+       idempotency_key, target_revision_id,
+       expected_current_revision_id, request_json, result_json
+     ) VALUES (?, ?, ?, ?, NULL)`,
+  )
+    .bind(
+      unfinishedRequest.idempotency_key,
+      unfinishedRequest.target_revision_id,
+      unfinishedRequest.expected_current_revision_id,
+      canonicalJson(unfinishedRequest),
+    )
+    .run();
+  await publishScenario(5);
+
+  const staleReplay = await post(
+    "/v1/catalogue-search-materialization/repair",
+    unfinishedRequest,
+  );
+  expect(staleReplay.response.status).toBe(409);
+  expect(staleReplay.document).toMatchObject({
+    code: "current_revision_mismatch",
+  });
+}, 60_000);
 
 async function collect(
   path: string,

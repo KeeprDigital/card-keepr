@@ -6,6 +6,9 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import {
+  failReconciliationWorkflow,
+} from "../../../src/catalogue/reconciliation-candidate-store";
 import type {
   ReconciliationWorkflowParams,
 } from "../../../src/catalogue/reconciliation-workflow";
@@ -24,37 +27,81 @@ export class ReconciliationWorkflow extends WorkflowEntrypoint<
     event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<{ result_json: string }> {
-    return step.do(
-      "reconcile retained Card, Printing, and Erratum evidence",
-      reconciliationStep,
-      async () => {
-        const result = await reconcileRetainedCardPrintingEvidence(
-          this.env.CATALOGUE_DB,
-          this.env.EVIDENCE_OBJECTS,
-          event.payload.ingestion_run_id,
-          event.payload.observed_at,
-        );
-        const durableResult = typeof result.candidate_digest === "string"
-          ? {
-            contract: "card-keepr-reconciliation-workflow-result@1",
-            run_id: event.payload.ingestion_run_id,
-            candidate_digest: result.candidate_digest,
-          }
-          : {
-            contract: "card-keepr-reconciliation-workflow-result@1",
-            run_id: event.payload.ingestion_run_id,
-            result,
-          };
-        const resultJson = canonicalJson(durableResult);
-        if (new TextEncoder().encode(resultJson).byteLength >= 524_288) {
-          throw new Error(
-            "The reconciliation Workflow result exceeds its 512 KiB bound.",
-          );
-        }
-        return {
-          result_json: resultJson,
-        };
-      },
-    );
+    return runReconciliationWorkflow(this.env, event, step);
   }
+}
+
+export async function runReconciliationWorkflow(
+  env: Env,
+  event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
+  step: WorkflowStep,
+): Promise<{ result_json: string }> {
+    let reconciliationResultJson: string;
+    try {
+      reconciliationResultJson = await step.do(
+        "reconcile retained Card, Printing, and Erratum evidence",
+        reconciliationStep,
+        async () => {
+          const result = await reconcileRetainedCardPrintingEvidence(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_OBJECTS,
+            event.payload.ingestion_run_id,
+            event.payload.observed_at,
+          );
+          return durableReconciliationResult(
+            event.payload.ingestion_run_id,
+            result,
+          );
+        },
+      );
+    } catch (error) {
+      reconciliationResultJson = await step.do(
+        "finalize exhausted reconciliation failure",
+        reconciliationStep,
+        async () => {
+          const result = await failReconciliationWorkflow(
+            env.CATALOGUE_DB,
+            event.payload.ingestion_run_id,
+            event.payload.observed_at,
+            error instanceof Error
+              ? error.message
+              : "The reconciliation Workflow exhausted its retries.",
+          );
+          return durableReconciliationResult(
+            event.payload.ingestion_run_id,
+            result,
+          );
+        },
+      );
+    }
+    if (
+      new TextEncoder().encode(reconciliationResultJson).byteLength >=
+        524_288
+    ) {
+      throw new Error(
+        "The reconciliation Workflow result exceeds its 512 KiB bound.",
+      );
+    }
+    return {
+      result_json: reconciliationResultJson,
+    };
+}
+
+function durableReconciliationResult(
+  runId: string,
+  result: Record<string, unknown>,
+): string {
+  return canonicalJson(
+    typeof result.candidate_digest === "string"
+      ? {
+        contract: "card-keepr-reconciliation-workflow-result@1",
+        run_id: runId,
+        candidate_digest: result.candidate_digest,
+      }
+      : {
+        contract: "card-keepr-reconciliation-workflow-result@1",
+        run_id: runId,
+        result,
+      },
+  );
 }

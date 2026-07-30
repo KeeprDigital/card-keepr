@@ -81,6 +81,13 @@ npm run keepr -- source collect \
 
 npm run keepr -- source resume --run-id RUN_ID --json
 npm run keepr -- source show --run-id RUN_ID
+npm run keepr -- run reconcile \
+  --run-id RUN_ID \
+  --expected-current-revision CATREV_ID \
+  --idempotency-key reconcile_RUN_ID \
+  --environment production \
+  --yes \
+  --json
 ```
 
 An interrupted collection phase resumes against its persisted request plan.
@@ -88,6 +95,10 @@ A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with
 `snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@1`.
+Reconciliation is an authenticated owner action and requires both the explicit
+production target and confirmation flags shown above. Before sending the
+mutation, the CLI resolves the named production Ingestion Run and requires its
+bound expected Catalogue Revision to match the supplied value.
 
 After applying the Errata/search migration to a database that already contains
 Catalogue Revisions, run the bounded, idempotent search repair until its JSON
@@ -95,14 +106,19 @@ response reports `"complete": true`:
 
 ```sh
 npm run keepr -- catalogue search repair \
+  --target-revision CATREV_ID \
+  --expected-current-revision CURRENT_CATREV_ID \
+  --idempotency-key repair_CATREV_ID \
   --environment production \
   --yes \
   --json
 ```
 
-Legacy revisions remain unavailable to cursor continuation until their Card
-search material has been repaired. Newly published revisions write their
-search material and availability marker atomically.
+Card search repair is limited to the current Catalogue Revision and its two
+immediate predecessors. Run the command again with a new idempotency key for
+each bounded step until it reports `"complete": true`. Legacy revisions outside
+that retained window stay archived and cannot be repaired. Newly published
+revisions write their search material and availability marker atomically.
 
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably

@@ -28,6 +28,9 @@ import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
+import {
+  requiredSourceAdapter,
+} from "../../../src/catalogue/source-adapters";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -207,7 +210,12 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         barrierStage += 1;
         continue;
       }
-      if (run.state === "parsing" && run.plan_origin === "production") {
+      if (
+        run.state === "parsing" &&
+        run.plan_origin === "production" &&
+        requiredSourceAdapter(run.adapter_version)
+            .reconciliationCoverage === "official_source"
+      ) {
         const reconciliation = await step.do(
           "reconcile retained Official Source evidence",
           deterministicDatabaseStep,

@@ -84,7 +84,7 @@ export async function parseSnapshot(
   let observations: readonly unknown[];
   try {
     if (adapter.parseBytes !== undefined) {
-      observations = adapter.parseBytes(bytes, {
+      observations = await adapter.parseBytes(bytes, {
         mediaType: snapshot.media_type,
         url: snapshot.request_url,
         requestId: snapshot.request_id,
@@ -103,7 +103,7 @@ export async function parseSnapshot(
       if (adapter.parse === undefined) {
         throw new Error("The Source Snapshot adapter has no parser.");
       }
-      observations = adapter.parse(document);
+      observations = await adapter.parse(document);
     }
   } catch (error) {
     throw new AdministrationProblem(

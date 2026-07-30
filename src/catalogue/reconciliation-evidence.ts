@@ -200,15 +200,21 @@ export async function retainedReconciliationObservation(
           );
         }
         observationIds.add(wrapped.id);
-        return {
-          ...parseReconciliationObservation(
-            wrapped.id,
-            await attachRetainedPrintingImages(
-              wrapped.value,
-              retainedImages,
-              row.plan_origin === "production",
-            ),
+        const parsed = parseReconciliationObservation(
+          wrapped.id,
+          await attachRetainedPrintingImages(
+            wrapped.value,
+            retainedImages,
+            row.plan_origin === "production",
           ),
+        );
+        assertObservationAuthority(
+          parsed,
+          requiredSourceAdapter(row.adapter_version)
+            .reconciliationCoverage,
+        );
+        return {
+          ...parsed,
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
           sourceCapturedAt: row.retrieved_at,
@@ -676,6 +682,26 @@ function base64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function assertObservationAuthority(
+  observation: ReturnType<typeof parseReconciliationObservation>,
+  coverage: ReturnType<
+    typeof requiredSourceAdapter
+  >["reconciliationCoverage"],
+): void {
+  const errataOnly = coverage === "official_errata" ||
+    coverage === "synthetic_errata_fixture";
+  if (
+    (observation.kind === "official_erratum") !== errataOnly ||
+    (observation.kind === "card_printing" &&
+      observation.errata.length > 0 &&
+      coverage !== "synthetic_fixture")
+  ) {
+    throw new Error(
+      "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
+    );
+  }
+}
+
 async function retainedObservationDocument(
   evidenceObjects: R2Bucket,
   row: EvidenceRow,
@@ -697,6 +723,21 @@ async function retainedObservationDocument(
   }
   const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
   const adapter = requiredSourceAdapter(row.adapter_version);
+  if (
+    adapter.reconciliationCoverage === "unavailable" &&
+    isRecord(document) &&
+    Array.isArray(document.observations) &&
+    document.observations.some((wrapped) => {
+      if (!isRecord(wrapped) || !isRecord(wrapped.value)) return false;
+      return wrapped.value.kind === "official_erratum" ||
+        (Array.isArray(wrapped.value.errata) &&
+          wrapped.value.errata.length > 0);
+    })
+  ) {
+    throw new Error(
+      "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
+    );
+  }
   if (
     !isRecord(document) ||
     document.contract !== "card-keepr-source-observations@1" ||

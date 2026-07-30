@@ -27,11 +27,11 @@ export const onePieceOfficialErrataHtml = `<!doctype html>
               The Card Errata <span class="txtStrong">“After” text is applied to all game formats and takes precedence</span> over the original wording of the card.
             </p>
 
-            <section class="contentsLCol">
+            <section class="contentsLCol" id="errata_15">
               <section class="contentsMCol mtM">
                 <h4 class="mediumTit">May 16, 2025</h4>
               </section>
-              <div class="detailCol mtS" id="errata_15">
+              <div class="detailCol mtS">
                 <h5 class="smallTitRed">OP07-097 Vegapunk</h5>
                 <div class="typographicalWrap mtS">
                   <div class="typographicalImg spWidthM centering"><img src="/images/rules/cards/20250516/OP07-097_p2.png" alt="OP09-058"></div>
@@ -67,10 +67,42 @@ export const onePieceOfficialErrataHtml = `<!doctype html>
                 </dl>
               </div>
             </section>
+
+            <section class="contentsLCol" id="errata_05">
+              <section class="contentsMCol mtM">
+                <h4 class="mediumTit">February 17, 2023</h4>
+              </section>
+              <section class="cardPackCol mtM">
+                <ul class="cardFlexWrap errataPopupCol">
+                  <li>
+                    <a class="modalOpen" data-src="#nov_11_2022_OP01-001">
+                      <img src="/images/rules/cards/20230217/op01-001_thumbnail.png" alt="OP01-001">
+                    </a>
+                    <div class="errataModal" id="nov_11_2022_OP01-001">
+                      <h5 class="smallTitRed">February 17, 2023<br>OP01-001 Monkey D. Luffy</h5>
+                      <div class="typographicalWrap mtM">
+                        <div class="typographicalImg spWidthM centering">
+                          <img src="/images/rules/cards/20230217/op01-001_dummy.png" alt="OP01-001">
+                        </div>
+                      </div>
+                      <dl>
+                        <dt class="txtBlack mtS">Before:</dt>
+                        <dd>[On Play] Draw 1 card.</dd>
+                        <dt class="txtBlack mtS">After:</dt>
+                        <dd>[On Play] Draw 2 cards.</dd>
+                      </dl>
+                    </div>
+                  </li>
+                </ul>
+              </section>
+            </section>
           </div>
         </section>
       </article>
     </main>
+    <footer>
+      <img src="/renewal/images/common/sp/footer_illust_chara.webp" alt="">
+    </footer>
   </body>
 </html>`;
 

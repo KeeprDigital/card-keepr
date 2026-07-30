@@ -31,6 +31,7 @@ import {
   cardSearchTerms,
   cardSearchText,
 } from "./card-search";
+import { requiredSourceAdapter } from "./source-adapters";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -1165,6 +1166,13 @@ async function publishNoChange(
     request.expected_current_revision_id,
     now,
   );
+  const runFreshnessStatements = await freshnessStatementsForRun(
+    database,
+    parseSelectedGames(run.selected_games_json),
+    run.id,
+    candidate,
+    now,
+  );
   try {
     await database.batch([
       database
@@ -1200,15 +1208,7 @@ async function publishNoChange(
           run.id,
         ),
       ...(reconciliation?.statements ?? []),
-      ...freshnessStatements(
-        database,
-        checkedFreshnessAreas(
-          parseSelectedGames(run.selected_games_json),
-          candidate,
-          now,
-        ),
-        run.id,
-      ),
+      ...runFreshnessStatements,
       database
         .prepare(
           `UPDATE ingestion_runs
@@ -1948,6 +1948,13 @@ async function commitVerifiedPublication(
     resulting_revision_id: revisionId,
     freshness_checked_at: input.completedAt,
   });
+  const runFreshnessStatements = await freshnessStatementsForRun(
+    database,
+    parseSelectedGames(input.run.selected_games_json),
+    input.run.id,
+    input.candidate,
+    input.completedAt,
+  );
   const cardDocuments = input.candidate.cards.map((card) => {
     const document = catalogueCard(
       card,
@@ -2275,15 +2282,7 @@ async function commitVerifiedPublication(
         publishedAt,
         input.run.expected_current_revision_id,
       ),
-    ...freshnessStatements(
-      database,
-      checkedFreshnessAreas(
-        parseSelectedGames(input.run.selected_games_json),
-        input.candidate,
-        input.completedAt,
-      ),
-      input.run.id,
-    ),
+    ...runFreshnessStatements,
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -4045,6 +4044,39 @@ function releaseRunLockStatement(
     .bind(runId);
 }
 
+async function freshnessStatementsForRun(
+  database: D1Database,
+  games: readonly string[],
+  runId: string,
+  candidate: FixtureCandidate,
+  checkedAt: string,
+): Promise<D1PreparedStatement[]> {
+  const area = await freshnessArea(database, runId);
+  if (area === null) return [];
+  if (area === "cards-and-printings") {
+    return freshnessStatements(
+      database,
+      checkedFreshnessAreas(games, candidate, checkedAt),
+      runId,
+    );
+  }
+  return games.map((game) =>
+    database
+      .prepare(
+        `INSERT INTO source_freshness (
+          game,
+          area,
+          checked_at,
+          ingestion_run_id
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT (game, area) DO UPDATE SET
+          checked_at = excluded.checked_at,
+          ingestion_run_id = excluded.ingestion_run_id`,
+      )
+      .bind(game, area, checkedAt, runId),
+  );
+}
+
 function freshnessStatements(
   database: D1Database,
   checks: readonly SourceFreshness[],
@@ -4103,6 +4135,33 @@ function checkedFreshnessAreas(
         : []),
     ];
   });
+}
+
+async function freshnessArea(
+  database: D1Database,
+  runId: string,
+): Promise<"cards-and-printings" | "errata" | null> {
+  const plan = await database
+    .prepare(
+      `SELECT adapter_version
+       FROM ingestion_evidence_plans
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<{ adapter_version: string }>();
+  if (plan === null) return "cards-and-printings";
+  const coverage = requiredSourceAdapter(plan.adapter_version)
+    .reconciliationCoverage;
+  if (
+    coverage === "official_errata" ||
+    coverage === "synthetic_errata_fixture"
+  ) {
+    return "errata";
+  }
+  return coverage === "official_source" ||
+      coverage === "synthetic_fixture"
+    ? "cards-and-printings"
+    : null;
 }
 
 async function sourceFreshnessForExport(
@@ -4738,7 +4797,6 @@ function publicRun(
   row: RunRow,
   cleanup: PublicationCleanupRow | null = null,
 ): Record<string, unknown> {
-  const candidate = parseCandidate(row);
   const selectedGames = parseSelectedGames(row.selected_games_json);
   const progress = parseProgress(row.progress_json);
   const approval =
@@ -4746,11 +4804,10 @@ function publicRun(
   const approvalHistory = parseApprovalHistory(
     row.approval_history_json,
   );
-  if (
+  if (row.candidate_digest !== null &&
     !selectedGames.every((game) =>
-      candidate.selected_games.includes(game),
-    )
-  ) {
+      parseCandidate(row).selected_games.includes(game)
+    )) {
     throw new Error(
       "The persisted Ingestion Run document is inconsistent.",
     );

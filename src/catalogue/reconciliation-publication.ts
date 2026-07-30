@@ -230,18 +230,19 @@ export async function reconciliationPublication(
       });
     }
     publicationRows.cardObservations.push(
-      ...grouped.map((plan) => ({
-        card_id: card.id,
-        source_lineage: plan.source_lineage,
-        source_observation_id: plan.source_observation_id,
-        canonical_facts_json: canonicalJson({
-          game: card.game,
-          official_identity: card.official_identity,
-          name: card.name,
-          effective_rules_text: card.effective_rules_text,
-          game_data: card.game_data,
-        }),
-      })),
+      ...grouped.map((plan) => {
+        if (plan.source_card_facts_json === null) {
+          throw new Error(
+            "The source-observed Card facts are unavailable.",
+          );
+        }
+        return {
+          card_id: card.id,
+          source_lineage: plan.source_lineage,
+          source_observation_id: plan.source_observation_id,
+          canonical_facts_json: plan.source_card_facts_json,
+        };
+      }),
     );
   }
 

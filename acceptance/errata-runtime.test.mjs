@@ -239,7 +239,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(evidence.code, 0, evidence.stderr);
   assert.equal(
     JSON.parse(evidence.stdout).observation_sets[0].observation_count,
-    2,
+    3,
   );
   const reconciled = await reconcileAndWait(
     run.id,
@@ -248,7 +248,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cliEnvironment,
     runtime,
   );
-  assert.equal(reconciled.publishable, true);
+  assert.equal(reconciled.publishable, true, JSON.stringify(reconciled));
   const revisionId = await approveCandidate(
     run.id,
     "approve-retained-bandai-errata-html",
@@ -470,6 +470,9 @@ async function reconcileAndWait(
       ],
       environment,
     );
+    if (result.code !== 0) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+    }
     assert.equal(
       result.code,
       0,

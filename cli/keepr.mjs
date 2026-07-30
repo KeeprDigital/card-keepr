@@ -363,6 +363,13 @@ async function reconcileRun(arguments_, environment, json) {
       "Reconciliation requires --environment production.",
     );
   }
+  const resolved = await resolveReconciliationTarget(
+    environment,
+    json,
+    runId,
+    expectedCurrentRevision,
+  );
+  if (resolved !== 0) return resolved;
   return administrationRequest(
     environment,
     json,
@@ -407,6 +414,13 @@ async function repairCatalogueSearch(arguments_, environment, json) {
       "Card search repair requires --environment production.",
     );
   }
+  const resolved = await resolveSearchRepairTarget(
+    environment,
+    json,
+    targetRevision,
+    expectedCurrentRevision,
+  );
+  if (resolved !== 0) return resolved;
   return administrationRequest(
     environment,
     json,
@@ -588,16 +602,44 @@ async function administrationRequest(
   method,
   body,
 ) {
-  const configuration = readAdministrationConfiguration(environment);
-  if (configuration.error !== null) {
+  const observed = await fetchAdministrationDocument(
+    environment,
+    pathname,
+    method,
+    body,
+  );
+  if (observed.error !== null) {
     return writeFailure(
       json,
-      {
+      observed.error,
+      observed.exitCode,
+    );
+  }
+  const document = observed.document;
+  if (json) {
+    process.stdout.write(`${JSON.stringify(document)}\n`);
+  } else {
+    process.stdout.write(`${formatAdministrationResult(document)}\n`);
+  }
+  return 0;
+}
+
+async function fetchAdministrationDocument(
+  environment,
+  pathname,
+  method = "GET",
+  body,
+) {
+  const configuration = readAdministrationConfiguration(environment);
+  if (configuration.error !== null) {
+    return {
+      error: {
         code: "configuration_error",
         detail: configuration.error,
       },
-      2,
-    );
+      exitCode: 2,
+      document: null,
+    };
   }
   let response;
   try {
@@ -616,30 +658,30 @@ async function administrationRequest(
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    return writeFailure(
-      json,
-      {
+    return {
+      error: {
         code: "runtime_unavailable",
         detail: "ingestion runtime is unavailable",
         runtime: "ingestion",
       },
-      9,
-    );
+      exitCode: 9,
+      document: null,
+    };
   }
 
   let document;
   try {
     document = await response.json();
   } catch {
-    return writeFailure(
-      json,
-      {
+    return {
+      error: {
         code: "invalid_administration_contract",
         detail: "ingestion runtime returned invalid JSON",
         runtime: "ingestion",
       },
-      8,
-    );
+      exitCode: 8,
+      document: null,
+    };
   }
   if (!response.ok) {
     const code =
@@ -650,18 +692,83 @@ async function administrationRequest(
       typeof document?.detail === "string"
         ? document.detail
         : `ingestion runtime returned HTTP ${response.status}`;
-    return writeFailure(
+    return {
+      error: { code, detail },
+      exitCode: exitCodeForStatus(response.status),
+      document: null,
+    };
+  }
+  return { error: null, exitCode: 0, document };
+}
+
+async function resolveReconciliationTarget(
+  environment,
+  json,
+  runId,
+  expectedCurrentRevision,
+) {
+  const run = await fetchAdministrationDocument(
+    environment,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}`,
+  );
+  const failedRun = writeObservedFailure(run, json);
+  if (failedRun !== null) return failedRun;
+  if (
+    run.document?.id !== runId ||
+    run.document?.expected_current_revision_id !== expectedCurrentRevision
+  ) {
+    return resolvedTargetFailure(
       json,
-      { code, detail },
-      exitCodeForStatus(response.status),
+      "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
     );
   }
-  if (json) {
-    process.stdout.write(`${JSON.stringify(document)}\n`);
-  } else {
-    process.stdout.write(`${formatAdministrationResult(document)}\n`);
+  return 0;
+}
+
+async function resolveSearchRepairTarget(
+  environment,
+  json,
+  targetRevision,
+  expectedCurrentRevision,
+) {
+  const status = await fetchAdministrationDocument(
+    environment,
+    "/v1/status",
+  );
+  const failedStatus = writeObservedFailure(status, json);
+  if (failedStatus !== null) return failedStatus;
+  const currentRevision = status.document?.safe_state?.current_revision_id;
+  if (currentRevision !== expectedCurrentRevision) {
+    return resolvedTargetFailure(
+      json,
+      `Production currently resolves to Catalogue Revision ${
+        typeof currentRevision === "string" ? currentRevision : "unknown"
+      }, not ${expectedCurrentRevision}.`,
+    );
+  }
+  const recentRuns = Array.isArray(status.document?.recent_runs)
+    ? status.document.recent_runs
+    : [];
+  const targetResolved = targetRevision === currentRevision ||
+    recentRuns.some(
+      (run) =>
+        run !== null &&
+        typeof run === "object" &&
+        run.resulting_revision_id === targetRevision,
+    );
+  if (!targetResolved) {
+    return resolvedTargetFailure(
+      json,
+      "The target Catalogue Revision was not resolved from production status.",
+    );
   }
   return 0;
+}
+
+function writeObservedFailure(observed, json) {
+  return observed.error === null
+    ? null
+    : writeFailure(json, observed.error, observed.exitCode);
 }
 
 function readHealthConfiguration(environment) {
@@ -732,6 +839,14 @@ function productionTargetFailure(json, detail) {
   return writeFailure(
     json,
     { code: "production_target_required", detail },
+    2,
+  );
+}
+
+function resolvedTargetFailure(json, detail) {
+  return writeFailure(
+    json,
+    { code: "production_target_mismatch", detail },
     2,
   );
 }

@@ -17,6 +17,7 @@ type ReconciliationWorkflowRequestRow = {
   ingestion_run_id: string;
   expected_current_revision_id: string;
   request_json: string;
+  workflow_params_json: string;
   workflow_instance_id: string;
   observed_at: string;
 };
@@ -107,19 +108,27 @@ export async function startOrObserveReconciliationWorkflow(
 
   const workflowInstanceId =
     `reconcile-${(await sha256Text(requestJson)).slice(0, 64)}`;
+  const workflowParams: ReconciliationWorkflowParams = {
+    ingestion_run_id: input.ingestion_run_id,
+    expected_current_revision_id: input.expected_current_revision_id,
+    idempotency_key: input.idempotency_key,
+    observed_at: observedAt,
+  };
+  const workflowParamsJson = canonicalJson(workflowParams);
   const insertion = await database
     .prepare(
       `INSERT OR IGNORE INTO reconciliation_workflow_requests (
          idempotency_key, ingestion_run_id,
          expected_current_revision_id, request_json,
-         workflow_instance_id, observed_at
-       ) VALUES (?, ?, ?, ?, ?, ?)`,
+         workflow_params_json, workflow_instance_id, observed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       input.idempotency_key,
       input.ingestion_run_id,
       input.expected_current_revision_id,
       requestJson,
+      workflowParamsJson,
       workflowInstanceId,
       observedAt,
     )
@@ -136,12 +145,12 @@ export async function startOrObserveReconciliationWorkflow(
   const created = insertion.meta.changes === 1;
   return {
     created,
-    document: await publicWorkflowRequest(database, workflow, stored, {
-      ingestion_run_id: input.ingestion_run_id,
-      expected_current_revision_id: input.expected_current_revision_id,
-      idempotency_key: input.idempotency_key,
-      observed_at: observedAt,
-    }),
+    document: await publicWorkflowRequest(
+      database,
+      workflow,
+      stored,
+      created,
+    ),
   };
 }
 
@@ -149,12 +158,25 @@ async function publicWorkflowRequest(
   database: D1Database,
   workflow: Workflow<ReconciliationWorkflowParams>,
   request: ReconciliationWorkflowRequestRow,
-  createParams?: ReconciliationWorkflowParams,
+  createRequested = false,
 ): Promise<Record<string, unknown>> {
-  let instance: WorkflowInstance;
-  if (createParams === undefined) {
-    instance = await workflow.get(request.workflow_instance_id);
-  } else {
+  const createParams = storedWorkflowParams(request);
+  let instance: WorkflowInstance | null = null;
+  let status: Awaited<ReturnType<WorkflowInstance["status"]>> | null = null;
+  if (!createRequested) {
+    try {
+      instance = await workflow.get(request.workflow_instance_id);
+      status = await instance.status();
+      if (status.status === "unknown") {
+        instance = null;
+        status = null;
+      }
+    } catch {
+      instance = null;
+      status = null;
+    }
+  }
+  if (instance === null) {
     try {
       instance = await workflow.create({
         id: request.workflow_instance_id,
@@ -164,7 +186,7 @@ async function publicWorkflowRequest(
       instance = await workflow.get(request.workflow_instance_id);
     }
   }
-  const status = await instance.status();
+  status ??= await instance.status();
   const output = status.status === "complete"
     ? await workflowOutput(database, request, status.output)
     : null;
@@ -239,12 +261,36 @@ async function workflowRequest(
     .prepare(
       `SELECT idempotency_key, ingestion_run_id,
               expected_current_revision_id, request_json,
-              workflow_instance_id, observed_at
+              workflow_params_json, workflow_instance_id, observed_at
        FROM reconciliation_workflow_requests
        WHERE idempotency_key = ?`,
     )
     .bind(idempotencyKey)
     .first<ReconciliationWorkflowRequestRow>();
+}
+
+function storedWorkflowParams(
+  request: ReconciliationWorkflowRequestRow,
+): ReconciliationWorkflowParams {
+  const parsed: unknown = JSON.parse(request.workflow_params_json);
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error("The persisted reconciliation Workflow params are invalid.");
+  }
+  const params = parsed as Record<string, unknown>;
+  if (
+    params.ingestion_run_id !== request.ingestion_run_id ||
+    params.expected_current_revision_id !==
+      request.expected_current_revision_id ||
+    params.idempotency_key !== request.idempotency_key ||
+    params.observed_at !== request.observed_at
+  ) {
+    throw new Error("The persisted reconciliation Workflow params are invalid.");
+  }
+  return params as ReconciliationWorkflowParams;
 }
 
 function assertExactReplay(

@@ -40,6 +40,7 @@ export type CandidatePlanRow = {
   memberships_json: string;
   warnings_json: string;
   withdrawal_json: string | null;
+  source_card_facts_json: string | null;
   digest_payload_json: string;
 };
 
@@ -64,6 +65,7 @@ export async function persistReviewableCandidate(
       compatibility: PrintingCompatibility | null;
       memberships: Memberships;
       withdrawal: ProvenancedWithdrawal | null;
+      sourceCardFactsJson: string | null;
     }[];
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
     candidate: FixtureCandidate;
@@ -171,6 +173,7 @@ export async function persistBlockedCandidate(
       compatibility: PrintingCompatibility | null;
       memberships: Memberships;
       withdrawal: ProvenancedWithdrawal | null;
+      sourceCardFactsJson: string | null;
     }[];
     diagnostics: readonly Record<string, unknown>[];
     candidate: FixtureCandidate;
@@ -308,6 +311,55 @@ export async function failReconciliation(
   ]);
 }
 
+export async function failReconciliationWorkflow(
+  database: D1Database,
+  runId: string,
+  observedAt: string,
+  detail: string,
+): Promise<Record<string, unknown>> {
+  const diagnostic = {
+    code: "reconciliation_workflow_failed",
+    detail,
+  };
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'failed', terminal_at = ?,
+             failure_code = 'reconciliation_workflow_failed',
+             warnings_json = ?,
+             progress_json =
+               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
+         WHERE id = ? AND state IN ('parsing', 'reconciling')`,
+      )
+      .bind(observedAt, canonicalJson([diagnostic]), runId),
+    database
+      .prepare(
+        `UPDATE operation_state
+         SET active_ingestion_run_id = NULL
+         WHERE singleton = 1
+           AND active_ingestion_run_id = ?
+           AND EXISTS (
+             SELECT 1 FROM ingestion_runs
+             WHERE id = ? AND state = 'failed'
+               AND failure_code = 'reconciliation_workflow_failed'
+           )`,
+      )
+      .bind(runId, runId),
+  ]);
+  return {
+    contract: "card-keepr-card-printing-reconciliation@2",
+    run_id: runId,
+    state: "failed",
+    publishable: false,
+    cards: [],
+    printings: [],
+    errata: [],
+    diagnostics: [diagnostic],
+    warnings: [],
+  };
+}
+
 type CandidatePlanInput = {
   sourceObservationSetId: string;
   sourceSnapshotId: string;
@@ -321,6 +373,7 @@ type CandidatePlanInput = {
   compatibility: PrintingCompatibility | null;
   memberships: Memberships;
   withdrawal: ProvenancedWithdrawal | null;
+  sourceCardFactsJson: string | null;
 };
 
 function candidatePlanInsertionStatements(
@@ -344,6 +397,7 @@ function candidatePlanInsertionStatements(
     memberships_json: canonicalJson(plan.memberships),
     withdrawal_json:
       plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
+    source_card_facts_json: plan.sourceCardFactsJson,
   }));
   return byteBoundedJsonArrays(rows).map((chunk) =>
     database.prepare(
@@ -351,7 +405,8 @@ function candidatePlanInsertionStatements(
          ingestion_run_id, source_observation_set_id, source_snapshot_id,
          source_observation_id, card_id, printing_id, source_lineage,
          locator, variant_key, compatibility_json, memberships_json,
-         withdrawal_json, warnings_json, digest_payload_json,
+         withdrawal_json, source_card_facts_json,
+         warnings_json, digest_payload_json,
          observation_kind
        )
        SELECT ?, json_extract(planned.value, '$.observation_set_id'),
@@ -364,7 +419,8 @@ function candidatePlanInsertionStatements(
               json_extract(planned.value, '$.variant_key'),
               json_extract(planned.value, '$.compatibility_json'),
               json_extract(planned.value, '$.memberships_json'),
-              json_extract(planned.value, '$.withdrawal_json'), ?,
+              json_extract(planned.value, '$.withdrawal_json'),
+              json_extract(planned.value, '$.source_card_facts_json'), ?,
               '{"reconciliation_context":"shared"}',
               json_extract(planned.value, '$.observation_kind')
        FROM json_each(?) AS planned`,

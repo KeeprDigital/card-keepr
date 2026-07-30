@@ -805,6 +805,25 @@ function reconciliationSourceDocument(scenario: string) {
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
   }
+  const searchRepairRetention =
+    /^search-repair-retention-([1-5])$/.exec(scenario);
+  if (searchRepairRetention !== null) {
+    const sequence = searchRepairRetention[1]!;
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP98-00${sequence}`,
+          name: `Search Repair Retention ${sequence}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/search-repair-retention/${sequence}`,
+          lineageMarker: `search-repair-retention-${sequence}`,
+        }),
+      ],
+    };
+  }
   if (
     scenario === "errata-card-rules-text" ||
     scenario === "errata-card-rules-text-v2" ||

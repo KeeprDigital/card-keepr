@@ -36,7 +36,7 @@ operation accepted but not yet terminal.
 | `keepr status` | no | none |
 | `keepr run start` | yes | exact Supported Games; no active run; recovery not blocked |
 | `keepr run show` | no | run identity |
-| `keepr run reconcile` | yes | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation; starts or observes the bound reconciliation Workflow |
+| `keepr run reconcile` | yes | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation after resolving the production run and its bound revision; starts or observes the bound reconciliation Workflow |
 | `keepr candidate inspect` | no | run in `awaiting_approval` |
 | `keepr run approve` | yes | run identity, candidate digest, expected current revision, unexpired candidate, verified current backup |
 | `keepr run reject` | yes | run identity and candidate digest |
@@ -54,7 +54,7 @@ operation accepted but not yet terminal.
 | `keepr credential rotate` | yes | credential class; replacement supplied out of band |
 | `keepr credential verify` | yes | rotation identity and harmless class-specific probe |
 | `keepr credential revoke-old` | yes | verified replacement and exact old credential fingerprint |
-| `keepr catalogue search repair` | yes | exact target Catalogue Revision; expected current Catalogue Revision; idempotency key; production confirmation; one bounded repair step |
+| `keepr catalogue search repair` | yes | exact target among the current Catalogue Revision and its two immediate predecessors; expected current Catalogue Revision; idempotency key; production confirmation after resolving production status; one bounded repair step |
 
 The ingestion Workflow owns automatic collection, parsing, reconciliation,
 candidate finalization, publication, export verification, expiry, and backup
@@ -70,9 +70,11 @@ revision fails closed.
 `catalogue search repair` performs one resumable, byte-bounded repair step. Its
 request is exactly
 `{target_revision_id, expected_current_revision_id, idempotency_key}`. The
-target remains explicit even when it is the current Catalogue Revision. An
-exact replay returns the persisted result; a stale expected revision or
-conflicting idempotency request fails closed.
+target remains explicit even when it is the current Catalogue Revision and is
+limited to that revision plus its two immediate predecessors. Every unfinished
+replay atomically rechecks the retained expected-current guard before claiming
+another step. An exact completed replay returns the persisted result; a stale
+expected revision or conflicting idempotency request fails closed.
 
 ## Catalogue Export deletion
 

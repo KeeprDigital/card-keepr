@@ -11,14 +11,16 @@ English Errata surface:
 adapter do not accept substitute HTTPS hosts or paths.
 
 The retained Source Snapshot is Bandai's UTF-8 HTML, not a producer-normalized
-JSON Card document. The versioned HTML adapter requires the dated section,
-Card heading, image, and exact `Before:`/`After:` pair for every entry and
-fails closed if that structure drifts. Its dedicated Erratum observation keeps
-the page's published date separate from `effective_from`: a dated page heading
-does not invent an official applicability date, so `effective_from` remains
-`null` unless the source explicitly supplies one. `Before:` is observed
-Printed Rules Text evidence; `After:` is the correction used to derive
-Effective Rules Text.
+JSON Card document. The versioned HTML adapter structurally enumerates both
+dated detail entries and historical modal entries inside the page's bounded
+content region. It requires the dated section or modal heading, Card heading,
+correction image, and exact `Before:`/`After:` pair for every enumerated entry;
+the declared and parsed counts must match, and unrelated footer or rules-change
+content is excluded. Its dedicated Erratum observation keeps the page's
+published date separate from `effective_from`: a dated page heading does not
+invent an official applicability date, so `effective_from` remains `null`
+unless the source explicitly supplies one. `Before:` is observed Printed Rules
+Text evidence; `After:` is the correction used to derive Effective Rules Text.
 
 Each Erratum object conforms to
 [`official-errata.schema.json`](./official-errata.schema.json):
@@ -51,3 +53,9 @@ effective date for a selected Supported Game is crossed while a candidate
 awaits approval, approval rejects the stale candidate and requires a fresh
 reconciliation. Unselected Supported Games carry forward byte-for-byte from
 the current Catalogue Revision.
+
+An Errata-only observation advances the Supported Game's `errata` freshness,
+not its broader `cards-and-printings` freshness. If a previously published
+Erratum from the same Source Lineage disappears from a complete observation,
+the immutable Erratum remains published with its prior last-observed revision
+and reconciliation emits an `erratum_not_observed` warning.

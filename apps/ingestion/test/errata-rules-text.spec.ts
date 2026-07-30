@@ -31,6 +31,45 @@ beforeEach(async () => {
 });
 
 describe("Errata rules-text lifecycle", () => {
+  test("generic production Card evidence cannot self-assert Official Errata authority", async () => {
+    const started = await post("/v1/ingestion-runs/evidence", {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-json-document@1",
+      idempotency_key: "reject-generic-production-errata-authority",
+      requests: [{
+        id: "cards",
+        method: "GET",
+        url:
+          "https://official-source.invalid/reconciliation/errata-card-rules-text",
+        headers: { accept: "application/json" },
+      }],
+    });
+    expect(started.response.status).toBe(201);
+    const runId = requiredString(started.document, "id");
+    expect(
+      (await post(
+        `/v1/ingestion-runs/${runId}/collection/resume`,
+        {},
+      )).response.status,
+    ).toBe(202);
+    await waitForRunState(runId, "parsing");
+
+    const reconciled = await reconcile(runId);
+
+    expect(reconciled.response.status).toBe(409);
+    expect(reconciled.document.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            "exact Source Adapter coverage",
+          ),
+        }),
+      ]),
+    );
+  });
+
   test("raw Errata NDJSON bytes follow the manifest id:utf8 ordering contract", async () => {
     const base = await fixtureCandidate("first-catalogue", ["one-piece"]);
     const cardId = base.candidate.cards[0]!.id;
@@ -442,6 +481,18 @@ describe("Errata rules-text lifecycle", () => {
       source_lineage: "one-piece-en",
       source_observation_id: expect.stringMatching(/^srcobs_/),
     });
+    const sourceFacts = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT canonical_facts_json
+       FROM reconciled_card_observations
+       WHERE card_id = ? AND source_observation_id = ?`,
+    )
+      .bind(erratum.target_id, persisted?.source_observation_id ?? "")
+      .first<{ canonical_facts_json: string }>();
+    expect(JSON.parse(sourceFacts?.canonical_facts_json ?? "null")).toMatchObject(
+      {
+        effective_rules_text: "[On Play] Draw 1 card.",
+      },
+    );
     await expect(
       testEnv.CATALOGUE_DB.prepare(
         `UPDATE reconciled_errata
@@ -589,6 +640,79 @@ describe("Errata rules-text lifecycle", () => {
         effective_from: null,
       }),
     );
+    const freshness = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT area, ingestion_run_id
+       FROM source_freshness
+       WHERE game = 'one-piece'
+       ORDER BY area`,
+    ).all<{ area: string; ingestion_run_id: string }>();
+    expect(freshness.results).toEqual([
+      {
+        area: "cards-and-printings",
+        ingestion_run_id: seedRun.id,
+      },
+      {
+        area: "errata",
+        ingestion_run_id: run.id,
+      },
+    ]);
+  });
+
+  test("a complete Errata observation warns when a published Erratum disappears without deleting it", async () => {
+    const seedRun = await collect(
+      "/reconciliation/dedicated-printing-erratum-seed",
+      "seed-disappearing-official-erratum",
+    );
+    const seed = await reconcile(seedRun.id);
+    expect(seed.response.status).toBe(200);
+    expect((await approve(seed.document)).response.status).toBe(200);
+
+    const observedRun = await collect(
+      "/reconciliation/dedicated-printing-erratum",
+      "observe-disappearing-official-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const observed = await reconcile(observedRun.id);
+    expect(observed.response.status).toBe(200);
+    const observedErratum = requiredFirst(observed.document, "errata");
+    const observedPublished = await approve(observed.document);
+    expect(observedPublished.response.status).toBe(200);
+    const observedRevisionId = requiredString(
+      observedPublished.document,
+      "resulting_revision_id",
+    );
+
+    const missingRun = await collect(
+      "/reconciliation/complete-empty-lineage",
+      "warn-disappearing-official-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const missing = await reconcile(missingRun.id);
+
+    expect(missing.response.status).toBe(200);
+    expect(missing.document.warnings).toContainEqual({
+      code: "erratum_not_observed",
+      erratum_id: requiredString(observedErratum, "id"),
+      source_lineage: "one-piece-en",
+      detail: expect.stringContaining(
+        "retained without advancing its last-observed revision",
+      ),
+    });
+    expect(missing.document.errata).toContainEqual(
+      expect.objectContaining({ id: requiredString(observedErratum, "id") }),
+    );
+    const missingPublished = await approve(missing.document);
+    expect(missingPublished.response.status).toBe(200);
+    const retained = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT last_observed_revision_id
+       FROM reconciled_errata
+       WHERE id = ?`,
+    )
+      .bind(requiredString(observedErratum, "id"))
+      .first<{ last_observed_revision_id: string }>();
+    expect(retained).toEqual({
+      last_observed_revision_id: observedRevisionId,
+    });
   });
 
   test("a dedicated Printing Erratum fails closed for ambiguous or unpublished locators", async () => {

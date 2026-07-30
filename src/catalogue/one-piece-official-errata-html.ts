@@ -30,124 +30,328 @@ export type OnePieceOfficialErratumObservation = Readonly<{
   }>;
 }>;
 
-const canonicalOrigin = "https://en.onepiece-cardgame.com";
+type SectionDraft = {
+  sourceId: string | null;
+  publishedOnParts: string[];
+};
 
-export function parseOnePieceOfficialErrataHtml(
+type PairDraft = {
+  labelParts: string[];
+  valueParts: string[];
+};
+
+type EntryDraft = {
+  sourceId: string | null;
+  sectionSourceId: string | null;
+  sectionPublishedOn: string | null;
+  headingParts: string[];
+  imagePaths: string[];
+  pairs: PairDraft[];
+  allTextParts: string[];
+};
+
+const canonicalOrigin = "https://en.onepiece-cardgame.com";
+const entrySelectors = [
+  ".contentsWrap div.detailCol",
+  ".contentsWrap div.errataModal",
+] as const;
+
+export async function parseOnePieceOfficialErrataHtml(
   document: string,
-): readonly OnePieceOfficialErratumObservation[] {
+): Promise<readonly OnePieceOfficialErratumObservation[]> {
+  const pageTitleParts: string[][] = [];
+  const observations: OnePieceOfficialErratumObservation[] = [];
+  const sections: SectionDraft[] = [];
+  let activeEntry: EntryDraft | null = null;
+  let activeHeading: string[] | null = null;
+  let activeLabel: string[] | null = null;
+  let activeValue: string[] | null = null;
+  let declaredRecordCount = 0;
+
+  const rewriter = new HTMLRewriter()
+    .on("h3.pageTit", {
+      element(element) {
+        const parts: string[] = [];
+        pageTitleParts.push(parts);
+        element.onEndTag(() => {});
+        activeHeading = parts;
+        element.onEndTag(() => {
+          activeHeading = null;
+        });
+      },
+      text(text) {
+        activeHeading?.push(text.text);
+      },
+    })
+    .on("section.contentsLCol", {
+      element(element) {
+        const section: SectionDraft = {
+          sourceId: element.getAttribute("id"),
+          publishedOnParts: [],
+        };
+        sections.push(section);
+        element.onEndTag(() => {
+          if (sections.at(-1) !== section) {
+            return parseFailure(
+              "The Official Errata section nesting is invalid.",
+            );
+          }
+          sections.pop();
+        });
+      },
+    })
+    .on("section.contentsLCol h4.mediumTit", {
+      text(text) {
+        sections.at(-1)?.publishedOnParts.push(text.text);
+      },
+    });
+  const entryHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (activeEntry !== null) {
+        return parseFailure("Official Errata entries must not be nested.");
+      }
+      const section = sections.at(-1);
+      const entry: EntryDraft = {
+        sourceId: element.getAttribute("id"),
+        sectionSourceId: section?.sourceId ?? null,
+        sectionPublishedOn: section === undefined
+          ? null
+          : normalizedText(section.publishedOnParts),
+        headingParts: [],
+        imagePaths: [],
+        pairs: [],
+        allTextParts: [],
+      };
+      declaredRecordCount += 1;
+      activeEntry = entry;
+      element.onEndTag(() => {
+        if (activeEntry !== entry) {
+          return parseFailure("The Official Errata entry boundary is invalid.");
+        }
+        observations.push(parsedEntry(entry));
+        activeEntry = null;
+      });
+    },
+    text(text) {
+      activeEntry?.allTextParts.push(text.text);
+    },
+  };
+  const headingHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (activeEntry === null || activeHeading !== null) {
+        return parseFailure(
+          "An Official Erratum Card heading is unavailable.",
+        );
+      }
+      activeHeading = activeEntry.headingParts;
+      element.onEndTag(() => {
+        activeHeading = null;
+      });
+    },
+    text(text) {
+      activeHeading?.push(text.text);
+    },
+  };
+  const headingBreakHandler: HTMLRewriterElementContentHandlers = {
+    element() {
+      activeHeading?.push("\n");
+    },
+  };
+  const imageHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      const source = element.getAttribute("src");
+      if (activeEntry === null || source === null) {
+        return parseFailure("An Official Erratum image is unavailable.");
+      }
+      activeEntry.imagePaths.push(source);
+    },
+  };
+  const labelHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (activeEntry === null || activeLabel !== null) {
+        return parseFailure(
+          "An Official Erratum field label is invalid.",
+        );
+      }
+      const pair: PairDraft = { labelParts: [], valueParts: [] };
+      activeEntry.pairs.push(pair);
+      activeLabel = pair.labelParts;
+      element.onEndTag(() => {
+        activeLabel = null;
+      });
+    },
+    text(text) {
+      activeLabel?.push(text.text);
+    },
+  };
+  const valueHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      const pair = activeEntry?.pairs.at(-1);
+      if (pair === undefined || activeValue !== null) {
+        return parseFailure(
+          "An Official Erratum field value is invalid.",
+        );
+      }
+      activeValue = pair.valueParts;
+      element.onEndTag(() => {
+        activeValue = null;
+      });
+    },
+    text(text) {
+      activeValue?.push(text.text);
+    },
+  };
+  const valueBreakHandler: HTMLRewriterElementContentHandlers = {
+    element() {
+      activeValue?.push("\n");
+    },
+  };
+  for (const entrySelector of entrySelectors) {
+    rewriter
+      .on(entrySelector, entryHandler)
+      .on(`${entrySelector} h5.smallTitRed`, headingHandler)
+      .on(`${entrySelector} h5.smallTitRed br`, headingBreakHandler)
+      .on(`${entrySelector} .typographicalImg img`, imageHandler)
+      .on(`${entrySelector} dl > dt`, labelHandler)
+      .on(`${entrySelector} dl > dd`, valueHandler)
+      .on(`${entrySelector} dl > dd br`, valueBreakHandler);
+  }
+
+  const parsed = rewriter.transform(
+    new Response(document, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    }),
+  );
+  try {
+    await parsed.arrayBuffer();
+  } catch (error) {
+    if (error instanceof AdministrationProblem) throw error;
+    throw new AdministrationProblem(
+      422,
+      "source_parse_failed",
+      error instanceof Error
+        ? error.message
+        : "The Official Errata HTML could not be parsed.",
+    );
+  }
+
   if (
-    !/<h3\b[^>]*class="[^"]*\bpageTit\b[^"]*"[^>]*>\s*Errata Cards\s*<\/h3>/i
-      .test(document)
+    pageTitleParts.length !== 1 ||
+    normalizedText(pageTitleParts[0] ?? []) !== "Errata Cards"
   ) {
     return parseFailure("The Official Errata page title is unavailable.");
   }
-  const headings = [...document.matchAll(
-    /<h4\b[^>]*class="[^"]*\bmediumTit\b[^"]*"[^>]*>([\s\S]*?)<\/h4>/gi,
-  )].map((match) => ({
-    index: match.index,
-    publishedOn: publishedDate(textContent(match[1] ?? "")),
-  }));
-  const details = [...document.matchAll(
-    /<div\b(?=[^>]*class="[^"]*\bdetailCol\b[^"]*")(?=[^>]*\bid="([^"]+)")[^>]*>/gi,
-  )];
-  if (headings.length === 0 || details.length === 0) {
-    return parseFailure("The Official Errata dated Card sections are unavailable.");
+  if (
+    declaredRecordCount === 0 ||
+    observations.length !== declaredRecordCount
+  ) {
+    return parseFailure(
+      "The Official Errata entry enumeration is incomplete.",
+    );
   }
-
-  return details.map((detail, index) => {
-    const start = detail.index;
-    const end = details[index + 1]?.index ?? document.length;
-    const fragment = document.slice(start, end);
-    const heading = [...headings]
-      .reverse()
-      .find((candidate) => candidate.index < start);
-    if (heading === undefined) {
-      return parseFailure("An Official Erratum has no published date.");
-    }
-    const title = singleCapture(
-      fragment,
-      /<h5\b[^>]*class="[^"]*\bsmallTitRed\b[^"]*"[^>]*>([\s\S]*?)<\/h5>/gi,
-      "An Official Erratum Card heading is unavailable.",
-    );
-    const displayName = textContent(title);
-    const identity = /^([A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6})\s+(.+)$/
-      .exec(displayName);
-    if (identity === null) {
-      return parseFailure("An Official Erratum Card heading is invalid.");
-    }
-    const pairs = [...fragment.matchAll(
-      /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi,
-    )].map((match) => ({
-      label: textContent(match[1] ?? ""),
-      value: textContent(match[2] ?? "", true),
-    }));
-    if (
-      pairs.length !== 2 ||
-      pairs[0]?.label !== "Before:" ||
-      pairs[1]?.label !== "After:" ||
-      pairs.some((pair) => pair.value.length === 0)
-    ) {
-      return parseFailure(
-        "An Official Erratum must contain exactly one Before/After pair.",
-      );
-    }
-    const imagePath = singleCapture(
-      fragment,
-      /<img\b(?=[^>]*\bsrc="([^"]+)")[^>]*>/gi,
-      "An Official Erratum image is unavailable.",
-    );
-    if (!imagePath.startsWith("/")) {
-      return parseFailure("An Official Erratum image path is invalid.");
-    }
-    const sourceId = detail[1] ?? "";
-    if (!/^errata_[A-Za-z0-9_-]+$/.test(sourceId)) {
-      return parseFailure("An Official Erratum source fragment is invalid.");
-    }
-    const before = pairs[0].value;
-    const after = pairs[1].value;
-    return {
-      kind: "official_erratum",
-      game: "one-piece",
-      target: {
-        type: "card",
-        official_identity: {
-          kind: "card_number",
-          value: identity[1]!,
-        },
-      },
-      published_on: heading.publishedOn,
-      effective_from: null,
-      observed_printed_rules_text: before,
-      corrected_rules_text: after,
-      official_wording: `Before: ${before}\nAfter: ${after}`,
-      applies_to_parallel_printings:
-        /\bAlso applies to parallel card version\./i.test(textContent(fragment)),
-      source: {
-        fragment: `#${sourceId}`,
-        display_name: displayName,
-        image_url: `${canonicalOrigin}${imagePath}`,
-      },
-      completeness: {
-        structurally_complete: true,
-        required_surfaces_complete: true,
-        partitions_complete: true,
-        declared_record_count: 1,
-        parsed_record_count: 1,
-      },
-    };
-  });
+  return observations;
 }
 
-function singleCapture(
-  value: string,
-  pattern: RegExp,
-  detail: string,
-): string {
-  const matches = [...value.matchAll(pattern)];
-  if (matches.length !== 1 || matches[0]?.[1] === undefined) {
-    return parseFailure(detail);
+function parsedEntry(
+  entry: EntryDraft,
+): OnePieceOfficialErratumObservation {
+  const headingLines = normalizedLines(entry.headingParts);
+  const embeddedDate = headingLines.length > 1
+    ? publishedDate(headingLines[0] ?? "")
+    : null;
+  const displayName = headingLines.length > 1
+    ? normalizedText(headingLines.slice(1))
+    : headingLines[0] ?? "";
+  const publishedOn = embeddedDate ??
+    (entry.sectionPublishedOn === null
+      ? parseFailure("An Official Erratum has no published date.")
+      : publishedDate(entry.sectionPublishedOn));
+  const identity = /^([A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6})\s+(.+)$/
+    .exec(displayName);
+  if (identity === null) {
+    return parseFailure("An Official Erratum Card heading is invalid.");
   }
-  return matches[0][1];
+  if (entry.imagePaths.length !== 1) {
+    return parseFailure("An Official Erratum image is unavailable.");
+  }
+  const imagePath = entry.imagePaths[0]!;
+  if (!imagePath.startsWith("/")) {
+    return parseFailure("An Official Erratum image path is invalid.");
+  }
+  const sourceId = entry.sourceId ?? entry.sectionSourceId;
+  if (
+    sourceId === null ||
+    !/^[A-Za-z][A-Za-z0-9_-]+$/.test(sourceId)
+  ) {
+    return parseFailure("An Official Erratum source fragment is invalid.");
+  }
+  const pairs = entry.pairs.map((pair) => ({
+    label: normalizedText(pair.labelParts),
+    value: normalizedLines(pair.valueParts).join("\n"),
+  }));
+  if (
+    pairs.length < 2 ||
+    pairs.some((pair) =>
+      !["Note:", "Before:", "After:"].includes(pair.label) ||
+      pair.value.length === 0
+    )
+  ) {
+    return parseFailure(
+      "An Official Erratum contains an unsupported field.",
+    );
+  }
+  const before = exactlyOnePair(pairs, "Before:");
+  const after = exactlyOnePair(pairs, "After:");
+  if (pairs.filter((pair) => pair.label === "Note:").length > 1) {
+    return parseFailure(
+      "An Official Erratum must contain exactly one Before/After pair.",
+    );
+  }
+  return {
+    kind: "official_erratum",
+    game: "one-piece",
+    target: {
+      type: "card",
+      official_identity: {
+        kind: "card_number",
+        value: identity[1]!,
+      },
+    },
+    published_on: publishedOn,
+    effective_from: null,
+    observed_printed_rules_text: before,
+    corrected_rules_text: after,
+    official_wording: `Before: ${before}\nAfter: ${after}`,
+    applies_to_parallel_printings:
+      /\bAlso applies to parallel card version\./i.test(
+        normalizedText(entry.allTextParts),
+      ),
+    source: {
+      fragment: `#${sourceId}`,
+      display_name: displayName,
+      image_url: `${canonicalOrigin}${imagePath}`,
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  };
+}
+
+function exactlyOnePair(
+  pairs: readonly Readonly<{ label: string; value: string }>[],
+  label: "Before:" | "After:",
+): string {
+  const matching = pairs.filter((pair) => pair.label === label);
+  if (matching.length !== 1) {
+    return parseFailure(
+      "An Official Erratum must contain exactly one Before/After pair.",
+    );
+  }
+  return matching[0]!.value;
 }
 
 function publishedDate(value: string): string {
@@ -182,53 +386,16 @@ function publishedDate(value: string): string {
   return result;
 }
 
-function textContent(value: string, preserveBreaks = false): string {
-  return decodeEntities(
-    value
-      .replace(/<br\s*\/?>/gi, preserveBreaks ? "\n" : " ")
-      .replace(/<[^>]+>/g, " "),
-  )
+function normalizedLines(parts: readonly string[]): string[] {
+  return parts
+    .join("")
     .split("\n")
     .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 0)
-    .join(preserveBreaks ? "\n" : " ");
+    .filter((line) => line.length > 0);
 }
 
-function decodeEntities(value: string): string {
-  const named: Readonly<Record<string, string>> = {
-    amp: "&",
-    apos: "'",
-    gt: ">",
-    hellip: "…",
-    ldquo: "“",
-    lsquo: "‘",
-    lt: "<",
-    nbsp: " ",
-    quot: "\"",
-    rdquo: "”",
-    rsquo: "’",
-  };
-  return value.replace(
-    /&(#(?:x[0-9a-f]+|[0-9]+)|[a-z]+);/gi,
-    (entity, encoded: string) => {
-      if (encoded.startsWith("#")) {
-        const hexadecimal = encoded[1]?.toLowerCase() === "x";
-        const point = Number.parseInt(
-          encoded.slice(hexadecimal ? 2 : 1),
-          hexadecimal ? 16 : 10,
-        );
-        if (!Number.isInteger(point) || point < 0 || point > 0x10ffff) {
-          return parseFailure("The Official Errata HTML entity is invalid.");
-        }
-        return String.fromCodePoint(point);
-      }
-      const decoded = named[encoded.toLowerCase()];
-      if (decoded === undefined) {
-        return parseFailure("The Official Errata HTML entity is unsupported.");
-      }
-      return decoded;
-    },
-  );
+function normalizedText(parts: readonly string[]): string {
+  return normalizedLines(parts).join(" ");
 }
 
 function parseFailure(detail: string): never {

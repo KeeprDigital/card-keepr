@@ -9,6 +9,7 @@ const root = resolve(import.meta.dirname, "..");
 const run = {
   id: "run_cli_demo",
   state: "failed",
+  expected_current_revision_id: "catrev_cli_demo",
   progress: {
     completed_stages: ["planning", "collecting", "parsing"],
     current_stage: "failed",
@@ -333,7 +334,12 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
-  assert.deepEqual(requests.slice(-5), [
+  assert.deepEqual(requests.slice(-7), [
+    {
+      method: "GET",
+      path: "/v1/ingestion-runs/run_cli_demo",
+      body: null,
+    },
     {
       method: "POST",
       path: "/v1/ingestion-runs/run_cli_demo/reconciliation",
@@ -341,6 +347,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
         expected_current_revision_id: "catrev_cli_demo",
         idempotency_key: "reconcile-cli-demo",
       },
+    },
+    {
+      method: "GET",
+      path: "/v1/status",
+      body: null,
     },
     {
       method: "POST",
@@ -375,6 +386,39 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       },
     },
   ]);
+
+  const mutationCount = requests.filter(({ method }) => method === "POST")
+    .length;
+  const staleTarget = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_stale_cli",
+      "--idempotency-key",
+      "reject-stale-cli-preflight",
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(staleTarget.code, 2, staleTarget.stderr);
+  assert.deepEqual(JSON.parse(staleTarget.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "production_target_mismatch",
+    detail:
+      "The production Ingestion Run does not resolve to the supplied run and expected Catalogue Revision.",
+  });
+  assert.equal(
+    requests.filter(({ method }) => method === "POST").length,
+    mutationCount,
+    "target mismatch must stop before mutation",
+  );
 });
 
 test("CLI Card search uses the authenticated catalogue HTTP seam", async (t) => {
