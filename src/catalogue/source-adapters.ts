@@ -11,6 +11,10 @@ export type SourceAdapterRegistration = Readonly<{
   parserContract: string;
   maximumSnapshotBytes: number;
   origin: "production" | "synthetic_fixture";
+  requestSurface:
+    | Readonly<{ kind: "credential-free-https" }>
+    | Readonly<{ kind: "exact-url"; url: string }>
+    | Readonly<{ kind: "synthetic-fixture" }>;
   reconciliationCoverage:
     | "official_source"
     | "official_errata"
@@ -81,6 +85,10 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: "one-piece-official-errata-document@1",
         maximumSnapshotBytes: 1024 * 1024,
         origin: "production" as const,
+        requestSurface: {
+          kind: "exact-url" as const,
+          url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+        },
         reconciliationCoverage: "official_errata" as const,
         parse: parsePinnedCardDocument,
       },
@@ -92,6 +100,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         parserContract: `${adapter.sourceLineage}-raw-surfaces@1`,
         maximumSnapshotBytes: 16 * 1024 * 1024,
         origin: "production" as const,
+        requestSurface: { kind: "credential-free-https" as const },
         reconciliationCoverage: "official_source" as const,
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
@@ -156,6 +165,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
       ].map((adapter) => ({
         ...adapter,
         origin: "production" as const,
+        requestSurface: { kind: "credential-free-https" as const },
         reconciliationCoverage: "unavailable" as const,
       })),
       ...[
@@ -214,6 +224,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumSnapshotBytes:
           adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
+        requestSurface: { kind: "synthetic-fixture" as const },
         reconciliationCoverage: "synthetic_fixture" as const,
         parse: parseSourceDocument,
       })),
@@ -261,4 +272,17 @@ export function assertAdapterBinding(
       "The adapter version is not registered for this Supported Game, Game Profile, and Official Source lineage.",
     );
   }
+}
+
+export function assertAdapterRequestSurface(
+  adapter: SourceAdapterRegistration,
+  url: URL,
+): void {
+  const surface = adapter.requestSurface;
+  if (surface.kind !== "exact-url" || url.href === surface.url) return;
+  throw new AdministrationProblem(
+    422,
+    "official_source_surface_mismatch",
+    `The Official Errata adapter accepts only ${surface.url}.`,
+  );
 }

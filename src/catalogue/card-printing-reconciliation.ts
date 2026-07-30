@@ -228,7 +228,23 @@ export async function reconcileRetainedCardPrintingEvidence(
       observation.sourceLineage,
       { effectiveRulesText: currentEffectiveAuthority },
     );
-    const canonicalFacts = canonicalJson(acceptedCard);
+    let acceptedCanonicalCard = acceptedCard;
+    try {
+      acceptedCanonicalCard = {
+        ...acceptedCard,
+        effective_rules_text: deriveEffectiveRulesText(
+          { id: cardId, ...acceptedCard },
+          mergeCatalogueErrata(
+            priorCandidate?.errata ?? [],
+            observedErrata,
+          ),
+          observedAt,
+        ),
+      };
+    } catch {
+      // Final candidate derivation below is the single diagnostic authority.
+    }
+    const canonicalFacts = canonicalJson(acceptedCanonicalCard);
     const priorFacts = localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
@@ -247,7 +263,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     } else {
       localCardFacts.set(cardId, canonicalFacts);
-      cards.set(cardId, { id: cardId, ...acceptedCard });
+      cards.set(cardId, { id: cardId, ...acceptedCanonicalCard });
     }
 
     let compatibility: PrintingCompatibility | null = null;

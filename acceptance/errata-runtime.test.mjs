@@ -10,6 +10,73 @@ import test from "node:test";
 const root = resolve(import.meta.dirname, "..");
 const runtimePort = 18_793;
 
+test("the repository CLI rejects Official Errata authority outside the documented Bandai surface", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-authority-"));
+  const statePath = join(directory, "shared-state");
+  const apiKey = crypto.randomUUID();
+  const administrationKey = crypto.randomUUID();
+  const environmentFile = join(directory, "runtime.env");
+  const runtimeConfig = join(directory, "runtime.wrangler.json");
+  await Promise.all([
+    writeFile(
+      environmentFile,
+      `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`,
+      { mode: 0o600 },
+    ),
+    writeRuntimeConfig(runtimeConfig),
+  ]);
+  applyMigrations(runtimeConfig, statePath);
+  const port = runtimePort + 1;
+  const runtime = startWorker({
+    config: runtimeConfig,
+    envFile: environmentFile,
+    inspectorPort: 19_235,
+    port,
+    statePath,
+  });
+  t.after(async () => {
+    await stopWorker(runtime);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await waitForHealth(
+    runtime,
+    port,
+    apiKey,
+    "Errata authority runtime",
+  );
+  const result = await runCli(
+    [
+      "source",
+      "collect",
+      "--game",
+      "one-piece",
+      "--lineage",
+      "one-piece-en",
+      "--adapter",
+      "one-piece-official-errata-json@1",
+      "--request-id",
+      "untrusted-errata",
+      "--url",
+      "https://publisher.example/claims/official-errata.json",
+      "--idempotency-key",
+      "reject-untrusted-errata-authority",
+      "--json",
+    ],
+    {
+      KEEPR_ADMINISTRATION_KEY: administrationKey,
+      KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+    },
+  );
+  assert.equal(result.code, 8, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "official_source_surface_mismatch",
+    detail:
+      "The Official Errata adapter accepts only https://en.onepiece-cardgame.com/rules/errata_card/.",
+  });
+});
+
 test("an Erratum fixture publishes through the CLI and is consumed through authenticated HTTP and export bytes", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-"));
   const statePath = join(directory, "shared-state");
@@ -73,7 +140,7 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
       "--request-id",
       "errata-rules-text",
       "--url",
-      "https://official-source.invalid/errata-rules-text",
+      "https://en.onepiece-cardgame.com/rules/errata_card/",
       "--idempotency-key",
       "errata-runtime-source",
       "--json",
@@ -88,6 +155,15 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
   );
   assert.equal(resumed.code, 0, resumed.stderr);
   await waitForRunState(run.id, "parsing", cliEnvironment, runtime);
+  const evidence = await runCli(
+    ["source", "show", "--run-id", run.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(evidence.code, 0, evidence.stderr);
+  assert.equal(
+    JSON.parse(evidence.stdout).observation_sets[0].observation_count,
+    2,
+  );
   const reconciledResult = await runCli(
     [
       "run",

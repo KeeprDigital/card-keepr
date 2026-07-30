@@ -1867,6 +1867,16 @@ async function commitVerifiedPublication(
     return {
       card,
       document,
+      summary: {
+        type: document.type,
+        id: document.id,
+        game: document.game,
+        official_identity: document.official_identity,
+        name: document.name,
+        game_data: document.game_data,
+        lifecycle: document.lifecycle,
+        links: document.links,
+      },
       searchText: cardSearchText(document),
     };
   });
@@ -1919,19 +1929,36 @@ async function commitVerifiedPublication(
     },
   );
   const revisionCardStatements = byteBoundedJsonArrays(
-    cardDocuments.map(({ card, document, searchText }) => ({
+    cardDocuments.map(({ card, document }) => ({
       card_id: card.id,
       document_json: JSON.stringify(document),
-      search_text: searchText,
     })),
   ).map((chunk) =>
     database
       .prepare(
         `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json, search_text
+           catalogue_revision_id, card_id, document_json
          )
          SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.document_json'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
+  const revisionCardQueryStatements = byteBoundedJsonArrays(
+    cardDocuments.map(({ card, summary, searchText }) => ({
+      card_id: card.id,
+      summary_json: JSON.stringify(summary),
+      search_text: searchText,
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_card_query_documents (
+           catalogue_revision_id, card_id, summary_json, search_text
+         )
+         SELECT ?, json_extract(value, '$.card_id'),
+                json_extract(value, '$.summary_json'),
                 json_extract(value, '$.search_text')
          FROM json_each(?)`,
       )
@@ -1948,13 +1975,19 @@ async function commitVerifiedPublication(
     database
       .prepare(
         `INSERT INTO revision_card_search_terms (
-           catalogue_revision_id, card_id, term
+           catalogue_revision_id, card_id, term, sort_game,
+           sort_identity_kind, sort_identity_value, sort_id
          )
-         SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.term')
-         FROM json_each(?)`,
+         SELECT query.catalogue_revision_id, query.card_id,
+                json_extract(term.value, '$.term'),
+                query.sort_game, query.sort_identity_kind,
+                query.sort_identity_value, query.sort_id
+         FROM json_each(?) AS term
+         JOIN revision_card_query_documents AS query
+           ON query.catalogue_revision_id = ?
+          AND query.card_id = json_extract(term.value, '$.card_id')`,
       )
-      .bind(revisionId, chunk),
+      .bind(chunk, revisionId),
   );
   const revisionPrintingStatements = byteBoundedJsonArrays(
     printingDocuments.map(({ printing, document }) => ({
@@ -2058,6 +2091,7 @@ async function commitVerifiedPublication(
       ),
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
+    ...revisionCardQueryStatements,
     ...revisionCardSearchStatements,
     database
       .prepare(

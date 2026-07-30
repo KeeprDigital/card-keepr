@@ -5,6 +5,11 @@ Source Observation evidence. The observation keeps the source-published Card
 and Printing facts unchanged; reconciliation derives **Effective Rules Text**
 without rewriting **Printed Rules Text**.
 
+The installed One Piece Official Errata adapter is bound to Bandai's documented
+English Errata surface:
+`https://en.onepiece-cardgame.com/rules/errata_card/`. Requests for that
+adapter do not accept substitute HTTPS hosts or paths.
+
 Each Erratum object conforms to
 [`official-errata.schema.json`](./official-errata.schema.json):
 

@@ -1,5 +1,3 @@
-ALTER TABLE revision_cards RENAME TO revision_cards_legacy;
-
 INSERT INTO source_adapter_versions (
   adapter_version,
   source_lineage,
@@ -16,43 +14,37 @@ INSERT INTO source_adapter_versions (
   'production'
 );
 
-CREATE TABLE revision_cards (
-  catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+CREATE TABLE revision_card_query_documents (
+  catalogue_revision_id TEXT NOT NULL,
   card_id TEXT NOT NULL,
-  document_json TEXT NOT NULL CHECK (json_valid(document_json)),
+  summary_json TEXT NOT NULL CHECK (json_valid(summary_json)),
   sort_game TEXT GENERATED ALWAYS AS (
-    CAST(json_extract(document_json, '$.game') AS TEXT)
+    CAST(json_extract(summary_json, '$.game') AS TEXT)
   ) STORED NOT NULL,
   sort_identity_kind TEXT GENERATED ALWAYS AS (
-    CAST(json_extract(document_json, '$.official_identity.kind') AS TEXT)
+    CAST(json_extract(summary_json, '$.official_identity.kind') AS TEXT)
   ) STORED NOT NULL,
   sort_identity_value TEXT GENERATED ALWAYS AS (
-    CAST(json_extract(document_json, '$.official_identity.value') AS TEXT)
+    CAST(json_extract(summary_json, '$.official_identity.value') AS TEXT)
   ) STORED NOT NULL,
   sort_id TEXT GENERATED ALWAYS AS (
-    CAST(json_extract(document_json, '$.id') AS TEXT)
+    CAST(json_extract(summary_json, '$.id') AS TEXT)
   ) STORED NOT NULL,
-  search_text TEXT NOT NULL,
-  PRIMARY KEY (catalogue_revision_id, card_id)
+  search_text TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (catalogue_revision_id, card_id),
+  FOREIGN KEY (catalogue_revision_id, card_id)
+    REFERENCES revision_cards(catalogue_revision_id, card_id)
+    ON DELETE CASCADE
 );
 
-INSERT INTO revision_cards (
-  catalogue_revision_id, card_id, document_json, search_text
-)
-SELECT catalogue_revision_id, card_id, document_json,
-       ''
-FROM revision_cards_legacy;
-
-DROP TABLE revision_cards_legacy;
-
-CREATE INDEX revision_cards_by_order
-  ON revision_cards(
+CREATE INDEX revision_card_query_documents_by_order
+  ON revision_card_query_documents(
     catalogue_revision_id, sort_game, sort_identity_kind,
     sort_identity_value, sort_id
   );
 
-CREATE INDEX revision_cards_by_identity
-  ON revision_cards(
+CREATE INDEX revision_card_query_documents_by_identity
+  ON revision_card_query_documents(
     catalogue_revision_id, sort_identity_kind, sort_identity_value,
     sort_game, sort_id
   );
@@ -63,14 +55,21 @@ CREATE TABLE revision_card_search_terms (
   term TEXT NOT NULL CHECK (
     length(term) > 0 AND length(term) <= 128
   ),
+  sort_game TEXT NOT NULL,
+  sort_identity_kind TEXT NOT NULL,
+  sort_identity_value TEXT NOT NULL,
+  sort_id TEXT NOT NULL,
   PRIMARY KEY (catalogue_revision_id, card_id, term),
   FOREIGN KEY (catalogue_revision_id, card_id)
-    REFERENCES revision_cards(catalogue_revision_id, card_id)
+    REFERENCES revision_card_query_documents(catalogue_revision_id, card_id)
     ON DELETE CASCADE
 );
 
 CREATE INDEX revision_card_search_by_term
-  ON revision_card_search_terms(catalogue_revision_id, term, card_id);
+  ON revision_card_search_terms(
+    catalogue_revision_id, term, sort_game, sort_identity_kind,
+    sort_identity_value, sort_id, card_id
+  );
 
 CREATE TABLE catalogue_query_revisions (
   catalogue_revision_id TEXT PRIMARY KEY
@@ -78,26 +77,30 @@ CREATE TABLE catalogue_query_revisions (
   state TEXT NOT NULL CHECK (
     state IN ('pending', 'available', 'archived')
   ),
-  repaired_through_card_id TEXT
+  repaired_through_card_id TEXT,
+  repair_card_id TEXT,
+  repair_search_offset INTEGER NOT NULL DEFAULT 0 CHECK (
+    repair_search_offset >= 0
+  ),
+  repair_term_offset INTEGER NOT NULL DEFAULT 0 CHECK (
+    repair_term_offset >= 0
+  )
 );
 
-INSERT INTO catalogue_query_revisions (
-  catalogue_revision_id, state, repaired_through_card_id
-)
-SELECT DISTINCT catalogue_revision_id, 'pending', NULL
-FROM revision_cards;
-
 CREATE TRIGGER archive_removed_card_query_material
-AFTER DELETE ON revision_cards
+AFTER DELETE ON revision_card_query_documents
 WHEN NOT EXISTS (
   SELECT 1
-  FROM revision_cards
+  FROM revision_card_query_documents
   WHERE catalogue_revision_id = OLD.catalogue_revision_id
 )
 BEGIN
   UPDATE catalogue_query_revisions
   SET state = 'archived',
-      repaired_through_card_id = NULL
+      repaired_through_card_id = NULL,
+      repair_card_id = NULL,
+      repair_search_offset = 0,
+      repair_term_offset = 0
   WHERE catalogue_revision_id = OLD.catalogue_revision_id;
 END;
 

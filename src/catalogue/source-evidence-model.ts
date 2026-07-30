@@ -1,5 +1,6 @@
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
+  assertAdapterRequestSurface,
   assertAdapterBinding,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
@@ -109,6 +110,7 @@ export async function validateEvidencePlan(
       );
     }
     const url = validOfficialSourceUrl(sourceRequest.url);
+    assertAdapterRequestSurface(adapter, url);
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(sourceRequest.headers ?? {})) {
       const normalizedName = name.toLowerCase();

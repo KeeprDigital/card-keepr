@@ -19,10 +19,9 @@ export function cardSearchTerms(searchText: string): string[] {
     ...new Set(
       searchText
         .split(" ")
-        .filter(
-          (term) =>
-            term.length > 0 &&
-            term.length <= maximumIndexedTermLength,
+        .filter((term) => term.length > 0)
+        .map((term) =>
+          [...term].slice(0, maximumIndexedTermLength).join("")
         ),
     ),
   ];

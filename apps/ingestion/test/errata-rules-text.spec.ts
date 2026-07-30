@@ -12,6 +12,8 @@ import {
 } from "../../../src/catalogue/read";
 import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { buildCatalogueExport } from "../../../src/catalogue/export";
+import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
@@ -30,6 +32,69 @@ beforeEach(async () => {
 });
 
 describe("Errata rules-text lifecycle", () => {
+  test("raw Errata NDJSON bytes follow the manifest id:utf8 ordering contract", async () => {
+    const base = await fixtureCandidate("first-catalogue", ["one-piece"]);
+    const cardId = base.candidate.cards[0]!.id;
+    const provenance = [{
+      source_lineage: "one-piece-en",
+      source_observation_id: "srcobs_errata_order",
+    }];
+    const built = await buildCatalogueExport(
+      {
+        ...base.candidate,
+        errata: [
+          {
+            id: "erratum_z_late_utf8",
+            game: "one-piece",
+            target_type: "card",
+            target_id: cardId,
+            effective_from: "2026-01-01",
+            official_wording: "Earlier effective date, later UTF-8 id.",
+            corrected_value: "Earlier correction.",
+            provenance,
+          },
+          {
+            id: "erratum_a_early_utf8",
+            game: "one-piece",
+            target_type: "card",
+            target_id: cardId,
+            effective_from: "2026-12-31",
+            official_wording: "Later effective date, earlier UTF-8 id.",
+            corrected_value: "Later correction.",
+            provenance,
+          },
+        ],
+      },
+      base.digest,
+      "catrev_errata_raw_order",
+      "2026-07-30T00:00:00.000Z",
+    );
+    const component = built.manifest.components.find(
+      (candidate) => candidate.name === "errata",
+    );
+    const object = built.objects.find((candidate) =>
+      candidate.key.includes(component?.compressed_sha256 ?? "missing")
+    );
+    expect(object).toBeDefined();
+    const body = object!.body();
+    const decompressed = body.readable.pipeThrough(
+      new DecompressionStream("gzip"),
+    );
+    const raw = await new Response(decompressed).text();
+    await body.completed;
+    expect(
+      raw.trim().split("\n").map((line) =>
+        (JSON.parse(line) as { id: string }).id
+      ),
+    ).toEqual([
+      "erratum_a_early_utf8",
+      "erratum_z_late_utf8",
+    ]);
+    expect(raw.indexOf('"id":"erratum_a_early_utf8"')).toBeLessThan(
+      raw.indexOf('"id":"erratum_z_late_utf8"'),
+    );
+  });
+
   test("applicable Card Errata reconcile the same raw rules across authoritative lineages", async () => {
     const asiaRun = await collect(
       "/reconciliation/gundam-errata-cross-lineage-asia",

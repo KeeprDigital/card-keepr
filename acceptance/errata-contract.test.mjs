@@ -54,4 +54,23 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   ]) {
     assert.match(contract, new RegExp(term));
   }
+  assert.match(
+    contract,
+    /https:\/\/en\.onepiece-cardgame\.com\/rules\/errata_card\//,
+  );
+});
+
+test("the 0007 schema migration is additive and leaves historical Card backfill to the resumable application repair", async () => {
+  const migration = await readFile(
+    resolve(root, "migrations/0007_errata_rules_text.sql"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    migration,
+    /ALTER\s+TABLE\s+revision_cards\s+RENAME/iu,
+  );
+  assert.doesNotMatch(
+    migration,
+    /INSERT\s+INTO\s+revision_cards[\s\S]*FROM\s+revision_cards/iu,
+  );
 });

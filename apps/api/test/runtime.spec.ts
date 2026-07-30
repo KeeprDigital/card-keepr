@@ -294,15 +294,19 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
     ).bind("b".repeat(64), "b".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_cards (
-        catalogue_revision_id, card_id, document_json, search_text
-      ) VALUES (?, ?, ?, ?)`,
+        catalogue_revision_id, card_id, document_json
+      ) VALUES (?, ?, ?)`,
     ).bind(
       "catrev_errata_read",
       card.id,
       JSON.stringify(card),
-      cardSearchText(card),
     ),
     ...cardSearchStatements("catrev_errata_read", card),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_query_revisions (
+         catalogue_revision_id, state, repaired_through_card_id
+       ) VALUES ('catrev_errata_read', 'available', NULL)`,
+    ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
         catalogue_revision_id, printing_id, card_id, document_json
@@ -364,8 +368,8 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   expect(etag).not.toBeNull();
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO revision_cards (
-       catalogue_revision_id, card_id, document_json, search_text
-     ) VALUES (?, ?, ?, '')`,
+       catalogue_revision_id, card_id, document_json
+     ) VALUES (?, ?, ?)`,
   )
     .bind(
       "catrev_errata_read",
@@ -496,6 +500,95 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   });
 });
 
+test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {
+  const token = (length: number) => "x".repeat(length);
+  await seedApiRevision({
+    revisionId: "catrev_query_boundaries",
+    runId: "run_query_boundaries",
+    cards: [
+      apiCard({
+        id: "card_query_boundaries",
+        cardNumber: "OP29-500",
+        name: [
+          token(1),
+          token(128),
+          token(129),
+          token(500),
+        ].join(" "),
+      }),
+    ],
+  });
+  let sequence = 40;
+  for (const query of [
+    token(1),
+    token(128),
+    token(129),
+    token(500),
+    "ﬀ".repeat(500),
+  ]) {
+    const response = await exports.default.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/cards?q=${
+          encodeURIComponent(query)
+        }`,
+        { headers: apiHeaders(`203.0.113.${sequence++}`) },
+      ),
+    );
+    expect(response.status, `${query.length}: ${await response.clone().text()}`)
+      .toBe(200);
+  }
+  for (const [query, reason] of [
+    [token(501), "q must contain at most 500 characters."],
+    ["---", "q must contain at least one searchable letter or number."],
+  ] as const) {
+    const response = await exports.default.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/cards?q=${
+          encodeURIComponent(query)
+        }`,
+        { headers: apiHeaders(`203.0.113.${sequence++}`) },
+      ),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+      invalid_params: [{ name: "q", reason }],
+    });
+  }
+});
+
+test("authenticated Card collection pages remain byte-bounded for large valid records", async () => {
+  const cards = Array.from({ length: 18 }, (_, index) =>
+    apiCard({
+      id: `card_large_page_${String(index).padStart(3, "0")}`,
+      cardNumber: `OP29-${String(600 + index)}`,
+      name: `Large Card ${String(index).padStart(3, "0")} ${
+        "x".repeat(250_000)
+      }`,
+    })
+  );
+  await seedApiRevision({
+    revisionId: "catrev_large_page",
+    runId: "run_large_page",
+    cards,
+  });
+  const response = await exports.default.fetch(
+    new Request("https://card-keepr.invalid/v1/cards?limit=100", {
+      headers: apiHeaders("203.0.113.58"),
+    }),
+  );
+  expect(response.status).toBe(200);
+  const bytes = new Uint8Array(await response.clone().arrayBuffer());
+  const document = await response.json<{
+    data: unknown[];
+    page: { next_cursor: string | null };
+  }>();
+  expect(bytes.byteLength).toBeLessThanOrEqual(4 * 1024 * 1024);
+  expect(document.data.length).toBeGreaterThan(0);
+  expect(document.data.length).toBeLessThan(cards.length);
+  expect(document.page.next_cursor).toEqual(expect.any(String));
+});
+
 test("Card search persistence remains compatible with D1 export", async () => {
   const virtualTables = await testEnv.CATALOGUE_DB.prepare(
     `SELECT name FROM sqlite_schema
@@ -542,6 +635,15 @@ test("pre-0007 Card search rows are canonically upgraded for current and retaine
         name: "E\u0301clair — Luffy",
         effectiveRulesText: "[On Play]: Draw 2 cards!",
       }),
+      apiCard({
+        id: "card_search_current_002",
+        cardNumber: "OP01-003",
+        name: "Current Repair Partner",
+        effectiveRulesText: Array.from(
+          { length: 2_000 },
+          (_, index) => `posting${index}`,
+        ).join(" "),
+      }),
     ],
   );
   await applyD1Migrations(
@@ -549,14 +651,78 @@ test("pre-0007 Card search rows are canonically upgraded for current and retaine
     testEnv.TEST_MIGRATIONS.slice(5),
   );
 
-  let repair;
+  const unavailableBeforeRepair = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=OP01%20001",
+    ),
+    "request-upgrade-before-repair",
+  );
+  expect(unavailableBeforeRepair.status).toBe(503);
+  await expect(unavailableBeforeRepair.json()).resolves.toMatchObject({
+    code: "catalogue_query_unavailable",
+  });
+  const retainedPendingCursor = encodeTestCardCursor({
+    revisionId: "catrev_search_retained",
+    q: "draw 2",
+    limit: 1,
+    after: {
+      game: "one-piece",
+      identityKind: "card_number",
+      identityValue: "OP01-001",
+      id: "card_search_retained_001",
+    },
+  });
+  const retainedUnavailable = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=draw%202&limit=1&after=" +
+        encodeURIComponent(retainedPendingCursor),
+    ),
+    "request-retained-pending",
+  );
+  expect(retainedUnavailable.status).toBe(409);
+  await expect(retainedUnavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+  });
+
+  let repair = await repairCardSearchMaterialization(legacyDatabase, {
+    limit: 1,
+    maximumBoundParameterBytes: 4_096,
+  });
+  expect(repair.complete).toBe(false);
+  const unavailableDuringRepair = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=OP01%20001",
+    ),
+    "request-upgrade-during-repair",
+  );
+  expect(unavailableDuringRepair.status).toBe(503);
+  await expect(unavailableDuringRepair.json()).resolves.toMatchObject({
+    code: "catalogue_query_unavailable",
+  });
+
+  let repairCalls = 1;
+  let maximumBoundParameterBytes = repair.maximum_bound_parameter_bytes;
   do {
     repair = await repairCardSearchMaterialization(legacyDatabase, {
       limit: 1,
+      maximumBoundParameterBytes: 4_096,
     });
+    repairCalls += 1;
+    maximumBoundParameterBytes = Math.max(
+      maximumBoundParameterBytes,
+      repair.maximum_bound_parameter_bytes,
+    );
   } while (!repair.complete);
+  expect(repairCalls).toBeGreaterThan(5);
+  expect(maximumBoundParameterBytes).toBeLessThanOrEqual(4_096);
   await expect(
-    repairCardSearchMaterialization(legacyDatabase, { limit: 1 }),
+    repairCardSearchMaterialization(legacyDatabase, {
+      limit: 1,
+      maximumBoundParameterBytes: 4_096,
+    }),
   ).resolves.toMatchObject({
     complete: true,
     processed_cards: 0,
@@ -584,6 +750,18 @@ test("pre-0007 Card search rows are canonically upgraded for current and retaine
       meta: { catalogue_revision_id: "catrev_search_current" },
     });
   }
+  const oversizedPosting = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=posting1999",
+    ),
+    "request-upgrade-oversized-posting",
+  );
+  expect(oversizedPosting.status).toBe(200);
+  await expect(oversizedPosting.json()).resolves.toMatchObject({
+    data: [{ id: "card_search_current_002" }],
+    meta: { catalogue_revision_id: "catrev_search_current" },
+  });
 
   await legacyDatabase.prepare(
     `UPDATE catalogue_state
@@ -623,7 +801,7 @@ test("pre-0007 Card search rows are canonically upgraded for current and retaine
 
 test("Card collection schema exposes revision-bounded indexed search materialization", async () => {
   const columns = await testEnv.CATALOGUE_DB.prepare(
-    "PRAGMA table_xinfo(revision_cards)",
+    "PRAGMA table_xinfo(revision_card_query_documents)",
   ).all<{ name: string }>();
   expect(columns.results.map((column) => column.name)).toEqual(
     expect.arrayContaining([
@@ -635,20 +813,20 @@ test("Card collection schema exposes revision-bounded indexed search materializa
     ]),
   );
   const indexes = await testEnv.CATALOGUE_DB.prepare(
-    "PRAGMA index_list(revision_cards)",
+    "PRAGMA index_list(revision_card_query_documents)",
   ).all<{ name: string }>();
   expect(indexes.results.map((index) => index.name)).toEqual(
     expect.arrayContaining([
-      "revision_cards_by_order",
-      "revision_cards_by_identity",
+      "revision_card_query_documents_by_order",
+      "revision_card_query_documents_by_identity",
     ]),
   );
   expect(indexes.results.map((index) => index.name))
-    .not.toContain("revision_cards_by_search");
+    .not.toContain("revision_card_query_documents_by_search");
   const orderPlan = await testEnv.CATALOGUE_DB.prepare(
     `EXPLAIN QUERY PLAN
-     SELECT document_json
-     FROM revision_cards
+     SELECT summary_json
+     FROM revision_card_query_documents
      WHERE catalogue_revision_id = ?
        AND (sort_game, sort_identity_kind, sort_identity_value, sort_id)
          > (?, ?, ?, ?)
@@ -664,7 +842,7 @@ test("Card collection schema exposes revision-bounded indexed search materializa
     )
     .all<{ detail: string }>();
   expect(orderPlan.results.map((row) => row.detail).join("\n"))
-    .toContain("revision_cards_by_order");
+    .toContain("revision_card_query_documents_by_order");
   const productionSearch = cardCollectionPageQuery(
     "catrev_plan",
     {
@@ -685,6 +863,7 @@ test("Card collection schema exposes revision-bounded indexed search materializa
     .join("\n");
   expect(searchPlanText).toContain("revision_card_search_by_term");
   expect(searchPlanText).not.toMatch(/\bSCAN revision_cards\b/u);
+  expect(searchPlanText).not.toContain("USE TEMP B-TREE");
 });
 
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
@@ -753,7 +932,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
     .bind("e".repeat(64))
     .run();
   await testEnv.CATALOGUE_DB.prepare(
-    `DELETE FROM revision_cards
+    `DELETE FROM revision_card_query_documents
      WHERE catalogue_revision_id = 'catrev_cursor_old'`,
   ).run();
   await expect(
@@ -818,6 +997,34 @@ function apiHeaders(ip: string): Record<string, string> {
     authorization: "Bearer vitest-api-key",
     "cf-connecting-ip": ip,
   };
+}
+
+function encodeTestCardCursor(input: {
+  revisionId: string;
+  q: string | null;
+  limit: number;
+  after: {
+    game: string;
+    identityKind: string;
+    identityValue: string;
+    id: string;
+  };
+}): string {
+  const bytes = new TextEncoder().encode(JSON.stringify({
+    contract: "card-keepr-card-cursor@1",
+    revision_id: input.revisionId,
+    q: input.q,
+    game: null,
+    card_number: null,
+    limit: input.limit,
+    after: {
+      game: input.after.game,
+      identity_kind: input.after.identityKind,
+      identity_value: input.after.identityValue,
+      id: input.after.id,
+    },
+  }));
+  return btoa(String.fromCharCode(...bytes));
 }
 
 type ApiCardFixture = Record<string, unknown> & {
@@ -1003,13 +1210,12 @@ async function seedApiRevision(input: {
     ...input.cards.flatMap((card) => [
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json, search_text
-         ) VALUES (?, ?, ?, ?)`,
+           catalogue_revision_id, card_id, document_json
+         ) VALUES (?, ?, ?)`,
       ).bind(
         input.revisionId,
         card.id,
         JSON.stringify(card),
-        apiCardSearchText(card),
       ),
       ...cardSearchStatements(input.revisionId, card),
     ]),
@@ -1045,13 +1251,47 @@ function cardSearchStatements(
   revisionId: string,
   card: ApiCardFixture,
 ): D1PreparedStatement[] {
-  return cardSearchTerms(apiCardSearchText(card)).map((term) =>
+  return [
     testEnv.CATALOGUE_DB.prepare(
-      `INSERT INTO revision_card_search_terms (
-         catalogue_revision_id, card_id, term
-       ) VALUES (?, ?, ?)`,
-    ).bind(revisionId, card.id, term),
-  );
+      `INSERT INTO revision_card_query_documents (
+         catalogue_revision_id, card_id, summary_json, search_text
+       ) VALUES (?, ?, ?, ?)`,
+    ).bind(
+      revisionId,
+      card.id,
+      JSON.stringify(apiCardSummary(card)),
+      apiCardSearchText(card),
+    ),
+    ...cardSearchTerms(apiCardSearchText(card)).map((term) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_card_search_terms (
+           catalogue_revision_id, card_id, term, sort_game,
+           sort_identity_kind, sort_identity_value, sort_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        revisionId,
+        card.id,
+        term,
+        card.game,
+        card.official_identity.kind,
+        card.official_identity.value,
+        card.id,
+      )
+    ),
+  ];
+}
+
+function apiCardSummary(card: ApiCardFixture) {
+  return {
+    type: card.type,
+    id: card.id,
+    game: card.game,
+    official_identity: card.official_identity,
+    name: card.name,
+    game_data: card.game_data,
+    lifecycle: card.lifecycle,
+    links: card.links,
+  };
 }
 
 function apiCardSearchText(card: ApiCardFixture): string {

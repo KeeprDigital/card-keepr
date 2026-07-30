@@ -12,7 +12,7 @@ export {
 
 export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
   fetch(): Response {
-    return Response.json({ cards: [errataObservation()] });
+    return Response.json({ cards: errataObservations() });
   }
 }
 
@@ -30,9 +30,9 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-function errataObservation() {
+function errataObservations() {
   const artworkFingerprint = `sha256:${"a".repeat(64)}`;
-  return {
+  const first = {
     card: {
       game: "one-piece",
       official_identity: { kind: "card_number", value: "OP29-009" },
@@ -71,14 +71,16 @@ function errataObservation() {
       demonstrably_novel: true,
       novelty_basis: {
         kind: "official_printing_image",
-        source_url: "https://official-source.invalid/images/OP29-009.png",
+        source_url:
+          "https://en.onepiece-cardgame.com/images/cardlist/card/OP29-009.png",
         artwork_fingerprint: artworkFingerprint,
       },
     },
     appearance_evidence: {
       images: [{
         role: "front",
-        source_url: "https://official-source.invalid/images/OP29-009.png",
+        source_url:
+          "https://en.onepiece-cardgame.com/images/cardlist/card/OP29-009.png",
         artwork_fingerprint: artworkFingerprint,
       }],
     },
@@ -103,4 +105,15 @@ function errataObservation() {
       corrected_value: "[On Play] Draw 2 cards.",
     }],
   };
+  return [
+    first,
+    {
+      ...first,
+      card: {
+        ...first.card,
+        effective_rules_text:
+          "[On Play] Draw one card. (Observed alternate wording)",
+      },
+    },
+  ];
 }
