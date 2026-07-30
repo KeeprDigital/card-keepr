@@ -1,5 +1,9 @@
 export type CredentialClass =
-  keyof typeof credentialClassDefinitions;
+  | "api_bearer_key"
+  | "ingestion_admin_key"
+  | "d1_export_token"
+  | "d1_verification_token"
+  | "github_deployment_token";
 
 export const credentialClasses: readonly CredentialClass[];
 export const credentialConsumerProofWorkerName:

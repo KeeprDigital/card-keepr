@@ -8,12 +8,7 @@ import {
   probeD1Credential,
 } from "./cloudflare-authority.mjs";
 
-type ConsumerProofEnvironment = {
-  CREDENTIAL_CONSUMER_PROOF_KEY: string;
-  CATALOGUE_DB: D1Database;
-  CLOUDFLARE_ACCOUNT_ID?: string;
-  CATALOGUE_D1_DATABASE_ID?: string;
-  DISPOSABLE_D1_DATABASE_ID?: string;
+type CredentialSecretEnvironment = {
   API_BEARER_KEY_REPLACEMENT?: string;
   ADMINISTRATION_KEY_REPLACEMENT?: string;
   D1_EXPORT_TOKEN_REPLACEMENT?: string;
@@ -24,12 +19,21 @@ type ConsumerProofEnvironment = {
   D1_VERIFICATION_TOKEN?: string;
 };
 
+type ConsumerProofEnvironment = CredentialSecretEnvironment & {
+  CREDENTIAL_CONSUMER_PROOF_KEY: string;
+  CATALOGUE_DB: D1Database;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CATALOGUE_D1_DATABASE_ID?: string;
+  DISPOSABLE_D1_DATABASE_ID?: string;
+};
+
 type ApiConsumerObservationEnvironment = Pick<
-  ConsumerProofEnvironment,
-  | "CREDENTIAL_CONSUMER_PROOF_KEY"
+  CredentialSecretEnvironment,
   | "API_BEARER_KEY"
   | "API_BEARER_KEY_REPLACEMENT"
->;
+> & {
+  CREDENTIAL_CONSUMER_PROOF_KEY: string;
+};
 
 export const credentialConsumerProofRequestHeader =
   "x-keepr-credential-consumer-request";
@@ -273,7 +277,6 @@ export async function handleCredentialConsumerProof(
     );
   }
   const capability =
-    credentialClass === "api_bearer_key" ||
     credentialClass === "ingestion_admin_key"
       ? {
           ok: await normalBearerProbe(
@@ -582,19 +585,35 @@ function consumerProofRequestNonceMessage(
 
 function replacementSecret(
   credentialClass: CredentialClass,
-  environment:
-    | ConsumerProofEnvironment
-    | ApiConsumerObservationEnvironment,
+  environment: CredentialSecretEnvironment,
   slot: "a" | "b",
 ): string | undefined {
-  const definition = credentialClassDefinitions[credentialClass];
-  const key =
-    slot === "a"
-      ? definition.active_environment_key
-      : definition.replacement_environment_key;
-  return (environment as unknown as Record<string, unknown>)[key] as
-    | string
-    | undefined;
+  switch (credentialClass) {
+    case "api_bearer_key":
+      return slot === "a"
+        ? environment.API_BEARER_KEY
+        : environment.API_BEARER_KEY_REPLACEMENT;
+    case "ingestion_admin_key":
+      return slot === "a"
+        ? environment.ADMINISTRATION_KEY
+        : environment.ADMINISTRATION_KEY_REPLACEMENT;
+    case "d1_export_token":
+      return slot === "a"
+        ? environment.D1_EXPORT_TOKEN
+        : environment.D1_EXPORT_TOKEN_REPLACEMENT;
+    case "d1_verification_token":
+      return slot === "a"
+        ? environment.D1_VERIFICATION_TOKEN
+        : environment.D1_VERIFICATION_TOKEN_REPLACEMENT;
+    case "github_deployment_token":
+      return undefined;
+    default:
+      return unreachableCredentialClass(credentialClass);
+  }
+}
+
+function unreachableCredentialClass(value: never): never {
+  throw new TypeError(`Unsupported credential class: ${String(value)}`);
 }
 
 async function probeD1Capability(
