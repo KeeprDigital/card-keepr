@@ -8,11 +8,13 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import {
+  AdministrationProblem,
   administrationStatus as administrationStatusDirect,
   approveRun as approveRunDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
 } from "../../../src/catalogue/ingestion";
+import { injectFixturePublication } from "./fixture-plan-injection";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -246,15 +248,18 @@ test("a lengthless administration body is rejected while streaming beyond 16 KiB
     { highWaterMark: 0 },
   );
   const response = await exports.default.fetch(
-    new Request("https://card-keepr.invalid/v1/ingestion-runs", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer vitest-administration-key",
-        "content-type": "application/json",
-        "cf-connecting-ip": "192.0.2.251",
+    new Request(
+      "https://card-keepr.invalid/v1/ingestion-runs/evidence",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+          "cf-connecting-ip": "192.0.2.251",
+        },
+        body,
       },
-      body,
-    }),
+    ),
   );
   expect(response.status).toBe(413);
   await expect(response.json()).resolves.toMatchObject({
@@ -1834,6 +1839,55 @@ async function administrationRequest(
   response: Response;
   document: Record<string, unknown>;
 }> {
+  if (pathname === "/v1/ingestion-runs" && body !== undefined) {
+    try {
+      const document = await injectFixturePublication(
+        testEnv.CATALOGUE_DB,
+        testEnv.CATALOGUE_EXPORTS,
+        {
+          fixture: String(body.fixture),
+          selected_games: Array.isArray(body.selected_games)
+            ? body.selected_games.map(String)
+            : [],
+          idempotency_key: String(body.idempotency_key),
+        },
+        testObservedAt ?? undefined,
+      );
+      return {
+        response: Response.json(document, {
+          status:
+            document.contract ===
+              "card-keepr-administration-operation@1" &&
+            document.status === "in_progress"
+              ? 202
+              : 201,
+        }),
+        document,
+      };
+    } catch (error) {
+      const status =
+        error instanceof AdministrationProblem ? error.status : 500;
+      const code =
+        error instanceof AdministrationProblem
+          ? error.code
+          : "internal_error";
+      const document = {
+        type: `https://card-keepr.invalid/problems/${code}`,
+        title: "Administration request rejected",
+        status,
+        code,
+        detail:
+          error instanceof AdministrationProblem
+            ? error.message
+            : "The administration request could not be completed.",
+        request_id: crypto.randomUUID(),
+      };
+      return {
+        response: Response.json(document, { status }),
+        document,
+      };
+    }
+  }
   const response = await exports.default.fetch(
     new Request(`https://card-keepr.invalid${pathname}`, {
       method: body === undefined ? "GET" : "POST",

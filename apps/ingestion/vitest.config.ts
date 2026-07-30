@@ -399,6 +399,8 @@ function reconciliationSourceDocument(scenario: string) {
     scenario === "gundam-cross-asia" ||
     scenario === "gundam-cross-us" ||
     scenario === "gundam-cross-us-empty" ||
+    scenario === "gundam-mirror-asia" ||
+    scenario === "gundam-mirror-us" ||
     scenario === "gundam-cross-product-conflict" ||
     scenario === "gundam-cross-variant-conflict" ||
     scenario === "gundam-cross-conflict" ||
@@ -409,7 +411,9 @@ function reconciliationSourceDocument(scenario: string) {
         printingObservation({
           game: "gundam",
           profile: "gundam@1",
-          cardNumber: "GD99-001",
+          cardNumber: scenario.startsWith("gundam-mirror-")
+            ? "GD95-001"
+            : "GD99-001",
           name:
             scenario === "gundam-card-conflict"
               ? "Contradictory US name"

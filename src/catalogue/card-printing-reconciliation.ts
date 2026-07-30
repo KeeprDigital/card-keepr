@@ -14,7 +14,6 @@ import {
   compatiblePrintings,
   canonicalCardConflict,
   existingCard,
-  gundamCrossLocaleEvidenceCompatible,
   hasCurrentCardObservationFromLineage,
   hasOtherGundamLocaleEvidence,
   printingAtLocator,
@@ -22,6 +21,7 @@ import {
 } from "./reconciliation-repository";
 import {
   failReconciliation,
+  persistBlockedCandidate,
   persistReviewableCandidate,
 } from "./reconciliation-candidate-store";
 import {
@@ -207,20 +207,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           compatiblePrintings(database, compatibility),
           printingsWithAppearance(database, compatibility),
         ]);
-      const databaseMatches: typeof unfilteredDatabaseMatches = [];
-      for (const match of unfilteredDatabaseMatches) {
-        if (
-          await gundamCrossLocaleEvidenceCompatible(
-            database,
-            match,
-            retained.sourceLineage,
-            observation.variantKey,
-            observation.memberships.products,
-          )
-        ) {
-          databaseMatches.push(match);
-        }
-      }
+      const databaseMatches = unfilteredDatabaseMatches;
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
@@ -341,9 +328,6 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...withdrawalConflictDiagnostics(plans),
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
-  if (diagnostics.length > 0) {
-    return blockedResult(database, runId, diagnostics, observedAt);
-  }
 
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
@@ -408,6 +392,45 @@ export async function reconcileRetainedCardPrintingEvidence(
     plans,
     retained.sourceLineage,
   );
+  const observedCards = [...cards.values()]
+    .filter((card) => localCardFacts.has(card.id))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const observedPrintings = [...printings.values()]
+    .filter((printing) =>
+      plans.some((plan) => plan.printingId === printing.id),
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+  if (diagnostics.length > 0) {
+    const stableDiagnostics = [...diagnostics].sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
+    await persistBlockedCandidate(database, {
+      runId,
+      observationSetId: retained.observationSetId,
+      sourceSnapshotId: retained.sourceSnapshotId,
+      sourceLineage: retained.sourceLineage,
+      plans,
+      diagnostics: stableDiagnostics,
+      candidate,
+      digestPayloadJson,
+      candidateDigest,
+      candidateCatalogueDigest,
+      observedAt,
+    });
+    return {
+      contract: "card-keepr-card-printing-reconciliation@2",
+      run_id: runId,
+      state: "failed",
+      publishable: false,
+      candidate_digest: candidateDigest,
+      expected_current_revision_id: run.expected_current_revision_id,
+      source_observation_set_id: retained.observationSetId,
+      cards: observedCards,
+      printings: observedPrintings,
+      diagnostics: stableDiagnostics,
+      warnings,
+    };
+  }
   await persistReviewableCandidate(database, {
     runId,
     observationSetId: retained.observationSetId,
@@ -429,14 +452,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     candidate_digest: candidateDigest,
     expected_current_revision_id: run.expected_current_revision_id,
     source_observation_set_id: retained.observationSetId,
-    cards: [...cards.values()]
-      .filter((card) => localCardFacts.has(card.id))
-      .sort((left, right) => left.id.localeCompare(right.id)),
-    printings: [...printings.values()]
-      .filter((printing) =>
-        plans.some((plan) => plan.printingId === printing.id),
-      )
-      .sort((left, right) => left.id.localeCompare(right.id)),
+    cards: observedCards,
+    printings: observedPrintings,
     diagnostics: [],
     warnings,
   };

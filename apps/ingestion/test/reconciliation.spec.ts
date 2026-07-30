@@ -9,7 +9,10 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import type { FixtureCandidate } from "../../../src/catalogue/fixture";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import {
+  injectFixtureEvidencePlan,
+  injectFixturePublication,
+} from "./fixture-plan-injection";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -218,6 +221,12 @@ test("retained immutable evidence publishes stable identities and warns when ear
   expect(publishedPrintingDocument.relationship_evidence).toEqual(
     lifecycle.document.relationship_evidence,
   );
+  expect(
+    JSON.stringify(lifecycle.document.relationship_evidence),
+  ).not.toContain("source_bucket");
+  expect(
+    JSON.stringify(publishedPrintingDocument.relationship_evidence),
+  ).not.toContain("source_bucket");
 
   const withdrawalRun = await collect(
     "/reconciliation/withdrawn",
@@ -432,6 +441,29 @@ test("a complete zero-match blocks publication unless retained evidence proves a
         source_observation_id: expect.stringMatching(/^srcobs_/),
       },
     ],
+  });
+  const inspected = await get(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+  );
+  expect(inspected.response.status).toBe(200);
+  expect(inspected.document).toMatchObject({
+    run_id: run.id,
+    candidate_digest: requiredString(
+      blocked.document,
+      "candidate_digest",
+    ),
+    diff: {
+      printings: {
+        added: expect.any(Array),
+      },
+    },
+  });
+  const retried = await post(`/v1/ingestion-runs/${run.id}/retry`, {
+    idempotency_key: "blocked-candidate-generic-retry",
+  });
+  expect(retried.response.status).toBe(409);
+  expect(retried.document).toMatchObject({
+    code: "evidence_retry_required",
   });
   const approval = await post(
     `/v1/ingestion-runs/${run.id}/approval`,
@@ -695,6 +727,22 @@ test("the production Worker has no route capable of injecting synthetic fixture 
   );
   expect(blocked.response.status).toBe(404);
   expect(blocked.document).toMatchObject({ code: "not_found" });
+
+  const legacyFixturePublication = await post("/v1/ingestion-runs", {
+    fixture: "first-catalogue",
+    selected_games: ["one-piece"],
+    idempotency_key: "production-fixture-publication-bypass",
+  });
+  expect(legacyFixturePublication.response.status).toBe(404);
+  expect(legacyFixturePublication.document).toMatchObject({
+    code: "not_found",
+  });
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM ingestion_runs
+     WHERE idempotency_key = 'production-fixture-publication-bypass'`,
+  ).first<{ count: number }>();
+  expect(retained?.count).toBe(0);
 });
 
 test("one complete retained set can publish multiple Printings without collapsing their identities", async () => {
@@ -1184,17 +1232,49 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       },
     );
     const mismatch = await reconcile(mismatchRun.id);
-    expect(mismatch.response.status).toBe(409);
-    expect(mismatch.document).toMatchObject({
-      diagnostics: [
-        {
-          code: "printing_match_contradictory",
-          candidate_printing_ids: [printingId],
-        },
-      ],
+    expect(mismatch.response.status).toBe(200);
+    expect(requiredFirst(mismatch.document, "printings")).toMatchObject({
+      id: printingId,
     });
+    await approve(mismatch.document);
   }
 }, 20_000);
+
+test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
+  const usRun = await collect(
+    "/reconciliation/gundam-mirror-us",
+    "stable-id-en-us-first",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const us = await reconcile(usRun.id);
+  const printingId = requiredString(
+    requiredFirst(us.document, "printings"),
+    "id",
+  );
+  expect(printingId).toBe(
+    "printing_133c063736fd275c675f6db014416609",
+  );
+  await approve(us.document);
+
+  const asiaRun = await collect(
+    "/reconciliation/gundam-mirror-asia",
+    "stable-id-en-asia-second",
+    {
+      game: "gundam",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@1",
+    },
+  );
+  const asia = await reconcile(asiaRun.id);
+  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  await approve(asia.document);
+});
 
 test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
   const usRun = await collect(
@@ -1724,11 +1804,19 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
   expect(retainedCandidate?.digest_payload_json).toContain(
     '"catalogue_data"',
   );
-  const intervening = await post("/v1/ingestion-runs", {
-    fixture: "first-catalogue",
-    selected_games: ["one-piece"],
-    idempotency_key: "intervening-current-revision",
-  });
+  const interveningDocument = await injectFixturePublication(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      idempotency_key: "intervening-current-revision",
+    },
+  );
+  const intervening = {
+    response: new Response(null, { status: 201 }),
+    document: interveningDocument,
+  };
   expect(intervening.response.status).toBe(201);
   const interveningPublished = await post(
     `/v1/ingestion-runs/${requiredString(intervening.document, "id")}/approval`,

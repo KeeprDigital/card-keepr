@@ -697,7 +697,9 @@ async function nextRelationshipEvidence(
       });
     }
   }
-  return aggregateRelationshipEvidence(rows);
+  return aggregateRelationshipEvidence(rows).filter(
+    (relationship) => relationship.relationship_kind !== "source_bucket",
+  );
 }
 
 function printingPersistenceStatement(

@@ -8,7 +8,6 @@ import {
   retryPublicationCleanup,
   retryRun,
   showRun,
-  startFixtureRun,
 } from "../../../src/catalogue/ingestion";
 import {
   assertBindingsAvailable,
@@ -77,37 +76,6 @@ export default {
         });
       }
       const observedAt = administrationObservedAt(request, env);
-
-      if (
-        request.method === "POST" &&
-        url.pathname === "/v1/ingestion-runs"
-      ) {
-        const body = await readAdministrationBody(request);
-        assertOnlyFields(body, [
-          "fixture",
-          "selected_games",
-          "idempotency_key",
-        ]);
-        const result = await startFixtureRun(
-          env.CATALOGUE_DB,
-          env.CATALOGUE_EXPORTS,
-          {
-            fixture: requiredString(body, "fixture"),
-            selected_games: requiredStringArray(
-              body,
-              "selected_games",
-            ),
-            idempotency_key: requiredString(
-              body,
-              "idempotency_key",
-            ),
-          },
-          observedAt,
-        );
-        return Response.json(result, {
-          status: administrationResultStatus(result, 201),
-        });
-      }
 
       if (
         request.method === "POST" &&

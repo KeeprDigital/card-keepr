@@ -43,8 +43,14 @@ export async function cardIdFor(
 export async function printingIdFor(
   compatibility: PrintingCompatibility,
 ): Promise<string> {
+  const identityCompatibility = {
+    ...compatibility,
+    source_lineage: isGundamEnglishLineage(compatibility.source_lineage)
+      ? "gundam-english"
+      : compatibility.source_lineage,
+  };
   return `printing_${(
-    await sha256Text(canonicalJson(compatibility))
+    await sha256Text(canonicalJson(identityCompatibility))
   ).slice(0, 32)}`;
 }
 

@@ -168,10 +168,10 @@ export async function publicReconciledPrinting(
       last_missing_revision_id: string | null;
     }[]
   >(() => []);
-  const relationshipEvidence = aggregateRelationshipEvidence(
+  const allRelationshipEvidence = aggregateRelationshipEvidence(
     memberships.results,
   );
-  for (const membership of relationshipEvidence) {
+  for (const membership of allRelationshipEvidence) {
     const key = projectionKey(membership.relationship_kind);
     if (membership.current) {
       if (!current[key].includes(membership.relationship_value)) {
@@ -192,7 +192,9 @@ export async function publicReconciledPrinting(
     card_id: printing.card_id,
     locators: locators.results.map((row) => row.locator),
     memberships: { current, historical },
-    relationship_evidence: relationshipEvidence,
+    relationship_evidence: allRelationshipEvidence.filter(
+      (relationship) => relationship.relationship_kind !== "source_bucket",
+    ),
     lifecycle: lifecycle(
       printing.first_revision_id,
       printing.last_observed_revision_id,

@@ -439,11 +439,22 @@ export async function inspectCandidate(
   );
   assertOpaqueId(runId, "run_id");
   const row = await requiredRun(database, runId);
-  if (row.state !== "awaiting_approval") {
+  const blockedReconciliation =
+    row.state === "failed" &&
+    row.candidate_digest !== null &&
+    (await database
+      .prepare(
+        `SELECT 1 AS present
+         FROM reconciliation_contexts
+         WHERE ingestion_run_id = ?`,
+      )
+      .bind(row.id)
+      .first<{ present: number }>()) !== null;
+  if (row.state !== "awaiting_approval" && !blockedReconciliation) {
     throw new AdministrationProblem(
       409,
       "candidate_not_approvable",
-      "The Ingestion Run does not have a candidate awaiting approval.",
+      "The Ingestion Run does not have an inspectable reconciliation candidate.",
     );
   }
   const candidate = parseCandidate(row);
@@ -1274,8 +1285,12 @@ async function cataloguePrinting(
   reconciledLifecycle?: Record<string, unknown>,
   relationshipEvidence: readonly Record<string, unknown>[] = [],
 ) {
+  const canonicalRelationshipEvidence = relationshipEvidence.filter(
+    (relationship) =>
+      relationship.relationship_kind !== "source_bucket",
+  );
   const contexts = await Promise.all(
-    relationshipEvidence
+    canonicalRelationshipEvidence
       .filter(
         (relationship) =>
           relationship.current === true &&
@@ -1304,7 +1319,7 @@ async function cataloguePrinting(
           index,
       )
       .sort((left, right) => String(left.id).localeCompare(String(right.id))),
-    relationship_evidence: relationshipEvidence,
+    relationship_evidence: canonicalRelationshipEvidence,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,

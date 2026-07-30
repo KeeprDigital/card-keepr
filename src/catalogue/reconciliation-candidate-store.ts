@@ -138,6 +138,130 @@ export async function persistReviewableCandidate(
   ]);
 }
 
+export async function persistBlockedCandidate(
+  database: D1Database,
+  input: {
+    runId: string;
+    observationSetId: string;
+    sourceSnapshotId: string;
+    sourceLineage: string;
+    plans: readonly {
+      sourceObservationId: string;
+      cardId: string;
+      printingId: string | null;
+      locator: string | null;
+      variantKey: string | null;
+      compatibility: PrintingCompatibility | null;
+      memberships: Memberships;
+      withdrawal: ProvenancedWithdrawal | null;
+    }[];
+    diagnostics: readonly Record<string, unknown>[];
+    candidate: FixtureCandidate;
+    digestPayloadJson: string;
+    candidateDigest: string;
+    candidateCatalogueDigest: string;
+    observedAt: string;
+  },
+): Promise<void> {
+  const approvalDeadline = new Date(
+    Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  const runDiagnostics = input.diagnostics.map((diagnostic) => ({
+    code: String(diagnostic.code),
+    detail: String(diagnostic.detail),
+  }));
+  await database.batch([
+    database
+      .prepare(
+        `INSERT INTO reconciliation_contexts (
+          ingestion_run_id, source_observation_set_id,
+          source_snapshot_id, source_lineage, digest_payload_json
+        ) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        input.runId,
+        input.observationSetId,
+        input.sourceSnapshotId,
+        input.sourceLineage,
+        input.digestPayloadJson,
+      ),
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'reconciling',
+             progress_json =
+               '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
+         WHERE id = ? AND state = 'parsing'`,
+      )
+      .bind(input.runId),
+    ...input.plans.map((plan) =>
+      database
+        .prepare(
+          `INSERT INTO reconciliation_candidates (
+            ingestion_run_id, source_observation_set_id, source_snapshot_id,
+            source_observation_id, card_id, printing_id, source_lineage,
+            locator, variant_key, compatibility_json, memberships_json,
+            withdrawal_json,
+            warnings_json, digest_payload_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.runId,
+          input.observationSetId,
+          input.sourceSnapshotId,
+          plan.sourceObservationId,
+          plan.cardId,
+          plan.printingId,
+          input.sourceLineage,
+          plan.locator,
+          plan.variantKey,
+          plan.compatibility === null
+            ? null
+            : canonicalJson(plan.compatibility),
+          canonicalJson(plan.memberships),
+          plan.withdrawal === null
+            ? null
+            : canonicalJson(plan.withdrawal),
+          canonicalJson(input.diagnostics),
+          input.digestPayloadJson,
+        ),
+    ),
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'failed',
+             candidate_json = ?,
+             candidate_digest = ?,
+             candidate_catalogue_digest = ?,
+             candidate_created_at = ?,
+             approval_deadline = ?,
+             terminal_at = ?,
+             failure_code = 'printing_reconciliation_blocked',
+             warnings_json = ?,
+             progress_json =
+               '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
+         WHERE id = ? AND state = 'reconciling'`,
+      )
+      .bind(
+        canonicalJson(input.candidate),
+        input.candidateDigest,
+        input.candidateCatalogueDigest,
+        input.observedAt,
+        approvalDeadline,
+        input.observedAt,
+        canonicalJson(runDiagnostics),
+        input.runId,
+      ),
+    database
+      .prepare(
+        `UPDATE operation_state
+         SET active_ingestion_run_id = NULL
+         WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+      )
+      .bind(input.runId),
+  ]);
+}
+
 export async function failReconciliation(
   database: D1Database,
   runId: string,
