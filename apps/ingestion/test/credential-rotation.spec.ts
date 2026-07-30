@@ -99,6 +99,7 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
       plan_digest: plan.plan_digest,
       execution_owner_token: "b".repeat(64),
       execution_attempt: plan.execution_attempt,
+      mutation_started: false,
     },
     undefined,
     "2026-07-29T00:04:15.000Z",
@@ -114,6 +115,7 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
       plan_digest: plan.plan_digest,
       execution_owner_token: "a".repeat(64),
       execution_attempt: plan.execution_attempt,
+      mutation_started: false,
     },
     undefined,
     "2026-07-29T00:04:30.000Z",
@@ -416,6 +418,103 @@ test("stale identity, wrong class, aliased management, and stale claim snapshot 
   });
 });
 
+test("execution capabilities are plan-bound and consumed exactly once before provider work", async () => {
+  const plan = await reserve(
+    await planInput(
+      "install",
+      "d1_export_token",
+      0,
+      "credrot_execution_capability",
+    ),
+  );
+  await execute(plan);
+  expect(plan.execution_capability).toMatch(/^[0-9a-f]{64}$/);
+  const path =
+    `/v1/credential-rotation-plans/${plan.id}/execution-capability`;
+  const wrong = await administrationRequest(
+    path,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: "0".repeat(64),
+    },
+  );
+  expect(wrong.status).toBe(409);
+  const accepted = await administrationRequest(
+    path,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+    },
+  );
+  expect(accepted.status).toBe(200);
+  await expect(accepted.json()).resolves.toEqual({
+    contract: "card-keepr-credential-execution-capability@1",
+    consumed: true,
+  });
+  const replay = await administrationRequest(
+    path,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+    },
+  );
+  expect(replay.status).toBe(409);
+});
+
+test("API, administration, and provider credentials complete two A/B generations without reusing a live slot", async () => {
+  for (const [classIndex, credentialClass] of ([
+    "api_bearer_key",
+    "ingestion_admin_key",
+    "d1_export_token",
+  ] as const).entries()) {
+    const firstGeneration = classIndex * 6;
+    const firstOld = await fingerprint(`generation-0-${credentialClass}`);
+    const firstReplacement = await fingerprint(
+      `generation-1-${credentialClass}`,
+    );
+    const firstIds = issuerSlots(credentialClass);
+    const first = await completeRotationLifecycle({
+      credentialClass,
+      generation: firstGeneration,
+      rotationId: `credrot_${credentialClass}_generation_1`,
+      oldFingerprint: firstOld,
+      replacementFingerprint: firstReplacement,
+      oldIssuer: firstIds.a,
+      replacementIssuer: firstIds.b,
+    });
+    expect(first).toMatchObject({
+      state: "old_revoked",
+      current_consumer_slot: "b",
+    });
+
+    const secondReplacement = await fingerprint(
+      `generation-2-${credentialClass}`,
+    );
+    const second = await completeRotationLifecycle({
+      credentialClass,
+      generation: firstGeneration + 3,
+      rotationId: `credrot_${credentialClass}_generation_2`,
+      oldFingerprint: firstReplacement,
+      replacementFingerprint: secondReplacement,
+      oldIssuer: firstIds.b,
+      replacementIssuer:
+        credentialClass === "d1_export_token"
+          ? "provider-token:generation-2-id"
+          : firstIds.a,
+    });
+    expect(second).toMatchObject({
+      state: "old_revoked",
+      current_consumer_slot: "a",
+    });
+  }
+});
+
 const identities = {
   api_bearer_key: {
     resource_identity:
@@ -473,8 +572,11 @@ type PlanDocument = Record<string, unknown> & {
   required_permission: string;
   cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
+  old_consumer_slot: "a" | "b";
+  replacement_consumer_slot: "a" | "b";
   execution_attempt: number;
   execution_mode: "mutation" | "reconciliation" | null;
+  execution_capability?: string;
   old_fingerprint: string;
   replacement_fingerprint: string;
   old_issuer_credential_id: string;
@@ -508,6 +610,77 @@ function productionTargetIdentity(): string {
     github_environment_id: "33333333",
     github_workflow_id: "44444444",
   });
+}
+
+function issuerSlots(credentialClass: CredentialClass): {
+  a: string;
+  b: string;
+} {
+  if (credentialClass === "api_bearer_key") {
+    return {
+      a: "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY",
+      b: "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT",
+    };
+  }
+  if (credentialClass === "ingestion_admin_key") {
+    return {
+      a: "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY",
+      b: "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY_REPLACEMENT",
+    };
+  }
+  return {
+    a: "provider-token:old-credential-id",
+    b: "provider-token:replacement-credential-id",
+  };
+}
+
+async function completeRotationLifecycle(input: {
+  credentialClass: CredentialClass;
+  generation: number;
+  rotationId: string;
+  oldFingerprint: string;
+  replacementFingerprint: string;
+  oldIssuer: string;
+  replacementIssuer: string;
+}): Promise<Record<string, unknown>> {
+  let last: Record<string, unknown> = {};
+  for (const [offset, action] of [
+    [0, "install"],
+    [1, "verify"],
+    [2, "revoke"],
+  ] as const) {
+    const request = await planInput(
+      action,
+      input.credentialClass,
+      input.generation + offset,
+      input.rotationId,
+      input.oldFingerprint,
+      input.replacementFingerprint,
+    );
+    request.old_issuer_credential_id = input.oldIssuer;
+    request.replacement_issuer_credential_id =
+      input.replacementIssuer;
+    request.idempotency_key =
+      `${action}-${input.rotationId}-${input.generation + offset}`;
+    const plan = await reserve(request);
+    expect(plan).toMatchObject({
+      old_consumer_slot:
+        input.rotationId.endsWith("_generation_1") ? "a" : "b",
+      replacement_consumer_slot:
+        input.rotationId.endsWith("_generation_1") ? "b" : "a",
+    });
+    await execute(plan);
+    const response = await finalize(
+      plan,
+      await signedAttestation(
+        plan,
+        action === "revoke" ? "unusable" : "usable",
+      ),
+    );
+    expect(response.status).toBe(200);
+    last = await response.json<Record<string, unknown>>();
+  }
+  return last;
 }
 
 async function planInput(
@@ -577,7 +750,11 @@ async function reserve(
     undefined,
     observedAt,
   );
-  expect(response.status).toBe(201);
+  const failure =
+    response.status === 201
+      ? ""
+      : JSON.stringify(await response.clone().json());
+  expect(response.status, failure).toBe(201);
   return response.json<PlanDocument>();
 }
 
@@ -656,6 +833,8 @@ async function signedAttestation(
       plan.cloudflare_management_required_permissions,
     consumer_installation_identity:
       plan.consumer_installation_identity,
+    old_consumer_slot: plan.old_consumer_slot,
+    replacement_consumer_slot: plan.replacement_consumer_slot,
     old_fingerprint: plan.old_fingerprint,
     replacement_fingerprint: plan.replacement_fingerprint,
     installed_fingerprint: plan.replacement_fingerprint,
@@ -741,7 +920,7 @@ async function consumerProofRequest(
     credential_class: credentialClass,
     expected_fingerprint: expectedFingerprint,
     challenge,
-    slot: "replacement",
+    slot: "b",
     expected_status: "usable",
   });
   const key = await crypto.subtle.importKey(

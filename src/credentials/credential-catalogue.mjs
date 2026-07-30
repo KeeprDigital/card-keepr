@@ -6,17 +6,27 @@ export const credentialClassDefinitions = Object.freeze({
     resource_name: "card-keepr-api",
     verification_operation: "health",
     required_permission: "workers-secret:api-traffic",
-    management_permissions: ["Workers Scripts Write"],
+    management_permissions: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+      "Workers Scripts Write",
+    ],
     consumer_provider: "wrangler",
     consumer_config: "apps/api/wrangler.jsonc",
     consumer_worker_name: "card-keepr-api",
     active_secret_name: "API_BEARER_KEY",
     replacement_secret_name: "API_BEARER_KEY_REPLACEMENT",
+    slot_a_secret_name: "API_BEARER_KEY",
+    slot_b_secret_name: "API_BEARER_KEY_REPLACEMENT",
     active_environment_key: "API_BEARER_KEY",
     replacement_environment_key: "API_BEARER_KEY_REPLACEMENT",
     fixed_old_issuer_credential_id:
       "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY",
     fixed_replacement_issuer_credential_id:
+      "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT",
+    slot_a_issuer_credential_id:
+      "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY",
+    slot_b_issuer_credential_id:
       "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT",
   }),
   ingestion_admin_key: Object.freeze({
@@ -26,18 +36,28 @@ export const credentialClassDefinitions = Object.freeze({
     resource_name: "card-keepr-ingestion",
     verification_operation: "health",
     required_permission: "workers-secret:administration",
-    management_permissions: ["Workers Scripts Write"],
+    management_permissions: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+      "Workers Scripts Write",
+    ],
     consumer_provider: "wrangler",
     consumer_config: "apps/ingestion/wrangler.jsonc",
     consumer_worker_name: "card-keepr-ingestion",
     active_secret_name: "ADMINISTRATION_KEY",
     replacement_secret_name: "ADMINISTRATION_KEY_REPLACEMENT",
+    slot_a_secret_name: "ADMINISTRATION_KEY",
+    slot_b_secret_name: "ADMINISTRATION_KEY_REPLACEMENT",
     active_environment_key: "ADMINISTRATION_KEY",
     replacement_environment_key:
       "ADMINISTRATION_KEY_REPLACEMENT",
     fixed_old_issuer_credential_id:
       "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY",
     fixed_replacement_issuer_credential_id:
+      "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY_REPLACEMENT",
+    slot_a_issuer_credential_id:
+      "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY",
+    slot_b_issuer_credential_id:
       "wrangler:apps/ingestion/wrangler.jsonc:ADMINISTRATION_KEY_REPLACEMENT",
   }),
   d1_export_token: Object.freeze({
@@ -49,6 +69,7 @@ export const credentialClassDefinitions = Object.freeze({
     verification_operation: "export-schema",
     required_permission: "D1 Read",
     management_permissions: [
+      "Account API Tokens Read",
       "Account API Tokens Write",
       "Workers Scripts Write",
     ],
@@ -57,6 +78,8 @@ export const credentialClassDefinitions = Object.freeze({
     consumer_worker_name: "card-keepr-ingestion",
     active_secret_name: "D1_EXPORT_TOKEN",
     replacement_secret_name: "D1_EXPORT_TOKEN_REPLACEMENT",
+    slot_a_secret_name: "D1_EXPORT_TOKEN",
+    slot_b_secret_name: "D1_EXPORT_TOKEN_REPLACEMENT",
     active_environment_key: "D1_EXPORT_TOKEN",
     replacement_environment_key: "D1_EXPORT_TOKEN_REPLACEMENT",
     database_environment_key: "CATALOGUE_D1_DATABASE_ID",
@@ -70,6 +93,7 @@ export const credentialClassDefinitions = Object.freeze({
     verification_operation: "write-rollback-probe",
     required_permission: "D1 Edit",
     management_permissions: [
+      "Account API Tokens Read",
       "Account API Tokens Write",
       "Workers Scripts Write",
     ],
@@ -78,6 +102,8 @@ export const credentialClassDefinitions = Object.freeze({
     consumer_worker_name: "card-keepr-ingestion",
     active_secret_name: "D1_VERIFICATION_TOKEN",
     replacement_secret_name: "D1_VERIFICATION_TOKEN_REPLACEMENT",
+    slot_a_secret_name: "D1_VERIFICATION_TOKEN",
+    slot_b_secret_name: "D1_VERIFICATION_TOKEN_REPLACEMENT",
     active_environment_key: "D1_VERIFICATION_TOKEN",
     replacement_environment_key:
       "D1_VERIFICATION_TOKEN_REPLACEMENT",
@@ -90,10 +116,17 @@ export const credentialClassDefinitions = Object.freeze({
     resource_name: "credential-boundary-probe.yml",
     verification_operation: "deployment-scope-introspection",
     required_permission: "Workers Scripts Write",
-    management_permissions: ["Account API Tokens Write"],
+    management_permissions: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+      "Workers Scripts Write",
+    ],
     consumer_provider: "github",
     active_secret_name: "CLOUDFLARE_DEPLOYMENT_TOKEN",
     replacement_secret_name:
+      "CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT",
+    slot_a_secret_name: "CLOUDFLARE_DEPLOYMENT_TOKEN",
+    slot_b_secret_name:
       "CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT",
     active_environment_key: "CLOUDFLARE_DEPLOYMENT_TOKEN",
     replacement_environment_key:

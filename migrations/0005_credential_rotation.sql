@@ -17,6 +17,11 @@ CREATE TABLE credential_rotation_plans (
   required_permission TEXT NOT NULL,
   cloudflare_management_required_permissions TEXT NOT NULL,
   consumer_installation_identity TEXT NOT NULL,
+  old_consumer_slot TEXT NOT NULL CHECK (old_consumer_slot IN ('a', 'b')),
+  replacement_consumer_slot TEXT NOT NULL CHECK (
+    replacement_consumer_slot IN ('a', 'b')
+    AND replacement_consumer_slot <> old_consumer_slot
+  ),
   expected_catalogue_revision_id TEXT NOT NULL,
   expected_state_generation INTEGER NOT NULL,
   expected_rotation_state TEXT,
@@ -41,6 +46,8 @@ CREATE TABLE credential_rotation_plans (
   execution_expires_at TEXT,
   execution_attempt INTEGER NOT NULL DEFAULT 0,
   execution_owner_hash TEXT,
+  execution_capability_hash TEXT,
+  execution_capability_consumed_at TEXT,
   finalized_at TEXT,
   attestation_digest TEXT
 );
@@ -110,6 +117,14 @@ CREATE TABLE credential_rotations (
   required_permission TEXT NOT NULL,
   cloudflare_management_required_permissions TEXT NOT NULL,
   consumer_installation_identity TEXT NOT NULL,
+  old_consumer_slot TEXT NOT NULL CHECK (old_consumer_slot IN ('a', 'b')),
+  replacement_consumer_slot TEXT NOT NULL CHECK (
+    replacement_consumer_slot IN ('a', 'b')
+    AND replacement_consumer_slot <> old_consumer_slot
+  ),
+  current_consumer_slot TEXT NOT NULL CHECK (
+    current_consumer_slot IN ('a', 'b')
+  ),
   old_issuer_credential_id TEXT NOT NULL,
   replacement_issuer_credential_id TEXT NOT NULL,
   management_credential_id TEXT NOT NULL,
@@ -178,6 +193,9 @@ WHEN OLD.status = 'executing' AND NEW.status = 'finalized'
           NEW.cloudflare_management_required_permissions
         AND rotation.consumer_installation_identity =
           NEW.consumer_installation_identity
+        AND rotation.old_consumer_slot = NEW.old_consumer_slot
+        AND rotation.replacement_consumer_slot =
+          NEW.replacement_consumer_slot
         AND rotation.old_issuer_credential_id =
           NEW.old_issuer_credential_id
         AND rotation.replacement_issuer_credential_id =

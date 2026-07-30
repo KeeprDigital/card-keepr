@@ -13,7 +13,10 @@ import {
   parseOptions,
   writeCliFailure,
 } from "./command-support.mjs";
-import { executeCredentialBoundary } from "./credential-boundary.mjs";
+import {
+  executeCredentialBoundary,
+  mayReleaseExecutionClaim,
+} from "./credential-boundary.mjs";
 
 export async function runCredentialCommand(
   arguments_,
@@ -267,6 +270,9 @@ async function mutate(
     ) ||
     !Number.isSafeInteger(claimed.document.execution_attempt) ||
     claimed.document.execution_attempt < 1 ||
+    !/^[0-9a-f]{64}$/.test(
+      claimed.document.execution_capability ?? "",
+    ) ||
     !sameExecutionPlan(plan, claimed.document)
   ) {
     return failure(
@@ -276,6 +282,21 @@ async function mutate(
       8,
     );
   }
+  const executionBaseUrl = administrationBaseUrl(environment);
+  if (executionBaseUrl === null) {
+    return failure(
+      json,
+      "invalid_administration_url",
+      "Credential execution requires the validated ingestion URL.",
+      8,
+    );
+  }
+  claimed.document.execution_validation_url = new URL(
+    `/v1/credential-rotation-plans/${encodeURIComponent(
+      plan.id,
+    )}/execution-capability`,
+    executionBaseUrl,
+  ).toString();
 
   const boundary = await executeCredentialBoundary(
     claimed.document,
@@ -283,7 +304,10 @@ async function mutate(
     environment,
   );
   if (!boundary.ok) {
-    if (claimed.document.execution_mode === "mutation") {
+    if (
+      claimed.document.execution_mode === "mutation" &&
+      mayReleaseExecutionClaim(boundary)
+    ) {
       await requestDocument(
         environment,
         `/v1/credential-rotation-plans/${encodeURIComponent(
@@ -294,6 +318,7 @@ async function mutate(
           plan_digest: plan.plan_digest,
           execution_owner_token: executionOwnerToken,
           execution_attempt: claimed.document.execution_attempt,
+          mutation_started: false,
         },
         secrets.values.administration_key,
       );
@@ -454,9 +479,9 @@ function fingerprint(secret) {
 function safeBearerSecret(value) {
   return (
     typeof value === "string" &&
-    value.length > 0 &&
+    value.length >= 22 &&
     value.length <= 4096 &&
-    !/[\s\u0000-\u001f\u007f]/u.test(value)
+    /^[A-Za-z0-9\-._~+/]+={0,8}$/u.test(value)
   );
 }
 

@@ -11,6 +11,8 @@ export type BoundaryAttestationPlan = {
   required_permission: string;
   cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
+  old_consumer_slot: "a" | "b";
+  replacement_consumer_slot: "a" | "b";
   old_fingerprint: string;
   replacement_fingerprint: string;
   old_issuer_credential_id: string;
@@ -38,6 +40,8 @@ type BoundaryAttestation = {
   required_permission: string;
   cloudflare_management_required_permissions: string;
   consumer_installation_identity: string;
+  old_consumer_slot: "a" | "b";
+  replacement_consumer_slot: "a" | "b";
   old_fingerprint: string;
   replacement_fingerprint: string;
   installed_fingerprint: string;
@@ -102,6 +106,9 @@ export async function credentialBoundaryAttestationFailure(
       plan.cloudflare_management_required_permissions &&
     attestation.consumer_installation_identity ===
       plan.consumer_installation_identity &&
+    attestation.old_consumer_slot === plan.old_consumer_slot &&
+    attestation.replacement_consumer_slot ===
+      plan.replacement_consumer_slot &&
     attestation.consumer_installation_id ===
       plan.consumer_installation_identity &&
     attestation.old_issuer_credential_id ===

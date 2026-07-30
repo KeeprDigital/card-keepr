@@ -1,5 +1,11 @@
+import {
+  cloudflareJson,
+  verifyCloudflareEnvelope,
+  verifyD1DatabaseMetadata,
+} from "../src/credentials/cloudflare-authority.mjs";
+
 export async function classifyTokenLookup(response, tokenId) {
-  const document = await safeJson(response);
+  const document = await cloudflareJson(response);
   if (response.status === 404) {
     return document?.success === false
       ? { kind: "absent" }
@@ -15,19 +21,7 @@ export async function classifyTokenLookup(response, tokenId) {
 
 export async function cloudflareOperationSucceeded(response) {
   if (!response.ok) return false;
-  const document = await safeJson(response);
-  if (document?.success !== true) return false;
-  const results = Array.isArray(document.result)
-    ? document.result
-    : [document.result];
-  return results.every((result) => {
-    if (result === null || typeof result !== "object") return true;
-    if (result.success !== undefined && result.success !== true) {
-      return false;
-    }
-    return result.status === undefined ||
-      ["complete", "completed", "success"].includes(result.status);
-  });
+  return verifyCloudflareEnvelope(await cloudflareJson(response));
 }
 
 export async function d1DatabaseInfoSucceeded(
@@ -35,10 +29,9 @@ export async function d1DatabaseInfoSucceeded(
   databaseId,
 ) {
   if (!response.ok) return false;
-  const document = await safeJson(response);
-  return (
-    document?.success === true &&
-    document.result?.uuid === databaseId
+  return verifyD1DatabaseMetadata(
+    await cloudflareJson(response),
+    databaseId,
   );
 }
 
@@ -127,12 +120,4 @@ export function exactManagementTokenPolicy(
       `com.cloudflare.api.account.${cloudflareAccountId}` &&
     entries[0][1] === "*"
   );
-}
-
-async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }

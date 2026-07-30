@@ -2,16 +2,17 @@ import {
   createHash,
   timingSafeEqual,
 } from "node:crypto";
-import { spawn } from "node:child_process";
 import {
   credentialClassDefinitions,
   isCredentialClass,
 } from "../src/credentials/credential-catalogue.mjs";
 import {
-  classifySecretList,
   exactManagementTokenPolicy,
   exactTokenPolicy,
 } from "./provider-authority.mjs";
+import {
+  cloudflareJson,
+} from "../src/credentials/cloudflare-authority.mjs";
 import {
   createCloudflareProvider,
 } from "./provider-cloudflare-boundary.mjs";
@@ -47,6 +48,10 @@ const [
   githubManagementCredentialId,
   githubManagementCredentialFingerprint,
   githubManagementRequiredPermission,
+  oldConsumerSlot,
+  replacementConsumerSlot,
+  executionCapability,
+  executionValidationUrl,
 ] = process.argv.slice(2);
 const secrets = await readInput();
 const definition = isCredentialClass(credentialClass)
@@ -64,6 +69,9 @@ if (
   !["install", "verify", "revoke"].includes(action) ||
   !["mutation", "reconciliation"].includes(executionMode) ||
   !/^[1-9][0-9]*$/.test(executionAttempt) ||
+  !["a", "b"].includes(oldConsumerSlot) ||
+  !["a", "b"].includes(replacementConsumerSlot) ||
+  oldConsumerSlot === replacementConsumerSlot ||
   owningBoundary !== definition.owning_boundary ||
   requiredPermission !== definition.required_permission ||
   !resourceMatchesDefinition(
@@ -95,12 +103,24 @@ if (
     (githubManagementCredentialId !== "not-applicable" ||
       githubManagementCredentialFingerprint !==
         `sha256:${"0".repeat(64)}` ||
-      githubManagementRequiredPermission !== "not-applicable"))
+      githubManagementRequiredPermission !== "not-applicable")) ||
+  !(await consumeExecutionCapability())
 ) {
   process.exitCode = 2;
 } else {
-  const result = await execute();
+  const journal = {
+    contract: "card-keepr-provider-mutation-journal@1",
+    mutation_started: false,
+    steps: [],
+  };
+  const result = await execute(journal);
   if (!result.ok) {
+    process.stdout.write(`${JSON.stringify({
+      ok: false,
+      plan_id: planId,
+      plan_digest: planDigest,
+      journal,
+    })}\n`);
     process.exitCode = 9;
   } else {
     const facts = {
@@ -134,6 +154,8 @@ if (
         githubManagementCredentialFingerprint,
       github_management_required_permission:
         githubManagementRequiredPermission,
+      old_consumer_slot: oldConsumerSlot,
+      replacement_consumer_slot: replacementConsumerSlot,
       consumer_installation_id: result.consumerInstallationId,
       scope_evidence_digest: result.scopeEvidenceDigest,
       old_credential_status:
@@ -148,12 +170,60 @@ if (
         plan_id: planId,
         plan_digest: planDigest,
         facts,
+        journal,
       })}\n`,
     );
   }
 }
 
-async function execute() {
+async function consumeExecutionCapability() {
+  if (
+    !/^[0-9a-f]{64}$/.test(executionCapability ?? "") ||
+    typeof executionValidationUrl !== "string"
+  ) {
+    return false;
+  }
+  let url;
+  try {
+    url = new URL(executionValidationUrl);
+  } catch {
+    return false;
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !==
+      `/v1/credential-rotation-plans/${encodeURIComponent(planId)}/execution-capability` ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    return false;
+  }
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        plan_digest: planDigest,
+        execution_attempt: Number.parseInt(executionAttempt, 10),
+        execution_capability: executionCapability,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return false;
+    const document = await response.json();
+    return (
+      document?.contract ===
+        "card-keepr-credential-execution-capability@1" &&
+      document.consumed === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function execute(journal) {
   if (action === "install" && executionMode === "mutation") {
     if (
       typeof secrets.old_secret !== "string" ||
@@ -270,6 +340,12 @@ async function execute() {
           oldIssuerCredentialId,
         ),
       ]);
+      const capability = await cloudflare.probeExactCapability(
+        credentialClass,
+        secrets.replacement_secret,
+        planDigest,
+        planNonce,
+      );
       if (
         verified?.id !== replacementIssuerCredentialId ||
         verified.status !== "active" ||
@@ -281,29 +357,60 @@ async function execute() {
           requiredPermission,
           cloudflareAccountId,
         ) ||
-        !(await cloudflare.probeExactCapability(
-          credentialClass,
-          secrets.replacement_secret,
-        ))
+        !capability.ok
       ) {
+        if (capability.mutation_started) {
+          recordMutation(
+            journal,
+            `disposable-probe-cleanup:${capability.cleanup}`,
+          );
+        }
         return { ok: false };
       }
     }
   }
 
   const marker = markerName(replacementFingerprint);
+  const oldSecretName =
+    oldConsumerSlot === "a"
+      ? definition.slot_a_secret_name
+      : definition.slot_b_secret_name;
+  const replacementSecretName =
+    replacementConsumerSlot === "a"
+      ? definition.slot_a_secret_name
+      : definition.slot_b_secret_name;
   if (action === "install" && executionMode === "mutation") {
-    const installed =
-      (await putConsumerSecret(
-        definition,
-        definition.replacement_secret_name,
-        secrets.replacement_secret,
-      )) &&
-      (await putConsumerSecret(definition, marker, planId));
-    if (!installed) return { ok: false };
+    if (!(await putConsumerSecret(
+      definition,
+      replacementSecretName,
+      secrets.replacement_secret,
+    ))) {
+      return { ok: false };
+    }
+    recordMutation(journal, `consumer-secret-put:${replacementSecretName}`);
+    if (!(await putConsumerSecret(definition, marker, planId))) {
+      return { ok: false };
+    }
+    recordMutation(journal, `consumer-marker-put:${marker}`);
+  } else if (
+    action === "install" &&
+    executionMode === "reconciliation"
+  ) {
+    const listed = await listConsumerSecrets(definition);
+    if (listed.kind !== "present") return { ok: false };
+    if (!listed.names.includes(replacementSecretName)) return { ok: false };
+    if (
+      !listed.names.includes(marker) &&
+      !(await putConsumerSecret(definition, marker, planId))
+    ) {
+      return { ok: false };
+    }
+    if (!listed.names.includes(marker)) {
+      recordMutation(journal, `consumer-marker-put:${marker}`);
+    }
   }
   if (!(await consumerHasSecrets(definition, [
-    definition.replacement_secret_name,
+    replacementSecretName,
     marker,
   ]))) {
     return { ok: false };
@@ -315,8 +422,10 @@ async function execute() {
           replacementIssuerCredentialId,
           planDigest,
           planNonce,
-          secretSlot: "replacement",
+          secretSlot: replacementConsumerSlot,
+          expectedActor: githubAuthority.expected_actor,
           credential: secrets.github_management_credential,
+          workflowId: productionTarget.github_workflow_id,
         })
       : {};
   if (consumerProof === null) return { ok: false };
@@ -329,8 +438,10 @@ async function execute() {
       replacementIssuerCredentialId: oldIssuerCredentialId,
       planDigest,
       planNonce,
-      secretSlot: "active",
+      secretSlot: oldConsumerSlot,
+      expectedActor: githubAuthority.expected_actor,
       credential: secrets.github_management_credential,
+      workflowId: productionTarget.github_workflow_id,
     });
     if (oldConsumerProof === null) return { ok: false };
     Object.assign(consumerProof, {
@@ -367,20 +478,28 @@ async function execute() {
       if (!absent) {
         return { ok: false };
       }
+      if (executionMode === "mutation") {
+        recordMutation(
+          journal,
+          `issuer-delete:${oldIssuerCredentialId}`,
+        );
+      }
     }
     const consumerAbsent =
-      executionMode === "mutation"
+      executionMode === "mutation" ||
+      executionMode === "reconciliation"
         ? await deleteConsumerSecret(
             definition,
-            definition.active_secret_name,
+            oldSecretName,
           )
         : await consumerSecretAuthoritativelyAbsent(
             definition,
-            definition.active_secret_name,
+            oldSecretName,
           );
     if (!consumerAbsent) {
       return { ok: false };
     }
+    recordMutation(journal, `consumer-secret-delete:${oldSecretName}`);
   }
 
   return {
@@ -393,22 +512,28 @@ async function execute() {
   };
 }
 
+function recordMutation(journal, step) {
+  journal.mutation_started = true;
+  journal.steps.push(step);
+}
+
 async function putConsumerSecret(definition_, name, value) {
   if (definition_.consumer_provider === "wrangler") {
-    return (
-      (await run(
-        "wrangler",
-        [
-          "secret",
-          "put",
+    const response = await cloudflare.request(
+      secrets.management_credential,
+      workerSecretPath(definition_),
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
           name,
-          "--config",
-          definition_.consumer_config,
-        ],
-        value,
-        providerEnvironment(),
-      )) === 0
+          text: value,
+          type: "secret_text",
+        }),
+      },
     );
+    return response.ok &&
+      (await cloudflareJson(response))?.success === true;
   }
   return setGithubConsumerSecret(
     name,
@@ -426,26 +551,32 @@ async function consumerHasSecrets(definition_, names) {
 }
 
 async function listConsumerSecrets(definition_) {
-  const result =
-    definition_.consumer_provider === "wrangler"
-      ? await capture(
-          "wrangler",
-          [
-            "secret",
-            "list",
-            "--format",
-            "json",
-            "--config",
-            definition_.consumer_config,
-          ],
-          providerEnvironment(),
-        )
-      : null;
-  return definition_.consumer_provider === "wrangler"
-    ? classifySecretList(result)
-    : listGithubConsumerSecrets(
-        secrets.github_management_credential,
-      );
+  if (definition_.consumer_provider !== "wrangler") {
+    return listGithubConsumerSecrets(
+      secrets.github_management_credential,
+    );
+  }
+  let response;
+  try {
+    response = await cloudflare.request(
+      secrets.management_credential,
+      workerSecretPath(definition_),
+    );
+  } catch {
+    return { kind: "failure" };
+  }
+  const document = await cloudflareJson(response);
+  if (
+    !response.ok ||
+    document?.success !== true ||
+    !Array.isArray(document.result)
+  ) {
+    return { kind: "failure" };
+  }
+  const names = document.result.map((item) => item?.name);
+  return names.every((name) => typeof name === "string")
+    ? { kind: "present", names }
+    : { kind: "failure" };
 }
 
 async function deleteConsumerSecret(definition_, name) {
@@ -454,19 +585,13 @@ async function deleteConsumerSecret(definition_, name) {
   if (!before.names.includes(name)) return true;
   let deleted;
   if (definition_.consumer_provider === "wrangler") {
-    deleted =
-      (await run(
-        "wrangler",
-        [
-          "secret",
-          "delete",
-          name,
-          "--config",
-          definition_.consumer_config,
-        ],
-        "",
-        providerEnvironment(),
-      )) === 0;
+    const response = await cloudflare.request(
+      secrets.management_credential,
+      `${workerSecretPath(definition_)}/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    );
+    deleted = response.ok &&
+      (await cloudflareJson(response))?.success === true;
   } else {
     deleted = await deleteGithubConsumerSecret(
       name,
@@ -492,15 +617,10 @@ async function consumerSecretAuthoritativelyAbsent(
   );
 }
 
-function providerEnvironment() {
-  return Object.fromEntries(
-    Object.entries({
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      CI: "1",
-      CLOUDFLARE_API_TOKEN: secrets.management_credential,
-    }).filter(([, value]) => typeof value === "string"),
-  );
+function workerSecretPath(definition_) {
+  return `/accounts/${cloudflareAccountId}/workers/scripts/${encodeURIComponent(
+    definition_.consumer_worker_name,
+  )}/secrets`;
 }
 
 function resourceMatchesDefinition(
@@ -618,39 +738,6 @@ function canonicalJson(value) {
       .join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-function run(command, arguments_, input, environment) {
-  return new Promise((resolveRun) => {
-    const child = spawn(command, arguments_, {
-      cwd: process.cwd(),
-      env: environment,
-      stdio: ["pipe", "ignore", "ignore"],
-    });
-    child.once("error", () => resolveRun(9));
-    child.once("exit", (code) => resolveRun(code ?? 9));
-    child.stdin.end(input);
-  });
-}
-
-function capture(command, arguments_, environment) {
-  return new Promise((resolveRun) => {
-    const child = spawn(command, arguments_, {
-      cwd: process.cwd(),
-      env: environment,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-      if (stdout.length > 64_000) child.kill();
-    });
-    child.once("error", () => resolveRun({ code: 9, stdout: "" }));
-    child.once("exit", (code) => {
-      resolveRun({ code: code ?? 9, stdout });
-    });
-  });
 }
 
 async function readInput() {

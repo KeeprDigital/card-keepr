@@ -48,6 +48,7 @@ export function rotationDocument(
     owning_boundary: row.owning_boundary,
     verification_target: row.verification_target,
     production_target_identity: row.production_target_identity,
+    current_consumer_slot: row.current_consumer_slot,
     old_fingerprint: `sha256:${row.old_secret_hash}`,
     replacement_fingerprint: `sha256:${row.replacement_secret_hash}`,
     installed_at: row.installed_at,
@@ -130,6 +131,8 @@ export function planDocument(
       row.cloudflare_management_required_permissions,
     consumer_installation_identity:
       row.consumer_installation_identity,
+    old_consumer_slot: row.old_consumer_slot,
+    replacement_consumer_slot: row.replacement_consumer_slot,
     expected_catalogue_revision_id:
       row.expected_catalogue_revision_id,
     expected_state_generation: row.expected_state_generation,

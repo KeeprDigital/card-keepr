@@ -31,6 +31,12 @@ if (typeof key !== "string" || key.length < 32) {
     !safeDigestEqual(provider.document.plan_digest, arguments_[2]) ||
     !(await verifyInstalledConsumer(arguments_, facts, input, key))
   ) {
+    process.stdout.write(`${JSON.stringify({
+      ok: false,
+      plan_id: arguments_[1],
+      plan_digest: arguments_[2],
+      journal: validMutationJournal(provider.document?.journal),
+    })}\n`);
     process.exitCode = 9;
   } else {
     const encoded = Buffer.from(JSON.stringify(facts)).toString(
@@ -50,6 +56,24 @@ if (typeof key !== "string" || key.length < 32) {
   }
 }
 
+function validMutationJournal(value) {
+  if (
+    value?.contract !== "card-keepr-provider-mutation-journal@1" ||
+    typeof value.mutation_started !== "boolean" ||
+    !Array.isArray(value.steps) ||
+    !value.steps.every(
+      (step) => typeof step === "string" && step.length <= 256,
+    )
+  ) {
+    return {
+      contract: "card-keepr-provider-mutation-journal@1",
+      mutation_started: true,
+      steps: ["provider-result-unavailable"],
+    };
+  }
+  return value;
+}
+
 async function verifyInstalledConsumer(
   arguments_,
   facts,
@@ -58,19 +82,18 @@ async function verifyInstalledConsumer(
 ) {
   const credentialClass = arguments_[4];
   if (credentialClass === "github_deployment_token") {
+    const replacementWorkflowSlot =
+      arguments_[24] === "a" ? "active" : "replacement";
     const expectedEvidence =
-      `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
-      `head_sha=${facts.consumer_proof_head_sha} token_id=${arguments_[18]} ` +
-      `actor=${facts.consumer_proof_actor} slot=replacement`;
+      `credential-boundary-probe-${replacementWorkflowSlot}-${arguments_[18]}-${arguments_[3]}-${arguments_[2]}` +
+      `\0${facts.consumer_proof_head_sha}\0${facts.consumer_proof_id}\0${facts.consumer_proof_actor}`;
     const replacementMatches =
       facts.consumer_proof_contract ===
-        "github-actions-installed-secret-probe@1" &&
+        "github-actions-installed-secret-probe@2" &&
       typeof facts.consumer_proof_id === "string" &&
       /^[0-9]{1,20}$/.test(facts.consumer_proof_id) &&
       /^[0-9a-f]{40}$/.test(facts.consumer_proof_head_sha ?? "") &&
-      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(
-        facts.consumer_proof_actor ?? "",
-      ) &&
+      safeBotActor(facts.consumer_proof_actor) &&
       safeFingerprintEqual(
         facts.consumer_proof_digest,
         `sha256:${createHash("sha256")
@@ -79,20 +102,19 @@ async function verifyInstalledConsumer(
       );
     if (!replacementMatches) return false;
     if (arguments_[0] !== "verify") return true;
+    const oldWorkflowSlot =
+      arguments_[23] === "a" ? "active" : "replacement";
     const expectedOldEvidence =
-      `KEEPR_CREDENTIAL_PROOF plan_digest=${arguments_[2]} plan_nonce=${arguments_[3]} ` +
-      `head_sha=${facts.old_consumer_proof_head_sha} token_id=${arguments_[17]} ` +
-      `actor=${facts.old_consumer_proof_actor} slot=active`;
+      `credential-boundary-probe-${oldWorkflowSlot}-${arguments_[17]}-${arguments_[3]}-${arguments_[2]}` +
+      `\0${facts.old_consumer_proof_head_sha}\0${facts.old_consumer_proof_id}\0${facts.old_consumer_proof_actor}`;
     return (
       facts.old_consumer_proof_contract ===
-        "github-actions-installed-secret-probe@1" &&
+        "github-actions-installed-secret-probe@2" &&
       /^[0-9]{1,20}$/.test(facts.old_consumer_proof_id ?? "") &&
       /^[0-9a-f]{40}$/.test(
         facts.old_consumer_proof_head_sha ?? "",
       ) &&
-      /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(
-        facts.old_consumer_proof_actor ?? "",
-      ) &&
+      safeBotActor(facts.old_consumer_proof_actor) &&
       safeFingerprintEqual(
         facts.old_consumer_proof_digest,
         `sha256:${createHash("sha256")
@@ -136,14 +158,14 @@ async function verifyInstalledConsumer(
   if (typeof worker !== "string") return false;
   const probes = [
     {
-      slot: "replacement",
+      slot: arguments_[24],
       status: "usable",
       fingerprint: arguments_[16],
     },
     ...(arguments_[0] === "verify"
       ? [
           {
-            slot: "active",
+            slot: arguments_[23],
             status: "usable",
             fingerprint: arguments_[15],
           },
@@ -152,7 +174,7 @@ async function verifyInstalledConsumer(
     ...(arguments_[0] === "revoke"
       ? [
           {
-            slot: "active",
+            slot: arguments_[23],
             status: "unusable",
             fingerprint: arguments_[15],
           },
@@ -209,6 +231,13 @@ async function verifyInstalledConsumer(
     }
   }
   return true;
+}
+
+function safeBotActor(value) {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,99})\[bot\]$/.test(value)
+  );
 }
 
 async function runProvider(arguments_, input_) {
@@ -276,6 +305,8 @@ function exactProviderFacts(arguments_, facts) {
     githubManagementCredentialId,
     githubManagementCredentialFingerprint,
     githubManagementRequiredPermission,
+    oldConsumerSlot,
+    replacementConsumerSlot,
   ] = arguments_;
   return (
     facts.version === 1 &&
@@ -319,6 +350,8 @@ function exactProviderFacts(arguments_, facts) {
     ) &&
     facts.github_management_required_permission ===
       githubManagementRequiredPermission &&
+    facts.old_consumer_slot === oldConsumerSlot &&
+    facts.replacement_consumer_slot === replacementConsumerSlot &&
     /^sha256:[0-9a-f]{64}$/.test(
       facts.scope_evidence_digest ?? "",
     ) &&

@@ -1,5 +1,6 @@
 import {
   credentialClasses,
+  credentialClassDefinitions,
   isCredentialClass as isSharedCredentialClass,
   resolveCredentialIdentity,
   type CredentialClass,
@@ -73,6 +74,19 @@ export async function reserveCredentialRotationPlan(
   const cloudflareManagementPermissions = JSON.stringify(
     expectedIdentity.cloudflare_management_required_permissions,
   );
+  const consumerSlots = await consumerSlotsForPlan(database, input);
+  const definition = credentialClassDefinitions[input.credential_class];
+  const replacementSecretName =
+    consumerSlots.replacement === "a"
+      ? definition.slot_a_secret_name
+      : definition.slot_b_secret_name;
+  const consumerInstallationIdentity =
+    definition.consumer_provider === "github"
+      ? expectedIdentity.consumer_installation_identity.replace(
+          /:secret:[^:]+$/u,
+          `:secret:${replacementSecretName}`,
+        )
+      : `${definition.consumer_provider}:${definition.consumer_config}:${replacementSecretName}`;
   if (
     input.environment !== expectedIdentity.environment ||
     input.cloudflare_account_id !==
@@ -88,13 +102,20 @@ export async function reserveCredentialRotationPlan(
       "The resolved credential boundary identity is stale.",
     );
   }
+  const expectedOldIssuer =
+    consumerSlots.old === "a"
+      ? definition.slot_a_issuer_credential_id
+      : definition.slot_b_issuer_credential_id;
+  const expectedReplacementIssuer =
+    consumerSlots.replacement === "a"
+      ? definition.slot_a_issuer_credential_id
+      : definition.slot_b_issuer_credential_id;
   if (
-    (expectedIdentity.fixed_old_issuer_credential_id !== null &&
-      input.old_issuer_credential_id !==
-        expectedIdentity.fixed_old_issuer_credential_id) ||
-    (expectedIdentity.fixed_replacement_issuer_credential_id !== null &&
+    (expectedOldIssuer !== undefined &&
+      input.old_issuer_credential_id !== expectedOldIssuer) ||
+    (expectedReplacementIssuer !== undefined &&
       input.replacement_issuer_credential_id !==
-        expectedIdentity.fixed_replacement_issuer_credential_id)
+        expectedReplacementIssuer)
   ) {
     throw problem(
       "identity_conflict",
@@ -215,7 +236,10 @@ export async function reserveCredentialRotationPlan(
   const expectedRotationState = await expectedStateForAction(
     database,
     input,
-    expectedIdentity,
+    {
+      ...expectedIdentity,
+      consumer_installation_identity: consumerInstallationIdentity,
+    },
   );
 
   await database
@@ -236,7 +260,9 @@ export async function reserveCredentialRotationPlan(
     cloudflare_management_required_permissions:
       cloudflareManagementPermissions,
     consumer_installation_identity:
-      expectedIdentity.consumer_installation_identity,
+      consumerInstallationIdentity,
+    old_consumer_slot: consumerSlots.old,
+    replacement_consumer_slot: consumerSlots.replacement,
     github_management_required_permission:
       expectedIdentity.github_management_required_permission,
     expected_rotation_state: expectedRotationState,
@@ -253,7 +279,8 @@ export async function reserveCredentialRotationPlan(
           verification_target, production_target_identity,
           required_permission,
           cloudflare_management_required_permissions,
-          consumer_installation_identity,
+          consumer_installation_identity, old_consumer_slot,
+          replacement_consumer_slot,
           expected_catalogue_revision_id, expected_state_generation,
           expected_rotation_state, old_fingerprint,
           replacement_fingerprint, old_issuer_credential_id,
@@ -265,7 +292,7 @@ export async function reserveCredentialRotationPlan(
           plan_nonce, plan_digest, status, created_at, expires_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
           'reserved', ?, ?
         )`,
       )
@@ -282,7 +309,9 @@ export async function reserveCredentialRotationPlan(
         input.production_target_identity,
         expectedIdentity.required_permission,
         cloudflareManagementPermissions,
-        expectedIdentity.consumer_installation_identity,
+        consumerInstallationIdentity,
+        consumerSlots.old,
+        consumerSlots.replacement,
         input.expected_catalogue_revision_id,
         input.expected_state_generation,
         expectedRotationState,
@@ -391,6 +420,8 @@ export async function finalizeCredentialRotationPlan(
               required_permission,
               cloudflare_management_required_permissions,
               consumer_installation_identity,
+              old_consumer_slot, replacement_consumer_slot,
+              current_consumer_slot,
               old_issuer_credential_id,
               replacement_issuer_credential_id,
               management_credential_id,
@@ -402,7 +433,7 @@ export async function finalizeCredentialRotationPlan(
               install_receipt
             ) VALUES (
               ?, ?, 'replacement_installed', ?, ?, ?, ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )`,
           )
           .bind(
@@ -416,6 +447,9 @@ export async function finalizeCredentialRotationPlan(
             plan.required_permission,
             plan.cloudflare_management_required_permissions,
             plan.consumer_installation_identity,
+            plan.old_consumer_slot,
+            plan.replacement_consumer_slot,
+            plan.old_consumer_slot,
             plan.old_issuer_credential_id,
             plan.replacement_issuer_credential_id,
             plan.management_credential_id,
@@ -452,6 +486,7 @@ export async function finalizeCredentialRotationPlan(
             .prepare(
               `UPDATE credential_rotations
                SET state = 'old_revoked', old_revoked_at = ?,
+                   current_consumer_slot = replacement_consumer_slot,
                    revocation_idempotency_key = ?,
                    revocation_request_digest = ?,
                    revocation_receipt = ?
@@ -554,19 +589,28 @@ export async function beginCredentialRotationPlanExecution(
         "The live execution claim belongs to another owner.",
       );
     }
-    return planDocument(plan);
+    throw problem(
+      "credential_execution_capability_consumed",
+      "A live execution must use its original one-time capability.",
+    );
   }
   const executionExpiresAt = new Date(
     Date.parse(observedAt) + 10 * 60 * 1000,
   ).toISOString();
   let result: D1Result<unknown>;
+  const executionCapability = randomHex(32);
+  const executionCapabilityHash = await secretHash(
+    executionCapability,
+  );
   try {
     result = await database
       .prepare(
       `UPDATE credential_rotation_plans
        SET status = 'executing', execution_started_at = ?,
            execution_expires_at = ?, execution_attempt =
-             execution_attempt + 1, execution_owner_hash = ?
+             execution_attempt + 1, execution_owner_hash = ?,
+           execution_capability_hash = ?,
+           execution_capability_consumed_at = NULL
        WHERE id = ?
          AND execution_attempt = ?
          AND (
@@ -620,6 +664,10 @@ export async function beginCredentialRotationPlanExecution(
                      credential_rotation_plans.cloudflare_management_required_permissions
                    AND rotation.consumer_installation_identity =
                      credential_rotation_plans.consumer_installation_identity
+                   AND rotation.old_consumer_slot =
+                     credential_rotation_plans.old_consumer_slot
+                   AND rotation.replacement_consumer_slot =
+                     credential_rotation_plans.replacement_consumer_slot
                    AND rotation.old_issuer_credential_id =
                      credential_rotation_plans.old_issuer_credential_id
                    AND rotation.replacement_issuer_credential_id =
@@ -649,6 +697,7 @@ export async function beginCredentialRotationPlanExecution(
         observedAt,
       executionExpiresAt,
       ownerHash,
+      executionCapabilityHash,
       plan.id,
       expectedExecutionAttempt,
       observedAt,
@@ -672,7 +721,50 @@ export async function beginCredentialRotationPlanExecution(
       "Another credential execution claim is active.",
     );
   }
-  return planDocument(await requiredPlan(database, plan.id));
+  return {
+    ...planDocument(await requiredPlan(database, plan.id)),
+    execution_capability: executionCapability,
+  };
+}
+
+export async function consumeCredentialRotationExecutionCapability(
+  database: D1Database,
+  planId: string,
+  planDigest: string,
+  executionAttempt: number,
+  capability: string,
+  observedAt: string,
+): Promise<void> {
+  if (!/^[0-9a-f]{64}$/.test(capability)) {
+    throw problem(
+      "invalid_execution_capability",
+      "The execution capability is invalid.",
+    );
+  }
+  const capabilityHash = await secretHash(capability);
+  const result = await database
+    .prepare(
+      `UPDATE credential_rotation_plans
+       SET execution_capability_consumed_at = ?
+       WHERE id = ? AND status = 'executing'
+         AND plan_digest = ? AND execution_attempt = ?
+         AND execution_capability_consumed_at IS NULL
+         AND execution_capability_hash = ?`,
+    )
+    .bind(
+      observedAt,
+      planId,
+      planDigest,
+      executionAttempt,
+      capabilityHash,
+    )
+    .run();
+  if (result.meta.changes !== 1) {
+    throw problem(
+      "invalid_execution_capability",
+      "The execution capability is invalid, expired, or consumed.",
+    );
+  }
 }
 
 export async function releaseCredentialRotationPlanExecution(
@@ -681,8 +773,15 @@ export async function releaseCredentialRotationPlanExecution(
   planDigest: string,
   executionOwnerToken: string,
   executionAttempt: number,
+  mutationStarted: false,
   observedAt: string,
 ): Promise<CredentialRotationPlanDocument> {
+  if (mutationStarted !== false) {
+    throw problem(
+      "credential_reconciliation_required",
+      "A provider mutation may have started and must remain locked for reconciliation.",
+    );
+  }
   const plan = await requiredPlan(database, planId);
   if (!(await fixedHashEqual(plan.plan_digest, planDigest))) {
     throw problem(
@@ -713,7 +812,9 @@ export async function releaseCredentialRotationPlanExecution(
       `UPDATE credential_rotation_plans
        SET status = 'reserved', execution_started_at = NULL,
            execution_expires_at = NULL, execution_attempt = 0,
-           execution_owner_hash = NULL, expires_at = ?
+           execution_owner_hash = NULL,
+           execution_capability_hash = NULL,
+           execution_capability_consumed_at = NULL, expires_at = ?
        WHERE id = ? AND status = 'executing'
          AND execution_attempt = ? AND execution_owner_hash = ?
          AND plan_digest = ?`,
@@ -754,7 +855,8 @@ export async function credentialSecretMatches(
       `SELECT state, old_secret_hash, replacement_secret_hash
        FROM credential_rotations
        WHERE credential_class = ?
-       ORDER BY installed_at, id`,
+       ORDER BY installed_at DESC, id DESC
+       LIMIT 1`,
     )
     .bind(credentialClass)
     .all<AuthenticationRow>();
@@ -785,6 +887,38 @@ function safeProviderIdentity(value: string): boolean {
     typeof value === "string" &&
     /^[A-Za-z0-9._:/-]{8,256}$/.test(value)
   );
+}
+
+async function consumerSlotsForPlan(
+  database: D1Database,
+  input: CredentialRotationPlanInput,
+): Promise<{ old: "a" | "b"; replacement: "a" | "b" }> {
+  if (input.action !== "install") {
+    const rotation = await optionalRow(database, input.rotation_id);
+    if (rotation === null) {
+      throw new CredentialRotationProblem(
+        404,
+        "rotation_not_found",
+        "The credential rotation does not exist.",
+      );
+    }
+    return {
+      old: rotation.old_consumer_slot,
+      replacement: rotation.replacement_consumer_slot,
+    };
+  }
+  const latest = await database
+    .prepare(
+      `SELECT current_consumer_slot
+       FROM credential_rotations
+       WHERE credential_class = ? AND state = 'old_revoked'
+       ORDER BY installed_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .bind(input.credential_class)
+    .first<{ current_consumer_slot: "a" | "b" }>();
+  const old = latest?.current_consumer_slot ?? "a";
+  return { old, replacement: old === "a" ? "b" : "a" };
 }
 
 async function expectedStateForAction(
@@ -827,6 +961,7 @@ async function expectedStateForAction(
     rotation.verification_target !== input.verification_target ||
     rotation.production_target_identity !==
       input.production_target_identity
+    || rotation.old_consumer_slot === rotation.replacement_consumer_slot
   ) {
     throw problem(
       "identity_conflict",
@@ -970,6 +1105,9 @@ async function assertExecutionSnapshot(
       plan.cloudflare_management_required_permissions ||
     rotation.consumer_installation_identity !==
       plan.consumer_installation_identity ||
+    rotation.old_consumer_slot !== plan.old_consumer_slot ||
+    rotation.replacement_consumer_slot !==
+      plan.replacement_consumer_slot ||
     rotation.old_issuer_credential_id !==
       plan.old_issuer_credential_id ||
     rotation.replacement_issuer_credential_id !==

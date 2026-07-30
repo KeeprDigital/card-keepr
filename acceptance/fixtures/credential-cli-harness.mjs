@@ -24,7 +24,29 @@ const server = createServer(async (request, response) => {
       );
   }
   if (process.env.KEEPR_TEST_BOUNDARY_FAIL === "1") {
-    response.writeHead(503).end();
+    response
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify({
+        ok: false,
+        journal: {
+          contract: "card-keepr-provider-mutation-journal@1",
+          mutation_started: false,
+          steps: [],
+        },
+      }));
+    return;
+  }
+  if (process.env.KEEPR_TEST_BOUNDARY_FAIL === "after-mutation") {
+    response
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify({
+        ok: false,
+        journal: {
+          contract: "card-keepr-provider-mutation-journal@1",
+          mutation_started: true,
+          steps: ["consumer-secret-put:test-slot"],
+        },
+      }));
     return;
   }
   response

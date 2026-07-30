@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
-import { classifySecretList } from "./provider-authority.mjs";
+import sodium from "libsodium-wrappers";
 
 const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
 const probeWorkflow = "credential-boundary-probe.yml";
+const githubApi = "https://api.github.com";
 
 export async function verifyGithubManagementAuthority({
   credential,
@@ -14,46 +14,52 @@ export async function verifyGithubManagementAuthority({
   workflowId,
   requiredPolicy,
 }) {
-  const [installationResult, repositoryResult, environmentResult, workflowResult] =
+  const [
+    repositories,
+    repositoryDocument,
+    environment,
+    workflow,
+    viewer,
+  ] =
     await Promise.all([
-      capture(["api", "installation"], credential),
-      capture(["api", `repositories/${repositoryId}`], credential),
-      capture(
-        [
-          "api",
-          `repos/${repository}/environments/production`,
-        ],
+      githubRequest(credential, "/installation/repositories"),
+      githubRequest(credential, `/repositories/${repositoryId}`),
+      githubRequest(
         credential,
+        `/repos/${repository}/environments/${environmentName}`,
       ),
-      capture(
-        [
-          "api",
-          `repos/${repository}/actions/workflows/${workflowId}`,
-        ],
+      githubRequest(
         credential,
+        `/repos/${repository}/actions/workflows/${workflowId}`,
       ),
+      githubRequest(credential, "/graphql", {
+        method: "POST",
+        body: JSON.stringify({
+          query: "query { viewer { login } }",
+        }),
+      }),
     ]);
-  const installation = parsedDocument(installationResult);
-  const repositoryDocument = parsedDocument(repositoryResult);
-  const environment = parsedDocument(environmentResult);
-  const workflow = parsedDocument(workflowResult);
-  const expectedPermissions = {
-    actions: "write",
-    contents: "read",
-    environments: "write",
-    metadata: "read",
-  };
+  if (
+    !repositories.ok ||
+    !repositoryDocument.ok ||
+    !environment.ok ||
+    !workflow.ok ||
+    !viewer.ok
+  ) {
+    return null;
+  }
   const expectedPolicy =
     `github-app-installation:${installationId}` +
     `:repository:${repositoryId}` +
     `:environment:${environmentId}` +
     `:workflow:${workflowId}` +
     ":actions=write,contents=read,environments=write,metadata=read";
-  if (!githubAuthorityMatches({
-    installation,
-    repository: repositoryDocument,
-    environment,
-    workflow,
+  const authority = {
+    repositories: repositories.document,
+    repository: repositoryDocument.document,
+    environment: environment.document,
+    workflow: workflow.document,
+    viewer: viewer.document,
     expected: {
       installationId,
       repositoryId,
@@ -61,36 +67,67 @@ export async function verifyGithubManagementAuthority({
       workflowId,
       requiredPolicy: expectedPolicy,
       suppliedPolicy: requiredPolicy,
-      permissions: expectedPermissions,
     },
-  })) {
-    return null;
-  }
+  };
+  if (!githubAuthorityMatches(authority)) return null;
   return {
-    installation_id: String(installation.id),
-    app_id: String(installation.app_id),
-    app_slug: installation.app_slug,
-    target_id: String(installation.target_id),
-    repository_id: String(repositoryDocument.id),
-    environment_id: String(environment.id),
-    workflow_id: String(workflow.id),
-    permissions: expectedPermissions,
+    installation_id: installationId,
+    repository_id: String(repositoryDocument.document.id),
+    environment_id: String(environment.document.id),
+    workflow_id: String(workflow.document.id),
+    repository_selection: "selected",
+    repositories_count: 1,
+    permission_policy: requiredPolicy,
+    expected_actor: viewer.document.data.viewer.login,
   };
 }
 
 export function githubAuthorityMatches({
+  repositories,
   installation,
   repository: repositoryDocument,
   environment,
   workflow,
+  viewer,
   expected,
 }) {
+  if (repositories !== undefined) {
+    return (
+      repositories?.repository_selection === "selected" &&
+      repositories?.total_count === 1 &&
+      Array.isArray(repositories.repositories) &&
+      repositories.repositories.length === 1 &&
+      repositories.repositories[0]?.id ===
+        Number(expected.repositoryId) &&
+      safeBotActor(viewer?.data?.viewer?.login) &&
+      exactGithubTargets(
+        repositoryDocument,
+        environment,
+        workflow,
+        expected,
+      )
+    );
+  }
   return (
     installation?.id === Number(expected.installationId) &&
-    exactObject(
-      installation.permissions,
-      expected.permissions,
-    ) &&
+    (expected.permissions === undefined ||
+      exactObject(installation.permissions, expected.permissions)) &&
+    exactGithubTargets(
+      repositoryDocument,
+      environment,
+      workflow,
+      expected,
+    )
+  );
+}
+
+function exactGithubTargets(
+  repositoryDocument,
+  environment,
+  workflow,
+  expected,
+) {
+  return (
     repositoryDocument?.id === Number(expected.repositoryId) &&
     environment?.id === Number(expected.environmentId) &&
     environment?.name === environmentName &&
@@ -107,60 +144,66 @@ export async function setGithubConsumerSecret(
   value,
   credential,
 ) {
-  return (
-    (await run(
-      [
-        "secret",
-        "set",
-        name,
-        "--repo",
-        repository,
-        "--env",
-        environmentName,
-      ],
-      value,
-      credential,
-    )) === 0
+  const key = await githubRequest(
+    credential,
+    `/repos/${repository}/environments/${environmentName}/secrets/public-key`,
   );
+  if (
+    !key.ok ||
+    typeof key.document?.key !== "string" ||
+    typeof key.document?.key_id !== "string"
+  ) {
+    return false;
+  }
+  await sodium.ready;
+  const encrypted = sodium.to_base64(
+    sodium.crypto_box_seal(
+      sodium.from_string(value),
+      sodium.from_base64(
+        key.document.key,
+        sodium.base64_variants.ORIGINAL,
+      ),
+    ),
+    sodium.base64_variants.ORIGINAL,
+  );
+  const response = await githubRequest(
+    credential,
+    `/repos/${repository}/environments/${environmentName}/secrets/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        encrypted_value: encrypted,
+        key_id: key.document.key_id,
+      }),
+    },
+  );
+  return response.ok;
 }
 
 export async function listGithubConsumerSecrets(credential) {
-  return classifySecretList(
-    await capture(
-      [
-        "secret",
-        "list",
-        "--repo",
-        repository,
-        "--env",
-        environmentName,
-        "--json",
-        "name",
-      ],
-      credential,
-    ),
+  const response = await githubRequest(
+    credential,
+    `/repos/${repository}/environments/${environmentName}/secrets?per_page=100`,
   );
+  if (!response.ok || !Array.isArray(response.document?.secrets)) {
+    return { kind: "failure" };
+  }
+  const names = response.document.secrets.map((item) => item?.name);
+  return names.every((name) => typeof name === "string")
+    ? { kind: "present", names }
+    : { kind: "failure" };
 }
 
 export async function deleteGithubConsumerSecret(
   name,
   credential,
 ) {
-  return (
-    (await run(
-      [
-        "secret",
-        "delete",
-        name,
-        "--repo",
-        repository,
-        "--env",
-        environmentName,
-      ],
-      "",
-      credential,
-    )) === 0
+  const response = await githubRequest(
+    credential,
+    `/repos/${repository}/environments/${environmentName}/secrets/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
+  return response.ok;
 }
 
 export async function probeGithubInstalledSecret({
@@ -169,154 +212,124 @@ export async function probeGithubInstalledSecret({
   planDigest,
   planNonce,
   secretSlot,
+  expectedActor,
   credential,
+  workflowId,
 }) {
-  if (!["active", "replacement"].includes(secretSlot)) return null;
-  const head = await capture(
-    [
-      "api",
-      `repos/${repository}/git/ref/heads/main`,
-      "--jq",
-      ".object.sha",
-    ],
-    credential,
-  );
-  const expectedHeadSha = head.stdout.trim();
-  if (
-    head.code !== 0 ||
-    !/^[0-9a-f]{40}$/.test(expectedHeadSha)
-  ) {
+  const workflowSlot =
+    secretSlot === "a"
+      ? "active"
+      : secretSlot === "b"
+        ? "replacement"
+        : null;
+  if (workflowSlot === null || !safeBotActor(expectedActor)) {
     return null;
   }
-  const viewer = await capture(
-    ["api", "user", "--jq", ".login"],
+  const head = await githubRequest(
     credential,
+    `/repos/${repository}/git/ref/heads/main`,
   );
-  const expectedActor = viewer.stdout.trim();
-  if (
-    viewer.code !== 0 ||
-    !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(expectedActor)
-  ) {
+  const expectedHeadSha = head.document?.object?.sha;
+  if (!head.ok || !/^[0-9a-f]{40}$/.test(expectedHeadSha ?? "")) {
     return null;
   }
-  const dispatchedAfter = new Date().toISOString();
   const runTitle =
-    `credential-boundary-probe-${secretSlot}-${replacementIssuerCredentialId}-${planNonce}-${planDigest}`;
-  const dispatched = await run(
-    [
-      "workflow",
-      "run",
-      probeWorkflow,
-      "--repo",
-      repository,
-      "--ref",
-      "main",
-      "-f",
-      `expected_account_id=${cloudflareAccountId}`,
-      "-f",
-      `expected_token_id=${replacementIssuerCredentialId}`,
-      "-f",
-      `plan_digest=${planDigest}`,
-      "-f",
-      `plan_nonce=${planNonce}`,
-      "-f",
-      `expected_head_sha=${expectedHeadSha}`,
-      "-f",
-      `expected_actor=${expectedActor}`,
-      "-f",
-      `secret_slot=${secretSlot}`,
-    ],
-    "",
+    `credential-boundary-probe-${workflowSlot}-${replacementIssuerCredentialId}-${planNonce}-${planDigest}`;
+  const dispatchedAfter = new Date().toISOString();
+  const dispatched = await githubRequest(
     credential,
+    `/repos/${repository}/actions/workflows/${workflowId ?? probeWorkflow}/dispatches`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ref: "main",
+        inputs: {
+          expected_account_id: cloudflareAccountId,
+          expected_token_id: replacementIssuerCredentialId,
+          plan_digest: planDigest,
+          plan_nonce: planNonce,
+          expected_head_sha: expectedHeadSha,
+          expected_actor: expectedActor,
+          secret_slot: workflowSlot,
+        },
+      }),
+    },
   );
-  if (dispatched !== 0) return null;
+  if (!dispatched.ok) return null;
   for (let attempt = 0; attempt < 24; attempt += 1) {
-    const listed = await capture(
-      [
-        "run",
-        "list",
-        "--repo",
-        repository,
-        "--workflow",
-        probeWorkflow,
-        "--event",
-        "workflow_dispatch",
-        "--limit",
-        "10",
-        "--json",
-        "databaseId,status,conclusion,displayTitle,createdAt,headSha",
-      ],
+    const listed = await githubRequest(
       credential,
+      `/repos/${repository}/actions/workflows/${workflowId ?? probeWorkflow}/runs?event=workflow_dispatch&per_page=10`,
     );
-    if (listed.code !== 0) return null;
-    let runs;
-    try {
-      runs = JSON.parse(listed.stdout);
-    } catch {
+    if (!listed.ok || !Array.isArray(listed.document?.workflow_runs)) {
       return null;
     }
-    const selected = Array.isArray(runs)
-      ? runs.find(
-          (candidate) =>
-            candidate?.displayTitle === runTitle &&
-            candidate?.headSha === expectedHeadSha &&
-            typeof candidate?.createdAt === "string" &&
-            candidate.createdAt >= dispatchedAfter,
-        )
-      : undefined;
+    const selected = listed.document.workflow_runs.find(
+      (candidate) =>
+        candidate?.display_title === runTitle &&
+        candidate?.head_sha === expectedHeadSha &&
+        typeof candidate?.created_at === "string" &&
+        candidate.created_at >= dispatchedAfter,
+    );
     if (
-      Number.isSafeInteger(selected?.databaseId) &&
+      Number.isSafeInteger(selected?.id) &&
       selected.status === "completed"
     ) {
-      if (selected.conclusion !== "success") return null;
-      const log = await capture(
-        [
-          "run",
-          "view",
-          String(selected.databaseId),
-          "--repo",
-          repository,
-          "--log",
-        ],
-        credential,
-      );
+      if (
+        selected.conclusion !== "success" ||
+        selected.actor?.login !== expectedActor
+      ) {
+        return null;
+      }
       const evidence =
-        `KEEPR_CREDENTIAL_PROOF plan_digest=${planDigest} plan_nonce=${planNonce} ` +
-        `head_sha=${expectedHeadSha} token_id=${replacementIssuerCredentialId} ` +
-        `actor=${expectedActor} slot=${secretSlot}`;
-      return log.code === 0 && log.stdout.includes(evidence)
-        ? {
-            consumer_proof_contract:
-              "github-actions-installed-secret-probe@1",
-            consumer_proof_id: String(selected.databaseId),
-            consumer_proof_head_sha: expectedHeadSha,
-            consumer_proof_actor: expectedActor,
-            consumer_proof_digest: fingerprint(evidence),
-          }
-        : null;
+        `${runTitle}\0${expectedHeadSha}\0${String(selected.id)}\0${expectedActor}`;
+      return {
+        consumer_proof_contract:
+          "github-actions-installed-secret-probe@2",
+        consumer_proof_id: String(selected.id),
+        consumer_proof_head_sha: expectedHeadSha,
+        consumer_proof_actor: expectedActor,
+        consumer_proof_digest: fingerprint(evidence),
+      };
     }
-    await new Promise((resolveDelay) => {
-      setTimeout(resolveDelay, 5_000);
-    });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000));
   }
   return null;
 }
 
-function githubEnvironment(credential) {
-  return {
-    PATH: process.env.PATH,
-    GH_TOKEN: credential,
-    GH_PROMPT_DISABLED: "1",
-  };
+function safeBotActor(value) {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,99})\[bot\]$/.test(value)
+  );
 }
 
-function parsedDocument(result) {
-  if (result.code !== 0) return null;
+async function githubRequest(credential, pathname, init = {}) {
+  let response;
   try {
-    return JSON.parse(result.stdout);
+    response = await fetch(`${githubApi}${pathname}`, {
+      ...init,
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${credential}`,
+        "content-type": "application/json",
+        "x-github-api-version": "2022-11-28",
+        ...(init.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
   } catch {
-    return null;
+    return { ok: false, status: 0, document: null };
   }
+  let document = null;
+  if (response.status !== 204) {
+    try {
+      document = await response.json();
+    } catch {
+      return { ok: false, status: response.status, document: null };
+    }
+  }
+  return { ok: response.ok, status: response.status, document };
 }
 
 function exactObject(actual, expected) {
@@ -337,41 +350,6 @@ function exactObject(actual, expected) {
         actual[key] === expected[key],
     )
   );
-}
-
-function run(arguments_, input, credential) {
-  return new Promise((resolveRun) => {
-    const child = spawn("gh", arguments_, {
-      cwd: process.cwd(),
-      env: githubEnvironment(credential),
-      stdio: ["pipe", "ignore", "ignore"],
-    });
-    child.once("error", () => resolveRun(9));
-    child.once("exit", (code) => resolveRun(code ?? 9));
-    child.stdin.end(input);
-  });
-}
-
-function capture(arguments_, credential) {
-  return new Promise((resolveRun) => {
-    const child = spawn("gh", arguments_, {
-      cwd: process.cwd(),
-      env: githubEnvironment(credential),
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-      if (stdout.length > 64_000) child.kill();
-    });
-    child.once("error", () =>
-      resolveRun({ code: 9, stdout: "" }),
-    );
-    child.once("exit", (code) => {
-      resolveRun({ code: code ?? 9, stdout });
-    });
-  });
 }
 
 function fingerprint(value) {

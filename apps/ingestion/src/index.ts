@@ -33,7 +33,10 @@ import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
 } from "../../../src/catalogue/credential-rotation";
-import { handleCredentialAdministration } from "./credential-administration";
+import {
+  handleCredentialAdministration,
+  handleCredentialExecutionCapability,
+} from "./credential-administration";
 import {
   handleCredentialConsumerProof,
 } from "../../../src/credentials/consumer-proof";
@@ -70,6 +73,13 @@ const ingestionWorker = {
         },
       );
       if (consumerProof !== null) return consumerProof;
+      const executionCapability =
+        await handleCredentialExecutionCapability(
+          request,
+          env.CATALOGUE_DB,
+          administrationObservedAt(request, env),
+        );
+      if (executionCapability !== null) return executionCapability;
       const rateLimited = await rateLimitFailure(
         request,
         env.ADMINISTRATION_RATE_LIMIT,

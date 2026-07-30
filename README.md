@@ -145,29 +145,42 @@ installation, environment, and workflow values remain `0` until those
 resources are provisioned. A zero or non-numeric value intentionally prevents
 credential-rotation execution.
 
-Resolve GitHub IDs with the same least-privilege GitHub App installation token
-that will manage the production environment:
+Record the installation ID when its installation token is minted. Resolve the
+remaining GitHub IDs and verify that token's repository and actor authority
+with the same least-privilege installation token that will manage the
+production environment:
 
 ```sh
 gh api repos/KeeprDigital/card-keepr --jq .id
-gh api installation --jq .id
+gh api installation/repositories \
+  --jq '{repository_selection,total_count,repositories:[.repositories[].id]}'
+gh api graphql -f query='query { viewer { login } }' --jq .data.viewer.login
 gh api repos/KeeprDigital/card-keepr/environments/production --jq .id
 gh api repos/KeeprDigital/card-keepr/actions/workflows \
   --jq '.workflows[] | select(.path == ".github/workflows/credential-boundary-probe.yml") | .id'
 ```
 
 The installation token must expose exactly `actions:write`, `contents:read`,
-`environments:write`, and `metadata:read` for this repository. Cloudflare
-management tokens are class-specific: API/administration bearer rotations use
-only `Workers Scripts Write`; D1 token rotations use exactly
-`Account API Tokens Write` plus `Workers Scripts Write`; the GitHub deployment
-token rotation uses only `Account API Tokens Write`. Rotated D1 tokens remain
-restricted to `D1 Read` on the catalogue account or `D1 Edit` on the exact
-disposable database path.
+`environments:write`, and `metadata:read` for this repository, and
+`GET /installation/repositories` must return exactly this one selected
+repository. The authenticated GraphQL viewer must be the installation's bot
+actor; each deployment probe passes and verifies that exact actor. Persisted
+consumer slots `a` and `b` map at the GitHub boundary to the workflow's
+`active` and `replacement` inputs respectively. Cloudflare management tokens expose exactly
+`Account API Tokens Read`, `Account API Tokens Write`, and
+`Workers Scripts Write`, covering token inspection/revocation and direct
+Worker-secret management. Rotated D1 tokens are account-scoped because
+Cloudflare API-token policy resources do not support a D1-database resource
+scope; Keepr therefore enforces the exact account, permission, configured
+database ID, and request path for every operation. D1 export proof is a
+non-mutating metadata read. D1 edit proof uses a challenge-owned table in the
+configured disposable database and always attempts exact cleanup.
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
 the ingestion Worker using `wrangler secret put`. Set the production CORS
-allowlist to the exact owner origins before deploying. Credential CLI input is
-provided through its secret file descriptor; that document includes the
-boundary attestation key, which the CLI forwards to the fixed attestor on a
-dedicated child descriptor and never exposes to the provider subprocess.
+allowlist to the exact owner origins before deploying. API and administration
+bearer replacements use token68 characters and must encode at least 128 bits
+(22 characters without padding). Credential CLI input is provided through its
+secret file descriptor; that document includes the boundary attestation key,
+which the CLI forwards to the fixed attestor on a dedicated child descriptor
+and never exposes to the provider subprocess.

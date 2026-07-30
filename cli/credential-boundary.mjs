@@ -12,7 +12,7 @@ export async function executeCredentialBoundary(
     typeof attestationKey !== "string" ||
     attestationKey.length < 32
   ) {
-    return boundaryFailure();
+    return boundaryFailure(false);
   }
   const providerSecrets = {
     ...(secrets.old_secret === undefined
@@ -41,9 +41,16 @@ export async function executeCredentialBoundary(
       });
       if (!response.ok) throw new Error("test boundary failed");
       const result = await response.json();
+      if (result?.ok !== true) {
+        const journal = validMutationJournal(result?.journal);
+        return boundaryFailure(
+          journal?.mutation_started ?? true,
+          journal,
+        );
+      }
       return validateBoundaryResult(plan, result);
     } catch {
-      return boundaryFailure();
+      return boundaryFailure(true);
     }
   }
   const executor = fileURLToPath(
@@ -74,6 +81,10 @@ export async function executeCredentialBoundary(
     plan.github_management_credential_id,
     plan.github_management_credential_fingerprint,
     plan.github_management_required_permission,
+    plan.old_consumer_slot,
+    plan.replacement_consumer_slot,
+    plan.execution_capability,
+    plan.execution_validation_url,
   ];
   const input = JSON.stringify(providerSecrets);
   const result = await run(
@@ -83,7 +94,6 @@ export async function executeCredentialBoundary(
     attestationKey,
     subprocessEnvironment(environment),
   );
-  if (result.code !== 0) return boundaryFailure();
   let document;
   try {
     document = JSON.parse(result.stdout);
@@ -95,7 +105,24 @@ export async function executeCredentialBoundary(
         "The owning credential boundary returned an invalid attestation.",
     };
   }
+  if (result.code !== 0 || document?.ok !== true) {
+    const journal = validMutationJournal(document?.journal);
+    return boundaryFailure(
+      journal?.mutation_started ?? true,
+      journal,
+    );
+  }
   return validateBoundaryResult(plan, document);
+}
+
+export function mayReleaseExecutionClaim(boundaryResult) {
+  return (
+    boundaryResult?.ok === false &&
+    boundaryResult.mutation_started === false &&
+    boundaryResult.journal?.contract ===
+      "card-keepr-provider-mutation-journal@1" &&
+    boundaryResult.journal.mutation_started === false
+  );
 }
 
 function validateBoundaryResult(plan, document) {
@@ -143,12 +170,26 @@ function safeTestBoundary(environment) {
   }
 }
 
-function boundaryFailure() {
+function boundaryFailure(mutationStarted = true, journal = null) {
   return {
     ok: false,
     code: "credential_boundary_operation_failed",
     detail: "The owning credential boundary rejected the operation.",
+    mutation_started: mutationStarted,
+    journal,
   };
+}
+
+function validMutationJournal(value) {
+  return value?.contract ===
+    "card-keepr-provider-mutation-journal@1" &&
+    typeof value.mutation_started === "boolean" &&
+    Array.isArray(value.steps) &&
+    value.steps.every(
+      (step) => typeof step === "string" && step.length <= 256,
+    )
+    ? value
+    : null;
 }
 
 function safeDigestEqual(left, right) {

@@ -4,6 +4,9 @@ import type {
 import {
   credentialClassDefinitions,
 } from "./credential-catalogue.mjs";
+import {
+  probeD1Credential,
+} from "./cloudflare-authority.mjs";
 
 type ConsumerProofEnvironment = {
   CREDENTIAL_BOUNDARY_ATTESTATION_KEY: string;
@@ -74,7 +77,7 @@ export async function handleCredentialConsumerProof(
     !/^sha256:[0-9a-f]{64}$/.test(body.expected_fingerprint) ||
     typeof body.challenge !== "string" ||
     !/^[0-9a-f]{64}$/.test(body.challenge) ||
-    !["active", "replacement"].includes(String(body.slot)) ||
+    !["a", "b"].includes(String(body.slot)) ||
     !["usable", "unusable"].includes(String(body.expected_status))
   ) {
     return Response.json({ code: "identity_conflict" }, { status: 409 });
@@ -82,7 +85,7 @@ export async function handleCredentialConsumerProof(
   const secret = replacementSecret(
     credentialClass as CredentialClass,
     environment,
-    body.slot as "active" | "replacement",
+    body.slot as "a" | "b",
   );
   if (
     body.expected_status === "unusable" &&
@@ -120,6 +123,8 @@ export async function handleCredentialConsumerProof(
           credentialClass,
           secret,
           environment,
+          body.expected_fingerprint.slice("sha256:".length),
+          body.challenge,
         );
   if (!capable) {
     return Response.json(
@@ -162,11 +167,11 @@ async function proofResponse(
 function replacementSecret(
   credentialClass: CredentialClass,
   environment: ConsumerProofEnvironment,
-  slot: "active" | "replacement",
+  slot: "a" | "b",
 ): string | undefined {
   const definition = credentialClassDefinitions[credentialClass];
   const key =
-    slot === "active"
+    slot === "a"
       ? definition.active_environment_key
       : definition.replacement_environment_key;
   return environment[key as keyof ConsumerProofEnvironment] as
@@ -178,6 +183,8 @@ async function probeD1Capability(
   credentialClass: CredentialClass,
   token: string,
   environment: ConsumerProofEnvironment,
+  planDigest: string,
+  challenge: string,
 ): Promise<boolean> {
   const definition = credentialClassDefinitions[credentialClass];
   const databaseId = environment[
@@ -189,56 +196,23 @@ async function probeD1Capability(
   ) {
     return false;
   }
-  const operation =
-    credentialClass === "d1_export_token"
-      ? {
-          path: "export",
-          body: {
-            output_format: "polling",
-            dump_options: { no_data: true },
-          },
-        }
-      : {
-          path: "query",
-          body: {
-            sql: [
-              "CREATE TABLE IF NOT EXISTS __keepr_credential_probe (id INTEGER PRIMARY KEY)",
-              "DROP TABLE __keepr_credential_probe",
-            ].join(";"),
-          },
-        };
-  let response: Response;
-  try {
-    response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${environment.CLOUDFLARE_ACCOUNT_ID}/d1/database/${databaseId}/${operation.path}`,
-      {
-        method: "POST",
+  const result = await probeD1Credential({
+    request: (pathname: string, init?: RequestInit) =>
+      fetch(`https://api.cloudflare.com/client/v4${pathname}`, {
+        ...init,
         headers: {
           authorization: `Bearer ${token}`,
-          "content-type": "application/json",
+          ...(init?.headers ?? {}),
         },
-        body: JSON.stringify(operation.body),
         signal: AbortSignal.timeout(15_000),
-      },
-    );
-  } catch {
-    return false;
-  }
-  if (!response.ok) return false;
-  const document = await response.json<{
-    success?: boolean;
-    result?: unknown;
-  }>();
-  if (document.success !== true) return false;
-  return (
-    !Array.isArray(document.result) ||
-    document.result.every(
-      (result) =>
-        typeof result === "object" &&
-        result !== null &&
-        (result as { success?: boolean }).success === true,
-    )
-  );
+      }),
+    accountId: environment.CLOUDFLARE_ACCOUNT_ID,
+    databaseId,
+    permission: definition.required_permission,
+    planDigest,
+    challenge,
+  });
+  return result.ok;
 }
 
 async function sha256(value: string): Promise<string> {

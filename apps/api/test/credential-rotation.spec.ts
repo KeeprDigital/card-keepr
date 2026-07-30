@@ -94,7 +94,7 @@ test("the signed consumer challenge proves the exact installed API value through
     credential_class: "api_bearer_key",
     expected_fingerprint: expectedFingerprint,
     challenge,
-    slot: "replacement",
+    slot: "b",
     status: "usable",
   });
 
@@ -126,7 +126,7 @@ async function consumerProof(
     credential_class: "api_bearer_key",
     expected_fingerprint: expectedFingerprint,
     challenge,
-    slot: "replacement",
+    slot: "b",
     expected_status: "usable",
   });
   return exports.default.fetch(
@@ -185,6 +185,9 @@ async function seedRotation(
       required_permission,
       cloudflare_management_required_permissions,
       consumer_installation_identity,
+      old_consumer_slot,
+      replacement_consumer_slot,
+      current_consumer_slot,
       old_issuer_credential_id,
       replacement_issuer_credential_id,
       management_credential_id,
@@ -209,8 +212,11 @@ async function seedRotation(
       'worker-health:card-keepr-api',
       '{"cloudflare_account_id":"0123456789abcdef0123456789abcdef","worker_scripts":["card-keepr-api","card-keepr-ingestion"],"d1_databases":["00000000-0000-0000-0000-000000000001","00000000-0000-0000-0000-000000000002"],"r2_buckets":["card-keepr-evidence","card-keepr-printing-images","card-keepr-catalogue-exports","card-keepr-backups"],"workflows":["card-keepr-evidence-ingestion","card-keepr-evidence-host"],"github_repository_id":"1313489088","github_installation_id":"22222222","github_environment_id":"33333333","github_workflow_id":"44444444"}',
       'workers-secret:api-traffic',
-      '["Workers Scripts Write"]',
+      '["Account API Tokens Read","Account API Tokens Write","Workers Scripts Write"]',
       'worker-secret:card-keepr-api:API_BEARER_KEY_REPLACEMENT',
+      'a',
+      'b',
+      'b',
       'issuer-old-api-test',
       'issuer-replacement-api-test',
       'management-api-test',

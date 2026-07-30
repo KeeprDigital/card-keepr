@@ -124,6 +124,9 @@ test("API and administration replacements reject whitespace and controls before 
     ["api_bearer_key", "line\nbreak"],
     ["ingestion_admin_key", "tab\tsecret"],
     ["ingestion_admin_key", "\u0000control"],
+    ["api_bearer_key", "unicode-\u00e9-secret"],
+    ["ingestion_admin_key", "comma,invalid"],
+    ["api_bearer_key", "short"],
   ]) {
     const oldSecret = `valid-old-${credentialClass}`;
     const result = await runCli(
@@ -319,6 +322,7 @@ test("an initial provider failure releases the bounded mutation claim without fi
               status: "executing",
               execution_attempt: 1,
               execution_mode: "mutation",
+              execution_capability: "f".repeat(64),
             }
           : document,
       ),
@@ -378,7 +382,7 @@ test("an initial provider failure releases the bounded mutation claim without fi
 });
 
 test("plan digest is printed and fully bound before provider installation and finalization", async (t) => {
-  const oldSecret = "old-api-plan-secret";
+  const oldSecret = "old-api-plan-secret-0001";
   const replacementSecret = "replacement-api-plan-secret";
   const administrationKey = "administration-plan-secret";
   const oldFingerprint = fingerprint(oldSecret);
@@ -418,6 +422,7 @@ test("plan digest is printed and fully bound before provider installation and fi
                 status: "executing",
                 execution_attempt: 1,
                 execution_mode: "mutation",
+                execution_capability: "f".repeat(64),
               }
           : rotationDocument(
               body,
@@ -559,6 +564,7 @@ test("single-holder verify and revoke send no rotated plaintext and carry manage
           status: "executing",
           execution_attempt: 1,
           execution_mode: "mutation",
+          execution_capability: "f".repeat(64),
         }),
       );
       return;
@@ -720,16 +726,17 @@ function planDocument(body, options) {
       body.production_target_identity ?? productionTargetIdentity(),
     required_permission: options.permission,
     cloudflare_management_required_permissions:
-      body.credential_class === "api_bearer_key"
-        ? JSON.stringify(["Workers Scripts Write"])
-        : JSON.stringify([
-            "Account API Tokens Write",
-            "Workers Scripts Write",
-          ]),
+      JSON.stringify([
+        "Account API Tokens Read",
+        "Account API Tokens Write",
+        "Workers Scripts Write",
+      ]),
     consumer_installation_identity:
       body.credential_class === "api_bearer_key"
         ? "wrangler:apps/api/wrangler.jsonc:API_BEARER_KEY_REPLACEMENT"
         : "wrangler:apps/ingestion/wrangler.jsonc:D1_EXPORT_TOKEN_REPLACEMENT",
+    old_consumer_slot: "a",
+    replacement_consumer_slot: "b",
     expected_catalogue_revision_id: "catrev_spine_000",
     expected_state_generation: body.expected_state_generation ?? 0,
     expected_rotation_state: null,

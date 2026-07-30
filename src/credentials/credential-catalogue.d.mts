@@ -46,11 +46,15 @@ export const credentialClassDefinitions: Readonly<
     consumer_worker_name?: string;
     active_secret_name: string;
     replacement_secret_name: string;
+    slot_a_secret_name: string;
+    slot_b_secret_name: string;
     active_environment_key: string;
     replacement_environment_key: string;
     database_environment_key?: string;
     fixed_old_issuer_credential_id?: string;
     fixed_replacement_issuer_credential_id?: string;
+    slot_a_issuer_credential_id?: string;
+    slot_b_issuer_credential_id?: string;
   }>
 >;
 

@@ -1,9 +1,11 @@
 import {
   classifyTokenLookup,
-  cloudflareOperationSucceeded,
-  d1DatabaseInfoSucceeded,
   exactTokenPolicy,
 } from "./provider-authority.mjs";
+import {
+  cloudflareJson,
+  probeD1Credential,
+} from "../src/credentials/cloudflare-authority.mjs";
 
 export function createCloudflareProvider({
   accountId,
@@ -44,7 +46,7 @@ export function createCloudflareProvider({
       return null;
     }
     if (!response.ok) return null;
-    const document = await safeJson(response);
+    const document = await cloudflareJson(response);
     return document?.success === true ? document.result : null;
   }
 
@@ -79,37 +81,38 @@ export function createCloudflareProvider({
       return false;
     }
     if (!response.ok) return false;
-    const document = await safeJson(response);
+    const document = await cloudflareJson(response);
     return document?.success === true;
   }
 
-  async function probeExactCapability(credentialClass, token) {
+  async function probeExactCapability(
+    credentialClass,
+    token,
+    planDigest,
+    challenge,
+  ) {
     const databaseId = d1DatabaseId(resourceIdentity);
-    if (credentialClass === "d1_export_token") {
-      const response = await request(
-        token,
-        `/accounts/${accountId}/d1/database/${databaseId}`,
-      );
-      return d1DatabaseInfoSucceeded(response, databaseId);
+    if (
+      credentialClass === "d1_export_token" ||
+      credentialClass === "d1_verification_token"
+    ) {
+      return probeD1Credential({
+        request: (pathname, init) => request(token, pathname, init),
+        accountId,
+        databaseId,
+        permission:
+          credentialClass === "d1_export_token"
+            ? "D1 Read"
+            : "D1 Edit",
+        planDigest,
+        challenge,
+      });
     }
-    if (credentialClass === "d1_verification_token") {
-      const response = await request(
-        token,
-        `/accounts/${accountId}/d1/database/${databaseId}/query`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            sql: [
-              "CREATE TABLE IF NOT EXISTS __keepr_credential_probe (id INTEGER PRIMARY KEY)",
-              "DROP TABLE __keepr_credential_probe",
-            ].join(";"),
-          }),
-        },
-      );
-      return cloudflareOperationSucceeded(response);
-    }
-    return credentialClass === "github_deployment_token";
+    return {
+      ok: credentialClass === "github_deployment_token",
+      mutation_started: false,
+      cleanup: "not-applicable",
+    };
   }
 
   return {
@@ -125,12 +128,4 @@ function d1DatabaseId(resourceIdentity) {
   return resourceIdentity.slice(
     resourceIdentity.lastIndexOf(":") + 1,
   );
-}
-
-async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
 }

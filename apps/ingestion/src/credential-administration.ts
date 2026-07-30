@@ -1,5 +1,6 @@
 import {
   beginCredentialRotationPlanExecution,
+  consumeCredentialRotationExecutionCapability,
   CredentialRotationProblem,
   finalizeCredentialRotationPlan,
   isCredentialClass,
@@ -12,6 +13,36 @@ import type {
   CredentialDeploymentContext,
 } from "../../../src/credentials/credential-catalogue.mjs";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
+
+export async function handleCredentialExecutionCapability(
+  request: Request,
+  database: D1Database,
+  observedAt: string,
+): Promise<Response | null> {
+  const match =
+    /^\/v1\/credential-rotation-plans\/([^/]+)\/execution-capability$/.exec(
+      new URL(request.url).pathname,
+    );
+  if (request.method !== "POST" || match === null) return null;
+  const body = await readBody(request);
+  assertOnlyFields(body, [
+    "plan_digest",
+    "execution_attempt",
+    "execution_capability",
+  ]);
+  await consumeCredentialRotationExecutionCapability(
+    database,
+    decodeURIComponent(match[1]!),
+    requiredSha256(body, "plan_digest"),
+    requiredInteger(body, "execution_attempt"),
+    requiredOwnerToken(body, "execution_capability"),
+    observedAt,
+  );
+  return Response.json({
+    contract: "card-keepr-credential-execution-capability@1",
+    consumed: true,
+  });
+}
 
 export async function handleCredentialAdministration(
   request: Request,
@@ -74,6 +105,7 @@ export async function handleCredentialAdministration(
       "plan_digest",
       "execution_owner_token",
       "execution_attempt",
+      "mutation_started",
     ]);
     return Response.json(
       await releaseCredentialRotationPlanExecution(
@@ -82,6 +114,7 @@ export async function handleCredentialAdministration(
         requiredSha256(body, "plan_digest"),
         requiredOwnerToken(body),
         requiredInteger(body, "execution_attempt"),
+        requiredFalse(body, "mutation_started"),
         observedAt,
       ),
     );
@@ -277,8 +310,11 @@ function requiredSha256(
   return value;
 }
 
-function requiredOwnerToken(body: Record<string, unknown>): string {
-  const value = requiredString(body, "execution_owner_token");
+function requiredOwnerToken(
+  body: Record<string, unknown>,
+  field = "execution_owner_token",
+): string {
+  const value = requiredString(body, field);
   if (!/^[0-9a-f]{64}$/.test(value)) {
     throw new CredentialRotationProblem(
       422,
@@ -287,6 +323,20 @@ function requiredOwnerToken(body: Record<string, unknown>): string {
     );
   }
   return value;
+}
+
+function requiredFalse(
+  body: Record<string, unknown>,
+  field: string,
+): false {
+  if (body[field] !== false) {
+    throw new CredentialRotationProblem(
+      422,
+      "invalid_parameter",
+      `${field} must authoritatively be false.`,
+    );
+  }
+  return false;
 }
 
 function requiredProduction(
