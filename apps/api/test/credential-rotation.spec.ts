@@ -172,6 +172,8 @@ async function consumerProof(
           id: "credplan_api_consumer_proof",
           plan_digest: challenge,
           plan_nonce: "c".repeat(64),
+          execution_attempt: 1,
+          execution_expires_at: "2026-07-29T00:10:00.000Z",
           action: "install",
           credential_class: "api_bearer_key",
           old_fingerprint: `sha256:${"1".repeat(64)}`,

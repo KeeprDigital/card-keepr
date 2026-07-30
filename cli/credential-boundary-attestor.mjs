@@ -235,6 +235,9 @@ async function verifyInstalledConsumer(
         requested.expected_fingerprint,
       ) ||
       !safeDigestEqual(proof.challenge, plan.plan_digest) ||
+      !safeDigestEqual(proof.plan_nonce, plan.plan_nonce) ||
+      proof.execution_attempt !== plan.execution_attempt ||
+      proof.execution_expires_at !== plan.execution_expires_at ||
       proof.slot !== requested.slot ||
       proof.status !== requested.expected_status ||
       !/^[0-9a-f]{64}$/.test(proof.proof ?? "")

@@ -278,6 +278,45 @@ test("caller-authored provider facts cannot be exchanged for a server attestatio
   });
 });
 
+test("consumer proofs from an expired execution attempt cannot be replayed into reconciliation", async () => {
+  const plan = await reserve(
+    await planInput(
+      "install",
+      "api_bearer_key",
+      0,
+      "credrot_cross_attempt_consumer_proof",
+    ),
+  );
+  await execute(plan, "2026-07-29T00:00:00.000Z");
+  const staleProofs = await consumerProofsFor(plan);
+  await execute(
+    plan,
+    "2026-07-29T00:11:00.000Z",
+    "b".repeat(64),
+  );
+  expect(plan.execution_attempt).toBe(2);
+  await consumeExecutionCapability(
+    plan,
+    "2026-07-29T00:11:30.000Z",
+  );
+  const response = await administrationRequest(
+    `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
+    "POST",
+    {
+      plan_digest: plan.plan_digest,
+      execution_attempt: plan.execution_attempt,
+      execution_capability: plan.execution_capability,
+      consumer_proofs: staleProofs,
+    },
+    undefined,
+    "2026-07-29T00:11:30.000Z",
+  );
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "credential_provider_execution_required",
+  });
+});
+
 test("GitHub final evidence is independently read from an exact successful workflow run", async () => {
   const digest = "a".repeat(64);
   const started = "2026-07-29T00:01:00.000Z";
@@ -285,6 +324,13 @@ test("GitHub final evidence is independently read from an exact successful workf
     plan_digest: digest,
     plan_nonce: "b".repeat(64),
     execution_started_at: started,
+    github_management_credential_id:
+      "github-app-installation:22222222",
+    github_management_required_permission:
+      "github-app-installation:22222222" +
+      ":repository:1313489088:environment:33333333" +
+      ":workflow:44444444" +
+      ":actions=write,contents=read,environments=write,metadata=read",
   } as never;
   const expected = [{
     slot: "b",
@@ -305,17 +351,81 @@ test("GitHub final evidence is independently read from an exact successful workf
     conclusion: "success",
     actor: { login: "keepr-rotation[bot]" },
   };
-  const observe = (run: typeof exactRun) =>
+  const exactRequest = async (
+    _token: string,
+    pathname: string,
+    run = exactRun,
+  ): Promise<any> => {
+    if (pathname === "/app/installations/22222222") {
+      return {
+        id: 22222222,
+        repository_selection: "selected",
+        permissions: {
+          actions: "write",
+          contents: "read",
+          environments: "write",
+          metadata: "read",
+        },
+      };
+    }
+    if (pathname.endsWith("/access_tokens")) {
+      return {
+        token: "exact-installation-observation-token",
+        permissions: {
+          actions: "write",
+          contents: "read",
+          environments: "write",
+          metadata: "read",
+        },
+        repositories: [{ id: 1313489088 }],
+      };
+    }
+    if (pathname === "/installation/repositories") {
+      return {
+        repository_selection: "selected",
+        total_count: 1,
+        repositories: [{ id: 1313489088 }],
+      };
+    }
+    if (pathname === "/graphql") {
+      return {
+        data: {
+          viewer: { login: "keepr-rotation[bot]" },
+        },
+      };
+    }
+    if (pathname === "/repositories/1313489088") {
+      return { id: 1313489088 };
+    }
+    if (pathname.endsWith("/environments/production")) {
+      return { id: 33333333 };
+    }
+    if (pathname.includes("/actions/workflows/44444444")) {
+      if (pathname.endsWith("44444444")) {
+        return {
+          id: 44444444,
+          path: ".github/workflows/credential-boundary-probe.yml",
+          state: "active",
+        };
+      }
+      return { workflow_runs: [run] };
+    }
+    return { object: { sha: "d".repeat(40) } };
+  };
+  const observe = (
+    run: typeof exactRun,
+    request = (
+      token: string,
+      pathname: string,
+    ) => exactRequest(token, pathname, run),
+  ) =>
     observeGithubCredentialRuns(
       plan,
       expected,
       "server-owned-github-observation-token",
       "44444444",
       "keepr-rotation[bot]",
-      async (_token, pathname) =>
-        pathname.endsWith("/git/ref/heads/main")
-          ? { object: { sha: "d".repeat(40) } }
-          : { workflow_runs: [run] },
+      request,
     );
   await expect(observe(exactRun)).resolves.toHaveLength(1);
   await expect(observe({
@@ -326,6 +436,39 @@ test("GitHub final evidence is independently read from an exact successful workf
     ...exactRun,
     display_title: `${title}-forged`,
   })).resolves.toBeNull();
+  await expect(observe(
+    exactRun,
+    async (token, pathname) => {
+      const result = await exactRequest(token, pathname);
+      return pathname === "/app/installations/22222222"
+        ? {
+            ...result,
+            permissions: {
+              ...result.permissions,
+              administration: "write",
+            },
+          }
+        : result;
+    },
+  )).resolves.toBeNull();
+  await expect(observe(
+    exactRun,
+    async (token, pathname) => {
+      const result = await exactRequest(token, pathname);
+      return pathname.endsWith("/access_tokens")
+        ? { ...result, repositories: [{ id: 999 }] }
+        : result;
+    },
+  )).resolves.toBeNull();
+  await expect(observe(
+    exactRun,
+    async (token, pathname) => {
+      const result = await exactRequest(token, pathname);
+      return pathname.endsWith("44444444")
+        ? { ...result, id: 999 }
+        : result;
+    },
+  )).resolves.toBeNull();
 });
 
 test("the durable public sequence is installed then verified then issuer-old revoked", async () => {
@@ -771,6 +914,9 @@ type PlanDocument = Record<string, unknown> & {
     credential_class: CredentialClass;
     expected_fingerprint: string;
     plan_digest: string;
+    plan_nonce: string;
+    execution_attempt: number;
+    execution_expires_at: string;
     slot: "a" | "b";
     expected_status: "usable" | "unusable";
     request_token: string;
@@ -1010,24 +1156,7 @@ async function signedAttestation(
   if (!capabilityAlreadyConsumed) {
     await consumeExecutionCapability(plan, observedAt);
   }
-  const consumerProofs = await Promise.all(
-    (plan.consumer_proof_requests ?? []).map(
-      async (request) => ({
-        contract: "card-keepr-credential-consumer-proof@1",
-        credential_class: request.credential_class,
-        expected_fingerprint: request.expected_fingerprint,
-        challenge: request.plan_digest,
-        slot: request.slot,
-        status: request.expected_status,
-        proof: await consumerProofHmac(
-          `${request.credential_class}\0` +
-          `${request.expected_fingerprint}\0` +
-          `${request.plan_digest}\0${request.slot}\0` +
-          request.expected_status,
-        ),
-      }),
-    ),
-  );
+  const consumerProofs = await consumerProofsFor(plan);
   const response = await administrationRequest(
     `/v1/credential-rotation-plans/${plan.id}/boundary-attestation`,
     "POST",
@@ -1045,6 +1174,34 @@ async function signedAttestation(
     boundary_attestation: string;
   }>();
   return document.boundary_attestation;
+}
+
+async function consumerProofsFor(
+  plan: PlanDocument,
+): Promise<unknown[]> {
+  return Promise.all(
+    (plan.consumer_proof_requests ?? []).map(
+      async (request) => ({
+        contract: "card-keepr-credential-consumer-proof@1",
+        credential_class: request.credential_class,
+        expected_fingerprint: request.expected_fingerprint,
+        challenge: request.plan_digest,
+        plan_nonce: request.plan_nonce,
+        execution_attempt: request.execution_attempt,
+        execution_expires_at: request.execution_expires_at,
+        slot: request.slot,
+        status: request.expected_status,
+        proof: await consumerProofHmac(
+          `${request.credential_class}\0` +
+          `${request.expected_fingerprint}\0` +
+          `${request.plan_digest}\0${request.plan_nonce}\0` +
+          `${request.execution_attempt}\0` +
+          `${request.execution_expires_at}\0${request.slot}\0` +
+          request.expected_status,
+        ),
+      }),
+    ),
+  );
 }
 
 function boundaryFacts(
@@ -1184,6 +1341,8 @@ async function consumerProofRequest(
         id: "credplan_ingestion_consumer_proof",
         plan_digest: challenge,
         plan_nonce: "c".repeat(64),
+        execution_attempt: 1,
+        execution_expires_at: "2026-07-29T00:10:00.000Z",
         action: "install",
         credential_class: credentialClass as CredentialClass,
         old_fingerprint: `sha256:${"1".repeat(64)}`,

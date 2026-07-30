@@ -680,9 +680,17 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
     workflow,
     /options:\s*\n\s*- active\s*\n\s*- replacement/u,
   );
-  assert.match(
+  assert.doesNotMatch(
     workflow,
     /inputs\.secret_slot == 'active' && secrets\.CLOUDFLARE_DEPLOYMENT_TOKEN \|\| secrets\.CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT/u,
+  );
+  assert.match(
+    workflow,
+    /if: inputs\.secret_slot == 'active'[\s\S]*secrets\.CLOUDFLARE_DEPLOYMENT_TOKEN/u,
+  );
+  assert.match(
+    workflow,
+    /if: inputs\.secret_slot == 'replacement'[\s\S]*secrets\.CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT/u,
   );
   assert.match(workflow, /expected_actor:\s*\n\s*required: true/u);
   assert.match(
@@ -793,16 +801,36 @@ test("API and administration issuer identities are fixed catalogue secret slots"
   );
 });
 
-test("management permissions exactly cover token and Worker secret APIs", () => {
+test("management permissions are minimal for each credential class", () => {
+  const expected = {
+    api_bearer_key: [
+      "Account API Tokens Read",
+      "Workers Scripts Write",
+    ],
+    ingestion_admin_key: [
+      "Account API Tokens Read",
+      "Workers Scripts Write",
+    ],
+    d1_export_token: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+      "Workers Scripts Write",
+    ],
+    d1_verification_token: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+      "Workers Scripts Write",
+    ],
+    github_deployment_token: [
+      "Account API Tokens Read",
+      "Account API Tokens Write",
+    ],
+  };
   for (const credentialClass of credentialClasses) {
     assert.deepEqual(
       [...credentialClassDefinitions[credentialClass].management_permissions]
         .sort(),
-      [
-        "Account API Tokens Read",
-        "Account API Tokens Write",
-        "Workers Scripts Write",
-      ],
+      [...expected[credentialClass]].sort(),
     );
   }
 });

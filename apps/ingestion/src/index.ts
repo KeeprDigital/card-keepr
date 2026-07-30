@@ -80,6 +80,7 @@ const ingestionWorker = {
           administrationObservedAt(request, env),
           env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
           env.CREDENTIAL_CONSUMER_PROOF_KEY,
+          env.CLOUDFLARE_OBSERVATION_TOKEN,
           env.GITHUB_OBSERVATION_TOKEN,
           env.GITHUB_WORKFLOW_ID,
           env.GITHUB_OBSERVATION_ACTOR,

@@ -342,17 +342,27 @@ async function mutate(
 }
 
 async function show(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--rotation-id"]);
+  const options = parseOptions(arguments_, [
+    "--rotation-id",
+    "--secrets-stdin-fd",
+  ]);
   const rotationId = options.values["--rotation-id"];
   if (options.error !== null || rotationId === undefined) {
     return usage(json);
+  }
+  const secrets = readSecrets(
+    options.values["--secrets-stdin-fd"],
+    ["administration_key"],
+  );
+  if (secrets.error !== null) {
+    return failure(json, "secret_input_error", secrets.error, 2);
   }
   const response = await requestDocument(
     environment,
     `/v1/credential-rotations/${encodeURIComponent(rotationId)}`,
     "GET",
     undefined,
-    environment.KEEPR_ADMINISTRATION_KEY,
+    secrets.values.administration_key,
   );
   if (!response.ok) return requestFailure(json, response);
   writeSuccess(json, response.document);

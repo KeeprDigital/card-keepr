@@ -27,6 +27,8 @@ export type CredentialConsumerProofRequestClaims = {
   plan_id: string;
   plan_digest: string;
   plan_nonce: string;
+  execution_attempt: number;
+  execution_expires_at: string;
   credential_class: CredentialClass;
   expected_fingerprint: string;
   slot: "a" | "b";
@@ -41,6 +43,9 @@ export type CredentialConsumerProof = {
   credential_class: CredentialClass;
   expected_fingerprint: string;
   challenge: string;
+  plan_nonce: string;
+  execution_attempt: number;
+  execution_expires_at: string;
   slot: "a" | "b";
   status: "usable" | "unusable";
   proof: string;
@@ -51,6 +56,8 @@ export async function credentialConsumerProofRequests(
     id: string;
     plan_digest: string;
     plan_nonce: string;
+    execution_attempt: number;
+    execution_expires_at: string | null;
     action: string;
     credential_class: CredentialClass;
     old_fingerprint: string;
@@ -98,6 +105,8 @@ export async function credentialConsumerProofRequests(
       plan_id: plan.id,
       plan_digest: plan.plan_digest,
       plan_nonce: plan.plan_nonce,
+      execution_attempt: plan.execution_attempt,
+      execution_expires_at: plan.execution_expires_at ?? "",
       credential_class: plan.credential_class,
       ...request,
       github_management_credential_fingerprint:
@@ -176,11 +185,7 @@ export async function handleCredentialConsumerProof(
     secret === undefined
   ) {
     return proofResponse(
-      credentialClass,
-      body.expected_fingerprint,
-      body.challenge,
-      body.slot as string,
-      "unusable",
+      claims,
       environment.CREDENTIAL_CONSUMER_PROOF_KEY,
     );
   }
@@ -233,11 +238,7 @@ export async function handleCredentialConsumerProof(
     );
   }
   return proofResponse(
-    credentialClass,
-    body.expected_fingerprint,
-    body.challenge,
-    body.slot as string,
-    "usable",
+    claims,
     environment.CREDENTIAL_CONSUMER_PROOF_KEY,
   );
 }
@@ -255,12 +256,7 @@ export async function credentialConsumerProofMatches(
     return false;
   }
   const candidate = proof as Record<string, unknown>;
-  const expected = await hmac(
-    key,
-    `${claims.credential_class}\0${claims.expected_fingerprint}` +
-      `\0${claims.plan_digest}\0${claims.slot}` +
-      `\0${claims.expected_status}`,
-  );
+  const expected = await hmac(key, consumerProofMessage(claims));
   return (
     candidate.contract ===
       "card-keepr-credential-consumer-proof@1" &&
@@ -268,6 +264,9 @@ export async function credentialConsumerProofMatches(
     candidate.expected_fingerprint ===
       claims.expected_fingerprint &&
     candidate.challenge === claims.plan_digest &&
+    candidate.plan_nonce === claims.plan_nonce &&
+    candidate.execution_attempt === claims.execution_attempt &&
+    candidate.execution_expires_at === claims.execution_expires_at &&
     candidate.slot === claims.slot &&
     candidate.status === claims.expected_status &&
     typeof candidate.proof === "string" &&
@@ -313,6 +312,9 @@ async function verifiedRequestToken(
     typeof claims.plan_id === "string" &&
     /^[0-9a-f]{64}$/.test(claims.plan_digest) &&
     /^[0-9a-f]{64}$/.test(claims.plan_nonce) &&
+    Number.isSafeInteger(claims.execution_attempt) &&
+    claims.execution_attempt > 0 &&
+    canonicalTimestamp(claims.execution_expires_at) &&
     credentialClassDefinitions[claims.credential_class] !== undefined &&
     /^sha256:[0-9a-f]{64}$/.test(claims.expected_fingerprint) &&
     ["a", "b"].includes(claims.slot) &&
@@ -357,25 +359,32 @@ async function readBoundedText(
 }
 
 async function proofResponse(
-  credentialClass: string,
-  expectedFingerprint: string,
-  challenge: string,
-  slot: string,
-  status: string,
+  claims: CredentialConsumerProofRequestClaims,
   key: string,
 ): Promise<Response> {
   return Response.json({
     contract: "card-keepr-credential-consumer-proof@1",
-    credential_class: credentialClass,
-    expected_fingerprint: expectedFingerprint,
-    challenge,
-    slot,
-    status,
-    proof: await hmac(
-      key,
-      `${credentialClass}\0${expectedFingerprint}\0${challenge}\0${slot}\0${status}`,
-    ),
+    credential_class: claims.credential_class,
+    expected_fingerprint: claims.expected_fingerprint,
+    challenge: claims.plan_digest,
+    plan_nonce: claims.plan_nonce,
+    execution_attempt: claims.execution_attempt,
+    execution_expires_at: claims.execution_expires_at,
+    slot: claims.slot,
+    status: claims.expected_status,
+    proof: await hmac(key, consumerProofMessage(claims)),
   });
+}
+
+export function consumerProofMessage(
+  claims: CredentialConsumerProofRequestClaims,
+): string {
+  return (
+    `${claims.credential_class}\0${claims.expected_fingerprint}` +
+    `\0${claims.plan_digest}\0${claims.plan_nonce}` +
+    `\0${claims.execution_attempt}\0${claims.execution_expires_at}` +
+    `\0${claims.slot}\0${claims.expected_status}`
+  );
 }
 
 function replacementSecret(
@@ -503,4 +512,13 @@ function base64Url(value: Uint8Array): string {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/u, "");
+}
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = new Date(value);
+  return (
+    Number.isFinite(parsed.valueOf()) &&
+    parsed.toISOString() === value
+  );
 }

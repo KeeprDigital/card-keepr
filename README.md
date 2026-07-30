@@ -170,9 +170,10 @@ repository. The authenticated GraphQL viewer must be the installation's bot
 actor; each deployment probe passes and verifies that exact actor. Persisted
 consumer slots `a` and `b` map at the GitHub boundary to the workflow's
 `active` and `replacement` inputs respectively. Cloudflare management tokens
-expose exactly `Account API Tokens Read`, `Account API Tokens Write`, and
-`Workers Scripts Write`, covering token inspection/revocation and direct
-Worker-secret management. Rotated D1 tokens are account-scoped because
+are class-minimal: Worker bearer classes use token read plus Worker-secret
+write, D1 classes additionally use token write, and GitHub deployment uses
+token read/write without Worker-secret write. Rotated D1 tokens are
+account-scoped because
 Cloudflare API-token policy resources do not support a D1-database resource
 scope; Keepr therefore enforces the exact account, permission, configured
 database ID, and request path for every operation. D1 export proof is a
@@ -185,12 +186,17 @@ allowlist to the exact owner origins before deploying. API and administration
 bearer replacements use token68 characters and must encode at least 128 bits
 (22 characters without padding). Set `CREDENTIAL_CONSUMER_PROOF_KEY` on both
 Workers and set `CREDENTIAL_BOUNDARY_ATTESTATION_KEY` only on the ingestion
-Worker. Also set `GITHUB_OBSERVATION_TOKEN` only on ingestion to a read-only
-credential restricted to workflow-run and repository-ref reads for
-`KeeprDigital/card-keepr`. The ingestion Worker uses it to observe exact
-successful credential-probe runs independently of the mutation caller. Set
+Worker. Also set `GITHUB_OBSERVATION_TOKEN` only on ingestion to a server-owned
+GitHub App credential for the configured installation. The ingestion Worker
+verifies the installation's exact policy, mints an exact one-repository token,
+and uses it to observe exact successful credential-probe runs independently
+of the mutation caller. Set
 `GITHUB_OBSERVATION_ACTOR` to the exact GitHub App bot login that owns those
-runs.
+runs. Set `CLOUDFLARE_OBSERVATION_TOKEN` only on ingestion to an independently
+managed observation token with account-token read and Worker-secret metadata
+read access. Attestation uses it to verify exact issuer identity and policy,
+authoritative old-issuer deletion, exact management-token policy, and the
+selected Worker secret name independently of the mutation caller.
 
 The attestation and consumer-proof keys are server-owned and never enter the
 CLI or a child process. Credential CLI input is provided through its secret

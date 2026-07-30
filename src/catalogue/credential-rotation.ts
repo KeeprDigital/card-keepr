@@ -796,7 +796,7 @@ export async function issueCredentialBoundaryAttestation(
   attestationKey: string,
   consumerProofKey: string,
   observedAt: string,
-  observeGithub: (
+  observeProvider: (
     plan: CredentialRotationPlanRow,
     expected: Awaited<
       ReturnType<typeof credentialConsumerProofRequests>
@@ -834,20 +834,18 @@ export async function issueCredentialBoundaryAttestation(
     plan,
     consumerProofKey,
   );
-  const githubEvidence =
-    plan.credential_class === "github_deployment_token"
-      ? await observeGithub(plan, expectedProofs)
-      : null;
+  const providerEvidence =
+    await observeProvider(plan, expectedProofs);
   const proofs =
     plan.credential_class === "github_deployment_token"
-      ? githubEvidence ?? []
+      ? providerEvidence ?? []
       : Array.isArray(suppliedProofs)
         ? suppliedProofs
         : [];
   const signedProofsValid =
     plan.credential_class === "github_deployment_token"
-      ? githubEvidence !== null &&
-        githubEvidence.length === expectedProofs.length
+      ? providerEvidence !== null &&
+        providerEvidence.length >= expectedProofs.length
       : proofs.length === expectedProofs.length &&
         (await Promise.all(expectedProofs.map(async (expected) => {
           const proof = proofs.find((candidate) =>
@@ -864,7 +862,8 @@ export async function issueCredentialBoundaryAttestation(
             expected,
             consumerProofKey,
           );
-        }))).every(Boolean);
+        }))).every(Boolean) &&
+        providerEvidence !== null;
   if (!signedProofsValid) {
     throw problem(
       "credential_provider_execution_required",
@@ -873,7 +872,7 @@ export async function issueCredentialBoundaryAttestation(
   }
   const facts = await serverObservedBoundaryFacts(
     plan,
-    proofs,
+    [...proofs, ...(providerEvidence ?? [])],
     observedAt,
   );
   const attestation = await signCredentialBoundaryFacts(

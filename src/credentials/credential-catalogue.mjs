@@ -8,7 +8,6 @@ export const credentialClassDefinitions = Object.freeze({
     required_permission: "workers-secret:api-traffic",
     management_permissions: [
       "Account API Tokens Read",
-      "Account API Tokens Write",
       "Workers Scripts Write",
     ],
     consumer_provider: "wrangler",
@@ -38,7 +37,6 @@ export const credentialClassDefinitions = Object.freeze({
     required_permission: "workers-secret:administration",
     management_permissions: [
       "Account API Tokens Read",
-      "Account API Tokens Write",
       "Workers Scripts Write",
     ],
     consumer_provider: "wrangler",
@@ -119,7 +117,6 @@ export const credentialClassDefinitions = Object.freeze({
     management_permissions: [
       "Account API Tokens Read",
       "Account API Tokens Write",
-      "Workers Scripts Write",
     ],
     consumer_provider: "github",
     active_secret_name: "CLOUDFLARE_DEPLOYMENT_TOKEN",

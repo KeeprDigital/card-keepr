@@ -3,6 +3,7 @@ ADMINISTRATION_KEY=generated-type-placeholder
 ADMINISTRATION_KEY_REPLACEMENT=generated-type-placeholder-replacement
 CREDENTIAL_BOUNDARY_ATTESTATION_KEY=generated-type-placeholder-attestation
 CREDENTIAL_CONSUMER_PROOF_KEY=generated-type-placeholder-consumer-proof
+CLOUDFLARE_OBSERVATION_TOKEN=generated-type-placeholder-cloudflare-observation
 GITHUB_OBSERVATION_TOKEN=generated-type-placeholder-github-observation
 GITHUB_OBSERVATION_ACTOR=keepr-rotation[bot]
 D1_EXPORT_TOKEN=generated-type-placeholder-d1-export

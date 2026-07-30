@@ -16,6 +16,7 @@ import test from "node:test";
 const cliHarness = resolve(
   "acceptance/fixtures/credential-cli-harness.mjs",
 );
+const cliExecutable = resolve("cli/keepr.mjs");
 const context = {
   cloudflareAccountId: "0123456789abcdef0123456789abcdef",
   catalogueD1DatabaseId: "00000000-0000-0000-0000-000000000001",
@@ -25,6 +26,25 @@ const context = {
   githubEnvironmentId: "33333333",
   githubWorkflowId: "44444444",
 };
+
+test("credential show ignores an administration key supplied only through the environment", async () => {
+  const result = await runDirectCli(
+    [
+      "credential",
+      "show",
+      "--rotation-id",
+      "credrot_environment_key_rejected",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: "http://127.0.0.1:1",
+      KEEPR_ADMINISTRATION_KEY: "environment-only-secret",
+    },
+    {},
+  );
+  assert.equal(result.code, 2);
+  assert.match(result.stdout, /secret_input_error/u);
+});
 
 test("credential mutation requires an explicit production environment before preflight or provider work", async (t) => {
   let requests = 0;
@@ -896,6 +916,27 @@ async function listen(server) {
 
 async function runCli(arguments_, environment_, secrets) {
   const child = spawn(process.execPath, [cliHarness, ...arguments_], {
+    cwd: process.cwd(),
+    env: { ...process.env, ...environment_ },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdin.end(JSON.stringify(secrets));
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const [code] = await once(child, "exit");
+  return { code, stdout, stderr };
+}
+
+async function runDirectCli(arguments_, environment_, secrets) {
+  const child = spawn(process.execPath, [cliExecutable, ...arguments_], {
     cwd: process.cwd(),
     env: { ...process.env, ...environment_ },
     stdio: ["pipe", "pipe", "pipe"],

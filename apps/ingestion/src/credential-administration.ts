@@ -20,6 +20,9 @@ import {
 import {
   observeGithubCredentialRuns,
 } from "./github-credential-observation";
+import {
+  observeCloudflareCredentialBoundary,
+} from "./cloudflare-credential-observation";
 
 export async function handleCredentialExecutionCapability(
   request: Request,
@@ -27,6 +30,7 @@ export async function handleCredentialExecutionCapability(
   observedAt: string,
   attestationKey: string,
   consumerProofKey: string,
+  cloudflareObservationToken: string,
   githubObservationToken: string,
   githubWorkflowId: string,
   githubObservationActor: string,
@@ -75,14 +79,32 @@ export async function handleCredentialExecutionCapability(
           attestationKey,
           consumerProofKey,
           observedAt,
-          (plan, expected) =>
-            observeGithubCredentialRuns(
+          async (plan, expected) => {
+            const cloudflare =
+              await observeCloudflareCredentialBoundary(
+                plan,
+                cloudflareObservationToken,
+                undefined,
+                expected,
+              );
+            if (cloudflare === null) return null;
+            if (
+              plan.credential_class !==
+                "github_deployment_token"
+            ) {
+              return cloudflare;
+            }
+            const github = await observeGithubCredentialRuns(
               plan,
               expected,
               githubObservationToken,
               githubWorkflowId,
               githubObservationActor,
-            ),
+            );
+            return github === null
+              ? null
+              : [...cloudflare, ...github];
+          },
         ),
     });
   }
