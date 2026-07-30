@@ -46,7 +46,8 @@ export type Memberships = Readonly<{
 
 export type ReconciliationWarning = ProfileWarning;
 
-export type ParsedReconciliationObservation = Readonly<{
+export type ParsedCardPrintingObservation = Readonly<{
+  kind: "card_printing";
   sourceObservationId: string;
   candidateWithoutIdentities: {
     card: Omit<FixtureCard, "id"> | null;
@@ -70,6 +71,33 @@ export type ParsedReconciliationObservation = Readonly<{
   sourceWarnings: readonly ReconciliationWarning[];
   errata: readonly ParsedRulesTextErratum[];
 }>;
+
+export type ParsedOfficialErratumObservation = Readonly<{
+  kind: "official_erratum";
+  sourceObservationId: string;
+  game: "one-piece";
+  target:
+    | Readonly<{
+        type: "card";
+        officialIdentity: FixtureCard["official_identity"];
+      }>
+    | Readonly<{
+        type: "printing";
+        officialIdentity: FixtureCard["official_identity"];
+        locator: string;
+      }>;
+  publishedOn: string;
+  effectiveFrom: string | null;
+  observedPrintedRulesText: string;
+  correctedRulesText: string;
+  officialWording: string;
+  appliesToParallelPrintings: boolean;
+  sourceFragment: string;
+}>;
+
+export type ParsedReconciliationObservation =
+  | ParsedCardPrintingObservation
+  | ParsedOfficialErratumObservation;
 
 export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
@@ -154,6 +182,9 @@ export function parseReconciliationObservation(
   value: unknown,
 ): ParsedReconciliationObservation {
   const record = requiredRecord(value, "Source Observation value");
+  if (record.kind === "official_erratum") {
+    return parseOfficialErratumObservation(sourceObservationId, record);
+  }
   if (record.card === undefined) {
     if (record.product_release_catalogue === undefined) {
       throw new Error(
@@ -180,6 +211,7 @@ export function parseReconciliationObservation(
       warnings,
     );
     return {
+      kind: "card_printing",
       sourceObservationId,
       candidateWithoutIdentities: { card: null, printing: null },
       locator: null,
@@ -297,6 +329,7 @@ export function parseReconciliationObservation(
   }
   if (record.printing === undefined) {
     return {
+      kind: "card_printing",
       sourceObservationId,
       candidateWithoutIdentities: { card, printing: null },
       locator: null,
@@ -405,6 +438,7 @@ export function parseReconciliationObservation(
     canonicalCardAttributes,
   );
   return {
+    kind: "card_printing",
     sourceObservationId,
     candidateWithoutIdentities: { card, printing },
     locator: requiredString(
@@ -463,6 +497,163 @@ function inspectSourceSidecar(
       ),
     );
   }
+}
+
+function parseOfficialErratumObservation(
+  sourceObservationId: string,
+  record: Record<string, unknown>,
+): ParsedOfficialErratumObservation {
+  const fields = [
+    "kind",
+    "game",
+    "target",
+    "published_on",
+    "effective_from",
+    "observed_printed_rules_text",
+    "corrected_rules_text",
+    "official_wording",
+    "applies_to_parallel_printings",
+    "source",
+    "completeness",
+  ];
+  assertOnlyFields(record, fields, "Official Erratum");
+  if (record.game !== "one-piece") {
+    throw new Error("Official Erratum Supported Game is invalid.");
+  }
+  const target = requiredRecord(record.target, "Official Erratum target");
+  if (target.type !== "card" && target.type !== "printing") {
+    throw new Error(
+      "Official Erratum target type is invalid.",
+    );
+  }
+  assertOnlyFields(
+    target,
+    target.type === "card"
+      ? ["type", "official_identity"]
+      : ["type", "official_identity", "locator"],
+    "Official Erratum target",
+  );
+  const identity = parseOfficialIdentity(target.official_identity, "one-piece");
+  const targetLocator = target.type === "printing"
+    ? requiredString(target.locator, "Official Erratum target locator")
+    : null;
+  const source = requiredRecord(record.source, "Official Erratum source");
+  assertOnlyFields(
+    source,
+    ["fragment", "display_name", "image_url"],
+    "Official Erratum source",
+  );
+  requiredString(source.display_name, "Official Erratum source display_name");
+  const imageUrl = requiredString(
+    source.image_url,
+    "Official Erratum source image_url",
+  );
+  if (!imageUrl.startsWith("https://en.onepiece-cardgame.com/")) {
+    throw new Error("Official Erratum image provenance is invalid.");
+  }
+  const fragment = requiredString(
+    source.fragment,
+    "Official Erratum source fragment",
+  );
+  if (!/^#errata_[A-Za-z0-9_-]+$/.test(fragment)) {
+    throw new Error("Official Erratum source fragment is invalid.");
+  }
+  const completeness = requiredRecord(
+    record.completeness,
+    "Official Erratum completeness",
+  );
+  assertOnlyFields(
+    completeness,
+    [
+      "structurally_complete",
+      "required_surfaces_complete",
+      "partitions_complete",
+      "declared_record_count",
+      "parsed_record_count",
+    ],
+    "Official Erratum completeness",
+  );
+  if (
+    completeness.structurally_complete !== true ||
+    completeness.required_surfaces_complete !== true ||
+    completeness.partitions_complete !== true ||
+    completeness.declared_record_count !== 1 ||
+    completeness.parsed_record_count !== 1
+  ) {
+    throw new Error("Official Erratum completeness proof is invalid.");
+  }
+  if (typeof record.applies_to_parallel_printings !== "boolean") {
+    throw new Error(
+      "Official Erratum parallel Printing applicability is invalid.",
+    );
+  }
+  return {
+    kind: "official_erratum",
+    sourceObservationId,
+    game: "one-piece",
+    target: targetLocator === null
+      ? {
+          type: "card",
+          officialIdentity: identity,
+        }
+      : {
+          type: "printing",
+          officialIdentity: identity,
+          locator: targetLocator,
+        },
+    publishedOn: exactDate(record.published_on, "published_on"),
+    effectiveFrom:
+      record.effective_from === null
+        ? null
+        : exactDate(record.effective_from, "effective_from"),
+    observedPrintedRulesText: requiredString(
+      record.observed_printed_rules_text,
+      "Official Erratum observed_printed_rules_text",
+    ),
+    correctedRulesText: requiredString(
+      record.corrected_rules_text,
+      "Official Erratum corrected_rules_text",
+    ),
+    officialWording: requiredString(
+      record.official_wording,
+      "Official Erratum official_wording",
+    ),
+    appliesToParallelPrintings: record.applies_to_parallel_printings,
+    sourceFragment: fragment,
+  };
+}
+
+function assertOnlyFields(
+  record: Record<string, unknown>,
+  expected: readonly string[],
+  name: string,
+): void {
+  const extra = Object.keys(record).filter((field) => !expected.includes(field));
+  if (extra.length > 0) {
+    throw new Error(
+      `${name} contains undeclared fields: ${extra.sort().join(", ")}.`,
+    );
+  }
+  const missing = expected.filter((field) => !(field in record));
+  if (missing.length > 0) {
+    throw new Error(
+      `${name} is missing fields: ${missing.sort().join(", ")}.`,
+    );
+  }
+}
+
+function exactDate(value: unknown, name: string): string {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)
+  ) {
+    throw new Error(`Official Erratum ${name} is invalid.`);
+  }
+  const instant = new Date(`${value}T00:00:00.000Z`);
+  if (instant.toISOString().slice(0, 10) !== value) {
+    throw new Error(`Official Erratum ${name} is invalid.`);
+  }
+  return value;
 }
 
 function parseOfficialIdentity(

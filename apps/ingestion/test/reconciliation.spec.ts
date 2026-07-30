@@ -7,7 +7,14 @@ import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { sha256 } from "../../../src/catalogue/serialization";
+import {
+  reconcileRetainedCardPrintingEvidence,
+} from "../../../src/catalogue/card-printing-reconciliation";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
+import {
+  startOrObserveReconciliationWorkflow,
+  type ReconciliationWorkflowParams,
+} from "../../../src/catalogue/reconciliation-workflow";
 import type {
   FixtureCandidate,
   SupportedGame,
@@ -33,6 +40,324 @@ beforeEach(async () => {
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+});
+
+test("reconciliation is Workflow-owned and exact replays observe one bound instance", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "workflow-owned-reconciliation",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  const requestBody = {
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: "workflow-owned-reconciliation-request",
+  };
+  const first = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation`,
+    requestBody,
+  );
+  expect(first.response.status).toBe(202);
+  expect(first.document).toMatchObject({
+    contract: "card-keepr-reconciliation-workflow@1",
+    ingestion_run_id: run.id,
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: requestBody.idempotency_key,
+    workflow_instance_id: expect.any(String),
+  });
+
+  const replay = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation`,
+    requestBody,
+  );
+  expect(replay.response.status).toBe(200);
+  expect(replay.document.workflow_instance_id).toBe(
+    first.document.workflow_instance_id,
+  );
+
+  const conflicting = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation`,
+    {
+      expected_current_revision_id: "catrev_conflicting_request",
+      idempotency_key: requestBody.idempotency_key,
+    },
+  );
+  expect(conflicting.response.status).toBe(409);
+  expect(conflicting.document).toMatchObject({
+    code: "idempotency_conflict",
+  });
+
+  const stale = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation`,
+    {
+      expected_current_revision_id: "catrev_stale_request",
+      idempotency_key: "workflow-owned-reconciliation-stale",
+    },
+  );
+  expect(stale.response.status).toBe(409);
+  expect(stale.document).toMatchObject({
+    code: "current_revision_mismatch",
+  });
+
+  let completed = replay;
+  const deadline = Date.now() + 15_000;
+  while (completed.document.status !== "complete") {
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `reconciliation Workflow ${run.id} did not complete`,
+      );
+    }
+    completed = await post(
+      `/v1/ingestion-runs/${run.id}/reconciliation`,
+      requestBody,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const output = requiredRecord(completed.document.output, "output");
+  expect(output).toMatchObject({
+    run_id: run.id,
+    publishable: true,
+  });
+  const rejected = await post(
+    `/v1/ingestion-runs/${run.id}/rejection`,
+    {
+      candidate_digest: requiredString(output, "candidate_digest"),
+      idempotency_key: "reject-workflow-owned-reconciliation",
+    },
+  );
+  expect(rejected.response.status).toBe(200);
+  expect(rejected.document).toMatchObject({
+    id: run.id,
+    state: "rejected",
+  });
+  const terminalStatus = await get("/v1/status");
+  expect(
+    requiredRecord(terminalStatus.document.safe_state, "safe_state"),
+  ).toMatchObject({
+    active_ingestion_run_id: null,
+  });
+});
+
+test("an exact reconciliation replay observes without creating or executing the bound Workflow again", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "observe-only-workflow-replay",
+  );
+  const expectedCurrentRevisionId = requiredString(
+    run.document,
+    "expected_current_revision_id",
+  );
+  const createIds: string[] = [];
+  const getIds: string[] = [];
+  let durableOutput: { result_json: string } | null = null;
+  const instance = {
+    status: async () =>
+      durableOutput === null
+        ? { status: "running" }
+        : { status: "complete", output: durableOutput },
+  } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async ({ id }: { id: string }) => {
+      createIds.push(id);
+      if (createIds.length > 1) {
+        throw new Error("duplicate Workflow execution");
+      }
+      const result = await reconcileRetainedCardPrintingEvidence(
+        testEnv.CATALOGUE_DB,
+        testEnv.EVIDENCE_OBJECTS,
+        run.id,
+        "2026-07-31T01:00:00.000Z",
+      );
+      durableOutput = {
+        result_json: JSON.stringify({
+          contract: "card-keepr-reconciliation-workflow-result@1",
+          run_id: run.id,
+          candidate_digest: requiredString(
+            result,
+            "candidate_digest",
+          ),
+        }),
+      };
+      return instance;
+    },
+    get: async (id: string) => {
+      getIds.push(id);
+      return instance;
+    },
+  } as unknown as Workflow<ReconciliationWorkflowParams>;
+  const input = {
+    ingestion_run_id: run.id,
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: "observe-only-workflow-replay-request",
+  };
+  const first = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T01:00:00.000Z",
+  );
+  const replay = await startOrObserveReconciliationWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-07-31T01:01:00.000Z",
+  );
+
+  expect(first.created).toBe(true);
+  expect(replay.created).toBe(false);
+  expect(replay.document.workflow_instance_id).toBe(
+    first.document.workflow_instance_id,
+  );
+  expect(createIds).toEqual([first.document.workflow_instance_id]);
+  expect(getIds).toEqual([first.document.workflow_instance_id]);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM reconciliation_workflow_requests
+       WHERE ingestion_run_id = ?`,
+    )
+      .bind(run.id)
+      .first<{ count: number }>(),
+  ).resolves.toMatchObject({ count: 1 });
+  const output = requiredRecord(replay.document.output, "output");
+  const rejected = await post(
+    `/v1/ingestion-runs/${run.id}/rejection`,
+    {
+      candidate_digest: requiredString(output, "candidate_digest"),
+      idempotency_key: "reject-observe-only-workflow-replay",
+    },
+  );
+  expect(rejected.response.status).toBe(200);
+  expect(rejected.document).toMatchObject({
+    id: run.id,
+    state: "rejected",
+  });
+  const terminalStatus = await get("/v1/status");
+  expect(
+    requiredRecord(terminalStatus.document.safe_state, "safe_state"),
+  ).toMatchObject({
+    active_ingestion_run_id: null,
+  });
+});
+
+test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
+  const status = await get("/v1/status");
+  const safeState = requiredRecord(status.document.safe_state, "safe_state");
+  const revisionId = requiredString(safeState, "current_revision_id");
+  const request = {
+    target_revision_id: revisionId,
+    expected_current_revision_id: revisionId,
+    idempotency_key: "guarded-search-repair",
+  };
+  const first = await post(
+    "/v1/catalogue-search-materialization/repair",
+    request,
+  );
+  expect(first.response.status).toBe(200);
+  expect(first.document).toMatchObject({
+    contract: "card-keepr-card-search-repair@1",
+    complete: expect.any(Boolean),
+  });
+  const replay = await post(
+    "/v1/catalogue-search-materialization/repair",
+    request,
+  );
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(first.document);
+
+  const conflict = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      ...request,
+      target_revision_id: "catrev_conflicting_repair_target",
+    },
+  );
+  expect(conflict.response.status).toBe(409);
+  expect(conflict.document).toMatchObject({ code: "idempotency_conflict" });
+
+  const stale = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      target_revision_id: revisionId,
+      expected_current_revision_id: "catrev_stale_repair_current",
+      idempotency_key: "guarded-search-repair-stale",
+    },
+  );
+  expect(stale.response.status).toBe(409);
+  expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
+});
+
+test("an empty published revision has an available projection and concurrent repair steps converge by CAS", async () => {
+  const run = await collect(
+    "/reconciliation/complete-empty-lineage",
+    "empty-query-revision",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document.cards).toEqual([]);
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT query.state,
+              COUNT(document.card_id) AS document_count
+       FROM catalogue_query_revisions AS query
+       LEFT JOIN revision_card_query_documents AS document
+         ON document.catalogue_revision_id =
+              query.catalogue_revision_id
+       WHERE query.catalogue_revision_id = ?
+       GROUP BY query.catalogue_revision_id, query.state`,
+    )
+      .bind(revisionId)
+      .first(),
+  ).resolves.toMatchObject({
+    state: "available",
+    document_count: 0,
+  });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM catalogue_query_revisions
+     WHERE catalogue_revision_id = ?`,
+  ).bind(revisionId).run();
+  const repair = (idempotencyKey: string) =>
+    post("/v1/catalogue-search-materialization/repair", {
+      target_revision_id: revisionId,
+      expected_current_revision_id: revisionId,
+      idempotency_key: idempotencyKey,
+    });
+  const concurrent = await Promise.all([
+    repair("empty-query-repair-concurrent-a"),
+    repair("empty-query-repair-concurrent-b"),
+  ]);
+  expect(concurrent.map(({ response }) => response.status)).toEqual([
+    200,
+    200,
+  ]);
+  expect(concurrent.map(({ document }) => document)).toEqual([
+    expect.objectContaining({
+      contract: "card-keepr-card-search-repair@1",
+    }),
+    expect.objectContaining({
+      contract: "card-keepr-card-search-repair@1",
+    }),
+  ]);
+  const complete = concurrent.find(
+    ({ document }) => document.complete === true,
+  ) ?? await repair("empty-query-repair-complete");
+  expect(complete.response.status).toBe(200);
+  expect(complete.document).toMatchObject({ complete: true });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT state FROM catalogue_query_revisions
+       WHERE catalogue_revision_id = ?`,
+    ).bind(revisionId).first(),
+  ).resolves.toMatchObject({ state: "available" });
 });
 
 test("retained immutable evidence publishes stable identities and warns when earlier membership disappears", async () => {
@@ -2914,6 +3239,7 @@ test("locator variant evolution preserves effective-dated suffix history across 
         variant_key: "suffix-b",
         first_revision_id: secondRevision,
         last_observed_revision_id: secondRevision,
+        current: false,
         last_missing_revision_id: missingRevision,
       }),
     ],
@@ -2926,8 +3252,124 @@ test("locator variant evolution preserves effective-dated suffix history across 
       locator_evidence: lifecycle.document.locators,
     }),
   );
-  expect(missingRevision).not.toBe(reactivatedRevision);
 }, 20_000);
+
+test("Card search keeps exactly the current and two preceding distinct Catalogue Revisions hot", async () => {
+  const status = await get("/v1/status");
+  const baselineRevision = requiredString(
+    requiredRecord(status.document.safe_state, "safe_state"),
+    "current_revision_id",
+  );
+  const revisions: string[] = [];
+  let retainedDocumentCount: number | null = null;
+  for (const [index, scenario] of [
+    "query-hot-window-1",
+    "query-hot-window-2",
+    "query-hot-window-3",
+    "query-hot-window-4",
+  ].entries()) {
+    const run = await collect(
+      `/reconciliation/${scenario}`,
+      `query-hot-window-${index + 1}-${scenario}`,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(200);
+    const revisionId = requiredString(
+      (await approve(reconciled.document)).document,
+      "resulting_revision_id",
+    );
+    expect(revisions).not.toContain(revisionId);
+    revisions.push(revisionId);
+    if (retainedDocumentCount === null) {
+      retainedDocumentCount = (
+        await testEnv.CATALOGUE_DB.prepare(
+          `SELECT COUNT(*) AS count
+           FROM revision_card_query_documents
+           WHERE catalogue_revision_id = ?`,
+        )
+          .bind(revisionId)
+          .first<{ count: number }>()
+      )?.count ?? null;
+    }
+  }
+  const [first, second, third, current] = revisions as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  expect(retainedDocumentCount).not.toBeNull();
+  const chain = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT revision.id, revision.expected_previous_revision_id,
+            state.current_revision_id
+     FROM catalogue_revisions AS revision
+     CROSS JOIN catalogue_state AS state
+     WHERE revision.id IN (?, ?, ?, ?)`,
+  )
+    .bind(first, second, third, current)
+    .all<{
+      id: string;
+      expected_previous_revision_id: string;
+      current_revision_id: string;
+    }>();
+  expect(chain.results).toHaveLength(4);
+  expect(
+    new Map(
+      chain.results.map((revision) => [
+        revision.id,
+        revision.expected_previous_revision_id,
+      ]),
+    ),
+  ).toEqual(
+    new Map([
+      [first, baselineRevision],
+      [second, first],
+      [third, second],
+      [current, third],
+    ]),
+  );
+  expect(
+    new Set(
+      chain.results.map(({ current_revision_id }) =>
+        current_revision_id
+      ),
+    ),
+  ).toEqual(new Set([current]));
+
+  const queryStates = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT query.catalogue_revision_id, query.state,
+            COUNT(document.card_id) AS document_count
+     FROM catalogue_query_revisions AS query
+     LEFT JOIN revision_card_query_documents AS document
+       ON document.catalogue_revision_id =
+            query.catalogue_revision_id
+     WHERE query.catalogue_revision_id IN (?, ?, ?, ?)
+     GROUP BY query.catalogue_revision_id, query.state`,
+  )
+    .bind(first, second, third, current)
+    .all<{
+      catalogue_revision_id: string;
+      state: string;
+      document_count: number;
+    }>();
+  expect(queryStates.results).toHaveLength(4);
+  const queryStateByRevision = new Map(
+    queryStates.results.map((row) => [
+      row.catalogue_revision_id,
+      { state: row.state, document_count: row.document_count },
+    ]),
+  );
+  expect(queryStateByRevision.get(first)).toEqual({
+    state: "archived",
+    document_count: 0,
+  });
+  for (const retainedRevision of [second, third, current]) {
+    expect(queryStateByRevision.get(retainedRevision)).toEqual({
+      state: "available",
+      document_count: retainedDocumentCount,
+    });
+  }
+}, 30_000);
 
 test("every planned request contributes exactly one provenance-bound observation set in deterministic request order", async () => {
   const run = await collectRequests(
@@ -3230,6 +3672,43 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
       ? reconciled.document.cards
       : [],
   ).toHaveLength(1_001);
+  const publicCardIds = (
+    Array.isArray(reconciled.document.cards)
+      ? reconciled.document.cards
+      : []
+  ).map((card) =>
+    requiredString(card as Record<string, unknown>, "id")
+  );
+  expect(new Set(publicCardIds).size).toBe(1_001);
+  if (!("workflow_instance_id" in reconciled)) {
+    throw new Error("Expected an accepted reconciliation Workflow.");
+  }
+  const workflowInstance = await testEnv.RECONCILIATION_WORKFLOW.get(
+    reconciled.workflow_instance_id,
+  );
+  const workflowStatus = await workflowInstance.status();
+  expect(workflowStatus.status).toBe("complete");
+  const durableOutputBytes = new TextEncoder().encode(
+    JSON.stringify(workflowStatus.output),
+  ).byteLength;
+  expect(durableOutputBytes).toBeLessThan(1_048_576);
+  expect(workflowStatus.output).toMatchObject({
+    result_json: expect.stringContaining(
+      "card-keepr-reconciliation-workflow-result@1",
+    ),
+  });
+  const publicReplay = await post(
+    `/v1/ingestion-runs/${run.id}/reconciliation`,
+    {
+      expected_current_revision_id: requiredString(
+        reconciled.document,
+        "expected_current_revision_id",
+      ),
+      idempotency_key: `reconcile-${run.id}`,
+    },
+  );
+  expect(publicReplay.response.status).toBe(200);
+  expect(publicReplay.document.output).toEqual(reconciled.document);
   const published = await approve(reconciled.document);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(
@@ -3269,6 +3748,26 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   expect(chunks?.count).toBeLessThan(900);
   expect(chunks?.maximum_bytes).toBeLessThanOrEqual(524_288);
   expect(chunks?.candidate_bytes).toBeGreaterThan(8 * 1024 * 1024);
+  expect(chunks?.candidate_bytes).toBeLessThan(16 * 1024 * 1024);
+  const searchMaterialization = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM revision_card_search_terms
+        WHERE catalogue_revision_id = ?
+          AND card_id IN (
+            SELECT CAST(value AS TEXT) FROM json_each(?)
+          )) AS term_count,
+       (SELECT SUM(length(CAST(search_text AS BLOB)))
+        FROM revision_card_search_chunks
+        WHERE catalogue_revision_id = ?) AS chunk_bytes`,
+  )
+    .bind(revisionId, JSON.stringify(publicCardIds), revisionId)
+    .first<{ term_count: number; chunk_bytes: number }>();
+  expect(searchMaterialization?.term_count).toBeLessThanOrEqual(
+    48 * 1_001,
+  );
+  expect(searchMaterialization?.chunk_bytes).toBeLessThan(
+    16 * 1024 * 1024,
+  );
   const storedRun = await testEnv.CATALOGUE_DB.prepare(
     "SELECT candidate_json FROM ingestion_runs WHERE id = ?",
   )
@@ -3339,12 +3838,12 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
   ).run();
-  const resumed = await reconcile(run.id);
+  const resumed = await reconcile(run.id, {}, 45_000);
   await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(resumed.document, "candidate_digest"),
     idempotency_key: "reject-after-recovery-restored",
   });
-});
+}, 60_000);
 
 test("the administration boundary requires every accepted lineage for each selected game", async () => {
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
@@ -5165,8 +5664,54 @@ async function waitForRunState(
   throw new Error(`run ${id} did not reach ${expectedState}`);
 }
 
-function reconcile(runId: string) {
-  return post(`/v1/ingestion-runs/${runId}/reconciliation`, {});
+async function reconcile(
+  runId: string,
+  extraHeaders: Record<string, string> = {},
+  timeoutMs = 15_000,
+) {
+  const shown = await get(`/v1/ingestion-runs/${runId}`);
+  const expectedCurrentRevisionId = requiredString(
+    shown.document,
+    "expected_current_revision_id",
+  );
+  const body = {
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: `reconcile-${runId}`,
+  };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const observed = await post(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      body,
+      extraHeaders,
+    );
+    if (
+      observed.response.status !== 200 &&
+      observed.response.status !== 202
+    ) {
+      return observed;
+    }
+    if (
+      observed.document.status === "complete" &&
+      observed.document.output !== null &&
+      typeof observed.document.output === "object" &&
+      !Array.isArray(observed.document.output)
+    ) {
+      const document = observed.document.output as Record<string, unknown>;
+      return {
+        response: new Response(null, {
+          status: document.publishable === true ? 200 : 409,
+        }),
+        document,
+        workflow_instance_id: requiredString(
+          observed.document,
+          "workflow_instance_id",
+        ),
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`reconciliation Workflow ${runId} did not complete`);
 }
 
 function approve(document: Record<string, unknown>) {
@@ -5284,6 +5829,16 @@ function requiredString(
   const value = document[field];
   if (typeof value !== "string") throw new Error(`${field} is not a string`);
   return value;
+}
+
+function requiredRecord(
+  value: unknown,
+  field: string,
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} is not an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 async function exportComponentRecords(

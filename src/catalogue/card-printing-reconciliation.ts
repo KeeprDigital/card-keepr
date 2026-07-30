@@ -25,7 +25,8 @@ import {
   hasOtherGundamLocaleEvidence,
   hasPrintingLocatorFromLineage,
   printingFactsFormattingEquivalent,
-  printingAtLocator,
+  printingAtLocatorVariant,
+  printingsAtLocator,
   printingsWithAppearance,
 } from "./reconciliation-repository";
 import {
@@ -135,6 +136,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceObservationId: string;
     sourceLineage: string;
     supportedGame: SupportedGame;
+    observationKind: "card_printing" | "official_erratum";
     cardId: string;
     printingId: string | null;
     locator: string | null;
@@ -145,8 +147,11 @@ export async function reconcileRetainedCardPrintingEvidence(
   }[] = [];
   const sourceWarnings: Record<string, unknown>[] = [];
   const observedErrata: CatalogueErratum[] = [];
+  const targetedCardIds = new Set<string>();
+  const targetedPrintingIds = new Set<string>();
 
   for (const observation of retained.observations) {
+    if (observation.kind !== "card_printing") continue;
     const proposedCard = observation.candidateWithoutIdentities.card;
     if (proposedCard === null) {
       sourceWarnings.push(...observation.sourceWarnings);
@@ -173,7 +178,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       game: proposedCard.game,
       cardId,
       printingId: null,
-      sourceLineage: retained.sourceLineage,
+      sourceLineage: observation.sourceLineage,
       sourceObservationId: observation.sourceObservationId,
       errata: observation.errata.filter(
         (erratum) => erratum.targetType === "card",
@@ -280,17 +285,19 @@ export async function reconcileRetainedCardPrintingEvidence(
         throw new Error("A Printing observation has no locator.");
       }
       const compatibilityKey = canonicalJson(compatibility);
-      const locatorKey = canonicalJson([
+      const locatorVariantKey = canonicalJson([
         observation.sourceLineage,
         locator,
+        observation.variantKey,
       ]);
-      const localLocated = localLocators.get(locatorKey);
+      const localLocated = localLocators.get(locatorVariantKey);
       const [located, unfilteredDatabaseMatches, appearanceMatches] =
         await Promise.all([
-          printingAtLocator(
+          printingAtLocatorVariant(
             database,
             observation.sourceLineage,
             locator,
+            observation.variantKey,
           ),
           compatiblePrintings(database, compatibility),
           printingsWithAppearance(database, compatibility),
@@ -372,7 +379,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         }
       }
       localCompatibility.set(compatibilityKey, printingId);
-      localLocators.set(locatorKey, { compatibility, printingId });
+      localLocators.set(locatorVariantKey, { compatibility, printingId });
       const carriedPrinting = printings.get(printingId);
       const publishedPrintingConflict = await canonicalPrintingConflict(
         database,
@@ -500,6 +507,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceObservationId: observation.sourceObservationId,
       sourceLineage: observation.sourceLineage,
       supportedGame: observation.supportedGame,
+      observationKind: "card_printing",
       cardId,
       printingId,
       locator: observation.locator,
@@ -525,7 +533,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           game: proposedCard.game,
           cardId,
           printingId,
-          sourceLineage: retained.sourceLineage,
+          sourceLineage: observation.sourceLineage,
           sourceObservationId: observation.sourceObservationId,
           errata: observation.errata.filter(
             (erratum) => erratum.targetType === "printing",
@@ -546,6 +554,115 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     }
     sourceWarnings.push(...observation.sourceWarnings);
+  }
+
+  for (const observation of retained.observations) {
+    if (observation.kind !== "official_erratum") continue;
+    const matchingCards = priorCandidate?.cards.filter(
+      (card) =>
+        card.game === observation.game &&
+        canonicalJson(card.official_identity) ===
+          canonicalJson(observation.target.officialIdentity),
+    ) ?? [];
+    if (matchingCards.length !== 1) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.sourceFragment,
+        candidate_printing_ids: [],
+        detail:
+          matchingCards.length === 0
+            ? "Official Erratum evidence does not resolve one Card in the expected published Catalogue Revision."
+            : "Official Erratum evidence resolves more than one Card in the expected published Catalogue Revision.",
+      });
+      continue;
+    }
+    const card = matchingCards[0]!;
+    targetedCardIds.add(card.id);
+    let targetPrintingId: string | null = null;
+    if (observation.target.type === "printing") {
+      const located = await printingsAtLocator(
+        database,
+        observation.sourceLineage,
+        observation.target.locator,
+      );
+      const publishedPrintings = [
+        ...new Map(
+          located.flatMap((candidate) => {
+            const published = priorCandidate?.printings.find(
+              (printing) =>
+                printing.id === candidate.id &&
+                printing.card_id === card.id,
+            );
+            return published === undefined
+              ? []
+              : [[published.id, published] as const];
+          }),
+        ).values(),
+      ];
+      if (publishedPrintings.length !== 1) {
+        diagnostics.push({
+          code: "retained_evidence_invalid",
+          source_observation_id: observation.sourceObservationId,
+          locator: observation.target.locator,
+          candidate_printing_ids:
+            publishedPrintings.map((printing) => printing.id).sort(),
+          detail:
+            "Official Erratum evidence does not resolve exactly one Printing of the Card in the expected published Catalogue Revision.",
+        });
+        continue;
+      }
+      const publishedPrinting = publishedPrintings[0]!;
+      targetPrintingId = publishedPrinting.id;
+      targetedPrintingIds.add(publishedPrinting.id);
+    }
+    try {
+      observedErrata.push(
+        ...(await identifyRulesTextErrata({
+          game: observation.game,
+          cardId: card.id,
+          printingId: targetPrintingId,
+          sourceLineage: observation.sourceLineage,
+          sourceObservationId: observation.sourceObservationId,
+          errata: [{
+            targetType: observation.target.type,
+            effectiveFrom: observation.effectiveFrom,
+            officialWording: observation.officialWording,
+            correctedValue: observation.correctedRulesText,
+          }],
+        })),
+      );
+      plans.push({
+        sourceObservationSetId: observation.sourceObservationSetId,
+        sourceSnapshotId: observation.sourceSnapshotId,
+        sourceObservationId: observation.sourceObservationId,
+        sourceLineage: observation.sourceLineage,
+        supportedGame: observation.supportedGame,
+        observationKind: "official_erratum",
+        cardId: card.id,
+        printingId: targetPrintingId,
+        locator: null,
+        variantKey: null,
+        compatibility: null,
+        memberships: {
+          products: [],
+          distribution_contexts: [],
+          source_buckets: [],
+        },
+        withdrawal: null,
+      });
+    } catch (error) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.sourceFragment,
+        candidate_printing_ids: [],
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Retained Official Erratum evidence is invalid.",
+      });
+    }
   }
 
   diagnostics.push(
@@ -569,15 +686,18 @@ export async function reconcileRetainedCardPrintingEvidence(
   };
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
+  const cardPrintingObservations = retained.observations.filter(
+    (observation) => observation.kind === "card_printing",
+  );
   try {
     const plansByObservationId = new Map(
       plans.map((plan) => [plan.sourceObservationId, plan]),
     );
     const observationsByGame = new Map<
       SupportedGame,
-      typeof retained.observations
+      typeof cardPrintingObservations
     >();
-    for (const observation of retained.observations) {
+    for (const observation of cardPrintingObservations) {
       observationsByGame.set(observation.supportedGame, [
         ...(observationsByGame.get(observation.supportedGame) ?? []),
         observation,
@@ -645,11 +765,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           : "Retained Product evidence is invalid.",
     });
   }
-  const cardSurfaceObservations = retained.observations.filter(
+  const cardSurfaceObservations = cardPrintingObservations.filter(
     (observation) =>
       observation.candidateWithoutIdentities.card !== null,
   );
-  const productSurfaceObservations = retained.observations.filter(
+  const productSurfaceObservations = cardPrintingObservations.filter(
     (observation) => observation.productReleaseValue !== undefined,
   );
   const errata = mergeCatalogueErrata(
@@ -736,7 +856,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     ],
     errata,
   };
-  const groupedMemberships = mergedPlanMemberships(plans);
+  const cardPrintingPlans = plans.filter(
+    (plan) => plan.observationKind === "card_printing",
+  );
+  const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
   const relationshipWarnings = (
     await Promise.all(
       groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>
@@ -756,7 +879,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     (sourceLineage) =>
       [
         sourceLineage,
-        plans.filter((plan) => plan.sourceLineage === sourceLineage),
+        cardPrintingPlans.filter(
+          (plan) => plan.sourceLineage === sourceLineage,
+        ),
       ] as const,
   );
   const disappearanceWarnings = (
@@ -796,12 +921,6 @@ export async function reconcileRetainedCardPrintingEvidence(
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  const digestPayloadJson = canonicalJson({
-    catalogue_data: candidate,
-    evidence_partitions: retained.partitions,
-    observation_plans: digestObservationPlans(plans),
-  });
-  const candidateDigest = await sha256Text(digestPayloadJson);
   const candidateCatalogueDigest = await catalogueDataDigest(
     database,
     candidate,
@@ -809,17 +928,36 @@ export async function reconcileRetainedCardPrintingEvidence(
     checkedSourceLineages,
   );
   const observedCards = candidateCards
-    .filter((card) => localCardFacts.has(card.id))
+    .filter((card) =>
+      localCardFacts.has(card.id) || targetedCardIds.has(card.id)
+    )
     .sort((left, right) => left.id.localeCompare(right.id));
   const observedPrintings = [...printings.values()]
     .filter((printing) =>
-      plans.some((plan) => plan.printingId === printing.id),
+      plans.some(
+        (plan) =>
+          plan.observationKind === "card_printing" &&
+          plan.printingId === printing.id,
+      ) || targetedPrintingIds.has(printing.id),
     )
     .sort((left, right) => left.id.localeCompare(right.id));
   if (diagnostics.length > 0) {
     const stableDiagnostics = [...diagnostics].sort((left, right) =>
       canonicalJson(left).localeCompare(canonicalJson(right)),
     );
+    const digestPayloadJson = reconciliationDigestPayload({
+      candidate,
+      partitions: retained.partitions,
+      plans,
+      state: "failed",
+      publishable: false,
+      sourceObservationSetId: retained.observationSetId,
+      observedCards,
+      observedPrintings,
+      diagnostics: stableDiagnostics,
+      warnings,
+    });
+    const candidateDigest = await sha256Text(digestPayloadJson);
     await persistBlockedCandidate(database, {
       runId,
       observationSetId: retained.observationSetId,
@@ -850,6 +988,19 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
+  const digestPayloadJson = reconciliationDigestPayload({
+    candidate,
+    partitions: retained.partitions,
+    plans,
+    state: "awaiting_approval",
+    publishable: true,
+    sourceObservationSetId: retained.observationSetId,
+    observedCards,
+    observedPrintings,
+    diagnostics: [],
+    warnings,
+  });
+  const candidateDigest = await sha256Text(digestPayloadJson);
   await persistReviewableCandidate(database, {
     runId,
     observationSetId: retained.observationSetId,
@@ -906,6 +1057,34 @@ function fillAuthorityGaps<T>(authority: T, fallback: T): T {
   ) as T;
 }
 
+function reconciliationDigestPayload(input: {
+  candidate: FixtureCandidate;
+  partitions: readonly unknown[];
+  plans: Parameters<typeof digestObservationPlans>[0];
+  state: "awaiting_approval" | "failed";
+  publishable: boolean;
+  sourceObservationSetId: string;
+  observedCards: readonly FixtureCard[];
+  observedPrintings: readonly FixturePrinting[];
+  diagnostics: readonly Record<string, unknown>[];
+  warnings: readonly Record<string, unknown>[];
+}): string {
+  return canonicalJson({
+    catalogue_data: input.candidate,
+    evidence_partitions: input.partitions,
+    observation_plans: digestObservationPlans(input.plans),
+    reconciliation_response: {
+      state: input.state,
+      publishable: input.publishable,
+      source_observation_set_id: input.sourceObservationSetId,
+      observed_card_ids: input.observedCards.map(({ id }) => id),
+      observed_printing_ids: input.observedPrintings.map(({ id }) => id),
+      diagnostics: input.diagnostics,
+      warnings: input.warnings,
+    },
+  });
+}
+
 async function candidateAtRevision(
   database: D1Database,
   revisionId: string,
@@ -953,6 +1132,7 @@ function digestObservationPlans(
     sourceObservationId: string;
     sourceLineage: string;
     supportedGame: SupportedGame;
+    observationKind: "card_printing" | "official_erratum";
     cardId: string;
     printingId: string | null;
     locator: string | null;

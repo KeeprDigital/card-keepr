@@ -36,6 +36,7 @@ operation accepted but not yet terminal.
 | `keepr status` | no | none |
 | `keepr run start` | yes | exact Supported Games; no active run; recovery not blocked |
 | `keepr run show` | no | run identity |
+| `keepr run reconcile` | yes | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation; starts or observes the bound reconciliation Workflow |
 | `keepr candidate inspect` | no | run in `awaiting_approval` |
 | `keepr run approve` | yes | run identity, candidate digest, expected current revision, unexpired candidate, verified current backup |
 | `keepr run reject` | yes | run identity and candidate digest |
@@ -53,11 +54,25 @@ operation accepted but not yet terminal.
 | `keepr credential rotate` | yes | credential class; replacement supplied out of band |
 | `keepr credential verify` | yes | rotation identity and harmless class-specific probe |
 | `keepr credential revoke-old` | yes | verified replacement and exact old credential fingerprint |
+| `keepr catalogue search repair` | yes | exact target Catalogue Revision; expected current Catalogue Revision; idempotency key; production confirmation; one bounded repair step |
 
 The ingestion Workflow owns automatic collection, parsing, reconciliation,
 candidate finalization, publication, export verification, expiry, and backup
 attempt progression. The CLI observes these automatic transitions; it cannot
 skip or rewrite them.
+
+`run reconcile` never executes reconciliation inline in the HTTP request. Its
+request is exactly `{expected_current_revision_id, idempotency_key}` and is
+bound to the run identity in the route. An exact replay observes the same
+Workflow instance; reuse of the idempotency key for another run or expected
+revision fails closed.
+
+`catalogue search repair` performs one resumable, byte-bounded repair step. Its
+request is exactly
+`{target_revision_id, expected_current_revision_id, idempotency_key}`. The
+target remains explicit even when it is the current Catalogue Revision. An
+exact replay returns the persisted result; a stale expected revision or
+conflicting idempotency request fails closed.
 
 ## Catalogue Export deletion
 

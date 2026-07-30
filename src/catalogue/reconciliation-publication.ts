@@ -111,12 +111,14 @@ export async function reconciliationPublication(
   );
   const context = await database
     .prepare(
-      `SELECT source_lineage
-       FROM reconciliation_contexts
-       WHERE ingestion_run_id = ?`,
+      `SELECT context.source_lineage, plan.adapter_version
+       FROM reconciliation_contexts AS context
+       JOIN ingestion_evidence_plans AS plan
+         ON plan.ingestion_run_id = context.ingestion_run_id
+       WHERE context.ingestion_run_id = ?`,
     )
     .bind(runId)
-    .first<{ source_lineage: string }>();
+    .first<{ source_lineage: string; adapter_version: string }>();
   if (context === null) return null;
   const evidencePartitions = await database
     .prepare(
@@ -138,9 +140,16 @@ export async function reconciliationPublication(
   const printings = new Map(
     candidate.printings.map((printing) => [printing.id, printing]),
   );
-  const cardPlans = groupedPlans(plans, (plan) => plan.card_id);
+  const cardPlans = groupedPlans(
+    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    (plan) => plan.card_id,
+  );
   const printingPlans = groupedPlans(
-    plans.filter((plan) => plan.printing_id !== null),
+    plans.filter(
+      (plan) =>
+        plan.observation_kind === "card_printing" &&
+        plan.printing_id !== null,
+    ),
     (plan) => plan.printing_id!,
   );
   const [existingCards, existingPrintings, existingMemberships, existingLocators] =
@@ -344,6 +353,7 @@ export async function reconciliationPublication(
     result,
     publicationRows,
     observedSourceLineages,
+    cardPlans.size > 0,
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(
@@ -529,39 +539,46 @@ async function erratumTargetLifecycles(
   revisionId: string,
 ): Promise<Record<string, NormalizedLifecycle>> {
   const ids = [...new Set(errata.map((erratum) => erratum.id))];
-  const existing =
-    ids.length === 0
-      ? []
-      : (
-          await database
-            .prepare(
-              `SELECT provenance.erratum_id,
-                      provenance.source_lineage,
-                      provenance.first_revision_id,
-                      provenance.last_observed_revision_id,
-                      first_revision.published_at AS first_order,
-                      last_revision.published_at AS last_order
-               FROM erratum_provenance AS provenance
-               JOIN catalogue_revisions AS first_revision
-                 ON first_revision.id = provenance.first_revision_id
-               JOIN catalogue_revisions AS last_revision
-                 ON last_revision.id =
-                    provenance.last_observed_revision_id
-               WHERE EXISTS (
-                 SELECT 1 FROM json_each(?) AS requested
-                 WHERE requested.value = provenance.erratum_id
-               )`,
-            )
-            .bind(JSON.stringify(ids))
-            .all<{
-              erratum_id: string;
-              source_lineage: string;
-              first_revision_id: string;
-              last_observed_revision_id: string;
-              first_order: string;
-              last_order: string;
-            }>()
-        ).results;
+  const existing: {
+    erratum_id: string;
+    source_lineage: string;
+    first_revision_id: string;
+    last_observed_revision_id: string;
+    first_order: string;
+    last_order: string;
+  }[] = [];
+  for (
+    const idChunk of ids.length === 0 ? [] : byteBoundedJsonArrays(ids)
+  ) {
+    const rows = await database
+      .prepare(
+        `SELECT provenance.erratum_id,
+                provenance.source_lineage,
+                provenance.first_revision_id,
+                provenance.last_observed_revision_id,
+                first_revision.published_at AS first_order,
+                last_revision.published_at AS last_order
+         FROM erratum_provenance AS provenance
+         JOIN catalogue_revisions AS first_revision
+           ON first_revision.id = provenance.first_revision_id
+         JOIN catalogue_revisions AS last_revision
+           ON last_revision.id = provenance.last_observed_revision_id
+         WHERE EXISTS (
+           SELECT 1 FROM json_each(?) AS requested
+           WHERE requested.value = provenance.erratum_id
+         )`,
+      )
+      .bind(idChunk)
+      .all<{
+        erratum_id: string;
+        source_lineage: string;
+        first_revision_id: string;
+        last_observed_revision_id: string;
+        first_order: string;
+        last_order: string;
+      }>();
+    existing.push(...rows.results);
+  }
   const result: Record<string, NormalizedLifecycle> = {};
   for (const erratum of errata) {
     const lineages = new Set(
@@ -751,6 +768,7 @@ async function retainCarriedLifecycles(
   result: ReconciliationPublicationPlan,
   publicationRows: PublicationRows,
   observedSourceLineages: readonly string[],
+  inferCanonicalDisappearance: boolean,
   revisionId: string,
 ): Promise<void> {
   const run = await database
@@ -792,12 +810,14 @@ async function retainCarriedLifecycles(
       result.cardLifecycles[row.id] = documentLifecycle(
         row.document_json,
       );
-      publicationRows.cardDeactivations.push(
-        ...observedSourceLineages.map((sourceLineage) => ({
-          card_id: row.id,
-          source_lineage: sourceLineage,
-        })),
-      );
+      if (inferCanonicalDisappearance) {
+        publicationRows.cardDeactivations.push(
+          ...observedSourceLineages.map((sourceLineage) => ({
+            card_id: row.id,
+            source_lineage: sourceLineage,
+          })),
+        );
+      }
     }
   }
   for (const row of printings.results) {
@@ -814,62 +834,68 @@ async function retainCarriedLifecycles(
       result.relationshipEvidence[row.id] === undefined
     ) {
       const carried = documentRelationshipEvidence(row.document_json);
-      const omittedLineageWasCurrent = carried.some(
-        (relationship) =>
+      if (!inferCanonicalDisappearance) {
+        result.relationshipEvidence[row.id] = carried;
+      } else {
+        const omittedLineageWasCurrent = carried.some(
+          (relationship) =>
+            observedSourceLineages.includes(relationship.source_lineage) &&
+            relationship.current,
+        );
+        result.relationshipEvidence[row.id] = carried.map((relationship) =>
           observedSourceLineages.includes(relationship.source_lineage) &&
-          relationship.current,
-      );
-      result.relationshipEvidence[row.id] = carried.map((relationship) =>
-        observedSourceLineages.includes(relationship.source_lineage) &&
-        relationship.current
-          ? {
-              ...relationship,
-              current: false,
-              last_missing_revision_id: revisionId,
-            }
-          : relationship,
-      );
-      if (omittedLineageWasCurrent) {
-        publicationRows.membershipDeactivations.push(
-          ...observedSourceLineages.map((sourceLineage) => ({
-            printing_id: row.id,
-            source_lineage: sourceLineage,
-          })),
+            relationship.current
+            ? {
+                ...relationship,
+                current: false,
+                last_missing_revision_id: revisionId,
+              }
+            : relationship,
         );
+        if (omittedLineageWasCurrent) {
+          publicationRows.membershipDeactivations.push(
+            ...observedSourceLineages.map((sourceLineage) => ({
+              printing_id: row.id,
+              source_lineage: sourceLineage,
+            })),
+          );
+        }
       }
-      if (omittedPrinting) {
-        publicationRows.locatorDeactivations.push(
-          ...observedSourceLineages.map((sourceLineage) => ({
-            printing_id: row.id,
-            source_lineage: sourceLineage,
-          })),
-        );
-      }
+    }
+    if (omittedPrinting && inferCanonicalDisappearance) {
+      publicationRows.locatorDeactivations.push(
+        ...observedSourceLineages.map((sourceLineage) => ({
+          printing_id: row.id,
+          source_lineage: sourceLineage,
+        })),
+      );
     }
     if (
       candidatePrintingIds.has(row.id) &&
       result.locatorEvidence[row.id] === undefined
     ) {
       const carried = documentLocatorEvidence(row.document_json);
-      result.locatorEvidence[row.id] = {
-        current: carried.current.filter(
-          (locator) =>
-            !observedSourceLineages.includes(locator.source_lineage),
-        ),
-        historical: [
-          ...carried.historical,
-          ...carried.current
-            .filter(
+      result.locatorEvidence[row.id] = !inferCanonicalDisappearance
+        ? carried
+        : {
+            current: carried.current.filter(
               (locator) =>
-                observedSourceLineages.includes(locator.source_lineage),
-            )
-            .map((locator) => ({
-              ...locator,
-              current: false as const,
-              last_missing_revision_id: revisionId,
-            })),
-        ].sort(locatorEvidenceOrder),
-      };
+                !observedSourceLineages.includes(locator.source_lineage),
+            ),
+            historical: [
+              ...carried.historical,
+              ...carried.current
+                .filter(
+                  (locator) =>
+                    observedSourceLineages.includes(locator.source_lineage),
+                )
+                .map((locator) => ({
+                  ...locator,
+                  current: false as const,
+                  last_missing_revision_id: revisionId,
+                })),
+            ].sort(locatorEvidenceOrder),
+          };
     }
   }
 }

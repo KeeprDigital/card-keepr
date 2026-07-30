@@ -1286,16 +1286,76 @@ function reconciliationSourceDocument(scenario: string) {
       }),
     };
   }
-  if (scenario === "multi-printing") {
+  if (
+    scenario === "dedicated-printing-erratum" ||
+    scenario === "dedicated-printing-erratum-ambiguous" ||
+    scenario === "dedicated-printing-erratum-missing"
+  ) {
+    const locator = scenario === "dedicated-printing-erratum"
+      ? "/official/dedicated-multi/base"
+      : scenario === "dedicated-printing-erratum-ambiguous"
+        ? "/official/multi/shared"
+        : "/official/multi/missing";
+    return {
+      cards: [{
+        kind: "official_erratum",
+        game: "one-piece",
+        target: {
+          type: "printing",
+          official_identity: {
+            kind: "card_number",
+            value: scenario === "dedicated-printing-erratum"
+              ? "OP05-006"
+              : "OP05-005",
+          },
+          locator,
+        },
+        published_on: "2026-07-31",
+        effective_from: null,
+        observed_printed_rules_text: "Official printed rules",
+        corrected_rules_text: "Printing-scoped corrected rules",
+        official_wording:
+          "Before: Official printed rules\nAfter: Printing-scoped corrected rules",
+        applies_to_parallel_printings: false,
+        source: {
+          fragment: "#errata_fixture_printing",
+          display_name: scenario === "dedicated-printing-erratum"
+            ? "OP05-006 Dedicated Printing Erratum Card"
+            : "OP05-005 Multiple Printing Card",
+          image_url:
+            `https://en.onepiece-cardgame.com/images/rules/cards/${
+              scenario === "dedicated-printing-erratum"
+                ? "OP05-006"
+                : "OP05-005"
+            }.png`,
+        },
+        completeness: completeEvidence(),
+      }],
+    };
+  }
+  if (
+    scenario === "dedicated-printing-erratum-seed" ||
+    scenario === "multi-printing" ||
+    scenario === "multi-printing-shared-locator"
+  ) {
+    const sharedLocator = scenario === "multi-printing-shared-locator";
+    const dedicated = scenario === "dedicated-printing-erratum-seed";
     const base = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
-      cardNumber: "OP05-005",
-      name: "Multiple Printing Card",
+      cardNumber: dedicated ? "OP05-006" : "OP05-005",
+      name: dedicated
+        ? "Dedicated Printing Erratum Card"
+        : "Multiple Printing Card",
       cardAttributes: onePieceLeaderAttributes(),
       printingAttributes: { illustration_types: [] },
-      locator: "/official/multi/base",
-      lineageMarker: "multi-base",
+      locator: sharedLocator
+        ? "/official/multi/shared"
+        : dedicated
+          ? "/official/dedicated-multi/base"
+          : "/official/multi/base",
+      ...(sharedLocator ? { variantKey: "base" } : {}),
+      lineageMarker: dedicated ? "dedicated-multi-base" : "multi-base",
     });
     return {
       cards: [
@@ -1304,12 +1364,19 @@ function reconciliationSourceDocument(scenario: string) {
           ...base,
           identity_evidence: {
             ...base.identity_evidence,
-            locator: "/official/multi/alternate",
+            locator: sharedLocator
+              ? "/official/multi/shared"
+              : dedicated
+                ? "/official/dedicated-multi/alternate"
+                : "/official/multi/alternate",
+            ...(sharedLocator ? { variant_key: "alternate" } : {}),
             artwork_fingerprint: `sha256:${"d".repeat(64)}`,
             novelty_basis: {
               ...base.identity_evidence.novelty_basis,
               source_url:
-                "https://official-source.invalid/images/OP05-005-alt.png",
+                `https://official-source.invalid/images/${
+                  dedicated ? "OP05-006" : "OP05-005"
+                }-alt.png`,
               artwork_fingerprint: `sha256:${"d".repeat(64)}`,
             },
           },
@@ -2202,6 +2269,29 @@ function reconciliationSourceDocument(scenario: string) {
             source_buckets: ["gundam-card-list"],
           },
           printedFieldsMarker: "shared",
+        }),
+      ],
+    };
+  }
+  if (/^query-hot-window-[1-4]$/.test(scenario)) {
+    const generation = Number(scenario.at(-1));
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP12-002",
+          name: `Query hot window generation ${generation}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/query-hot-window/stable",
+          variantKey: "query-hot-window",
+          lineageMarker: "locator-binding",
+          memberships: {
+            products: ["product_op12"],
+            distribution_contexts: [],
+            source_buckets: ["query-hot-window-list"],
+          },
         }),
       ],
     };

@@ -803,6 +803,7 @@
             "invalid_parameter",
             "invalid_cursor",
             "cursor_revision_unavailable",
+            "catalogue_query_unavailable",
             "catalogue_export_deleted",
             "invalid_legality_region",
             "range_not_satisfiable",

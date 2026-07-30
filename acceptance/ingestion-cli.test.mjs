@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -33,6 +34,47 @@ const run = {
   },
 };
 
+test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
+  const schema = JSON.parse(
+    await readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/administration.schema.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(
+    schema.$defs.ReconciliationCommandRequest.required,
+    ["expected_current_revision_id", "idempotency_key"],
+  );
+  assert.equal(
+    schema.$defs.ReconciliationCommandRequest.additionalProperties,
+    false,
+  );
+  assert.deepEqual(
+    schema.$defs.CatalogueSearchRepairCommandRequest.required,
+    [
+      "target_revision_id",
+      "expected_current_revision_id",
+      "idempotency_key",
+    ],
+  );
+  assert.equal(
+    schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties,
+    false,
+  );
+  const contract = await readFile(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/ADMINISTRATION.md",
+    ),
+    "utf8",
+  );
+  assert.match(contract, /never executes reconciliation inline/);
+  assert.match(contract, /one resumable, byte-bounded repair step/);
+});
+
 test("CLI reconciliation requires explicit production selection and confirmation", async () => {
   const result = await runCli(
     [
@@ -40,6 +82,10 @@ test("CLI reconciliation requires explicit production selection and confirmation
       "reconcile",
       "--run-id",
       "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "reconcile-cli-target-check",
       "--environment",
       "staging",
       "--yes",
@@ -65,6 +111,12 @@ test("CLI search repair requires explicit production selection and confirmation"
       "catalogue",
       "search",
       "repair",
+      "--target-revision",
+      "catrev_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "repair-cli-target-check",
       "--environment",
       "staging",
       "--yes",
@@ -193,11 +245,36 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(removedReconcile.stdout, /usage_error/u);
   assert.equal(requests.length, requestCountBeforeRemovedMutation);
 
+  const reconciled = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "reconcile-cli-demo",
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(reconciled.code, 0, reconciled.stderr);
+
   const repaired = await runCli(
     [
       "catalogue",
       "search",
       "repair",
+      "--target-revision",
+      "catrev_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "repair-cli-demo",
       "--environment",
       "production",
       "--yes",
@@ -256,11 +333,23 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
-  assert.deepEqual(requests.slice(-4), [
+  assert.deepEqual(requests.slice(-5), [
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/reconciliation",
+      body: {
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "reconcile-cli-demo",
+      },
+    },
     {
       method: "POST",
       path: "/v1/catalogue-search-materialization/repair",
-      body: {},
+      body: {
+        target_revision_id: "catrev_cli_demo",
+        expected_current_revision_id: "catrev_cli_demo",
+        idempotency_key: "repair-cli-demo",
+      },
     },
     {
       method: "POST",

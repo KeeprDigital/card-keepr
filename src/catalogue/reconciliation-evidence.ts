@@ -233,6 +233,8 @@ export async function retainedReconciliationObservation(
     sourceSnapshotId: first.source_snapshot_id,
     sourceLineage: first.source_lineage,
     supportedGame: supportedGame(first.supported_game),
+    reconciliationCoverage:
+      requiredSourceAdapter(first.adapter_version).reconciliationCoverage,
     structurallyComplete: true,
     partitions: orderedRows.map((row, index) => ({
       sequenceNumber: requests.results[index]!.sequence_number,

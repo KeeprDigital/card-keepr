@@ -28,6 +28,11 @@
       "name": "card-keepr-evidence-host",
       "binding": "EVIDENCE_HOST_WORKFLOW",
       "class_name": "EvidenceHostWorkflow"
+    },
+    {
+      "name": "card-keepr-reconciliation",
+      "binding": "RECONCILIATION_WORKFLOW",
+      "class_name": "ReconciliationWorkflow"
     }
   ],
   "services": [

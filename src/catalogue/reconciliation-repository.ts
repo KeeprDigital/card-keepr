@@ -108,12 +108,35 @@ export async function printingsWithAppearance(
   return rows.results;
 }
 
-export async function printingAtLocator(
+export async function printingAtLocatorVariant(
   database: D1Database,
   sourceLineage: string,
   locator: string,
+  variantKey: string | null,
 ): Promise<ReconciledPrintingRow | null> {
-  return database
+  const row = await database
+    .prepare(
+      `SELECT printing.*
+       FROM reconciled_printing_locators AS locator
+       JOIN reconciled_printings AS printing
+         ON printing.id = locator.printing_id
+       WHERE locator.source_lineage = ?
+         AND locator.locator = ?
+         AND locator.variant_identity = ?
+       ORDER BY locator.current DESC,
+                locator.last_observed_revision_id DESC`,
+    )
+    .bind(sourceLineage, locator, variantKey ?? "")
+    .first<ReconciledPrintingRow>();
+  return row ?? null;
+}
+
+export async function printingsAtLocator(
+  database: D1Database,
+  sourceLineage: string,
+  locator: string,
+): Promise<ReconciledPrintingRow[]> {
+  const rows = await database
     .prepare(
       `SELECT printing.*
        FROM reconciled_printing_locators AS locator
@@ -126,7 +149,8 @@ export async function printingAtLocator(
                 locator.variant_identity`,
     )
     .bind(sourceLineage, locator)
-    .first<ReconciledPrintingRow>();
+    .all<ReconciledPrintingRow>();
+  return rows.results;
 }
 
 export async function hasOtherGundamLocaleEvidence(

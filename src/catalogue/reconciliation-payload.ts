@@ -59,21 +59,29 @@ export function byteBoundedJsonArrays<T>(
   values: readonly T[],
 ): string[] {
   const chunks: string[] = [];
-  let current: T[] = [];
+  const encoder = new TextEncoder();
+  let current: string[] = [];
+  let currentBytes = 2;
   for (const value of values) {
-    const next = canonicalJson([...current, value]);
-    if (new TextEncoder().encode(next).byteLength > maximumChunkBytes) {
-      if (current.length === 0) {
-        throw new Error("One reconciliation persistence record exceeds 512 KiB.");
-      }
-      chunks.push(canonicalJson(current));
-      current = [value];
-    } else {
-      current.push(value);
+    const encoded = canonicalJson(value);
+    const encodedBytes = encoder.encode(encoded).byteLength;
+    if (encodedBytes + 2 > maximumChunkBytes) {
+      throw new Error("One reconciliation persistence record exceeds 512 KiB.");
     }
+    const additionalBytes = encodedBytes + (current.length === 0 ? 0 : 1);
+    if (
+      current.length > 0 &&
+      currentBytes + additionalBytes > maximumChunkBytes
+    ) {
+      chunks.push(`[${current.join(",")}]`);
+      current = [];
+      currentBytes = 2;
+    }
+    current.push(encoded);
+    currentBytes += encodedBytes + (current.length === 1 ? 0 : 1);
   }
   if (current.length > 0 || values.length === 0) {
-    chunks.push(canonicalJson(current));
+    chunks.push(`[${current.join(",")}]`);
   }
   return chunks;
 }

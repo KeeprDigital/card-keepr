@@ -60,9 +60,7 @@ export async function cardCollectionResponse(
   const requestedCurrent =
     cursor === null || cursor.revision_id === current.id;
   const revision = requestedCurrent
-    ? filters.q === null
-      ? current
-      : await availableRevision(database, current.id)
+    ? await availableRevision(database, current.id)
     : await availableRevision(database, cursor.revision_id);
   if (revision === null) {
     return requestedCurrent
@@ -86,21 +84,22 @@ export async function cardCollectionResponse(
     filters,
     cursor?.after ?? null,
   );
-  const pageRows = queried.rows;
-  const nextCursor =
-    queried.hasMore && pageRows.length > 0
-      ? encodeCursor({
-          contract: "card-keepr-card-cursor@1",
-          revision_id: revision.id,
-          q: filters.q,
-          game: filters.game,
-          card_number: filters.cardNumber,
-          limit: filters.limit,
-          after: rowCursor(pageRows.at(-1)!),
-        })
-      : null;
-  return Response.json(
-    {
+  const pageRows = [...queried.rows];
+  let truncated = false;
+  while (true) {
+    const nextCursor =
+      (queried.hasMore || truncated) && pageRows.length > 0
+        ? encodeCursor({
+            contract: "card-keepr-card-cursor@1",
+            revision_id: revision.id,
+            q: filters.q,
+            game: filters.game,
+            card_number: filters.cardNumber,
+            limit: filters.limit,
+            after: rowCursor(pageRows.at(-1)!),
+          })
+        : null;
+    const serialized = JSON.stringify({
       data: pageRows.map((row) => JSON.parse(row.summary_json)),
       meta: {
         catalogue_revision_id: revision.id,
@@ -108,9 +107,21 @@ export async function cardCollectionResponse(
       },
       page: { limit: filters.limit, next_cursor: nextCursor },
       links: { self: `/v1/cards${url.search}` },
-    },
-    { headers },
-  );
+    });
+    if (encoder.encode(serialized).byteLength <= maximumCollectionResponseBytes) {
+      return new Response(serialized, {
+        headers: {
+          ...headers,
+          "content-type": "application/json",
+        },
+      });
+    }
+    if (pageRows.length <= 1) {
+      return catalogueQueryUnavailable(requestId);
+    }
+    pageRows.pop();
+    truncated = true;
+  }
 }
 
 async function queryCardPage(
@@ -191,7 +202,13 @@ export function cardCollectionPageQuery(
     }
     conditions.push(
       "search.term = ?",
-      "instr(cards.search_text, ?) > 0",
+      `EXISTS (
+         SELECT 1
+         FROM revision_card_search_chunks AS chunk
+         WHERE chunk.catalogue_revision_id = cards.catalogue_revision_id
+           AND chunk.card_id = cards.card_id
+           AND instr(chunk.search_text, ?) > 0
+       )`,
     );
     bindings.push(search.anchorTerm, search.text);
   }
@@ -277,7 +294,7 @@ function parseFilters(
     return invalidParameter(
       requestId,
       "q",
-      "q must contain at least one searchable letter or number.",
+      "q must contain at least one character.",
     );
   }
   const game = normalizedFilter(url.searchParams.get("game"));

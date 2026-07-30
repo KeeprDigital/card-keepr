@@ -2,7 +2,7 @@ import type { FixtureCard } from "./fixture";
 import type { Withdrawal } from "./reconciliation-observation";
 import {
   compatibilityFields,
-  type ParsedReconciliationObservation,
+  type ParsedCardPrintingObservation,
   type PrintingCompatibility,
 } from "./reconciliation-observation";
 import { canonicalJson, sha256Text } from "./serialization";
@@ -13,6 +13,8 @@ export {
 } from "./reconciliation-observation";
 export type {
   Memberships,
+  ParsedCardPrintingObservation,
+  ParsedOfficialErratumObservation,
   ParsedReconciliationObservation,
   PrintingCompatibility,
   ReconciliationWarning,
@@ -57,7 +59,7 @@ export async function printingIdFor(
 export function compatibilityFor(
   cardId: string,
   sourceLineage: string,
-  observation: ParsedReconciliationObservation,
+  observation: ParsedCardPrintingObservation,
 ): PrintingCompatibility {
   if (
     observation.candidateWithoutIdentities.card === null ||

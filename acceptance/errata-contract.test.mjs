@@ -73,4 +73,51 @@ test("the 0007 schema migration is additive and leaves historical Card backfill 
     migration,
     /INSERT\s+INTO\s+revision_cards[\s\S]*FROM\s+revision_cards/iu,
   );
+  const workflowRequests =
+    /CREATE TABLE reconciliation_workflow_requests \(([\s\S]*?)\n\);/u
+      .exec(migration)?.[1] ?? "";
+  assert.match(
+    workflowRequests,
+    /ingestion_run_id[\s\S]*REFERENCES ingestion_runs\(id\)/u,
+  );
+  assert.doesNotMatch(
+    workflowRequests,
+    /expected_current_revision_id[\s\S]*REFERENCES catalogue_revisions\(id\)/u,
+    "the bootstrap Catalogue state identity is valid before the first Catalogue Revision row exists",
+  );
+});
+
+test("the Card collection contract normatively exposes projection unavailability as 503", async () => {
+  const [openapi, apiSchema] = await Promise.all([
+    readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/openapi.json",
+      ),
+      "utf8",
+    ).then(JSON.parse),
+    readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
+      ),
+      "utf8",
+    ).then(JSON.parse),
+  ]);
+  assert.equal(
+    openapi.paths["/cards"].get.responses["503"].$ref,
+    "#/components/responses/CatalogueQueryUnavailable",
+  );
+  assert.equal(
+    openapi.components.responses.CatalogueQueryUnavailable.content[
+      "application/problem+json"
+    ].schema.$ref,
+    "./schemas/api.schema.json#/$defs/Problem",
+  );
+  assert.equal(
+    apiSchema.$defs.Problem.properties.code.enum.includes(
+      "catalogue_query_unavailable",
+    ),
+    true,
+  );
 });

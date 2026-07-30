@@ -5,14 +5,89 @@ INSERT INTO source_adapter_versions (
   game_profile_version,
   parser_contract,
   adapter_origin
-) VALUES (
-  'one-piece-official-errata-json@1',
-  'one-piece-en',
-  'one-piece',
-  'one-piece@1',
-  'one-piece-official-errata-document@1',
-  'production'
+) VALUES
+  (
+    'one-piece-official-errata-html@1',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'one-piece-official-errata-html@1',
+    'production'
+  ),
+  (
+    'fixture-one-piece-official-errata-json@1',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'synthetic-official-errata-fixture@1',
+    'synthetic_fixture'
+  );
+
+ALTER TABLE reconciliation_candidates
+  ADD COLUMN observation_kind TEXT NOT NULL DEFAULT 'card_printing'
+  CHECK (observation_kind IN ('card_printing', 'official_erratum'));
+
+CREATE TABLE reconciliation_workflow_requests (
+  idempotency_key TEXT PRIMARY KEY,
+  ingestion_run_id TEXT NOT NULL UNIQUE
+    REFERENCES ingestion_runs(id),
+  expected_current_revision_id TEXT NOT NULL,
+  request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  workflow_instance_id TEXT NOT NULL UNIQUE,
+  observed_at TEXT NOT NULL
 );
+
+CREATE TRIGGER reconciliation_workflow_requests_are_immutable
+BEFORE UPDATE ON reconciliation_workflow_requests
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_workflow_request_immutable');
+END;
+
+CREATE TRIGGER reconciliation_workflow_requests_are_not_deleted
+BEFORE DELETE ON reconciliation_workflow_requests
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_workflow_request_immutable');
+END;
+
+CREATE TABLE catalogue_search_repair_requests (
+  idempotency_key TEXT PRIMARY KEY,
+  target_revision_id TEXT NOT NULL,
+  expected_current_revision_id TEXT NOT NULL,
+  request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  result_json TEXT CHECK (
+    result_json IS NULL OR json_valid(result_json)
+  ),
+  claim_token TEXT,
+  claim_expires_at TEXT,
+  CHECK (
+    (claim_token IS NULL AND claim_expires_at IS NULL)
+    OR (claim_token IS NOT NULL AND claim_expires_at IS NOT NULL)
+  )
+);
+
+CREATE TRIGGER catalogue_search_repair_request_identity_is_immutable
+BEFORE UPDATE OF
+  idempotency_key,
+  target_revision_id,
+  expected_current_revision_id,
+  request_json
+ON catalogue_search_repair_requests
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_search_repair_request_immutable');
+END;
+
+CREATE TRIGGER catalogue_search_repair_result_is_immutable
+BEFORE UPDATE OF result_json ON catalogue_search_repair_requests
+WHEN OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_search_repair_result_immutable');
+END;
+
+CREATE TRIGGER catalogue_search_repair_requests_are_not_deleted
+BEFORE DELETE ON catalogue_search_repair_requests
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_search_repair_request_immutable');
+END;
 
 CREATE TABLE revision_card_query_documents (
   catalogue_revision_id TEXT NOT NULL,
@@ -70,6 +145,22 @@ CREATE INDEX revision_card_search_by_term
     catalogue_revision_id, term, sort_game, sort_identity_kind,
     sort_identity_value, sort_id, card_id
   );
+
+CREATE TABLE revision_card_search_chunks (
+  catalogue_revision_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  field_ordinal INTEGER NOT NULL CHECK (
+    field_ordinal >= 0 AND field_ordinal <= 2
+  ),
+  chunk_ordinal INTEGER NOT NULL CHECK (chunk_ordinal >= 0),
+  search_text TEXT NOT NULL,
+  PRIMARY KEY (
+    catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
+  ),
+  FOREIGN KEY (catalogue_revision_id, card_id)
+    REFERENCES revision_card_query_documents(catalogue_revision_id, card_id)
+    ON DELETE CASCADE
+);
 
 CREATE TABLE catalogue_query_revisions (
   catalogue_revision_id TEXT PRIMARY KEY

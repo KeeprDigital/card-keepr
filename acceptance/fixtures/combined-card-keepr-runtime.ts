@@ -3,16 +3,35 @@ import apiWorker from "../../apps/api/src/index";
 import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
+  ReconciliationWorkflow,
 } from "../../apps/ingestion/src/index";
+import {
+  onePieceOfficialErrataHtml,
+  onePieceOfficialErrataShapeDriftHtml,
+} from "./one-piece-official-errata-html";
 
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
+  ReconciliationWorkflow,
 };
 
 export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
+  fetch(request: Request): Response {
+    return new URL(request.url).pathname === "/rules/errata_card/"
+      ? new Response(onePieceOfficialErrataHtml, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      : Response.json({ cards: seedObservations() });
+  }
+}
+
+export class AcceptanceShapeDriftOfficialSourceTransport
+  extends WorkerEntrypoint<Env> {
   fetch(): Response {
-    return Response.json({ cards: errataObservations() });
+    return new Response(onePieceOfficialErrataShapeDriftHtml, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
   }
 }
 
@@ -30,14 +49,50 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-function errataObservations() {
-  const artworkFingerprint = `sha256:${"a".repeat(64)}`;
-  const first = {
+function seedObservations() {
+  return [
+    seedObservation({
+      identity: "OP07-097",
+      name: "Vegapunk",
+      rules:
+        "This Leader cannot attack.\n[Activate: Main] [Once Per Turn] You may rest 1 of your DON!! cards Select up to 1 {Egghead} typSelectup to 1 {Egghead} type card with a cost of 5 or less from your hand and play it or add it to the top of your Life cards face-up.",
+      fingerprintCharacter: "a",
+      printedDigestCharacter: "b",
+    }),
+    seedObservation({
+      identity: "OP03-047",
+      name: "Zeff",
+      rules:
+        "[DON!! x1] When this Character's attack deals damage to your opponent's Life, you may trash 7 cards from the top of your deck.\n[On Play] You may return up to 1 Character with a cost of 3 or less to the owner's hand, and trash 2 cards from the top of your deck.",
+      fingerprintCharacter: "c",
+      printedDigestCharacter: "d",
+    }),
+    seedObservation({
+      identity: "OP01-001",
+      name: "Monkey D. Luffy",
+      rules: "[On Play] Draw 1 card.",
+      fingerprintCharacter: "e",
+      printedDigestCharacter: "f",
+    }),
+  ];
+}
+
+function seedObservation(input: {
+  identity: string;
+  name: string;
+  rules: string;
+  fingerprintCharacter: string;
+  printedDigestCharacter: string;
+}) {
+  const artworkFingerprint = `sha256:${
+    input.fingerprintCharacter.repeat(64)
+  }`;
+  return {
     card: {
       game: "one-piece",
-      official_identity: { kind: "card_number", value: "OP29-009" },
-      name: "Black-box Errata Card",
-      effective_rules_text: "[On Play] Draw 1 card.",
+      official_identity: { kind: "card_number", value: input.identity },
+      name: input.name,
+      effective_rules_text: input.rules,
       game_data: {
         profile: "one-piece@1",
         attributes: {
@@ -50,29 +105,31 @@ function errataObservations() {
           counter: null,
           traits: ["Straw Hat Crew"],
           block_icons: ["1"],
-          effect_text: "[On Play] Draw 1 card.",
+          effect_text: input.rules,
           trigger_text: null,
         },
       },
     },
     printing: {
       rarity: { raw: "L", normalized: "leader" },
-      printed_rules_text: "[On Play] Draw 1 card.",
+      printed_rules_text: input.rules,
       game_data: {
         profile: "one-piece@1",
         attributes: { illustration_types: [] },
       },
     },
     identity_evidence: {
-      locator: "/official/errata/OP29-009",
+      locator: `/official/card-list/${input.identity}`,
       artwork_fingerprint: artworkFingerprint,
-      printed_fields_digest: `sha256:${"b".repeat(64)}`,
+      printed_fields_digest: `sha256:${
+        input.printedDigestCharacter.repeat(64)
+      }`,
       treatment: "standard",
       demonstrably_novel: true,
       novelty_basis: {
         kind: "official_printing_image",
         source_url:
-          "https://en.onepiece-cardgame.com/images/cardlist/card/OP29-009.png",
+          `https://en.onepiece-cardgame.com/images/cardlist/card/${input.identity}.png`,
         artwork_fingerprint: artworkFingerprint,
       },
     },
@@ -80,7 +137,7 @@ function errataObservations() {
       images: [{
         role: "front",
         source_url:
-          "https://en.onepiece-cardgame.com/images/cardlist/card/OP29-009.png",
+          `https://en.onepiece-cardgame.com/images/cardlist/card/${input.identity}.png`,
         artwork_fingerprint: artworkFingerprint,
       }],
     },
@@ -92,28 +149,10 @@ function errataObservations() {
       parsed_record_count: 1,
     },
     memberships: {
-      products: ["product_op29"],
+      products: [],
       distribution_contexts: [],
       source_buckets: ["official-card-list"],
     },
-    errata: [{
-      authority: "official_errata",
-      field: "effective_rules_text",
-      target_type: "card",
-      effective_from: "2026-07-01",
-      official_wording: 'Replace "Draw 1 card" with "Draw 2 cards".',
-      corrected_value: "[On Play] Draw 2 cards.",
-    }],
+    errata: [],
   };
-  return [
-    first,
-    {
-      ...first,
-      card: {
-        ...first.card,
-        effective_rules_text:
-          "[On Play] Draw one card. (Observed alternate wording)",
-      },
-    },
-  ];
 }

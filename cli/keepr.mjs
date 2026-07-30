@@ -334,14 +334,24 @@ async function cleanupRun(arguments_, environment, json) {
 async function reconcileRun(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    ["--run-id", "--environment"],
+    [
+      "--run-id",
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+    ],
     ["--yes"],
   );
   const runId = options.values["--run-id"];
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   if (
     options.error !== null ||
     runId === undefined ||
+    expectedCurrentRevision === undefined ||
+    idempotencyKey === undefined ||
     target === undefined ||
     !options.flags.has("--yes")
   ) {
@@ -358,19 +368,34 @@ async function reconcileRun(arguments_, environment, json) {
     json,
     `/v1/ingestion-runs/${encodeURIComponent(runId)}/reconciliation`,
     "POST",
-    {},
+    {
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
   );
 }
 
 async function repairCatalogueSearch(arguments_, environment, json) {
   const options = parseOptions(
     arguments_,
-    ["--environment"],
+    [
+      "--target-revision",
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+    ],
     ["--yes"],
   );
+  const targetRevision = options.values["--target-revision"];
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
   const target = options.values["--environment"];
   if (
     options.error !== null ||
+    targetRevision === undefined ||
+    expectedCurrentRevision === undefined ||
+    idempotencyKey === undefined ||
     target === undefined ||
     !options.flags.has("--yes")
   ) {
@@ -387,7 +412,11 @@ async function repairCatalogueSearch(arguments_, environment, json) {
     json,
     "/v1/catalogue-search-materialization/repair",
     "POST",
-    {},
+    {
+      target_revision_id: targetRevision,
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
   );
 }
 

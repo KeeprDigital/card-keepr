@@ -10,6 +10,16 @@ English Errata surface:
 `https://en.onepiece-cardgame.com/rules/errata_card/`. Requests for that
 adapter do not accept substitute HTTPS hosts or paths.
 
+The retained Source Snapshot is Bandai's UTF-8 HTML, not a producer-normalized
+JSON Card document. The versioned HTML adapter requires the dated section,
+Card heading, image, and exact `Before:`/`After:` pair for every entry and
+fails closed if that structure drifts. Its dedicated Erratum observation keeps
+the page's published date separate from `effective_from`: a dated page heading
+does not invent an official applicability date, so `effective_from` remains
+`null` unless the source explicitly supplies one. `Before:` is observed
+Printed Rules Text evidence; `After:` is the correction used to derive
+Effective Rules Text.
+
 Each Erratum object conforms to
 [`official-errata.schema.json`](./official-errata.schema.json):
 
@@ -27,10 +37,13 @@ Each Erratum object conforms to
 - `corrected_value` is the exact non-empty corrected text, or `null` when the
   Official Source explicitly removes Effective Rules Text.
 
-The target identity is resolved from the surrounding Source Observation:
-`card` maps to its accepted Card identity and `printing` maps to its accepted
-Printing identity. Provenance records the Source Lineage and Source
-Observation identity; neither is supplied by the Erratum object itself.
+The dedicated observation never supplies complete Card or Printing facts.
+Its target identity is resolved only against the run's expected published
+Catalogue Revision: `card` maps an exact accepted official Card identity and
+`printing` additionally maps an exact accepted Printing locator. Missing or
+ambiguous targets block reconciliation; the Errata surface never creates a
+Card or Printing. Provenance records the Source Lineage and Source Observation
+identity; neither is supplied by the Erratum object itself.
 
 Publication uses the authenticated reconciliation request time as the
 deterministic applicability clock. Approval never recalculates wording. If an

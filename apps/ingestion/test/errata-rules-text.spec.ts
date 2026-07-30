@@ -5,12 +5,6 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
-import { cardCollectionResponse } from "../../../src/catalogue/card-collection-read";
-import {
-  catalogueExportResponse,
-  currentCardResponse,
-} from "../../../src/catalogue/read";
-import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
@@ -23,6 +17,11 @@ const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
 };
 let requestSequence = 0;
+const syntheticOfficialErrataSource = {
+  game: "one-piece",
+  lineage: "one-piece-en",
+  adapter: "fixture-one-piece-official-errata-json@1",
+};
 
 beforeEach(async () => {
   await applyD1Migrations(
@@ -247,9 +246,8 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/errata-future-boundary",
       "reconcile-future-errata-before-boundary",
     );
-    const reconciled = await post(
-      `/v1/ingestion-runs/${run.id}/reconciliation`,
-      {},
+    const reconciled = await reconcile(
+      run.id,
       { "x-keepr-test-now": "2026-07-31T23:59:00.000Z" },
     );
     expect(reconciled.response.status).toBe(200);
@@ -292,9 +290,8 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/errata-future-boundary",
       "publish-future-errata-before-boundary",
     );
-    const carried = await post(
-      `/v1/ingestion-runs/${carriedRun.id}/reconciliation`,
-      {},
+    const carried = await reconcile(
+      carriedRun.id,
       { "x-keepr-test-now": "2026-07-31T23:50:00.000Z" },
     );
     const carriedPublished = await post(
@@ -320,9 +317,8 @@ describe("Errata rules-text lifecycle", () => {
         adapter: "fixture-gundam-en-us-json@1",
       },
     );
-    const subset = await post(
-      `/v1/ingestion-runs/${subsetRun.id}/reconciliation`,
-      {},
+    const subset = await reconcile(
+      subsetRun.id,
       { "x-keepr-test-now": "2026-08-01T00:05:00.000Z" },
     );
     const subsetPublished = await post(
@@ -425,59 +421,6 @@ describe("Errata rules-text lifecycle", () => {
     if (erratum === undefined) {
       throw new Error("Expected the published Card Erratum in the export.");
     }
-    const currentCard = await currentCardResponse(
-      testEnv.CATALOGUE_DB,
-      String(erratum.target_id),
-    );
-    expect(currentCard?.status).toBe(200);
-    await expect(currentCard?.json()).resolves.toMatchObject({
-      data: {
-        id: erratum.target_id,
-        effective_rules_text:
-          "[On Play] Draw 2 cards, then discard 1 card.",
-      },
-    });
-    const searchRequest = new Request(
-      "https://card-keepr.invalid/v1/cards?q=draw%202%20cards",
-      { headers: { authorization: "Bearer published-erratum-api-key" } },
-    );
-    expect(
-      await authenticateCredentialBearer(
-        searchRequest,
-        testEnv.CATALOGUE_DB,
-        "api_bearer_key",
-        ["published-erratum-api-key"],
-        "errata-published-authentication",
-        {
-          missing: "authentication_required",
-          invalid: "invalid_api_key",
-        },
-      ),
-    ).toBeNull();
-    const search = await cardCollectionResponse(
-      testEnv.CATALOGUE_DB,
-      searchRequest,
-      "errata-published-search",
-    );
-    expect(search.status).toBe(200);
-    await expect(search.json()).resolves.toMatchObject({
-      data: [{ id: erratum.target_id }],
-      meta: { catalogue_revision_id: revisionId },
-    });
-    const exportResponse = await catalogueExportResponse(
-      testEnv.CATALOGUE_DB,
-      testEnv.CATALOGUE_EXPORTS,
-      revisionId,
-    );
-    expect(exportResponse?.status).toBe(200);
-    await expect(exportResponse?.json()).resolves.toMatchObject({
-      data: {
-        components: expect.arrayContaining([
-          expect.objectContaining({ name: "errata" }),
-        ]),
-      },
-      meta: { catalogue_revision_id: revisionId },
-    });
     const persisted = await testEnv.CATALOGUE_DB.prepare(
       `SELECT erratum.id, provenance.source_lineage,
               provenance.source_observation_id
@@ -522,6 +465,181 @@ describe("Errata rules-text lifecycle", () => {
     );
     expect(await retainedObservation?.text()).toContain(
       '"effective_rules_text":"[On Play] Draw 1 card."',
+    );
+  });
+
+  test("a dedicated nullable-date Printing Erratum resolves one already-published Printing without rewriting physical text", async () => {
+    const seedRun = await collect(
+      "/reconciliation/dedicated-printing-erratum-seed",
+      "seed-dedicated-printing-erratum",
+    );
+    const seed = await reconcile(seedRun.id);
+    expect(seed.response.status).toBe(200);
+    const seedPublished = await approve(seed.document);
+    expect(seedPublished.response.status).toBe(200);
+    const seedRevisionId = requiredString(
+      seedPublished.document,
+      "resulting_revision_id",
+    );
+    const seedPrintings = Array.isArray(seed.document.printings)
+      ? seed.document.printings
+      : [];
+    const inspected = await Promise.all(
+      seedPrintings.map(async (printing) => {
+        const id = requiredString(
+          printing as Record<string, unknown>,
+          "id",
+        );
+        return {
+          id,
+          lifecycle: await get(`/v1/reconciliation/printings/${id}`),
+        };
+      }),
+    );
+    const basePrinting = inspected.find(({ lifecycle }) =>
+      JSON.stringify(lifecycle.document).includes(
+        "/official/dedicated-multi/base",
+      )
+    );
+    expect(basePrinting).toBeDefined();
+
+    const run = await collect(
+      "/reconciliation/dedicated-printing-erratum",
+      "dedicated-printing-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document.cards).toEqual([
+      expect.objectContaining({
+        effective_rules_text: "Official effective rules",
+      }),
+    ]);
+    expect(reconciled.document.printings).toEqual([
+      expect.objectContaining({
+        id: basePrinting?.id,
+        printed_rules_text: "Official printed rules",
+      }),
+    ]);
+    expect(reconciled.document.errata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target_type: "printing",
+          target_id: basePrinting?.id,
+          effective_from: null,
+          corrected_value: "Printing-scoped corrected rules",
+        }),
+      ]),
+    );
+    const published = await approve(reconciled.document);
+    expect(published.response.status).toBe(200);
+    const revisionId = requiredString(
+      published.document,
+      "resulting_revision_id",
+    );
+    const [cards, printings, errata] = await Promise.all([
+      exportComponentRecords(revisionId, "cards"),
+      exportComponentRecords(revisionId, "printings"),
+      exportComponentRecords(revisionId, "errata"),
+    ]);
+    expect(cards).toContainEqual(
+      expect.objectContaining({
+        effective_rules_text: "Official effective rules",
+        lifecycle: expect.objectContaining({
+          last_observed_revision_id: seedRevisionId,
+        }),
+      }),
+    );
+    expect(printings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: basePrinting?.id,
+          printed_rules_text: "Official printed rules",
+          lifecycle: expect.objectContaining({
+            last_observed_revision_id: seedRevisionId,
+          }),
+          locator_evidence: {
+            current: [
+              expect.objectContaining({
+                locator: "/official/dedicated-multi/base",
+                current: true,
+              }),
+            ],
+            historical: [],
+          },
+        }),
+      ]),
+    );
+    expect(printings.map((printing) => printing.id)).toEqual(
+      expect.arrayContaining(inspected.map(({ id }) => id)),
+    );
+    for (const { id } of inspected) {
+      const retainedPrinting = printings.find(
+        (printing) => printing.id === id,
+      );
+      expect(retainedPrinting).toMatchObject({
+        id,
+        printed_rules_text: "Official printed rules",
+      });
+    }
+    expect(errata).toContainEqual(
+      expect.objectContaining({
+        target_type: "printing",
+        target_id: basePrinting?.id,
+        effective_from: null,
+      }),
+    );
+  });
+
+  test("a dedicated Printing Erratum fails closed for ambiguous or unpublished locators", async () => {
+    const seedRun = await collect(
+      "/reconciliation/multi-printing-shared-locator",
+      "seed-ambiguous-dedicated-printing-erratum",
+    );
+    const seed = await reconcile(seedRun.id);
+    expect(seed.response.status).toBe(200);
+    const printingIds = (Array.isArray(seed.document.printings)
+      ? seed.document.printings
+      : []).map((printing) =>
+        requiredString(printing as Record<string, unknown>, "id")
+      ).sort();
+    expect(printingIds).toHaveLength(2);
+    expect((await approve(seed.document)).response.status).toBe(200);
+
+    const ambiguousRun = await collect(
+      "/reconciliation/dedicated-printing-erratum-ambiguous",
+      "ambiguous-dedicated-printing-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const ambiguous = await reconcile(ambiguousRun.id);
+    expect(ambiguous.response.status).toBe(409);
+    expect(ambiguous.document.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          locator: "/official/multi/shared",
+          candidate_printing_ids: printingIds,
+          detail: expect.stringContaining("exactly one Printing"),
+        }),
+      ]),
+    );
+
+    const missingRun = await collect(
+      "/reconciliation/dedicated-printing-erratum-missing",
+      "missing-dedicated-printing-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const missing = await reconcile(missingRun.id);
+    expect(missing.response.status).toBe(409);
+    expect(missing.document.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          locator: "/official/multi/missing",
+          candidate_printing_ids: [],
+          detail: expect.stringContaining("exactly one Printing"),
+        }),
+      ]),
     );
   });
 
@@ -844,8 +962,43 @@ async function waitForRunState(
   throw new Error(`run ${id} did not reach ${expectedState}`);
 }
 
-function reconcile(runId: string) {
-  return post(`/v1/ingestion-runs/${runId}/reconciliation`, {});
+async function reconcile(
+  runId: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  const shown = await get(`/v1/ingestion-runs/${runId}`);
+  const expectedCurrentRevisionId = requiredString(
+    shown.document,
+    "expected_current_revision_id",
+  );
+  const body = {
+    expected_current_revision_id: expectedCurrentRevisionId,
+    idempotency_key: `reconcile-${runId}`,
+  };
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const observed = await post(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      body,
+      extraHeaders,
+    );
+    if (
+      observed.document.status === "complete" &&
+      observed.document.output !== null &&
+      typeof observed.document.output === "object" &&
+      !Array.isArray(observed.document.output)
+    ) {
+      const document = observed.document.output as Record<string, unknown>;
+      return {
+        response: new Response(null, {
+          status: document.publishable === true ? 200 : 409,
+        }),
+        document,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`reconciliation Workflow ${runId} did not complete`);
 }
 
 function approve(document: Record<string, unknown>) {

@@ -53,7 +53,7 @@ test("the repository CLI rejects Official Errata authority outside the documente
       "--lineage",
       "one-piece-en",
       "--adapter",
-      "one-piece-official-errata-json@1",
+      "one-piece-official-errata-html@1",
       "--request-id",
       "untrusted-errata",
       "--url",
@@ -77,7 +77,62 @@ test("the repository CLI rejects Official Errata authority outside the documente
   });
 });
 
-test("an Erratum fixture publishes through the CLI and is consumed through authenticated HTTP and export bytes", async (t) => {
+test("Bandai Errata HTML shape drift fails closed through the CLI and Worker seam", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-drift-"));
+  const statePath = join(directory, "shared-state");
+  const apiKey = crypto.randomUUID();
+  const administrationKey = crypto.randomUUID();
+  const environmentFile = join(directory, "runtime.env");
+  const runtimeConfig = join(directory, "runtime.wrangler.json");
+  await Promise.all([
+    writeFile(
+      environmentFile,
+      `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`,
+      { mode: 0o600 },
+    ),
+    writeRuntimeConfig(
+      runtimeConfig,
+      "AcceptanceShapeDriftOfficialSourceTransport",
+    ),
+  ]);
+  applyMigrations(runtimeConfig, statePath);
+  const port = runtimePort + 2;
+  const runtime = startWorker({
+    config: runtimeConfig,
+    envFile: environmentFile,
+    inspectorPort: 19_236,
+    port,
+    statePath,
+  });
+  t.after(async () => {
+    await stopWorker(runtime);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await waitForHealth(runtime, port, apiKey, "Errata drift runtime");
+  const environment = {
+    KEEPR_ADMINISTRATION_KEY: administrationKey,
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+  };
+  const run = await collectSource(
+    {
+      adapter: "one-piece-official-errata-html@1",
+      idempotencyKey: "reject-bandai-errata-shape-drift",
+      requestId: "errata-shape-drift",
+      url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    },
+    environment,
+  );
+  const resumed = await runCli(
+    ["source", "resume", "--run-id", run.id, "--json"],
+    environment,
+  );
+  assert.equal(resumed.code, 0, resumed.stderr);
+  const failed = await waitForFailedRun(run.id, environment, runtime);
+  assert.equal(failed.failure_code, "source_parse_failed");
+  assert.equal(failed.observation_sets.length, 0);
+});
+
+test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/export seams", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-"));
   const statePath = join(directory, "shared-state");
   const apiKey = crypto.randomUUID();
@@ -113,11 +168,21 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
     KEEPR_ADMINISTRATION_KEY: administrationKey,
     KEEPR_INGESTION_URL: `http://127.0.0.1:${runtimePort}`,
   };
+  const initialStatus = await runCli(["status", "--json"], cliEnvironment);
+  assert.equal(initialStatus.code, 0, initialStatus.stderr);
+  const bootstrapRevision = JSON.parse(initialStatus.stdout).safe_state
+    .current_revision_id;
   const repaired = await runCli(
     [
       "catalogue",
       "search",
       "repair",
+      "--target-revision",
+      bootstrapRevision,
+      "--expected-current-revision",
+      bootstrapRevision,
+      "--idempotency-key",
+      "repair-bootstrap-search",
       "--environment",
       "production",
       "--yes",
@@ -127,34 +192,46 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
   );
   assert.equal(repaired.code, 0, repaired.stderr);
   assert.equal(JSON.parse(repaired.stdout).complete, true);
-  const collected = await runCli(
-    [
-      "source",
-      "collect",
-      "--game",
-      "one-piece",
-      "--lineage",
-      "one-piece-en",
-      "--adapter",
-      "one-piece-official-errata-json@1",
-      "--request-id",
-      "errata-rules-text",
-      "--url",
-      "https://en.onepiece-cardgame.com/rules/errata_card/",
-      "--idempotency-key",
-      "errata-runtime-source",
-      "--json",
-    ],
+
+  const seedRun = await collectSource(
+    {
+      adapter: "one-piece-json-document@1",
+      idempotencyKey: "seed-published-errata-targets",
+      requestId: "published-card-list",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
     cliEnvironment,
   );
-  assert.equal(collected.code, 0, collected.stderr);
-  const run = JSON.parse(collected.stdout);
-  const resumed = await runCli(
-    ["source", "resume", "--run-id", run.id, "--json"],
+  await resumeAndWait(seedRun.id, cliEnvironment, runtime);
+  const seedReconciled = await reconcileAndWait(
+    seedRun.id,
+    bootstrapRevision,
+    "reconcile-published-errata-targets",
+    cliEnvironment,
+    runtime,
+  );
+  assert.equal(
+    seedReconciled.publishable,
+    true,
+    JSON.stringify(seedReconciled),
+  );
+  const seededRevision = await approveCandidate(
+    seedRun.id,
+    "approve-published-errata-targets",
+    cliEnvironment,
+    runtime,
+  );
+
+  const run = await collectSource(
+    {
+      adapter: "one-piece-official-errata-html@1",
+      idempotencyKey: "errata-runtime-source",
+      requestId: "errata-rules-text",
+      url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    },
     cliEnvironment,
   );
-  assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(run.id, "parsing", cliEnvironment, runtime);
+  await resumeAndWait(run.id, cliEnvironment, runtime);
   const evidence = await runCli(
     ["source", "show", "--run-id", run.id, "--json"],
     cliEnvironment,
@@ -164,66 +241,39 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
     JSON.parse(evidence.stdout).observation_sets[0].observation_count,
     2,
   );
-  const reconciledResult = await runCli(
-    [
-      "run",
-      "reconcile",
-      "--run-id",
-      run.id,
-      "--environment",
-      "production",
-      "--yes",
-      "--json",
-    ],
+  const reconciled = await reconcileAndWait(
+    run.id,
+    seededRevision,
+    "reconcile-retained-bandai-errata-html",
     cliEnvironment,
+    runtime,
   );
-  assert.equal(
-    reconciledResult.code,
-    0,
-    `${reconciledResult.stdout}\n${reconciledResult.stderr}\n${
-      runtime.getOutput()
-    }`,
-  );
-  const reconciled = JSON.parse(reconciledResult.stdout);
   assert.equal(reconciled.publishable, true);
-  const inspected = await runCli(
-    ["candidate", "inspect", "--run-id", run.id, "--json"],
+  const revisionId = await approveCandidate(
+    run.id,
+    "approve-retained-bandai-errata-html",
     cliEnvironment,
+    runtime,
   );
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const candidate = JSON.parse(inspected.stdout);
-  const card = reconciled.cards[0];
-  const printing = reconciled.printings[0];
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      run.id,
-      "--candidate-digest",
-      candidate.candidate_digest,
-      "--expected-current-revision",
-      candidate.expected_current_revision_id,
-      "--idempotency-key",
-      "errata-runtime-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
+  const card = reconciled.cards.find(
+    (candidate) => candidate.official_identity.value === "OP07-097",
   );
-  assert.equal(
-    approved.code,
-    0,
-    `${approved.stdout}\n${approved.stderr}\n${runtime.getOutput()}`,
+  const zeff = reconciled.cards.find(
+    (candidate) => candidate.official_identity.value === "OP03-047",
   );
-  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  assert.notEqual(card, undefined);
+  assert.notEqual(zeff, undefined);
+  const printing = seedReconciled.printings.find(
+    (candidate) => candidate.card_id === card.id,
+  );
+  assert.notEqual(printing, undefined);
 
   const searched = await runCli(
     [
       "cards",
       "search",
       "--query",
-      "draw 2 cards",
+      "rest 1 of your DON!! cards: Select",
       "--json",
     ],
     cliEnvironment,
@@ -231,36 +281,243 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
   assert.equal(searched.code, 0, searched.stderr);
   assert.equal(JSON.parse(searched.stdout).data[0].id, card.id);
 
+  const luffy = seedReconciled.cards.find(
+    (candidate) => candidate.official_identity.value === "OP01-001",
+  );
+  assert.notEqual(luffy, undefined);
+  for (const query of ["uffy", "ＵＦＦＹ", "op01-001"]) {
+    const result = await apiJson(
+      `/v1/cards?q=${encodeURIComponent(query)}`,
+      apiKey,
+    );
+    assert.equal(result.data.some((candidate) => candidate.id === luffy.id), true);
+  }
+  const oneCharacter = await apiJson("/v1/cards?q=D", apiKey);
+  assert.equal(
+    oneCharacter.data.some((candidate) => candidate.id === luffy.id),
+    true,
+  );
+  const punctuationMustRemainExact = await apiJson(
+    `/v1/cards?q=${encodeURIComponent("DON cards")}`,
+    apiKey,
+  );
+  assert.equal(
+    punctuationMustRemainExact.data.some(
+      (candidate) => candidate.id === card.id,
+    ),
+    false,
+  );
+  const fieldsMustNotBeConcatenated = await apiJson(
+    `/v1/cards?q=${encodeURIComponent("OP01-001 Monkey")}`,
+    apiKey,
+  );
+  assert.equal(fieldsMustNotBeConcatenated.data.length, 0);
+  const maximumQuery = await fetch(
+    `http://127.0.0.1:${runtimePort}/v1/cards?q=${"x".repeat(500)}`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(maximumQuery.status, 200, await maximumQuery.text());
+  const oversizedQuery = await fetch(
+    `http://127.0.0.1:${runtimePort}/v1/cards?q=${"x".repeat(501)}`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(oversizedQuery.status, 400);
+  assert.equal((await oversizedQuery.json()).code, "invalid_parameter");
+
   const cardRead = await apiJson(`/v1/cards/${card.id}`, apiKey);
-  assert.equal(cardRead.data.effective_rules_text, "[On Play] Draw 2 cards.");
+  assert.match(
+    cardRead.data.effective_rules_text,
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+  );
   const printingRead = await apiJson(
     `/v1/printings/${printing.id}`,
     apiKey,
   );
-  assert.equal(printingRead.data.printed_rules_text, "[On Play] Draw 1 card.");
+  assert.match(
+    printingRead.data.printed_rules_text,
+    /DON!! cards Select up to 1 \{Egghead\}/,
+  );
   const manifest = await apiJson(
     `/v1/catalogue-exports/${revisionId}`,
     apiKey,
   );
   assert.equal(manifest.meta.catalogue_revision_id, revisionId);
 
-  const [cardsBytes, errataBytes] = await Promise.all([
+  const [cardsBytes, printingsBytes, errataBytes, relationshipBytes] =
+    await Promise.all([
     exportComponent(revisionId, "cards", apiKey),
+    exportComponent(revisionId, "printings", apiKey),
     exportComponent(revisionId, "errata", apiKey),
+    exportComponent(revisionId, "relationships", apiKey),
   ]);
-  const exportedCard = JSON.parse(cardsBytes.trim());
-  const exportedErratum = JSON.parse(errataBytes.trim());
+  const exportedCard = cardsBytes.trim().split("\n").map((line) =>
+    JSON.parse(line)
+  ).find(
+    (candidate) => candidate.id === card.id,
+  );
+  const exportedErratum = errataBytes.trim().split("\n").map((line) =>
+    JSON.parse(line)
+  ).find(
+    (candidate) => candidate.target_id === card.id,
+  );
+  const exportedZeffErratum = errataBytes.trim().split("\n").map((line) =>
+    JSON.parse(line)
+  ).find(
+    (candidate) => candidate.target_id === zeff.id,
+  );
+  const exportedPrinting = printingsBytes.trim().split("\n").map((line) =>
+    JSON.parse(line)
+  ).find(
+    (candidate) => candidate.id === printing.id,
+  );
   assert.equal(exportedCard.id, card.id);
-  assert.equal(
+  assert.match(
     exportedCard.effective_rules_text,
-    "[On Play] Draw 2 cards.",
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
   );
   assert.equal(exportedErratum.target_id, card.id);
-  assert.equal(exportedErratum.corrected_value, "[On Play] Draw 2 cards.");
-  assert.doesNotMatch(cardsBytes + errataBytes, /snapshot|raw_payload/i);
+  assert.equal(exportedErratum.target_type, "card");
+  assert.equal(exportedErratum.effective_from, null);
+  assert.match(
+    exportedErratum.corrected_value,
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+  );
+  assert.equal(exportedZeffErratum.target_type, "card");
+  assert.equal(exportedZeffErratum.target_id, zeff.id);
+  assert.equal(exportedZeffErratum.effective_from, null);
+  assert.match(
+    exportedZeffErratum.corrected_value,
+    /and you may trash 2 cards/,
+  );
+  assert.equal(exportedPrinting.id, printing.id);
+  assert.match(
+    exportedPrinting.printed_rules_text,
+    /DON!! cards Select up to 1 \{Egghead\}/,
+  );
+  const erratumRelationship = relationshipBytes.trim().split("\n").map(
+    (line) => JSON.parse(line),
+  ).find(
+    (candidate) =>
+      candidate.kind === "erratum-target" &&
+      candidate.from.id === exportedErratum.id,
+  );
+  assert.equal(erratumRelationship.to.id, card.id);
+  assert.equal(erratumRelationship.source_lineage, "one-piece-en");
+  assert.equal(erratumRelationship.source_observation_ids.length, 1);
+  assert.doesNotMatch(
+    cardsBytes + printingsBytes + errataBytes + relationshipBytes,
+    /snapshot|raw_payload/i,
+  );
 });
 
-async function writeRuntimeConfig(destination) {
+async function collectSource(input, environment) {
+  const result = await runCli(
+    [
+      "source",
+      "collect",
+      "--game",
+      "one-piece",
+      "--lineage",
+      "one-piece-en",
+      "--adapter",
+      input.adapter,
+      "--request-id",
+      input.requestId,
+      "--url",
+      input.url,
+      "--idempotency-key",
+      input.idempotencyKey,
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+async function resumeAndWait(runId, environment, runtime) {
+  const resumed = await runCli(
+    ["source", "resume", "--run-id", runId, "--json"],
+    environment,
+  );
+  assert.equal(resumed.code, 0, resumed.stderr);
+  await waitForRunState(runId, "parsing", environment, runtime);
+}
+
+async function reconcileAndWait(
+  runId,
+  expectedRevision,
+  idempotencyKey,
+  environment,
+  runtime,
+) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const result = await runCli(
+      [
+        "run",
+        "reconcile",
+        "--run-id",
+        runId,
+        "--expected-current-revision",
+        expectedRevision,
+        "--idempotency-key",
+        idempotencyKey,
+        "--environment",
+        "production",
+        "--yes",
+        "--json",
+      ],
+      environment,
+    );
+    assert.equal(
+      result.code,
+      0,
+      `${result.stdout}\n${result.stderr}\n${runtime.getOutput()}`,
+    );
+    const workflow = JSON.parse(result.stdout);
+    if (workflow.status === "complete") return workflow.output;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error(`Reconciliation Workflow did not complete for ${runId}`);
+}
+
+async function approveCandidate(runId, idempotencyKey, environment, runtime) {
+  const inspected = await runCli(
+    ["candidate", "inspect", "--run-id", runId, "--json"],
+    environment,
+  );
+  assert.equal(inspected.code, 0, inspected.stderr);
+  const candidate = JSON.parse(inspected.stdout);
+  const approved = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      runId,
+      "--candidate-digest",
+      candidate.candidate_digest,
+      "--expected-current-revision",
+      candidate.expected_current_revision_id,
+      "--idempotency-key",
+      idempotencyKey,
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(
+    approved.code,
+    0,
+    `${approved.stdout}\n${approved.stderr}\n${runtime.getOutput()}`,
+  );
+  return JSON.parse(approved.stdout).resulting_revision_id;
+}
+
+async function writeRuntimeConfig(
+  destination,
+  sourceEntrypoint = "AcceptanceOfficialSourceTransport",
+) {
   const config = JSON.parse(
     readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
   );
@@ -277,7 +534,7 @@ async function writeRuntimeConfig(destination) {
   config.services = [{
     binding: "OFFICIAL_SOURCE_TRANSPORT",
     service: config.name,
-    entrypoint: "AcceptanceOfficialSourceTransport",
+    entrypoint: sourceEntrypoint,
   }];
   config.ratelimits.push(...apiConfig.ratelimits);
   config.vars.CORS_ALLOWED_ORIGINS = apiConfig.vars.CORS_ALLOWED_ORIGINS;
@@ -401,6 +658,22 @@ async function waitForRunState(id, expected, environment, runtime) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
   }
   throw new Error(`Run ${id} did not reach ${expected}\n${runtime.getOutput()}`);
+}
+
+async function waitForFailedRun(id, environment, runtime) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const shown = await runCli(
+      ["source", "show", "--run-id", id, "--json"],
+      environment,
+    );
+    if (shown.code === 0) {
+      const document = JSON.parse(shown.stdout);
+      if (document.state === "failed") return document;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error(`Run ${id} did not fail closed\n${runtime.getOutput()}`);
 }
 
 async function exportComponent(revisionId, component, apiKey) {

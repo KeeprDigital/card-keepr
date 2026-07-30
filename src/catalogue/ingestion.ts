@@ -27,12 +27,17 @@ import { AdministrationProblem } from "./administration-problem.mjs";
 import { productReleasePublicationStatements } from "./product-release-publication";
 import { typedPrintingProjections } from "./product-release-projection";
 import {
+  cardSearchChunks,
   cardSearchTerms,
   cardSearchText,
 } from "./card-search";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
+const maximumPublicationCandidateBytes = 16 * 1024 * 1024;
+const maximumPublicationEntityBytes = 384 * 1024;
+const maximumPublicationSearchMaterializationBytes = 24 * 1024 * 1024;
+const maximumPublicationExportBytes = 32 * 1024 * 1024;
 const activeRunStages = [
   "planning",
   "collecting",
@@ -641,6 +646,7 @@ async function approveRunAttempt(
       candidate,
     );
   }
+  assertPublicationAggregateBudget(candidate);
   const revisionId = `catrev_${crypto.randomUUID()}`;
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(
@@ -679,6 +685,7 @@ async function approveRunAttempt(
         },
     sourceFreshness,
   );
+  assertBuiltPublicationBudget(catalogueExport);
   try {
     await reservePublication(
       database,
@@ -1687,6 +1694,93 @@ async function assertStoredPrintingImage(
   }
 }
 
+function assertPublicationAggregateBudget(
+  candidate: FixtureCandidate,
+): void {
+  const encoder = new TextEncoder();
+  const candidateBytes = encoder.encode(
+    canonicalJson(candidate),
+  ).byteLength;
+  if (candidateBytes > maximumPublicationCandidateBytes) {
+    throw new AdministrationProblem(
+      422,
+      "publication_aggregate_too_large",
+      "The Catalogue candidate exceeds the bounded publication aggregate.",
+    );
+  }
+  let searchTermBytes = 2;
+  let searchChunkBytes = 2;
+  for (const card of candidate.cards) {
+    assertPublicationEntityBudget(card, "Card", encoder);
+    const document = cardSearchText(card);
+    for (const term of cardSearchTerms(document)) {
+      searchTermBytes += (searchTermBytes === 2 ? 0 : 1) +
+        encoder.encode(canonicalJson({
+          card_id: card.id,
+          term,
+        })).byteLength;
+    }
+    for (const chunk of cardSearchChunks(document)) {
+      searchChunkBytes += (searchChunkBytes === 2 ? 0 : 1) +
+        encoder.encode(canonicalJson({
+          card_id: card.id,
+          field_ordinal: chunk.field,
+          chunk_ordinal: chunk.ordinal,
+          search_text: chunk.text,
+        })).byteLength;
+    }
+    if (
+      searchTermBytes + searchChunkBytes >
+        maximumPublicationSearchMaterializationBytes
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "publication_aggregate_too_large",
+        "The Catalogue candidate exceeds the byte-bounded Card search publication aggregate.",
+      );
+    }
+  }
+  for (const printing of candidate.printings) {
+    assertPublicationEntityBudget(printing, "Printing", encoder);
+  }
+  for (const erratum of candidate.errata ?? []) {
+    assertPublicationEntityBudget(erratum, "Erratum", encoder);
+  }
+}
+
+function assertPublicationEntityBudget(
+  entity: unknown,
+  description: string,
+  encoder: TextEncoder,
+): void {
+  if (
+    encoder.encode(canonicalJson(entity)).byteLength >
+      maximumPublicationEntityBytes
+  ) {
+    throw new AdministrationProblem(
+      422,
+      "publication_aggregate_too_large",
+      `One ${description} exceeds the byte-bounded publication record budget.`,
+    );
+  }
+}
+
+function assertBuiltPublicationBudget(
+  catalogueExport: BuiltCatalogueExport,
+): void {
+  let bytes = 0;
+  for (const object of catalogueExport.objects) {
+    bytes += object.byteLength;
+    if (bytes > maximumPublicationExportBytes) {
+      throw new AdministrationProblem(
+        422,
+        "publication_aggregate_too_large",
+        "The Catalogue Export exceeds the bounded publication aggregate.",
+      );
+    }
+  }
+}
+
 async function assertPublicationWriterActive(
   database: D1Database,
   runId: string,
@@ -1989,6 +2083,30 @@ async function commitVerifiedPublication(
       )
       .bind(chunk, revisionId),
   );
+  const revisionCardSearchChunkStatements = byteBoundedJsonArrays(
+    cardDocuments.flatMap(({ card, searchText }) =>
+      cardSearchChunks(searchText).map((chunk) => ({
+        card_id: card.id,
+        field_ordinal: chunk.field,
+        chunk_ordinal: chunk.ordinal,
+        search_text: chunk.text,
+      })),
+    ),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_card_search_chunks (
+           catalogue_revision_id, card_id, field_ordinal,
+           chunk_ordinal, search_text
+         )
+         SELECT ?, json_extract(value, '$.card_id'),
+                json_extract(value, '$.field_ordinal'),
+                json_extract(value, '$.chunk_ordinal'),
+                json_extract(value, '$.search_text')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
   const revisionPrintingStatements = byteBoundedJsonArrays(
     printingDocuments.map(({ printing, document }) => ({
       printing_id: printing.id,
@@ -2092,6 +2210,7 @@ async function commitVerifiedPublication(
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
     ...revisionCardQueryStatements,
+    ...revisionCardSearchChunkStatements,
     ...revisionCardSearchStatements,
     database
       .prepare(
@@ -2100,6 +2219,36 @@ async function commitVerifiedPublication(
          ) VALUES (?, 'available', NULL)`,
       )
       .bind(revisionId),
+    database.prepare(
+      `WITH RECURSIVE retained(catalogue_revision_id, depth) AS (
+         SELECT ?, 0
+         UNION ALL
+         SELECT revision.expected_previous_revision_id, retained.depth + 1
+         FROM retained
+         JOIN catalogue_revisions AS revision
+           ON revision.id = retained.catalogue_revision_id
+         WHERE retained.depth < 2
+           AND revision.expected_previous_revision_id IS NOT NULL
+       )
+       UPDATE catalogue_query_revisions
+       SET state = 'archived',
+           repaired_through_card_id = NULL,
+           repair_card_id = NULL,
+           repair_search_offset = 0,
+           repair_term_offset = 0
+       WHERE catalogue_revision_id NOT IN (
+         SELECT catalogue_revision_id
+         FROM retained
+       )`,
+    ).bind(revisionId),
+    database.prepare(
+      `DELETE FROM revision_card_query_documents
+       WHERE catalogue_revision_id IN (
+         SELECT catalogue_revision_id
+         FROM catalogue_query_revisions
+         WHERE state = 'archived'
+       )`,
+    ),
     ...revisionPrintingStatements,
     ...printingImageStatements,
     ...revisionPrintingImageStatements,

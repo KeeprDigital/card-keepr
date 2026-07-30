@@ -2,6 +2,7 @@ import { AdministrationProblem } from "./administration-problem.mjs";
 import {
   officialRawAdapterContracts,
 } from "./official-raw-adapter-contracts.mjs";
+import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
 
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
@@ -18,6 +19,7 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationCoverage:
     | "official_source"
     | "official_errata"
+    | "synthetic_errata_fixture"
     | "synthetic_fixture"
     | "unavailable";
   parse?: (document: unknown) => readonly unknown[];
@@ -78,11 +80,11 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
       {
-        adapterVersion: "one-piece-official-errata-json@1",
+        adapterVersion: "one-piece-official-errata-html@1",
         sourceLineage: "one-piece-en",
         supportedGame: "one-piece",
         gameProfileVersion: "one-piece@1",
-        parserContract: "one-piece-official-errata-document@1",
+        parserContract: "one-piece-official-errata-html@1",
         maximumSnapshotBytes: 1024 * 1024,
         origin: "production" as const,
         requestSurface: {
@@ -90,7 +92,13 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           url: "https://en.onepiece-cardgame.com/rules/errata_card/",
         },
         reconciliationCoverage: "official_errata" as const,
-        parse: parsePinnedCardDocument,
+        parseBytes: (bytes: Uint8Array) => {
+          const document = new TextDecoder(
+            "utf-8",
+            { fatal: true, ignoreBOM: false },
+          ).decode(bytes);
+          return parseOnePieceOfficialErrataHtml(document);
+        },
       },
       ...officialRawAdapterContracts.map((adapter) => ({
         adapterVersion: adapter.adapterVersion,
@@ -168,6 +176,18 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         requestSurface: { kind: "credential-free-https" as const },
         reconciliationCoverage: "unavailable" as const,
       })),
+      {
+        adapterVersion: "fixture-one-piece-official-errata-json@1",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "synthetic-official-errata-fixture@1",
+        maximumSnapshotBytes: 16 * 1024 * 1024,
+        origin: "synthetic_fixture" as const,
+        requestSurface: { kind: "synthetic-fixture" as const },
+        reconciliationCoverage: "synthetic_errata_fixture" as const,
+        parse: parseSourceDocument,
+      },
       ...[
         {
           adapterVersion: "fixture-one-piece-json@1",

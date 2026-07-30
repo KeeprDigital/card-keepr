@@ -57,7 +57,7 @@
         "operationId": "listCards",
         "tags": ["Cards"],
         "summary": "Browse, search, and filter Cards",
-        "description": "Order is Supported Game, official identity kind, official identity value, then opaque Card identity. q searches official identity value, name, and Effective Rules Text case-insensitively.",
+        "description": "Order is Supported Game, official identity kind, official identity value, then opaque Card identity. q is an exact case-insensitive Unicode substring search over official identity value, name, and Effective Rules Text without crossing field boundaries.",
         "parameters": [
           { "$ref": "#/components/parameters/Search" },
           { "$ref": "#/components/parameters/Game" },
@@ -90,6 +90,7 @@
           "403": { "$ref": "#/components/responses/ForbiddenOrigin" },
           "409": { "$ref": "#/components/responses/CursorUnavailable" },
           "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CatalogueQueryUnavailable" },
           "500": { "$ref": "#/components/responses/InternalError" }
         }
       }
@@ -715,6 +716,14 @@
         "headers": {
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
         },
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }
+          }
+        }
+      },
+      "CatalogueQueryUnavailable": {
+        "description": "The current Catalogue Revision does not yet have a complete bounded Card query projection.",
         "content": {
           "application/problem+json": {
             "schema": { "$ref": "./schemas/api.schema.json#/$defs/Problem" }

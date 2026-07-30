@@ -26,12 +26,14 @@ import {
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
 import {
-  reconcileRetainedCardPrintingEvidence,
   showReconciledPrinting,
 } from "../../../src/catalogue/card-printing-reconciliation";
 import {
-  repairCardSearchMaterialization,
-} from "../../../src/catalogue/card-search-materialization";
+  startOrObserveReconciliationWorkflow,
+} from "../../../src/catalogue/reconciliation-workflow";
+import {
+  runGuardedCardSearchRepair,
+} from "../../../src/catalogue/card-search-repair-administration";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -48,6 +50,7 @@ export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
 } from "./evidence-workflows";
+export { ReconciliationWorkflow } from "./reconciliation-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
 
 const ingestionWorker = {
@@ -204,15 +207,27 @@ const ingestionWorker = {
         );
       if (request.method === "POST" && reconciliationMatch !== null) {
         const body = await readAdministrationBody(request);
-        assertOnlyFields(body, []);
-        const result = await reconcileRetainedCardPrintingEvidence(
+        assertOnlyFields(body, [
+          "expected_current_revision_id",
+          "idempotency_key",
+        ]);
+        const result = await startOrObserveReconciliationWorkflow(
           env.CATALOGUE_DB,
-          env.EVIDENCE_OBJECTS,
-          decodeURIComponent(reconciliationMatch[1]!),
+          env.RECONCILIATION_WORKFLOW,
+          {
+            ingestion_run_id: decodeURIComponent(
+              reconciliationMatch[1]!,
+            ),
+            expected_current_revision_id: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
           observedAt,
         );
-        return Response.json(result, {
-          status: result.publishable === true ? 200 : 409,
+        return Response.json(result.document, {
+          status: result.created ? 202 : 200,
         });
       }
 
@@ -221,9 +236,23 @@ const ingestionWorker = {
         url.pathname === "/v1/catalogue-search-materialization/repair"
       ) {
         const body = await readAdministrationBody(request);
-        assertOnlyFields(body, []);
+        assertOnlyFields(body, [
+          "target_revision_id",
+          "expected_current_revision_id",
+          "idempotency_key",
+        ]);
         return Response.json(
-          await repairCardSearchMaterialization(env.CATALOGUE_DB),
+          await runGuardedCardSearchRepair(env.CATALOGUE_DB, {
+            target_revision_id: requiredString(
+              body,
+              "target_revision_id",
+            ),
+            expected_current_revision_id: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          }, observedAt),
         );
       }
 
