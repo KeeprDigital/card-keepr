@@ -36,6 +36,7 @@
     "wrangler": "^4.114.0"
   },
   "dependencies": {
-    "libsodium-wrappers": "^0.7.15"
+    "libsodium-wrappers": "^0.7.15",
+    "pako": "3.0.1"
   }
 }

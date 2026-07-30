@@ -744,7 +744,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
       {
         id: "cards",
         method: "GET",
-        url: "https://official-source.invalid/reconciliation/profile-fusion-world",
+        url: "https://official-source.invalid/reconciliation/production-profile-fusion-world",
         headers: { accept: "application/json" },
       },
     ],
@@ -3788,6 +3788,61 @@ test("same-name Products with different official codes remain distinct across re
   });
 }, 90_000);
 
+test("a name-only Product matching multiple published Products fails closed without publication", async () => {
+  for (const scenario of [
+    "product-identity-distinct-code-a",
+    "product-identity-distinct-code-b",
+  ]) {
+    const run = await collect(
+      `/reconciliation/${scenario}`,
+      `identity-ambiguous-prior-${scenario}`,
+    );
+    const candidate = await reconcile(run.id);
+    expect(candidate.response.status).toBe(200);
+    expect((await approve(candidate.document)).response.status).toBe(200);
+  }
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<{ current_revision_id: string }>();
+
+  const ambiguous = await collect(
+    "/reconciliation/product-identity-ambiguous-name",
+    "identity-ambiguous-name-only",
+  );
+  await expectRetainedEvidenceInvalid(
+    ambiguous.id,
+    "matched multiple published Products",
+  );
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+    ).first<{ current_revision_id: string }>(),
+  ).toEqual(currentBefore);
+}, 90_000);
+
+test("conflicting Distribution Context facts fail closed without publication", async () => {
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<{ current_revision_id: string }>();
+  const run = await collectRequests(
+    [
+      { id: "context-a", scenario: "product-context-conflict-a" },
+      { id: "context-b", scenario: "product-context-conflict-b" },
+    ],
+    "product-context-conflicting-facts",
+  );
+
+  await expectRetainedEvidenceInvalid(
+    run.id,
+    "Distribution Context facts conflict",
+  );
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+    ).first<{ current_revision_id: string }>(),
+  ).toEqual(currentBefore);
+});
+
 test("identical Product facts are a semantic no-change while source freshness advances", async () => {
   const firstRun = await collect(
     "/reconciliation/product-standalone-v1",
@@ -3952,6 +4007,101 @@ test("Product observations and disappearance remain scoped to their Source Linea
     },
   ]);
 });
+
+test("only an actual Product surface checks its Gundam Source Lineage", async () => {
+  const usRun = await collect(
+    "/reconciliation/gundam-product-us",
+    "gundam-product-us-prior-to-mixed-run",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const usCandidate = await reconcile(usRun.id);
+  expect(usCandidate.response.status).toBe(200);
+  expect((await approve(usCandidate.document)).response.status).toBe(200);
+
+  const mixed = await postFixtureEvidence({
+    idempotency_key: "gundam-mixed-product-and-card-surfaces",
+    plans: [
+      {
+        supported_game: "gundam",
+        source_lineage: "gundam-en-asia",
+        adapter_version: "fixture-gundam-en-asia-json@1",
+        requests: [
+          {
+            id: "asia-product",
+            method: "GET",
+            url:
+              "https://official-source.invalid/reconciliation/" +
+              "gundam-product-asia",
+            headers: { accept: "application/json" },
+          },
+        ],
+      },
+      {
+        supported_game: "gundam",
+        source_lineage: "gundam-en-us",
+        adapter_version: "fixture-gundam-en-us-json@1",
+        requests: [
+          {
+            id: "us-card",
+            method: "GET",
+            url:
+              "https://official-source.invalid/reconciliation/" +
+              "gundam-cross-us",
+            headers: { accept: "application/json" },
+          },
+        ],
+      },
+    ],
+  });
+  expect(mixed.response.status).toBe(201);
+  const runId = requiredString(mixed.document, "id");
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
+    ).response.status,
+  ).toBe(202);
+  await waitForRunState(runId, "parsing");
+  const candidate = await reconcile(runId);
+  expect(candidate.response.status).toBe(200);
+  const product = (candidate.document.products as Record<string, unknown>[])
+    .find(({ official_code }) => official_code === "GD-CROSS");
+  expect(product?.releases).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ region: "EN-ASIA" }),
+      expect.objectContaining({ region: "EN-US" }),
+    ]),
+  );
+  expect(candidate.document.warnings ?? []).not.toContainEqual(
+    expect.objectContaining({
+      code: "product_not_observed",
+      source_lineages: expect.arrayContaining(["gundam-en-us"]),
+    }),
+  );
+
+  const published = await approve(candidate.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const exportedProduct = (
+    await exportComponentRecords(revisionId, "products")
+  ).find(({ official_code }) => official_code === "GD-CROSS");
+  expect(exportedProduct).toBeDefined();
+  const exportedReleases = (
+    await exportComponentRecords(revisionId, "releases")
+  ).filter(({ product_id }) => product_id === exportedProduct?.id);
+  expect(exportedReleases).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ region: "EN-ASIA" }),
+      expect.objectContaining({ region: "EN-US" }),
+    ]),
+  );
+}, 90_000);
 
 test("Product freshness is emitted only for an actually checked Product surface", async () => {
   const checkedRun = await collect(

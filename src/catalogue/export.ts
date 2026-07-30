@@ -1,5 +1,4 @@
-import { Readable } from "node:stream";
-import { constants, createGzip } from "node:zlib";
+import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
 import type { FixtureCandidate, SupportedGame } from "./fixture";
 import type {
   NormalizedLifecycle,
@@ -17,6 +16,7 @@ import {
   sha256Text,
   utf8,
 } from "./serialization";
+import { typedPrintingProjections } from "./product-release-projection";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8"],
@@ -32,6 +32,8 @@ const componentDefinitions = [
   ["relationships", "RelationshipRecord", "id:utf8"],
 ] as const;
 const maximumExportRecordBytes = 524_288;
+const zFixed = 4;
+const zOk = 0;
 
 export type ExportObject = {
   key: string;
@@ -257,77 +259,50 @@ async function analyseComponent(
 function deterministicGzipStream(
   source: ReadableStream<Uint8Array>,
 ): ReadableStream<Uint8Array> {
-  const gzip = createGzip({
+  const compressor = new Deflate({
+    gzip: true,
     level: 9,
     windowBits: 15,
     memLevel: 8,
-    strategy: constants.Z_FIXED,
+    strategy: zFixed,
   });
-  const compressed = nodeReadableToWeb(
-    Readable.from(webChunks(source)).pipe(gzip),
-  );
-  let offset = 0;
-  return compressed.pipeThrough(
+  compressor.onStart = (stream) => {
+    const header = new GZheader();
+    header.time = 0;
+    header.os = 0xff;
+    if (zlibDeflateSetHeader(stream, header) !== zOk) {
+      throw new Error("The deterministic gzip header was rejected.");
+    }
+  };
+  return source.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        const portable = chunk.slice();
-        if (offset <= 9 && offset + portable.byteLength > 9) {
-          portable[9 - offset] = 0xff;
+      start(controller) {
+        compressor.onData = (chunk) => {
+          controller.enqueue(chunk.slice());
+        };
+      },
+      transform(chunk) {
+        if (
+          !compressor.push(chunk, false) ||
+          compressor.err !== zOk
+        ) {
+          throw new Error(
+            compressor.msg || "The deterministic gzip compressor failed.",
+          );
         }
-        offset += portable.byteLength;
-        controller.enqueue(portable);
+      },
+      flush() {
+        if (
+          !compressor.push(new Uint8Array(), true) ||
+          compressor.err !== zOk
+        ) {
+          throw new Error(
+            compressor.msg || "The deterministic gzip compressor failed.",
+          );
+        }
       },
     }),
   );
-}
-
-async function* webChunks(
-  source: ReadableStream<Uint8Array>,
-): AsyncGenerator<Uint8Array> {
-  const reader = source.getReader();
-  let completed = false;
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) {
-        completed = true;
-        return;
-      }
-      yield next.value;
-    }
-  } finally {
-    if (!completed) await reader.cancel();
-    reader.releaseLock();
-  }
-}
-
-function nodeReadableToWeb(
-  source: Readable,
-): ReadableStream<Uint8Array> {
-  const iterator = source[Symbol.asyncIterator]();
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const next = await iterator.next();
-        if (next.done) {
-          controller.close();
-        } else if (typeof next.value === "string") {
-          controller.enqueue(utf8(next.value));
-        } else if (next.value instanceof Uint8Array) {
-          controller.enqueue(next.value.slice());
-        } else {
-          throw new Error("The gzip stream emitted a non-byte chunk.");
-        }
-      } catch (error) {
-        source.destroy(error instanceof Error ? error : undefined);
-        controller.error(error);
-      }
-    },
-    async cancel(reason) {
-      source.destroy(reason instanceof Error ? reason : undefined);
-      await iterator.return?.();
-    },
-  });
 }
 
 function catalogueRecordStream(
@@ -549,15 +524,25 @@ async function exportRecordFactories(
       ...card,
       lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
     })),
-    printings: () => candidate.printings.map((printing) => ({
-      type: "printing",
-      ...printing,
-      locator_evidence: lifecycles?.locators?.[printing.id] ?? {
-        current: [],
-        historical: [],
-      },
-      lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
-    })),
+    printings: () => candidate.printings.map((printing) => {
+      const typed = typedPrintingProjections(
+        printing.id,
+        candidate.products ?? [],
+        candidate.distribution_contexts ?? [],
+        candidate.product_relationships ?? [],
+      );
+      return {
+        type: "printing",
+        ...printing,
+        products: typed.products,
+        distribution_contexts: typed.distribution_contexts,
+        locator_evidence: lifecycles?.locators?.[printing.id] ?? {
+          current: [],
+          historical: [],
+        },
+        lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
+      };
+    }),
     "printing-images": () => [],
     products: () => products,
     releases: () => (candidate.products ?? [])

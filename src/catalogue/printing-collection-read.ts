@@ -1,7 +1,13 @@
 import { ifNoneMatch } from "../http/conditional";
 
 const printingRoute = "/v1/printings";
-const printingOrder = "printing-id";
+const printingOrder = "card-id,printing-id";
+const supportedGames = new Set([
+  "one-piece",
+  "fusion-world",
+  "digimon",
+  "gundam",
+]);
 const releaseRegions = new Set([
   "EN-OCEANIA",
   "EN-ASIA",
@@ -14,11 +20,14 @@ type PrintingCursor = {
   ordering: typeof printingOrder;
   revision: string;
   filters: {
+    card_id: string | null;
+    game: string | null;
+    rarity: string | null;
     product_id: string | null;
     release_region: string | null;
     limit: number;
   };
-  last: { id: string };
+  last: { card_id: string; id: string };
 };
 
 export class PrintingCollectionReadProblem extends Error {
@@ -48,12 +57,21 @@ export async function currentPrintingsResponse(
   if (state === null) throw new Error("Catalogue state is unavailable");
 
   const limit = parseLimit(url.searchParams.get("limit"));
+  const cardId = optionalSingle(url, "card_id");
+  const game = optionalSingle(url, "game");
+  const rarity = normalizedRarity(optionalSingle(url, "rarity"));
   const productId = optionalSingle(url, "product_id");
   const releaseRegion = optionalSingle(url, "release_region");
+  if (game !== null && !supportedGames.has(game)) {
+    throw invalidParameter("Printing Supported Game is invalid.");
+  }
   if (releaseRegion !== null && !releaseRegions.has(releaseRegion)) {
     throw invalidParameter("Printing Release region is invalid.");
   }
   const filters = {
+    card_id: cardId,
+    game,
+    rarity,
     product_id: productId,
     release_region: releaseRegion,
     limit,
@@ -77,7 +95,7 @@ export async function currentPrintingsResponse(
     );
   }
 
-  const after = cursor?.last.id ?? null;
+  const after = cursor?.last ?? null;
   const etag = quotedEtag(
     `printings:${revisionId}:${JSON.stringify({
       route: printingRoute,
@@ -92,10 +110,28 @@ export async function currentPrintingsResponse(
 
   const rows = await database
     .prepare(
-      `SELECT printing.printing_id, printing.document_json
+      `SELECT printing.printing_id, printing.card_id,
+              printing.document_json
        FROM revision_printings AS printing
+       JOIN revision_cards AS card
+         ON card.catalogue_revision_id = printing.catalogue_revision_id
+        AND card.card_id = printing.card_id
        WHERE printing.catalogue_revision_id = ?
-         AND (? IS NULL OR printing.printing_id > ?)
+         AND (? IS NULL OR printing.card_id = ?)
+         AND (
+           ? IS NULL OR
+           json_extract(card.document_json, '$.game') = ?
+         )
+         AND (
+           ? IS NULL OR
+           json_extract(
+             printing.document_json, '$.rarity.normalized'
+           ) = ?
+         )
+         AND (
+           ? = 0 OR
+           (printing.card_id, printing.printing_id) > (?, ?)
+         )
          AND (
            (? IS NULL AND ? IS NULL)
            OR EXISTS (
@@ -131,13 +167,20 @@ export async function currentPrintingsResponse(
                )
            )
          )
-       ORDER BY printing.printing_id
+       ORDER BY printing.card_id, printing.printing_id
        LIMIT ?`,
     )
     .bind(
       revisionId,
-      after,
-      after,
+      cardId,
+      cardId,
+      game,
+      game,
+      rarity,
+      rarity,
+      after === null ? 0 : 1,
+      after?.card_id ?? "",
+      after?.id ?? "",
       productId,
       releaseRegion,
       productId,
@@ -146,9 +189,14 @@ export async function currentPrintingsResponse(
       releaseRegion,
       limit + 1,
     )
-    .all<{ printing_id: string; document_json: string }>();
+    .all<{
+      printing_id: string;
+      card_id: string;
+      document_json: string;
+    }>();
   const selected = rows.results.map((row) => ({
     id: row.printing_id,
+    card_id: row.card_id,
     document: JSON.parse(row.document_json) as unknown,
   }));
   const data = selected
@@ -161,7 +209,10 @@ export async function currentPrintingsResponse(
           ordering: printingOrder,
           revision: revisionId,
           filters,
-          last: { id: selected[limit - 1]!.id },
+          last: {
+            card_id: selected[limit - 1]!.card_id,
+            id: selected[limit - 1]!.id,
+          },
         })
       : null;
 
@@ -175,6 +226,9 @@ export async function currentPrintingsResponse(
       page: { limit, next_cursor: next },
       links: {
         self: canonicalSelf(url.pathname, {
+          cardId,
+          game,
+          rarity,
           productId,
           releaseRegion,
           limit,
@@ -205,6 +259,19 @@ function optionalSingle(url: URL, name: string): string | null {
   return value;
 }
 
+function normalizedRarity(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
+  if (
+    normalized.length < 1 ||
+    normalized.length > 100 ||
+    !/^[a-z0-9_-]+$/u.test(normalized)
+  ) {
+    throw invalidParameter("Printing rarity filter is invalid.");
+  }
+  return normalized;
+}
+
 function parseCursor(
   value: string | null,
   filters: PrintingCursor["filters"],
@@ -218,6 +285,7 @@ function parseCursor(
       typeof parsed.revision !== "string" ||
       JSON.stringify(parsed.filters) !== JSON.stringify(filters) ||
       parsed.last === undefined ||
+      typeof parsed.last.card_id !== "string" ||
       typeof parsed.last.id !== "string"
     ) {
       throw new Error("invalid");
@@ -258,6 +326,9 @@ function decodeBase64Url(value: string): string {
 function canonicalSelf(
   pathname: string,
   values: {
+    cardId: string | null;
+    game: string | null;
+    rarity: string | null;
     productId: string | null;
     releaseRegion: string | null;
     limit: number;
@@ -265,6 +336,9 @@ function canonicalSelf(
   },
 ): string {
   const query = new URLSearchParams();
+  if (values.cardId !== null) query.set("card_id", values.cardId);
+  if (values.game !== null) query.set("game", values.game);
+  if (values.rarity !== null) query.set("rarity", values.rarity);
   if (values.productId !== null) query.set("product_id", values.productId);
   if (values.releaseRegion !== null) {
     query.set("release_region", values.releaseRegion);

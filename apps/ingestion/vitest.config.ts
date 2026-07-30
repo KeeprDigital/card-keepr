@@ -10,6 +10,10 @@ import {
 } from "node:crypto";
 import { defineConfig } from "vitest/config";
 import {
+  officialDiscoveryDefinitions,
+  officialDiscoveryDocument,
+} from "../../acceptance/fixtures/synthetic-official-source.mjs";
+import {
   consumerProofMessage,
   credentialConsumerProofRequestHeader,
   type CredentialConsumerProofRequestClaims,
@@ -324,6 +328,37 @@ export default defineConfig({
                   etag: '"cards-v1"',
                 },
               },
+            );
+          }
+          if (url.pathname === "/raw-one-piece-products") {
+            return Response.json(
+              officialDiscoveryDocument(
+                officialDiscoveryDefinitions["/raw-one-piece-products"],
+              ),
+            );
+          }
+          if (
+            url.pathname ===
+            "/reconciliation/production-profile-fusion-world"
+          ) {
+            const document = officialDiscoveryDocument(
+              officialDiscoveryDefinitions["/raw-fusion-world-products"],
+            ) as { detail_pages: Array<Record<string, unknown>> };
+            Object.assign(document.detail_pages[0]!, {
+              printing: {
+                rarity: "C",
+                normalizedRarity: "common",
+                attributes: {},
+              },
+              printed_rules: "Official printed rules",
+              variant: "base",
+              artwork_fingerprint: `sha256:${"a".repeat(64)}`,
+              printed_fields_digest: `sha256:${"b".repeat(64)}`,
+              image:
+                "https://official-source.invalid/images/FB99-001.png",
+            });
+            return Response.json(
+              document,
             );
           }
           if (url.pathname.startsWith("/reconciliation/")) {
@@ -1686,6 +1721,34 @@ function productReleaseCatalogueForScenario(
       relationships: [],
     };
   }
+  if (
+    scenario === "product-context-conflict-a" ||
+    scenario === "product-context-conflict-b"
+  ) {
+    const second = scenario.endsWith("-b");
+    return {
+      products: [
+        {
+          reference: officialReference("ST-CONTEXT-CONFLICT"),
+          official_code: "ST-CONTEXT-CONFLICT",
+          name: "Context Conflict Product",
+          releases: [],
+        },
+      ],
+      distribution_contexts: [
+        {
+          key: "same-context-key",
+          kind: second ? "tournament_pack" : "promotion",
+          label: second
+            ? "Conflicting Tournament Context"
+            : "Conflicting Promotion Context",
+          product_reference: officialReference("ST-CONTEXT-CONFLICT"),
+          evidence_category: "explicit",
+        },
+      ],
+      relationships: [],
+    };
+  }
   if (scenario === "product-typed-relationships") {
     return {
       products: [
@@ -1777,6 +1840,7 @@ function productReleaseCatalogueForScenario(
     scenario === "product-identity-coded" ||
     scenario === "product-identity-distinct-code-a" ||
     scenario === "product-identity-distinct-code-b" ||
+    scenario === "product-identity-ambiguous-name" ||
     scenario === "product-identity-rename-v1" ||
     scenario === "product-identity-rename-v2"
   ) {
@@ -1785,14 +1849,16 @@ function productReleaseCatalogueForScenario(
         ? "Renamed Identity Product"
         : scenario.startsWith("product-identity-rename")
           ? "Original Identity Product"
-          : scenario.startsWith("product-identity-distinct-code")
+          : scenario.startsWith("product-identity-distinct-code") ||
+              scenario === "product-identity-ambiguous-name"
             ? "Same-name Distinct-code Product"
           : scenario === "product-identity-name" ||
               scenario === "product-identity-coded"
             ? "Name-to-code Identity Product"
             : "Inferred-to-typed Identity Product";
     const officialCode =
-      scenario === "product-identity-name"
+      scenario === "product-identity-name" ||
+      scenario === "product-identity-ambiguous-name"
         ? null
         : scenario.startsWith("product-identity-rename")
           ? "IDENTITY-RENAME"

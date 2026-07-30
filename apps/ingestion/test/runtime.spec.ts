@@ -854,7 +854,7 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
 test("reparse retries recover one staged immutable observation set while new intents append", async () => {
   const run = await createCollection(
     "source_collection_reparse_001",
-    "https://official-source.invalid/cards",
+    "https://official-source.invalid/raw-one-piece-products",
   );
   const completed = await resumeCollection(run.id);
   const snapshot = completed.snapshots[0];

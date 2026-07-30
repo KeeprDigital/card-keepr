@@ -2,212 +2,33 @@ export default {
   fetch(request) {
     const pathname = new URL(request.url).pathname;
     if (pathname === "/success") {
-      return new Response(
-        '{"cards":[{"card_number":"OP01-001","name":"Synthetic Card"}]}',
-        {
-          headers: {
-            "content-type": "application/json",
-            etag: '"synthetic-success-v1"',
-          },
-        },
-      );
-    }
-    if (pathname === "/product-only") {
       return Response.json(
-        {
-          product_surfaces: [
-            {
-              completeness: {
-                structurally_complete: true,
-                required_surfaces_complete: true,
-                partitions_complete: true,
-                declared_record_count: 1,
-                parsed_record_count: 1,
-              },
-              product_release_catalogue: {
-                products: [
-                  {
-                    reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    official_code: "BT-PRODUCT-ONLY",
-                    name: "Product-only announced release",
-                    releases: [
-                      {
-                        region: "unknown",
-                        date: { precision: "unknown", value: null },
-                        status: "announced",
-                      },
-                    ],
-                  },
-                ],
-                distribution_contexts: [
-                  {
-                    key: "product-only-promotion",
-                    kind: "promotion",
-                    label: "Product-only promotion",
-                    product_reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    evidence_category: "explicit",
-                  },
-                ],
-                relationships: [
-                  {
-                    kind: "distribution-context-product",
-                    context_key: "product-only-promotion",
-                    product_reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    evidence_category: "explicit",
-                    resolution: "explicit",
-                  },
-                ],
-              },
-            },
-          ],
-        },
-        { headers: { etag: '"synthetic-product-only-v1"' } },
+        { cards: [{ card_number: "OP01-001", name: "Synthetic Card" }] },
+        { headers: { etag: '"synthetic-success-v1"' } },
       );
     }
-    if (pathname === "/catalogue-discovery") {
-      const complete = {
-        structurally_complete: true,
-        required_surfaces_complete: true,
-        partitions_complete: true,
-        declared_record_count: 1,
-        parsed_record_count: 1,
-      };
+    if (pathname.startsWith("/raw-one-piece-failure-")) {
+      const document = officialDiscoveryDocument(
+        officialDiscoveryDefinitions["/raw-one-piece-products"],
+      );
+      if (pathname.endsWith("missing-surface")) {
+        delete document.correction_notices;
+      } else if (pathname.endsWith("result-cap")) {
+        document.card_list.result_cap = 1;
+      } else if (pathname.endsWith("pagination")) {
+        document.card_list.pages = 2;
+        document.card_list.has_next = true;
+      }
+      return Response.json(document, {
+        headers: { etag: `"${pathname.slice(1)}"` },
+      });
+    }
+    const definition = officialDiscoveryDefinitions[pathname];
+    if (definition !== undefined) {
       return Response.json(
-        {
-          official_records: [
-            {
-              record_type: "product_announcement",
-              completeness: complete,
-              catalogue: {
-                products: [
-                  {
-                    reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    official_code: "BT-PRODUCT-ONLY",
-                    name: "Product-only announced release",
-                    releases: [
-                      {
-                        region: "unknown",
-                        date: { precision: "unknown", value: null },
-                        status: "announced",
-                      },
-                    ],
-                  },
-                ],
-                distribution_contexts: [
-                  {
-                    key: "product-only-promotion",
-                    kind: "promotion",
-                    label: "Product-only promotion",
-                    product_reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    evidence_category: "explicit",
-                  },
-                ],
-                relationships: [
-                  {
-                    kind: "distribution-context-product",
-                    context_key: "product-only-promotion",
-                    product_reference: {
-                      kind: "official_code",
-                      value: "BT-PRODUCT-ONLY",
-                    },
-                    evidence_category: "explicit",
-                    resolution: "explicit",
-                  },
-                ],
-              },
-            },
-            {
-              record_type: "card_product_listing",
-              completeness: complete,
-              card: {
-                game: "digimon",
-                official_identity: {
-                  kind: "card_number",
-                  value: "BT99-001",
-                },
-                name: "Discovery Card",
-                effective_rules_text: "Official effective rules",
-                game_data: {
-                  profile: "digimon@1",
-                  attributes: {
-                    card_type: "digimon",
-                    colours: ["blue"],
-                    level: 4,
-                    play_cost: 5,
-                    use_cost: null,
-                    dp: 6000,
-                    form: "Champion",
-                    attribute: "Data",
-                    traits: ["Test"],
-                    digivolution_requirements: [],
-                    text_sections: [],
-                    dual_colours: [],
-                    dual_cost: null,
-                    link_dp: null,
-                  },
-                },
-              },
-              catalogue: {
-                products: [
-                  {
-                    reference: {
-                      kind: "official_code",
-                      value: "BT-CARD-BEARING",
-                    },
-                    official_code: "BT-CARD-BEARING",
-                    name: "Card-bearing product",
-                    releases: [],
-                  },
-                ],
-                distribution_contexts: [],
-                relationships: [
-                  {
-                    kind: "product-card",
-                    product_reference: {
-                      kind: "official_code",
-                      value: "BT-CARD-BEARING",
-                    },
-                    card_reference: { kind: "current_card" },
-                    evidence_category: "explicit",
-                    resolution: "explicit",
-                  },
-                ],
-              },
-              memberships: {
-                products: [],
-                distribution_contexts: [],
-                source_buckets: [],
-              },
-            },
-          ],
-        },
-        { headers: { etag: '"synthetic-catalogue-discovery-v1"' } },
+        officialDiscoveryDocument(definition),
+        { headers: { etag: `"${definition.etag}"` } },
       );
-    }
-    if (
-      [
-        "/raw-one-piece-products",
-        "/raw-fusion-world-products",
-        "/raw-gundam-asia-products",
-        "/raw-gundam-us-products",
-      ].includes(pathname)
-    ) {
-      return rawProductResponse(pathname);
     }
     if (pathname === "/redirect") {
       return new Response(null, {
@@ -225,106 +46,236 @@ export default {
   },
 };
 
-function rawProductResponse(pathname) {
-  const definitions = {
-    "/raw-one-piece-products": {
-      wrapper: "official_card_results",
-      game: "one-piece",
-      profile: "one-piece@1",
-      cardNumber: "OP99-001",
-      productCode: "OP-RAW-01",
-      productName: "One Piece Raw Product",
-      region: "EN-OCEANIA",
-      attributes: {
-        card_type: "leader",
-        colours: ["red"],
-        cost: null,
-        life: 5,
-        battle_attributes: ["strike"],
-        power: 5000,
-        counter: null,
-        traits: ["Test"],
-        block_icons: ["1"],
-        effect_text: "Official effect",
-        trigger_text: null,
+export const officialDiscoveryDefinitions = {
+  "/catalogue-discovery": digimonDefinition(),
+  "/raw-one-piece-products": definition({
+    format: "one-piece",
+    etag: "one-piece-official-v1",
+    game: "one-piece",
+    profile: "one-piece@1",
+    number: "OP99-001",
+    productCode: "OP-RAW-01",
+    productName: "One Piece Raw Product",
+    region: "EN-OCEANIA",
+    attributes: {
+      card_type: "leader",
+      colours: ["red"],
+      cost: null,
+      life: 5,
+      battle_attributes: ["strike"],
+      power: 5000,
+      counter: null,
+      traits: ["Test"],
+      block_icons: ["1"],
+      effect_text: "Official effect",
+      trigger_text: null,
+    },
+  }),
+  "/raw-fusion-world-products": definition({
+    format: "fusion-world",
+    etag: "fusion-world-official-v1",
+    game: "fusion-world",
+    profile: "fusion-world@1",
+    number: "FB99-001",
+    productCode: "FB-RAW-01",
+    productName: "Fusion World Raw Product",
+    region: "EN-US",
+    attributes: {
+      card_type: "battle",
+      colours: ["red"],
+      cost: 1,
+      specified_cost: [{ colour: "red", count: 1 }],
+      power: 10000,
+      combo_power: 5000,
+      traits: ["Test"],
+      skills: [{ kind: "ordinary", text: "Official skill" }],
+    },
+  }),
+  "/raw-gundam-asia-products": definition({
+    format: "gundam-asia",
+    etag: "gundam-asia-official-v1",
+    game: "gundam",
+    profile: "gundam@1",
+    number: "GD99-001",
+    productCode: "GD-RAW-01",
+    productName: "Gundam Cross-region Raw Product",
+    region: "EN-ASIA",
+    attributes: gundamAttributes(),
+  }),
+  "/raw-gundam-us-products": definition({
+    format: "gundam-us",
+    etag: "gundam-us-official-v1",
+    game: "gundam",
+    profile: "gundam@1",
+    number: "GD99-001",
+    productCode: "GD-RAW-01",
+    productName: "Gundam Cross-region Raw Product",
+    region: "EN-US",
+    attributes: gundamAttributes(),
+  }),
+};
+
+function digimonDefinition() {
+  return definition({
+    format: "digimon",
+    etag: "digimon-official-v1",
+    game: "digimon",
+    profile: "digimon@1",
+    number: "BT99-001",
+    productCode: "BT-CARD-BEARING",
+    productName: "Card-bearing product",
+    region: null,
+    printing: {
+      rarity: "R",
+      normalizedRarity: "rare",
+      attributes: { alternative_art: false },
+    },
+    attributes: {
+      card_type: "digimon",
+      colours: ["blue"],
+      level: 4,
+      play_cost: 5,
+      use_cost: null,
+      dp: 6000,
+      form: "Champion",
+      attribute: "Data",
+      traits: ["Test"],
+      digivolution_requirements: [],
+      text_sections: [],
+      dual_colours: [],
+      dual_cost: null,
+      link_dp: null,
+    },
+    extraProducts: [
+      {
+        code: "BT-PRODUCT-ONLY",
+        title: "Product-only announced release",
+        distribution: {
+          code: "product-only-promotion",
+          kind: "promotion",
+          label: "Product-only promotion",
+        },
+        release: {
+          region: "unknown",
+          precision: "unknown",
+          date: null,
+          status: "announced",
+        },
       },
-    },
-    "/raw-fusion-world-products": {
-      wrapper: "card_items",
-      game: "fusion-world",
-      profile: "fusion-world@1",
-      cardNumber: "FB99-001",
-      productCode: "FB-RAW-01",
-      productName: "Fusion World Raw Product",
-      region: "EN-US",
-      attributes: {
-        card_type: "battle",
-        colours: ["red"],
-        cost: 1,
-        specified_cost: [{ colour: "red", count: 1 }],
-        power: 10000,
-        combo_power: 5000,
-        traits: ["Test"],
-        skills: [{ kind: "ordinary", text: "Official skill" }],
-      },
-    },
-    "/raw-gundam-asia-products": {
-      wrapper: "search_results",
-      game: "gundam",
-      profile: "gundam@1",
-      cardNumber: "GD99-001",
-      productCode: "GD-RAW-01",
-      productName: "Gundam Cross-region Raw Product",
-      region: "EN-ASIA",
-      attributes: gundamAttributes(),
-    },
-    "/raw-gundam-us-products": {
-      wrapper: "search_results",
-      game: "gundam",
-      profile: "gundam@1",
-      cardNumber: "GD99-001",
-      productCode: "GD-RAW-01",
-      productName: "Gundam Cross-region Raw Product",
-      region: "EN-US",
-      attributes: gundamAttributes(),
-    },
+    ],
+  });
+}
+
+function definition(value) {
+  return { extraProducts: [], printing: null, ...value };
+}
+
+export function officialDiscoveryDocument(input) {
+  const product = {
+    code: input.productCode,
+    title: input.productName,
+    campaign_note: "Optional Official Source marketing copy",
   };
-  const definition = definitions[pathname];
-  const contextCode = `${definition.productCode}-distribution`;
-  const rawRecord = {
-    completeness: {
-      structurally_complete: true,
-      required_surfaces_complete: true,
-      partitions_complete: true,
-      declared_record_count: 1,
-      parsed_record_count: 1,
+  const products = [product, ...input.extraProducts];
+  const releases = [
+    ...(input.region === null
+      ? []
+      : [{
+          code: input.productCode,
+          region: input.region,
+          precision: "day",
+          date: "2026-12-01",
+          status: "released",
+        }]),
+    ...input.extraProducts.flatMap((item) =>
+      item.release === undefined ? [] : [{ code: item.code, ...item.release }]
+    ),
+  ];
+  const detail = {
+    path: `/cards/${input.number}`,
+    number: input.number,
+    title: `${input.productName} Card`,
+    rules: "Official effective rules",
+    profile: input.profile,
+    attributes: input.attributes,
+    product_codes: [input.productCode],
+    distribution: {
+      code: `${input.productCode}-distribution`,
+      kind: input.format === "digimon" ? "tournament_pack" : "product",
+      label: `${input.productName} distribution`,
     },
-    card_record: {
-      number: definition.cardNumber,
-      name: `${definition.productName} Card`,
-      rules_text: "Official effective rules",
-      profile: definition.profile,
-      attributes: definition.attributes,
-    },
-    product_record: {
-      code: definition.productCode,
-      name: definition.productName,
-      release_region: definition.region,
-      release_date_precision: "day",
-      release_date: "2026-12-01",
-      release_status: "released",
-    },
-    distribution_record: {
-      code: contextCode,
-      kind: "product",
-      label: `${definition.productName} distribution`,
-    },
-    source_bucket: `${definition.productCode}-official-list`,
+    ...(input.printing === null
+      ? {}
+      : {
+          printing: input.printing,
+          printed_rules: "Official printed rules",
+          variant: "base",
+          artwork_fingerprint:
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          printed_fields_digest:
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          image:
+            `https://synthetic-source.invalid/images/${input.number}.png`,
+        }),
   };
-  return Response.json(
-    { [definition.wrapper]: [rawRecord] },
-    { headers: { etag: `"${definition.productCode}-${definition.region}"` } },
-  );
+  const listing = {
+    page: 1,
+    pages: 1,
+    total: 1,
+    has_next: false,
+    entries: [{ number: input.number, detail: detail.path }],
+  };
+  const shared = {
+    lineage: input.format,
+    listing,
+    details: [detail],
+    products,
+    releases,
+    legality: { revision: "2026-07", entries: [] },
+    errata: { revision: "2026-07", entries: [] },
+  };
+  if (input.format === "one-piece") {
+    return {
+      source: "one-piece-cardlist",
+      card_list: listing,
+      card_pages: [detail],
+      product_catalog: products,
+      release_schedule: releases,
+      rules_restrictions: shared.legality,
+      correction_notices: shared.errata,
+    };
+  }
+  if (input.format === "fusion-world") {
+    return {
+      source: "fusion-world-card-search",
+      search: listing,
+      detail_pages: [detail],
+      products,
+      releases,
+      banned_limited: shared.legality,
+      errata_notices: shared.errata,
+    };
+  }
+  if (input.format === "digimon") {
+    return {
+      source: "digimon-card-database",
+      card_index: listing,
+      card_details: [detail],
+      product_index: products,
+      release_calendar: releases,
+      restricted_cards: shared.legality,
+      errata_notices: shared.errata,
+    };
+  }
+  return {
+    source: input.format,
+    card_search: listing,
+    card_details: [detail],
+    product_list: products,
+    release_list: releases,
+    regulation: shared.legality,
+    errata: shared.errata,
+  };
 }
 
 function gundamAttributes() {

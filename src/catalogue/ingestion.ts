@@ -24,6 +24,7 @@ import {
   retainedPayload,
 } from "./reconciliation-payload";
 import { productReleasePublicationStatements } from "./product-release-publication";
+import { typedPrintingProjections } from "./product-release-projection";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -1334,6 +1335,12 @@ async function cataloguePrinting(
   declaredContexts: readonly NonNullable<
     FixtureCandidate["distribution_contexts"]
   >[number][] = [],
+  declaredProducts: readonly NonNullable<
+    FixtureCandidate["products"]
+  >[number][] = [],
+  declaredRelationships: readonly NonNullable<
+    FixtureCandidate["product_relationships"]
+  >[number][] = [],
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
     (relationship) =>
@@ -1367,17 +1374,26 @@ async function cataloguePrinting(
         );
       }),
   );
+  const typed = typedPrintingProjections(
+    printing.id,
+    declaredProducts,
+    declaredContexts,
+    declaredRelationships,
+  );
+  const projectedContexts = [
+    ...new Map(
+      [...contexts, ...typed.distribution_contexts].map((context) => [
+        context.id,
+        context,
+      ]),
+    ).values(),
+  ].sort((left, right) => left.id.localeCompare(right.id));
   return {
     type: "printing",
     ...printing,
     printing_images: [],
-    distribution_contexts: contexts
-      .filter(
-        (context, index, contexts) =>
-          contexts.findIndex((candidate) => candidate.id === context.id) ===
-          index,
-      )
-      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    products: typed.products,
+    distribution_contexts: projectedContexts,
     relationship_evidence: canonicalRelationshipEvidence,
     locator_evidence: locatorEvidence,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
@@ -1690,6 +1706,8 @@ async function commitVerifiedPublication(
           historical: [],
         },
         input.candidate.distribution_contexts ?? [],
+        input.candidate.products ?? [],
+        input.candidate.product_relationships ?? [],
       ),
     })),
   );

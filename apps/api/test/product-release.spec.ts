@@ -63,6 +63,33 @@ beforeEach(async () => {
     lifecycle: product.lifecycle,
     links: { self: "/v1/printings/printing_st15_event" },
   };
+  const card = {
+    type: "card",
+    id: printing.card_id,
+    game: "one-piece",
+    official_identity: { kind: "card_number", value: "ST15-001" },
+    name: "Starter Deck Event Card",
+    effective_rules_text: "Official printed rules",
+    game_data: {
+      profile: "one-piece@1",
+      attributes: {
+        card_type: "leader",
+        colours: ["red"],
+        cost: null,
+        life: 5,
+        battle_attributes: ["strike"],
+        power: 5000,
+        counter: null,
+        traits: ["Test"],
+        block_icons: [],
+        effect_text: "Official printed rules",
+        trigger_text: null,
+      },
+    },
+    printing_ids: [printing.id],
+    lifecycle: product.lifecycle,
+    links: { self: `/v1/cards/${printing.card_id}` },
+  };
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (
@@ -117,6 +144,11 @@ beforeEach(async () => {
         disagreements: [],
       }),
     ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_cards (
+         catalogue_revision_id, card_id, document_json
+       ) VALUES ('catrev_products', ?, ?)`,
+    ).bind(card.id, JSON.stringify(card)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
          catalogue_revision_id, printing_id, card_id, document_json
@@ -210,6 +242,118 @@ test("Product conditional reads return 304 for matching revision ETags", async (
     expect(conditional.headers.get("x-catalogue-revision")).toBe(
       "catrev_products",
     );
+  }
+});
+
+test("Printing detail conditional reads bind exact response bytes to one revision", async () => {
+  const path = "/v1/printings/printing_st15_event";
+  const first = await api(path);
+  expect(first.status).toBe(200);
+  const etag = first.headers.get("etag");
+  expect(etag).toMatch(/^".+"$/);
+  const firstBytes = await first.text();
+
+  for (const validator of [
+    etag!,
+    `W/${etag!}`,
+    `"unrelated", W/${etag!}`,
+    "*",
+  ]) {
+    const conditional = await api(path, {
+      "if-none-match": validator,
+    });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe("");
+    expect(conditional.headers.get("etag")).toBe(etag);
+    expect(conditional.headers.get("x-catalogue-revision")).toBe(
+      "catrev_products",
+    );
+  }
+
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL
+       WHERE singleton = 1`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key
+       ) VALUES (
+         'run_products_next', 'publishing', '["one-piece"]',
+         '2026-01-02T00:00:00.000Z', 'catrev_products', NULL,
+         'products-next-seed', ?, '2026-01-02T00:00:00.000Z',
+         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+       )`,
+    ).bind(
+      "7".repeat(64),
+      JSON.stringify({
+        candidate_digest: "7".repeat(64),
+        expected_current_revision_id: "catrev_products",
+        approved_at: "2026-01-02T00:00:00.000Z",
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = 'run_products_next'
+       WHERE singleton = 1`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+         id, ingestion_run_id, published_at, content_digest,
+         expected_previous_revision_id, approved_candidate_digest
+       ) VALUES (
+         'catrev_products_next', 'run_products_next',
+         '2026-01-02T00:00:00.000Z', ?,
+         'catrev_products', ?
+       )`,
+    ).bind("7".repeat(64), "7".repeat(64)),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_cards (
+         catalogue_revision_id, card_id, document_json
+       )
+       SELECT 'catrev_products_next', card_id, document_json
+       FROM revision_cards
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND card_id = 'card_st15_event'`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printings (
+         catalogue_revision_id, printing_id, card_id, document_json
+       )
+       SELECT 'catrev_products_next', printing_id, card_id, document_json
+       FROM revision_printings
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND printing_id = 'printing_st15_event'`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state
+       SET current_revision_id = 'catrev_products_next',
+           published_at = '2026-01-02T00:00:00.000Z'
+       WHERE singleton = 1`,
+    ),
+  ]);
+  try {
+    const changed = await api(path, {
+      "if-none-match": etag!,
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    expect(changed.headers.get("x-catalogue-revision")).toBe(
+      "catrev_products_next",
+    );
+    expect(await changed.text()).not.toBe(firstBytes);
+  } finally {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state
+       SET current_revision_id = 'catrev_products',
+           published_at = '2026-01-01T00:00:00.000Z'
+       WHERE singleton = 1`,
+    ).run();
   }
 });
 
@@ -564,11 +708,11 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   ).run();
 });
 
-test("Printing collection filters one revision-pinned keyset by Product and Release region", async () => {
+test("Printing collection binds every normalized filter to one card-ordered revision-pinned keyset", async () => {
   const secondPrinting = {
     type: "printing",
-    id: "printing_unrelated_us",
-    card_id: "card_unrelated_us",
+    id: "printing_zzz_us",
+    card_id: "card_aaa_us",
     rarity: { normalized: "rare", raw: "R" },
     printed_rules_text: null,
     game_data: null,
@@ -581,7 +725,34 @@ test("Printing collection filters one revision-pinned keyset by Product and Rele
       last_observed_revision_id: "catrev_products",
       withdrawn: false,
     },
-    links: { self: "/v1/printings/printing_unrelated_us" },
+    links: { self: "/v1/printings/printing_zzz_us" },
+  };
+  const secondCard = {
+    type: "card",
+    id: secondPrinting.card_id,
+    game: "one-piece",
+    official_identity: { kind: "card_number", value: "ST-US-001" },
+    name: "US Product Card",
+    effective_rules_text: null,
+    game_data: {
+      profile: "one-piece@1",
+      attributes: {
+        card_type: "character",
+        colours: ["red"],
+        cost: 1,
+        life: null,
+        battle_attributes: ["strike"],
+        power: 1000,
+        counter: 1000,
+        traits: ["Test"],
+        block_icons: [],
+        effect_text: null,
+        trigger_text: null,
+      },
+    },
+    printing_ids: [secondPrinting.id],
+    lifecycle: secondPrinting.lifecycle,
+    links: { self: `/v1/cards/${secondPrinting.card_id}` },
   };
   const usProduct = {
     type: "product",
@@ -599,6 +770,11 @@ test("Printing collection filters one revision-pinned keyset by Product and Rele
     links: { self: "/v1/products/product_us" },
   };
   await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_cards (
+         catalogue_revision_id, card_id, document_json
+       ) VALUES ('catrev_products', ?, ?)`,
+    ).bind(secondCard.id, JSON.stringify(secondCard)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
          catalogue_revision_id, printing_id, card_id, document_json
@@ -624,7 +800,7 @@ test("Printing collection filters one revision-pinned keyset by Product and Rele
     })),
     ...[
       ["relationship_st15", "printing_st15_event", "product_st15"],
-      ["relationship_us", "printing_unrelated_us", "product_us"],
+      ["relationship_us", "printing_zzz_us", "product_us"],
     ].map(([id, printingId, productId]) =>
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO revision_product_relationships (
@@ -670,25 +846,58 @@ test("Printing collection filters one revision-pinned keyset by Product and Rele
   expect(mismatched.status).toBe(200);
   await expect(mismatched.json()).resolves.toMatchObject({ data: [] });
 
-  const page = await api("/v1/printings?limit=1");
-  const cursor = (await page.json<{
+  for (const [query, expectedIds] of [
+    ["card_id=card_st15_event", ["printing_st15_event"]],
+    ["game=one-piece", ["printing_zzz_us", "printing_st15_event"]],
+    ["rarity=leader", ["printing_st15_event"]],
+    ["rarity=rare", ["printing_zzz_us"]],
+    [
+      "card_id=card_st15_event&game=one-piece&rarity=leader&product_id=product_st15&release_region=EN-OCEANIA",
+      ["printing_st15_event"],
+    ],
+    [
+      "card_id=card_st15_event&game=one-piece&rarity=rare&product_id=product_st15&release_region=EN-OCEANIA",
+      [],
+    ],
+  ] as const) {
+    const filtered = await api(`/v1/printings?${query}`);
+    expect(filtered.status).toBe(200);
+    await expect(filtered.json()).resolves.toMatchObject({
+      data: expectedIds.map((id) => ({ id })),
+    });
+  }
+
+  const firstPage = await api(
+    "/v1/printings?game=one-piece&limit=1",
+  );
+  const firstPageBody = await firstPage.json<{
+    data: { id: string; card_id: string }[];
     page: { next_cursor: string };
-  }>()).page.next_cursor;
+  }>();
+  expect(firstPageBody.data).toMatchObject([
+    { id: "printing_zzz_us", card_id: "card_aaa_us" },
+  ]);
+  const cursor = firstPageBody.page.next_cursor;
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_state
      SET current_revision_id = 'catrev_spine_000'
      WHERE singleton = 1`,
   ).run();
   const retained = await api(
-    `/v1/printings?limit=1&after=${encodeURIComponent(cursor)}`,
+    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`,
   );
   expect(retained.status).toBe(200);
   await expect(retained.json()).resolves.toMatchObject({
+    data: [{ id: "printing_st15_event", card_id: "card_st15_event" }],
     meta: { catalogue_revision_id: "catrev_products" },
   });
 
   for (const path of [
     "/v1/printings?release_region=not-a-region",
+    "/v1/printings?game=not-a-game",
+    "/v1/printings?rarity=",
+    "/v1/printings?card_id=",
+    "/v1/printings?game=one-piece&game=one-piece",
     "/v1/printings?limit=0",
   ]) {
     const response = await api(path);
@@ -706,6 +915,28 @@ test("Printing collection filters one revision-pinned keyset by Product and Rele
   await expect(invalidCursor.json()).resolves.toMatchObject({
     code: "invalid_cursor",
   });
+  const decoded = decodeCursor(cursor);
+  const filters = decoded.filters as Record<string, unknown>;
+  const forgedFilter = encodeCursor({
+    ...decoded,
+    filters: { ...filters, rarity: "leader" },
+  });
+  const forged = await api(
+    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(forgedFilter)}`,
+  );
+  expect(forged.status).toBe(400);
+  await expect(forged.json()).resolves.toMatchObject({
+    code: "invalid_cursor",
+  });
+
+  const canonical = await api(
+    "/v1/printings?game=one-piece&rarity=leader&card_id=card_st15_event",
+  );
+  const reordered = await api(
+    "/v1/printings?card_id=card_st15_event&rarity=leader&game=one-piece",
+  );
+  expect(canonical.headers.get("etag")).toBe(reordered.headers.get("etag"));
+  expect(await canonical.text()).toBe(await reordered.text());
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_state
      SET current_revision_id = 'catrev_products'

@@ -123,6 +123,7 @@ const apiWorker = {
         const response = await currentPrintingResponse(
           env.CATALOGUE_DB,
           decodeURIComponent(printingMatch[1]!),
+          request,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }

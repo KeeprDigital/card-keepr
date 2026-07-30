@@ -72,6 +72,7 @@ const rootFields = new Set([
   "memberships",
   "withdrawal",
   "product_release_catalogue",
+  "source_sidecar",
 ]);
 const cardFields = new Set([
   "game",
@@ -205,6 +206,7 @@ export function parseReconciliationObservation(
     record,
     warnings,
   );
+  inspectSourceSidecar(sourceObservationId, profile, record.source_sidecar, warnings);
   detectUnknownFields(
     sourceObservationId,
     profile,
@@ -392,6 +394,31 @@ export function parseReconciliationObservation(
     productReleaseValue: record.product_release_catalogue,
     sourceWarnings: sortedWarnings(warnings),
   };
+}
+
+function inspectSourceSidecar(
+  sourceObservationId: string,
+  profile: string,
+  value: unknown,
+  warnings: ReconciliationWarning[],
+): void {
+  if (value === undefined) return;
+  const sidecar = requiredRecord(value, "source_sidecar");
+  const unmapped = sidecar.unmapped_optional_fields;
+  if (!Array.isArray(unmapped)) {
+    throw new Error("source_sidecar.unmapped_optional_fields must be an array.");
+  }
+  for (const item of unmapped) {
+    const field = requiredRecord(item, "source_sidecar unmapped field");
+    warnings.push(
+      sourceFieldWarning(
+        sourceObservationId,
+        profile,
+        requiredString(field.path, "source_sidecar unmapped field path"),
+        field.value,
+      ),
+    );
+  }
 }
 
 function parseOfficialIdentity(

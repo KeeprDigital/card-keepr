@@ -181,7 +181,9 @@ export async function reconcileProductReleaseCatalogue(
   );
   const checkedLineages = new Set(
     observedSurface
-      ? evidenceInputs.map(({ sourceLineage }) => sourceLineage)
+      ? evidenceInputs
+          .filter(({ value }) => value !== undefined)
+          .map(({ sourceLineage }) => sourceLineage)
       : [],
   );
   const priorObservations = (prior?.products ?? [])
@@ -328,14 +330,10 @@ async function preservePublishedProductIdentity(
     if (candidateIds.length === 1) {
       replacements.set(product.id, candidateIds[0]!);
     } else if (candidateIds.length > 1) {
-      warnings.push({
-        code: "product_identity_unresolved",
-        official_code: product.officialCode,
-        name: product.name,
-        candidate_product_ids: candidateIds.sort(),
-        detail:
-          "The Product identity matched multiple published Products and remains unresolved.",
-      });
+      throw new Error(
+        "The Product identity matched multiple published Products and " +
+          `cannot be published canonically: ${candidateIds.sort().join(", ")}.`,
+      );
     }
   }
   if (replacements.size === 0) {
@@ -755,15 +753,44 @@ function aggregateContexts(
     grouped.set(context.id, [...(grouped.get(context.id) ?? []), context]);
   }
   return [...grouped.values()]
-    .map((values) => ({
-      ...values.at(-1)!,
-      source_lineages: [
-        ...new Set(
-          values.flatMap(({ source_lineages }) => source_lineages ?? []),
-        ),
-      ].sort(),
-    }))
+    .map((values) => {
+      const facts = new Map(
+        values.map((context) => [
+          canonicalJson({
+            game: context.game,
+            key: context.key,
+            kind: context.kind,
+            label: context.label,
+            product_id: context.product_id,
+          }),
+          context,
+        ]),
+      );
+      if (facts.size > 1) {
+        throw new Error(
+          `Distribution Context facts conflict for ${values[0]!.id}; ` +
+            "retained evidence remains unresolved.",
+        );
+      }
+      const authoritative = [...values].sort(
+        (left, right) =>
+          evidenceAuthority(left.evidence_category) -
+          evidenceAuthority(right.evidence_category),
+      )[0]!;
+      return {
+        ...authoritative,
+        source_lineages: [
+          ...new Set(
+            values.flatMap(({ source_lineages }) => source_lineages ?? []),
+          ),
+        ].sort(),
+      };
+    })
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function evidenceAuthority(category: EvidenceCategory): number {
+  return category === "explicit" ? 0 : category === "curated" ? 1 : 2;
 }
 
 function resolveFact<T extends { evidence: ProductEvidenceResource }, V>(

@@ -166,15 +166,40 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ["run", "reconcile", "--run-id", collectedRun.id, "--json"],
     cliEnvironment,
   );
+  const reconciliationDiagnostic =
+    reconciled.code === 0
+      ? ""
+      : await (
+          await fetch(
+            `http://127.0.0.1:${ingestionPort}/v1/ingestion-runs/` +
+              collectedRun.id,
+            {
+              headers: {
+                authorization: `Bearer ${administrationKey}`,
+                "cf-connecting-ip": "203.0.113.28",
+              },
+            },
+          )
+        ).text();
   assert.equal(
     reconciled.code,
     0,
-    `${reconciled.stdout}\n${reconciled.stderr}\n${ingestion.getOutput()}`,
+    `${reconciled.stdout}\n${reconciled.stderr}\n` +
+      `${reconciliationDiagnostic}\n${ingestion.getOutput()}`,
   );
   const reconciliation = JSON.parse(reconciled.stdout);
   assert.equal(reconciliation.cards.length, 1);
-  assert.equal(reconciliation.printings.length, 0);
+  assert.equal(reconciliation.printings.length, 1);
   assert.equal(reconciliation.products.length, 2);
+  assert.ok(
+    reconciliation.warnings.some(
+      ({ code, path, raw_value }) =>
+        code === "unknown_source_field" &&
+        path === "source_sidecar.raw.products[0].campaign_note" &&
+        raw_value === "Optional Official Source marketing copy",
+    ),
+  );
+  const printingId = reconciliation.printings[0].id;
   const productOnly = reconciliation.products.find(
     ({ official_code }) => official_code === "BT-PRODUCT-ONLY",
   );
@@ -365,6 +390,58 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     productDocument.provenance["/data/official_code"][0],
     /^srcobs_/u,
   );
+  const printingResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/printings/${printingId}`,
+    { headers },
+  );
+  assert.equal(printingResponse.status, 200);
+  const printingDocument = await printingResponse.json();
+  assert.equal(printingDocument.data.products.length, 1);
+  assert.deepEqual(
+    {
+      id: printingDocument.data.products[0].id,
+      evidence_category:
+        printingDocument.data.products[0].evidence_category,
+      source_lineage:
+        printingDocument.data.products[0].source_lineage,
+    },
+    {
+      id: cardBearing.id,
+      evidence_category: "explicit",
+      source_lineage: "digimon-en",
+    },
+  );
+  assert.equal(
+    printingDocument.data.products[0].source_observation_ids.length,
+    1,
+  );
+  assert.match(
+    printingDocument.data.products[0].source_observation_ids[0],
+    /^srcobs_/u,
+  );
+  assert.equal(printingDocument.data.distribution_contexts.length, 1);
+  assert.deepEqual(
+    {
+      kind: printingDocument.data.distribution_contexts[0].kind,
+      product_id:
+        printingDocument.data.distribution_contexts[0].product_id,
+      evidence_category:
+        printingDocument.data.distribution_contexts[0].evidence_category,
+      source_lineage:
+        printingDocument.data.distribution_contexts[0].source_lineage,
+    },
+    {
+      kind: "tournament_pack",
+      product_id: cardBearing.id,
+      evidence_category: "derived",
+      source_lineage: "digimon-en",
+    },
+  );
+  assert.equal(
+    printingDocument.data.distribution_contexts[0]
+      .source_observation_ids.length,
+    1,
+  );
 
   const [products, releases, contexts, relationships, cards] = await Promise.all(
     [
@@ -379,7 +456,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   assert.equal(products.length, 5);
   assert.equal(releases.length, 5);
-  assert.equal(contexts.length, 4);
+  assert.equal(contexts.length, 5);
   assert.ok(products.some(({ id }) => id === productId));
   assert.ok(products.every(({ releases: value }) => value === undefined));
   assert.ok(
@@ -398,6 +475,23 @@ test("the CLI publishes separated Product catalogue data consumed through authen
         evidence_category === "explicit",
     ),
   );
+  for (const projection of [
+    ...printingDocument.data.products,
+    ...printingDocument.data.distribution_contexts,
+  ]) {
+    assert.ok(
+      relationships.some(
+        (relationship) =>
+          relationship.from.id === printingId &&
+          relationship.to.id === projection.id &&
+          relationship.evidence_category ===
+            projection.evidence_category &&
+          relationship.source_lineage === projection.source_lineage &&
+          JSON.stringify(relationship.source_observation_ids) ===
+            JSON.stringify(projection.source_observation_ids),
+      ),
+    );
+  }
   for (const code of [
     "OP-RAW-01",
     "FB-RAW-01",
@@ -509,6 +603,7 @@ async function waitForRunState(
   worker,
 ) {
   const deadline = Date.now() + 20_000;
+  let lastDocument = null;
   while (Date.now() < deadline) {
     const shown = await runCli(
       ["source", "show", "--run-id", runId, "--json"],
@@ -516,12 +611,14 @@ async function waitForRunState(
     );
     if (shown.code === 0) {
       const document = JSON.parse(shown.stdout);
+      lastDocument = document;
       if (document.state === expectedState) return document;
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
   }
   throw new Error(
-    `Run did not reach ${expectedState}\n${worker.getOutput()}`,
+    `Run did not reach ${expectedState}: ${JSON.stringify(lastDocument)}\n` +
+      worker.getOutput(),
   );
 }
 

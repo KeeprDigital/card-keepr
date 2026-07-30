@@ -95,7 +95,18 @@ export async function parseSnapshot(
       "The Source Snapshot is not valid UTF-8 JSON.",
     );
   }
-  const observations = adapter.parse(document);
+  let observations: readonly unknown[];
+  try {
+    observations = adapter.parse(document);
+  } catch (error) {
+    throw new AdministrationProblem(
+      422,
+      "source_parse_failed",
+      error instanceof Error
+        ? error.message
+        : "The Official Source document does not satisfy its adapter contract.",
+    );
+  }
   if (operation.state === "planned") {
     const observationDocument = {
       contract: "card-keepr-source-observations@1",

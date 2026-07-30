@@ -107,6 +107,7 @@ export async function currentCardResponse(
 export async function currentPrintingResponse(
   database: D1Database,
   printingId: string,
+  request: Request,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -127,6 +128,7 @@ export async function currentPrintingResponse(
     row,
     `/v1/printings/${encodeURIComponent(printingId)}`,
     `printing:${printingId}:${row.current_revision_id}`,
+    request,
   );
 }
 
@@ -293,7 +295,13 @@ function revisionDocumentResponse(
   state: CatalogueStateRow,
   self: string,
   etag: string,
+  request?: Request,
 ): Response {
+  const headers = revisionHeaders(state.current_revision_id, etag);
+  const responseEtag = `"${etag.replaceAll('"', "")}"`;
+  if (request !== undefined && ifNoneMatch(request, responseEtag)) {
+    return new Response(null, { status: 304, headers });
+  }
   return Response.json(
     {
       data,
@@ -304,7 +312,7 @@ function revisionDocumentResponse(
       links: { self },
     },
     {
-      headers: revisionHeaders(state.current_revision_id, etag),
+      headers,
     },
   );
 }
