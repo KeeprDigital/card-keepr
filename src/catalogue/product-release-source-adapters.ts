@@ -10,6 +10,471 @@ type DiscoveryFormat =
   | "digimon"
   | "gundam";
 
+export type OfficialRawAdapterContract = {
+  adapterVersion: string;
+  sourceLineage: string;
+  supportedGame: ProductSourceGame;
+  format: DiscoveryFormat;
+  requiredSurfaces: readonly string[];
+  parseBytes: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string },
+  ) => readonly unknown[];
+};
+
+const rawContractDefinitions = [
+  {
+    adapterVersion: "one-piece-json-document@2",
+    sourceLineage: "one-piece-en",
+    supportedGame: "one-piece",
+    format: "one-piece",
+    requiredSurfaces: [
+      "card-list",
+      "products",
+      "releases",
+      "restrictions",
+      "block-policy",
+      "errata",
+      "don-rules",
+    ],
+  },
+  {
+    adapterVersion: "fusion-world-en@1",
+    sourceLineage: "fusion-world-en",
+    supportedGame: "fusion-world",
+    format: "fusion-world",
+    requiredSurfaces: [
+      "card-search",
+      "products",
+      "releases",
+      "legality-current",
+      "legality-history",
+      "errata",
+    ],
+  },
+  {
+    adapterVersion: "digimon-en@1",
+    sourceLineage: "digimon-en",
+    supportedGame: "digimon",
+    format: "digimon",
+    requiredSurfaces: [
+      "card-list",
+      "products",
+      "releases",
+      "restrictions-current",
+      "restrictions-history",
+      "errata",
+    ],
+  },
+  {
+    adapterVersion: "gundam-en-asia@1",
+    sourceLineage: "gundam-en-asia",
+    supportedGame: "gundam",
+    format: "gundam",
+    requiredSurfaces: [
+      "packages",
+      "products",
+      "releases",
+      "legality",
+      "errata",
+    ],
+  },
+  {
+    adapterVersion: "gundam-en-us@1",
+    sourceLineage: "gundam-en-us",
+    supportedGame: "gundam",
+    format: "gundam",
+    requiredSurfaces: [
+      "packages",
+      "products",
+      "releases",
+      "legality",
+      "errata",
+    ],
+  },
+] as const;
+
+export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
+  Object.freeze(
+    rawContractDefinitions.map((definition) =>
+      Object.freeze({
+        ...definition,
+        requiredSurfaces: Object.freeze([...definition.requiredSurfaces]),
+        parseBytes: rawSnapshotDecoder(
+          definition.format,
+          definition.supportedGame,
+          definition.sourceLineage,
+          definition.requiredSurfaces,
+        ),
+      }),
+    ),
+  );
+
+export function officialSourceDiscoveryRequests(
+  sourceLineage: string,
+  origin: string,
+): readonly {
+  id: string;
+  method: "GET";
+  url: string;
+  headers: Record<string, string>;
+}[] {
+  const contract = officialRawAdapterContracts.find(
+    (candidate) => candidate.sourceLineage === sourceLineage,
+  );
+  if (contract === undefined) {
+    throw new Error("Official Source lineage has no discovery contract.");
+  }
+  const base = new URL(origin);
+  return contract.requiredSurfaces.map((surface) => ({
+    id: `${sourceLineage}:${surface}`,
+    method: "GET",
+    url: new URL(
+      `${sourceLineage}/${surface}`,
+      base.href.endsWith("/") ? base : new URL(`${base.href}/`),
+    ).href,
+    headers: {
+      accept:
+        surface.includes("card") ||
+        surface === "packages" ||
+        surface === "products"
+          ? "text/html"
+          : "application/json",
+    },
+  }));
+}
+
+function rawSnapshotDecoder(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+): OfficialRawAdapterContract["parseBytes"] {
+  return (bytes, context) => {
+    const surface = surfaceFromUrl(context.url);
+    if (!requiredSurfaces.includes(surface)) {
+      throw new Error(
+        `Official Source URL does not identify a required ${sourceLineage} surface.`,
+      );
+    }
+    const document = decodeRawSurfacePayload(bytes, context.mediaType, surface);
+    if (
+      document.contract !== "card-keepr-official-source-surface@1" ||
+      document.lineage !== sourceLineage ||
+      document.surface !== surface
+    ) {
+      throw new Error(
+        `Official Source ${surface} bytes do not satisfy the ${sourceLineage} surface binding.`,
+      );
+    }
+    if (isDiscoverySurface(surface)) {
+      return parseRawDiscoverySurface(document, format, game);
+    }
+    if (surface === "products") {
+      return parseRawProductsSurface(document);
+    }
+    if (surface === "releases") {
+      return parseRawReleasesSurface(document);
+    }
+    return [rawCoverageObservation(document, surface)];
+  };
+}
+
+function decodeRawSurfacePayload(
+  bytes: Uint8Array,
+  mediaType: string | null,
+  surface: string,
+): Record<string, unknown> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: false,
+    }).decode(bytes);
+  } catch {
+    throw new Error(`Official Source ${surface} bytes are not valid UTF-8.`);
+  }
+  const normalizedMediaType = mediaType?.split(";", 1)[0]?.trim().toLowerCase();
+  let json: string;
+  if (
+    isDiscoverySurface(surface) ||
+    surface === "products"
+  ) {
+    if (normalizedMediaType !== "text/html") {
+      throw new Error(
+        `Official Source ${surface} must be captured as text/html.`,
+      );
+    }
+    const matches = [
+      ...text.matchAll(
+        /<script\s+type=["']application\/json["']\s+data-keepr-official-payload(?:=["'][^"']*["'])?\s*>([\s\S]*?)<\/script>/giu,
+      ),
+    ];
+    if (matches.length !== 1) {
+      throw new Error(
+        `Official Source ${surface} HTML must contain exactly one official payload.`,
+      );
+    }
+    json = matches[0]![1]!;
+  } else {
+    if (
+      normalizedMediaType !== "application/json" &&
+      normalizedMediaType !== "application/ld+json"
+    ) {
+      throw new Error(
+        `Official Source ${surface} must be captured as application/json.`,
+      );
+    }
+    json = text;
+  }
+  try {
+    return requiredRecord(
+      JSON.parse(json),
+      `Official Source ${surface} payload`,
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Official Source")
+    ) {
+      throw error;
+    }
+    throw new Error(`Official Source ${surface} payload is not valid JSON.`);
+  }
+}
+
+function parseRawDiscoverySurface(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+): readonly unknown[] {
+  const sourceBuckets = uniqueTextValues(
+    surface.source_buckets,
+    "Official Source discovery buckets",
+  );
+  if (sourceBuckets.length === 0) {
+    throw new Error("Official Source discovery buckets are incomplete.");
+  }
+  const facets = requiredArray(
+    surface.facets,
+    "Official Source discovery facets",
+  );
+  if (facets.length === 0) {
+    throw new Error("Official Source discovery facets are incomplete.");
+  }
+  const entries = completePartitionEntries(surface.partitions);
+  const details = requiredArray(
+    surface.details,
+    "Official Source Card details",
+  );
+  const products = requiredArray(
+    surface.products,
+    "Official Source referenced Products",
+  );
+  const releases = requiredArray(
+    surface.releases,
+    "Official Source referenced Releases",
+  );
+  const keys = surfaceKeys[format];
+  return parseOfficialDiscovery(
+    {
+      [keys.listing]: {
+        page: 1,
+        pages: 1,
+        total: entries.length,
+        has_next: false,
+        entries,
+      },
+      [keys.details]: details,
+      [keys.products]: products,
+      [keys.releases]: releases,
+      [keys.legality]: {
+        revision: "captured-by-required-policy-surfaces",
+        entries: [],
+      },
+      [keys.errata]: {
+        revision: "captured-by-required-policy-surfaces",
+        entries: [],
+      },
+    },
+    keys,
+    game,
+  );
+}
+
+function parseRawProductsSurface(
+  surface: Record<string, unknown>,
+): readonly unknown[] {
+  const products = completePartitionEntries(surface.partitions)
+    .map((value) => requiredRecord(value, "Official Source Product"));
+  const releasesByCode = new Map<string, Record<string, unknown>[]>();
+  const policy = {
+    revision: "captured-by-required-policy-surfaces",
+    entries: [],
+  };
+  return products.map((product) =>
+    productOnlyObservation(product, releasesByCode, policy, policy)
+  );
+}
+
+function parseRawReleasesSurface(
+  surface: Record<string, unknown>,
+): readonly unknown[] {
+  const entries = completePartitionEntries(surface.partitions)
+    .map((value) => requiredRecord(value, "Official Source Release entry"));
+  const products = new Map<string, Record<string, unknown>>();
+  const releases = new Map<string, Record<string, unknown>[]>();
+  for (const entry of entries) {
+    const product = requiredRecord(
+      entry.product,
+      "Official Source Release Product",
+    );
+    const code = requiredText(product.code, "Official Release Product code");
+    const release = requiredRecord(
+      entry.release,
+      "Official Source Release value",
+    );
+    if (requiredText(release.code, "Official Release code") !== code) {
+      throw new Error(
+        "Official Source Release Product binding is inconsistent.",
+      );
+    }
+    products.set(code, product);
+    releases.set(code, [...(releases.get(code) ?? []), release]);
+  }
+  const policy = {
+    revision: "captured-by-required-policy-surfaces",
+    entries: [],
+  };
+  return [...products.entries()].map(([code, product]) =>
+    productOnlyObservation(
+      product,
+      new Map([[code, releases.get(code) ?? []]]),
+      policy,
+      policy,
+    )
+  );
+}
+
+function rawCoverageObservation(
+  surface: Record<string, unknown>,
+  name: string,
+): Record<string, unknown> {
+  requiredText(surface.revision, `Official Source ${name} revision`);
+  requiredArray(surface.entries, `Official Source ${name} entries`);
+  return {
+    completeness: completeObservation(),
+    product_release_catalogue: {
+      products: [],
+      distribution_contexts: [],
+      relationships: [],
+    },
+  };
+}
+
+function completePartitionEntries(value: unknown): unknown[] {
+  const pages = requiredArray(
+    value,
+    "Official Source discovery partitions",
+  ).map((item) =>
+    requiredRecord(item, "Official Source discovery partition page")
+  );
+  if (pages.length === 0) {
+    throw new Error("Official Source discovery partitions are incomplete.");
+  }
+  const byBucket = new Map<string, Record<string, unknown>[]>();
+  for (const page of pages) {
+    if (Object.hasOwn(page, "result_cap")) {
+      throw new Error(
+        "Official Source partition result-cap evidence does not prove complete coverage.",
+      );
+    }
+    const bucket = requiredText(
+      page.bucket,
+      "Official Source partition bucket",
+    );
+    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), page]);
+  }
+  const allEntries: unknown[] = [];
+  for (const [bucket, bucketPages] of byBucket) {
+    bucketPages.sort(
+      (left, right) =>
+        requiredPositiveInteger(left.page, "Official Source page") -
+        requiredPositiveInteger(right.page, "Official Source page"),
+    );
+    const pageCount = requiredPositiveInteger(
+      bucketPages[0]!.pages,
+      "Official Source page count",
+    );
+    if (
+      bucketPages.length !== pageCount ||
+      bucketPages.some(
+        (page, index) =>
+          page.bucket !== bucket ||
+          page.page !== index + 1 ||
+          page.pages !== pageCount ||
+          page.has_next !== (index + 1 < pageCount),
+      )
+    ) {
+      throw new Error(
+        "Official Source pagination evidence does not prove complete partitions.",
+      );
+    }
+    const entries = bucketPages.flatMap((page) =>
+      requiredArray(page.entries, "Official Source partition entries")
+    );
+    const declaredTotal = requiredNonNegativeInteger(
+      bucketPages[0]!.total,
+      "Official Source partition total",
+    );
+    if (
+      entries.length !== declaredTotal ||
+      bucketPages.some((page) => page.total !== declaredTotal)
+    ) {
+      throw new Error(
+        "Official Source count evidence does not prove complete partitions.",
+      );
+    }
+    allEntries.push(...entries);
+  }
+  return allEntries;
+}
+
+function surfaceFromUrl(value: string): string {
+  const pathname = new URL(value).pathname.replace(/\/+$/u, "");
+  return decodeURIComponent(pathname.slice(pathname.lastIndexOf("/") + 1));
+}
+
+function isDiscoverySurface(surface: string): boolean {
+  return surface === "card-list" ||
+    surface === "card-search" ||
+    surface === "packages";
+}
+
+function uniqueTextValues(value: unknown, name: string): string[] {
+  const result = requiredArray(value, name).map((item) =>
+    requiredText(item, name)
+  );
+  if (new Set(result).size !== result.length) {
+    throw new Error(`${name} overlap.`);
+  }
+  return result;
+}
+
+function requiredPositiveInteger(value: unknown, name: string): number {
+  if (!Number.isInteger(value) || Number(value) < 1) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return Number(value);
+}
+
+function requiredNonNegativeInteger(value: unknown, name: string): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return Number(value);
+}
+
 const surfaceKeys = {
   "one-piece": {
     listing: "card_list",
@@ -163,6 +628,25 @@ function cardObservation(
     distribution.code,
     "Official Distribution code",
   );
+  const distributionProductReference =
+    distribution.product_reference === undefined
+      ? null
+      : productReferenceValue(
+          distribution.product_reference,
+          "Official Distribution Product reference",
+        );
+  if (
+    distributionProductReference !== null &&
+    !products.some(
+      (product) =>
+        productReferenceKey(productReference(product)) ===
+        productReferenceKey(distributionProductReference),
+    )
+  ) {
+    throw new Error(
+      "Official Distribution references a Product not evidenced by the Card detail.",
+    );
+  }
   const productCatalogue = catalogue(products, releasesByCode);
   const relationships: Record<string, unknown>[] = products.flatMap((product) => {
     const reference = productReference(product);
@@ -190,6 +674,29 @@ function cardObservation(
       context_key: distributionCode,
       evidence_category: "derived",
       resolution: "deterministic",
+    });
+  }
+  if (distributionProductReference !== null) {
+    relationships.push({
+      kind: "distribution-context-product",
+      context_key: distributionCode,
+      product_reference: distributionProductReference,
+      evidence_category: "explicit",
+      resolution: "explicit",
+    });
+  } else if (typeof distribution.product_label === "string") {
+    relationships.push({
+      kind: "distribution-context-product",
+      context_key: distributionCode,
+      product_reference: {
+        kind: "name",
+        value: requiredText(
+          distribution.product_label,
+          "Official Distribution Product label",
+        ),
+      },
+      evidence_category: "explicit",
+      resolution: "warning",
     });
   }
   const artwork = detail.artwork_fingerprint;
@@ -273,19 +780,12 @@ function cardObservation(
         key: distributionCode,
         kind: distribution.kind,
         label: distribution.label,
-        product_reference: productReference(products[0]!),
+        ...(distributionProductReference === null
+          ? {}
+          : { product_reference: distributionProductReference }),
         evidence_category: "explicit",
       }],
-      relationships: [
-        ...relationships,
-        {
-          kind: "distribution-context-product",
-          context_key: distributionCode,
-          product_reference: productReference(products[0]!),
-          evidence_category: "explicit",
-          resolution: "explicit",
-        },
-      ],
+      relationships,
     },
     source_sidecar: sourceSidecar(detail, products, legality, errata),
   };
@@ -400,11 +900,34 @@ function completeObservation() {
   };
 }
 
-function productReference(product: Record<string, unknown>) {
+function productReference(
+  product: Record<string, unknown>,
+): { kind: "official_code"; value: string } {
   return {
     kind: "official_code",
     value: requiredText(product.code, "Official Product code"),
   };
+}
+
+function productReferenceValue(
+  value: unknown,
+  name: string,
+): { kind: "official_code" | "name"; value: string } {
+  const reference = requiredRecord(value, name);
+  if (reference.kind !== "official_code" && reference.kind !== "name") {
+    throw new Error(`${name} kind is invalid.`);
+  }
+  return {
+    kind: reference.kind,
+    value: requiredText(reference.value, `${name} value`),
+  };
+}
+
+function productReferenceKey(reference: {
+  kind: "official_code" | "name";
+  value: string;
+}): string {
+  return `${reference.kind}:${reference.value}`;
 }
 
 function uniqueRequiredText(

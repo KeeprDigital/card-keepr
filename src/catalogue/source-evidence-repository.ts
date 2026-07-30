@@ -581,6 +581,7 @@ export async function showEvidenceRun(
   runId: string,
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
+  const evidencePlans = parseEvidencePlans(run.request_plan_json);
   const [snapshots, observations, attempts] = await Promise.all([
     database
       .prepare(
@@ -611,10 +612,15 @@ export async function showEvidenceRun(
     id: run.id,
     state: run.state,
     selected_games: JSON.parse(run.selected_games_json),
-    supported_game: run.supported_game,
-    game_profile_version: run.game_profile_version,
-    source_lineage: run.source_lineage,
-    adapter_version: run.adapter_version,
+    evidence_plans: evidencePlans,
+    ...(evidencePlans.length === 1
+      ? {
+          supported_game: run.supported_game,
+          game_profile_version: run.game_profile_version,
+          source_lineage: run.source_lineage,
+          adapter_version: run.adapter_version,
+        }
+      : {}),
     plan_origin: run.plan_origin,
     idempotency_key: run.idempotency_key,
     linked_run_id: run.linked_run_id,

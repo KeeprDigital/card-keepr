@@ -29,6 +29,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
+  config.ratelimits[0].simple.limit = 300;
   config.services = [
     {
       binding: "OFFICIAL_SOURCE_TRANSPORT",
@@ -79,12 +80,18 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     "failed",
     cliEnvironment,
     ingestion,
+    directory,
   );
   assert.equal(rejected.failure_code, "source_redirect_rejected");
-  assert.equal(rejected.snapshots.length, 0);
-  assert.equal(rejected.observation_sets.length, 0);
-  assert.equal(rejected.diagnostics.length, 1);
-  assert.equal(rejected.diagnostics[0].outcome, "redirect");
+  assert.equal(rejected.snapshots.length, 6);
+  assert.equal(rejected.observation_sets.length, 6);
+  assert.equal(rejected.diagnostics.length, 7);
+  assert.equal(
+    rejected.diagnostics.find(
+      ({ request_id }) => request_id === "one-piece-en:card-list",
+    )?.outcome,
+    "redirect",
+  );
 
   const terminalFailure = await collectResumeAndShow(
     "cli_terminal_evidence_001",
@@ -92,26 +99,28 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     "failed",
     cliEnvironment,
     ingestion,
+    directory,
   );
   assert.equal(
     terminalFailure.failure_code,
     "source_request_retries_exhausted",
   );
-  assert.equal(terminalFailure.snapshots.length, 0);
-  assert.equal(terminalFailure.observation_sets.length, 0);
-  assert.equal(terminalFailure.diagnostics.length, 4);
+  assert.equal(terminalFailure.snapshots.length, 6);
+  assert.equal(terminalFailure.observation_sets.length, 6);
+  assert.equal(terminalFailure.diagnostics.length, 10);
 
   const successful = await collectResumeAndShow(
     "cli_success_evidence_001",
-    "https://synthetic-source.invalid/success",
+    "https://synthetic-source.invalid/one-piece-en/card-list",
     "parsing",
     cliEnvironment,
     ingestion,
+    directory,
   );
   assert.equal(successful.failure_code, null);
-  assert.equal(successful.snapshots.length, 1);
-  assert.equal(successful.observation_sets.length, 1);
-  assert.equal(successful.diagnostics.length, 1);
+  assert.equal(successful.snapshots.length, 7);
+  assert.equal(successful.observation_sets.length, 7);
+  assert.equal(successful.diagnostics.length, 7);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
   const retained = await runCli(
@@ -128,21 +137,28 @@ async function collectResumeAndShow(
   expectedState,
   environment,
   ingestion,
+  directory,
 ) {
+  const planFile = join(directory, `${idempotencyKey}.json`);
+  const requests = exactOnePieceRequests();
+  requests[0].url = url;
+  await writeFile(
+    planFile,
+    JSON.stringify({
+      plans: [{
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: "one-piece-json-document@2",
+        requests,
+      }],
+    }),
+  );
   const collected = await runCli(
     [
       "source",
       "collect",
-      "--game",
-      "one-piece",
-      "--lineage",
-      "one-piece-en",
-      "--adapter",
-      "one-piece-json-document@1",
-      "--request-id",
-      "required-source",
-      "--url",
-      url,
+      "--plan-file",
+      planFile,
       "--idempotency-key",
       idempotencyKey,
       "--json",
@@ -182,6 +198,21 @@ async function collectResumeAndShow(
   throw new Error(
     `Ingestion Run ${run.id} did not reach ${expectedState}`,
   );
+}
+
+function exactOnePieceRequests() {
+  return [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions",
+    "block-policy",
+    "errata",
+    "don-rules",
+  ].map((surface) => ({
+    id: `one-piece-en:${surface}`,
+    url: `https://synthetic-source.invalid/one-piece-en/${surface}`,
+  }));
 }
 
 function parseCliErrorCode(stdout) {

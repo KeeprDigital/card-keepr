@@ -49,6 +49,7 @@ beforeEach(async () => {
       attributes: { illustration_types: [] },
     },
     printing_images: [],
+    products: [],
     distribution_contexts: [
       {
         id: "context_championship_2026",
@@ -355,6 +356,98 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
        WHERE singleton = 1`,
     ).run();
   }
+});
+
+test("Printing detail validates and binds optional evidence representations", async () => {
+  const path = "/v1/printings/printing_st15_event";
+  const stored = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json FROM revision_printings
+     WHERE catalogue_revision_id = 'catrev_products'
+       AND printing_id = 'printing_st15_event'`,
+  ).first<{ document_json: string }>();
+  expect(stored).not.toBeNull();
+  const data = JSON.parse(stored!.document_json);
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_printings SET document_json = ?
+     WHERE catalogue_revision_id = 'catrev_products'
+       AND printing_id = 'printing_st15_event'`,
+  ).bind(JSON.stringify({
+    data,
+    included: [{
+      type: "source_observation",
+      id: "srcobs_printing_detail",
+      captured_at: "2026-01-01T00:00:00.000Z",
+      source: "one-piece-en",
+    }],
+    provenance: {
+      "/data/rarity": ["srcobs_printing_detail"],
+    },
+    disagreements: [{
+      path: "/data/printed_rules_text",
+      status: "unresolved",
+      candidates: [{
+        value: "Earlier text",
+        observation_id: "srcobs_printing_detail",
+      }],
+    }],
+  })).run();
+
+  for (const invalid of [
+    `${path}?include=unknown`,
+    `${path}?include=evidence,evidence`,
+    `${path}?include=evidence&include=disagreements`,
+  ]) {
+    const response = await api(invalid);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+      title: "Invalid Printing request",
+    });
+  }
+
+  const base = await api(path);
+  const evidence = await api(`${path}?include=evidence`);
+  const disagreements = await api(`${path}?include=disagreements`);
+  const combined = await api(
+    `${path}?include=disagreements,evidence`,
+  );
+  const reordered = await api(
+    `${path}?include=evidence,disagreements`,
+  );
+  expect(base.status).toBe(200);
+  expect(evidence.status).toBe(200);
+  expect(disagreements.status).toBe(200);
+  expect(combined.status).toBe(200);
+  expect(reordered.status).toBe(200);
+  await expect(base.json()).resolves.not.toHaveProperty("included");
+  await expect(evidence.json()).resolves.toMatchObject({
+    included: [{ id: "srcobs_printing_detail" }],
+    provenance: {
+      "/data/rarity": ["srcobs_printing_detail"],
+    },
+  });
+  await expect(disagreements.json()).resolves.toMatchObject({
+    disagreements: [{
+      path: "/data/printed_rules_text",
+      status: "unresolved",
+    }],
+  });
+  expect(combined.headers.get("etag")).toBe(
+    reordered.headers.get("etag"),
+  );
+  expect(await combined.text()).toBe(await reordered.text());
+  expect(base.headers.get("etag")).not.toBe(
+    evidence.headers.get("etag"),
+  );
+  const conditional = await api(`${path}?include=evidence`, {
+    "if-none-match": evidence.headers.get("etag")!,
+  });
+  expect(conditional.status).toBe(304);
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_printings SET document_json = ?
+     WHERE catalogue_revision_id = 'catrev_products'
+       AND printing_id = 'printing_st15_event'`,
+  ).bind(stored!.document_json).run();
 });
 
 test("Product query and include parameters reject invalid public representations", async () => {

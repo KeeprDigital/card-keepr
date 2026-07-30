@@ -218,7 +218,11 @@ export async function reconcileProductReleaseCatalogue(
           product.game !== game ||
           !resolvedProductIds.has(product.id),
       )
-      .map((product) => ({ ...product, observed: false })),
+      .map((product) =>
+        product.game === game
+          ? { ...product, observed: false }
+          : product,
+      ),
     ...resolvedProducts,
   ]);
   const observedProducts = products.filter((product) =>

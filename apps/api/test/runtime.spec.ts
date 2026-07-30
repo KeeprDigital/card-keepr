@@ -45,6 +45,7 @@ test("the public Printing response validates full Distribution Context objects",
       attributes: { illustration_types: [] },
     },
     printing_images: [],
+    products: [],
     distribution_contexts: [
       {
         id: "context_event",

@@ -4,6 +4,11 @@ import {
 } from "../http/catalogue";
 import { ifNoneMatch } from "../http/conditional";
 import { canonicalJson, sha256Text } from "./serialization";
+import {
+  canonicalDetailSelf,
+  detailIncludeProjection,
+  detailRepresentationKey,
+} from "./detail-representation";
 
 type CatalogueStateRow = {
   current_revision_id: string;
@@ -23,6 +28,18 @@ type FreshnessRow = {
 type RevisionDocumentRow = CatalogueStateRow & {
   document_json: string;
 };
+
+type PrintingEnvelope = {
+  data: unknown;
+  included: unknown[];
+  provenance: Record<string, string[]>;
+  disagreements: unknown[];
+};
+
+export class PrintingReadProblem extends Error {
+  readonly status = 400;
+  readonly code = "invalid_parameter";
+}
 
 type ExportRow = {
   catalogue_revision_id: string;
@@ -123,13 +140,65 @@ export async function currentPrintingResponse(
     .bind(printingId)
     .first<RevisionDocumentRow>();
   if (row === null) return null;
-  return revisionDocumentResponse(
-    JSON.parse(row.document_json),
-    row,
-    `/v1/printings/${encodeURIComponent(printingId)}`,
-    `printing:${printingId}:${row.current_revision_id}`,
-    request,
+  const url = new URL(request.url);
+  const include = detailIncludeProjection(
+    url,
+    () => new PrintingReadProblem("Printing include projection is invalid."),
   );
+  const envelope = printingEnvelope(row.document_json);
+  const etag = `"printing:${printingId}:${row.current_revision_id}:` +
+    `${detailRepresentationKey(include)}"`;
+  const headers = revisionHeaders(row.current_revision_id, etag);
+  if (ifNoneMatch(request, etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  return Response.json(
+    {
+      data: envelope.data,
+      ...(include.has("evidence")
+        ? {
+            included: envelope.included,
+            provenance: envelope.provenance,
+          }
+        : {}),
+      ...(include.has("disagreements")
+        ? { disagreements: envelope.disagreements }
+        : {}),
+      meta: {
+        catalogue_revision_id: row.current_revision_id,
+        published_at: row.published_at,
+      },
+      links: { self: canonicalDetailSelf(url, include) },
+    },
+    { headers },
+  );
+}
+
+function printingEnvelope(documentJson: string): PrintingEnvelope {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("A revision-pinned Printing document is invalid.");
+  }
+  const value = parsed as Record<string, unknown>;
+  const data =
+    value.data !== null &&
+    typeof value.data === "object" &&
+    !Array.isArray(value.data)
+      ? value.data
+      : value;
+  return {
+    data,
+    included: Array.isArray(value.included) ? value.included : [],
+    provenance:
+      value.provenance !== null &&
+      typeof value.provenance === "object" &&
+      !Array.isArray(value.provenance)
+        ? (value.provenance as Record<string, string[]>)
+        : {},
+    disagreements: Array.isArray(value.disagreements)
+      ? value.disagreements
+      : [],
+  };
 }
 
 export async function catalogueExportResponse(

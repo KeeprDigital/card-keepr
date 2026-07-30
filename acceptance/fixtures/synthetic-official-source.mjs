@@ -1,6 +1,7 @@
 export default {
   fetch(request) {
-    const pathname = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const pathname = url.pathname;
     if (pathname === "/success") {
       return Response.json(
         { cards: [{ card_number: "OP01-001", name: "Synthetic Card" }] },
@@ -21,6 +22,35 @@ export default {
       }
       return Response.json(document, {
         headers: { etag: `"${pathname.slice(1)}"` },
+      });
+    }
+    const raw = officialRawSurfacePayload(pathname);
+    if (raw !== null) {
+      if (
+        url.searchParams.get("failure") === "cap" &&
+        raw.surface === "card-list"
+      ) {
+        raw.partitions[0].result_cap = 1;
+      }
+      if (
+        url.searchParams.get("failure") === "pagination" &&
+        raw.surface === "card-list"
+      ) {
+        raw.partitions[0].pages = 2;
+        raw.partitions[0].has_next = true;
+      }
+      const body = isHtmlSurface(raw.surface)
+        ? `<main><script type="application/json" data-keepr-official-payload>${
+          JSON.stringify(raw)
+        }</script></main>`
+        : JSON.stringify(raw);
+      return new Response(body, {
+        headers: {
+          "content-type": isHtmlSurface(raw.surface)
+            ? "text/html; charset=utf-8"
+            : "application/json; charset=utf-8",
+          etag: `"${raw.lineage}-${raw.surface}-v1"`,
+        },
       });
     }
     const definition = officialDiscoveryDefinitions[pathname];
@@ -166,6 +196,126 @@ function digimonDefinition() {
   });
 }
 
+const rawLineageDefinitions = {
+  "one-piece-en": "/raw-one-piece-products",
+  "fusion-world-en": "/raw-fusion-world-products",
+  "digimon-en": "/catalogue-discovery",
+  "gundam-en-asia": "/raw-gundam-asia-products",
+  "gundam-en-us": "/raw-gundam-us-products",
+};
+
+const rawDiscoveryKeys = {
+  "one-piece-en": {
+    listing: "card_list",
+    details: "card_pages",
+    products: "product_catalog",
+    releases: "release_schedule",
+  },
+  "fusion-world-en": {
+    listing: "search",
+    details: "detail_pages",
+    products: "products",
+    releases: "releases",
+  },
+  "digimon-en": {
+    listing: "card_index",
+    details: "card_details",
+    products: "product_index",
+    releases: "release_calendar",
+  },
+  "gundam-en-asia": {
+    listing: "card_search",
+    details: "card_details",
+    products: "product_list",
+    releases: "release_list",
+  },
+  "gundam-en-us": {
+    listing: "card_search",
+    details: "card_details",
+    products: "product_list",
+    releases: "release_list",
+  },
+};
+
+export function officialRawSurfacePayload(pathname) {
+  const match = pathname.match(
+    /^\/(one-piece-en|fusion-world-en|digimon-en|gundam-en-asia|gundam-en-us)\/([^/]+)$/u,
+  );
+  if (match === null) return null;
+  const [, lineage, surface] = match;
+  const definitionPath = rawLineageDefinitions[lineage];
+  const keys = rawDiscoveryKeys[lineage];
+  const document = officialDiscoveryDocument(
+    officialDiscoveryDefinitions[definitionPath],
+  );
+  const base = {
+    contract: "card-keepr-official-source-surface@1",
+    lineage,
+    surface,
+  };
+  if (["card-list", "card-search", "packages"].includes(surface)) {
+    return {
+      ...base,
+      source_buckets: ["all-cards"],
+      facets: [{ name: "product", exhaustive: true }],
+      partitions: [{
+        bucket: "all-cards",
+        page: 1,
+        pages: 1,
+        total: document[keys.listing].entries.length,
+        has_next: false,
+        entries: document[keys.listing].entries,
+      }],
+      details: document[keys.details],
+      products: document[keys.products],
+      releases: document[keys.releases],
+      retained_unknown: { synthetic_contract_probe: true },
+    };
+  }
+  if (surface === "products") {
+    return {
+      ...base,
+      partitions: [{
+        bucket: "all-products",
+        page: 1,
+        pages: 1,
+        total: document[keys.products].length,
+        has_next: false,
+        entries: document[keys.products],
+      }],
+    };
+  }
+  if (surface === "releases") {
+    const products = new Map(
+      document[keys.products].map((product) => [product.code, product]),
+    );
+    const entries = document[keys.releases].map((release) => ({
+      product: products.get(release.code),
+      release,
+    }));
+    return {
+      ...base,
+      partitions: [{
+        bucket: "all-releases",
+        page: 1,
+        pages: 1,
+        total: entries.length,
+        has_next: false,
+        entries,
+      }],
+    };
+  }
+  return {
+    ...base,
+    revision: "2026-07",
+    entries: [],
+  };
+}
+
+function isHtmlSurface(surface) {
+  return ["card-list", "card-search", "packages", "products"].includes(surface);
+}
+
 function definition(value) {
   return { extraProducts: [], printing: null, ...value };
 }
@@ -203,6 +353,10 @@ export function officialDiscoveryDocument(input) {
       code: `${input.productCode}-distribution`,
       kind: input.format === "digimon" ? "tournament_pack" : "product",
       label: `${input.productName} distribution`,
+      product_reference: {
+        kind: "official_code",
+        value: input.productCode,
+      },
     },
     ...(input.printing === null
       ? {}

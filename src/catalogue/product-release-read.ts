@@ -1,4 +1,9 @@
 import { ifNoneMatch } from "../http/conditional";
+import {
+  canonicalDetailSelf,
+  detailIncludeProjection,
+  detailRepresentationKey,
+} from "./detail-representation";
 
 type ProductRow = {
   document_json: string;
@@ -57,12 +62,19 @@ export async function currentProductResponse(
     .bind(productId)
     .first<ProductRow>();
   if (row === null) return null;
-  const include = includeProjection(url);
+  const include = detailIncludeProjection(
+    url,
+    () =>
+      new ProductReadProblem(
+        400,
+        "invalid_parameter",
+        "Product include projection is invalid.",
+      ),
+  );
   const envelope = productEnvelope(row.document_json);
   const etag = quotedEtag(
-    `product:${productId}:${row.current_revision_id}:${[
-      ...include,
-    ].sort().join(",")}`,
+    `product:${productId}:${row.current_revision_id}:` +
+      detailRepresentationKey(include),
   );
   if (ifNoneMatch(request, etag)) {
     return notModified(etag, row.current_revision_id);
@@ -83,7 +95,7 @@ export async function currentProductResponse(
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
       },
-      links: { self: canonicalProductSelf(url, { include }) },
+      links: { self: canonicalDetailSelf(url, include) },
     },
     {
       headers: productHeaders(row.current_revision_id, etag),
@@ -265,28 +277,6 @@ function productEnvelope(documentJson: string): ProductEnvelope {
   };
 }
 
-function includeProjection(url: URL): Set<string> {
-  const rawValues = url.searchParams.getAll("include");
-  const values = rawValues.flatMap((value) =>
-    value.split(",").filter((item) => item.length > 0),
-  );
-  const include = new Set(values);
-  if (
-    rawValues.length > 1 ||
-    include.size !== values.length ||
-    [...include].some(
-      (value) => value !== "evidence" && value !== "disagreements",
-    )
-  ) {
-    throw new ProductReadProblem(
-      400,
-      "invalid_parameter",
-      "Product include projection is invalid.",
-    );
-  }
-  return include;
-}
-
 function parseQuery(url: URL): string | null {
   const values = url.searchParams.getAll("q");
   if (values.length === 0) return null;
@@ -304,31 +294,25 @@ function parseQuery(url: URL): string | null {
 function canonicalProductSelf(
   url: URL,
   representation:
-    | { include: ReadonlySet<string> }
-    | {
-        q: string | null;
-        game: string | null;
-        region: string | null;
-        limit: number;
-        after: string | null;
-      },
+    {
+      q: string | null;
+      game: string | null;
+      region: string | null;
+      limit: number;
+      after: string | null;
+    },
 ): string {
   const query = new URLSearchParams();
-  if ("include" in representation) {
-    const include = [...representation.include].sort();
-    if (include.length > 0) query.set("include", include.join(","));
-  } else {
-    if (representation.q !== null) query.set("q", representation.q);
-    if (representation.game !== null) query.set("game", representation.game);
-    if (representation.region !== null) {
-      query.set("release_region", representation.region);
-    }
-    if (representation.limit !== 50) {
-      query.set("limit", String(representation.limit));
-    }
-    if (representation.after !== null) {
-      query.set("after", representation.after);
-    }
+  if (representation.q !== null) query.set("q", representation.q);
+  if (representation.game !== null) query.set("game", representation.game);
+  if (representation.region !== null) {
+    query.set("release_region", representation.region);
+  }
+  if (representation.limit !== 50) {
+    query.set("limit", String(representation.limit));
+  }
+  if (representation.after !== null) {
+    query.set("after", representation.after);
   }
   const serialized = query.toString();
   return serialized.length === 0

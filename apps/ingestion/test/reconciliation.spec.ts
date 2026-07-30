@@ -741,13 +741,17 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     adapter_version: "fusion-world-en@1",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: [
-      {
-        id: "cards",
-        method: "GET",
-        url: "https://official-source.invalid/reconciliation/production-profile-fusion-world",
-        headers: { accept: "application/json" },
-      },
-    ],
+      "card-search",
+      "products",
+      "releases",
+      "legality-current",
+      "legality-history",
+      "errata",
+    ].map((surface) => ({
+      id: `fusion-world-en:${surface}`,
+      method: "GET",
+      url: `https://official-source.invalid/fusion-world-en/${surface}`,
+    })),
   });
   expect(started.response.status).toBe(201);
   const run = {
@@ -766,7 +770,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     publishable: true,
     diagnostics: [],
     cards: [expect.objectContaining({ game: "fusion-world" })],
-    printings: [expect.objectContaining({ card_id: expect.any(String) })],
+    printings: [],
   });
   expect((await approve(reconciled.document)).response.status).toBe(200);
 });
@@ -3145,16 +3149,21 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-json-document@1",
+    adapter_version: "one-piece-json-document@2",
     idempotency_key: "blocked-recovery-start",
     requests: [
-      {
-        id: "cards",
-        method: "GET",
-        url: "https://official-source.invalid/reconciliation/base",
-        headers: { accept: "application/json" },
-      },
-    ],
+      "card-list",
+      "products",
+      "releases",
+      "restrictions",
+      "block-policy",
+      "errata",
+      "don-rules",
+    ].map((surface) => ({
+      id: `one-piece-en:${surface}`,
+      method: "GET",
+      url: `https://official-source.invalid/one-piece-en/${surface}`,
+    })),
   });
   expect(blockedStart.response.status).toBe(409);
   expect(blockedStart.document).toMatchObject({
@@ -3662,6 +3671,36 @@ test.each([
         first_revision_id: firstRevision,
         last_observed_revision_id: secondRevision,
         withdrawn: false,
+      },
+    });
+    const persistedIdentity = await env.CATALOGUE_DB.prepare(
+      `SELECT id, official_code FROM reconciled_products WHERE id = ?`,
+    )
+      .bind(firstId)
+      .first<{ id: string; official_code: string | null }>();
+    expect(persistedIdentity).toEqual({
+      id: firstId,
+      official_code: secondCode,
+    });
+    await expect(
+      env.CATALOGUE_DB.prepare(
+        `UPDATE reconciled_products
+         SET official_code = 'INCOMPATIBLE-CODE'
+         WHERE id = ?`,
+      )
+        .bind(firstId)
+        .run(),
+    ).rejects.toThrow(/reconciled_product_identity_immutable/u);
+    const apiProjection = await env.CATALOGUE_DB.prepare(
+      `SELECT document_json FROM revision_products
+       WHERE catalogue_revision_id = ? AND product_id = ?`,
+    )
+      .bind(secondRevision, firstId)
+      .first<{ document_json: string }>();
+    expect(JSON.parse(apiProjection!.document_json)).toMatchObject({
+      data: {
+        id: firstId,
+        official_code: secondCode,
       },
     });
     const productRelationships = await exportComponentRecords(

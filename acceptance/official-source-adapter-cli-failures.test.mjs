@@ -11,16 +11,19 @@ const failureCases = [
   {
     name: "a missing required Official Source surface",
     path: "/raw-one-piece-failure-missing-surface",
+    failure: "omission",
     portOffset: 0,
   },
   {
     name: "an Official Source result cap",
     path: "/raw-one-piece-failure-result-cap",
+    failure: "cap",
     portOffset: 10,
   },
   {
     name: "unfinished Official Source pagination",
     path: "/raw-one-piece-failure-pagination",
+    failure: "pagination",
     portOffset: 20,
   },
 ];
@@ -33,6 +36,7 @@ for (const failureCase of failureCases) {
     const administrationKey = crypto.randomUUID();
     const ingestionEnv = join(directory, "ingestion.env");
     const ingestionConfig = join(directory, "ingestion.wrangler.json");
+    const planPath = join(directory, "source-plan.json");
     const ingestionState = join(directory, "ingestion-state");
     const ingestionPort = 24_788 + failureCase.portOffset;
     const sourcePort = 24_789 + failureCase.portOffset;
@@ -57,6 +61,23 @@ for (const failureCase of failureCases) {
       },
     ];
     await writeFile(ingestionConfig, JSON.stringify(config));
+    const requests = exactOnePieceRequests();
+    if (failureCase.failure === "omission") {
+      requests.pop();
+    } else {
+      requests[0].url += `?failure=${failureCase.failure}`;
+    }
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        plans: [{
+          supported_game: "one-piece",
+          source_lineage: "one-piece-en",
+          adapter_version: "one-piece-json-document@2",
+          requests,
+        }],
+      }),
+    );
 
     const source = startWorker({
       config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
@@ -98,22 +119,22 @@ for (const failureCase of failureCases) {
       [
         "source",
         "collect",
-        "--game",
-        "one-piece",
-        "--lineage",
-        "one-piece-en",
-        "--adapter",
-        "one-piece-json-document@2",
-        "--request-id",
-        "official-discovery",
-        "--url",
-        `https://synthetic-source.invalid${failureCase.path}`,
+        "--plan-file",
+        planPath,
         "--idempotency-key",
         `official-failure-${failureCase.portOffset}`,
         "--json",
       ],
       cliEnvironment,
     );
+    if (failureCase.failure === "omission") {
+      assert.notEqual(collected.code, 0);
+      assert.match(
+        `${collected.stdout}\n${collected.stderr}`,
+        /incomplete_source_plan/u,
+      );
+      return;
+    }
     assert.equal(
       collected.code,
       0,
@@ -136,9 +157,24 @@ for (const failureCase of failureCases) {
       ingestion,
     );
     assert.equal(failed.failure_code, "source_parse_failed");
-    assert.equal(failed.snapshots.length, 1);
-    assert.equal(failed.observation_sets.length, 0);
+    assert.equal(failed.snapshots.length, 7);
+    assert.equal(failed.observation_sets.length, 6);
   });
+}
+
+function exactOnePieceRequests() {
+  return [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions",
+    "block-policy",
+    "errata",
+    "don-rules",
+  ].map((surface) => ({
+    id: `one-piece-en:${surface}`,
+    url: `https://synthetic-source.invalid/one-piece-en/${surface}`,
+  }));
 }
 
 async function waitForFailedRun(runId, environment, ingestion) {

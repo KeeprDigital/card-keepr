@@ -70,3 +70,50 @@ test("unfinished Official Source pagination blocks completeness", () => {
     /pagination\/count\/cap evidence does not prove complete coverage/u,
   );
 });
+
+test("Distribution Contexts bind the exact evidenced Product in a multi-Product detail", () => {
+  const document = rawDocument();
+  document.product_catalog.push({
+    code: "OP-RAW-02",
+    title: "Second evidenced Product",
+  });
+  document.card_pages[0].product_codes.push("OP-RAW-02");
+  document.card_pages[0].distribution.product_reference = {
+    kind: "official_code",
+    value: "OP-RAW-02",
+  };
+  const observation = adapter.parse(document)[0];
+  assert.deepEqual(
+    observation.product_release_catalogue.distribution_contexts[0]
+      .product_reference,
+    { kind: "official_code", value: "OP-RAW-02" },
+  );
+  assert.deepEqual(
+    observation.product_release_catalogue.relationships.find(
+      ({ kind }) => kind === "distribution-context-product",
+    ).product_reference,
+    { kind: "official_code", value: "OP-RAW-02" },
+  );
+});
+
+test("a Productless Distribution Context stays nullable and unresolved", () => {
+  const document = rawDocument();
+  document.card_pages[0].product_codes = [];
+  document.card_pages[0].distribution = {
+    code: "unresolved-event",
+    kind: "promotion",
+    label: "Unresolved event",
+    product_label: "Unresolved event product",
+  };
+  const observation = adapter.parse(document)[0];
+  const context =
+    observation.product_release_catalogue.distribution_contexts[0];
+  assert.equal(Object.hasOwn(context, "product_reference"), false);
+  assert.ok(
+    observation.product_release_catalogue.relationships.some(
+      ({ kind, resolution }) =>
+        kind === "distribution-context-product" &&
+        resolution === "warning",
+    ),
+  );
+});

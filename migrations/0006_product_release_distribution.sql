@@ -121,6 +121,18 @@ CREATE TABLE revision_product_relationships (
 CREATE TRIGGER reconciled_product_identity_is_immutable
 BEFORE UPDATE OF id, supported_game, official_code, first_revision_id
 ON reconciled_products
+WHEN
+  OLD.id IS NOT NEW.id OR
+  OLD.supported_game IS NOT NEW.supported_game OR
+  OLD.first_revision_id IS NOT NEW.first_revision_id OR
+  (
+    OLD.official_code IS NOT NEW.official_code AND
+    NOT (
+      OLD.official_code IS NULL AND
+      NEW.official_code IS NOT NULL AND
+      lower(trim(OLD.name)) = lower(trim(NEW.name))
+    )
+  )
 BEGIN
   SELECT RAISE(ABORT, 'reconciled_product_identity_immutable');
 END;
@@ -143,3 +155,30 @@ BEGIN
     'reconciled_product_relationship_identity_immutable'
   );
 END;
+
+-- The legacy aggregate document is retained only for deterministic fixtures.
+-- Production lineages parse immutable per-surface bytes under exact contracts.
+UPDATE source_adapter_versions
+SET parser_contract = 'synthetic-fixture-card-document@1',
+    adapter_origin = 'synthetic_fixture'
+WHERE adapter_version = 'one-piece-json-document@1';
+
+UPDATE source_adapter_versions
+SET parser_contract = 'one-piece-en-raw-surfaces@1'
+WHERE adapter_version = 'one-piece-json-document@2';
+
+UPDATE source_adapter_versions
+SET parser_contract = 'fusion-world-en-raw-surfaces@1'
+WHERE adapter_version = 'fusion-world-en@1';
+
+UPDATE source_adapter_versions
+SET parser_contract = 'digimon-en-raw-surfaces@1'
+WHERE adapter_version = 'digimon-en@1';
+
+UPDATE source_adapter_versions
+SET parser_contract = 'gundam-en-asia-raw-surfaces@1'
+WHERE adapter_version = 'gundam-en-asia@1';
+
+UPDATE source_adapter_versions
+SET parser_contract = 'gundam-en-us-raw-surfaces@1'
+WHERE adapter_version = 'gundam-en-us@1';

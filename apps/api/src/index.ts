@@ -6,6 +6,7 @@ import {
   currentCardResponse,
   currentCatalogueStatus,
   currentPrintingResponse,
+  PrintingReadProblem,
 } from "../../../src/catalogue/read";
 import {
   currentProductResponse,
@@ -237,6 +238,18 @@ const apiWorker = {
               error.status === 409
                 ? "Cursor revision unavailable"
                 : "Invalid Printing request",
+            detail: error.message,
+          }),
+        );
+      }
+      if (error instanceof PrintingReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title: "Invalid Printing request",
             detail: error.message,
           }),
         );

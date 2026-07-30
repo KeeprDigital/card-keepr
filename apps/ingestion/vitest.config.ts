@@ -12,6 +12,7 @@ import { defineConfig } from "vitest/config";
 import {
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
+  officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
   consumerProofMessage,
@@ -335,6 +336,43 @@ export default defineConfig({
               officialDiscoveryDocument(
                 officialDiscoveryDefinitions["/raw-one-piece-products"],
               ),
+            );
+          }
+          const rawSurface = officialRawSurfacePayload(url.pathname);
+          if (rawSurface !== null) {
+            if (
+              url.searchParams.get("failure") === "cap" &&
+              rawSurface.surface === "card-list"
+            ) {
+              (rawSurface.partitions as Array<Record<string, unknown>>)[0]!
+                .result_cap = 1;
+            }
+            if (
+              url.searchParams.get("failure") === "pagination" &&
+              rawSurface.surface === "card-list"
+            ) {
+              const page =
+                (rawSurface.partitions as Array<Record<string, unknown>>)[0]!;
+              page.pages = 2;
+              page.has_next = true;
+            }
+            const html = [
+              "card-list",
+              "card-search",
+              "packages",
+              "products",
+            ].includes(String(rawSurface.surface));
+            return new Response(
+              html
+                ? `<script type="application/json" data-keepr-official-payload>${
+                  JSON.stringify(rawSurface)
+                }</script>`
+                : JSON.stringify(rawSurface),
+              {
+                headers: {
+                  "content-type": html ? "text/html" : "application/json",
+                },
+              },
             );
           }
           if (

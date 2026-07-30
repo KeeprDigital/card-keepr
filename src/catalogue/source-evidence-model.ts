@@ -132,6 +132,22 @@ export async function validateEvidencePlan(
       }),
     });
   }
+  if (adapter.requiredSurfaces !== undefined) {
+    const expectedIds = adapter.requiredSurfaces.map(
+      (surface) => `${adapter.sourceLineage}:${surface}`,
+    );
+    const actualIds = requests.map(({ id }) => id);
+    if (
+      actualIds.length !== expectedIds.length ||
+      expectedIds.some((id) => !requestIds.has(id))
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "incomplete_source_plan",
+        "The Evidence Plan must contain every exact required Official Source surface once.",
+      );
+    }
+  }
   return {
     adapter,
     plan: {

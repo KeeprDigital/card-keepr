@@ -13,6 +13,7 @@ import { sourceAdapterRegistrations } from "../../../src/catalogue/source-adapte
 import {
   pendingEvidenceRequests,
   requiredEvidenceRun,
+  startEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 
 declare global {
@@ -50,9 +51,7 @@ test("the administration authentication boundary runs in the Workers runtime", a
 });
 
 test("a successful Official Source response is snapshotted before parsing", async () => {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
+  const created = await fixtureEvidenceRequest(
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
@@ -238,9 +237,7 @@ test("resuming collection restarts an existing errored hostname Workflow and its
 }, 15_000);
 
 test("a full parent restart preserves each pending hostname child identity", async () => {
-  const created = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
+  const created = await fixtureEvidenceRequest(
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
@@ -417,9 +414,7 @@ test(
         failureCode: "source_request_retries_exhausted",
       },
     ]) {
-      const response = await administrationRequest(
-        "/v1/ingestion-runs/evidence",
-        "POST",
+      const response = await fixtureEvidenceRequest(
         {
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
@@ -536,7 +531,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const changedAdapterRun = await createCollection(
     "source_collection_cache_adapter_changed_001",
     "https://official-source.invalid/conditional",
-    "one-piece-json-document@2",
+    "fixture-one-piece-json@1",
     { "accept-language": "en" },
   );
   const changedAdapter = await resumeCollection(changedAdapterRun.id);
@@ -586,7 +581,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "one-piece-json-document@2",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -628,6 +623,50 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
       ),
   );
 });
+
+test("a production plan that omits a required raw surface is rejected", async () => {
+  const plan = exactOnePiecePlan("source_exact_plan_omission_001");
+  plan.requests.pop();
+  const response = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    plan,
+  );
+  expect(response.status).toBe(422);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "incomplete_source_plan",
+  });
+});
+
+test.each([
+  ["cap"],
+  ["pagination"],
+])(
+  "raw discovery %s evidence fails closed after retaining the snapshot",
+  async (failure) => {
+    const plan = exactOnePiecePlan(`source_exact_${failure}_001`);
+    plan.requests[0]!.url += `?failure=${failure}`;
+    const created = await administrationRequest(
+      "/v1/ingestion-runs/evidence",
+      "POST",
+      plan,
+    );
+    expect(created.status).toBe(201);
+    const run = await created.json<{ id: string }>();
+    const terminal = await resumeCollection(run.id, 12_000);
+    expect(terminal).toMatchObject({
+      state: "failed",
+      failure_code: "source_parse_failed",
+    });
+    expect(terminal.snapshots).toHaveLength(7);
+    expect(terminal.observation_sets).toHaveLength(6);
+    expect(
+      terminal.snapshots.some((snapshot) =>
+        snapshot.request.url.includes(`failure=${failure}`)
+      ),
+    ).toBe(true);
+  },
+);
 
 test("all successful response bytes stream to immutable storage while parsing stays bounded", async () => {
   const retainedRun = await createCollection(
@@ -881,7 +920,7 @@ test("reparse retries recover one staged immutable observation set while new int
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
     {
-      adapter_version: "one-piece-json-document@2",
+      adapter_version: "fixture-one-piece-json@1",
       idempotency_key: "reparse_intent_001",
     },
   );
@@ -891,7 +930,7 @@ test("reparse retries recover one staged immutable observation set while new int
      WHERE source_snapshot_id = ? AND adapter_version = ?
        AND idempotency_key = ?`,
   )
-    .bind(snapshot.id, "one-piece-json-document@2", "reparse_intent_001")
+    .bind(snapshot.id, "fixture-one-piece-json@1", "reparse_intent_001")
     .first<{ state: string; content_object_key: string }>();
   expect(staged?.state).toBe("uploaded");
   expect(
@@ -906,7 +945,7 @@ test("reparse retries recover one staged immutable observation set while new int
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "one-piece-json-document@2",
+        adapter_version: "fixture-one-piece-json@1",
         idempotency_key: "reparse_intent_001",
       },
     ),
@@ -914,7 +953,7 @@ test("reparse retries recover one staged immutable observation set while new int
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "one-piece-json-document@2",
+        adapter_version: "fixture-one-piece-json@1",
         idempotency_key: "reparse_intent_001",
       },
     ),
@@ -931,7 +970,7 @@ test("reparse retries recover one staged immutable observation set while new int
   }
   expect(reparsed).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "one-piece-json-document@2",
+    adapter_version: "fixture-one-piece-json@1",
     observation_count: 1,
   });
   expect(replayed).toEqual(reparsed);
@@ -942,7 +981,7 @@ test("reparse retries recover one staged immutable observation set while new int
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
     {
-      adapter_version: "one-piece-json-document@2",
+      adapter_version: "fixture-one-piece-json@1",
       idempotency_key: "reparse_intent_002",
     },
   );
@@ -973,9 +1012,7 @@ test("reparse retries recover one staged immutable observation set while new int
 });
 
 test("collection is sequential per hostname and different hostnames progress concurrently", async () => {
-  const response = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
+  const response = await fixtureEvidenceRequest(
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
@@ -1068,6 +1105,7 @@ type Diagnostic = {
   outcome: string;
   http_status: number | null;
   retry_after_ms: number | null;
+  diagnostic?: string | null;
 };
 
 type CollectionDocument = {
@@ -1087,9 +1125,7 @@ async function createCollection(
   adapterVersion = "one-piece-json-document@1",
   headers: Record<string, string> = {},
 ): Promise<CollectionDocument> {
-  const response = await administrationRequest(
-    "/v1/ingestion-runs/evidence",
-    "POST",
+  const response = await fixtureEvidenceRequest(
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
@@ -1100,6 +1136,45 @@ async function createCollection(
   );
   expect(response.status).toBe(201);
   return response.json<CollectionDocument>();
+}
+
+async function fixtureEvidenceRequest(body: {
+  supported_game: string;
+  source_lineage: string;
+  adapter_version: string;
+  idempotency_key: string;
+  requests: {
+    id: string;
+    url: string;
+    headers?: Record<string, string>;
+  }[];
+}): Promise<Response> {
+  return Response.json(
+    await startEvidenceRun(env.CATALOGUE_DB, body, "synthetic_fixture"),
+    { status: 201 },
+  );
+}
+
+function exactOnePiecePlan(idempotencyKey: string) {
+  const surfaces = [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions",
+    "block-policy",
+    "errata",
+    "don-rules",
+  ];
+  return {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-json-document@2",
+    idempotency_key: idempotencyKey,
+    requests: surfaces.map((surface) => ({
+      id: `one-piece-en:${surface}`,
+      url: `https://official-source.invalid/one-piece-en/${surface}`,
+    })),
+  };
 }
 
 async function waitForEvidenceDiagnostic(
@@ -1184,6 +1259,7 @@ async function waitForParseOperation(
 
 async function resumeCollection(
   runId: string,
+  timeoutMs = 8_000,
 ): Promise<CollectionDocument> {
   const response = await administrationRequest(
     `/v1/ingestion-runs/${runId}/collection/resume`,
@@ -1191,7 +1267,7 @@ async function resumeCollection(
   );
   expect(response.status).toBe(202);
   await response.body?.cancel();
-  return waitForEvidenceRun(runId);
+  return waitForEvidenceRun(runId, null, timeoutMs);
 }
 
 async function waitForEvidenceRun(

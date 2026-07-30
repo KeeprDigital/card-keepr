@@ -81,23 +81,29 @@ export async function parseSnapshot(
   if ((await sha256(bytes)) !== snapshot.content_digest) {
     throw new Error("Source Snapshot bytes failed digest verification");
   }
-  let document: unknown;
-  try {
-    document = JSON.parse(
-      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
-        bytes,
-      ),
-    );
-  } catch {
-    throw new AdministrationProblem(
-      422,
-      "source_parse_failed",
-      "The Source Snapshot is not valid UTF-8 JSON.",
-    );
-  }
   let observations: readonly unknown[];
   try {
-    observations = adapter.parse(document);
+    if (adapter.parseBytes !== undefined) {
+      observations = adapter.parseBytes(bytes, {
+        mediaType: snapshot.media_type,
+        url: snapshot.request_url,
+      });
+    } else {
+      let document: unknown;
+      try {
+        document = JSON.parse(
+          new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+            bytes,
+          ),
+        );
+      } catch {
+        throw new Error("The Source Snapshot is not valid UTF-8 JSON.");
+      }
+      if (adapter.parse === undefined) {
+        throw new Error("The Source Snapshot adapter has no parser.");
+      }
+      observations = adapter.parse(document);
+    }
   } catch (error) {
     throw new AdministrationProblem(
       422,

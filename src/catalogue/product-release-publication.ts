@@ -371,6 +371,7 @@ export function productReleasePublicationStatements(
               json_extract(value, '$.withdrawal_evidence_json')
        FROM json_each(?) WHERE true
        ON CONFLICT (id) DO UPDATE SET
+         official_code = excluded.official_code,
          name = excluded.name,
          last_observed_revision_id = excluded.last_observed_revision_id,
          withdrawn = excluded.withdrawn,

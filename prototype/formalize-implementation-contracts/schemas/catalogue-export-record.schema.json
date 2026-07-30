@@ -253,6 +253,7 @@
         "source_lineage": { "type": "string", "minLength": 1 },
         "source_observation_ids": {
           "type": "array",
+          "minItems": 1,
           "items": { "$ref": "#/$defs/OpaqueId" },
           "uniqueItems": true
         }
@@ -283,6 +284,7 @@
         "source_lineage": { "type": "string", "minLength": 1 },
         "source_observation_ids": {
           "type": "array",
+          "minItems": 1,
           "items": { "$ref": "#/$defs/OpaqueId" },
           "uniqueItems": true
         }
@@ -298,6 +300,8 @@
         "rarity",
         "printed_rules_text",
         "game_data",
+        "products",
+        "distribution_contexts",
         "locator_evidence",
         "lifecycle"
       ],

@@ -101,16 +101,21 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "one-piece-json-document@2",
       idempotency_key: "blocked-by-credential-execution",
       requests: [
-        {
-          id: "cards",
-          method: "GET",
-          url: "https://official-source.invalid/reconciliation/base",
-          headers: { accept: "application/json" },
-        },
-      ],
+        "card-list",
+        "products",
+        "releases",
+        "restrictions",
+        "block-policy",
+        "errata",
+        "don-rules",
+      ].map((surface) => ({
+        id: `one-piece-en:${surface}`,
+        method: "GET",
+        url: `https://official-source.invalid/one-piece-en/${surface}`,
+      })),
     },
   );
   expect(blockedIngestion.status).toBe(409);
