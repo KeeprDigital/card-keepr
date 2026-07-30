@@ -1,4 +1,9 @@
 import { canonicalJson, sha256Text } from "./serialization";
+import type {
+  CatalogueDistributionContext,
+  CatalogueProduct,
+  ProductRelationship,
+} from "./product-release-catalogue";
 
 export const firstCatalogueFixture = "first-catalogue";
 export const firstFixtureCardId = "card_01k_first_catalogue_0001";
@@ -15,6 +20,9 @@ export type FixtureCandidate = {
   selected_games: readonly SupportedGame[];
   cards: readonly FixtureCard[];
   printings: readonly FixturePrinting[];
+  products?: readonly CatalogueProduct[];
+  distribution_contexts?: readonly CatalogueDistributionContext[];
+  product_relationships?: readonly ProductRelationship[];
 };
 
 export type FixtureCard = {

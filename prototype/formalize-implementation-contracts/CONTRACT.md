@@ -59,6 +59,8 @@ override a machine-readable artifact.
   Unresolved Product or Release facts remain `null`, with candidate values in
   `disagreements` and supporting Source Observations or Curated Revisions in
   `included`.
+- Every regional Release retains the Official Source's calendar precision and
+  whether that observation is still `announced` or already `released`.
 - `GET /legality-status` requires Card, date, and format. With `region`, it
   returns exactly one regional result. Without `region`, it returns every
   applicable regional result separately. Gundam accepts only `EN-ASIA` and

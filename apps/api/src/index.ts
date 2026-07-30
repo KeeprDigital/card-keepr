@@ -8,6 +8,11 @@ import {
   currentPrintingResponse,
 } from "../../../src/catalogue/read";
 import {
+  currentProductResponse,
+  currentProductsResponse,
+  ProductReadProblem,
+} from "../../../src/catalogue/product-release-read";
+import {
   catalogueResponse,
 } from "../../../src/http/catalogue";
 import {
@@ -115,6 +120,23 @@ const apiWorker = {
         if (response !== null) return withCorsHeaders(request, response);
       }
 
+      if (request.method === "GET" && url.pathname === "/v1/products") {
+        return withCorsHeaders(
+          request,
+          await currentProductsResponse(env.CATALOGUE_DB, url),
+        );
+      }
+
+      const productMatch = /^\/v1\/products\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && productMatch !== null) {
+        const response = await currentProductResponse(
+          env.CATALOGUE_DB,
+          decodeURIComponent(productMatch[1]!),
+          url,
+        );
+        if (response !== null) return withCorsHeaders(request, response);
+      }
+
       const exportComponentMatch =
         /^\/v1\/catalogue-exports\/([^/]+)\/components\/([^/]+)$/.exec(
           url.pathname,
@@ -174,6 +196,21 @@ const apiWorker = {
         }),
       );
     } catch (error) {
+      if (error instanceof ProductReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title:
+              error.status === 409
+                ? "Cursor revision unavailable"
+                : "Invalid Product request",
+            detail: error.message,
+          }),
+        );
+      }
       console.error(
         JSON.stringify({
           message: "request failed",

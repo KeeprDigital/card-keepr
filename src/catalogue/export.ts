@@ -56,7 +56,7 @@ type CatalogueExportManifest = {
   supported_games: readonly SupportedGame[];
   source_freshness: readonly {
     game: SupportedGame;
-    area: "cards-and-printings";
+    area: "cards-and-printings" | "products-and-releases";
     checked_at: string;
   }[];
   components: readonly ExportComponent[];
@@ -140,11 +140,22 @@ export async function buildCatalogueExport(
     published_at: publishedAt,
     export_created_at: publishedAt,
     supported_games: candidate.selected_games,
-    source_freshness: candidate.selected_games.map((game) => ({
+    source_freshness: candidate.selected_games.flatMap((game) => [
+      {
         game,
-        area: "cards-and-printings",
+        area: "cards-and-printings" as const,
         checked_at: sourceFreshness?.[game] ?? publishedAt,
-      })),
+      },
+      ...((candidate.products ?? []).some((product) => product.game === game)
+        ? [
+            {
+              game,
+              area: "products-and-releases" as const,
+              checked_at: sourceFreshness?.[game] ?? publishedAt,
+            },
+          ]
+        : []),
+    ]),
     components,
     manifest_sha256: "0".repeat(64),
   };
@@ -264,17 +275,33 @@ async function exportRecords(
   const identifiedRelationships = await Promise.all(
     canonicalRelationshipEvidence.map(
       async ({ printing, card, relationship }) => {
+        const declaredProduct =
+          relationship.relationship_kind === "product"
+            ? candidate.products?.find(
+                (product) =>
+                  product.game === card.game &&
+                  (product.official_code === relationship.relationship_value ||
+                    product.name === relationship.relationship_value),
+              )
+            : undefined;
+        const declaredContext =
+          relationship.relationship_kind === "distribution_context"
+            ? candidate.distribution_contexts?.find(
+                (context) =>
+                  context.game === card.game &&
+                  context.key === relationship.relationship_value,
+              )
+            : undefined;
         const targetId =
           relationship.relationship_kind === "product"
-            ? await productExportId(
-                card.game,
-                relationship.relationship_value,
-              )
-            : await distributionContextExportId(
+            ? declaredProduct?.id ??
+              (await productExportId(card.game, relationship.relationship_value))
+            : declaredContext?.id ??
+              (await distributionContextExportId(
                 card.game,
                 relationship.source_lineage,
                 relationship.relationship_value,
-              );
+              ));
         return {
           printing,
           card,
@@ -290,7 +317,7 @@ async function exportRecords(
       },
     ),
   );
-  const products = uniqueById(
+  const inferredProducts =
     identifiedRelationships
       .filter(
         ({ relationship }) =>
@@ -311,9 +338,25 @@ async function exportRecords(
               relationship.last_observed_revision_id,
             withdrawn: false,
           },
-      })),
-  );
-  const distributionContexts = uniqueById(
+      }));
+  const products = uniqueById([
+    ...inferredProducts,
+    ...(candidate.products ?? []).map((product) => ({
+      type: "product" as const,
+      id: product.id,
+      game: product.game,
+      official_code: product.official_code,
+      name: product.name,
+      lifecycle:
+        lifecycles?.products?.[
+          productLifecycleKey(
+            product.game,
+            product.official_code ?? product.name,
+          )
+        ] ?? defaultLifecycle,
+    })),
+  ]);
+  const inferredDistributionContexts =
     identifiedRelationships
       .filter(
         ({ relationship }) =>
@@ -326,8 +369,18 @@ async function exportRecords(
         kind: "other",
         label: relationship.relationship_value,
         product_id: null,
-      })),
-  );
+      }));
+  const distributionContexts = uniqueById([
+    ...inferredDistributionContexts,
+    ...(candidate.distribution_contexts ?? []).map((context) => ({
+      type: "distribution_context" as const,
+      id: context.id,
+      game: context.game,
+      kind: context.kind,
+      label: context.label,
+      product_id: context.product_id,
+    })),
+  ]);
   return {
     "supported-games": candidate.selected_games.map((game) => ({
         type: "supported_game",
@@ -355,12 +408,19 @@ async function exportRecords(
     })),
     "printing-images": [],
     products,
-    releases: [],
+    releases: (candidate.products ?? [])
+      .flatMap((product) =>
+        product.releases.map((release) => ({
+          type: "release",
+          ...release,
+        })),
+      )
+      .sort((left, right) => left.id.localeCompare(right.id)),
     "distribution-contexts": distributionContexts,
     errata: [],
     "legality-rules": [],
     relationships: identifiedRelationships
-      .map(({ printing, relationship, relationshipId, targetId }) => ({
+      .map(({ printing, card, relationship, relationshipId, targetId }) => ({
         type: "relationship",
         id: relationshipId,
         kind:
@@ -375,7 +435,18 @@ async function exportRecords(
               : "distribution_context",
           id: targetId,
         },
-        evidence_category: "explicit",
+        evidence_category:
+          candidate.product_relationships?.find(
+            (candidateRelationship) =>
+              candidateRelationship.resolution === "canonical" &&
+              candidateRelationship.game === card.game &&
+              candidateRelationship.target_key ===
+                relationship.relationship_value &&
+              candidateRelationship.kind ===
+                (relationship.relationship_kind === "product"
+                  ? "printing-product"
+                  : "printing-distribution-context"),
+          )?.evidence_category ?? "explicit",
         source_lineage: relationship.source_lineage,
         source_observation_ids: relationship.source_observation_ids,
         relationship_value: relationship.relationship_value,

@@ -52,6 +52,7 @@ export type ParsedReconciliationObservation = Readonly<{
   noveltyProofComplete: boolean;
   memberships: Memberships;
   withdrawal: Withdrawal | null;
+  productReleaseValue: unknown;
   sourceWarnings: readonly ReconciliationWarning[];
 }>;
 
@@ -70,6 +71,7 @@ const rootFields = new Set([
   "completeness",
   "memberships",
   "withdrawal",
+  "product_release_catalogue",
 ]);
 const cardFields = new Set([
   "game",
@@ -235,6 +237,7 @@ export function parseReconciliationObservation(
       noveltyProofComplete: true,
       memberships: parseMemberships(record.memberships),
       withdrawal: parseWithdrawal(record.withdrawal, false),
+      productReleaseValue: record.product_release_catalogue,
       sourceWarnings: sortedWarnings(warnings),
     };
   }
@@ -351,6 +354,7 @@ export function parseReconciliationObservation(
       ),
     memberships: parseMemberships(record.memberships),
     withdrawal: parseWithdrawal(record.withdrawal, true),
+    productReleaseValue: record.product_release_catalogue,
     sourceWarnings: sortedWarnings(warnings),
   };
 }

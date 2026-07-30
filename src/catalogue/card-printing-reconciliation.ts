@@ -34,6 +34,7 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
+import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import { retainedPayload } from "./reconciliation-payload";
 
 type ActiveRunRow = {
@@ -388,6 +389,13 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
   );
 
+  const productCatalogue = await reconcileProductReleaseCatalogue(
+    priorCandidate,
+    retained.observations.map(
+      (observation) => observation.productReleaseValue,
+    ),
+    retained.supportedGame,
+  );
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
     selected_games: [
@@ -402,6 +410,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings: [...printings.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
+    products: productCatalogue.products,
+    distribution_contexts: productCatalogue.distribution_contexts,
+    product_relationships: productCatalogue.product_relationships,
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (
@@ -435,6 +446,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ...relationshipWarnings,
         ...disappearanceWarnings,
         ...cardWarnings,
+        ...productCatalogue.warnings,
       ].map((warning) => [canonicalJson(warning), warning]),
     ).values(),
   ].sort((left, right) =>

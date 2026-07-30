@@ -21,6 +21,7 @@ import {
   guardedAtomicBatch,
   retainedPayload,
 } from "./reconciliation-payload";
+import { productReleasePublicationStatements } from "./product-release-publication";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -1319,6 +1320,9 @@ async function cataloguePrinting(
     current: [],
     historical: [],
   },
+  declaredContexts: readonly NonNullable<
+    FixtureCandidate["distribution_contexts"]
+  >[number][] = [],
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
     (relationship) =>
@@ -1331,17 +1335,26 @@ async function cataloguePrinting(
           relationship.current === true &&
           relationship.relationship_kind === "distribution_context",
       )
-      .map(async (relationship) => ({
-        id: await distributionContextExportId(
-          game,
-          String(relationship.source_lineage),
-          String(relationship.relationship_value),
-        ),
-        kind: "other",
-        label: relationship.relationship_value,
-        product_id: null,
-        evidence_category: "explicit",
-      })),
+      .map(async (relationship) => {
+        const declared = declaredContexts.find(
+          (context) =>
+            context.game === game &&
+            context.key === String(relationship.relationship_value),
+        );
+        return (
+          declared ?? {
+            id: await distributionContextExportId(
+              game,
+              String(relationship.source_lineage),
+              String(relationship.relationship_value),
+            ),
+            kind: "other" as const,
+            label: String(relationship.relationship_value),
+            product_id: null,
+            evidence_category: "explicit" as const,
+          }
+        );
+      }),
   );
   return {
     type: "printing",
@@ -1675,8 +1688,15 @@ async function commitVerifiedPublication(
           current: [],
           historical: [],
         },
+        input.candidate.distribution_contexts ?? [],
       ),
     })),
+  );
+  const productReleaseStatements = productReleasePublicationStatements(
+    database,
+    input.candidate,
+    revisionId,
+    input.reconciliation?.productLifecycles,
   );
   const revisionCardStatements = byteBoundedJsonArrays(
     cardDocuments.map(({ card, document }) => ({
@@ -1737,6 +1757,7 @@ async function commitVerifiedPublication(
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
     ...revisionPrintingStatements,
+    ...productReleaseStatements,
     database
       .prepare(
         `INSERT INTO catalogue_exports (

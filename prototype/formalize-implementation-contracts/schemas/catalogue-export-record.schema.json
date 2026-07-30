@@ -300,7 +300,7 @@
     "ReleaseRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "product_id", "region", "date"],
+      "required": ["type", "id", "product_id", "region", "date", "status"],
       "properties": {
         "type": { "const": "release" },
         "id": { "$ref": "#/$defs/OpaqueId" },
@@ -314,7 +314,8 @@
             "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
             "value": { "$ref": "#/$defs/NullableText" }
           }
-        }
+        },
+        "status": { "enum": ["announced", "released"] }
       }
     },
     "DistributionContextRecord": {

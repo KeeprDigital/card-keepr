@@ -1352,8 +1352,62 @@ function reconciliationSourceDocument(scenario: string) {
                 distribution_contexts: ["context_event"],
                 source_buckets: ["promotion-list"],
               }
+            : scenario === "product-release"
+              ? {
+                  products: ["ST-15"],
+                  distribution_contexts: ["championship-2026-pack"],
+                  source_buckets: ["starter-deck-card-list"],
+                }
             : undefined,
         }),
+        ...(scenario === "product-release"
+          ? {
+              product_release_catalogue: {
+                products: [
+                  {
+                    official_code: "ST-15",
+                    name: "Starter Deck RED Edward.Newgate",
+                    releases: [
+                      {
+                        region: "EN-OCEANIA",
+                        date: { precision: "month", value: "2026-09" },
+                        status: "announced",
+                      },
+                    ],
+                  },
+                ],
+                distribution_contexts: [
+                  {
+                    key: "championship-2026-pack",
+                    kind: "tournament_pack",
+                    label: "Championship 2026 Participation Pack",
+                    product_key: "ST-15",
+                    evidence_category: "derived",
+                  },
+                ],
+                relationships: [
+                  {
+                    kind: "printing-product",
+                    target_key: "ST-15",
+                    evidence_category: "explicit",
+                    resolution: "explicit",
+                  },
+                  {
+                    kind: "printing-distribution-context",
+                    target_key: "championship-2026-pack",
+                    evidence_category: "derived",
+                    resolution: "deterministic",
+                  },
+                  {
+                    kind: "printing-product",
+                    target_key: "ST-15 fuzzy label",
+                    evidence_category: "derived",
+                    resolution: "fuzzy",
+                  },
+                ],
+              },
+            }
+          : {}),
         ...(unknownVocabulary
           ? { new_official_label: "Bandai-added-value" }
           : {}),

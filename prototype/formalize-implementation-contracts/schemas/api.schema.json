@@ -372,11 +372,12 @@
     "Release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "region", "date"],
+      "required": ["id", "region", "date", "status"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "region": { "$ref": "#/$defs/Region" },
-        "date": { "$ref": "#/$defs/ReleaseDate" }
+        "date": { "$ref": "#/$defs/ReleaseDate" },
+        "status": { "enum": ["announced", "released"] }
       }
     },
     "Product": {

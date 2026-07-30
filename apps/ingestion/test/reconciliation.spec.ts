@@ -3146,6 +3146,154 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   });
 });
 
+test("a complete Product fixture publishes separated release and distribution records atomically", async () => {
+  const run = await collect(
+    "/reconciliation/product-release",
+    "product-release-complete-fixture",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(
+    Array.isArray(reconciled.document.warnings)
+      ? reconciled.document.warnings
+      : [],
+  ).toContainEqual(
+    expect.objectContaining({
+      code: "product_relationship_unresolved",
+      relationship_value: "ST-15 fuzzy label",
+    }),
+  );
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const [products, releases, contexts, relationships, printings] =
+    await Promise.all([
+      exportComponentRecords(revisionId, "products"),
+      exportComponentRecords(revisionId, "releases"),
+      exportComponentRecords(revisionId, "distribution-contexts"),
+      exportComponentRecords(revisionId, "relationships"),
+      exportComponentRecords(revisionId, "printings"),
+    ]);
+  const product = products.find(
+    (candidate) => candidate.official_code === "ST-15",
+  );
+  expect(product).toMatchObject({
+    official_code: "ST-15",
+    name: "Starter Deck RED Edward.Newgate",
+    lifecycle: {
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      withdrawn: false,
+    },
+  });
+  if (product === undefined) throw new Error("ST-15 Product missing");
+  const productId = requiredString(product, "id");
+  const release = releases.find(
+    (candidate) =>
+      candidate.product_id === productId &&
+      candidate.region === "EN-OCEANIA",
+  );
+  expect(release).toMatchObject({
+    product_id: productId,
+    region: "EN-OCEANIA",
+    date: { precision: "month", value: "2026-09" },
+    status: "announced",
+  });
+  expect((await exportManifest(revisionId)).source_freshness).toEqual(
+    expect.arrayContaining([
+      {
+        game: "one-piece",
+        area: "products-and-releases",
+        checked_at: expect.any(String),
+      },
+    ]),
+  );
+  const context = contexts.find(
+    (candidate) =>
+      candidate.product_id === productId &&
+      candidate.label === "Championship 2026 Participation Pack",
+  );
+  expect(context).toMatchObject({
+    kind: "tournament_pack",
+    label: "Championship 2026 Participation Pack",
+    product_id: productId,
+  });
+  if (context === undefined) throw new Error("Distribution Context missing");
+  const contextId = requiredString(context, "id");
+  const productRelationship = relationships.find(
+    (relationship) => {
+      const to = relationship.to;
+      return (
+        to !== null &&
+        typeof to === "object" &&
+        !Array.isArray(to) &&
+        (to as Record<string, unknown>).type === "product" &&
+        (to as Record<string, unknown>).id === productId
+      );
+    },
+  );
+  expect(productRelationship).toEqual(
+    expect.objectContaining({
+      from: { type: "printing", id: expect.any(String) },
+      to: { type: "product", id: productId },
+      evidence_category: "explicit",
+    }),
+  );
+  if (productRelationship === undefined) {
+    throw new Error("Printing-to-Product relationship missing");
+  }
+  const from = productRelationship.from;
+  if (from === null || typeof from !== "object" || Array.isArray(from)) {
+    throw new Error("Printing relationship source invalid");
+  }
+  const printingId = requiredString(from as Record<string, unknown>, "id");
+  expect(printings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: printingId,
+      }),
+    ]),
+  );
+  expect(relationships).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        from: { type: "printing", id: printingId },
+        to: { type: "distribution_context", id: contextId },
+        evidence_category: "derived",
+      }),
+    ]),
+  );
+  expect(
+    JSON.stringify({
+      product,
+      release,
+      context,
+      relationships: relationships.filter(
+        (relationship) => {
+          const relationshipFrom = relationship.from;
+          return (
+            relationshipFrom !== null &&
+            typeof relationshipFrom === "object" &&
+            !Array.isArray(relationshipFrom) &&
+            (relationshipFrom as Record<string, unknown>).type ===
+              "printing" &&
+            (relationshipFrom as Record<string, unknown>).id === printingId
+          );
+        },
+      ),
+    }),
+  ).not.toContain("starter-deck-card-list");
+  expect(
+    relationships.some(
+      (relationship) =>
+        relationship.relationship_value === "ST-15 fuzzy label",
+    ),
+  ).toBe(false);
+});
+
 async function collect(
   path: string,
   key: string,
