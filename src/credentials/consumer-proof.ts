@@ -10,6 +10,7 @@ import {
 
 type ConsumerProofEnvironment = {
   CREDENTIAL_CONSUMER_PROOF_KEY: string;
+  CATALOGUE_DB: D1Database;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CATALOGUE_D1_DATABASE_ID?: string;
   DISPOSABLE_D1_DATABASE_ID?: string;
@@ -24,6 +25,7 @@ type ConsumerProofEnvironment = {
 };
 
 export type CredentialConsumerProofRequestClaims = {
+  request_nonce: string;
   plan_id: string;
   plan_digest: string;
   plan_nonce: string;
@@ -40,6 +42,7 @@ export type CredentialConsumerProofRequestClaims = {
 
 export type CredentialConsumerProof = {
   contract: "card-keepr-credential-consumer-proof@1";
+  request_nonce: string;
   credential_class: CredentialClass;
   expected_fingerprint: string;
   challenge: string;
@@ -102,6 +105,10 @@ export async function credentialConsumerProofRequests(
   ];
   return Promise.all(requests.map(async (request) => {
     const claims: CredentialConsumerProofRequestClaims = {
+      request_nonce: await hmac(
+        key,
+        consumerProofRequestNonceMessage(plan, request),
+      ),
       plan_id: plan.id,
       plan_digest: plan.plan_digest,
       plan_nonce: plan.plan_nonce,
@@ -150,6 +157,7 @@ export async function handleCredentialConsumerProof(
   const claims = await verifiedRequestToken(
     body.request_token,
     environment.CREDENTIAL_CONSUMER_PROOF_KEY,
+    new Date().toISOString(),
   );
   if (claims === null) {
     return Response.json(
@@ -174,6 +182,23 @@ export async function handleCredentialConsumerProof(
     body.expected_status !== claims.expected_status
   ) {
     return Response.json({ code: "identity_conflict" }, { status: 409 });
+  }
+  const consumed = await consumeRequestNonce(
+    environment.CATALOGUE_DB,
+    claims,
+    new Date().toISOString(),
+  );
+  if (consumed === "replayed") {
+    return Response.json(
+      { code: "consumer_proof_request_replayed" },
+      { status: 409 },
+    );
+  }
+  if (consumed === "failed") {
+    return Response.json(
+      { code: "consumer_proof_replay_store_unavailable" },
+      { status: 503 },
+    );
   }
   const secret = replacementSecret(
     credentialClass as CredentialClass,
@@ -260,6 +285,7 @@ export async function credentialConsumerProofMatches(
   return (
     candidate.contract ===
       "card-keepr-credential-consumer-proof@1" &&
+    candidate.request_nonce === claims.request_nonce &&
     candidate.credential_class === claims.credential_class &&
     candidate.expected_fingerprint ===
       claims.expected_fingerprint &&
@@ -287,6 +313,7 @@ async function signedRequestToken(
 async function verifiedRequestToken(
   value: unknown,
   key: string,
+  observedAt: string,
 ): Promise<CredentialConsumerProofRequestClaims | null> {
   if (typeof value !== "string") return null;
   const match =
@@ -310,11 +337,13 @@ async function verifiedRequestToken(
   }
   return (
     typeof claims.plan_id === "string" &&
+    /^[0-9a-f]{64}$/.test(claims.request_nonce) &&
     /^[0-9a-f]{64}$/.test(claims.plan_digest) &&
     /^[0-9a-f]{64}$/.test(claims.plan_nonce) &&
     Number.isSafeInteger(claims.execution_attempt) &&
     claims.execution_attempt > 0 &&
     canonicalTimestamp(claims.execution_expires_at) &&
+    claims.execution_expires_at > observedAt &&
     credentialClassDefinitions[claims.credential_class] !== undefined &&
     /^sha256:[0-9a-f]{64}$/.test(claims.expected_fingerprint) &&
     ["a", "b"].includes(claims.slot) &&
@@ -325,6 +354,32 @@ async function verifiedRequestToken(
   )
     ? claims
     : null;
+}
+
+async function consumeRequestNonce(
+  database: D1Database,
+  claims: CredentialConsumerProofRequestClaims,
+  consumedAt: string,
+): Promise<"consumed" | "replayed" | "failed"> {
+  try {
+    const result = await database.prepare(
+      `INSERT INTO credential_consumer_proof_uses (
+         request_nonce, plan_id, execution_attempt,
+         credential_class, consumed_at
+       ) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(request_nonce) DO NOTHING`,
+    ).bind(
+      claims.request_nonce,
+      claims.plan_id,
+      claims.execution_attempt,
+      claims.credential_class,
+      consumedAt,
+    ).run();
+    if (!result.success) return "failed";
+    return result.meta.changes === 1 ? "consumed" : "replayed";
+  } catch {
+    return "failed";
+  }
 }
 
 async function readBoundedText(
@@ -364,6 +419,7 @@ async function proofResponse(
 ): Promise<Response> {
   return Response.json({
     contract: "card-keepr-credential-consumer-proof@1",
+    request_nonce: claims.request_nonce,
     credential_class: claims.credential_class,
     expected_fingerprint: claims.expected_fingerprint,
     challenge: claims.plan_digest,
@@ -380,10 +436,35 @@ export function consumerProofMessage(
   claims: CredentialConsumerProofRequestClaims,
 ): string {
   return (
-    `${claims.credential_class}\0${claims.expected_fingerprint}` +
+    `${claims.request_nonce}\0${claims.credential_class}` +
+    `\0${claims.expected_fingerprint}` +
     `\0${claims.plan_digest}\0${claims.plan_nonce}` +
     `\0${claims.execution_attempt}\0${claims.execution_expires_at}` +
     `\0${claims.slot}\0${claims.expected_status}`
+  );
+}
+
+function consumerProofRequestNonceMessage(
+  plan: {
+    id: string;
+    plan_digest: string;
+    execution_attempt: number;
+    execution_expires_at: string | null;
+    credential_class: CredentialClass;
+  },
+  request: {
+    expected_fingerprint: string;
+    slot: "a" | "b";
+    expected_status: "usable" | "unusable";
+    replacement_issuer_credential_id: string;
+  },
+): string {
+  return (
+    `consumer-proof-request\0${plan.id}\0${plan.plan_digest}` +
+    `\0${plan.execution_attempt}\0${plan.execution_expires_at ?? ""}` +
+    `\0${plan.credential_class}\0${request.expected_fingerprint}` +
+    `\0${request.slot}\0${request.expected_status}` +
+    `\0${request.replacement_issuer_credential_id}`
   );
 }
 

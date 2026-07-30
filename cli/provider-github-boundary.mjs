@@ -10,7 +10,7 @@ import {
 
 const repository = "KeeprDigital/card-keepr";
 const environmentName = "production";
-const probeWorkflow = "credential-boundary-probe.yml";
+const releaseWorkflow = "production-release.yml";
 const githubApi = "https://api.github.com";
 const exactInstallationPermissions = Object.freeze({
   actions: "write",
@@ -220,7 +220,7 @@ function exactGithubTargets(
     environment?.name === environmentName &&
     workflow?.id === Number(expected.workflowId) &&
     workflow?.path ===
-      ".github/workflows/credential-boundary-probe.yml" &&
+      ".github/workflows/production-release.yml" &&
     workflow?.state === "active" &&
     expected.suppliedPolicy === expected.requiredPolicy
   );
@@ -230,6 +230,7 @@ export async function setGithubConsumerSecret(
   name,
   value,
   credential,
+  recordMutationIntent = () => {},
 ) {
   const key = await githubRequest(
     credential,
@@ -253,6 +254,7 @@ export async function setGithubConsumerSecret(
     ),
     sodium.base64_variants.ORIGINAL,
   );
+  recordMutationIntent();
   const response = await githubRequest(
     credential,
     `/repos/${repository}/environments/${environmentName}/secrets/${encodeURIComponent(name)}`,
@@ -284,7 +286,9 @@ export async function listGithubConsumerSecrets(credential) {
 export async function deleteGithubConsumerSecret(
   name,
   credential,
+  recordMutationIntent = () => {},
 ) {
+  recordMutationIntent();
   const response = await githubRequest(
     credential,
     `/repos/${repository}/environments/${environmentName}/secrets/${encodeURIComponent(name)}`,
@@ -304,6 +308,7 @@ export async function probeGithubInstalledSecret({
   expectedFingerprint,
   credential,
   workflowId,
+  recordMutationIntent = () => {},
 }) {
   const workflowSlot =
     secretSlot === "a"
@@ -328,11 +333,12 @@ export async function probeGithubInstalledSecret({
     return null;
   }
   const runTitle =
-    `credential-boundary-probe-${workflowSlot}-${replacementIssuerCredentialId}-${expectedStatus}-${expectedFingerprint}-${planDigest}`;
+    `production-release-credential-boundary-${workflowSlot}-${replacementIssuerCredentialId}-${expectedStatus}-${expectedFingerprint}-${planDigest}`;
   const dispatchedAfter = new Date().toISOString();
+  recordMutationIntent();
   const dispatched = await githubRequest(
     credential,
-    `/repos/${repository}/actions/workflows/${workflowId ?? probeWorkflow}/dispatches`,
+    `/repos/${repository}/actions/workflows/${workflowId ?? releaseWorkflow}/dispatches`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -355,7 +361,7 @@ export async function probeGithubInstalledSecret({
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const listed = await githubRequest(
       credential,
-      `/repos/${repository}/actions/workflows/${workflowId ?? probeWorkflow}/runs?event=workflow_dispatch&per_page=10`,
+      `/repos/${repository}/actions/workflows/${workflowId ?? releaseWorkflow}/runs?event=workflow_dispatch&per_page=10`,
     );
     if (!listed.ok || !Array.isArray(listed.document?.workflow_runs)) {
       return null;

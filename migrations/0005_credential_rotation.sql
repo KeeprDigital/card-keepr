@@ -61,6 +61,17 @@ CREATE UNIQUE INDEX one_executing_credential_plan
 ON credential_rotation_plans ((1))
 WHERE status = 'executing';
 
+CREATE TABLE credential_consumer_proof_uses (
+  request_nonce TEXT PRIMARY KEY CHECK (
+    length(request_nonce) = 64
+    AND request_nonce NOT GLOB '*[^0-9a-f]*'
+  ),
+  plan_id TEXT NOT NULL,
+  execution_attempt INTEGER NOT NULL CHECK (execution_attempt > 0),
+  credential_class TEXT NOT NULL,
+  consumed_at TEXT NOT NULL
+);
+
 CREATE TRIGGER block_ingestion_during_credential_execution
 BEFORE UPDATE OF active_ingestion_run_id ON operation_state
 WHEN OLD.active_ingestion_run_id IS NULL

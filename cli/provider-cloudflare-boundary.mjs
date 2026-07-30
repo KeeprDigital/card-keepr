@@ -54,6 +54,7 @@ export function createCloudflareProvider({
     managementCredential,
     tokenId,
     permission,
+    recordMutationIntent = () => {},
   ) {
     const existing = await tokenDetails(
       managementCredential,
@@ -72,6 +73,7 @@ export function createCloudflareProvider({
     }
     let response;
     try {
+      recordMutationIntent();
       response = await request(
         managementCredential,
         `/accounts/${accountId}/tokens/${encodeURIComponent(tokenId)}`,

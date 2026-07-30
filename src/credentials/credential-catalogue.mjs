@@ -111,7 +111,7 @@ export const credentialClassDefinitions = Object.freeze({
     owning_boundary: "production_release_workflow",
     issuer_provider: "cloudflare-api-token",
     resource_kind: "github-workflow",
-    resource_name: "credential-boundary-probe.yml",
+    resource_name: "production-release.yml",
     verification_operation: "deployment-scope-introspection",
     required_permission: "Workers Scripts Write",
     management_permissions: [

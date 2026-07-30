@@ -121,7 +121,7 @@ async function verifyInstalledConsumer(
         ? "active"
         : "replacement";
     const expectedEvidence =
-      `credential-boundary-probe-${replacementWorkflowSlot}-${plan.replacement_issuer_credential_id}-usable-${plan.replacement_fingerprint}-${plan.plan_digest}` +
+      `production-release-credential-boundary-${replacementWorkflowSlot}-${plan.replacement_issuer_credential_id}-usable-${plan.replacement_fingerprint}-${plan.plan_digest}` +
       `\0${facts.consumer_proof_head_sha}\0${facts.consumer_proof_id}\0${facts.consumer_proof_actor}`;
     const replacementMatches =
       facts.consumer_proof_contract ===
@@ -141,7 +141,7 @@ async function verifyInstalledConsumer(
     const oldWorkflowSlot =
       plan.old_consumer_slot === "a" ? "active" : "replacement";
     const expectedOldEvidence =
-      `credential-boundary-probe-${oldWorkflowSlot}-${plan.old_issuer_credential_id}-${plan.action === "revoke" ? "unusable" : "usable"}-${plan.old_fingerprint}-${plan.plan_digest}` +
+      `production-release-credential-boundary-${oldWorkflowSlot}-${plan.old_issuer_credential_id}-${plan.action === "revoke" ? "unusable" : "usable"}-${plan.old_fingerprint}-${plan.plan_digest}` +
       `\0${facts.old_consumer_proof_head_sha}\0${facts.old_consumer_proof_id}\0${facts.old_consumer_proof_actor}`;
     return (
       facts.old_consumer_proof_contract ===
@@ -229,6 +229,7 @@ async function verifyInstalledConsumer(
     const proof = await response.json();
     if (
       proof?.contract !== "card-keepr-credential-consumer-proof@1" ||
+      !safeDigestEqual(proof.request_nonce, requested.request_nonce) ||
       proof.credential_class !== credentialClass ||
       !safeFingerprintEqual(
         proof.expected_fingerprint,

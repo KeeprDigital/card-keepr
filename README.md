@@ -162,16 +162,18 @@ gh api installation/repositories \
 gh api graphql -f query='query { viewer { login } }' --jq .data.viewer.login
 gh api repos/KeeprDigital/card-keepr/environments/production --jq .id
 gh api repos/KeeprDigital/card-keepr/actions/workflows \
-  --jq '.workflows[] | select(.path == ".github/workflows/credential-boundary-probe.yml") | .id'
+  --jq '.workflows[] | select(.path == ".github/workflows/production-release.yml") | .id'
 ```
 
 Both the installation and minted token must expose exactly `actions:write`,
 `contents:read`, `environments:write`, and `metadata:read`.
 `GET /installation/repositories` must return exactly the one configured
 repository. The authenticated GraphQL viewer must be the installation's bot
-actor; each deployment probe passes and verifies that exact actor. Persisted
-consumer slots `a` and `b` map at the GitHub boundary to the workflow's
-`active` and `replacement` inputs respectively. Cloudflare management tokens
+actor; each production release verifies that exact actor. Persisted consumer
+slots `a` and `b` map at the GitHub boundary to the serialized
+`production-release.yml` workflow's `active` and `replacement` inputs
+respectively; a usable proof performs the real API and ingestion Worker
+deployment. Cloudflare management tokens
 are class-minimal: Worker bearer classes use token read plus Worker-secret
 write, D1 classes additionally use token write, and GitHub deployment uses
 token read/write without Worker-secret write. Rotated D1 tokens are

@@ -120,9 +120,10 @@ override a machine-readable artifact.
 - Ingestion and deployment are blocked throughout a recovery operation.
   Mutation reopens only after restored state passes the agreed integrity and API
   checks and the owner explicitly accepts it.
-- Pull-request and `main` CI never mutate production. Only a serialized,
-  manually dispatched production release workflow holds deployment credentials,
-  and the guarded repository CLI is its entry point.
+- Pull-request and `main` CI never mutate production. Only the serialized,
+  manually dispatched `.github/workflows/production-release.yml` workflow
+  holds deployment credentials and deploys both production Workers, and the
+  guarded repository CLI is its entry point.
 
 ## Credential isolation
 

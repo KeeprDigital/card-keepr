@@ -22,11 +22,17 @@ beforeEach(async () => {
   await env.CATALOGUE_DB.prepare(
     "DELETE FROM credential_rotations",
   ).run();
+  await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_consumer_proof_uses",
+  ).run();
 });
 
 afterEach(async () => {
   await env.CATALOGUE_DB.prepare(
     "DELETE FROM credential_rotations",
+  ).run();
+  await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_consumer_proof_uses",
   ).run();
 });
 
@@ -100,6 +106,14 @@ test("the signed consumer challenge proves the exact installed API value through
     slot: "b",
     status: "usable",
   });
+  const replay = await consumerProof(
+    expectedFingerprint,
+    challenge,
+  );
+  expect(replay.status).toBe(409);
+  await expect(replay.json()).resolves.toMatchObject({
+    code: "consumer_proof_request_replayed",
+  });
 
   const wrongValue = await consumerProof(
     `sha256:${"0".repeat(64)}`,
@@ -109,6 +123,48 @@ test("the signed consumer challenge proves the exact installed API value through
   await expect(wrongValue.json()).resolves.toMatchObject({
     code: "credential_fingerprint_mismatch",
   });
+});
+
+test("expired consumer proof tokens fail before probing or mutating the consumer", async () => {
+  const replacement = "vitest-api-key-replacement-slot";
+  const response = await consumerProof(
+    `sha256:${await hash(replacement)}`,
+    "d".repeat(64),
+    "2000-01-01T00:00:00.000Z",
+  );
+  expect(response.status).toBe(401);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "invalid_boundary_challenge",
+  });
+});
+
+test("distinct required observations receive distinct single-use request nonces", async () => {
+  const requests = await credentialConsumerProofRequests(
+    {
+      id: "credplan_api_distinct_proofs",
+      plan_digest: "e".repeat(64),
+      plan_nonce: "f".repeat(64),
+      execution_attempt: 1,
+      execution_expires_at: "9999-12-31T23:59:59.999Z",
+      action: "verify",
+      credential_class: "api_bearer_key",
+      old_fingerprint: `sha256:${await hash("vitest-api-key")}`,
+      replacement_fingerprint:
+        `sha256:${await hash("vitest-api-key-replacement-slot")}`,
+      old_consumer_slot: "a",
+      replacement_consumer_slot: "b",
+      old_issuer_credential_id: "worker-secret:old",
+      replacement_issuer_credential_id: "worker-secret:replacement",
+      github_management_credential_fingerprint:
+        `sha256:${"0".repeat(64)}`,
+      github_management_required_permission: "not-applicable",
+    },
+    "vitest-consumer-proof-key",
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0]!.request_nonce).not.toBe(
+    requests[1]!.request_nonce,
+  );
 });
 
 test("consumer proof rejects declared and streamed bodies beyond 16 KiB before buffering", async () => {
@@ -159,6 +215,7 @@ async function healthStatus(secret: string): Promise<number> {
 async function consumerProof(
   expectedFingerprint: string,
   challenge: string,
+  executionExpiresAt = "9999-12-31T23:59:59.999Z",
 ): Promise<Response> {
   const body = JSON.stringify({
     credential_class: "api_bearer_key",
@@ -173,7 +230,7 @@ async function consumerProof(
           plan_digest: challenge,
           plan_nonce: "c".repeat(64),
           execution_attempt: 1,
-          execution_expires_at: "2026-07-29T00:10:00.000Z",
+          execution_expires_at: executionExpiresAt,
           action: "install",
           credential_class: "api_bearer_key",
           old_fingerprint: `sha256:${"1".repeat(64)}`,

@@ -28,7 +28,7 @@ export async function observeGithubCredentialRuns(
     token: string,
     pathname: string,
     init?: RequestInit,
-  ) => Promise<any | null> = githubJson,
+  ) => Promise<unknown | null> = githubJson,
   mintJwt: (
     privateKey: string,
     appId: string,
@@ -75,11 +75,12 @@ export async function observeGithubCredentialRuns(
     observationToken,
     `/app/installations/${authority.github_installation_id}`,
   );
+  const installationDocument = jsonObject(installation);
   if (
-    installation?.id !==
+    installationDocument?.id !==
       Number(authority.github_installation_id) ||
-    installation?.repository_selection !== "selected" ||
-    !exactPermissions(installation?.permissions, permissions)
+    installationDocument?.repository_selection !== "selected" ||
+    !exactPermissions(installationDocument?.permissions, permissions)
   ) {
     return null;
   }
@@ -94,18 +95,19 @@ export async function observeGithubCredentialRuns(
       }),
     },
   );
+  const mintedDocument = jsonObject(minted);
   if (
-    typeof minted?.token !== "string" ||
-    minted.token.length < 20 ||
-    !exactPermissions(minted.permissions, permissions) ||
+    typeof mintedDocument?.token !== "string" ||
+    mintedDocument.token.length < 20 ||
+    !exactPermissions(mintedDocument.permissions, permissions) ||
     !exactRepositories(
-      minted.repositories,
+      mintedDocument.repositories,
       authority.github_repository_id,
     )
   ) {
     return null;
   }
-  const installationToken = minted.token;
+  const installationToken = mintedDocument.token;
   const [repositories, viewer, repositoryInfo, environment, workflow,
     head, listed] = await Promise.all([
     request(installationToken, "/installation/repositories"),
@@ -144,23 +146,34 @@ export async function observeGithubCredentialRuns(
       },
     ),
   ]);
-  const headSha = head?.object?.sha;
-  const runs = listed?.workflow_runs;
+  const repositoriesDocument = jsonObject(repositories);
+  const viewerDocument = jsonObject(viewer);
+  const viewerData = jsonObject(viewerDocument?.data);
+  const viewerIdentity = jsonObject(viewerData?.viewer);
+  const repositoryDocument = jsonObject(repositoryInfo);
+  const environmentDocument = jsonObject(environment);
+  const workflowDocument = jsonObject(workflow);
+  const headDocument = jsonObject(head);
+  const headObject = jsonObject(headDocument?.object);
+  const listedDocument = jsonObject(listed);
+  const headSha = headObject?.sha;
+  const runs = listedDocument?.workflow_runs;
   if (
-    repositories?.repository_selection !== "selected" ||
-    repositories?.total_count !== 1 ||
+    repositoriesDocument?.repository_selection !== "selected" ||
+    repositoriesDocument?.total_count !== 1 ||
     !exactRepositories(
-      repositories?.repositories,
+      repositoriesDocument?.repositories,
       authority.github_repository_id,
     ) ||
-    viewer?.data?.viewer?.login !== expectedActor ||
-    repositoryInfo?.id !== Number(authority.github_repository_id) ||
-    environment?.id !== Number(authority.github_environment_id) ||
-    workflow?.id !== Number(workflowId) ||
-    workflow?.path !==
-      ".github/workflows/credential-boundary-probe.yml" ||
-    workflow?.state !== "active" ||
-    !/^[0-9a-f]{40}$/.test(headSha ?? "") ||
+    viewerIdentity?.login !== expectedActor ||
+    repositoryDocument?.id !== Number(authority.github_repository_id) ||
+    environmentDocument?.id !== Number(authority.github_environment_id) ||
+    workflowDocument?.id !== Number(workflowId) ||
+    workflowDocument?.path !==
+      ".github/workflows/production-release.yml" ||
+    workflowDocument?.state !== "active" ||
+    typeof headSha !== "string" ||
+    !/^[0-9a-f]{40}$/.test(headSha) ||
     !Array.isArray(runs)
   ) {
     return null;
@@ -168,28 +181,33 @@ export async function observeGithubCredentialRuns(
   const evidence = [];
   for (const request of expected) {
     const title = runTitle(plan, request);
-    const matches = runs.filter((run) =>
-      run?.display_title === title &&
-      run?.workflow_id === Number(workflowId) &&
-      run?.event === "workflow_dispatch" &&
-      run?.head_sha === headSha &&
-      run?.status === "completed" &&
-      run?.conclusion === "success" &&
-      run?.actor?.login === expectedActor &&
-      typeof run?.created_at === "string" &&
-      run.created_at >= plan.execution_started_at!
-    );
+    const matches = runs
+      .map(jsonObject)
+      .filter((run): run is Record<string, unknown> =>
+        run !== null &&
+        run.display_title === title &&
+        run.workflow_id === Number(workflowId) &&
+        run.event === "workflow_dispatch" &&
+        run.head_sha === headSha &&
+        run.status === "completed" &&
+        run.conclusion === "success" &&
+        jsonObject(run.actor)?.login === expectedActor &&
+        typeof run.created_at === "string" &&
+        run.created_at >= plan.execution_started_at!
+      );
     if (matches.length === 0) return null;
     const run = matches.sort(
       (left, right) =>
         String(right.created_at).localeCompare(String(left.created_at)),
     )[0]!;
+    const runActor = jsonObject(run.actor);
+    if (typeof runActor?.login !== "string") return null;
     evidence.push({
       contract: "github-actions-server-observation@1",
       run_id: String(run.id),
       workflow_id: workflowId,
       head_sha: headSha,
-      actor: run.actor.login,
+      actor: runActor.login,
       display_title: title,
       expected_fingerprint: request.expected_fingerprint,
       slot: request.slot,
@@ -205,7 +223,7 @@ function runTitle(
 ): string {
   const slot = request.slot === "a" ? "active" : "replacement";
   return (
-    `credential-boundary-probe-${slot}` +
+    `production-release-credential-boundary-${slot}` +
     `-${request.replacement_issuer_credential_id}` +
     `-${request.expected_status}` +
     `-${request.expected_fingerprint}-${plan.plan_digest}`
@@ -216,7 +234,7 @@ async function githubJson(
   token: string,
   pathname: string,
   init: RequestInit = {},
-): Promise<any | null> {
+): Promise<unknown | null> {
   try {
     const response = await fetch(`https://api.github.com${pathname}`, {
       ...init,
@@ -232,6 +250,16 @@ async function githubJson(
   } catch {
     return null;
   }
+}
+
+function jsonObject(
+  value: unknown,
+): Record<string, unknown> | null {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function exactPermissions(
@@ -257,7 +285,7 @@ function exactRepositories(
   return (
     Array.isArray(repositories) &&
     repositories.length === 1 &&
-    repositories[0]?.id === Number(repositoryId)
+    jsonObject(repositories[0])?.id === Number(repositoryId)
   );
 }
 

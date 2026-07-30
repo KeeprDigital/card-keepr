@@ -14,7 +14,7 @@ import {
 
 type ObservationResponse = {
   status: number;
-  body: any;
+  body: unknown;
 };
 type ObservationContext = {
   expectedStatus?: "usable" | "unusable";
@@ -63,16 +63,22 @@ export async function observeCloudflareCredentialBoundary(
         `${definition.consumer_worker_name}/secrets`,
       { expectedSecrets },
     );
-    const names = listed?.body?.result;
+    const listedBody = jsonObject(listed?.body);
+    const names = listedBody?.result;
     if (
       listed?.status !== 200 ||
-      listed.body?.success !== true ||
-      !Array.isArray(names) ||
-      !names.every((item: any) => typeof item?.name === "string")
+      listedBody?.success !== true ||
+      !Array.isArray(names)
     ) {
       return null;
     }
-    const present = new Set(names.map((item: any) => item.name));
+    const secretNames: string[] = [];
+    for (const item of names) {
+      const name = jsonObject(item)?.name;
+      if (typeof name !== "string") return null;
+      secretNames.push(name);
+    }
+    const present = new Set(secretNames);
     for (const proofRequest of requests) {
       const name =
         proofRequest.slot === "a"
@@ -104,20 +110,21 @@ export async function observeCloudflareCredentialBoundary(
           requiredPermission: plan.required_permission,
         },
       );
+      const observedBody = jsonObject(observed?.body);
       if (check.expected_status === "unusable") {
         if (
           observed?.status !== 404 ||
-          observed.body?.success !== false
+          observedBody?.success !== false
         ) {
           return null;
         }
       } else {
-        const token = observed?.body?.result;
+        const token = observedBody?.result;
         if (
           observed?.status !== 200 ||
-          observed.body?.success !== true ||
-          token?.id !== issuerId ||
-          token?.status !== "active" ||
+          observedBody?.success !== true ||
+          jsonObject(token)?.id !== issuerId ||
+          jsonObject(token)?.status !== "active" ||
           !exactTokenPolicy(
             token,
             plan.required_permission,
@@ -158,12 +165,13 @@ export async function observeCloudflareCredentialBoundary(
         requiredPermissions: required as string[],
       },
     );
-    const token = management?.body?.result;
+    const managementBody = jsonObject(management?.body);
+    const token = managementBody?.result;
     if (
       management?.status !== 200 ||
-      management.body?.success !== true ||
-      token?.id !== plan.management_credential_id ||
-      token?.status !== "active" ||
+      managementBody?.success !== true ||
+      jsonObject(token)?.id !== plan.management_credential_id ||
+      jsonObject(token)?.status !== "active" ||
       !exactManagementTokenPolicy(
         token,
         required,
@@ -179,6 +187,16 @@ export async function observeCloudflareCredentialBoundary(
     });
   }
   return observations;
+}
+
+function jsonObject(
+  value: unknown,
+): Record<string, unknown> | null {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function issuerChecksFromPlan(plan: CredentialRotationPlanRow): Array<{

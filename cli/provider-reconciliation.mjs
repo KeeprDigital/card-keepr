@@ -6,9 +6,9 @@ export async function reconcileConsumerInstallation({
   verify,
   recordMutation,
 }) {
-  if (!(await putReplacement())) return false;
   recordMutation(`consumer-secret-put:${replacementName}`);
-  if (!(await putMarker())) return false;
+  if (!(await putReplacement())) return false;
   recordMutation(`consumer-marker-put:${markerName}`);
+  if (!(await putMarker())) return false;
   return verify();
 }

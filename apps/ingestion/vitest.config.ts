@@ -173,7 +173,7 @@ export default defineConfig({
               return Response.json({
                 id: 44444444,
                 path:
-                  ".github/workflows/credential-boundary-probe.yml",
+                  ".github/workflows/production-release.yml",
                 state: "active",
               });
             }

@@ -32,7 +32,7 @@ export function createGithubAppJwt(
     }));
     const payload = base64Url(JSON.stringify({
       iat: now - 60,
-      exp: now + 600,
+      exp: now + 540,
       iss: appId,
     }));
     const signingInput = `${header}.${payload}`;

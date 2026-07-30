@@ -419,14 +419,21 @@ async function execute(journal) {
       definition,
       replacementSecretName,
       secrets.replacement_secret,
+      () => recordMutation(
+        journal,
+        `consumer-secret-put:${replacementSecretName}`,
+      ),
     ))) {
       return { ok: false };
     }
-    recordMutation(journal, `consumer-secret-put:${replacementSecretName}`);
-    if (!(await putConsumerSecret(definition, marker, planId))) {
+    if (!(await putConsumerSecret(
+      definition,
+      marker,
+      planId,
+      () => recordMutation(journal, `consumer-marker-put:${marker}`),
+    ))) {
       return { ok: false };
     }
-    recordMutation(journal, `consumer-marker-put:${marker}`);
   } else if (
     action === "install" &&
     executionMode === "reconciliation"
@@ -470,6 +477,10 @@ async function execute(journal) {
           expectedActor: githubAuthority.expected_actor,
           credential: secrets.github_management_credential,
           workflowId: productionTarget.github_workflow_id,
+          recordMutationIntent: () => recordMutation(
+            journal,
+            `production-release-dispatch:${replacementConsumerSlot}`,
+          ),
         })
       : {};
   if (consumerProof === null) return { ok: false };
@@ -488,6 +499,10 @@ async function execute(journal) {
       expectedActor: githubAuthority.expected_actor,
       credential: secrets.github_management_credential,
       workflowId: productionTarget.github_workflow_id,
+      recordMutationIntent: () => recordMutation(
+        journal,
+        `production-release-dispatch:${oldConsumerSlot}`,
+      ),
     });
     if (oldConsumerProof === null) return { ok: false };
     Object.assign(consumerProof, {
@@ -512,6 +527,10 @@ async function execute(journal) {
               secrets.management_credential,
               oldIssuerCredentialId,
               requiredPermission,
+              () => recordMutation(
+                journal,
+                `issuer-delete:${oldIssuerCredentialId}`,
+              ),
             )) &&
             (await cloudflare.tokenDetails(
               secrets.management_credential,
@@ -524,12 +543,6 @@ async function execute(journal) {
       if (!absent) {
         return { ok: false };
       }
-      if (executionMode === "mutation") {
-        recordMutation(
-          journal,
-          `issuer-delete:${oldIssuerCredentialId}`,
-        );
-      }
     }
     const consumerAbsent =
       executionMode === "mutation" ||
@@ -537,6 +550,10 @@ async function execute(journal) {
         ? await deleteConsumerSecret(
             definition,
             oldSecretName,
+            () => recordMutation(
+              journal,
+              `consumer-secret-delete:${oldSecretName}`,
+            ),
           )
         : await consumerSecretAuthoritativelyAbsent(
             definition,
@@ -545,7 +562,6 @@ async function execute(journal) {
     if (!consumerAbsent) {
       return { ok: false };
     }
-    recordMutation(journal, `consumer-secret-delete:${oldSecretName}`);
     if (credentialClass === "github_deployment_token") {
       const oldConsumerProof = await probeGithubInstalledSecret({
         cloudflareAccountId,
@@ -558,6 +574,10 @@ async function execute(journal) {
         expectedActor: githubAuthority.expected_actor,
         credential: secrets.github_management_credential,
         workflowId: productionTarget.github_workflow_id,
+        recordMutationIntent: () => recordMutation(
+          journal,
+          `production-release-dispatch:${oldConsumerSlot}`,
+        ),
       });
       if (oldConsumerProof === null) return { ok: false };
       Object.assign(consumerProof, {
@@ -590,8 +610,14 @@ function recordMutation(journal, step) {
   journal.steps.push(step);
 }
 
-async function putConsumerSecret(definition_, name, value) {
+async function putConsumerSecret(
+  definition_,
+  name,
+  value,
+  recordMutationIntent = () => {},
+) {
   if (definition_.consumer_provider === "wrangler") {
+    recordMutationIntent();
     const response = await cloudflare.request(
       secrets.management_credential,
       workerSecretPath(definition_),
@@ -612,6 +638,7 @@ async function putConsumerSecret(definition_, name, value) {
     name,
     value,
     secrets.github_management_credential,
+    recordMutationIntent,
   );
 }
 
@@ -652,12 +679,17 @@ async function listConsumerSecrets(definition_) {
     : { kind: "failure" };
 }
 
-async function deleteConsumerSecret(definition_, name) {
+async function deleteConsumerSecret(
+  definition_,
+  name,
+  recordMutationIntent = () => {},
+) {
   const before = await listConsumerSecrets(definition_);
   if (before.kind !== "present") return false;
   if (!before.names.includes(name)) return true;
   let deleted;
   if (definition_.consumer_provider === "wrangler") {
+    recordMutationIntent();
     const response = await cloudflare.request(
       secrets.management_credential,
       `${workerSecretPath(definition_)}/${encodeURIComponent(name)}`,
@@ -669,6 +701,7 @@ async function deleteConsumerSecret(definition_, name) {
     deleted = await deleteGithubConsumerSecret(
       name,
       secrets.github_management_credential,
+      recordMutationIntent,
     );
   }
   if (!deleted) return false;

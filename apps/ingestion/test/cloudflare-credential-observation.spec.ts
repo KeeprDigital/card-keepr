@@ -87,4 +87,21 @@ describe("server-owned Cloudflare boundary observation", () => {
     );
     expect(observed).toBeNull();
   });
+
+  test.each([
+    null,
+    [],
+    "provider-envelope",
+    { success: true, result: null },
+    { success: true, result: [] },
+    { success: "true", result: exactPolicy() },
+    { success: true, result: { ...exactPolicy(), policies: "broad" } },
+  ])("rejects malformed provider JSON envelopes %#", async (body) => {
+    const observed = await observeCloudflareCredentialBoundary(
+      plan as never,
+      "server-owned-observation-token",
+      async () => ({ status: 200, body }),
+    );
+    expect(observed).toBeNull();
+  });
 });

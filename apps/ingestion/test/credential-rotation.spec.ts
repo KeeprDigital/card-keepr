@@ -344,7 +344,7 @@ test("GitHub final evidence is independently read from an exact successful workf
     expected_fingerprint: `sha256:${"c".repeat(64)}`,
   }] as never;
   const title =
-    `credential-boundary-probe-replacement-provider-token:new-usable-sha256:${"c".repeat(64)}-${digest}`;
+    `production-release-credential-boundary-replacement-provider-token:new-usable-sha256:${"c".repeat(64)}-${digest}`;
   const exactRun = {
     id: 42,
     workflow_id: 44444444,
@@ -416,7 +416,7 @@ test("GitHub final evidence is independently read from an exact successful workf
       if (pathname.endsWith("44444444")) {
         return {
           id: 44444444,
-          path: ".github/workflows/credential-boundary-probe.yml",
+          path: ".github/workflows/production-release.yml",
           state: "active",
         };
       }
@@ -484,6 +484,20 @@ test("GitHub final evidence is independently read from an exact successful workf
         : result;
     },
   )).resolves.toBeNull();
+  for (const malformed of [
+    null,
+    [],
+    "github-envelope",
+    { workflow_runs: "not-an-array" },
+  ]) {
+    await expect(observe(
+      exactRun,
+      async (_token, pathname) =>
+        pathname === "/app/installations/22222222"
+          ? malformed
+          : exactRequest("", pathname),
+    )).resolves.toBeNull();
+  }
 });
 
 test("the durable public sequence is installed then verified then issuer-old revoked", async () => {
@@ -873,12 +887,14 @@ test("an expired execution capability cannot be consumed or finalized", async ()
 });
 
 test("a failed D1 consumer proof reports unresolved cleanup mutation", async () => {
+  const expectedFingerprint = await fingerprint(
+    "vitest-d1-verification-token-replacement",
+  );
+  const challenge = "a".repeat(64);
   const response = await consumerProofRequest(
     "d1_verification_token",
-    await fingerprint(
-      "vitest-d1-verification-token-replacement",
-    ),
-    "a".repeat(64),
+    expectedFingerprint,
+    challenge,
   );
   expect(response.status).toBe(409);
   await expect(response.json()).resolves.toMatchObject({
@@ -888,6 +904,15 @@ test("a failed D1 consumer proof reports unresolved cleanup mutation", async () 
       mutation_started: true,
       steps: ["consumer-proof-cleanup:failed"],
     },
+  });
+  const replay = await consumerProofRequest(
+    "d1_verification_token",
+    expectedFingerprint,
+    challenge,
+  );
+  expect(replay.status).toBe(409);
+  await expect(replay.json()).resolves.toMatchObject({
+    code: "consumer_proof_request_replayed",
   });
 });
 
@@ -1010,6 +1035,7 @@ type PlanDocument = Record<string, unknown> & {
   github_management_credential_fingerprint: string;
   github_management_required_permission: string;
   consumer_proof_requests?: Array<{
+    request_nonce: string;
     credential_class: CredentialClass;
     expected_fingerprint: string;
     plan_digest: string;
@@ -1283,6 +1309,7 @@ async function consumerProofsFor(
     (plan.consumer_proof_requests ?? []).map(
       async (request) => ({
         contract: "card-keepr-credential-consumer-proof@1",
+        request_nonce: request.request_nonce,
         credential_class: request.credential_class,
         expected_fingerprint: request.expected_fingerprint,
         challenge: request.plan_digest,
@@ -1292,7 +1319,7 @@ async function consumerProofsFor(
         slot: request.slot,
         status: request.expected_status,
         proof: await consumerProofHmac(
-          `${request.credential_class}\0` +
+          `${request.request_nonce}\0${request.credential_class}\0` +
           `${request.expected_fingerprint}\0` +
           `${request.plan_digest}\0${request.plan_nonce}\0` +
           `${request.execution_attempt}\0` +
@@ -1442,7 +1469,7 @@ async function consumerProofRequest(
         plan_digest: challenge,
         plan_nonce: "c".repeat(64),
         execution_attempt: 1,
-        execution_expires_at: "2026-07-29T00:10:00.000Z",
+        execution_expires_at: "9999-12-31T23:59:59.999Z",
         action: "install",
         credential_class: credentialClass as CredentialClass,
         old_fingerprint: `sha256:${"1".repeat(64)}`,

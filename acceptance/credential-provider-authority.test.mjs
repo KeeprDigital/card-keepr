@@ -19,11 +19,16 @@ import {
   reconcileConsumerInstallation,
 } from "../cli/provider-reconciliation.mjs";
 import {
+  deleteGithubConsumerSecret,
   githubExecutionPlanMatches,
   githubAuthorityMatches,
   probeGithubInstalledSecret,
+  setGithubConsumerSecret,
   verifyGithubManagementAuthority,
 } from "../cli/provider-github-boundary.mjs";
+import {
+  createCloudflareProvider,
+} from "../cli/provider-cloudflare-boundary.mjs";
 import {
   classifySecretList,
   classifyTokenLookup,
@@ -267,6 +272,129 @@ test("reconciliation safely retries after every consumer installation step", asy
       "consumer-secret-put:REPLACEMENT",
       "consumer-marker-put:MARKER",
     ]);
+  }
+});
+
+test("consumer installation journals intent before every ambiguous remote write", async () => {
+  for (const failedStep of ["replacement", "marker"]) {
+    const journal = [];
+    const result = await reconcileConsumerInstallation({
+      replacementName: "REPLACEMENT",
+      markerName: "MARKER",
+      putReplacement: async () => {
+        assert.deepEqual(journal, [
+          "consumer-secret-put:REPLACEMENT",
+        ]);
+        return failedStep !== "replacement";
+      },
+      putMarker: async () => {
+        assert.deepEqual(journal, [
+          "consumer-secret-put:REPLACEMENT",
+          "consumer-marker-put:MARKER",
+        ]);
+        return failedStep !== "marker";
+      },
+      verify: async () => true,
+      recordMutation: (step) => journal.push(step),
+    });
+    assert.equal(result, false);
+    assert.deepEqual(
+      journal,
+      failedStep === "replacement"
+        ? ["consumer-secret-put:REPLACEMENT"]
+        : [
+            "consumer-secret-put:REPLACEMENT",
+            "consumer-marker-put:MARKER",
+          ],
+    );
+  }
+});
+
+test("provider write callbacks retain the claim when GitHub or Cloudflare loses the response after applying", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const operation of ["github-put", "github-delete"]) {
+      const journal = [];
+      let requestCount = 0;
+      globalThis.fetch = async (_url, init = {}) => {
+        requestCount += 1;
+        if (operation === "github-put" && requestCount === 1) {
+          return jsonResponse(200, {
+            key: Buffer.alloc(32, 7).toString("base64"),
+            key_id: "environment-key",
+          });
+        }
+        assert.deepEqual(journal, [
+          operation === "github-put"
+            ? "consumer-secret-put:ROTATING_SECRET"
+            : "consumer-secret-delete:ROTATING_SECRET",
+        ]);
+        assert.ok(["PUT", "DELETE"].includes(init.method));
+        throw new Error("response lost after provider applied write");
+      };
+      const record = () => journal.push(
+        operation === "github-put"
+          ? "consumer-secret-put:ROTATING_SECRET"
+          : "consumer-secret-delete:ROTATING_SECRET",
+      );
+      const ok = operation === "github-put"
+        ? await setGithubConsumerSecret(
+            "ROTATING_SECRET",
+            "replacement-secret",
+            "github-installation-token",
+            record,
+          )
+        : await deleteGithubConsumerSecret(
+            "ROTATING_SECRET",
+            "github-installation-token",
+            record,
+          );
+      assert.equal(ok, false);
+      assert.equal(journal.length, 1);
+    }
+
+    const journal = [];
+    const accountId = "0123456789abcdef0123456789abcdef";
+    const provider = createCloudflareProvider({
+      accountId,
+      resourceIdentity:
+        `cloudflare-account:${accountId}:d1:` +
+        "00000000-0000-0000-0000-000000000002",
+    });
+    globalThis.fetch = async (_url, init = {}) => {
+      if (init.method !== "DELETE") {
+        return jsonResponse(200, {
+          success: true,
+          result: {
+            id: "provider-token-old",
+            status: "active",
+            policies: [{
+              effect: "allow",
+              permission_groups: [{ name: "D1 Write" }],
+              resources: {
+                [`com.cloudflare.api.account.${accountId}`]: "*",
+              },
+            }],
+          },
+        });
+      }
+      assert.deepEqual(journal, [
+        "issuer-delete:provider-token-old",
+      ]);
+      throw new Error("response lost after issuer delete");
+    };
+    const deleted = await provider.deleteIssuerCredential(
+      "management-token",
+      "provider-token-old",
+      "D1 Write",
+      () => journal.push("issuer-delete:provider-token-old"),
+    );
+    assert.equal(deleted, false);
+    assert.deepEqual(journal, [
+      "issuer-delete:provider-token-old",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -522,7 +650,7 @@ test("GitHub management authority binds exact installation, repository, environm
     environment: { id: 33333333, name: "production" },
     workflow: {
       id: 44444444,
-      path: ".github/workflows/credential-boundary-probe.yml",
+      path: ".github/workflows/production-release.yml",
       state: "active",
     },
     expected,
@@ -643,7 +771,7 @@ test("GitHub authority authenticates the exact installation and mints one exact 
     if (pathname.endsWith("/actions/workflows/44444444")) {
       return jsonResponse(200, {
         id: 44444444,
-        path: ".github/workflows/credential-boundary-probe.yml",
+        path: ".github/workflows/production-release.yml",
         state: "active",
       });
     }
@@ -684,7 +812,8 @@ test("GitHub authority authenticates the exact installation and mints one exact 
     );
     assert.equal(firstClaims.iss, "11111111");
     assert.equal(firstClaims.iat, 1785283140);
-    assert.equal(firstClaims.exp, 1785283800);
+    assert.equal(firstClaims.exp, 1785283740);
+    assert.equal(firstClaims.exp - firstClaims.iat, 600);
     assert.equal(
       requests[2].init.headers.authorization,
       "Bearer installation-token-exact-authority",
@@ -706,18 +835,34 @@ test("GitHub authority authenticates the exact installation and mints one exact 
       Buffer.from(freshJwt.split(".")[1], "base64url").toString(),
     );
     assert.equal(freshClaims.iat, 1785284940);
-    assert.equal(freshClaims.exp, 1785285600);
+    assert.equal(freshClaims.exp, 1785285540);
+    assert.equal(freshClaims.exp - freshClaims.iat, 600);
     assert.notEqual(freshJwt, firstJwt);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("the GitHub installed-secret workflow retains semantic slots and exact actor validation", () => {
+test("the serialized production release owns both semantic deployment slots and performs the real deployment", () => {
+  assert.equal(
+    existsSync(".github/workflows/credential-boundary-probe.yml"),
+    false,
+  );
+  assert.equal(
+    existsSync(".github/workflows/production-release.yml"),
+    true,
+  );
   const workflow = readFileSync(
-    ".github/workflows/credential-boundary-probe.yml",
+    ".github/workflows/production-release.yml",
     "utf8",
   );
+  assert.match(workflow, /^name: production-release$/mu);
+  assert.match(workflow, /workflow_dispatch:/u);
+  assert.match(
+    workflow,
+    /concurrency:\s*\n\s*group: production-release\s*\n\s*cancel-in-progress: false/u,
+  );
+  assert.match(workflow, /environment: production/u);
   assert.match(
     workflow,
     /options:\s*\n\s*- active\s*\n\s*- replacement/u,
@@ -734,6 +879,23 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
     workflow,
     /if: inputs\.secret_slot == 'replacement'[\s\S]*secrets\.CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT/u,
   );
+  assert.equal(
+    (
+      workflow.match(
+        /npx wrangler deploy --config apps\/api\/wrangler\.jsonc/gu,
+      ) ?? []
+    ).length,
+    1,
+  );
+  assert.equal(
+    (
+      workflow.match(
+        /npx wrangler deploy --config apps\/ingestion\/wrangler\.jsonc/gu,
+      ) ?? []
+    ).length,
+    1,
+  );
+  assert.match(workflow, /test "\$\{GITHUB_SHA\}" = "\$\{EXPECTED_HEAD_SHA\}"/u);
   assert.match(workflow, /expected_actor:\s*\n\s*required: true/u);
   assert.match(
     workflow,
@@ -741,7 +903,11 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
   );
   assert.match(
     workflow,
-    /accounts\/\$\{EXPECTED_ACCOUNT_ID\}\/workers\/scripts\/card-keepr-ingestion\/deployments/u,
+    /for worker in card-keepr-api card-keepr-ingestion; do/u,
+  );
+  assert.match(
+    workflow,
+    /accounts\/\$\{EXPECTED_ACCOUNT_ID\}\/workers\/scripts\/\$\{worker\}\/deployments/u,
   );
   assert.doesNotMatch(workflow, /\/workers\/services\//u);
   assert.equal(
@@ -750,7 +916,7 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
         /test "\$\(jq -r '\.result\.deployments \| type' <<<"\$\{deployments\}"\)" = "array"/gu,
       ) ?? []
     ).length,
-    2,
+    1,
   );
   assert.equal(
     (
@@ -758,13 +924,14 @@ test("the GitHub installed-secret workflow retains semantic slots and exact acto
         /test "\$\(jq -r '\.result\.deployments \| length > 0' <<<"\$\{deployments\}"\)" = "true"/gu,
       ) ?? []
     ).length,
-    2,
+    1,
   );
 });
 
 test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong actor", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
+  const journal = [];
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init });
     if (String(url).endsWith("/git/ref/heads/main")) {
@@ -773,13 +940,16 @@ test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong
       });
     }
     if (String(url).endsWith("/dispatches")) {
+      assert.deepEqual(journal, [
+        "production-release-dispatch:a",
+      ]);
       return new Response(null, { status: 204 });
     }
     return jsonResponse(200, {
       workflow_runs: [{
         id: 1234,
         display_title:
-          `credential-boundary-probe-active-provider-token-new-usable-sha256:${"d".repeat(64)}-${"c".repeat(64)}`,
+          `production-release-credential-boundary-active-provider-token-new-usable-sha256:${"d".repeat(64)}-${"c".repeat(64)}`,
         head_sha: "a".repeat(40),
         created_at: "9999-12-31T23:59:59.999Z",
         status: "completed",
@@ -799,6 +969,8 @@ test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong
       expectedFingerprint: `sha256:${"d".repeat(64)}`,
       credential: "github-installation-token",
       workflowId: "44444444",
+      recordMutationIntent: () =>
+        journal.push("production-release-dispatch:a"),
     });
     assert.equal(proof, null);
     const dispatch = JSON.parse(requests[1].init.body);

@@ -1,0 +1,114 @@
+name: production-release
+run-name: production-release-credential-boundary-${{ inputs.secret_slot }}-${{ inputs.expected_token_id }}-${{ inputs.expected_status }}-${{ inputs.expected_fingerprint }}-${{ inputs.plan_digest }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_account_id:
+        required: true
+        type: string
+      expected_token_id:
+        required: true
+        type: string
+      plan_digest:
+        required: true
+        type: string
+      plan_nonce:
+        required: true
+        type: string
+      expected_head_sha:
+        required: true
+        type: string
+      expected_actor:
+        required: true
+        type: string
+      expected_status:
+        required: true
+        type: choice
+        options:
+          - usable
+          - unusable
+      expected_fingerprint:
+        required: true
+        type: string
+      secret_slot:
+        required: true
+        type: choice
+        options:
+          - active
+          - replacement
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out the exact guarded release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+      - name: Select active deployment credential
+        if: inputs.secret_slot == 'active'
+        env:
+          SELECTED_DEPLOYMENT_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf 'CLOUDFLARE_API_TOKEN=%s\n' \
+            "${SELECTED_DEPLOYMENT_TOKEN}" >> "${GITHUB_ENV}"
+      - name: Select replacement deployment credential
+        if: inputs.secret_slot == 'replacement'
+        env:
+          SELECTED_DEPLOYMENT_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT }}
+        run: |
+          set -euo pipefail
+          printf 'CLOUDFLARE_API_TOKEN=%s\n' \
+            "${SELECTED_DEPLOYMENT_TOKEN}" >> "${GITHUB_ENV}"
+      - name: Verify guarded credential and deploy production
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+          EXPECTED_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+          EXPECTED_TOKEN_ID: ${{ inputs.expected_token_id }}
+          PLAN_DIGEST: ${{ inputs.plan_digest }}
+          PLAN_NONCE: ${{ inputs.plan_nonce }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_ACTOR: ${{ inputs.expected_actor }}
+          EXPECTED_STATUS: ${{ inputs.expected_status }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
+          SECRET_SLOT: ${{ inputs.secret_slot }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_SHA}" = "${EXPECTED_HEAD_SHA}"
+          test "${GITHUB_ACTOR}" = "${EXPECTED_ACTOR}"
+          if test "${EXPECTED_STATUS}" = "usable"; then
+            actual_fingerprint="$(printf '%s' "${CLOUDFLARE_API_TOKEN}" |
+              sha256sum | awk '{print $1}')"
+            test "sha256:${actual_fingerprint}" = "${EXPECTED_FINGERPRINT}"
+            verify="$(curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${EXPECTED_ACCOUNT_ID}/tokens/verify")"
+            test "$(jq -r '.success' <<<"${verify}")" = "true"
+            test "$(jq -r '.result.id' <<<"${verify}")" = "${EXPECTED_TOKEN_ID}"
+            test "$(jq -r '.result.status' <<<"${verify}")" = "active"
+            npm ci
+            npx wrangler deploy --config apps/api/wrangler.jsonc
+            npx wrangler deploy --config apps/ingestion/wrangler.jsonc
+            for worker in card-keepr-api card-keepr-ingestion; do
+              deployments="$(curl --fail-with-body --silent --show-error \
+                --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                "https://api.cloudflare.com/client/v4/accounts/${EXPECTED_ACCOUNT_ID}/workers/scripts/${worker}/deployments")"
+              test "$(jq -r '.success' <<<"${deployments}")" = "true"
+              test "$(jq -r '.result.deployments | type' <<<"${deployments}")" = "array"
+              test "$(jq -r '.result.deployments | length > 0' <<<"${deployments}")" = "true"
+            done
+          else
+            test -z "${CLOUDFLARE_API_TOKEN}"
+          fi
+          printf 'KEEPR_CREDENTIAL_PROOF plan_digest=%s plan_nonce=%s head_sha=%s token_id=%s actor=%s slot=%s\n' \
+            "${PLAN_DIGEST}" "${PLAN_NONCE}" "${GITHUB_SHA}" "${EXPECTED_TOKEN_ID}" "${GITHUB_ACTOR}" "${SECRET_SLOT}"
