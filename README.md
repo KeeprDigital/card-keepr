@@ -116,7 +116,8 @@ binding changes with `npm run types:generate`.
 The API Worker has catalogue, Printing Image, and Catalogue Export read
 responsibilities and no evidence, export-mutation, or backup binding. The
 ingestion Worker has the corresponding mutation bindings plus the private
-backup bucket. R2 buckets have no `r2.dev` or custom-domain configuration and
+backup bucket and a service binding to the API Worker for credential
+observation. R2 buckets have no `r2.dev` or custom-domain configuration and
 remain reachable only through authenticated Worker routes.
 
 Cloudflare D1 and R2 bindings are resource-scoped rather than method-scoped, so
@@ -210,9 +211,13 @@ The attestation and consumer-proof keys are server-owned and never enter the
 CLI or a child process. Credential CLI input is provided through its secret
 file descriptor and contains only the credentials needed for the requested
 provider mutation. The ingestion Worker issues plan-bound consumer-proof
-request tokens; the API and ingestion consumers sign observations that the
-caller cannot forge. The CLI passes a validated, versioned plan envelope on a
-dedicated descriptor; neither the plan nor its single-use execution capability
-appears in child-process arguments. After trusted consumer observations
-succeed, ingestion derives the facts itself and issues the final boundary
-attestation. Caller-authored provider facts are never signed.
+request tokens and is the only Worker that accepts the proof POST or consumes
+its single-use nonce in D1. For an API bearer observation, ingestion invokes
+the API's private named service entrypoint with that signed request token; API
+performs its normal bearer-authenticated `GET /health` check and returns a
+stateless signed observation. The default API router exposes no proof route.
+The CLI passes a validated, versioned plan envelope on a dedicated descriptor;
+neither the plan nor its single-use execution capability appears in
+child-process arguments. After trusted consumer observations succeed,
+ingestion derives the facts itself and issues the final boundary attestation.
+Caller-authored provider facts are never signed.

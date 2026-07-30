@@ -2,6 +2,8 @@ export type CredentialClass =
   keyof typeof credentialClassDefinitions;
 
 export const credentialClasses: readonly CredentialClass[];
+export const credentialConsumerProofWorkerName:
+  "card-keepr-ingestion";
 
 export type CredentialDeploymentContext = {
   cloudflare_account_id: string;

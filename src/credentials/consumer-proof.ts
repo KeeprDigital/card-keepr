@@ -24,6 +24,16 @@ type ConsumerProofEnvironment = {
   D1_VERIFICATION_TOKEN?: string;
 };
 
+type ApiConsumerObservationEnvironment = Pick<
+  ConsumerProofEnvironment,
+  | "CREDENTIAL_CONSUMER_PROOF_KEY"
+  | "API_BEARER_KEY"
+  | "API_BEARER_KEY_REPLACEMENT"
+>;
+
+export const credentialConsumerProofRequestHeader =
+  "x-keepr-credential-consumer-request";
+
 export type CredentialConsumerProofRequestClaims = {
   request_nonce: string;
   plan_id: string;
@@ -136,6 +146,9 @@ export async function handleCredentialConsumerProof(
     secret: string,
     credentialClass: CredentialClass,
   ) => Promise<boolean>,
+  remoteConsumerObservation?: (
+    requestToken: string,
+  ) => Promise<unknown>,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   if (
@@ -200,6 +213,39 @@ export async function handleCredentialConsumerProof(
       { status: 503 },
     );
   }
+  if (credentialClass === "api_bearer_key") {
+    if (
+      remoteConsumerObservation === undefined ||
+      typeof body.request_token !== "string"
+    ) {
+      return Response.json(
+        { code: "consumer_proof_boundary_unavailable" },
+        { status: 503 },
+      );
+    }
+    let proof: unknown;
+    try {
+      proof = await remoteConsumerObservation(body.request_token);
+    } catch {
+      return Response.json(
+        { code: "consumer_proof_boundary_unavailable" },
+        { status: 503 },
+      );
+    }
+    if (
+      !(await credentialConsumerProofMatches(
+        proof,
+        claims,
+        environment.CREDENTIAL_CONSUMER_PROOF_KEY,
+      ))
+    ) {
+      return Response.json(
+        { code: "credential_capability_mismatch" },
+        { status: 409 },
+      );
+    }
+    return Response.json(proof);
+  }
   const secret = replacementSecret(
     credentialClass as CredentialClass,
     environment,
@@ -256,6 +302,75 @@ export async function handleCredentialConsumerProof(
           ],
         },
       },
+      { status: 409 },
+    );
+  }
+  return proofResponse(
+    claims,
+    environment.CREDENTIAL_CONSUMER_PROOF_KEY,
+  );
+}
+
+export async function handleApiCredentialConsumerObservation(
+  request: Request,
+  environment: ApiConsumerObservationEnvironment,
+  normalBearerProbe: (secret: string) => Promise<boolean>,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  const requestToken = request.headers.get(
+    credentialConsumerProofRequestHeader,
+  );
+  if (
+    request.method !== "GET" ||
+    url.pathname !== "/health" ||
+    requestToken === null
+  ) {
+    return null;
+  }
+  const claims = await verifiedRequestToken(
+    requestToken,
+    environment.CREDENTIAL_CONSUMER_PROOF_KEY,
+    new Date().toISOString(),
+  );
+  if (
+    claims === null ||
+    claims.credential_class !== "api_bearer_key"
+  ) {
+    return Response.json(
+      { code: "invalid_boundary_challenge" },
+      { status: 401 },
+    );
+  }
+  const secret = replacementSecret(
+    claims.credential_class,
+    environment,
+    claims.slot,
+  );
+  if (claims.expected_status === "unusable" && secret === undefined) {
+    return proofResponse(
+      claims,
+      environment.CREDENTIAL_CONSUMER_PROOF_KEY,
+    );
+  }
+  if (
+    secret === undefined ||
+    !(await fixedHexEqual(
+      await sha256(secret),
+      claims.expected_fingerprint.slice("sha256:".length),
+    ))
+  ) {
+    return Response.json(
+      { code: "credential_fingerprint_mismatch" },
+      { status: 409 },
+    );
+  }
+  const usable = await normalBearerProbe(secret);
+  if (
+    (claims.expected_status === "usable" && !usable) ||
+    (claims.expected_status === "unusable" && usable)
+  ) {
+    return Response.json(
+      { code: "credential_capability_mismatch" },
       { status: 409 },
     );
   }
@@ -467,7 +582,9 @@ function consumerProofRequestNonceMessage(
 
 function replacementSecret(
   credentialClass: CredentialClass,
-  environment: ConsumerProofEnvironment,
+  environment:
+    | ConsumerProofEnvironment
+    | ApiConsumerObservationEnvironment,
   slot: "a" | "b",
 ): string | undefined {
   const definition = credentialClassDefinitions[credentialClass];
@@ -475,7 +592,7 @@ function replacementSecret(
     slot === "a"
       ? definition.active_environment_key
       : definition.replacement_environment_key;
-  return environment[key as keyof ConsumerProofEnvironment] as
+  return (environment as unknown as Record<string, unknown>)[key] as
     | string
     | undefined;
 }

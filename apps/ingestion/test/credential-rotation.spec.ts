@@ -35,6 +35,9 @@ beforeEach(async () => {
     "DELETE FROM credential_rotations",
   ).run();
   await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_consumer_proof_uses",
+  ).run();
+  await env.CATALOGUE_DB.prepare(
     `UPDATE operation_state
      SET recovery_health = 'healthy', active_ingestion_run_id = NULL,
          credential_rotation_generation = 0
@@ -48,6 +51,9 @@ afterEach(async () => {
   ).run();
   await env.CATALOGUE_DB.prepare(
     "DELETE FROM credential_rotations",
+  ).run();
+  await env.CATALOGUE_DB.prepare(
+    "DELETE FROM credential_consumer_proof_uses",
   ).run();
   await env.CATALOGUE_DB.prepare(
     `UPDATE operation_state
@@ -686,6 +692,72 @@ test("the signed ingestion consumer challenge proves the exact installed adminis
   await expect(wrongClass.json()).resolves.toMatchObject({
     code: "identity_conflict",
   });
+});
+
+test("ingestion consumes and relays API consumer proof requests to the API owning boundary", async () => {
+  const challenge = "e".repeat(64);
+  const expectedFingerprint = await fingerprint(
+    "vitest-api-key-replacement-slot",
+  );
+  const accepted = await consumerProofRequest(
+    "api_bearer_key",
+    expectedFingerprint,
+    challenge,
+  );
+  expect(accepted.status).toBe(200);
+  await expect(accepted.json()).resolves.toMatchObject({
+    contract: "card-keepr-credential-consumer-proof@1",
+    credential_class: "api_bearer_key",
+    expected_fingerprint: expectedFingerprint,
+    challenge,
+    slot: "b",
+    status: "usable",
+  });
+
+  const replay = await consumerProofRequest(
+    "api_bearer_key",
+    expectedFingerprint,
+    challenge,
+  );
+  expect(replay.status).toBe(409);
+  await expect(replay.json()).resolves.toMatchObject({
+    code: "consumer_proof_request_replayed",
+  });
+});
+
+test("ingestion rejects declared and streamed consumer proof bodies beyond 16 KiB", async () => {
+  const declared = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": "16385",
+        },
+        body: "{}",
+      },
+    ),
+  );
+  expect(declared.status).toBe(413);
+
+  const streamed = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(10_000));
+            controller.enqueue(new Uint8Array(7_000));
+            controller.close();
+          },
+        }),
+      },
+    ),
+  );
+  expect(streamed.status).toBe(413);
 });
 
 test("stale identity, wrong class, aliased management, and stale claim snapshot fail before execution", async () => {

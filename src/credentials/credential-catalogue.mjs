@@ -1,3 +1,6 @@
+export const credentialConsumerProofWorkerName =
+  "card-keepr-ingestion";
+
 export const credentialClassDefinitions = Object.freeze({
   api_bearer_key: Object.freeze({
     owning_boundary: "api_worker",

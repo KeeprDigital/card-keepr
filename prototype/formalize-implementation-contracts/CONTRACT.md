@@ -27,6 +27,10 @@ override a machine-readable artifact.
 - Every operation is under `/v1`, read-only, and authenticated by the API
   bearer traffic gate. `OPTIONS` preflight is unauthenticated infrastructure
   behavior, not a catalogue operation.
+- Credential proof orchestration and replay-nonce mutation belong to the
+  ingestion Worker. API accepts a signed observation only through a private
+  named service entrypoint, verifies the selected live secret through its
+  normal bearer `GET /health` path, and signs the result without writing D1.
 - Browser requests additionally require an exact environment-specific origin.
   Preflight permits `GET`, `HEAD`, and `OPTIONS` plus `Authorization`; actual
   responses expose `ETag` and `X-Catalogue-Revision` and send `Vary: Origin`.
@@ -147,6 +151,12 @@ currently bound to the owning Worker. Catalogue rotation state can explicitly
 deny an `old_revoked` value, but it cannot keep a provider-removed binding
 alive; deletion therefore takes effect before an interrupted finalization is
 reconciled.
+
+The ingestion Worker is the sole public consumer-proof mutation boundary. It
+consumes each signed request nonce before dispatching to the owning consumer.
+API bearer proof dispatch uses a Worker service binding and a harmless
+authenticated health observation; API's default router exposes no proof route
+and performs no consumer-proof D1 write.
 
 ## Acceptance scenarios
 

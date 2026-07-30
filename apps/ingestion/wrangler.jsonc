@@ -32,6 +32,11 @@
   ],
   "services": [
     {
+      "binding": "API_CREDENTIAL_CONSUMER",
+      "service": "card-keepr-api",
+      "entrypoint": "ApiCredentialConsumer"
+    },
+    {
       "binding": "OFFICIAL_SOURCE_TRANSPORT",
       "service": "card-keepr-ingestion",
       "entrypoint": "OfficialSourceTransport"

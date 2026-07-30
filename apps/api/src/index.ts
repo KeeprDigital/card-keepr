@@ -1,3 +1,4 @@
+import { WorkerEntrypoint } from "cloudflare:workers";
 import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   catalogueExportComponentResponse,
@@ -22,7 +23,7 @@ import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
-  handleCredentialConsumerProof,
+  handleApiCredentialConsumerObservation,
 } from "../../../src/credentials/consumer-proof";
 
 const apiWorker = {
@@ -58,24 +59,6 @@ const apiWorker = {
       }
 
       const url = new URL(request.url);
-      const consumerProof = await handleCredentialConsumerProof(
-        request,
-        env,
-        ["api_bearer_key"],
-        async (secret) => {
-          const response = await apiWorker.fetch(
-            new Request(new URL("/health", request.url), {
-              headers: {
-                authorization: `Bearer ${secret}`,
-              },
-            }),
-            env,
-          );
-          await response.body?.cancel();
-          return response.status === 200;
-        },
-      );
-      if (consumerProof !== null) return consumerProof;
       if (url.pathname.startsWith("/v1/")) {
         const rateLimit = isPrintingImageContent(url.pathname)
           ? env.PRINTING_IMAGE_RATE_LIMIT
@@ -214,6 +197,29 @@ const apiWorker = {
 } satisfies ExportedHandler<Env>;
 
 export default apiWorker;
+
+export class ApiCredentialConsumer extends WorkerEntrypoint<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    return (
+      await handleApiCredentialConsumerObservation(
+        request,
+        this.env,
+        async (secret) => {
+          const response = await apiWorker.fetch(
+            new Request(new URL("/health", request.url), {
+              headers: {
+                authorization: `Bearer ${secret}`,
+              },
+            }),
+            this.env,
+          );
+          await response.body?.cancel();
+          return response.status === 200;
+        },
+      )
+    ) ?? new Response(null, { status: 404 });
+  }
+}
 
 function isPrintingImageContent(pathname: string): boolean {
   return (

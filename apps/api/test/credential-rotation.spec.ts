@@ -188,12 +188,12 @@ test("an out-of-band removed old API binding fails closed during overlap", async
   )).toBe(200);
 });
 
-test("the signed consumer challenge proves the exact installed API value through its authenticated boundary", async () => {
+test("the signed health observation proves the exact installed API value without mutating D1", async () => {
   const replacement = "vitest-api-key-replacement-slot";
   expect(await healthStatus(replacement)).toBe(200);
   const challenge = "b".repeat(64);
   const expectedFingerprint = `sha256:${await hash(replacement)}`;
-  const accepted = await consumerProof(
+  const accepted = await consumerObservation(
     expectedFingerprint,
     challenge,
   );
@@ -206,16 +206,13 @@ test("the signed consumer challenge proves the exact installed API value through
     slot: "b",
     status: "usable",
   });
-  const replay = await consumerProof(
+  const repeated = await consumerObservation(
     expectedFingerprint,
     challenge,
   );
-  expect(replay.status).toBe(409);
-  await expect(replay.json()).resolves.toMatchObject({
-    code: "consumer_proof_request_replayed",
-  });
+  expect(repeated.status).toBe(200);
 
-  const wrongValue = await consumerProof(
+  const wrongValue = await consumerObservation(
     `sha256:${"0".repeat(64)}`,
     challenge,
   );
@@ -223,11 +220,15 @@ test("the signed consumer challenge proves the exact installed API value through
   await expect(wrongValue.json()).resolves.toMatchObject({
     code: "credential_fingerprint_mismatch",
   });
+  const replayRows = await env.CATALOGUE_DB.prepare(
+    "SELECT COUNT(*) AS count FROM credential_consumer_proof_uses",
+  ).first<{ count: number }>();
+  expect(replayRows?.count).toBe(0);
 });
 
-test("expired consumer proof tokens fail before probing or mutating the consumer", async () => {
+test("expired health observation tokens fail before probing the consumer", async () => {
   const replacement = "vitest-api-key-replacement-slot";
-  const response = await consumerProof(
+  const response = await consumerObservation(
     `sha256:${await hash(replacement)}`,
     "d".repeat(64),
     "2000-01-01T00:00:00.000Z",
@@ -236,6 +237,29 @@ test("expired consumer proof tokens fail before probing or mutating the consumer
   await expect(response.json()).resolves.toMatchObject({
     code: "invalid_boundary_challenge",
   });
+});
+
+test("the API no longer accepts the mutating consumer-proof route", async () => {
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/credential-consumer-proof",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          credential_class: "api_bearer_key",
+        }),
+      },
+    ),
+  );
+  expect(response.status).toBe(404);
+  const replayRows = await env.CATALOGUE_DB.prepare(
+    "SELECT COUNT(*) AS count FROM credential_consumer_proof_uses",
+  ).first<{ count: number }>();
+  expect(replayRows?.count).toBe(0);
 });
 
 test("distinct required observations receive distinct single-use request nonces", async () => {
@@ -267,41 +291,6 @@ test("distinct required observations receive distinct single-use request nonces"
   );
 });
 
-test("consumer proof rejects declared and streamed bodies beyond 16 KiB before buffering", async () => {
-  const declared = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/credential-consumer-proof",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "content-length": "16385",
-        },
-        body: "{}",
-      },
-    ),
-  );
-  expect(declared.status).toBe(413);
-
-  const streamed = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/credential-consumer-proof",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: new ReadableStream({
-          start(controller) {
-            controller.enqueue(new Uint8Array(10_000));
-            controller.enqueue(new Uint8Array(7_000));
-            controller.close();
-          },
-        }),
-      },
-    ),
-  );
-  expect(streamed.status).toBe(413);
-});
-
 async function healthStatus(secret: string): Promise<number> {
   const response = await exports.default.fetch(
     new Request("https://card-keepr.invalid/health", {
@@ -326,50 +315,41 @@ async function directApiHealthStatus(
   return response.status;
 }
 
-async function consumerProof(
+async function consumerObservation(
   expectedFingerprint: string,
   challenge: string,
   executionExpiresAt = "9999-12-31T23:59:59.999Z",
 ): Promise<Response> {
-  const body = JSON.stringify({
-    credential_class: "api_bearer_key",
-    expected_fingerprint: expectedFingerprint,
-    challenge,
-    slot: "b",
-    expected_status: "usable",
-    request_token: (
-      await credentialConsumerProofRequests(
-        {
-          id: "credplan_api_consumer_proof",
-          plan_digest: challenge,
-          plan_nonce: "c".repeat(64),
-          execution_attempt: 1,
-          execution_expires_at: executionExpiresAt,
-          action: "install",
-          credential_class: "api_bearer_key",
-          old_fingerprint: `sha256:${"1".repeat(64)}`,
-          replacement_fingerprint: expectedFingerprint,
-          old_consumer_slot: "a",
-          replacement_consumer_slot: "b",
-          old_issuer_credential_id: "worker-secret:old",
-          replacement_issuer_credential_id: "worker-secret:replacement",
-          github_management_credential_fingerprint:
-            `sha256:${"0".repeat(64)}`,
-          github_management_required_permission: "not-applicable",
-        },
-        "vitest-consumer-proof-key",
-      )
-    )[0]!.request_token,
-  });
-  return exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/credential-consumer-proof",
+  const requestToken = (
+    await credentialConsumerProofRequests(
       {
-        method: "POST",
+        id: "credplan_api_consumer_proof",
+        plan_digest: challenge,
+        plan_nonce: "c".repeat(64),
+        execution_attempt: 1,
+        execution_expires_at: executionExpiresAt,
+        action: "install",
+        credential_class: "api_bearer_key",
+        old_fingerprint: `sha256:${"1".repeat(64)}`,
+        replacement_fingerprint: expectedFingerprint,
+        old_consumer_slot: "a",
+        replacement_consumer_slot: "b",
+        old_issuer_credential_id: "worker-secret:old",
+        replacement_issuer_credential_id: "worker-secret:replacement",
+        github_management_credential_fingerprint:
+          `sha256:${"0".repeat(64)}`,
+        github_management_required_permission: "not-applicable",
+      },
+      "vitest-consumer-proof-key",
+    )
+  )[0]!.request_token;
+  return exports.ApiCredentialConsumer.fetch(
+    new Request(
+      "https://card-keepr.invalid/health",
+      {
         headers: {
-          "content-type": "application/json",
+          "x-keepr-credential-consumer-request": requestToken,
         },
-        body,
       },
     ),
   );

@@ -38,6 +38,7 @@ import {
   handleCredentialExecutionCapability,
 } from "./credential-administration";
 import {
+  credentialConsumerProofRequestHeader,
   handleCredentialConsumerProof,
 } from "../../../src/credentials/consumer-proof";
 export {
@@ -55,6 +56,7 @@ const ingestionWorker = {
         request,
         env,
         [
+          "api_bearer_key",
           "ingestion_admin_key",
           "d1_export_token",
           "d1_verification_token",
@@ -70,6 +72,16 @@ const ingestionWorker = {
           );
           await response.body?.cancel();
           return response.status === 200;
+        },
+        async (requestToken) => {
+          const response = await env.API_CREDENTIAL_CONSUMER.fetch(
+            new Request("https://card-keepr-api.invalid/health", {
+              headers: {
+                [credentialConsumerProofRequestHeader]: requestToken,
+              },
+            }),
+          );
+          return response.json();
         },
       );
       if (consumerProof !== null) return consumerProof;

@@ -3,8 +3,17 @@ import {
   readD1Migrations,
 } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
-import { generateKeyPairSync } from "node:crypto";
+import {
+  createHmac,
+  generateKeyPairSync,
+  timingSafeEqual,
+} from "node:crypto";
 import { defineConfig } from "vitest/config";
+import {
+  consumerProofMessage,
+  credentialConsumerProofRequestHeader,
+  type CredentialConsumerProofRequestClaims,
+} from "../../src/credentials/consumer-proof";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
@@ -27,6 +36,10 @@ export default defineConfig({
       },
       miniflare: {
         d1Databases: ["LEGACY_DB"],
+        serviceBindings: {
+          API_CREDENTIAL_CONSUMER:
+            apiCredentialConsumerTestResponse,
+        },
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_KEY_REPLACEMENT:
@@ -1493,4 +1506,51 @@ function deterministicNoise(seed: number, length: number) {
     value += state.toString(36).padStart(7, "0");
   }
   return value.slice(0, length);
+async function apiCredentialConsumerTestResponse(
+  request: Request,
+): Promise<Response> {
+  const token = request.headers.get(
+    credentialConsumerProofRequestHeader,
+  );
+  const match =
+    /^v1\.([A-Za-z0-9_-]{32,4096})\.([0-9a-f]{64})$/.exec(
+      token ?? "",
+    );
+  if (match === null) return new Response(null, { status: 401 });
+  const expectedSignature = createHmac(
+    "sha256",
+    "vitest-consumer-proof-key",
+  ).update(`request\0${match[1]!}`).digest();
+  const suppliedSignature = Buffer.from(match[2]!, "hex");
+  if (
+    expectedSignature.byteLength !== suppliedSignature.byteLength ||
+    !timingSafeEqual(expectedSignature, suppliedSignature)
+  ) {
+    return new Response(null, { status: 401 });
+  }
+  const claims = JSON.parse(
+    Buffer.from(match[1]!, "base64url").toString("utf8"),
+  ) as CredentialConsumerProofRequestClaims;
+  if (
+    claims.credential_class !== "api_bearer_key" ||
+    claims.expected_status !== "usable"
+  ) {
+    return new Response(null, { status: 409 });
+  }
+  return Response.json({
+    contract: "card-keepr-credential-consumer-proof@1",
+    request_nonce: claims.request_nonce,
+    credential_class: claims.credential_class,
+    expected_fingerprint: claims.expected_fingerprint,
+    challenge: claims.plan_digest,
+    plan_nonce: claims.plan_nonce,
+    execution_attempt: claims.execution_attempt,
+    execution_expires_at: claims.execution_expires_at,
+    slot: claims.slot,
+    status: claims.expected_status,
+    proof: createHmac(
+      "sha256",
+      "vitest-consumer-proof-key",
+    ).update(consumerProofMessage(claims)).digest("hex"),
+  });
 }

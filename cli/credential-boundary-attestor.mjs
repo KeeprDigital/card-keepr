@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
-  credentialClassDefinitions,
+  credentialConsumerProofWorkerName,
 } from "../src/credentials/credential-catalogue.mjs";
 
 const input = await readInput();
@@ -189,9 +189,6 @@ async function verifyInstalledConsumer(
   ) {
     return false;
   }
-  const worker =
-    credentialClassDefinitions[credentialClass]?.consumer_worker_name;
-  if (typeof worker !== "string") return false;
   if (!Array.isArray(plan.consumer_proof_requests)) return false;
   for (const requested of plan.consumer_proof_requests) {
     const body = JSON.stringify({
@@ -204,7 +201,7 @@ async function verifyInstalledConsumer(
     });
     try {
       response = await fetch(
-        `https://${worker}.${subdomainDocument.result.subdomain}.workers.dev/v1/credential-consumer-proof`,
+        `https://${credentialConsumerProofWorkerName}.${subdomainDocument.result.subdomain}.workers.dev/v1/credential-consumer-proof`,
         {
           method: "POST",
           headers: {
