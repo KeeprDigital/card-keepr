@@ -900,6 +900,70 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (
+    scenario === "errata-conflicting-effective-text" ||
+    scenario === "errata-null-effective-text"
+  ) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber:
+        scenario === "errata-null-effective-text"
+          ? "OP29-004"
+          : "OP29-005",
+      name:
+        scenario === "errata-null-effective-text"
+          ? "Removed Rules Text Card"
+          : "Conflicting Errata Card",
+      cardAttributes: {
+        ...onePieceLeaderAttributes(),
+        effect_text: "Printed and observed rules text.",
+      },
+      printingAttributes: { illustration_types: [] },
+      locator: `/official/errata/${scenario}`,
+      lineageMarker: scenario,
+      printedRulesText: "Printed and observed rules text.",
+    });
+    const baseErratum = {
+      authority: "official_errata",
+      field: "effective_rules_text",
+      target_type: "card",
+      effective_from: "2026-07-01",
+    };
+    return {
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: "Printed and observed rules text.",
+          },
+          errata:
+            scenario === "errata-null-effective-text"
+              ? [
+                  {
+                    ...baseErratum,
+                    official_wording:
+                      "Remove the rules text from this Card.",
+                    corrected_value: null,
+                  },
+                ]
+              : [
+                  {
+                    ...baseErratum,
+                    official_wording: "Use conflicting wording A.",
+                    corrected_value: "Conflicting wording A.",
+                  },
+                  {
+                    ...baseErratum,
+                    official_wording: "Use conflicting wording B.",
+                    corrected_value: "Conflicting wording B.",
+                  },
+                ],
+        },
+      ],
+    };
+  }
   if (scenario === "errata-unrepresentable") {
     const observation = printingObservation({
       game: "one-piece",

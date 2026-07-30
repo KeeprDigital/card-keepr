@@ -612,14 +612,36 @@ export async function reconcileRetainedCardPrintingEvidence(
     observedErrata,
   );
   const candidateCards = [...cards.values()]
-    .map((card) => ({
-      ...card,
-      effective_rules_text: deriveEffectiveRulesText(
-        card,
-        errata,
-        observedAt,
-      ),
-    }))
+    .map((card) => {
+      try {
+        return {
+          ...card,
+          effective_rules_text: deriveEffectiveRulesText(
+            card,
+            errata,
+            observedAt,
+          ),
+        };
+      } catch (error) {
+        const conflictPlans = plans.filter(
+          (plan) => plan.cardId === card.id,
+        );
+        diagnostics.push({
+          code: "canonical_card_conflict",
+          source_observation_id:
+            conflictPlans[0]?.sourceObservationId ?? null,
+          locator: conflictPlans[0]?.locator ?? null,
+          candidate_printing_ids: conflictPlans.flatMap((plan) =>
+            plan.printingId === null ? [] : [plan.printingId],
+          ),
+          detail:
+            error instanceof ErratumRulesTextError
+              ? error.message
+              : "The Card has an unresolved Effective Rules Text conflict.",
+        });
+        return card;
+      }
+    })
     .sort((left, right) => left.id.localeCompare(right.id));
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",

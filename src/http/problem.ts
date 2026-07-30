@@ -5,6 +5,7 @@ type ProblemResponse = {
   title: string;
   detail: string;
   headers?: HeadersInit;
+  extensions?: Record<string, unknown>;
 };
 
 export function problemResponse(problem: ProblemResponse): Response {
@@ -16,6 +17,7 @@ export function problemResponse(problem: ProblemResponse): Response {
       code: problem.code,
       detail: problem.detail,
       request_id: problem.requestId,
+      ...problem.extensions,
     },
     {
       status: problem.status,

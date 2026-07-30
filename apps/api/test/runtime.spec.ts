@@ -344,21 +344,54 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   });
   const etag = searchResponse.headers.get("etag");
   expect(etag).not.toBeNull();
-  const notModifiedResponse = await exports.default.fetch(
-    new Request(
-      "https://card-keepr.invalid/v1/cards?q=discard%201%20card",
-      {
-        headers: {
-          ...headers,
-          "if-none-match": etag!,
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO revision_cards (
+       catalogue_revision_id, card_id, document_json
+     ) VALUES (?, ?, ?)`,
+  )
+    .bind(
+      "catrev_errata_read",
+      "card_etag_query_must_not_load",
+      JSON.stringify({
+        ...card,
+        id: "card_etag_query_must_not_load",
+        official_identity: {
+          kind: "card_number",
+          value: "OP29-999",
         },
-      },
+        name: "Does not match the query",
+        effective_rules_text: {},
+      }),
+    )
+    .run();
+  const conditionalResponses = await Promise.all(
+    [
+      etag!,
+      `W/${etag}`,
+      `"unrelated", W/${etag}`,
+      "*",
+    ].map((ifNoneMatch) =>
+      exports.default.fetch(
+        new Request(
+          "https://card-keepr.invalid/v1/cards?q=discard%201%20card",
+          {
+            headers: {
+              ...headers,
+              "if-none-match": ifNoneMatch,
+            },
+          },
+        ),
+      ),
     ),
   );
-  expect(notModifiedResponse.status).toBe(304);
-  expect(notModifiedResponse.headers.get("x-catalogue-revision")).toBe(
-    "catrev_errata_read",
-  );
+  expect(conditionalResponses.map((response) => response.status)).toEqual([
+    304, 304, 304, 304,
+  ]);
+  for (const response of conditionalResponses) {
+    expect(response.headers.get("x-catalogue-revision")).toBe(
+      "catrev_errata_read",
+    );
+  }
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE ingestion_runs
@@ -375,6 +408,125 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
        WHERE active_ingestion_run_id = 'run_errata_read'`,
     ),
   ]);
+});
+
+test("Card collection filtering and keyset pagination remain bounded in D1", async () => {
+  const card = apiCard({
+    id: "card_bounded_001",
+    cardNumber: "OP29-101",
+    name: "Bounded Alpha",
+  });
+  await seedApiRevision({
+    revisionId: "catrev_bounded_read",
+    runId: "run_bounded_read",
+    cards: [
+      card,
+      apiCard({
+        id: "card_bounded_002",
+        cardNumber: "OP29-102",
+        name: "Bounded Beta",
+      }),
+      {
+        ...apiCard({
+          id: "card_bounded_invalid_later",
+          cardNumber: "OP29-999",
+          name: "Does not match",
+        }),
+        effective_rules_text: {},
+      },
+    ],
+  });
+
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=bounded&limit=1",
+      { headers: apiHeaders("203.0.113.30") },
+    ),
+  );
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    data: [{ id: card.id }],
+    page: {
+      limit: 1,
+      next_cursor: expect.any(String),
+    },
+  });
+});
+
+test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_cursor_old",
+    runId: "run_cursor_old",
+    cards: [
+      apiCard({
+        id: "card_cursor_001",
+        cardNumber: "OP29-201",
+        name: "Cursor Alpha",
+      }),
+      apiCard({
+        id: "card_cursor_002",
+        cardNumber: "OP29-202",
+        name: "Cursor Beta",
+      }),
+    ],
+  });
+  const firstPage = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=cursor&limit=1",
+      { headers: apiHeaders("203.0.113.31") },
+    ),
+  );
+  expect(firstPage.status).toBe(200);
+  const firstPageDocument = await firstPage.json<{
+    page: { next_cursor: string };
+  }>();
+  expect(firstPageDocument.page.next_cursor).toEqual(expect.any(String));
+
+  await seedApiRevision({
+    revisionId: "catrev_cursor_new",
+    runId: "run_cursor_new",
+    cards: [
+      apiCard({
+        id: "card_cursor_new",
+        cardNumber: "OP29-203",
+        name: "Cursor New Revision",
+      }),
+    ],
+  });
+  const pinnedUrl =
+    `https://card-keepr.invalid/v1/cards?q=cursor&limit=1&after=` +
+    encodeURIComponent(firstPageDocument.page.next_cursor);
+  const available = await exports.default.fetch(
+    new Request(pinnedUrl, {
+      headers: apiHeaders("203.0.113.32"),
+    }),
+  );
+  expect(available.status).toBe(200);
+  await expect(available.json()).resolves.toMatchObject({
+    data: [{ id: "card_cursor_002" }],
+    meta: { catalogue_revision_id: "catrev_cursor_old" },
+  });
+
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM revision_cards
+       WHERE catalogue_revision_id = 'catrev_cursor_old'`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM catalogue_revisions
+       WHERE id = 'catrev_cursor_old'`,
+    ),
+  ]);
+  const unavailable = await exports.default.fetch(
+    new Request(pinnedUrl, {
+      headers: apiHeaders("203.0.113.33"),
+    }),
+  );
+  expect(unavailable.status).toBe(409);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+  });
 });
 
 test("the normative Printing schema excludes SourceBucket from canonical relationship evidence", () => {
@@ -406,3 +558,140 @@ test("the normative Printing schema excludes SourceBucket from canonical relatio
     }),
   ).toBe(false);
 });
+
+function apiHeaders(ip: string): Record<string, string> {
+  return {
+    authorization: "Bearer vitest-api-key",
+    "cf-connecting-ip": ip,
+  };
+}
+
+function apiCard(input: {
+  id: string;
+  cardNumber: string;
+  name: string;
+}): Record<string, unknown> {
+  return {
+    type: "card",
+    id: input.id,
+    game: "one-piece",
+    official_identity: {
+      kind: "card_number",
+      value: input.cardNumber,
+    },
+    name: input.name,
+    game_data: {
+      profile: "one-piece@1",
+      attributes: {
+        card_type: "leader",
+        colours: ["red"],
+        cost: null,
+        life: 5,
+        battle_attributes: [],
+        power: 5000,
+        counter: null,
+        traits: [],
+        block_icons: [],
+        effect_text: input.name,
+        trigger_text: null,
+      },
+    },
+    effective_rules_text: input.name,
+    printing_ids: [],
+    lifecycle: {
+      first_revision_id: "catrev_fixture",
+      last_observed_revision_id: "catrev_fixture",
+      withdrawn: false,
+    },
+    links: { self: `/v1/cards/${input.id}` },
+  };
+}
+
+async function seedApiRevision(input: {
+  revisionId: string;
+  runId: string;
+  cards: readonly Record<string, unknown>[];
+}): Promise<void> {
+  const digest = "b".repeat(64);
+  const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id
+     FROM catalogue_state WHERE singleton = 1`,
+  ).first<string>("current_revision_id");
+  if (previousRevisionId === null) {
+    throw new Error("The API test catalogue state is unavailable.");
+  }
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key
+       ) VALUES (
+         ?, 'publishing', '["one-piece"]',
+         '2026-07-20T00:00:00.000Z', ?, NULL, ?, ?,
+         '2026-07-20T00:00:00.000Z',
+         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+       )`,
+    ).bind(
+      input.runId,
+      previousRevisionId,
+      `${input.runId}-seed`,
+      digest,
+      JSON.stringify({
+        candidate_digest: digest,
+        expected_current_revision_id: previousRevisionId,
+        approved_at: "2026-07-20T00:00:00.000Z",
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(input.runId),
+  ]);
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_revisions (
+       id, ingestion_run_id, published_at, content_digest,
+       expected_previous_revision_id, approved_candidate_digest
+     ) VALUES (?, ?, '2026-07-20T00:00:00.000Z', ?, ?, ?)`,
+  )
+    .bind(
+      input.revisionId,
+      input.runId,
+      digest,
+      previousRevisionId,
+      digest,
+    )
+    .run();
+  await testEnv.CATALOGUE_DB.batch([
+    ...input.cards.map((card) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_cards (
+           catalogue_revision_id, card_id, document_json
+         ) VALUES (?, ?, ?)`,
+      ).bind(input.revisionId, card.id, JSON.stringify(card)),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state
+       SET current_revision_id = ?,
+           published_at = '2026-07-20T00:00:00.000Z'
+       WHERE singleton = 1`,
+    ).bind(input.revisionId),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'published',
+           published_revision_id = ?,
+           resulting_revision_id = ?,
+           publication_outcome = 'revision',
+           terminal_at = '2026-07-20T00:00:00.000Z'
+       WHERE id = ?`,
+    ).bind(input.revisionId, input.revisionId, input.runId),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL
+       WHERE active_ingestion_run_id = ?`,
+    ).bind(input.runId),
+  ]);
+}

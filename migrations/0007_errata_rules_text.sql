@@ -12,8 +12,11 @@ CREATE TABLE reconciled_errata (
   official_wording TEXT NOT NULL CHECK (length(official_wording) > 0),
   corrected_value_json TEXT NOT NULL CHECK (
     json_valid(corrected_value_json)
-    AND json_type(corrected_value_json) = 'text'
-    AND length(json_extract(corrected_value_json, '$')) > 0
+    AND json_type(corrected_value_json) IN ('text', 'null')
+    AND (
+      json_type(corrected_value_json) = 'null'
+      OR length(json_extract(corrected_value_json, '$')) > 0
+    )
   ),
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id)

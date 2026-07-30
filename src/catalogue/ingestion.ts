@@ -661,6 +661,7 @@ async function approveRunAttempt(
           products: reconciliation.productLifecycles,
           productRelationships:
             reconciliation.productRelationshipLifecycles,
+          erratumTargets: reconciliation.erratumTargetLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
           cardEvidence: reconciliation.cardEvidence,
@@ -2207,6 +2208,7 @@ async function reconcileReservedPublication(
           products: reconciliation.productLifecycles,
           productRelationships:
             reconciliation.productRelationshipLifecycles,
+          erratumTargets: reconciliation.erratumTargetLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
           cardEvidence: reconciliation.cardEvidence,
@@ -4152,7 +4154,8 @@ function isCatalogueErratum(value: unknown): boolean {
     (value.effective_from === null ||
       typeof value.effective_from === "string") &&
     typeof value.official_wording === "string" &&
-    typeof value.corrected_value === "string" &&
+    (value.corrected_value === null ||
+      typeof value.corrected_value === "string") &&
     Array.isArray(value.provenance) &&
     value.provenance.every(
       (provenance) =>

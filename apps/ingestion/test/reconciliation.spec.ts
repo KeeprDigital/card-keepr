@@ -219,6 +219,69 @@ function registerErrataRulesTextTests(): void {
     });
   });
 
+  test("equal-date Card Errata with conflicting Effective Rules Text hard-block publication", async () => {
+    const run = await collect(
+      "/reconciliation/errata-conflicting-effective-text",
+      "reconcile-errata-conflicting-effective-text",
+    );
+    const blocked = await reconcile(run.id);
+
+    expect(blocked.response.status).toBe(409);
+    expect(blocked.document).toMatchObject({
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "canonical_card_conflict",
+          detail: expect.stringContaining(
+            "conflicting applicable Errata",
+          ),
+        }),
+      ],
+    });
+  });
+
+  test("official Errata may remove Effective Rules Text without changing Printed Rules Text", async () => {
+    const run = await collect(
+      "/reconciliation/errata-null-effective-text",
+      "reconcile-errata-null-effective-text",
+    );
+    const reconciled = await reconcile(run.id);
+
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      state: "awaiting_approval",
+      publishable: true,
+      cards: [{ effective_rules_text: null }],
+      printings: [
+        { printed_rules_text: "Printed and observed rules text." },
+      ],
+      errata: [{ corrected_value: null }],
+    });
+    const published = await approve(reconciled.document);
+    expect(published.response.status).toBe(200);
+    const revisionId = requiredString(
+      published.document,
+      "resulting_revision_id",
+    );
+    const [cards, printings, errata] = await Promise.all([
+      exportComponentRecords(revisionId, "cards"),
+      exportComponentRecords(revisionId, "printings"),
+      exportComponentRecords(revisionId, "errata"),
+    ]);
+    expect(cards).toContainEqual(
+      expect.objectContaining({ effective_rules_text: null }),
+    );
+    expect(printings).toContainEqual(
+      expect.objectContaining({
+        printed_rules_text: "Printed and observed rules text.",
+      }),
+    );
+    expect(errata).toContainEqual(
+      expect.objectContaining({ corrected_value: null }),
+    );
+  });
+
   test("later effective Errata supersede current wording without mutating earlier Errata or Printed Rules Text", async () => {
     const firstRun = await collect(
       "/reconciliation/errata-card-rules-text",
@@ -228,6 +291,10 @@ function registerErrataRulesTextTests(): void {
     const firstPublished = await approve(first.document);
     expect(firstPublished.response.status).toBe(200);
     const firstErratum = requiredFirst(first.document, "errata");
+    const firstRevisionId = requiredString(
+      firstPublished.document,
+      "resulting_revision_id",
+    );
 
     const secondRun = await collect(
       "/reconciliation/errata-card-rules-text-v2",
@@ -263,17 +330,52 @@ function registerErrataRulesTextTests(): void {
       ]),
     );
     expect(layeredErrata).toHaveLength(2);
-    const rejected = await post(
-      `/v1/ingestion-runs/${secondRun.id}/rejection`,
-      {
-        candidate_digest: requiredString(
-          second.document,
-          "candidate_digest",
-        ),
-        idempotency_key: "reject-errata-layer-second",
-      },
+    const secondPublished = await approve(second.document);
+    expect(secondPublished.response.status).toBe(200);
+    const secondRevisionId = requiredString(
+      secondPublished.document,
+      "resulting_revision_id",
     );
-    expect(rejected.response.status).toBe(200);
+    const [persistedErratum, persistedProvenance, relationships] =
+      await Promise.all([
+        testEnv.CATALOGUE_DB.prepare(
+          `SELECT first_revision_id, last_observed_revision_id
+           FROM reconciled_errata WHERE id = ?`,
+        )
+          .bind(firstErratum.id)
+          .first<{
+            first_revision_id: string;
+            last_observed_revision_id: string;
+          }>(),
+        testEnv.CATALOGUE_DB.prepare(
+          `SELECT first_revision_id, last_observed_revision_id
+           FROM erratum_provenance WHERE erratum_id = ?`,
+        )
+          .bind(firstErratum.id)
+          .first<{
+            first_revision_id: string;
+            last_observed_revision_id: string;
+          }>(),
+        exportComponentRecords(secondRevisionId, "relationships"),
+      ]);
+    expect(persistedErratum).toEqual({
+      first_revision_id: firstRevisionId,
+      last_observed_revision_id: firstRevisionId,
+    });
+    expect(persistedProvenance).toEqual({
+      first_revision_id: firstRevisionId,
+      last_observed_revision_id: firstRevisionId,
+    });
+    expect(relationships).toContainEqual(
+      expect.objectContaining({
+        kind: "erratum-target",
+        from: { type: "erratum", id: firstErratum.id },
+        lifecycle: expect.objectContaining({
+          first_revision_id: firstRevisionId,
+          last_observed_revision_id: firstRevisionId,
+        }),
+      }),
+    );
   });
 }
 

@@ -18,7 +18,10 @@ import {
   utf8,
 } from "./serialization";
 import { typedPrintingProjections } from "./product-release-projection";
-import { exportErratum } from "./errata-rules-text";
+import {
+  erratumTargetLifecycleKey,
+  exportErratum,
+} from "./errata-rules-text";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8"],
@@ -116,6 +119,7 @@ export async function buildCatalogueExport(
         }
       >
     >;
+    erratumTargets?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
     cardEvidence?: Readonly<
@@ -409,6 +413,7 @@ async function exportRecordFactories(
         }
       >
     >;
+    erratumTargets?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
     cardEvidence?: Readonly<
@@ -719,26 +724,33 @@ async function exportRecordFactories(
           relationshipId,
           sourceLineage,
           sourceObservationIds,
-        }) => ({
-          type: "relationship",
-          id: relationshipId,
-          kind: "erratum-target",
-          from: { type: "erratum", id: erratum.id },
-          to: {
-            type: erratum.target_type,
-            id: erratum.target_id,
-          },
-          evidence_category: "explicit",
-          source_lineage: sourceLineage,
-          source_observation_ids: sourceObservationIds,
-          relationship_value: "effective_rules_text",
-          lifecycle: {
-            first_revision_id: revisionId,
-            last_observed_revision_id: revisionId,
-            current: true,
-            last_missing_revision_id: null,
-          },
-        }),
+        }) => {
+          const lifecycle =
+            lifecycles?.erratumTargets?.[
+              erratumTargetLifecycleKey(erratum.id, sourceLineage)
+            ] ?? defaultLifecycle;
+          return {
+            type: "relationship",
+            id: relationshipId,
+            kind: "erratum-target",
+            from: { type: "erratum", id: erratum.id },
+            to: {
+              type: erratum.target_type,
+              id: erratum.target_id,
+            },
+            evidence_category: "explicit",
+            source_lineage: sourceLineage,
+            source_observation_ids: sourceObservationIds,
+            relationship_value: "effective_rules_text",
+            lifecycle: {
+              first_revision_id: lifecycle.first_revision_id,
+              last_observed_revision_id:
+                lifecycle.last_observed_revision_id,
+              current: true,
+              last_missing_revision_id: null,
+            },
+          };
+        },
       ),
     ]),
   };

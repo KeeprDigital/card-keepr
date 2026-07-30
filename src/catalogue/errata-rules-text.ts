@@ -11,7 +11,7 @@ export type CatalogueErratum = Readonly<{
   target_id: string;
   effective_from: string | null;
   official_wording: string;
-  corrected_value: string;
+  corrected_value: string | null;
   provenance: readonly Readonly<{
     source_lineage: string;
     source_observation_id: string;
@@ -22,7 +22,7 @@ export type ParsedRulesTextErratum = Readonly<{
   targetType: "card" | "printing";
   effectiveFrom: string | null;
   officialWording: string;
-  correctedValue: string;
+  correctedValue: string | null;
 }>;
 
 export function parseRulesTextErrata(
@@ -63,8 +63,9 @@ export function parseRulesTextErrata(
       "Erratum official_wording",
     );
     if (
-      typeof erratum.corrected_value !== "string" ||
-      erratum.corrected_value.length === 0
+      erratum.corrected_value !== null &&
+      (typeof erratum.corrected_value !== "string" ||
+        erratum.corrected_value.length === 0)
     ) {
       throw new ErratumRulesTextError(
         "New Erratum wording cannot be represented without invented precision.",
@@ -179,7 +180,21 @@ export function deriveEffectiveRulesText(
         canonicalJson([right.effective_from ?? "", right.id]),
       ),
     );
-  return applicable.at(-1)?.corrected_value ?? card.effective_rules_text;
+  const latest = applicable.at(-1);
+  if (latest === undefined) return card.effective_rules_text;
+  const competingValues = new Set(
+    applicable
+      .filter(
+        (erratum) => erratum.effective_from === latest.effective_from,
+      )
+      .map((erratum) => canonicalJson(erratum.corrected_value)),
+  );
+  if (competingValues.size > 1) {
+    throw new ErratumRulesTextError(
+      "The Card has conflicting applicable Errata for Effective Rules Text at the same effective date.",
+    );
+  }
+  return latest.corrected_value;
 }
 
 export function exportErratum(erratum: CatalogueErratum) {
@@ -197,6 +212,13 @@ export function exportErratum(erratum: CatalogueErratum) {
 
 export function canonicalErratum(erratum: CatalogueErratum): string {
   return canonicalJson(exportErratum(erratum));
+}
+
+export function erratumTargetLifecycleKey(
+  erratumId: string,
+  sourceLineage: string,
+): string {
+  return canonicalJson([erratumId, sourceLineage]);
 }
 
 export class ErratumRulesTextError extends Error {}

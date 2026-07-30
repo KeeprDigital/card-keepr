@@ -37,8 +37,8 @@ import {
   handleApiCredentialConsumerObservation,
 } from "../../../src/credentials/consumer-proof";
 import {
-  currentCardCollectionResponse,
-} from "../../../src/catalogue/errata-rules-text-read";
+  cardCollectionResponse,
+} from "../../../src/catalogue/card-collection-read";
 
 const apiWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -115,7 +115,11 @@ const apiWorker = {
       if (request.method === "GET" && url.pathname === "/v1/cards") {
         return withCorsHeaders(
           request,
-          await currentCardCollectionResponse(env.CATALOGUE_DB, request),
+          await cardCollectionResponse(
+            env.CATALOGUE_DB,
+            request,
+            requestId,
+          ),
         );
       }
 

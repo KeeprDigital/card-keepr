@@ -28,6 +28,7 @@ import {
   productReleaseLifecyclePlan,
   type ProductRelationshipLifecycle,
 } from "./product-release-publication";
+import { erratumTargetLifecycleKey } from "./errata-rules-text";
 
 export type NormalizedLifecycle = {
   first_revision_id: string;
@@ -71,6 +72,7 @@ export type ReconciliationPublicationPlan = {
     string,
     ProductRelationshipLifecycle
   >;
+  erratumTargetLifecycles: Record<string, NormalizedLifecycle>;
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   locatorEvidence: Record<string, LocatorEvidenceCollection>;
   cardEvidence: Record<string, PublicationEvidenceResource[]>;
@@ -175,6 +177,7 @@ export async function reconciliationPublication(
     productLifecycles: {},
     releaseLifecycles: {},
     productRelationshipLifecycles: {},
+    erratumTargetLifecycles: {},
     relationshipEvidence: {},
     locatorEvidence: {},
     cardEvidence: {},
@@ -363,6 +366,17 @@ export async function reconciliationPublication(
   result.releaseLifecycles = productReleaseLifecycles.releases;
   result.productRelationshipLifecycles =
     productReleaseLifecycles.relationships;
+  const observedProvenance = new Set(
+    plans.map((plan) =>
+      provenanceKey(plan.source_lineage, plan.source_observation_id),
+    ),
+  );
+  result.erratumTargetLifecycles = await erratumTargetLifecycles(
+    database,
+    candidate.errata ?? [],
+    observedProvenance,
+    revisionId,
+  );
   result.statements.push(
     ...publicationStatements(
       database,
@@ -373,6 +387,7 @@ export async function reconciliationPublication(
     ...errataPublicationStatements(
       database,
       candidate.errata ?? [],
+      observedProvenance,
       revisionId,
     ),
   );
@@ -414,13 +429,27 @@ async function publicationEvidenceResources(
 function errataPublicationStatements(
   database: D1Database,
   errata: NonNullable<FixtureCandidate["errata"]>,
+  observedProvenance: ReadonlySet<string>,
   revisionId: string,
 ): D1PreparedStatement[] {
   const statements = (
     values: readonly Record<string, unknown>[],
     prepare: (payload: string) => D1PreparedStatement,
   ) => byteBoundedJsonArrays(values).map(prepare);
-  const canonicalRows = errata.map((erratum) => ({
+  const observedErrata = errata
+    .map((erratum) => ({
+      erratum,
+      provenance: erratum.provenance.filter((provenance) =>
+        observedProvenance.has(
+          provenanceKey(
+            provenance.source_lineage,
+            provenance.source_observation_id,
+          ),
+        ),
+      ),
+    }))
+    .filter(({ provenance }) => provenance.length > 0);
+  const canonicalRows = observedErrata.map(({ erratum }) => ({
     id: erratum.id,
     game: erratum.game,
     target_type: erratum.target_type,
@@ -429,12 +458,13 @@ function errataPublicationStatements(
     official_wording: erratum.official_wording,
     corrected_value_json: canonicalJson(erratum.corrected_value),
   }));
-  const provenanceRows = errata.flatMap((erratum) =>
-    erratum.provenance.map((provenance) => ({
-      erratum_id: erratum.id,
-      source_lineage: provenance.source_lineage,
-      source_observation_id: provenance.source_observation_id,
-    })),
+  const provenanceRows = observedErrata.flatMap(
+    ({ erratum, provenance }) =>
+      provenance.map((item) => ({
+        erratum_id: erratum.id,
+        source_lineage: item.source_lineage,
+        source_observation_id: item.source_observation_id,
+      })),
   );
   const revisionRows = errata.map((erratum) => ({
     erratum_id: erratum.id,
@@ -490,6 +520,111 @@ function errataPublicationStatements(
         .bind(revisionId, payload),
     ),
   ];
+}
+
+async function erratumTargetLifecycles(
+  database: D1Database,
+  errata: NonNullable<FixtureCandidate["errata"]>,
+  observedProvenance: ReadonlySet<string>,
+  revisionId: string,
+): Promise<Record<string, NormalizedLifecycle>> {
+  const ids = [...new Set(errata.map((erratum) => erratum.id))];
+  const existing =
+    ids.length === 0
+      ? []
+      : (
+          await database
+            .prepare(
+              `SELECT provenance.erratum_id,
+                      provenance.source_lineage,
+                      provenance.first_revision_id,
+                      provenance.last_observed_revision_id,
+                      first_revision.published_at AS first_order,
+                      last_revision.published_at AS last_order
+               FROM erratum_provenance AS provenance
+               JOIN catalogue_revisions AS first_revision
+                 ON first_revision.id = provenance.first_revision_id
+               JOIN catalogue_revisions AS last_revision
+                 ON last_revision.id =
+                    provenance.last_observed_revision_id
+               WHERE EXISTS (
+                 SELECT 1 FROM json_each(?) AS requested
+                 WHERE requested.value = provenance.erratum_id
+               )`,
+            )
+            .bind(JSON.stringify(ids))
+            .all<{
+              erratum_id: string;
+              source_lineage: string;
+              first_revision_id: string;
+              last_observed_revision_id: string;
+              first_order: string;
+              last_order: string;
+            }>()
+        ).results;
+  const result: Record<string, NormalizedLifecycle> = {};
+  for (const erratum of errata) {
+    const lineages = new Set(
+      erratum.provenance.map((item) => item.source_lineage),
+    );
+    for (const sourceLineage of lineages) {
+      const prior = existing.filter(
+        (row) =>
+          row.erratum_id === erratum.id &&
+          row.source_lineage === sourceLineage,
+      );
+      const first = [...prior].sort((left, right) =>
+        canonicalJson([
+          left.first_order,
+          left.first_revision_id,
+        ]).localeCompare(
+          canonicalJson([
+            right.first_order,
+            right.first_revision_id,
+          ]),
+        ),
+      )[0];
+      const last = [...prior].sort((left, right) =>
+        canonicalJson([
+          right.last_order,
+          right.last_observed_revision_id,
+        ]).localeCompare(
+          canonicalJson([
+            left.last_order,
+            left.last_observed_revision_id,
+          ]),
+        ),
+      )[0];
+      const observed = erratum.provenance.some(
+        (item) =>
+          item.source_lineage === sourceLineage &&
+          observedProvenance.has(
+            provenanceKey(
+              item.source_lineage,
+              item.source_observation_id,
+            ),
+          ),
+      );
+      result[erratumTargetLifecycleKey(erratum.id, sourceLineage)] =
+        normalizedLifecycle(
+          first?.first_revision_id ?? revisionId,
+          observed
+            ? revisionId
+            : (last?.last_observed_revision_id ?? revisionId),
+          false,
+          null,
+          null,
+        );
+    }
+  }
+  return result;
+}
+
+function provenanceKey(
+  sourceLineage: string,
+  sourceObservationId: string,
+): string {
+  return canonicalJson([sourceLineage, sourceObservationId]);
 }
 
 async function aggregateInferredProductLifecycles(
