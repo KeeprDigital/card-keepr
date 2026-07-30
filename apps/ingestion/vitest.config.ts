@@ -807,20 +807,30 @@ function reconciliationSourceDocument(scenario: string) {
   }
   if (
     scenario === "errata-card-rules-text" ||
-    scenario === "errata-card-rules-text-v2"
+    scenario === "errata-card-rules-text-v2" ||
+    scenario === "errata-card-rules-text-longitudinal" ||
+    scenario === "errata-card-rules-text-longitudinal-v2"
   ) {
+    const isLongitudinal = scenario.includes("longitudinal");
+    const isSecondVersion = scenario.endsWith("-v2");
     const observation = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
-      cardNumber: "OP29-001",
-      name: "Errata Rules Card",
+      cardNumber: isLongitudinal ? "OP29-006" : "OP29-001",
+      name: isLongitudinal
+        ? "Longitudinal Errata Rules Card"
+        : "Errata Rules Card",
       cardAttributes: {
         ...onePieceLeaderAttributes(),
         effect_text: "[On Play] Draw 1 card.",
       },
       printingAttributes: { illustration_types: [] },
-      locator: "/official/errata/OP29-001",
-      lineageMarker: "errata-card-rules-text",
+      locator: isLongitudinal
+        ? "/official/errata/OP29-006"
+        : "/official/errata/OP29-001",
+      lineageMarker: isLongitudinal
+        ? "errata-card-rules-text-longitudinal"
+        : "errata-card-rules-text",
       printedRulesText: "[On Play] Draw 1 card.",
     });
     return {
@@ -838,14 +848,18 @@ function reconciliationSourceDocument(scenario: string) {
               target_type: "card",
               effective_from: "2026-07-01",
               official_wording:
-                scenario === "errata-card-rules-text-v2"
-                  ? 'Replace the corrected "discard 1 card" with "discard 2 cards".'
+                isSecondVersion
+                  ? isLongitudinal
+                    ? 'For the longitudinal Card, replace the corrected "discard 1 card" with "discard 2 cards".'
+                    : 'Replace the corrected "discard 1 card" with "discard 2 cards".'
+                  : isLongitudinal
+                    ? 'For the longitudinal Card, replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".'
                   : 'Replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".',
               corrected_value:
-                scenario === "errata-card-rules-text-v2"
+                isSecondVersion
                   ? "[On Play] Draw 2 cards, then discard 2 cards."
                   : "[On Play] Draw 2 cards, then discard 1 card.",
-              ...(scenario === "errata-card-rules-text-v2"
+              ...(isSecondVersion
                 ? { effective_from: "2026-07-15" }
                 : {}),
             },

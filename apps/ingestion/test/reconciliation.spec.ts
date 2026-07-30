@@ -256,8 +256,12 @@ function registerErrataRulesTextTests(): void {
       printings: [
         { printed_rules_text: "Printed and observed rules text." },
       ],
-      errata: [{ corrected_value: null }],
     });
+    expect(reconciled.document.errata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ corrected_value: null }),
+      ]),
+    );
     const published = await approve(reconciled.document);
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(
@@ -284,20 +288,26 @@ function registerErrataRulesTextTests(): void {
 
   test("later effective Errata supersede current wording without mutating earlier Errata or Printed Rules Text", async () => {
     const firstRun = await collect(
-      "/reconciliation/errata-card-rules-text",
+      "/reconciliation/errata-card-rules-text-longitudinal",
       "reconcile-errata-layer-first",
     );
     const first = await reconcile(firstRun.id);
     const firstPublished = await approve(first.document);
     expect(firstPublished.response.status).toBe(200);
-    const firstErratum = requiredFirst(first.document, "errata");
+    const firstCard = requiredFirst(first.document, "cards");
+    const firstErratum = requiredObjectWithField(
+      first.document,
+      "errata",
+      "target_id",
+      requiredString(firstCard, "id"),
+    );
     const firstRevisionId = requiredString(
       firstPublished.document,
       "resulting_revision_id",
     );
 
     const secondRun = await collect(
-      "/reconciliation/errata-card-rules-text-v2",
+      "/reconciliation/errata-card-rules-text-longitudinal-v2",
       "reconcile-errata-layer-second",
     );
     const second = await reconcile(secondRun.id);
@@ -318,7 +328,15 @@ function registerErrataRulesTextTests(): void {
         },
       ],
     });
-    const layeredErrata = second.document.errata;
+    const layeredErrata = Array.isArray(second.document.errata)
+      ? second.document.errata.filter(
+          (erratum) =>
+            erratum !== null &&
+            typeof erratum === "object" &&
+            !Array.isArray(erratum) &&
+            erratum.target_id === firstErratum.target_id,
+        )
+      : [];
     expect(layeredErrata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: firstErratum.id }),
@@ -5590,6 +5608,31 @@ function requiredFirst(
   const value = values[0];
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${field}[0] is invalid`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredObjectWithField(
+  document: Record<string, unknown>,
+  collectionField: string,
+  valueField: string,
+  expectedValue: unknown,
+): Record<string, unknown> {
+  const values = document[collectionField];
+  if (!Array.isArray(values)) {
+    throw new Error(`${collectionField} is not an array`);
+  }
+  const value = values.find(
+    (candidate) =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>)[valueField] === expectedValue,
+  );
+  if (value === undefined) {
+    throw new Error(
+      `${collectionField} has no object with ${valueField}=${String(expectedValue)}`,
+    );
   }
   return value as Record<string, unknown>;
 }
