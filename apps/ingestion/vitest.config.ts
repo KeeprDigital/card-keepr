@@ -817,31 +817,55 @@ function reconciliationSourceDocument(scenario: string) {
   if (scenario.startsWith("gundam-printing-")) {
     const formatting = scenario.includes("-format-");
     const usSurface = scenario.includes("-us-");
+    const printingAuthorityConflict =
+      scenario ===
+      "gundam-printing-disappearance-us-printing-conflict";
     const substantiveConflict =
-      scenario.includes("-conflict-") && usSurface;
-    const cardNumber = formatting
-      ? scenario.endsWith("-asia-first") ||
-        scenario.endsWith("-us-second")
+      (scenario.includes("-conflict-") && usSurface) ||
+      printingAuthorityConflict ||
+      scenario === "gundam-printing-disappearance-asia-conflict";
+    const authorityAfterDisappearance =
+      scenario === "gundam-printing-disappearance-us-conflict";
+    const reverseAuthorityConflict =
+      scenario === "gundam-printing-disappearance-asia-conflict";
+    const cardNumber =
+      authorityAfterDisappearance || printingAuthorityConflict
         ? "GD94-001"
-        : "GD93-001"
-      : scenario.endsWith("-asia-first") ||
-          scenario.endsWith("-us-second")
-        ? "GD92-001"
-        : "GD91-001";
+        : reverseAuthorityConflict
+          ? "GD91-001"
+          : formatting
+            ? scenario.endsWith("-asia-first") ||
+              scenario.endsWith("-us-second")
+              ? "GD94-001"
+              : "GD93-001"
+            : scenario.endsWith("-asia-first") ||
+                scenario.endsWith("-us-second")
+              ? "GD92-001"
+              : "GD91-001";
     return {
       cards: [
         printingObservation({
           game: "gundam",
           profile: "gundam@1",
           cardNumber,
-          name: "Printing authority",
+          name:
+            authorityAfterDisappearance || reverseAuthorityConflict
+              ? "Contradictory historical-authority Card"
+              : formatting && usSurface
+                ? "  Printing   authority  "
+                : "Printing authority",
           cardAttributes: {
             card_type: "unit",
             colours: ["blue"],
             level: 4,
             cost: 3,
             block_icon: "1",
-            effect_text: "Official effect",
+            effect_text:
+              authorityAfterDisappearance || reverseAuthorityConflict
+                ? "Substantively different Card effect"
+                : formatting && usSurface
+                  ? "  Official   effect  "
+                  : "Official effect",
             zone: "space",
             traits: ["Earth Federation"],
             link_condition: null,
@@ -852,11 +876,13 @@ function reconciliationSourceDocument(scenario: string) {
           printingAttributes: {
             alternate_art: substantiveConflict,
           },
-          printedRulesText: substantiveConflict
-            ? "Substantively different printed rules"
-            : formatting && usSurface
-              ? "  Official   printed rules  "
-              : "Official printed rules",
+          printedRulesText: reverseAuthorityConflict
+            ? "Different substantive Asia printed rules"
+            : substantiveConflict
+              ? "Substantively different printed rules"
+              : formatting && usSurface
+                ? "  Official   printed rules  "
+                : "Official printed rules",
           rarityRaw: substantiveConflict
             ? "Leader Rare"
             : formatting && usSurface

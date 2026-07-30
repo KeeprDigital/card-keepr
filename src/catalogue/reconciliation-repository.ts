@@ -153,7 +153,7 @@ export async function hasOtherGundamLocaleEvidence(
   return row !== null;
 }
 
-export async function hasCurrentCardObservationFromLineage(
+export async function hasCardObservationFromLineage(
   database: D1Database,
   cardId: string,
   sourceLineage: string,
@@ -162,7 +162,7 @@ export async function hasCurrentCardObservationFromLineage(
     .prepare(
       `SELECT card_id
        FROM reconciled_card_observations
-       WHERE card_id = ? AND source_lineage = ? AND current = 1
+       WHERE card_id = ? AND source_lineage = ?
        LIMIT 1`,
     )
     .bind(cardId, sourceLineage)
@@ -170,7 +170,7 @@ export async function hasCurrentCardObservationFromLineage(
   return row !== null;
 }
 
-export async function hasCurrentPrintingLocatorFromLineage(
+export async function hasPrintingLocatorFromLineage(
   database: D1Database,
   printingId: string,
   sourceLineage: string,
@@ -179,7 +179,7 @@ export async function hasCurrentPrintingLocatorFromLineage(
     .prepare(
       `SELECT printing_id
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
+       WHERE printing_id = ? AND source_lineage = ?
        LIMIT 1`,
     )
     .bind(printingId, sourceLineage)
@@ -229,7 +229,7 @@ export async function canonicalCardConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_card_observations
-       WHERE card_id = ? AND current = 1`,
+       WHERE card_id = ?`,
     )
     .bind(cardId)
     .all<{ source_lineage: string }>();
@@ -274,7 +274,7 @@ export async function canonicalPrintingConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND current = 1`,
+       WHERE printing_id = ?`,
     )
     .bind(printingId)
     .all<{ source_lineage: string }>();

@@ -15,9 +15,9 @@ import {
   canonicalCardConflict,
   canonicalPrintingConflict,
   existingCard,
-  hasCurrentCardObservationFromLineage,
-  hasCurrentPrintingLocatorFromLineage,
+  hasCardObservationFromLineage,
   hasOtherGundamLocaleEvidence,
+  hasPrintingLocatorFromLineage,
   printingFactsFormattingEquivalent,
   printingAtLocator,
   printingsWithAppearance,
@@ -166,7 +166,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       proposedCard.game === "gundam" &&
       retained.sourceLineage === "gundam-en-us" &&
       carriedCard !== undefined &&
-      (await hasCurrentCardObservationFromLineage(
+      (await hasCardObservationFromLineage(
         database,
         cardId,
         "gundam-en-asia",
@@ -291,7 +291,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         retained.supportedGame === "gundam" &&
         retained.sourceLineage === "gundam-en-us" &&
         carriedPrinting !== undefined &&
-        (await hasCurrentPrintingLocatorFromLineage(
+        (await hasPrintingLocatorFromLineage(
           database,
           printingId,
           "gundam-en-asia",
