@@ -36,6 +36,22 @@ export function parseRulesTextErrata(
   }
   return value.map((item) => {
     const erratum = requiredRecord(item, "Erratum");
+    const undeclaredFields = Object.keys(erratum).filter(
+      (field) =>
+        ![
+          "authority",
+          "field",
+          "target_type",
+          "effective_from",
+          "official_wording",
+          "corrected_value",
+        ].includes(field),
+    );
+    if (undeclaredFields.length > 0) {
+      throw new ErratumRulesTextError(
+        `Erratum evidence contains undeclared fields: ${undeclaredFields.sort().join(", ")}.`,
+      );
+    }
     if (erratum.authority !== "official_errata") {
       throw new ErratumRulesTextError(
         "Rules Text changes require the field-specific official Errata authority.",

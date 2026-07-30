@@ -192,6 +192,9 @@ export async function canonicalCardConflict(
   cardId: string,
   proposed: Omit<FixtureCard, "id">,
   sourceLineage: string,
+  authority: { effectiveRulesText: boolean } = {
+    effectiveRulesText: false,
+  },
 ): Promise<string | null> {
   const row = await database
     .prepare(
@@ -209,15 +212,19 @@ export async function canonicalCardConflict(
     game: current.game,
     official_identity: current.official_identity,
     name: current.name,
-    effective_rules_text: current.effective_rules_text,
     game_data: current.game_data,
+    ...(authority.effectiveRulesText
+      ? {}
+      : { effective_rules_text: current.effective_rules_text }),
   };
   const proposedCanonical = {
     game: proposed.game,
     official_identity: proposed.official_identity,
     name: proposed.name,
-    effective_rules_text: proposed.effective_rules_text,
     game_data: proposed.game_data,
+    ...(authority.effectiveRulesText
+      ? {}
+      : { effective_rules_text: proposed.effective_rules_text }),
   };
   if (
     canonicalJson(normalizedFormatting(currentCanonical)) ===

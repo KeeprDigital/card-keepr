@@ -448,7 +448,10 @@
         "target_id": { "$ref": "#/$defs/OpaqueId" },
         "effective_from": { "$ref": "#/$defs/NullableDate" },
         "official_wording": { "type": "string", "minLength": 1 },
-        "corrected_value": {}
+        "corrected_value": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
       }
     },
     "LegalityRuleRecord": {

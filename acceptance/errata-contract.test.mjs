@@ -24,6 +24,19 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   assert.deepEqual(schema.properties.field.enum, ["effective_rules_text"]);
   assert.deepEqual(schema.properties.target_type.enum, ["card", "printing"]);
   assert.deepEqual(schema.properties.corrected_value.type, ["string", "null"]);
+  const exportSchema = JSON.parse(
+    await readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(
+    exportSchema.$defs.ErratumRecord.properties.corrected_value.type,
+    ["string", "null"],
+  );
 
   const contract = await readFile(
     resolve(root, "docs/contracts/official-errata.md"),

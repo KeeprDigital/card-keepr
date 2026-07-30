@@ -8,6 +8,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
+import {
+  cardSearchTerms,
+  cardSearchText,
+} from "../../../src/catalogue/card-search";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -282,9 +286,15 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
     ).bind("b".repeat(64), "b".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_cards (
-        catalogue_revision_id, card_id, document_json
-      ) VALUES (?, ?, ?)`,
-    ).bind("catrev_errata_read", card.id, JSON.stringify(card)),
+        catalogue_revision_id, card_id, document_json, search_text
+      ) VALUES (?, ?, ?, ?)`,
+    ).bind(
+      "catrev_errata_read",
+      card.id,
+      JSON.stringify(card),
+      cardSearchText(card),
+    ),
+    ...cardSearchStatements("catrev_errata_read", card),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_printings (
         catalogue_revision_id, printing_id, card_id, document_json
@@ -346,8 +356,8 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   expect(etag).not.toBeNull();
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO revision_cards (
-       catalogue_revision_id, card_id, document_json
-     ) VALUES (?, ?, ?)`,
+       catalogue_revision_id, card_id, document_json, search_text
+     ) VALUES (?, ?, ?, '')`,
   )
     .bind(
       "catrev_errata_read",
@@ -478,7 +488,15 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   });
 });
 
-test("Card collection schema exposes indexed revision order and search materialization", async () => {
+test("Card search persistence remains compatible with D1 export", async () => {
+  const virtualTables = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT name FROM sqlite_schema
+     WHERE type = 'table' AND lower(sql) LIKE '%create virtual table%'`,
+  ).all<{ name: string }>();
+  expect(virtualTables.results).toEqual([]);
+});
+
+test("Card collection schema exposes revision-bounded indexed search materialization", async () => {
   const columns = await testEnv.CATALOGUE_DB.prepare(
     "PRAGMA table_xinfo(revision_cards)",
   ).all<{ name: string }>();
@@ -498,9 +516,10 @@ test("Card collection schema exposes indexed revision order and search materiali
     expect.arrayContaining([
       "revision_cards_by_order",
       "revision_cards_by_identity",
-      "revision_cards_by_search",
     ]),
   );
+  expect(indexes.results.map((index) => index.name))
+    .not.toContain("revision_cards_by_search");
   const orderPlan = await testEnv.CATALOGUE_DB.prepare(
     `EXPLAIN QUERY PLAN
      SELECT document_json
@@ -521,11 +540,18 @@ test("Card collection schema exposes indexed revision order and search materiali
     .all<{ detail: string }>();
   expect(orderPlan.results.map((row) => row.detail).join("\n"))
     .toContain("revision_cards_by_order");
-  const searchTable = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT sql FROM sqlite_schema
-     WHERE type = 'table' AND name = 'revision_card_search'`,
-  ).first<{ sql: string }>();
-  expect(searchTable?.sql).toContain("fts5");
+  const searchPlan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN
+     SELECT card_id
+     FROM revision_card_search_terms
+     WHERE catalogue_revision_id = ? AND term = ?
+     ORDER BY card_id
+     LIMIT 101`,
+  )
+    .bind("catrev_plan", "éclair")
+    .all<{ detail: string }>();
+  expect(searchPlan.results.map((row) => row.detail).join("\n"))
+    .toContain("revision_card_search_by_term");
 });
 
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
@@ -640,11 +666,18 @@ function apiHeaders(ip: string): Record<string, string> {
   };
 }
 
+type ApiCardFixture = Record<string, unknown> & {
+  id: string;
+  official_identity: { kind: string; value: string };
+  name: string;
+  effective_rules_text: unknown;
+};
+
 function apiCard(input: {
   id: string;
   cardNumber: string;
   name: string;
-}): Record<string, unknown> {
+}): ApiCardFixture {
   return {
     type: "card",
     id: input.id,
@@ -684,7 +717,7 @@ function apiCard(input: {
 async function seedApiRevision(input: {
   revisionId: string;
   runId: string;
-  cards: readonly Record<string, unknown>[];
+  cards: readonly ApiCardFixture[];
 }): Promise<void> {
   const digest = "b".repeat(64);
   const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
@@ -740,13 +773,19 @@ async function seedApiRevision(input: {
     )
     .run();
   await testEnv.CATALOGUE_DB.batch([
-    ...input.cards.map((card) =>
+    ...input.cards.flatMap((card) => [
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json
-         ) VALUES (?, ?, ?)`,
-      ).bind(input.revisionId, card.id, JSON.stringify(card)),
-    ),
+           catalogue_revision_id, card_id, document_json, search_text
+         ) VALUES (?, ?, ?, ?)`,
+      ).bind(
+        input.revisionId,
+        card.id,
+        JSON.stringify(card),
+        apiCardSearchText(card),
+      ),
+      ...cardSearchStatements(input.revisionId, card),
+    ]),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = ?,
@@ -768,4 +807,29 @@ async function seedApiRevision(input: {
        WHERE active_ingestion_run_id = ?`,
     ).bind(input.runId),
   ]);
+}
+
+function cardSearchStatements(
+  revisionId: string,
+  card: ApiCardFixture,
+): D1PreparedStatement[] {
+  return cardSearchTerms(apiCardSearchText(card)).map((term) =>
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_card_search_terms (
+         catalogue_revision_id, card_id, term
+       ) VALUES (?, ?, ?)`,
+    ).bind(revisionId, card.id, term),
+  );
+}
+
+function apiCardSearchText(card: ApiCardFixture): string {
+  return cardSearchText({
+    official_identity: card.official_identity,
+    name: card.name,
+    effective_rules_text:
+      typeof card.effective_rules_text === "string" ||
+      card.effective_rules_text === null
+        ? card.effective_rules_text
+        : null,
+  });
 }

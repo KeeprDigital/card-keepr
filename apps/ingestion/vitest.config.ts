@@ -920,6 +920,66 @@ function reconciliationSourceDocument(scenario: string) {
       }],
     };
   }
+  if (
+    scenario === "gundam-current-run-errata-asia" ||
+    scenario === "gundam-current-run-errata-us"
+  ) {
+    const isUs = scenario.endsWith("-us");
+    const observation = printingObservation({
+      game: "gundam",
+      profile: "gundam@1",
+      cardNumber: "GD29-002",
+      name: "Current-run Errata Authority Card",
+      cardAttributes: {
+        card_type: "unit",
+        colours: ["blue"],
+        level: 4,
+        cost: 3,
+        block_icon: "1",
+        effect_text: "Observed source field stays stable.",
+        zone: "space",
+        traits: ["Earth Federation"],
+        link_condition: null,
+        ap: 3,
+        hp: 4,
+        series_titles: ["Mobile Suit Gundam"],
+      },
+      printingAttributes: { alternate_art: false },
+      locator: `/official/gundam/${scenario}`,
+      variantKey: "base",
+      lineageMarker: "gundam-current-run-errata",
+      printedRulesText: "Printed history stays stable.",
+      memberships: {
+        products: ["product_gd29_current"],
+        distribution_contexts: [],
+        source_buckets: ["gundam-card-list"],
+      },
+    });
+    return {
+      cards: [{
+        ...observation,
+        card: {
+          ...observation.card,
+          effective_rules_text: isUs
+            ? "Superseded US source rules."
+            : "Superseded Asia source rules.",
+        },
+        ...(isUs
+          ? {
+              errata: [{
+                authority: "official_errata",
+                field: "effective_rules_text",
+                target_type: "card",
+                effective_from: "2026-07-01",
+                official_wording:
+                  "Use the authoritative current Card wording.",
+                corrected_value: "Authoritative current Card wording.",
+              }],
+            }
+          : {}),
+      }],
+    };
+  }
   if (scenario === "errata-future-boundary") {
     const observation = printingObservation({
       game: "one-piece",
@@ -1090,6 +1150,32 @@ function reconciliationSourceDocument(scenario: string) {
           ],
         },
       ],
+    };
+  }
+  if (scenario === "errata-extra-property") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP29-008",
+      name: "Unexpected Errata Field Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/errata/OP29-008",
+      lineageMarker: "errata-extra-property",
+    });
+    return {
+      cards: [{
+        ...observation,
+        errata: [{
+          authority: "official_errata",
+          field: "effective_rules_text",
+          target_type: "card",
+          effective_from: "2026-07-01",
+          official_wording: "Use the exact corrected wording.",
+          corrected_value: "Exact corrected wording.",
+          editorial_note: "This undeclared field is not authoritative.",
+        }],
+      }],
     };
   }
   if (scenario === "scale-1001-cards") {

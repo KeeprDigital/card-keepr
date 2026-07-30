@@ -16,25 +16,24 @@ CREATE TABLE revision_cards (
   sort_id TEXT GENERATED ALWAYS AS (
     CAST(json_extract(document_json, '$.id') AS TEXT)
   ) STORED NOT NULL,
-  search_text TEXT GENERATED ALWAYS AS (
-    trim(
-      coalesce(CAST(json_extract(
-        document_json, '$.official_identity.value'
-      ) AS TEXT), '') || ' ' ||
-      coalesce(CAST(json_extract(document_json, '$.name') AS TEXT), '') ||
-      ' ' ||
-      coalesce(CAST(json_extract(
-        document_json, '$.effective_rules_text'
-      ) AS TEXT), '')
-    )
-  ) STORED NOT NULL,
+  search_text TEXT NOT NULL,
   PRIMARY KEY (catalogue_revision_id, card_id)
 );
 
 INSERT INTO revision_cards (
-  catalogue_revision_id, card_id, document_json
+  catalogue_revision_id, card_id, document_json, search_text
 )
-SELECT catalogue_revision_id, card_id, document_json
+SELECT catalogue_revision_id, card_id, document_json,
+       lower(trim(
+         coalesce(CAST(json_extract(
+           document_json, '$.official_identity.value'
+         ) AS TEXT), '') || ' ' ||
+         coalesce(CAST(json_extract(document_json, '$.name') AS TEXT), '') ||
+         ' ' ||
+         coalesce(CAST(json_extract(
+           document_json, '$.effective_rules_text'
+         ) AS TEXT), '')
+       ))
 FROM revision_cards_legacy;
 
 DROP TABLE revision_cards_legacy;
@@ -51,52 +50,40 @@ CREATE INDEX revision_cards_by_identity
     sort_game, sort_id
   );
 
-CREATE INDEX revision_cards_by_search
-  ON revision_cards(catalogue_revision_id, search_text);
-
-CREATE VIRTUAL TABLE revision_card_search USING fts5(
-  catalogue_revision_id UNINDEXED,
-  card_id UNINDEXED,
-  search_text,
-  tokenize = 'unicode61 remove_diacritics 0'
+CREATE TABLE revision_card_search_terms (
+  catalogue_revision_id TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  term TEXT NOT NULL CHECK (
+    length(term) > 0 AND length(term) <= 128
+  ),
+  PRIMARY KEY (catalogue_revision_id, card_id, term),
+  FOREIGN KEY (catalogue_revision_id, card_id)
+    REFERENCES revision_cards(catalogue_revision_id, card_id)
+    ON DELETE CASCADE
 );
 
-INSERT INTO revision_card_search (
-  catalogue_revision_id, card_id, search_text
+CREATE INDEX revision_card_search_by_term
+  ON revision_card_search_terms(catalogue_revision_id, term, card_id);
+
+WITH RECURSIVE search_terms(
+  catalogue_revision_id, card_id, term, remaining
+) AS (
+  SELECT catalogue_revision_id, card_id, '',
+         trim(search_text) || ' '
+  FROM revision_cards
+  UNION ALL
+  SELECT catalogue_revision_id, card_id,
+         substr(remaining, 1, instr(remaining, ' ') - 1),
+         ltrim(substr(remaining, instr(remaining, ' ') + 1))
+  FROM search_terms
+  WHERE remaining <> ''
 )
-SELECT catalogue_revision_id, card_id, search_text
-FROM revision_cards;
-
-CREATE TRIGGER revision_cards_search_after_insert
-AFTER INSERT ON revision_cards
-BEGIN
-  INSERT INTO revision_card_search (
-    catalogue_revision_id, card_id, search_text
-  ) VALUES (
-    NEW.catalogue_revision_id, NEW.card_id, NEW.search_text
-  );
-END;
-
-CREATE TRIGGER revision_cards_search_after_update
-AFTER UPDATE ON revision_cards
-BEGIN
-  DELETE FROM revision_card_search
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id
-    AND card_id = OLD.card_id;
-  INSERT INTO revision_card_search (
-    catalogue_revision_id, card_id, search_text
-  ) VALUES (
-    NEW.catalogue_revision_id, NEW.card_id, NEW.search_text
-  );
-END;
-
-CREATE TRIGGER revision_cards_search_after_delete
-AFTER DELETE ON revision_cards
-BEGIN
-  DELETE FROM revision_card_search
-  WHERE catalogue_revision_id = OLD.catalogue_revision_id
-    AND card_id = OLD.card_id;
-END;
+INSERT OR IGNORE INTO revision_card_search_terms (
+  catalogue_revision_id, card_id, term
+)
+SELECT catalogue_revision_id, card_id, term
+FROM search_terms
+WHERE length(term) > 0 AND length(term) <= 128;
 
 CREATE TABLE reconciled_errata (
   id TEXT PRIMARY KEY,

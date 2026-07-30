@@ -26,6 +26,10 @@ import {
 import { AdministrationProblem } from "./administration-problem.mjs";
 import { productReleasePublicationStatements } from "./product-release-publication";
 import { typedPrintingProjections } from "./product-release-projection";
+import {
+  cardSearchTerms,
+  cardSearchText,
+} from "./card-search";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -1850,9 +1854,8 @@ async function commitVerifiedPublication(
     resulting_revision_id: revisionId,
     freshness_checked_at: input.completedAt,
   });
-  const cardDocuments = input.candidate.cards.map((card) => ({
-    card,
-    document: catalogueCard(
+  const cardDocuments = input.candidate.cards.map((card) => {
+    const document = catalogueCard(
       card,
       input.candidate.printings
         .filter((printing) => printing.card_id === card.id)
@@ -1860,8 +1863,13 @@ async function commitVerifiedPublication(
       revisionId,
       input.reconciliation?.cardLifecycles[card.id],
       input.reconciliation?.cardEvidence[card.id] ?? [],
-    ),
-  }));
+    );
+    return {
+      card,
+      document,
+      searchText: cardSearchText(document),
+    };
+  });
   const printingDocuments = await Promise.all(
     input.candidate.printings.map(async (printing) => ({
       printing,
@@ -1911,18 +1919,39 @@ async function commitVerifiedPublication(
     },
   );
   const revisionCardStatements = byteBoundedJsonArrays(
-    cardDocuments.map(({ card, document }) => ({
+    cardDocuments.map(({ card, document, searchText }) => ({
       card_id: card.id,
       document_json: JSON.stringify(document),
+      search_text: searchText,
     })),
   ).map((chunk) =>
     database
       .prepare(
         `INSERT INTO revision_cards (
-           catalogue_revision_id, card_id, document_json
+           catalogue_revision_id, card_id, document_json, search_text
          )
          SELECT ?, json_extract(value, '$.card_id'),
-                json_extract(value, '$.document_json')
+                json_extract(value, '$.document_json'),
+                json_extract(value, '$.search_text')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
+  const revisionCardSearchStatements = byteBoundedJsonArrays(
+    cardDocuments.flatMap(({ card, searchText }) =>
+      cardSearchTerms(searchText).map((term) => ({
+        card_id: card.id,
+        term,
+      })),
+    ),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_card_search_terms (
+           catalogue_revision_id, card_id, term
+         )
+         SELECT ?, json_extract(value, '$.card_id'),
+                json_extract(value, '$.term')
          FROM json_each(?)`,
       )
       .bind(revisionId, chunk),
@@ -2029,6 +2058,7 @@ async function commitVerifiedPublication(
       ),
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
+    ...revisionCardSearchStatements,
     ...revisionPrintingStatements,
     ...printingImageStatements,
     ...revisionPrintingImageStatements,

@@ -1,5 +1,6 @@
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { problemResponse } from "../http/problem";
+import { cardSearchQuery } from "./card-search";
 
 type CardDocument = {
   type: "card";
@@ -133,15 +134,22 @@ async function queryCardPage(
     bindings.push(filters.cardNumber);
   }
   if (filters.q !== null) {
+    const search = cardSearchQuery(filters.q);
+    if (search === null) {
+      throw new Error("The validated Card search query is unavailable.");
+    }
     conditions.push(
-      `card_id IN (
-        SELECT card_id
-        FROM revision_card_search
-        WHERE revision_card_search MATCH ?
-          AND catalogue_revision_id = ?
+      `EXISTS (
+        SELECT 1
+        FROM revision_card_search_terms AS search
+        WHERE search.catalogue_revision_id =
+                revision_cards.catalogue_revision_id
+          AND search.card_id = revision_cards.card_id
+          AND search.term = ?
       )`,
+      "instr(search_text, ?) > 0",
     );
-    bindings.push(ftsPhrase(filters.q), revisionId);
+    bindings.push(search.anchorTerm, search.text);
   }
   if (after !== null) {
     conditions.push(
@@ -189,7 +197,7 @@ function parseFilters(
       "limit must be an integer from 1 to 100.",
     );
   }
-  const q = normalizedFilter(url.searchParams.get("q"));
+  const q = cardSearchQuery(url.searchParams.get("q"))?.text ?? null;
   if (url.searchParams.has("q") && q === null) {
     return invalidParameter(
       requestId,
@@ -280,16 +288,6 @@ function normalizedFilter(value: string | null): string | null {
   if (value === null) return null;
   const normalized = value.normalize("NFKC").trim();
   return normalized.length === 0 ? null : normalized;
-}
-
-function ftsPhrase(value: string): string {
-  const normalized = value
-    .normalize("NFKC")
-    .toLocaleLowerCase("und")
-    .normalize("NFKC")
-    .replace(/\s+/gu, " ")
-    .replaceAll('"', '""');
-  return `"${normalized}"`;
 }
 
 function encodeCursor(cursor: CardCursor): string {

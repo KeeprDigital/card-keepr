@@ -169,6 +169,22 @@ export async function reconcileRetainedCardPrintingEvidence(
       identityValue: proposedCard.official_identity.value,
     });
     const cardId = existing?.id ?? (await cardIdFor(proposedCard));
+    const currentCardErrata = await identifyRulesTextErrata({
+      game: proposedCard.game,
+      cardId,
+      printingId: null,
+      sourceLineage: retained.sourceLineage,
+      sourceObservationId: observation.sourceObservationId,
+      errata: observation.errata.filter(
+        (erratum) => erratum.targetType === "card",
+      ),
+    });
+    observedErrata.push(...currentCardErrata);
+    const currentEffectiveAuthority = currentCardErrata.some(
+      (erratum) =>
+        erratum.effective_from === null ||
+        erratum.effective_from <= observedAt.slice(0, 10),
+    );
     if (
       proposedCard.official_identity.kind === "functional_designation" &&
       proposedCard.official_identity.value === "DON!!"
@@ -197,17 +213,20 @@ export async function reconcileRetainedCardPrintingEvidence(
     }
     const proposedForComparison = {
       ...proposedCard,
-      effective_rules_text: deriveEffectiveRulesText(
-        { id: cardId, ...proposedCard },
-        priorCandidate?.errata ?? [],
-        observedAt,
-      ),
+      effective_rules_text: currentEffectiveAuthority
+        ? proposedCard.effective_rules_text
+        : deriveEffectiveRulesText(
+            { id: cardId, ...proposedCard },
+            priorCandidate?.errata ?? [],
+            observedAt,
+          ),
     };
     const publishedConflict = await canonicalCardConflict(
       database,
       cardId,
       proposedForComparison,
       observation.sourceLineage,
+      { effectiveRulesText: currentEffectiveAuthority },
     );
     const canonicalFacts = canonicalJson(acceptedCard);
     const priorFacts = localCardFacts.get(cardId);
@@ -492,7 +511,9 @@ export async function reconcileRetainedCardPrintingEvidence(
           printingId,
           sourceLineage: retained.sourceLineage,
           sourceObservationId: observation.sourceObservationId,
-          errata: observation.errata,
+          errata: observation.errata.filter(
+            (erratum) => erratum.targetType === "printing",
+          ),
         })),
       );
     } catch (error) {
