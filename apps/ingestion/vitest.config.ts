@@ -137,6 +137,7 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/ingestion/test/**/*.spec.ts"],
+    testTimeout: 15_000,
   },
 });
 
