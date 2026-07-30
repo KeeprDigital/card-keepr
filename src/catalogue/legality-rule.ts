@@ -4,7 +4,11 @@ import type {
   SupportedGame,
 } from "./fixture";
 import { validateMembershipPredicate } from "./reconciliation-profile";
-import { compareUtf8 } from "./serialization";
+import {
+  canonicalJson,
+  compareUtf8,
+  sha256Text,
+} from "./serialization";
 
 export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
 
@@ -24,6 +28,7 @@ export type LegalityRuleEffect =
 
 export type LegalityRule = {
   id: string;
+  official_id: string;
   game: SupportedGame;
   region: LegalityRegion;
   format: string;
@@ -39,11 +44,13 @@ export type LegalityRule = {
   source_observation_id: string;
   first_revision_id?: string;
   last_observed_revision_id?: string;
+  current?: boolean;
+  last_missing_revision_id?: string | null;
 };
 
 export type RetainedLegalityRule = Omit<
   LegalityRule,
-  "card_ids" | "effect"
+  "id" | "card_ids" | "effect"
 > & {
   card_numbers: readonly string[];
   effect:
@@ -73,10 +80,10 @@ export function parseRetainedLegalityRules(
   );
 }
 
-export function resolveLegalityRuleCards(
+export async function resolveLegalityRuleCards(
   rules: readonly RetainedLegalityRule[],
   cards: readonly FixtureCard[],
-): LegalityRule[] {
+): Promise<LegalityRule[]> {
   const cardsByNumber = new Map(
     cards.flatMap((card) =>
       card.official_identity.kind === "card_number"
@@ -85,11 +92,16 @@ export function resolveLegalityRuleCards(
     ),
   );
   const identities = new Set<string>();
-  return rules.map((rule) => {
-    if (identities.has(rule.id)) {
-      throw new Error(`Duplicate Legality Rule identity ${rule.id}.`);
+  const resolved: LegalityRule[] = [];
+  for (const rule of rules) {
+    const id = await canonicalLegalityRuleId(
+      rule.source_lineage,
+      rule.official_id,
+    );
+    if (identities.has(id)) {
+      throw new Error(`Duplicate Legality Rule identity ${id}.`);
     }
-    identities.add(rule.id);
+    identities.add(id);
     if (rule.effect.type === "membership") {
       validateMembershipPredicate(
         `${rule.game}@1`,
@@ -110,8 +122,14 @@ export function resolveLegalityRuleCards(
           }
         : rule.effect;
     const { card_numbers: _numbers, ...withoutNumbers } = rule;
-    return { ...withoutNumbers, card_ids: cardIds, effect };
-  });
+    resolved.push({
+      ...withoutNumbers,
+      id,
+      card_ids: cardIds,
+      effect,
+    });
+  }
+  return resolved;
 }
 
 export function legalityRulesForCandidate(
@@ -119,23 +137,67 @@ export function legalityRulesForCandidate(
   sourceLineage: string,
   incoming: readonly LegalityRule[],
 ): LegalityRule[] {
+  assertUniqueRuleIds(prior?.legality_rules ?? []);
+  assertUniqueRuleIds(incoming);
   const priorById = new Map(
     (prior?.legality_rules ?? []).map((rule) => [rule.id, rule]),
   );
   const observed = incoming.map((rule) => {
+    const {
+      last_observed_revision_id: _incomingLastObservedRevisionId,
+      ...freshRule
+    } = rule;
     const priorRule = priorById.get(rule.id);
+    if (
+      priorRule !== undefined &&
+      canonicalJson(identityBoundSemantics(priorRule)) !==
+        canonicalJson(identityBoundSemantics(rule))
+    ) {
+      throw new Error(
+        `Legality Rule official identity ${rule.official_id} has changed semantics; the Official Source must publish a new official identity.`,
+      );
+    }
     const firstRevisionId =
       rule.first_revision_id ?? priorRule?.first_revision_id;
-    return firstRevisionId === undefined
-      ? rule
-      : { ...rule, first_revision_id: firstRevisionId };
+    return {
+      ...freshRule,
+      ...(firstRevisionId === undefined
+        ? {}
+        : { first_revision_id: firstRevisionId }),
+      current: true,
+      last_missing_revision_id:
+        priorRule?.last_missing_revision_id ?? null,
+    };
   });
   return [
-    ...(prior?.legality_rules ?? []).filter(
-      (rule) => rule.source_lineage !== sourceLineage,
-    ),
+    ...(prior?.legality_rules ?? []).flatMap((rule) => {
+      if (rule.source_lineage !== sourceLineage) return [rule];
+      if (incoming.some((incomingRule) => incomingRule.id === rule.id)) {
+        return [];
+      }
+      return [
+        {
+          ...rule,
+          current: false,
+          last_missing_revision_id:
+            rule.last_missing_revision_id ?? null,
+        },
+      ];
+    }),
     ...observed,
   ].sort((left, right) => compareUtf8(left.id, right.id));
+}
+
+export async function canonicalLegalityRuleId(
+  sourceLineage: string,
+  officialId: string,
+): Promise<string> {
+  return `legality_rule_${await sha256Text(
+    canonicalJson({
+      official_id: officialId,
+      source_lineage: sourceLineage,
+    }),
+  )}`;
 }
 
 export function legalityExportKind(
@@ -240,7 +302,10 @@ function parseRule(
     );
   }
   return {
-    id: requiredOpaqueId(record.id, "legality rule id"),
+    official_id: requiredOpaqueId(
+      record.id,
+      "official legality rule id",
+    ),
     game: provenance.game,
     region,
     format: requiredString(record.format, "legality rule format"),
@@ -265,6 +330,32 @@ function parseRule(
     source_observation_set_id: provenance.sourceObservationSetId,
     source_observation_id: provenance.sourceObservationId,
   };
+}
+
+function identityBoundSemantics(rule: LegalityRule): unknown {
+  return {
+    official_id: rule.official_id,
+    game: rule.game,
+    region: rule.region,
+    format: rule.format,
+    event_tier: rule.event_tier,
+    effective_from: rule.effective_from,
+    effective_until: rule.effective_until,
+    card_ids: [...rule.card_ids].sort(compareUtf8),
+    official_wording: rule.official_wording,
+    effect: rule.effect,
+    source_lineage: rule.source_lineage,
+  };
+}
+
+function assertUniqueRuleIds(rules: readonly LegalityRule[]): void {
+  const identities = new Set<string>();
+  for (const rule of rules) {
+    if (identities.has(rule.id)) {
+      throw new Error(`Duplicate Legality Rule identity ${rule.id}.`);
+    }
+    identities.add(rule.id);
+  }
 }
 
 function parseEffect(value: unknown): RetainedLegalityRule["effect"] {
@@ -396,7 +487,7 @@ function requiredCardNumbers(
         item.toUpperCase(),
       ),
     ),
-  ].sort();
+  ].sort(compareUtf8);
 }
 
 function requiredStrings(

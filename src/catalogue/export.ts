@@ -31,17 +31,17 @@ import {
 } from "./legality-export";
 
 const componentDefinitions = [
-  ["supported-games", "SupportedGameRecord", "id:utf8"],
-  ["game-profiles", "GameProfileRecord", "profile:utf8"],
-  ["cards", "CardRecord", "id:utf8"],
-  ["printings", "PrintingRecord", "id:utf8"],
-  ["printing-images", "PrintingImageRecord", "id:utf8"],
-  ["products", "ProductRecord", "id:utf8"],
-  ["releases", "ReleaseRecord", "id:utf8"],
-  ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
-  ["errata", "ErratumRecord", "id:utf8"],
-  ["legality-rules", "LegalityRuleRecord", "id:utf8"],
-  ["relationships", "RelationshipRecord", "id:utf8"],
+  ["supported-games", "SupportedGameRecord", "id:utf8", 1],
+  ["game-profiles", "GameProfileRecord", "profile:utf8", 1],
+  ["cards", "CardRecord", "id:utf8", 1],
+  ["printings", "PrintingRecord", "id:utf8", 1],
+  ["printing-images", "PrintingImageRecord", "id:utf8", 1],
+  ["products", "ProductRecord", "id:utf8", 1],
+  ["releases", "ReleaseRecord", "id:utf8", 1],
+  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 1],
+  ["errata", "ErratumRecord", "id:utf8", 1],
+  ["legality-rules", "LegalityRuleRecord", "id:utf8", 2],
+  ["relationships", "RelationshipRecord", "id:utf8", 1],
 ] as const;
 const maximumExportRecordBytes = 524_288;
 const zFixed = 4;
@@ -146,7 +146,12 @@ export async function buildCatalogueExport(
   const components: ExportComponent[] = [];
   const objects: ExportObject[] = [];
 
-  for (const [name, schemaDefinition, order] of componentDefinitions) {
+  for (const [
+    name,
+    schemaDefinition,
+    order,
+    recordSchemaMajor,
+  ] of componentDefinitions) {
     const records = orderedExportRecords(recordFactories[name], order);
     const analysis = await analyseComponent(records);
     const key = `catalogue-exports/${catalogueRevisionId}/components/${analysis.compressedSha256}.ndjson.gz`;
@@ -154,7 +159,7 @@ export async function buildCatalogueExport(
       name,
       media_type: "application/x-ndjson",
       compression: "gzip",
-      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/${schemaDefinition}`,
+      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`,
       order,
       records: analysis.records,
       uncompressed_bytes: analysis.uncompressedBytes,

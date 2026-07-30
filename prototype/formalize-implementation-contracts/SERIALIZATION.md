@@ -7,10 +7,13 @@ component for every component declared by that schema version. Empty components
 are present with zero records. A successful no-change Ingestion Run produces no
 export.
 
-New exports use schema major 2 so `LegalityRuleRecord.effect` retains the exact
-normalized discriminated rule and every operand. Schema-major-1 manifests and
-components remain revision-addressed, immutable, and readable; they are never
-rewritten during the upgrade.
+New exports use manifest schema major 2. The `legality-rules` component uses
+record schema major 2 so `LegalityRuleRecord` retains both the Official Source
+identity and the exact normalized discriminated `effect` with every operand.
+Components whose record contracts did not change continue to advertise record
+schema major 1. Schema-major-1 manifests and components remain
+revision-addressed, immutable, and readable; they are never rewritten during
+the upgrade.
 
 ## Records and component order
 
@@ -96,10 +99,13 @@ gzip member. An immutable R2 component key is derived from
 
 ## Manifest
 
-The manifest validates against
-`schemas/catalogue-export-manifest.schema.json`. Its `components` array follows
-the fixed component order above. The manifest is canonical JSON under the same
-rules, followed by one LF, and is not compressed.
+New manifests validate against
+`schemas/catalogue-export-manifest-v2.schema.json`; historical v1 manifests
+validate against `schemas/catalogue-export-manifest.schema.json`. Consumers
+must resolve each component's advertised `record_schema` URI rather than infer
+it from the manifest major. The `components` array follows the fixed component
+order above. The manifest is canonical JSON under the same rules, followed by
+one LF, and is not compressed.
 
 `manifest_sha256` cannot hash a document containing itself. It is therefore the
 SHA-256 of the canonical manifest with `manifest_sha256` set to 64 ASCII zeroes.

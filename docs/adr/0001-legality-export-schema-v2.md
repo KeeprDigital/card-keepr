@@ -4,4 +4,4 @@ Catalogue Export schema v1 can identify only a broad Legality Rule kind, so it c
 
 ## Consequences
 
-The serialization profile remains `card-keepr-ndjson-gzip@1`, but Catalogue Consumers must select record schemas from each manifest rather than assuming schema major 1. The v1 schemas remain checked in because historical export artifacts are never rewritten.
+The serialization profile remains `card-keepr-ndjson-gzip@1`, but Catalogue Consumers must select record schemas from each manifest rather than assuming every component shares the manifest major. A v2 manifest advertises the v2 Legality Rule definition and the existing v1 definitions for unchanged components, so every URI is resolvable without duplicating schemas. The v1 schemas remain checked in because historical export artifacts are never rewritten.

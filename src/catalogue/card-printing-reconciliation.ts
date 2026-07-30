@@ -779,11 +779,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           : "Retained Product evidence is invalid.",
     });
   }
-  let resolvedLegalityRules: ReturnType<
+  let resolvedLegalityRules: Awaited<ReturnType<
     typeof resolveLegalityRuleCards
-  > = [];
+  >> = [];
   try {
-    resolvedLegalityRules = resolveLegalityRuleCards(
+    resolvedLegalityRules = await resolveLegalityRuleCards(
       retained.legalityRules,
       [...cards.values()],
     );
@@ -1251,7 +1251,14 @@ async function candidateAtRevision(
       ...rule,
       first_revision_id: rule.first_revision_id ?? revisionId,
       last_observed_revision_id:
-        rule.last_observed_revision_id ?? revisionId,
+        rule.current === false
+          ? rule.last_observed_revision_id ?? revisionId
+          : revisionId,
+      current: rule.current ?? true,
+      last_missing_revision_id:
+        rule.current === false
+          ? rule.last_missing_revision_id ?? revisionId
+          : rule.last_missing_revision_id ?? null,
     })),
   };
 }
@@ -1499,6 +1506,7 @@ function semanticCatalogueCandidate(
         source_observation_id: _sourceObservationId,
         first_revision_id: _firstRevisionId,
         last_observed_revision_id: _lastObservedRevisionId,
+        last_missing_revision_id: _lastMissingRevisionId,
         ...semanticRule
       } = rule;
       return semanticRule;

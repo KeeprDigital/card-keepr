@@ -15,18 +15,32 @@ The complete production adapters are:
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Their JSON document contains `cards`, `legality_rules`, and
-`legality_completeness`. Each rule retains its official identity, exact
-wording, game, region, format, nullable event tier, effective interval,
-affected Card Numbers, normalized effect, and `representable: true`.
+Their JSON document contains a closed `surfaces` object with mandatory
+`cards` and `legality_rules` surfaces. Each surface declares the adapter's
+exact regional partition, its total record count, and a complete ordered set
+of pages; every page declares its page number, total page count, record count,
+and records. A truly empty surface is represented by a declared total of zero
+and no pages. The adapter derives completeness from this structure and rejects
+missing surfaces, incomplete page sets, mismatched counts, unexpected
+partitions, and unknown envelope fields.
+
+Each rule retains its Official Source identity as `official_id`, exact wording,
+game, region, format, nullable event tier, effective interval, affected Card
+Numbers, normalized effect, and `representable: true`. Its catalogue `id` is
+derived from the canonical pair of `source_lineage` and `official_id`. Once
+that identity is observed, identity-bound rule semantics cannot change; the
+Official Source must publish a new official identity for a semantic change.
 
 Supported effects are `eligible`, `ban`, `copy_limit`,
 `prohibited_combination`, `membership`, `rotation`, `release_timing`, and
 `unresolved`. Unknown fields or effects, invalid intervals, conflicting
 regions, missing Cards, duplicate rule identities, and
 `representable: false` block the selected Ingestion Run before approval.
-The prior regional rule set is not carried forward after a valid complete
-empty rule stream.
+A complete observation replaces only its own source lineage. Rules missing
+from that observation remain in catalogue history as non-current, with their
+first-observed, last-observed, and last-missing revisions. Reappearance of the
+same unchanged official identity restores it as current while retaining that
+lifecycle history.
 
 Gundam `EN-ASIA` and `EN-US` are separate source lineages. Do not ingest or
 derive an `EN-OCEANIA` Gundam scope. Rule applicability is determined only by
@@ -52,9 +66,10 @@ Every result includes the applicable Legality Rule IDs and an auditable
 derivation. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
 `relationships` component. Newly generated exports use schema major 2 and
-retain each rule's complete normalized `effect`, including every operand and
-unresolved reason. Historical schema-major-1 artifacts remain immutable and
-readable.
+retain `official_id` and each rule's complete normalized `effect`, including
+every operand and unresolved reason. Relationship lifecycle states whether a
+rule is current and preserves its observation boundaries. Historical
+schema-major-1 artifacts remain immutable and readable.
 
 Migration `0008_legality_rules.sql` adds canonical provenance retention and
 the revision-scoped rule snapshot used by the API. Apply it before deploying

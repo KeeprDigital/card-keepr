@@ -89,6 +89,164 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
   return [document];
 };
 
+function officialCatalogueParser(
+  requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+): (document: unknown) => readonly unknown[] {
+  return (document) => {
+    const envelope = requiredRecord(
+      document,
+      "Official Source catalogue document",
+    );
+    assertOnlyFields(envelope, ["surfaces"]);
+    const surfaces = requiredRecord(
+      envelope.surfaces,
+      "Official Source surfaces",
+    );
+    assertOnlyFields(surfaces, ["cards", "legality_rules"]);
+    if (surfaces.cards === undefined) {
+      throw new Error("The required Card surface is missing.");
+    }
+    if (surfaces.legality_rules === undefined) {
+      throw new Error("The required Legality Rule surface is missing.");
+    }
+    const cards = parseOfficialSurface(
+      surfaces.cards,
+      "Card",
+      requiredPartition,
+    );
+    const legalityRules = parseOfficialSurface(
+      surfaces.legality_rules,
+      "Legality Rule",
+      requiredPartition,
+    );
+    return [
+      ...cards.map((card) => ({
+        ...requiredRecord(card, "Official Card record"),
+        completeness: completeObservationEvidence(),
+      })),
+      {
+        observation_type: "legality_rules",
+        legality_rules: legalityRules,
+        completeness: completeObservationEvidence(),
+      },
+    ];
+  };
+}
+
+function parseOfficialSurface(
+  value: unknown,
+  name: "Card" | "Legality Rule",
+  requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+): unknown[] {
+  const surface = requiredRecord(value, `${name} surface`);
+  assertOnlyFields(surface, [
+    "partition",
+    "declared_record_count",
+    "pages",
+  ]);
+  if (surface.partition !== requiredPartition) {
+    throw new Error(
+      `${name} surface partition does not match its Source Lineage.`,
+    );
+  }
+  const declaredRecordCount = requiredCount(
+    surface.declared_record_count,
+    `${name} surface declared record count`,
+  );
+  if (!Array.isArray(surface.pages)) {
+    throw new Error(`${name} surface pages must be an array.`);
+  }
+  if (declaredRecordCount > 0 && surface.pages.length === 0) {
+    throw new Error(
+      `${name} surface declared records but retained no pages.`,
+    );
+  }
+  const records: unknown[] = [];
+  const totalPages = surface.pages.length;
+  for (const [index, valuePage] of surface.pages.entries()) {
+    const page = requiredRecord(valuePage, `${name} surface page`);
+    assertOnlyFields(page, [
+      "number",
+      "total_pages",
+      "declared_record_count",
+      "records",
+    ]);
+    if (
+      page.number !== index + 1 ||
+      page.total_pages !== totalPages
+    ) {
+      throw new Error(
+        `${name} surface pages do not prove an exact complete partition.`,
+      );
+    }
+    if (!Array.isArray(page.records)) {
+      throw new Error(`${name} surface page records must be an array.`);
+    }
+    const pageDeclaredCount = requiredCount(
+      page.declared_record_count,
+      `${name} surface page declared record count`,
+    );
+    if (pageDeclaredCount !== page.records.length) {
+      throw new Error(
+        `${name} surface declared and parsed record counts differ.`,
+      );
+    }
+    records.push(...page.records);
+  }
+  if (records.length !== declaredRecordCount) {
+    throw new Error(
+      `${name} surface declared and parsed record counts differ.`,
+    );
+  }
+  return records;
+}
+
+function completeObservationEvidence() {
+  return {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 1,
+    parsed_record_count: 1,
+  };
+}
+
+function requiredCount(value: unknown, name: string): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
+  return Number(value);
+}
+
+function requiredRecord(
+  value: unknown,
+  name: string,
+): Record<string, unknown> {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    throw new Error(`${name} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertOnlyFields(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+): void {
+  const allowed = new Set(fields);
+  const unexpected = Object.keys(value).find(
+    (field) => !allowed.has(field),
+  );
+  if (unexpected !== undefined) {
+    throw new Error(
+      `Official Source surface field ${unexpected} is unsupported.`,
+    );
+  }
+}
+
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
@@ -217,7 +375,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: parseCardDocument,
+        parse: officialCatalogueParser("EN-ASIA"),
       },
       {
         adapterVersion: "gundam-en-us@2",
@@ -228,7 +386,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: parseCardDocument,
+        parse: officialCatalogueParser("EN-US"),
       },
       ...[
         {

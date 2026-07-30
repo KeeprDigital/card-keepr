@@ -92,7 +92,7 @@
           "properties": {
             "name": { "const": "supported-games" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/SupportedGameRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/SupportedGameRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -109,7 +109,7 @@
           "properties": {
             "name": { "const": "game-profiles" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/GameProfileRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/GameProfileRecord"
             },
             "order": { "const": "profile:utf8" }
           }
@@ -126,7 +126,7 @@
           "properties": {
             "name": { "const": "cards" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/CardRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/CardRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -143,7 +143,7 @@
           "properties": {
             "name": { "const": "printings" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/PrintingRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/PrintingRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -160,7 +160,7 @@
           "properties": {
             "name": { "const": "printing-images" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/PrintingImageRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/PrintingImageRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -177,7 +177,7 @@
           "properties": {
             "name": { "const": "products" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ProductRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ProductRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -194,7 +194,7 @@
           "properties": {
             "name": { "const": "releases" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ReleaseRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ReleaseRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -211,7 +211,7 @@
           "properties": {
             "name": { "const": "distribution-contexts" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/DistributionContextRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/DistributionContextRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -228,7 +228,7 @@
           "properties": {
             "name": { "const": "errata" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ErratumRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/ErratumRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -262,7 +262,7 @@
           "properties": {
             "name": { "const": "relationships" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/RelationshipRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/RelationshipRecord"
             },
             "order": { "const": "id:utf8" }
           }

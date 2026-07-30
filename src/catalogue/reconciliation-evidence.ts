@@ -46,6 +46,8 @@ type PrintingImageSnapshotRow = {
   content_object_key: string;
 };
 
+const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
+
 export async function retainedReconciliationObservation(
   database: D1Database,
   evidenceObjects: R2Bucket,
@@ -171,11 +173,15 @@ export async function retainedReconciliationObservation(
       );
     }
   }
-  const documents = await Promise.all(
-    orderedRows.map((row) =>
-      retainedObservationDocument(evidenceObjects, row),
-    ),
+  const aggregateBytes = orderedRows.reduce(
+    (total, row) => total + row.content_byte_length,
+    0,
   );
+  if (aggregateBytes > maximumAggregateReconciliationBytes) {
+    throw new Error(
+      "Retained Source Observation Sets exceed the aggregate reconciliation byte budget.",
+    );
+  }
   assertClosedRequestGraph(requests.results, orderedRows, documents);
   const retainedImages = new Map(
     await Promise.all(

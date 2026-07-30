@@ -2,13 +2,19 @@ import type { FixtureCandidate } from "./fixture";
 import {
   legalityExportKind,
   legalityRuleCardIds,
+  type LegalityRuleEffect,
 } from "./legality-rule";
-import { canonicalJson, sha256Text } from "./serialization";
+import {
+  canonicalJson,
+  compareUtf8,
+  sha256Text,
+} from "./serialization";
 
 export function legalityRuleExportRecords(candidate: FixtureCandidate) {
   return (candidate.legality_rules ?? []).map((rule) => ({
     type: "legality_rule",
     id: rule.id,
+    official_id: rule.official_id,
     game: rule.game,
     region: rule.region,
     format: rule.format,
@@ -16,10 +22,18 @@ export function legalityRuleExportRecords(candidate: FixtureCandidate) {
     effective_from: rule.effective_from,
     effective_until: rule.effective_until,
     kind: legalityExportKind(rule.effect),
-    effect: rule.effect,
+    effect: exportEffect(rule.effect),
     card_ids: legalityRuleCardIds(rule),
     official_wording: rule.official_wording,
   }));
+}
+
+function exportEffect(effect: LegalityRuleEffect): LegalityRuleEffect {
+  if (effect.type !== "prohibited_combination") return effect;
+  return {
+    ...effect,
+    with_card_ids: [...new Set(effect.with_card_ids)].sort(compareUtf8),
+  };
 }
 
 export async function legalityRuleRelationshipRecords(
@@ -48,8 +62,11 @@ export async function legalityRuleRelationshipRecords(
           first_revision_id: rule.first_revision_id ?? revisionId,
           last_observed_revision_id:
             rule.last_observed_revision_id ?? revisionId,
-          current: true,
-          last_missing_revision_id: null,
+          current: rule.current ?? true,
+          last_missing_revision_id:
+            rule.current === false
+              ? rule.last_missing_revision_id ?? revisionId
+              : rule.last_missing_revision_id ?? null,
         },
       })),
     ),

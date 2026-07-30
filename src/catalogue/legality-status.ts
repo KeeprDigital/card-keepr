@@ -96,7 +96,7 @@ export async function contextualLegalityStatusResponse(
     .all<RuleRow>();
   const rules = rows.results.map(
     (row) => JSON.parse(row.document_json) as LegalityRule,
-  );
+  ).filter((rule) => rule.current !== false);
   const regions =
     query.region === null
       ? supportedRegions.filter((region) =>
@@ -223,9 +223,12 @@ function evaluate(
     case "rotation": {
       const attributes = card.game_data.attributes;
       const rawBlocks =
-        attributes.block_icons ??
-        attributes.block_icon ??
-        [];
+        attributes.block_icons !== undefined
+          ? attributes.block_icons
+          : attributes.block_icon;
+      if (rawBlocks === null || rawBlocks === undefined) {
+        return "indeterminate";
+      }
       const blocks = Array.isArray(rawBlocks) ? rawBlocks : [rawBlocks];
       return blocks.some(
         (block) =>

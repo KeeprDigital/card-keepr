@@ -11,6 +11,30 @@ ajv.addSchema(manifestSchemaV1);
 ajv.addSchema(recordSchemaV1);
 const validateManifest = ajv.compile(manifestSchemaV2);
 const validateRecord = ajv.compile(recordSchemaV2);
+const componentValidators = new Map<string, ValidateFunction>(
+  [
+    "SupportedGameRecord",
+    "GameProfileRecord",
+    "CardRecord",
+    "PrintingRecord",
+    "PrintingImageRecord",
+    "ProductRecord",
+    "ReleaseRecord",
+    "DistributionContextRecord",
+    "ErratumRecord",
+    "RelationshipRecord",
+  ].map((definition) => {
+    const uri =
+      `https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/${definition}`;
+    return [uri, requiredValidator(uri)];
+  }),
+);
+const legalityRuleRecordUri =
+  "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord";
+componentValidators.set(
+  legalityRuleRecordUri,
+  requiredValidator(legalityRuleRecordUri),
+);
 
 export function verifyExportManifest(manifest: unknown): void {
   assertValid(validateManifest, manifest, "manifest");
@@ -18,6 +42,16 @@ export function verifyExportManifest(manifest: unknown): void {
 
 export function verifyExportRecord(record: unknown): void {
   assertValid(validateRecord, record, "record");
+}
+
+function requiredValidator(uri: string): ValidateFunction {
+  const validate = ajv.getSchema(uri);
+  if (validate === undefined) {
+    throw new Error(
+      `Catalogue Export component advertises an unresolved record_schema ${uri}.`,
+    );
+  }
+  return validate;
 }
 
 function assertValid(

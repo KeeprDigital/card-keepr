@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -144,6 +145,10 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       card.id,
     ]),
   );
+  const asiaRuleId = (officialId) =>
+    canonicalRuleId("gundam-en-asia", officialId);
+  const usRuleId = (officialId) =>
+    canonicalRuleId("gundam-en-us", officialId);
   assert.equal(asia.legality_rules.length, 15);
   const asiaPublication = await approve(
     asia,
@@ -313,7 +318,10 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     );
     assert.equal(document.data[0].status, expected);
     assert.ok(document.data[0].rule_ids.length > 0);
-    assert.match(document.data[0].derivation, /legality_rule_asia_/);
+    assert.match(
+      document.data[0].derivation,
+      /legality_rule_[a-f0-9]{64}/,
+    );
   }
 
   const nullableMembership = await legalityStatus(
@@ -327,12 +335,14 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       assert.equal(nullableMembership.data[0].status, "indeterminate");
       assert.ok(
         nullableMembership.data[0].rule_ids.includes(
-          "legality_rule_asia_nullable_membership",
+          asiaRuleId("legality_rule_asia_nullable_membership"),
         ),
       );
       assert.match(
         nullableMembership.data[0].derivation,
-        /legality_rule_asia_nullable_membership \(membership\) evaluated indeterminate/,
+        new RegExp(
+          `${asiaRuleId("legality_rule_asia_nullable_membership")} \\(membership\\) evaluated indeterminate`,
+        ),
       );
     },
   );
@@ -344,7 +354,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   );
   assert.equal(beforeRelease.data[0].status, "not_legal");
   assert.deepEqual(beforeRelease.data[0].rule_ids, [
-    "legality_rule_asia_release_timing",
+    asiaRuleId("legality_rule_asia_release_timing"),
   ]);
 
   const regional = await legalityStatus(
@@ -443,11 +453,13 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   await t.test("copy-limit export retains its operand", () => {
     assert.deepEqual(
       exportedRules.find(
-        (rule) => rule.id === "legality_rule_asia_copy_limit",
+        (rule) =>
+          rule.official_id === "legality_rule_asia_copy_limit",
       ),
       {
         type: "legality_rule",
-        id: "legality_rule_asia_copy_limit",
+        id: asiaRuleId("legality_rule_asia_copy_limit"),
+        official_id: "legality_rule_asia_copy_limit",
         game: "gundam",
         region: "EN-ASIA",
         format: "standard",
@@ -462,25 +474,25 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       },
     );
   });
-  await t.test(
-    "mixed punctuation and case use UTF-8 byte ordering",
-    () => {
-      assert.deepEqual(
-        exportedRules
-          .map((rule) => rule.id)
-          .filter((id) => id.startsWith("Order")),
-        ["Order-A", "Order.A", "Order:A", "Order_A", "Order_a"],
-      );
-    },
-  );
+  await t.test("canonical rule IDs use UTF-8 byte ordering", () => {
+    const exportedIds = exportedRules.map((rule) => rule.id);
+    assert.deepEqual(
+      exportedIds,
+      [...exportedIds].sort((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right)),
+      ),
+    );
+  });
   await t.test("membership export retains its predicate", () => {
     assert.deepEqual(
       exportedRules.find(
-        (rule) => rule.id === "legality_rule_asia_membership",
+        (rule) =>
+          rule.official_id === "legality_rule_asia_membership",
       ),
       {
         type: "legality_rule",
-        id: "legality_rule_asia_membership",
+        id: asiaRuleId("legality_rule_asia_membership"),
+        official_id: "legality_rule_asia_membership",
         game: "gundam",
         region: "EN-ASIA",
         format: "standard",
@@ -502,11 +514,13 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   await t.test("release-timing export matches temporal API semantics", () => {
     assert.deepEqual(
       exportedRules.find(
-        (rule) => rule.id === "legality_rule_asia_release_timing",
+        (rule) =>
+          rule.official_id === "legality_rule_asia_release_timing",
       ),
       {
         type: "legality_rule",
-        id: "legality_rule_asia_release_timing",
+        id: asiaRuleId("legality_rule_asia_release_timing"),
+        official_id: "legality_rule_asia_release_timing",
         game: "gundam",
         region: "EN-ASIA",
         format: "standard",
@@ -527,11 +541,13 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   await t.test("unresolved export matches indeterminate API semantics", () => {
     assert.deepEqual(
       exportedRules.find(
-        (rule) => rule.id === "legality_rule_asia_unresolved_scope",
+        (rule) =>
+          rule.official_id === "legality_rule_asia_unresolved_scope",
       ),
       {
         type: "legality_rule",
-        id: "legality_rule_asia_unresolved_scope",
+        id: asiaRuleId("legality_rule_asia_unresolved_scope"),
+        official_id: "legality_rule_asia_unresolved_scope",
         game: "gundam",
         region: "EN-ASIA",
         format: "standard",
@@ -567,12 +583,14 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   const asiaRelationship = exportedRelationships.find(
     (relationship) =>
       relationship.kind === "legality-rule-card" &&
-      relationship.from.id === "legality_rule_asia_membership",
+      relationship.from.id ===
+        asiaRuleId("legality_rule_asia_membership"),
   );
   const usRelationship = exportedRelationships.find(
     (relationship) =>
       relationship.kind === "legality-rule-card" &&
-      relationship.from.id === "legality_rule_us_eligible",
+      relationship.from.id ===
+        usRuleId("legality_rule_us_eligible"),
   );
   assert.equal(
     asiaRelationship.lifecycle.first_revision_id,
@@ -736,6 +754,18 @@ function legalityArguments(cardId, extraArguments) {
     ...filtered,
     "--json",
   ];
+}
+
+function canonicalRuleId(sourceLineage, officialId) {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        official_id: officialId,
+        source_lineage: sourceLineage,
+      }),
+    )
+    .digest("hex");
+  return `legality_rule_${digest}`;
 }
 
 async function waitForRunState(runId, expected, environment, worker) {

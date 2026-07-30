@@ -51,6 +51,7 @@ INSERT INTO source_adapter_versions (
 
 CREATE TABLE legality_rules (
   id TEXT PRIMARY KEY,
+  official_id TEXT NOT NULL,
   supported_game TEXT NOT NULL CHECK (
     supported_game IN ('one-piece', 'fusion-world', 'digimon', 'gundam')
   ),
@@ -76,7 +77,10 @@ CREATE TABLE legality_rules (
     REFERENCES source_observation_sets(id),
   source_observation_id TEXT NOT NULL,
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
-  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id)
+  last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
+  last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
+  UNIQUE (source_lineage, official_id)
 );
 
 CREATE INDEX legality_rules_context
@@ -92,6 +96,7 @@ CREATE INDEX legality_rules_context
 CREATE TRIGGER guard_legality_rule_identity
 BEFORE UPDATE ON legality_rules
 WHEN OLD.supported_game <> NEW.supported_game
+  OR OLD.official_id <> NEW.official_id
   OR OLD.region <> NEW.region
   OR OLD.format <> NEW.format
   OR COALESCE(OLD.event_tier, '') <> COALESCE(NEW.event_tier, '')
@@ -100,6 +105,7 @@ WHEN OLD.supported_game <> NEW.supported_game
   OR OLD.official_wording <> NEW.official_wording
   OR OLD.effect_json <> NEW.effect_json
   OR OLD.card_ids_json <> NEW.card_ids_json
+  OR OLD.source_lineage <> NEW.source_lineage
 BEGIN
   SELECT RAISE(ABORT, 'legality_rule_identity_conflict');
 END;

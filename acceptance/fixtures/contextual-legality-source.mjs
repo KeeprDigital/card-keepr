@@ -35,10 +35,33 @@ export function contextualLegalityDocument(
             includes_any: ["bluue"],
           };
   }
+  return officialSurfaceDocument(region, cards, legalityRules);
+}
+
+function officialSurfaceDocument(region, cards, legalityRules) {
   return {
-    cards,
-    legality_rules: legalityRules,
-    legality_completeness: completeEvidence(),
+    surfaces: {
+      cards: completeSurface(region, cards),
+      legality_rules: completeSurface(region, legalityRules),
+    },
+  };
+}
+
+function completeSurface(partition, records) {
+  return {
+    partition,
+    declared_record_count: records.length,
+    pages:
+      records.length === 0
+        ? []
+        : [
+            {
+              number: 1,
+              total_pages: 1,
+              declared_record_count: records.length,
+              records,
+            },
+          ],
   };
 }
 

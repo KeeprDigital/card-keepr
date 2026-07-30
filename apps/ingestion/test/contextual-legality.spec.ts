@@ -51,7 +51,8 @@ test("the production repository ingests effective-dated regional Legality Rules 
     publishable: true,
     legality_rules: expect.arrayContaining([
       expect.objectContaining({
-        id: "legality_rule_asia_copy_limit",
+        id: expect.stringMatching(/^legality_rule_[a-f0-9]{64}$/),
+        official_id: "legality_rule_asia_copy_limit",
         game: "gundam",
         region: "EN-ASIA",
         format: "standard",
@@ -67,25 +68,25 @@ test("the production repository ingests effective-dated regional Legality Rules 
         source_observation_id: expect.stringMatching(/^srcobs_/),
       }),
       expect.objectContaining({
-        id: "legality_rule_asia_combination",
+        official_id: "legality_rule_asia_combination",
         effect: expect.objectContaining({
           type: "prohibited_combination",
         }),
       }),
       expect.objectContaining({
-        id: "legality_rule_asia_membership",
+        official_id: "legality_rule_asia_membership",
         effect: expect.objectContaining({ type: "membership" }),
       }),
       expect.objectContaining({
-        id: "legality_rule_asia_rotation",
+        official_id: "legality_rule_asia_rotation",
         effect: expect.objectContaining({ type: "rotation" }),
       }),
       expect.objectContaining({
-        id: "legality_rule_asia_release_timing",
+        official_id: "legality_rule_asia_release_timing",
         effect: expect.objectContaining({ type: "release_timing" }),
       }),
       expect.objectContaining({
-        id: "legality_rule_asia_unresolved_scope",
+        official_id: "legality_rule_asia_unresolved_scope",
         effect: expect.objectContaining({ type: "unresolved" }),
       }),
     ]),

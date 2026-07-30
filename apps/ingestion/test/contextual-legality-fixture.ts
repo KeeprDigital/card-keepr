@@ -6,10 +6,30 @@ export function contextualLegalitySourceDocument(region: Region) {
       ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
+  const rules = legalityRules(region);
   return {
-    cards,
-    legality_rules: legalityRules(region),
-    legality_completeness: completeEvidence(),
+    surfaces: {
+      cards: completeSurface(region, cards),
+      legality_rules: completeSurface(region, rules),
+    },
+  };
+}
+
+function completeSurface(partition: Region, records: readonly unknown[]) {
+  return {
+    partition,
+    declared_record_count: records.length,
+    pages:
+      records.length === 0
+        ? []
+        : [
+            {
+              number: 1,
+              total_pages: 1,
+              declared_record_count: records.length,
+              records,
+            },
+          ],
   };
 }
 

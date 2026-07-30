@@ -36,6 +36,9 @@
     }
   ],
   "$defs": {
+    "LegalityRegion": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
+    },
     "LegalityRuleEffect": {
       "oneOf": [
         {
@@ -62,7 +65,7 @@
             "type": { "const": "copy_limit" },
             "maximum_copies": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 1
             }
           }
         },
@@ -151,6 +154,7 @@
       "required": [
         "type",
         "id",
+        "official_id",
         "game",
         "region",
         "format",
@@ -167,11 +171,14 @@
         "id": {
           "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
         },
+        "official_id": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
+        },
         "game": {
           "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/SupportedGame"
         },
         "region": {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/Locale"
+          "$ref": "#/$defs/LegalityRegion"
         },
         "format": {
           "type": "string",
