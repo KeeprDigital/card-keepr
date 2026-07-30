@@ -593,13 +593,6 @@ async function approveRunAttempt(
     );
   }
 
-  const approval = {
-    action: "approved",
-    approved_at: now,
-    candidate_digest: request.candidate_digest,
-    expected_current_revision_id:
-      request.expected_current_revision_id,
-  };
   const candidate = JSON.parse(
     await retainedPayload(
       database,
@@ -608,6 +601,19 @@ async function approveRunAttempt(
       run.candidate_json,
     ),
   ) as FixtureCandidate;
+  assertErrataClockFresh(
+    candidate,
+    parseSelectedGames(run.selected_games_json),
+    run.candidate_created_at,
+    now,
+  );
+  const approval = {
+    action: "approved",
+    approved_at: now,
+    candidate_digest: request.candidate_digest,
+    expected_current_revision_id:
+      request.expected_current_revision_id,
+  };
   const currentRevision = await database
     .prepare(
       `SELECT content_digest
@@ -754,6 +760,34 @@ async function approveRunAttempt(
       // publication outcome must remain the original problem.
     }
     throw problem;
+  }
+}
+
+function assertErrataClockFresh(
+  candidate: FixtureCandidate,
+  selectedGames: readonly SupportedGame[],
+  candidateCreatedAt: string | null,
+  approvalObservedAt: string,
+): void {
+  if (candidateCreatedAt === null) {
+    throw new Error("The persisted candidate has no reconciliation clock.");
+  }
+  const reconciledDate = candidateCreatedAt.slice(0, 10);
+  const approvalDate = approvalObservedAt.slice(0, 10);
+  const selected = new Set(selectedGames);
+  const crossedBoundary = (candidate.errata ?? []).some(
+    (erratum) =>
+      selected.has(erratum.game) &&
+      erratum.effective_from !== null &&
+      erratum.effective_from > reconciledDate &&
+      erratum.effective_from <= approvalDate,
+  );
+  if (crossedBoundary) {
+    throw new AdministrationProblem(
+      409,
+      "candidate_errata_stale",
+      "An Erratum became applicable after reconciliation; reconcile a fresh candidate before approval.",
+    );
   }
 }
 

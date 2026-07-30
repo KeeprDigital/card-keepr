@@ -7,6 +7,12 @@ import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { sha256 } from "../../../src/catalogue/serialization";
+import { cardCollectionResponse } from "../../../src/catalogue/card-collection-read";
+import {
+  catalogueExportResponse,
+  currentCardResponse,
+} from "../../../src/catalogue/read";
+import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import type {
   FixtureCandidate,
@@ -36,6 +42,227 @@ beforeEach(async () => {
 });
 
 function registerErrataRulesTextTests(): void {
+  test("applicable Card Errata reconcile the same raw rules across authoritative lineages", async () => {
+    const asiaRun = await collect(
+      "/reconciliation/gundam-errata-cross-lineage-asia",
+      "reconcile-gundam-errata-asia",
+      {
+        game: "gundam",
+        lineage: "gundam-en-asia",
+        adapter: "fixture-gundam-en-asia-json@1",
+      },
+    );
+    const asia = await reconcile(asiaRun.id);
+    expect(asia.response.status).toBe(200);
+    expect((await approve(asia.document)).response.status).toBe(200);
+
+    const usRun = await collect(
+      "/reconciliation/gundam-errata-cross-lineage-us",
+      "reconcile-gundam-errata-us",
+      {
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@1",
+      },
+    );
+    const us = await reconcile(usRun.id);
+    expect(us.response.status).toBe(200);
+    expect(us.document).toMatchObject({
+      cards: [{ effective_rules_text: "Corrected cross-lineage rules." }],
+      diagnostics: [],
+    });
+    expect((await approve(us.document)).response.status).toBe(200);
+  });
+
+  test("legacy persisted candidates without Errata remain inspectable and retryable", async () => {
+    const started = await injectFixturePublication(
+      testEnv.CATALOGUE_DB,
+      testEnv.CATALOGUE_EXPORTS,
+      {
+        fixture: "first-catalogue",
+        selected_games: ["one-piece"],
+        idempotency_key: "legacy-candidate-without-errata",
+      },
+      "2026-07-30T00:00:00.000Z",
+    );
+    const runId = requiredString(started, "id");
+    const rejected = await post(`/v1/ingestion-runs/${runId}/rejection`, {
+      candidate_digest: requiredString(started, "candidate_digest"),
+      idempotency_key: "reject-legacy-candidate-without-errata",
+    });
+    expect(rejected.response.status).toBe(200);
+    const stored = await testEnv.CATALOGUE_DB.prepare(
+      "SELECT candidate_json FROM ingestion_runs WHERE id = ?",
+    )
+      .bind(runId)
+      .first<{ candidate_json: string }>();
+    const legacy = JSON.parse(stored?.candidate_json ?? "{}") as
+      Record<string, unknown>;
+    delete legacy.errata;
+    const legacyRunId = "run_legacy_candidate_without_errata";
+    await testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key,
+         failure_code, progress_json, warnings_json,
+         approval_history_json, publication_outcome,
+         resulting_revision_id, freshness_checked_at,
+         publication_revision_id, publication_started_at,
+         publication_reconcile_after, publication_manifest_digest,
+         publication_writer_token, candidate_catalogue_digest
+       )
+       SELECT ?, state, selected_games_json, started_at,
+              expected_current_revision_id, NULL, ?,
+              candidate_digest, candidate_created_at, approval_deadline,
+              approval_json, published_revision_id, export_manifest_digest,
+              terminal_at, ?, NULL,
+              failure_code, progress_json, warnings_json,
+              approval_history_json, publication_outcome,
+              resulting_revision_id, freshness_checked_at,
+              publication_revision_id, publication_started_at,
+              publication_reconcile_after, publication_manifest_digest,
+              publication_writer_token, candidate_catalogue_digest
+       FROM ingestion_runs WHERE id = ?`,
+    )
+      .bind(
+        legacyRunId,
+        "persisted-legacy-candidate-without-errata",
+        JSON.stringify(legacy),
+        runId,
+      )
+      .run();
+
+    expect((await get(`/v1/ingestion-runs/${legacyRunId}`)).response.status)
+      .toBe(200);
+    const retried = await post(`/v1/ingestion-runs/${legacyRunId}/retry`, {
+      idempotency_key: "retry-legacy-candidate-without-errata",
+    });
+    expect(retried.response.status).toBe(201);
+    const retriedRunId = requiredString(retried.document, "id");
+    const retriedRejected = await post(
+      `/v1/ingestion-runs/${retriedRunId}/rejection`,
+      {
+        candidate_digest: requiredString(
+          retried.document,
+          "candidate_digest",
+        ),
+        idempotency_key: "reject-retried-legacy-candidate",
+      },
+    );
+    expect(retriedRejected.response.status).toBe(200);
+  });
+
+  test("a selected future Erratum cannot silently stale while awaiting approval", async () => {
+    const run = await collect(
+      "/reconciliation/errata-future-boundary",
+      "reconcile-future-errata-before-boundary",
+    );
+    const reconciled = await post(
+      `/v1/ingestion-runs/${run.id}/reconciliation`,
+      {},
+      { "x-keepr-test-now": "2026-07-31T23:59:00.000Z" },
+    );
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      cards: [{ effective_rules_text: "Rules before the future Erratum." }],
+    });
+    const approval = await post(
+      `/v1/ingestion-runs/${run.id}/approval`,
+      {
+        candidate_digest: requiredString(
+          reconciled.document,
+          "candidate_digest",
+        ),
+        expected_current_revision_id: requiredString(
+          reconciled.document,
+          "expected_current_revision_id",
+        ),
+        idempotency_key: "approve-future-errata-after-boundary",
+      },
+      { "x-keepr-test-now": "2026-08-01T00:01:00.000Z" },
+    );
+    expect(approval.response.status).toBe(409);
+    expect(approval.document).toMatchObject({
+      code: "candidate_errata_stale",
+    });
+    const rejected = await post(
+      `/v1/ingestion-runs/${run.id}/rejection`,
+      {
+        candidate_digest: requiredString(
+          reconciled.document,
+          "candidate_digest",
+        ),
+        idempotency_key: "reject-stale-future-errata",
+      },
+      { "x-keepr-test-now": "2026-08-01T00:02:00.000Z" },
+    );
+    expect(rejected.response.status).toBe(200);
+
+    const carriedRun = await collect(
+      "/reconciliation/errata-future-boundary",
+      "publish-future-errata-before-boundary",
+    );
+    const carried = await post(
+      `/v1/ingestion-runs/${carriedRun.id}/reconciliation`,
+      {},
+      { "x-keepr-test-now": "2026-07-31T23:50:00.000Z" },
+    );
+    const carriedPublished = await post(
+      `/v1/ingestion-runs/${carriedRun.id}/approval`,
+      {
+        candidate_digest: requiredString(carried.document, "candidate_digest"),
+        expected_current_revision_id: requiredString(
+          carried.document,
+          "expected_current_revision_id",
+        ),
+        idempotency_key: "approve-future-errata-before-boundary",
+      },
+      { "x-keepr-test-now": "2026-07-31T23:55:00.000Z" },
+    );
+    expect(carriedPublished.response.status).toBe(200);
+
+    const subsetRun = await collect(
+      "/reconciliation/gundam-authority-us",
+      "reconcile-unselected-future-errata-after-boundary",
+      {
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@1",
+      },
+    );
+    const subset = await post(
+      `/v1/ingestion-runs/${subsetRun.id}/reconciliation`,
+      {},
+      { "x-keepr-test-now": "2026-08-01T00:05:00.000Z" },
+    );
+    const subsetPublished = await post(
+      `/v1/ingestion-runs/${subsetRun.id}/approval`,
+      {
+        candidate_digest: requiredString(subset.document, "candidate_digest"),
+        expected_current_revision_id: requiredString(
+          subset.document,
+          "expected_current_revision_id",
+        ),
+        idempotency_key: "approve-unselected-future-errata",
+      },
+      { "x-keepr-test-now": "2026-08-01T00:06:00.000Z" },
+    );
+    expect(subsetPublished.response.status).toBe(200);
+    const cards = await exportComponentRecords(
+      requiredString(subsetPublished.document, "resulting_revision_id"),
+      "cards",
+    );
+    expect(cards).toContainEqual(
+      expect.objectContaining({
+        name: "Future Errata Card",
+        effective_rules_text: "Rules before the future Erratum.",
+      }),
+    );
+  });
+
   test("an official Erratum preserves observed and Printed Rules Text while publishing corrected Effective Rules Text", async () => {
     const run = await collect(
       "/reconciliation/errata-card-rules-text",
@@ -58,17 +285,19 @@ function registerErrataRulesTextTests(): void {
           printed_rules_text: "[On Play] Draw 1 card.",
         },
       ],
-      errata: [
-        {
+    });
+    expect(reconciled.document.errata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           target_type: "card",
           effective_from: "2026-07-01",
           official_wording:
             'Replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".',
           corrected_value:
             "[On Play] Draw 2 cards, then discard 1 card.",
-        },
-      ],
-    });
+        }),
+      ]),
+    );
 
     const published = await approve(reconciled.document);
     expect(published.response.status).toBe(200);
@@ -100,7 +329,68 @@ function registerErrataRulesTextTests(): void {
           "[On Play] Draw 2 cards, then discard 1 card.",
       }),
     );
-    const erratum = errata[0]!;
+    const erratum = errata.find(
+      (candidate) =>
+        candidate.corrected_value ===
+        "[On Play] Draw 2 cards, then discard 1 card.",
+    );
+    expect(erratum).toBeDefined();
+    if (erratum === undefined) {
+      throw new Error("Expected the published Card Erratum in the export.");
+    }
+    const currentCard = await currentCardResponse(
+      testEnv.CATALOGUE_DB,
+      String(erratum.target_id),
+    );
+    expect(currentCard?.status).toBe(200);
+    await expect(currentCard?.json()).resolves.toMatchObject({
+      data: {
+        id: erratum.target_id,
+        effective_rules_text:
+          "[On Play] Draw 2 cards, then discard 1 card.",
+      },
+    });
+    const searchRequest = new Request(
+      "https://card-keepr.invalid/v1/cards?q=draw%202%20cards",
+      { headers: { authorization: "Bearer published-erratum-api-key" } },
+    );
+    expect(
+      await authenticateCredentialBearer(
+        searchRequest,
+        testEnv.CATALOGUE_DB,
+        "api_bearer_key",
+        ["published-erratum-api-key"],
+        "errata-published-authentication",
+        {
+          missing: "authentication_required",
+          invalid: "invalid_api_key",
+        },
+      ),
+    ).toBeNull();
+    const search = await cardCollectionResponse(
+      testEnv.CATALOGUE_DB,
+      searchRequest,
+      "errata-published-search",
+    );
+    expect(search.status).toBe(200);
+    await expect(search.json()).resolves.toMatchObject({
+      data: [{ id: erratum.target_id }],
+      meta: { catalogue_revision_id: revisionId },
+    });
+    const exportResponse = await catalogueExportResponse(
+      testEnv.CATALOGUE_DB,
+      testEnv.CATALOGUE_EXPORTS,
+      revisionId,
+    );
+    expect(exportResponse?.status).toBe(200);
+    await expect(exportResponse?.json()).resolves.toMatchObject({
+      data: {
+        components: expect.arrayContaining([
+          expect.objectContaining({ name: "errata" }),
+        ]),
+      },
+      meta: { catalogue_revision_id: revisionId },
+    });
     const persisted = await testEnv.CATALOGUE_DB.prepare(
       `SELECT erratum.id, provenance.source_lineage,
               provenance.source_observation_id
@@ -5551,8 +5841,12 @@ function get(pathname: string) {
   return request(pathname);
 }
 
-function post(pathname: string, body: Record<string, unknown>) {
-  return request(pathname, body);
+function post(
+  pathname: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+) {
+  return request(pathname, body, extraHeaders);
 }
 
 async function postFixtureEvidence(body: StartEvidenceRunRequest) {

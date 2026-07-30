@@ -201,6 +201,45 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   ]);
 });
 
+test("CLI Card search uses the authenticated catalogue HTTP seam", async (t) => {
+  let observed = null;
+  const server = createServer((request, response) => {
+    observed = {
+      path: request.url,
+      authorization: request.headers.authorization,
+    };
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({
+      data: [{ id: "card_cli_erratum", name: "Éclair LÜFFY" }],
+      meta: { catalogue_revision_id: "catrev_cli_erratum" },
+      page: { limit: 25, next_cursor: null },
+      links: { self: "/v1/cards?q=%C3%A9clair&limit=25" },
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const result = await runCli(
+    ["cards", "search", "--query", "éclair", "--limit", "25", "--json"],
+    {
+      KEEPR_API_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_API_KEY: "cli-api-test-key",
+    },
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).data[0].id, "card_cli_erratum");
+  assert.deepEqual(observed, {
+    path: "/v1/cards?q=%C3%A9clair&limit=25",
+    authorization: "Bearer cli-api-test-key",
+  });
+});
+
 function runCli(arguments_, environment) {
   return new Promise((resolveExit) => {
     const child = spawn(

@@ -180,12 +180,6 @@ export async function reconcileRetainedCardPrintingEvidence(
           "Known DON!! Printing evidence is retained when present, but Official Source coverage is incomplete and absence never proves zero Printings.",
       });
     }
-    const publishedConflict = await canonicalCardConflict(
-      database,
-      cardId,
-      proposedCard,
-      observation.sourceLineage,
-    );
     const carriedCard = cards.get(cardId);
     const retainAsiaAuthority =
       proposedCard.game === "gundam" &&
@@ -201,6 +195,20 @@ export async function reconcileRetainedCardPrintingEvidence(
       const { id: _carriedId, ...authoritativeCard } = carriedCard;
       acceptedCard = fillAuthorityGaps(authoritativeCard, proposedCard);
     }
+    const proposedForComparison = {
+      ...proposedCard,
+      effective_rules_text: deriveEffectiveRulesText(
+        { id: cardId, ...proposedCard },
+        priorCandidate?.errata ?? [],
+        observedAt,
+      ),
+    };
+    const publishedConflict = await canonicalCardConflict(
+      database,
+      cardId,
+      proposedForComparison,
+      observation.sourceLineage,
+    );
     const canonicalFacts = canonicalJson(acceptedCard);
     const priorFacts = localCardFacts.get(cardId);
     if (
@@ -613,6 +621,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   );
   const candidateCards = [...cards.values()]
     .map((card) => {
+      if (card.game !== retained.supportedGame) return card;
       try {
         return {
           ...card,

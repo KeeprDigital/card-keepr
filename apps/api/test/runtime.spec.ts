@@ -454,6 +454,80 @@ test("Card collection filtering and keyset pagination remain bounded in D1", asy
   });
 });
 
+test("Card search is canonically Unicode case-insensitive", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_unicode_search",
+    runId: "run_unicode_search",
+    cards: [
+      apiCard({
+        id: "card_unicode_search",
+        cardNumber: "OP29-Ü01",
+        name: "Éclair LÜFFY",
+      }),
+    ],
+  });
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=E%CC%81CLAIR%20lüffy",
+      { headers: apiHeaders("203.0.113.34") },
+    ),
+  );
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    data: [{ id: "card_unicode_search" }],
+  });
+});
+
+test("Card collection schema exposes indexed revision order and search materialization", async () => {
+  const columns = await testEnv.CATALOGUE_DB.prepare(
+    "PRAGMA table_xinfo(revision_cards)",
+  ).all<{ name: string }>();
+  expect(columns.results.map((column) => column.name)).toEqual(
+    expect.arrayContaining([
+      "sort_game",
+      "sort_identity_kind",
+      "sort_identity_value",
+      "sort_id",
+      "search_text",
+    ]),
+  );
+  const indexes = await testEnv.CATALOGUE_DB.prepare(
+    "PRAGMA index_list(revision_cards)",
+  ).all<{ name: string }>();
+  expect(indexes.results.map((index) => index.name)).toEqual(
+    expect.arrayContaining([
+      "revision_cards_by_order",
+      "revision_cards_by_identity",
+      "revision_cards_by_search",
+    ]),
+  );
+  const orderPlan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN
+     SELECT document_json
+     FROM revision_cards
+     WHERE catalogue_revision_id = ?
+       AND (sort_game, sort_identity_kind, sort_identity_value, sort_id)
+         > (?, ?, ?, ?)
+     ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
+     LIMIT 51`,
+  )
+    .bind(
+      "catrev_plan",
+      "one-piece",
+      "card_number",
+      "OP29-001",
+      "card_plan",
+    )
+    .all<{ detail: string }>();
+  expect(orderPlan.results.map((row) => row.detail).join("\n"))
+    .toContain("revision_cards_by_order");
+  const searchTable = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT sql FROM sqlite_schema
+     WHERE type = 'table' AND name = 'revision_card_search'`,
+  ).first<{ sql: string }>();
+  expect(searchTable?.sql).toContain("fts5");
+});
+
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
   await seedApiRevision({
     revisionId: "catrev_cursor_old",

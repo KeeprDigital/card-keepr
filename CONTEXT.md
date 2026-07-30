@@ -112,6 +112,10 @@ _Avoid_: Printed Rules Text, silently corrected text
 An official, effective-dated correction to published Card or Printing facts that preserves the facts it supersedes.
 _Avoid_: Curated Revision, silent overwrite
 
+**Reconciliation Clock**:
+The authenticated reconciliation request time used to decide which effective-dated official facts apply to a candidate. A candidate cannot cross an applicability date while awaiting approval.
+_Avoid_: Publication time, wall clock
+
 **Legality Rule**:
 An effective-dated official assertion governing Card eligibility, copy limits, combinations, or release and rotation constraints within a stated play context.
 _Avoid_: Ruling, boolean legal flag

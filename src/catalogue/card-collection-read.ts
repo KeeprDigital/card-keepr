@@ -134,33 +134,21 @@ async function queryCardPage(
   }
   if (filters.q !== null) {
     conditions.push(
-      `(instr(lower(sort_identity_value), ?) > 0
-        OR instr(lower(sort_name), ?) > 0
-        OR instr(lower(sort_effective_rules_text), ?) > 0)`,
+      `card_id IN (
+        SELECT card_id
+        FROM revision_card_search
+        WHERE revision_card_search MATCH ?
+          AND catalogue_revision_id = ?
+      )`,
     );
-    const query = filters.q.toLocaleLowerCase("en");
-    bindings.push(query, query, query);
+    bindings.push(ftsPhrase(filters.q), revisionId);
   }
   if (after !== null) {
     conditions.push(
-      `(sort_game > ?
-        OR (sort_game = ? AND sort_identity_kind > ?)
-        OR (
-          sort_game = ? AND sort_identity_kind = ?
-          AND sort_identity_value > ?
-        )
-        OR (
-          sort_game = ? AND sort_identity_kind = ?
-          AND sort_identity_value = ? AND sort_id > ?
-        ))`,
+      `(sort_game, sort_identity_kind, sort_identity_value, sort_id)
+       > (?, ?, ?, ?)`,
     );
     bindings.push(
-      after.game,
-      after.game,
-      after.identity_kind,
-      after.game,
-      after.identity_kind,
-      after.identity_value,
       after.game,
       after.identity_kind,
       after.identity_value,
@@ -170,29 +158,9 @@ async function queryCardPage(
   bindings.push(filters.limit + 1);
   const result = await database
     .prepare(
-      `WITH cards AS (
-         SELECT document_json,
-                CAST(json_extract(document_json, '$.game') AS TEXT)
-                  AS sort_game,
-                CAST(json_extract(
-                  document_json, '$.official_identity.kind'
-                ) AS TEXT) AS sort_identity_kind,
-                CAST(json_extract(
-                  document_json, '$.official_identity.value'
-                ) AS TEXT) AS sort_identity_value,
-                CAST(json_extract(document_json, '$.id') AS TEXT)
-                  AS sort_id,
-                CAST(json_extract(document_json, '$.name') AS TEXT)
-                  AS sort_name,
-                CAST(json_extract(
-                  document_json, '$.effective_rules_text'
-                ) AS TEXT) AS sort_effective_rules_text,
-                catalogue_revision_id
-         FROM revision_cards
-       )
-       SELECT document_json, sort_game, sort_identity_kind,
+      `SELECT document_json, sort_game, sort_identity_kind,
               sort_identity_value, sort_id
-       FROM cards
+       FROM revision_cards
        WHERE ${conditions.join("\nAND ")}
        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
        LIMIT ?`,
@@ -310,8 +278,18 @@ function rowCursor(row: CardRow): CardCursor["after"] {
 
 function normalizedFilter(value: string | null): string | null {
   if (value === null) return null;
-  const normalized = value.normalize("NFC").trim();
+  const normalized = value.normalize("NFKC").trim();
   return normalized.length === 0 ? null : normalized;
+}
+
+function ftsPhrase(value: string): string {
+  const normalized = value
+    .normalize("NFKC")
+    .toLocaleLowerCase("und")
+    .normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .replaceAll('"', '""');
+  return `"${normalized}"`;
 }
 
 function encodeCursor(cursor: CardCursor): string {

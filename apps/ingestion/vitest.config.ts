@@ -868,6 +868,88 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (
+    scenario === "gundam-errata-cross-lineage-asia" ||
+    scenario === "gundam-errata-cross-lineage-us"
+  ) {
+    const observation = printingObservation({
+      game: "gundam",
+      profile: "gundam@1",
+      cardNumber: "GD29-001",
+      name: "Cross-lineage Errata Card",
+      cardAttributes: {
+        card_type: "unit",
+        colours: ["blue"],
+        level: 4,
+        cost: 3,
+        block_icon: "1",
+        effect_text: "Printed cross-lineage rules.",
+        zone: "space",
+        traits: ["Earth Federation"],
+        link_condition: null,
+        ap: 3,
+        hp: 4,
+        series_titles: ["Mobile Suit Gundam"],
+      },
+      printingAttributes: { alternate_art: false },
+      locator: `/official/gundam/${scenario}`,
+      variantKey: "base",
+      lineageMarker: "gundam-errata-cross-lineage",
+      printedRulesText: "Printed cross-lineage rules.",
+      memberships: {
+        products: ["product_gd29"],
+        distribution_contexts: [],
+        source_buckets: ["gundam-card-list"],
+      },
+    });
+    return {
+      cards: [{
+        ...observation,
+        card: {
+          ...observation.card,
+          effective_rules_text: "Printed cross-lineage rules.",
+        },
+        errata: [{
+          authority: "official_errata",
+          field: "effective_rules_text",
+          target_type: "card",
+          effective_from: "2026-07-01",
+          official_wording: "Use corrected cross-lineage rules.",
+          corrected_value: "Corrected cross-lineage rules.",
+        }],
+      }],
+    };
+  }
+  if (scenario === "errata-future-boundary") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP29-007",
+      name: "Future Errata Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/errata/OP29-007",
+      lineageMarker: "errata-future-boundary",
+      printedRulesText: "Rules before the future Erratum.",
+    });
+    return {
+      cards: [{
+        ...observation,
+        card: {
+          ...observation.card,
+          effective_rules_text: "Rules before the future Erratum.",
+        },
+        errata: [{
+          authority: "official_errata",
+          field: "effective_rules_text",
+          target_type: "card",
+          effective_from: "2026-08-01",
+          official_wording: "Use rules after the future boundary.",
+          corrected_value: "Rules after the future boundary.",
+        }],
+      }],
+    };
+  }
   if (scenario === "errata-effective-scope") {
     const observation = printingObservation({
       game: "one-piece",

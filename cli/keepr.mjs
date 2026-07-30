@@ -7,6 +7,7 @@ import {
   ingestionCapabilities,
 } from "../src/runtime-capabilities.mjs";
 import { runCredentialCommand } from "./credential-rotation.mjs";
+import { runCatalogueCommand } from "./catalogue.mjs";
 import {
   exitCodeForStatus,
   parseOptions,
@@ -68,6 +69,13 @@ export async function main(arguments_, environment) {
   }
   if (isCommand(arguments_, "snapshot", "reparse")) {
     return reparseSourceSnapshot(arguments_.slice(2), environment, json);
+  }
+  if (arguments_[0] === "cards") {
+    return runCatalogueCommand(
+      arguments_.slice(1),
+      environment,
+      json,
+    );
   }
   if (arguments_[0] === "credential") {
     return runCredentialCommand(
@@ -611,7 +619,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

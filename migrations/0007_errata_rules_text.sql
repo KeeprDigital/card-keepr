@@ -1,3 +1,103 @@
+ALTER TABLE revision_cards RENAME TO revision_cards_legacy;
+
+CREATE TABLE revision_cards (
+  catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  card_id TEXT NOT NULL,
+  document_json TEXT NOT NULL CHECK (json_valid(document_json)),
+  sort_game TEXT GENERATED ALWAYS AS (
+    CAST(json_extract(document_json, '$.game') AS TEXT)
+  ) STORED NOT NULL,
+  sort_identity_kind TEXT GENERATED ALWAYS AS (
+    CAST(json_extract(document_json, '$.official_identity.kind') AS TEXT)
+  ) STORED NOT NULL,
+  sort_identity_value TEXT GENERATED ALWAYS AS (
+    CAST(json_extract(document_json, '$.official_identity.value') AS TEXT)
+  ) STORED NOT NULL,
+  sort_id TEXT GENERATED ALWAYS AS (
+    CAST(json_extract(document_json, '$.id') AS TEXT)
+  ) STORED NOT NULL,
+  search_text TEXT GENERATED ALWAYS AS (
+    trim(
+      coalesce(CAST(json_extract(
+        document_json, '$.official_identity.value'
+      ) AS TEXT), '') || ' ' ||
+      coalesce(CAST(json_extract(document_json, '$.name') AS TEXT), '') ||
+      ' ' ||
+      coalesce(CAST(json_extract(
+        document_json, '$.effective_rules_text'
+      ) AS TEXT), '')
+    )
+  ) STORED NOT NULL,
+  PRIMARY KEY (catalogue_revision_id, card_id)
+);
+
+INSERT INTO revision_cards (
+  catalogue_revision_id, card_id, document_json
+)
+SELECT catalogue_revision_id, card_id, document_json
+FROM revision_cards_legacy;
+
+DROP TABLE revision_cards_legacy;
+
+CREATE INDEX revision_cards_by_order
+  ON revision_cards(
+    catalogue_revision_id, sort_game, sort_identity_kind,
+    sort_identity_value, sort_id
+  );
+
+CREATE INDEX revision_cards_by_identity
+  ON revision_cards(
+    catalogue_revision_id, sort_identity_kind, sort_identity_value,
+    sort_game, sort_id
+  );
+
+CREATE INDEX revision_cards_by_search
+  ON revision_cards(catalogue_revision_id, search_text);
+
+CREATE VIRTUAL TABLE revision_card_search USING fts5(
+  catalogue_revision_id UNINDEXED,
+  card_id UNINDEXED,
+  search_text,
+  tokenize = 'unicode61 remove_diacritics 0'
+);
+
+INSERT INTO revision_card_search (
+  catalogue_revision_id, card_id, search_text
+)
+SELECT catalogue_revision_id, card_id, search_text
+FROM revision_cards;
+
+CREATE TRIGGER revision_cards_search_after_insert
+AFTER INSERT ON revision_cards
+BEGIN
+  INSERT INTO revision_card_search (
+    catalogue_revision_id, card_id, search_text
+  ) VALUES (
+    NEW.catalogue_revision_id, NEW.card_id, NEW.search_text
+  );
+END;
+
+CREATE TRIGGER revision_cards_search_after_update
+AFTER UPDATE ON revision_cards
+BEGIN
+  DELETE FROM revision_card_search
+  WHERE catalogue_revision_id = OLD.catalogue_revision_id
+    AND card_id = OLD.card_id;
+  INSERT INTO revision_card_search (
+    catalogue_revision_id, card_id, search_text
+  ) VALUES (
+    NEW.catalogue_revision_id, NEW.card_id, NEW.search_text
+  );
+END;
+
+CREATE TRIGGER revision_cards_search_after_delete
+AFTER DELETE ON revision_cards
+BEGIN
+  DELETE FROM revision_card_search
+  WHERE catalogue_revision_id = OLD.catalogue_revision_id
+    AND card_id = OLD.card_id;
+END;
+
 CREATE TABLE reconciled_errata (
   id TEXT PRIMARY KEY,
   game TEXT NOT NULL CHECK (
