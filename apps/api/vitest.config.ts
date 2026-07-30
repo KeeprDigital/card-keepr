@@ -16,6 +16,7 @@ export default defineConfig({
         configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
       },
       miniflare: {
+        d1Databases: ["LEGACY_DB"],
         bindings: {
           API_BEARER_KEY: "vitest-api-key",
           API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",

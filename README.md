@@ -89,6 +89,21 @@ A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 be parsed again without changing its earlier Source Observation set with
 `snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@1`.
 
+After applying the Errata/search migration to a database that already contains
+Catalogue Revisions, run the bounded, idempotent search repair until its JSON
+response reports `"complete": true`:
+
+```sh
+npm run keepr -- catalogue search repair \
+  --environment production \
+  --yes \
+  --json
+```
+
+Legacy revisions remain unavailable to cursor continuation until their Card
+search material has been repaired. Newly published revisions write their
+search material and availability marker atomically.
+
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably
 paced, while different hostname shards can progress concurrently.

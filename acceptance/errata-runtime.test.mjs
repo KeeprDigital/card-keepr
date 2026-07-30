@@ -46,29 +46,69 @@ test("an Erratum fixture publishes through the CLI and is consumed through authe
     KEEPR_ADMINISTRATION_KEY: administrationKey,
     KEEPR_INGESTION_URL: `http://127.0.0.1:${runtimePort}`,
   };
-  const startedResponse = await fetch(
-    `http://127.0.0.1:${runtimePort}/__test/errata-evidence`,
-    {
-      method: "POST",
-      headers: {
-        "x-card-keepr-acceptance-fixture": "errata-rules-text",
-      },
-    },
+  const repaired = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
   );
-  const startedText = await startedResponse.text();
-  assert.equal(startedResponse.status, 201, startedText);
-  const run = JSON.parse(startedText);
+  assert.equal(repaired.code, 0, repaired.stderr);
+  assert.equal(JSON.parse(repaired.stdout).complete, true);
+  const collected = await runCli(
+    [
+      "source",
+      "collect",
+      "--game",
+      "one-piece",
+      "--lineage",
+      "one-piece-en",
+      "--adapter",
+      "one-piece-official-errata-json@1",
+      "--request-id",
+      "errata-rules-text",
+      "--url",
+      "https://official-source.invalid/errata-rules-text",
+      "--idempotency-key",
+      "errata-runtime-source",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(collected.code, 0, collected.stderr);
+  const run = JSON.parse(collected.stdout);
   const resumed = await runCli(
     ["source", "resume", "--run-id", run.id, "--json"],
     cliEnvironment,
   );
   assert.equal(resumed.code, 0, resumed.stderr);
   await waitForRunState(run.id, "parsing", cliEnvironment, runtime);
-  const reconciled = await administrationJson(
-    `/v1/ingestion-runs/${run.id}/reconciliation`,
-    administrationKey,
-    {},
+  const reconciledResult = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      run.id,
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
   );
+  assert.equal(
+    reconciledResult.code,
+    0,
+    `${reconciledResult.stdout}\n${reconciledResult.stderr}\n${
+      runtime.getOutput()
+    }`,
+  );
+  const reconciled = JSON.parse(reconciledResult.stdout);
   assert.equal(reconciled.publishable, true);
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", run.id, "--json"],
@@ -262,23 +302,6 @@ async function apiJson(pathname, apiKey) {
   const response = await fetch(
     `http://127.0.0.1:${runtimePort}${pathname}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
-  );
-  const text = await response.text();
-  assert.equal(response.status, 200, text);
-  return JSON.parse(text);
-}
-
-async function administrationJson(pathname, key, body) {
-  const response = await fetch(
-    `http://127.0.0.1:${runtimePort}${pathname}`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    },
   );
   const text = await response.text();
   assert.equal(response.status, 200, text);

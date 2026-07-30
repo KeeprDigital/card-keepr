@@ -9,11 +9,19 @@ import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
+  cardCollectionPageQuery,
+  cardCollectionResponse,
+} from "../../../src/catalogue/card-collection-read";
+import { repairCardSearchMaterialization } from "../../../src/catalogue/card-search-materialization";
+import {
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
 
-const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
+const testEnv = env as Env & {
+  TEST_MIGRATIONS: D1Migration[];
+  LEGACY_DB: D1Database;
+};
 
 beforeEach(async () => {
   await applyD1Migrations(
@@ -496,6 +504,123 @@ test("Card search persistence remains compatible with D1 export", async () => {
   expect(virtualTables.results).toEqual([]);
 });
 
+test("pre-0007 Card search rows are canonically upgraded for current and retained revisions without republishing", async () => {
+  const legacyDatabase = testEnv.LEGACY_DB;
+  await applyD1Migrations(
+    legacyDatabase,
+    testEnv.TEST_MIGRATIONS.slice(0, 5),
+  );
+  await seedLegacySearchRevision(
+    legacyDatabase,
+    "catrev_search_retained",
+    "run_search_retained",
+    "catrev_spine_000",
+    [
+      apiCard({
+        id: "card_search_retained_001",
+        cardNumber: "OP01-001",
+        name: "E\u0301clair — Luffy",
+        effectiveRulesText: "[On Play]: Draw 2 cards!",
+      }),
+      apiCard({
+        id: "card_search_retained_002",
+        cardNumber: "OP01-002",
+        name: "Retained Partner",
+        effectiveRulesText: "Draw 2 cards.",
+      }),
+    ],
+  );
+  await seedLegacySearchRevision(
+    legacyDatabase,
+    "catrev_search_current",
+    "run_search_current",
+    "catrev_search_retained",
+    [
+      apiCard({
+        id: "card_search_current_001",
+        cardNumber: "OP01-001",
+        name: "E\u0301clair — Luffy",
+        effectiveRulesText: "[On Play]: Draw 2 cards!",
+      }),
+    ],
+  );
+  await applyD1Migrations(
+    legacyDatabase,
+    testEnv.TEST_MIGRATIONS.slice(5),
+  );
+
+  let repair;
+  do {
+    repair = await repairCardSearchMaterialization(legacyDatabase, {
+      limit: 1,
+    });
+  } while (!repair.complete);
+  await expect(
+    repairCardSearchMaterialization(legacyDatabase, { limit: 1 }),
+  ).resolves.toMatchObject({
+    complete: true,
+    processed_cards: 0,
+    revisions_available: 2,
+  });
+
+  for (const query of [
+    "OP01 001",
+    "ÉCLAIR LUFFY",
+    "on play",
+    "draw 2 cards",
+  ]) {
+    const response = await cardCollectionResponse(
+      legacyDatabase,
+      new Request(
+        `https://card-keepr.invalid/v1/cards?q=${
+          encodeURIComponent(query)
+        }`,
+      ),
+      `request-upgrade-${query}`,
+    );
+    expect(response.status, await response.clone().text()).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: [{ id: "card_search_current_001" }],
+      meta: { catalogue_revision_id: "catrev_search_current" },
+    });
+  }
+
+  await legacyDatabase.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_search_retained'
+     WHERE singleton = 1`,
+  ).run();
+  const retainedFirstPage = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=draw%202&limit=1",
+    ),
+    "request-retained-first",
+  );
+  const retainedDocument = await retainedFirstPage.json<{
+    page: { next_cursor: string };
+  }>();
+  expect(retainedDocument.page.next_cursor).toEqual(expect.any(String));
+  await legacyDatabase.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_search_current'
+     WHERE singleton = 1`,
+  ).run();
+  const retainedNextPage = await cardCollectionResponse(
+    legacyDatabase,
+    new Request(
+      "https://card-keepr.invalid/v1/cards?q=draw%202&limit=1&after=" +
+        encodeURIComponent(retainedDocument.page.next_cursor),
+    ),
+    "request-retained-next",
+  );
+  expect(retainedNextPage.status).toBe(200);
+  await expect(retainedNextPage.json()).resolves.toMatchObject({
+    data: [{ id: "card_search_retained_002" }],
+    meta: { catalogue_revision_id: "catrev_search_retained" },
+  });
+});
+
 test("Card collection schema exposes revision-bounded indexed search materialization", async () => {
   const columns = await testEnv.CATALOGUE_DB.prepare(
     "PRAGMA table_xinfo(revision_cards)",
@@ -540,18 +665,26 @@ test("Card collection schema exposes revision-bounded indexed search materializa
     .all<{ detail: string }>();
   expect(orderPlan.results.map((row) => row.detail).join("\n"))
     .toContain("revision_cards_by_order");
+  const productionSearch = cardCollectionPageQuery(
+    "catrev_plan",
+    {
+      q: "éclair luffy",
+      game: null,
+      cardNumber: null,
+      limit: 100,
+    },
+    null,
+  );
   const searchPlan = await testEnv.CATALOGUE_DB.prepare(
-    `EXPLAIN QUERY PLAN
-     SELECT card_id
-     FROM revision_card_search_terms
-     WHERE catalogue_revision_id = ? AND term = ?
-     ORDER BY card_id
-     LIMIT 101`,
+    `EXPLAIN QUERY PLAN ${productionSearch.sql}`,
   )
-    .bind("catrev_plan", "éclair")
+    .bind(...productionSearch.bindings)
     .all<{ detail: string }>();
-  expect(searchPlan.results.map((row) => row.detail).join("\n"))
-    .toContain("revision_card_search_by_term");
+  const searchPlanText = searchPlan.results
+    .map((row) => row.detail)
+    .join("\n");
+  expect(searchPlanText).toContain("revision_card_search_by_term");
+  expect(searchPlanText).not.toMatch(/\bSCAN revision_cards\b/u);
 });
 
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
@@ -608,16 +741,37 @@ test("Card cursors continue on an available pinned revision and conflict only af
     meta: { catalogue_revision_id: "catrev_cursor_old" },
   });
 
-  await testEnv.CATALOGUE_DB.batch([
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_exports (
+       catalogue_revision_id, manifest_key, manifest_digest, verified
+     ) VALUES (
+       'catrev_cursor_old',
+       'catalogue/catrev_cursor_old/manifest.json',
+       ?, 1
+     )`,
+  )
+    .bind("e".repeat(64))
+    .run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM revision_cards
+     WHERE catalogue_revision_id = 'catrev_cursor_old'`,
+  ).run();
+  await expect(
     testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM revision_cards
-       WHERE catalogue_revision_id = 'catrev_cursor_old'`,
-    ),
-    testEnv.CATALOGUE_DB.prepare(
-      `DELETE FROM catalogue_revisions
-       WHERE id = 'catrev_cursor_old'`,
-    ),
-  ]);
+      `SELECT
+         EXISTS(
+           SELECT 1 FROM catalogue_revisions
+           WHERE id = 'catrev_cursor_old'
+         ) AS revision_retained,
+         EXISTS(
+           SELECT 1 FROM catalogue_exports
+           WHERE catalogue_revision_id = 'catrev_cursor_old'
+         ) AS export_retained`,
+    ).first(),
+  ).resolves.toMatchObject({
+    revision_retained: 1,
+    export_retained: 1,
+  });
   const unavailable = await exports.default.fetch(
     new Request(pinnedUrl, {
       headers: apiHeaders("203.0.113.33"),
@@ -677,6 +831,7 @@ function apiCard(input: {
   id: string;
   cardNumber: string;
   name: string;
+  effectiveRulesText?: string;
 }): ApiCardFixture {
   return {
     type: "card",
@@ -703,7 +858,7 @@ function apiCard(input: {
         trigger_text: null,
       },
     },
-    effective_rules_text: input.name,
+    effective_rules_text: input.effectiveRulesText ?? input.name,
     printing_ids: [],
     lifecycle: {
       first_revision_id: "catrev_fixture",
@@ -712,6 +867,78 @@ function apiCard(input: {
     },
     links: { self: `/v1/cards/${input.id}` },
   };
+}
+
+async function seedLegacySearchRevision(
+  database: D1Database,
+  revisionId: string,
+  runId: string,
+  previousRevisionId: string,
+  cards: readonly ApiCardFixture[],
+): Promise<void> {
+  const digest = "c".repeat(64);
+  await database.batch([
+    database.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key
+       ) VALUES (
+         ?, 'publishing', '["one-piece"]',
+         '2026-07-20T00:00:00.000Z', ?, NULL, ?, ?,
+         '2026-07-20T00:00:00.000Z',
+         '2099-01-01T00:00:00.000Z',
+         ?,
+         NULL, NULL, NULL, '{}', NULL
+       )`,
+    ).bind(
+      runId,
+      previousRevisionId,
+      `${runId}-seed`,
+      digest,
+      JSON.stringify({
+        action: "approved",
+        approved_at: "2026-07-20T00:00:00.000Z",
+        candidate_digest: digest,
+        expected_current_revision_id: previousRevisionId,
+      }),
+    ),
+    database.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(runId),
+  ]);
+  await database.prepare(
+    `INSERT INTO catalogue_revisions (
+       id, ingestion_run_id, published_at, content_digest,
+       expected_previous_revision_id, approved_candidate_digest
+     ) VALUES (?, ?, '2026-07-20T00:00:00.000Z', ?, ?, ?)`,
+  )
+    .bind(revisionId, runId, digest, previousRevisionId, digest)
+    .run();
+  await database.batch([
+    ...cards.map((card) =>
+      database.prepare(
+        `INSERT INTO revision_cards (
+           catalogue_revision_id, card_id, document_json
+         ) VALUES (?, ?, ?)`,
+      ).bind(revisionId, card.id, JSON.stringify(card))
+    ),
+    database.prepare(
+      `UPDATE catalogue_state
+       SET current_revision_id = ?,
+           published_at = '2026-07-20T00:00:00.000Z'
+       WHERE singleton = 1`,
+    ).bind(revisionId),
+    database.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL
+       WHERE singleton = 1`,
+    ),
+  ]);
 }
 
 async function seedApiRevision(input: {
@@ -786,6 +1013,11 @@ async function seedApiRevision(input: {
       ),
       ...cardSearchStatements(input.revisionId, card),
     ]),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_query_revisions (
+         catalogue_revision_id, state, repaired_through_card_id
+       ) VALUES (?, 'available', NULL)`,
+    ).bind(input.revisionId),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = ?,

@@ -120,16 +120,36 @@ async function queryCardPage(
   filters: CollectionFilters,
   after: CardCursor["after"] | null,
 ): Promise<CardRow[]> {
-  const conditions = ["catalogue_revision_id = ?"];
+  const query = cardCollectionPageQuery(
+    revisionId,
+    filters,
+    after,
+  );
+  const result = await database
+    .prepare(query.sql)
+    .bind(...query.bindings)
+    .all<CardRow>();
+  return result.results;
+}
+
+export function cardCollectionPageQuery(
+  revisionId: string,
+  filters: CollectionFilters,
+  after: CardCursor["after"] | null,
+): { sql: string; bindings: (string | number)[] } {
+  const searched = filters.q !== null;
+  const conditions = [
+    `${searched ? "search" : "cards"}.catalogue_revision_id = ?`,
+  ];
   const bindings: (string | number)[] = [revisionId];
   if (filters.game !== null) {
-    conditions.push("sort_game = ?");
+    conditions.push("cards.sort_game = ?");
     bindings.push(filters.game);
   }
   if (filters.cardNumber !== null) {
     conditions.push(
-      "sort_identity_kind = 'card_number'",
-      "sort_identity_value = ?",
+      "cards.sort_identity_kind = 'card_number'",
+      "cards.sort_identity_value = ?",
     );
     bindings.push(filters.cardNumber);
   }
@@ -139,21 +159,15 @@ async function queryCardPage(
       throw new Error("The validated Card search query is unavailable.");
     }
     conditions.push(
-      `EXISTS (
-        SELECT 1
-        FROM revision_card_search_terms AS search
-        WHERE search.catalogue_revision_id =
-                revision_cards.catalogue_revision_id
-          AND search.card_id = revision_cards.card_id
-          AND search.term = ?
-      )`,
-      "instr(search_text, ?) > 0",
+      "search.term = ?",
+      "instr(cards.search_text, ?) > 0",
     );
     bindings.push(search.anchorTerm, search.text);
   }
   if (after !== null) {
     conditions.push(
-      `(sort_game, sort_identity_kind, sort_identity_value, sort_id)
+      `(cards.sort_game, cards.sort_identity_kind,
+        cards.sort_identity_value, cards.sort_id)
        > (?, ?, ?, ?)`,
     );
     bindings.push(
@@ -164,18 +178,27 @@ async function queryCardPage(
     );
   }
   bindings.push(filters.limit + 1);
-  const result = await database
-    .prepare(
-      `SELECT document_json, sort_game, sort_identity_kind,
-              sort_identity_value, sort_id
-       FROM revision_cards
+  return {
+    sql:
+      `SELECT cards.document_json, cards.sort_game,
+              cards.sort_identity_kind, cards.sort_identity_value,
+              cards.sort_id
+       FROM ${
+        searched
+          ? `revision_card_search_terms AS search
+             INDEXED BY revision_card_search_by_term
+             JOIN revision_cards AS cards
+               ON cards.catalogue_revision_id =
+                    search.catalogue_revision_id
+              AND cards.card_id = search.card_id`
+          : "revision_cards AS cards"
+      }
        WHERE ${conditions.join("\nAND ")}
-       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
+       ORDER BY cards.sort_game, cards.sort_identity_kind,
+                cards.sort_identity_value, cards.sort_id
        LIMIT ?`,
-    )
-    .bind(...bindings)
-    .all<CardRow>();
-  return result.results;
+    bindings,
+  };
 }
 
 function parseFilters(
@@ -253,7 +276,12 @@ async function currentRevision(database: D1Database) {
 async function availableRevision(database: D1Database, id: string) {
   const revision = await database
     .prepare(
-      `SELECT id, published_at FROM catalogue_revisions WHERE id = ?`,
+      `SELECT revision.id, revision.published_at
+       FROM catalogue_revisions AS revision
+       JOIN catalogue_query_revisions AS query
+         ON query.catalogue_revision_id = revision.id
+        AND query.state = 'available'
+       WHERE revision.id = ?`,
     )
     .bind(id)
     .first<{ id: string; published_at: string }>();

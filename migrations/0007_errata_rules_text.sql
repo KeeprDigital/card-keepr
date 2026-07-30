@@ -1,5 +1,21 @@
 ALTER TABLE revision_cards RENAME TO revision_cards_legacy;
 
+INSERT INTO source_adapter_versions (
+  adapter_version,
+  source_lineage,
+  supported_game,
+  game_profile_version,
+  parser_contract,
+  adapter_origin
+) VALUES (
+  'one-piece-official-errata-json@1',
+  'one-piece-en',
+  'one-piece',
+  'one-piece@1',
+  'one-piece-official-errata-document@1',
+  'production'
+);
+
 CREATE TABLE revision_cards (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   card_id TEXT NOT NULL,
@@ -24,16 +40,7 @@ INSERT INTO revision_cards (
   catalogue_revision_id, card_id, document_json, search_text
 )
 SELECT catalogue_revision_id, card_id, document_json,
-       lower(trim(
-         coalesce(CAST(json_extract(
-           document_json, '$.official_identity.value'
-         ) AS TEXT), '') || ' ' ||
-         coalesce(CAST(json_extract(document_json, '$.name') AS TEXT), '') ||
-         ' ' ||
-         coalesce(CAST(json_extract(
-           document_json, '$.effective_rules_text'
-         ) AS TEXT), '')
-       ))
+       ''
 FROM revision_cards_legacy;
 
 DROP TABLE revision_cards_legacy;
@@ -65,25 +72,34 @@ CREATE TABLE revision_card_search_terms (
 CREATE INDEX revision_card_search_by_term
   ON revision_card_search_terms(catalogue_revision_id, term, card_id);
 
-WITH RECURSIVE search_terms(
-  catalogue_revision_id, card_id, term, remaining
-) AS (
-  SELECT catalogue_revision_id, card_id, '',
-         trim(search_text) || ' '
+CREATE TABLE catalogue_query_revisions (
+  catalogue_revision_id TEXT PRIMARY KEY
+    REFERENCES catalogue_revisions(id),
+  state TEXT NOT NULL CHECK (
+    state IN ('pending', 'available', 'archived')
+  ),
+  repaired_through_card_id TEXT
+);
+
+INSERT INTO catalogue_query_revisions (
+  catalogue_revision_id, state, repaired_through_card_id
+)
+SELECT DISTINCT catalogue_revision_id, 'pending', NULL
+FROM revision_cards;
+
+CREATE TRIGGER archive_removed_card_query_material
+AFTER DELETE ON revision_cards
+WHEN NOT EXISTS (
+  SELECT 1
   FROM revision_cards
-  UNION ALL
-  SELECT catalogue_revision_id, card_id,
-         substr(remaining, 1, instr(remaining, ' ') - 1),
-         ltrim(substr(remaining, instr(remaining, ' ') + 1))
-  FROM search_terms
-  WHERE remaining <> ''
+  WHERE catalogue_revision_id = OLD.catalogue_revision_id
 )
-INSERT OR IGNORE INTO revision_card_search_terms (
-  catalogue_revision_id, card_id, term
-)
-SELECT catalogue_revision_id, card_id, term
-FROM search_terms
-WHERE length(term) > 0 AND length(term) <= 128;
+BEGIN
+  UPDATE catalogue_query_revisions
+  SET state = 'archived',
+      repaired_through_card_id = NULL
+  WHERE catalogue_revision_id = OLD.catalogue_revision_id;
+END;
 
 CREATE TABLE reconciled_errata (
   id TEXT PRIMARY KEY,

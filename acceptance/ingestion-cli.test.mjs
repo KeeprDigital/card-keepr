@@ -33,6 +33,57 @@ const run = {
   },
 };
 
+test("CLI reconciliation requires explicit production selection and confirmation", async () => {
+  const result = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--environment",
+      "staging",
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: "http://127.0.0.1:1",
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
+  assert.equal(result.code, 2, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "production_target_required",
+    detail: "Reconciliation requires --environment production.",
+  });
+});
+
+test("CLI search repair requires explicit production selection and confirmation", async () => {
+  const result = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--environment",
+      "staging",
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: "http://127.0.0.1:1",
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
+  assert.equal(result.code, 2, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "production_target_required",
+    detail: "Card search repair requires --environment production.",
+  });
+});
+
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -71,6 +122,17 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
             pending_publication_cleanup_count: 1,
           },
           recent_runs: [run],
+        }),
+      );
+      return;
+    }
+    if (request.url === "/v1/catalogue-search-materialization/repair") {
+      response.end(
+        JSON.stringify({
+          contract: "card-keepr-card-search-repair@1",
+          complete: true,
+          processed_cards: 2,
+          revisions_available: 2,
         }),
       );
       return;
@@ -131,6 +193,26 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(removedReconcile.stdout, /usage_error/u);
   assert.equal(requests.length, requestCountBeforeRemovedMutation);
 
+  const repaired = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--environment",
+      "production",
+      "--yes",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(repaired.code, 0, repaired.stderr);
+  assert.deepEqual(JSON.parse(repaired.stdout), {
+    contract: "card-keepr-card-search-repair@1",
+    complete: true,
+    processed_cards: 2,
+    revisions_available: 2,
+  });
+
   const rejected = await runCli(
     [
       "run",
@@ -174,7 +256,12 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
-  assert.deepEqual(requests.slice(-3), [
+  assert.deepEqual(requests.slice(-4), [
+    {
+      method: "POST",
+      path: "/v1/catalogue-search-materialization/repair",
+      body: {},
+    },
     {
       method: "POST",
       path: "/v1/ingestion-runs/run_cli_demo/rejection",

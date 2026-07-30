@@ -13,6 +13,7 @@ export type SourceAdapterRegistration = Readonly<{
   origin: "production" | "synthetic_fixture";
   reconciliationCoverage:
     | "official_source"
+    | "official_errata"
     | "synthetic_fixture"
     | "unavailable";
   parse?: (document: unknown) => readonly unknown[];
@@ -72,6 +73,17 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
+      {
+        adapterVersion: "one-piece-official-errata-json@1",
+        sourceLineage: "one-piece-en",
+        supportedGame: "one-piece",
+        gameProfileVersion: "one-piece@1",
+        parserContract: "one-piece-official-errata-document@1",
+        maximumSnapshotBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "official_errata" as const,
+        parse: parsePinnedCardDocument,
+      },
       ...officialRawAdapterContracts.map((adapter) => ({
         adapterVersion: adapter.adapterVersion,
         sourceLineage: adapter.sourceLineage,

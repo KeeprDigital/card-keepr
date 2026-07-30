@@ -55,6 +55,20 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "run", "cleanup")) {
     return cleanupRun(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "run", "reconcile")) {
+    return reconcileRun(arguments_.slice(2), environment, json);
+  }
+  if (
+    arguments_[0] === "catalogue" &&
+    arguments_[1] === "search" &&
+    arguments_[2] === "repair"
+  ) {
+    return repairCatalogueSearch(
+      arguments_.slice(3),
+      environment,
+      json,
+    );
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -314,6 +328,66 @@ async function cleanupRun(arguments_, environment, json) {
     {
       idempotency_key: idempotencyKey,
     },
+  );
+}
+
+async function reconcileRun(arguments_, environment, json) {
+  const options = parseOptions(
+    arguments_,
+    ["--run-id", "--environment"],
+    ["--yes"],
+  );
+  const runId = options.values["--run-id"];
+  const target = options.values["--environment"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  ) {
+    return usageFailure(json);
+  }
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Reconciliation requires --environment production.",
+    );
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/reconciliation`,
+    "POST",
+    {},
+  );
+}
+
+async function repairCatalogueSearch(arguments_, environment, json) {
+  const options = parseOptions(
+    arguments_,
+    ["--environment"],
+    ["--yes"],
+  );
+  const target = options.values["--environment"];
+  if (
+    options.error !== null ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  ) {
+    return usageFailure(json);
+  }
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Card search repair requires --environment production.",
+    );
+  }
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/catalogue-search-materialization/repair",
+    "POST",
+    {},
   );
 }
 
@@ -619,8 +693,16 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
     },
+    2,
+  );
+}
+
+function productionTargetFailure(json, detail) {
+  return writeFailure(
+    json,
+    { code: "production_target_required", detail },
     2,
   );
 }

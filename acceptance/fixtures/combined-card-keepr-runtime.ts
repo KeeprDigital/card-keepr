@@ -4,7 +4,6 @@ import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
 } from "../../apps/ingestion/src/index";
-import { startEvidenceRun } from "../../src/catalogue/source-evidence";
 
 export {
   EvidenceHostWorkflow,
@@ -20,35 +19,11 @@ export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (
-      request.method === "POST" &&
-      url.pathname === "/__test/errata-evidence" &&
-      request.headers.get("x-card-keepr-acceptance-fixture") ===
-        "errata-rules-text"
-    ) {
-      return Response.json(
-        await startEvidenceRun(
-          env.CATALOGUE_DB,
-          {
-            supported_game: "one-piece",
-            source_lineage: "one-piece-en",
-            adapter_version: "fixture-one-piece-json@1",
-            idempotency_key: "errata-runtime-source",
-            requests: [{
-              id: "errata-rules-text",
-              url: "https://official-source.invalid/errata-rules-text",
-              headers: { accept: "application/json" },
-            }],
-          },
-          "synthetic_fixture",
-        ),
-        { status: 201 },
-      );
-    }
     return (
       url.pathname.startsWith("/v1/ingestion-runs/") ||
       url.pathname === "/v1/status" ||
-      url.pathname.startsWith("/v1/reconciliation/")
+      url.pathname.startsWith("/v1/reconciliation/") ||
+      url.pathname === "/v1/catalogue-search-materialization/repair"
     )
       ? ingestionWorker.fetch(request, env)
       : apiWorker.fetch(request, env);

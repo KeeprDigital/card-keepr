@@ -2059,6 +2059,13 @@ async function commitVerifiedPublication(
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
     ...revisionCardSearchStatements,
+    database
+      .prepare(
+        `INSERT INTO catalogue_query_revisions (
+           catalogue_revision_id, state, repaired_through_card_id
+         ) VALUES (?, 'available', NULL)`,
+      )
+      .bind(revisionId),
     ...revisionPrintingStatements,
     ...printingImageStatements,
     ...revisionPrintingImageStatements,

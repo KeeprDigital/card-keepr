@@ -29,6 +29,9 @@ import {
   reconcileRetainedCardPrintingEvidence,
   showReconciledPrinting,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import {
+  repairCardSearchMaterialization,
+} from "../../../src/catalogue/card-search-materialization";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -211,6 +214,17 @@ const ingestionWorker = {
         return Response.json(result, {
           status: result.publishable === true ? 200 : 409,
         });
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/catalogue-search-materialization/repair"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, []);
+        return Response.json(
+          await repairCardSearchMaterialization(env.CATALOGUE_DB),
+        );
       }
 
       const reconciledPrintingMatch =
