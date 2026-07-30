@@ -206,17 +206,19 @@ async function collectResumeAndShow(
 }
 
 function exactOnePieceRequests() {
-  return [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ].map((surface) => ({
+  return Object.entries({
+    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
+    products: "https://en.onepiece-cardgame.com/products/",
+    releases: "https://en.onepiece-cardgame.com/products/",
+    restrictions:
+      "https://en.onepiece-cardgame.com/rules/restriction/",
+    "block-policy":
+      "https://en.onepiece-cardgame.com/rules/block_icon/",
+    errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    "don-rules": "https://en.onepiece-cardgame.com/rules/",
+  }).map(([surface, url]) => ({
     id: `one-piece-en:${surface}`,
-    url: `https://synthetic-source.invalid/one-piece-en/${surface}`,
+    url,
   }));
 }
 

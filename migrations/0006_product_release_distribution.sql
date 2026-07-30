@@ -26,6 +26,50 @@ ON revision_products (
 CREATE INDEX revision_products_region
 ON revision_products (catalogue_revision_id, release_regions_json);
 
+CREATE TABLE reconciled_printing_images (
+  id TEXT PRIMARY KEY,
+  printing_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('front', 'back', 'other')),
+  media_type TEXT NOT NULL CHECK (media_type LIKE 'image/%'),
+  width INTEGER NOT NULL CHECK (width > 0),
+  height INTEGER NOT NULL CHECK (height > 0),
+  content_sha256 TEXT NOT NULL CHECK (
+    length(content_sha256) = 64 AND
+    content_sha256 NOT GLOB '*[^0-9a-f]*'
+  ),
+  content_byte_length INTEGER NOT NULL CHECK (content_byte_length > 0),
+  object_key TEXT NOT NULL UNIQUE,
+  UNIQUE (printing_id, role, content_sha256)
+);
+
+CREATE INDEX reconciled_printing_images_printing
+ON reconciled_printing_images (printing_id, role, id);
+
+CREATE TABLE revision_printing_images (
+  catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
+  image_id TEXT NOT NULL REFERENCES reconciled_printing_images(id),
+  printing_id TEXT NOT NULL,
+  PRIMARY KEY (catalogue_revision_id, image_id)
+);
+
+CREATE INDEX revision_printing_images_printing
+ON revision_printing_images (catalogue_revision_id, printing_id, image_id);
+
+CREATE TRIGGER reconciled_printing_image_is_immutable
+BEFORE UPDATE ON reconciled_printing_images
+WHEN
+  OLD.printing_id IS NOT NEW.printing_id OR
+  OLD.role IS NOT NEW.role OR
+  OLD.media_type IS NOT NEW.media_type OR
+  OLD.width IS NOT NEW.width OR
+  OLD.height IS NOT NEW.height OR
+  OLD.content_sha256 IS NOT NEW.content_sha256 OR
+  OLD.content_byte_length IS NOT NEW.content_byte_length OR
+  OLD.object_key IS NOT NEW.object_key
+BEGIN
+  SELECT RAISE(ABORT, 'reconciled_printing_image_immutable');
+END;
+
 CREATE TABLE reconciled_products (
   id TEXT PRIMARY KEY,
   supported_game TEXT NOT NULL,

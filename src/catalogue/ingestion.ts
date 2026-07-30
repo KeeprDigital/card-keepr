@@ -497,6 +497,7 @@ export async function approveRun(
   runId: string,
   request: ApproveRunRequest,
   observedAt = new Date().toISOString(),
+  printingImages?: R2Bucket,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
@@ -534,6 +535,7 @@ export async function approveRun(
         requestJson,
         observedAt,
         claimOwner,
+        printingImages,
       );
     },
   );
@@ -547,6 +549,7 @@ async function approveRunAttempt(
   requestJson: string,
   now: string,
   claimOwner: IdempotencyClaimOwner,
+  printingImages?: R2Bucket,
 ): Promise<Record<string, unknown>> {
   await expireOverdueRuns(database, now);
   const run = await requiredRun(database, runId);
@@ -695,6 +698,7 @@ async function approveRunAttempt(
       writerToken,
       catalogueExport.objects,
     );
+    await storeAndVerifyPrintingImages(candidate, printingImages);
     if (
       !(await isExactVerifiedExport(
         catalogueExports,
@@ -1355,6 +1359,9 @@ async function cataloguePrinting(
     captured_at: string;
     source: string;
   }[] = [],
+  printingImages: readonly NonNullable<
+    FixtureCandidate["printing_images"]
+  >[number][] = [],
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
     (relationship) =>
@@ -1405,7 +1412,7 @@ async function cataloguePrinting(
   const data = {
     type: "printing",
     ...printing,
-    printing_images: [],
+    printing_images: printingImages.map(publicPrintingImage),
     products: typed.products,
     distribution_contexts: projectedContexts,
     relationship_evidence: canonicalRelationshipEvidence,
@@ -1436,6 +1443,26 @@ async function cataloguePrinting(
             "/data/game_data": observationIds,
           },
     disagreements: [],
+  };
+}
+
+function publicPrintingImage(
+  image: NonNullable<FixtureCandidate["printing_images"]>[number],
+) {
+  return {
+    type: "printing_image",
+    id: image.id,
+    printing_id: image.printing_id,
+    role: image.role,
+    media_type: image.media_type,
+    width: image.width,
+    height: image.height,
+    content_sha256: image.content_sha256,
+    links: {
+      self: `/v1/printing-images/${encodeURIComponent(image.id)}`,
+      content:
+        `/v1/printing-images/${encodeURIComponent(image.id)}/content`,
+    },
   };
 }
 
@@ -1545,6 +1572,73 @@ async function storeAndVerifyExport(
       bucket,
       object.key,
     );
+  }
+}
+
+async function storeAndVerifyPrintingImages(
+  candidate: FixtureCandidate,
+  bucket: R2Bucket | undefined,
+): Promise<void> {
+  const images = candidate.printing_images ?? [];
+  if (images.length === 0) return;
+  if (bucket === undefined) {
+    throw new Error("The Printing Image object binding is unavailable.");
+  }
+  for (const image of images) {
+    const bytes = decodeBase64Bytes(image.content_base64);
+    if (
+      bytes.byteLength !== image.content_byte_length ||
+      await sha256(bytes) !== image.content_sha256 ||
+      image.object_key !== `printing-images/${image.content_sha256}`
+    ) {
+      throw new Error("Captured Printing Image bytes failed verification.");
+    }
+    const existing = await bucket.head(image.object_key);
+    if (existing !== null) {
+      assertStoredPrintingImage(existing, image);
+      continue;
+    }
+    const stored = await bucket.put(image.object_key, bytes, {
+      onlyIf: { etagDoesNotMatch: "*" },
+      sha256: image.content_sha256,
+      httpMetadata: {
+        contentType: image.media_type,
+        cacheControl: "private, max-age=31536000, immutable",
+      },
+      customMetadata: { sha256: image.content_sha256 },
+    });
+    if (stored === null) {
+      const concurrent = await bucket.head(image.object_key);
+      if (concurrent === null) {
+        throw new Error("Immutable Printing Image write conflict.");
+      }
+      assertStoredPrintingImage(concurrent, image);
+      continue;
+    }
+    assertStoredPrintingImage(stored, image);
+  }
+}
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  try {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0)
+    );
+  } catch {
+    throw new Error("Captured Printing Image bytes are not valid base64.");
+  }
+}
+
+function assertStoredPrintingImage(
+  object: R2Object,
+  image: NonNullable<FixtureCandidate["printing_images"]>[number],
+): void {
+  if (
+    object.size !== image.content_byte_length ||
+    object.customMetadata?.sha256 !== image.content_sha256
+  ) {
+    throw new Error("Immutable Printing Image object key collision.");
   }
 }
 
@@ -1746,6 +1840,9 @@ async function commitVerifiedPublication(
         input.candidate.products ?? [],
         input.candidate.product_relationships ?? [],
         input.reconciliation?.printingEvidence[printing.id] ?? [],
+        (input.candidate.printing_images ?? []).filter(
+          (image) => image.printing_id === printing.id,
+        ),
       ),
     })),
   );
@@ -1808,6 +1905,67 @@ async function commitVerifiedPublication(
       )
       .bind(revisionId, chunk),
   );
+  const printingImageStatements = byteBoundedJsonArrays(
+    (input.candidate.printing_images ?? []).map((image) => ({
+      id: image.id,
+      printing_id: image.printing_id,
+      role: image.role,
+      media_type: image.media_type,
+      width: image.width,
+      height: image.height,
+      content_sha256: image.content_sha256,
+      content_byte_length: image.content_byte_length,
+      object_key: image.object_key,
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO reconciled_printing_images (
+           id, printing_id, role, media_type, width, height,
+           content_sha256, content_byte_length, object_key
+         )
+         SELECT
+           json_extract(value, '$.id'),
+           json_extract(value, '$.printing_id'),
+           json_extract(value, '$.role'),
+           json_extract(value, '$.media_type'),
+           json_extract(value, '$.width'),
+           json_extract(value, '$.height'),
+           json_extract(value, '$.content_sha256'),
+           json_extract(value, '$.content_byte_length'),
+           json_extract(value, '$.object_key')
+         FROM json_each(?)
+         WHERE true
+         ON CONFLICT(id) DO UPDATE SET
+           printing_id = excluded.printing_id,
+           role = excluded.role,
+           media_type = excluded.media_type,
+           width = excluded.width,
+           height = excluded.height,
+           content_sha256 = excluded.content_sha256,
+           content_byte_length = excluded.content_byte_length,
+           object_key = excluded.object_key`,
+      )
+      .bind(chunk),
+  );
+  const revisionPrintingImageStatements = byteBoundedJsonArrays(
+    (input.candidate.printing_images ?? []).map((image) => ({
+      image_id: image.id,
+      printing_id: image.printing_id,
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_printing_images (
+           catalogue_revision_id, image_id, printing_id
+         )
+         SELECT ?,
+           json_extract(value, '$.image_id'),
+           json_extract(value, '$.printing_id')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
   const commitStatements = [
     database
       .prepare(
@@ -1831,6 +1989,8 @@ async function commitVerifiedPublication(
     ...(input.reconciliation?.statements ?? []),
     ...revisionCardStatements,
     ...revisionPrintingStatements,
+    ...printingImageStatements,
+    ...revisionPrintingImageStatements,
     ...productReleaseStatements,
     database
       .prepare(

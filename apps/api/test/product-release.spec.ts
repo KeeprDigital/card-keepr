@@ -38,6 +38,22 @@ beforeEach(async () => {
     },
     links: { self: "/v1/products/product_st15" },
   };
+  const printingImage = {
+    type: "printing_image",
+    id: "printing_image_st15_front",
+    printing_id: "printing_st15_event",
+    role: "front",
+    media_type: "image/webp",
+    width: 744,
+    height: 1039,
+    content_sha256:
+      "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+    links: {
+      self: "/v1/printing-images/printing_image_st15_front",
+      content:
+        "/v1/printing-images/printing_image_st15_front/content",
+    },
+  };
   const printing = {
     type: "printing",
     id: "printing_st15_event",
@@ -48,7 +64,7 @@ beforeEach(async () => {
       profile: "one-piece@1",
       attributes: { illustration_types: [] },
     },
-    printing_images: [],
+    printing_images: [printingImage],
     products: [],
     distribution_contexts: [
       {
@@ -156,6 +172,27 @@ beforeEach(async () => {
        ) VALUES ('catrev_products', ?, ?, ?)`,
     ).bind(printing.id, printing.card_id, JSON.stringify(printing)),
     testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO reconciled_printing_images (
+         id, printing_id, role, media_type, width, height,
+         content_sha256, content_byte_length, object_key
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      printingImage.id,
+      printingImage.printing_id,
+      printingImage.role,
+      printingImage.media_type,
+      printingImage.width,
+      printingImage.height,
+      printingImage.content_sha256,
+      18,
+      `printing-images/${printingImage.content_sha256}`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printing_images (
+         catalogue_revision_id, image_id, printing_id
+       ) VALUES ('catrev_products', ?, ?)`,
+    ).bind(printingImage.id, printingImage.printing_id),
+    testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = 'catrev_products',
            published_at = '2026-01-01T00:00:00.000Z'
@@ -171,6 +208,14 @@ beforeEach(async () => {
           '2026-01-01T02:00:00.000Z', 'run_products')`,
     ),
   ]);
+  await testEnv.PRINTING_IMAGES.put(
+    `printing-images/${printingImage.content_sha256}`,
+    new TextEncoder().encode("fusion-front-image"),
+    {
+      httpMetadata: { contentType: printingImage.media_type },
+      sha256: printingImage.content_sha256,
+    },
+  );
 });
 
 test("authenticated Product reads preserve regional precision and announced status", async () => {
@@ -228,6 +273,43 @@ test("authenticated Product reads preserve regional precision and announced stat
       ],
     },
   });
+});
+
+test("authenticated Printing Image content is immutable, conditional, and range-capable", async () => {
+  const content = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+  );
+  expect(content.status).toBe(200);
+  expect(content.headers.get("content-type")).toBe("image/webp");
+  expect(content.headers.get("content-length")).toBe("18");
+  expect(content.headers.get("cache-control")).toContain("private");
+  expect(await content.text()).toBe("fusion-front-image");
+
+  const head = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    {},
+    "HEAD",
+  );
+  expect(head.status).toBe(200);
+  expect(head.headers.get("content-length")).toBe("18");
+  expect(await head.text()).toBe("");
+
+  const partial = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    { range: "bytes=7-11" },
+  );
+  expect(partial.status).toBe(206);
+  expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
+  expect(await partial.text()).toBe("front");
+
+  const notModified = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    {
+      "if-none-match":
+        "\"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773\"",
+    },
+  );
+  expect(notModified.status).toBe(304);
 });
 
 test("Product conditional reads return 304 for matching revision ETags", async () => {
@@ -1040,9 +1122,11 @@ test("Printing collection binds every normalized filter to one card-ordered revi
 function api(
   path: string,
   headers: Record<string, string> = {},
+  method = "GET",
 ): Promise<Response> {
   return exports.default.fetch(
     new Request(`https://card-keepr.invalid${path}`, {
+      method,
       headers: {
         authorization: "Bearer vitest-api-key",
         "cf-connecting-ip": "203.0.113.28",

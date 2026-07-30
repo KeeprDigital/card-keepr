@@ -87,6 +87,7 @@ export async function parseSnapshot(
       observations = adapter.parseBytes(bytes, {
         mediaType: snapshot.media_type,
         url: snapshot.request_url,
+        requestId: snapshot.request_id,
       });
     } else {
       let document: unknown;

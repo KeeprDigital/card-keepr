@@ -315,6 +315,21 @@ export default defineConfig({
               status: 404,
             });
           }
+          if (
+            url.hostname.endsWith("cardgame.com") ||
+            url.hostname.endsWith("digimoncard.com") ||
+            url.hostname.endsWith("gundam-gcg.com")
+          ) {
+            return new Response(
+              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>Complete official policy surface.</main></html>",
+              {
+                headers: {
+                  "content-type": "text/html; charset=utf-8",
+                  etag: `"official-${url.pathname.replaceAll("/", "-")}"`,
+                },
+              },
+            );
+          }
           if (!url.hostname.endsWith("official-source.invalid")) {
             return new Response("unknown synthetic Official Source", {
               status: 404,
@@ -810,6 +825,78 @@ function reconciliationSourceDocument(scenario: string) {
           lineageMarker: "fusion-world",
         }),
       ],
+    };
+  }
+  if (scenario === "fusion-leader-images") {
+    const observation = printingObservation({
+      game: "fusion-world",
+      profile: "fusion-world@1",
+      cardNumber: "FB01-001",
+      name: "Awakened Leader",
+      cardAttributes: {
+        card_type: "leader",
+        colours: ["red"],
+        cost: null,
+        specified_cost: [],
+        power: 15000,
+        combo_power: null,
+        traits: ["Saiyan"],
+        skills: [{ kind: "ordinary", text: "Official leader skill" }],
+        leader_faces: [
+          {
+            role: "front",
+            name: "Leader",
+            power: 15000,
+            traits: ["Saiyan"],
+            skills: "Official front skill",
+          },
+          {
+            role: "back",
+            name: "Awakened Leader",
+            power: 20000,
+            traits: ["Saiyan"],
+            skills: "Official back skill",
+          },
+        ],
+      },
+      printingAttributes: {},
+      locator: "/official/fusion-world/FB01-001/leader",
+      lineageMarker: "fusion-leader-images",
+    });
+    return {
+      cards: [{
+        ...observation,
+        appearance_evidence: {
+          images: [
+            {
+              role: "front",
+              source_url:
+                "https://www.dbs-cardgame.com/fw/images/FB01-001-front.webp",
+              artwork_fingerprint:
+                observation.identity_evidence.artwork_fingerprint,
+              media_type: "image/webp",
+              width: 744,
+              height: 1039,
+              content_sha256:
+                "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+              content_base64: "ZnVzaW9uLWZyb250LWltYWdl",
+            },
+            {
+              role: "back",
+              source_url:
+                "https://www.dbs-cardgame.com/fw/images/FB01-001-back.webp",
+              artwork_fingerprint:
+                observation.identity_evidence.artwork_fingerprint,
+              media_type: "image/webp",
+              width: 744,
+              height: 1039,
+              content_sha256:
+                "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+              content_base64: "ZnVzaW9uLWJhY2staW1hZ2U=",
+            },
+          ],
+        },
+      }],
     };
   }
   if (scenario === "profile-digimon") {

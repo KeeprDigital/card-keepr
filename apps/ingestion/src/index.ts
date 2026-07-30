@@ -379,6 +379,7 @@ const ingestionWorker = {
               idempotency_key: requiredString(body, "idempotency_key"),
             },
             observedAt,
+            env.PRINTING_IMAGES,
           );
         return Response.json(result, {
           status: administrationResultStatus(result, 200),

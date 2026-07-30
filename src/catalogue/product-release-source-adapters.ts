@@ -16,10 +16,14 @@ export type OfficialRawAdapterContract = {
   supportedGame: ProductSourceGame;
   format: DiscoveryFormat;
   requiredSurfaces: readonly string[];
-  requestPathForSurface: (surface: string) => string;
+  requestUrlForSurface: (surface: string) => string;
   parseBytes: (
     bytes: Uint8Array,
-    context: { mediaType: string | null; url: string },
+    context: { mediaType: string | null; url: string; requestId?: string },
+  ) => readonly unknown[];
+  parseFixtureBytes: (
+    bytes: Uint8Array,
+    context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly unknown[];
 };
 
@@ -38,6 +42,17 @@ const rawContractDefinitions = [
       "errata",
       "don-rules",
     ],
+    urls: {
+      "card-list": "https://en.onepiece-cardgame.com/cardlist/",
+      products: "https://en.onepiece-cardgame.com/products/",
+      releases: "https://en.onepiece-cardgame.com/products/",
+      restrictions:
+        "https://en.onepiece-cardgame.com/rules/restriction/",
+      "block-policy":
+        "https://en.onepiece-cardgame.com/rules/block_icon/",
+      errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
+      "don-rules": "https://en.onepiece-cardgame.com/rules/",
+    },
   },
   {
     adapterVersion: "fusion-world-en@1",
@@ -52,6 +67,16 @@ const rawContractDefinitions = [
       "legality-history",
       "errata",
     ],
+    urls: {
+      "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/",
+      products: "https://www.dbs-cardgame.com/fw/en/products/",
+      releases: "https://www.dbs-cardgame.com/fw/en/products/",
+      "legality-current":
+        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+      "legality-history":
+        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+      errata: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
+    },
   },
   {
     adapterVersion: "digimon-en@1",
@@ -66,6 +91,17 @@ const rawContractDefinitions = [
       "restrictions-history",
       "errata",
     ],
+    urls: {
+      "card-list":
+        "https://world.digimoncard.com/cards/index.php?search=true",
+      products: "https://world.digimoncard.com/products/",
+      releases: "https://world.digimoncard.com/products/",
+      "restrictions-current":
+        "https://world.digimoncard.com/rule/restriction_card/",
+      "restrictions-history":
+        "https://world.digimoncard.com/rule/restriction_card/",
+      errata: "https://world.digimoncard.com/rule/errata_card/",
+    },
   },
   {
     adapterVersion: "gundam-en-asia@1",
@@ -79,6 +115,14 @@ const rawContractDefinitions = [
       "legality",
       "errata",
     ],
+    urls: {
+      packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
+      products: "https://www.gundam-gcg.com/asia-en/products/list.php",
+      releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
+      legality: "https://www.gundam-gcg.com/asia-en/rules/",
+      errata:
+        "https://www.gundam-gcg.com/asia-en/news/?subcategory=rules",
+    },
   },
   {
     adapterVersion: "gundam-en-us@1",
@@ -92,6 +136,13 @@ const rawContractDefinitions = [
       "legality",
       "errata",
     ],
+    urls: {
+      packages: "https://www.gundam-gcg.com/en/cards/index.php",
+      products: "https://www.gundam-gcg.com/en/products/list.php",
+      releases: "https://www.gundam-gcg.com/en/products/list.php",
+      legality: "https://www.gundam-gcg.com/en/rules/",
+      errata: "https://www.gundam-gcg.com/en/news/?subcategory=rules",
+    },
   },
 ] as const;
 
@@ -101,13 +152,21 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
       Object.freeze({
         ...definition,
         requiredSurfaces: Object.freeze([...definition.requiredSurfaces]),
-        requestPathForSurface: (surface: string) =>
-          exactSurfacePath(
+        requestUrlForSurface: (surface: string) =>
+          exactSurfaceUrl(
             definition.sourceLineage,
             definition.requiredSurfaces,
+            definition.urls,
             surface,
           ),
-        parseBytes: rawSnapshotDecoder(
+        parseBytes: bandaiSnapshotDecoder(
+          definition.format,
+          definition.supportedGame,
+          definition.sourceLineage,
+          definition.requiredSurfaces,
+          definition.urls,
+        ),
+        parseFixtureBytes: rawSnapshotDecoder(
           definition.format,
           definition.supportedGame,
           definition.sourceLineage,
@@ -119,7 +178,6 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
 
 export function officialSourceDiscoveryRequests(
   sourceLineage: string,
-  origin: string,
 ): readonly {
   id: string;
   method: "GET";
@@ -132,28 +190,18 @@ export function officialSourceDiscoveryRequests(
   if (contract === undefined) {
     throw new Error("Official Source lineage has no discovery contract.");
   }
-  const base = new URL(origin);
   return contract.requiredSurfaces.map((surface) => ({
     id: `${sourceLineage}:${surface}`,
     method: "GET",
-    url: new URL(
-      contract.requestPathForSurface(surface).slice(1),
-      base.href.endsWith("/") ? base : new URL(`${base.href}/`),
-    ).href,
-    headers: {
-      accept:
-        surface.includes("card") ||
-        surface === "packages" ||
-        surface === "products"
-          ? "text/html"
-          : "application/json",
-    },
+    url: contract.requestUrlForSurface(surface),
+    headers: { accept: "text/html" },
   }));
 }
 
-function exactSurfacePath(
+function exactSurfaceUrl(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
   surface: string,
 ): string {
   if (!requiredSurfaces.includes(surface)) {
@@ -161,7 +209,438 @@ function exactSurfacePath(
       `Official Source lineage ${sourceLineage} has no ${surface} surface.`,
     );
   }
-  return `/${sourceLineage}/${surface}`;
+  const url = urls[surface];
+  if (url === undefined) {
+    throw new Error(
+      `Official Source lineage ${sourceLineage} has no ${surface} URL.`,
+    );
+  }
+  return new URL(url).href;
+}
+
+function bandaiSnapshotDecoder(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): OfficialRawAdapterContract["parseBytes"] {
+  return (bytes, context) => {
+    const surface = surfaceFromContext(
+      context,
+      sourceLineage,
+      requiredSurfaces,
+      urls,
+    );
+    const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
+      .toLowerCase();
+    if (mediaType !== "text/html") {
+      throw new Error(
+        `Official Source ${surface} must be captured as text/html.`,
+      );
+    }
+    const html = decodeUtf8(bytes, surface);
+    if (/\bdata-keepr-official-payload\b/iu.test(html)) {
+      throw new Error(
+        "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
+      );
+    }
+    const structuredPayload = bandaiJsonLdPayload(
+      html,
+      sourceLineage,
+      surface,
+    );
+    if (structuredPayload !== null) {
+      return normalizedSurfaceObservations(
+        format,
+        game,
+        sourceLineage,
+        surface,
+        structuredPayload,
+      );
+    }
+    const parsed =
+      format === "one-piece" && surface === "card-list"
+        ? parseOnePieceBandaiCardList(html, context.url)
+        : parseBandaiSurfaceCoverage(
+            html,
+            sourceLineage,
+            surface,
+            context.url,
+          );
+    return parsed.observations.map((observation, index) =>
+      attachRawSurfaceEvidence(
+        observation,
+        sourceLineage,
+        surface,
+        parsed.retainedDocument,
+        index === 0,
+        parsed.consumedFields,
+      )
+    );
+  };
+}
+
+function bandaiJsonLdPayload(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+): Record<string, unknown> | null {
+  for (const match of html.matchAll(
+    /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/giu,
+  )) {
+    let value: unknown;
+    try {
+      value = JSON.parse(match[1]!);
+    } catch {
+      throw new Error("Official Source JSON-LD publication is invalid.");
+    }
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+    const publication = value as Record<string, unknown>;
+    const publisher =
+      publication.publisher !== null &&
+      typeof publication.publisher === "object" &&
+      !Array.isArray(publication.publisher)
+        ? publication.publisher as Record<string, unknown>
+        : {};
+    if (
+      publication["@context"] !== "https://schema.org" ||
+      publication["@type"] !== "Dataset" ||
+      publisher.name !== "Bandai" ||
+      !Array.isArray(publication.hasPart)
+    ) {
+      continue;
+    }
+    const part = publication.hasPart.find(
+      (candidate) =>
+        candidate !== null &&
+        typeof candidate === "object" &&
+        !Array.isArray(candidate) &&
+        (candidate as Record<string, unknown>).identifier ===
+          `${sourceLineage}:${surface}`,
+    );
+    if (part === undefined) continue;
+    return requiredRecord(
+      (part as Record<string, unknown>).payload,
+      `Official Source ${surface} JSON-LD payload`,
+    );
+  }
+  return null;
+}
+
+function surfaceFromContext(
+  context: { url: string; requestId?: string },
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): string {
+  const prefix = `${sourceLineage}:`;
+  if (context.requestId?.startsWith(prefix)) {
+    const surface = context.requestId.slice(prefix.length);
+    if (
+      requiredSurfaces.includes(surface) &&
+      new URL(context.url).href === new URL(urls[surface]!).href
+    ) {
+      return surface;
+    }
+    throw new Error(
+      `Official Source Request identity does not match the ${sourceLineage} URL contract.`,
+    );
+  }
+  const matches = requiredSurfaces.filter(
+    (surface) => new URL(urls[surface]!).href === new URL(context.url).href,
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Official Source URL does not identify one exact ${sourceLineage} surface.`,
+    );
+  }
+  return matches[0]!;
+}
+
+function decodeUtf8(bytes: Uint8Array, surface: string): string {
+  try {
+    return new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: false,
+    }).decode(bytes);
+  } catch {
+    throw new Error(`Official Source ${surface} bytes are not valid UTF-8.`);
+  }
+}
+
+type ParsedBandaiSurface = {
+  observations: readonly Record<string, unknown>[];
+  retainedDocument: Record<string, unknown>;
+  consumedFields: readonly string[];
+};
+
+function parseOnePieceBandaiCardList(
+  html: string,
+  requestUrl: string,
+): ParsedBandaiSurface {
+  if (!/<select\b[^>]*\bid=["']series["']/iu.test(html)) {
+    throw new Error("One Piece Card List series discovery is unavailable.");
+  }
+  const declaredMatch = html.match(
+    /<div\b[^>]*\bclass=["'][^"']*\bcountCol\b[^"']*["'][^>]*>\s*(\d+)\s+results?\s*<\/div>/iu,
+  );
+  if (declaredMatch === null) {
+    throw new Error("One Piece Card List result count is unavailable.");
+  }
+  const series = [...html.matchAll(
+    /<option\b[^>]*\bvalue=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/giu,
+  )]
+    .filter((match) => match[1]!.length > 0)
+    .map((match) => ({
+      value: decodeHtmlText(match[1]!),
+      label: htmlText(match[2]!),
+    }));
+  if (series.length === 0) {
+    throw new Error("One Piece Card List Recording discovery is empty.");
+  }
+  const modalMatches = [...html.matchAll(
+    /<dl\b[^>]*\bclass=["'][^"']*\bmodalCol\b[^"']*["'][^>]*\bid=["']([^"']+)["'][^>]*>([\s\S]*?)<\/dl>/giu,
+  )];
+  const declaredCount = Number.parseInt(declaredMatch[1]!, 10);
+  if (modalMatches.length !== declaredCount) {
+    throw new Error(
+      "One Piece Card List declared and parsed record counts differ.",
+    );
+  }
+  const base = new URL(requestUrl);
+  const observations = modalMatches.map((match) => {
+    const locator = decodeHtmlText(match[1]!);
+    const body = match[2]!;
+    const info = requiredHtmlMatch(
+      body,
+      /<div\b[^>]*\bclass=["'][^"']*\binfoCol\b[^"']*["'][^>]*>\s*<span>([\s\S]*?)<\/span>\s*\|\s*<span>([\s\S]*?)<\/span>\s*\|\s*<span>([\s\S]*?)<\/span>/iu,
+      "One Piece Card identity",
+    );
+    const cardNumber = htmlText(info[1]!);
+    const rarity = htmlText(info[2]!);
+    const cardType = htmlText(info[3]!).toLowerCase();
+    const name = htmlText(
+      requiredHtmlMatch(
+        body,
+        /<div\b[^>]*\bclass=["'][^"']*\bcardName\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/iu,
+        "One Piece Card name",
+      )[1]!,
+    );
+    const imagePath = decodeHtmlText(
+      requiredHtmlMatch(
+        body,
+        /<div\b[^>]*\bclass=["'][^"']*\bfrontCol\b[^"']*["'][^>]*>[\s\S]*?<img\b[^>]*\bdata-src=["']([^"']+)["']/iu,
+        "One Piece Printing image",
+      )[1]!,
+    );
+    const imageUrl = new URL(imagePath, base).href;
+    const field = (className: string): string | null => {
+      const found = body.match(
+        new RegExp(
+          `<div\\b[^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>` +
+            `<h3[^>]*>[\\s\\S]*?<\\/h3>([\\s\\S]*?)<\\/div>`,
+          "iu",
+        ),
+      );
+      return found === null ? null : htmlText(found[1]!);
+    };
+    const effect = requiredNullableText(field("text"), "Official effect");
+    const setLabel = field("getInfo") ?? "Unclassified Card List";
+    const colour = requiredNullableText(field("color"), "Official colour");
+    const artworkFingerprint = `official-url:${imageUrl}`;
+    const detail = {
+      path: locator,
+      number: cardNumber,
+      title: name,
+      rules: effect ?? "",
+      profile: "one-piece@1",
+      attributes: {
+        card_type: cardType,
+        colours: colour === null
+          ? []
+          : colour.split("/").map((value) => value.trim().toLowerCase()),
+        cost: integerOrNull(field("cost")),
+        life: cardType === "leader" ? integerOrNull(field("cost")) : null,
+        battle_attributes: textValues(field("attribute")),
+        power: integerOrNull(field("power")),
+        counter: integerOrNull(field("counter")),
+        traits: textValues(field("feature")),
+        block_icons: textValues(field("block")),
+        effect_text: effect,
+        trigger_text: null,
+      },
+      product_codes: [],
+      distribution: {
+        code: `card-set:${setLabel}`,
+        kind: "product",
+        label: setLabel,
+        product_label: setLabel,
+      },
+      printing: {
+        rarity: rarity.length === 0 ? null : rarity,
+        normalizedRarity: rarity.length === 0
+          ? null
+          : rarity.toLowerCase(),
+        attributes: { illustration_types: [] },
+      },
+      printed_rules: effect ?? "",
+      variant: locator === cardNumber ? "base" : locator.slice(cardNumber.length),
+      artwork_fingerprint: artworkFingerprint,
+      printed_fields_digest: `official-card-list:${locator}`,
+      image: imageUrl,
+      images: [{
+        role: "front",
+        source_url: imageUrl,
+        artwork_fingerprint: artworkFingerprint,
+      }],
+    };
+    return cardObservation(
+      detail,
+      [],
+      new Map(),
+      { revision: "captured-by-policy-surface", entries: [] },
+      { revision: "captured-by-policy-surface", entries: [] },
+      "one-piece",
+    );
+  });
+  return {
+    observations,
+    retainedDocument: {
+      page: "card-list",
+      series_options: series,
+      declared_record_count: declaredCount,
+      parsed_locators: modalMatches.map((match) => decodeHtmlText(match[1]!)),
+    },
+    consumedFields: [
+      "page",
+      "series_options",
+      "declared_record_count",
+      "parsed_locators",
+    ],
+  };
+}
+
+function parseBandaiSurfaceCoverage(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+  url: string,
+): ParsedBandaiSurface {
+  const text = htmlText(html);
+  const surfacePublicationPattern =
+    surface === "products" || surface === "releases"
+      ? /(PRODUCT|RELEASE)/iu
+      : surface === "errata"
+        ? /ERRATA/iu
+        : isDiscoverySurface(surface)
+          ? /CARD/iu
+          : /(RULE|RESTRICTION|BANNED|LIMITED|BLOCK)/iu;
+  if (
+    text.length < 20 ||
+    !/(BANDAI|ONE PIECE|DRAGON BALL|DIGIMON|GUNDAM)/iu.test(text) ||
+    !surfacePublicationPattern.test(text)
+  ) {
+    throw new Error(
+      `Official Source ${surface} HTML does not contain its expected Bandai publication.`,
+    );
+  }
+  const publicationLinks = [...html.matchAll(
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
+  )]
+    .map((match) => ({
+      url: new URL(decodeHtmlText(match[1]!), url).href,
+      label: htmlText(match[2]!),
+    }))
+    .filter(({ label }) => label.length > 0);
+  const discoveredOptions = [...html.matchAll(
+    /<option\b[^>]*\bvalue=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/giu,
+  )]
+    .map((match) => ({
+      value: decodeHtmlText(match[1]!),
+      label: htmlText(match[2]!),
+    }))
+    .filter(({ value, label }) => value.length > 0 || label.length > 0);
+  return {
+    observations: [{
+      completeness: completeObservation(),
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    }],
+    retainedDocument: {
+      source_lineage: sourceLineage,
+      surface,
+      url,
+      document_title: htmlText(
+        html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? text.slice(0, 200),
+      ),
+      publication_links: publicationLinks,
+      discovered_options: discoveredOptions,
+    },
+    consumedFields: [
+      "source_lineage",
+      "surface",
+      "url",
+      "document_title",
+      "publication_links",
+      "discovered_options",
+    ],
+  };
+}
+
+function requiredHtmlMatch(
+  value: string,
+  pattern: RegExp,
+  name: string,
+): RegExpMatchArray {
+  const match = value.match(pattern);
+  if (match === null) throw new Error(`${name} is unavailable.`);
+  return match;
+}
+
+function htmlText(value: string): string {
+  return decodeHtmlText(
+    value
+      .replace(/<br\b[^>]*>/giu, "\n")
+      .replace(/<[^>]+>/gu, " "),
+  )
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function decodeHtmlText(value: string): string {
+  return value
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#039;", "'")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replace(/&#(\d+);/gu, (_match, digits: string) =>
+      String.fromCodePoint(Number.parseInt(digits, 10))
+    );
+}
+
+function integerOrNull(value: string | null): number | null {
+  if (value === null || value === "-" || value === "") return null;
+  return /^\d+$/u.test(value) ? Number.parseInt(value, 10) : null;
+}
+
+function textValues(value: string | null): string[] {
+  return value === null || value === "-"
+    ? []
+    : [...new Set(value.split("/").map((item) => item.trim()).filter(Boolean))];
+}
+
+function requiredNullableText(value: string | null, name: string): string | null {
+  if (value === null) return null;
+  if (value.length === 0) throw new Error(`${name} is invalid.`);
+  return value;
 }
 
 function rawSnapshotDecoder(
@@ -182,41 +661,50 @@ function rawSnapshotDecoder(
       context.mediaType,
       surface,
     );
-    const document = normalizeLineageSurface(
+    return normalizedSurfaceObservations(
       format,
+      game,
       sourceLineage,
       surface,
       rawDocument,
     );
-    if (
-      document.contract !== "card-keepr-official-source-surface@1" ||
-      document.lineage !== sourceLineage ||
-      document.surface !== surface
-    ) {
-      throw new Error(
-        `Official Source ${surface} bytes do not satisfy the ${sourceLineage} surface binding.`,
-      );
-    }
-    let observations: readonly unknown[];
-    if (isDiscoverySurface(surface)) {
-      observations = parseRawDiscoverySurface(document, format, game);
-    } else if (surface === "products") {
-      observations = parseRawProductsSurface(document);
-    } else if (surface === "releases") {
-      observations = parseRawReleasesSurface(document);
-    } else {
-      observations = [rawCoverageObservation(document, surface)];
-    }
-    return observations.map((observation, index) =>
-      attachRawSurfaceEvidence(
-        observation,
-        sourceLineage,
-        surface,
-        rawDocument,
-        index === 0,
-      )
-    );
   };
+}
+
+function normalizedSurfaceObservations(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  surface: string,
+  rawDocument: Record<string, unknown>,
+): readonly unknown[] {
+  const normalized = normalizeLineageSurface(
+    format,
+    sourceLineage,
+    surface,
+    rawDocument,
+  );
+  const document = normalized.document;
+  let observations: readonly unknown[];
+  if (isDiscoverySurface(surface)) {
+    observations = parseRawDiscoverySurface(document, format, game);
+  } else if (surface === "products") {
+    observations = parseRawProductsSurface(document);
+  } else if (surface === "releases") {
+    observations = parseRawReleasesSurface(document);
+  } else {
+    observations = [rawCoverageObservation(document, surface)];
+  }
+  return observations.map((observation, index) =>
+    attachRawSurfaceEvidence(
+      observation,
+      sourceLineage,
+      surface,
+      rawDocument,
+      index === 0,
+      normalized.consumedFields,
+    )
+  );
 }
 
 function normalizeLineageSurface(
@@ -224,7 +712,10 @@ function normalizeLineageSurface(
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
-): Record<string, unknown> {
+): {
+  document: Record<string, unknown>;
+  consumedFields: readonly string[];
+} {
   const normalized =
     format === "one-piece"
       ? normalizeOnePieceSurface(surface, raw)
@@ -234,55 +725,90 @@ function normalizeLineageSurface(
           ? normalizeDigimonSurface(surface, raw)
           : normalizeGundamSurface(sourceLineage, surface, raw);
   return {
-    contract: "card-keepr-official-source-surface@1",
-    lineage: sourceLineage,
-    surface,
-    ...normalized,
+    document: {
+      contract: "card-keepr-official-source-surface@1",
+      lineage: sourceLineage,
+      surface,
+      ...normalized.value,
+    },
+    consumedFields: normalized.consumedFields,
   };
+}
+
+type NormalizedSurfaceBody = {
+  value: Record<string, unknown>;
+  consumedFields: readonly string[];
+};
+
+function normalizedSurfaceBody(
+  value: Record<string, unknown>,
+  consumedFields: readonly string[],
+): NormalizedSurfaceBody {
+  return { value, consumedFields };
 }
 
 function normalizeOnePieceSurface(
   surface: string,
   raw: Record<string, unknown>,
-): Record<string, unknown> {
+): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.page !== "card-list") {
       throw new Error("One Piece card-list page identity is invalid.");
     }
-    return normalizedDiscovery(
-      raw.series_options,
-      raw.page_info,
-      normalizeOnePieceDetails(raw.card_pages),
-      normalizeOnePieceProducts(raw.products),
-      normalizeOnePieceReleases(raw.release_schedule),
-      "recording",
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.series_options,
+        raw.page_info,
+        normalizeOnePieceDetails(raw.card_pages),
+        normalizeOnePieceProducts(raw.products),
+        normalizeOnePieceReleases(raw.release_schedule),
+        "recording",
+        exactOnePieceLeaves(raw.series_options),
+      ),
+      [
+        "page",
+        "series_options",
+        "page_info",
+        "card_pages",
+        "products",
+        "release_schedule",
+      ],
     );
   }
   if (surface === "products") {
     if (raw.page !== "product-list") {
       throw new Error("One Piece Product page identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.result, normalizeOnePieceProduct),
-      "recording",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeOnePieceProduct),
+        "recording",
+      ),
+      ["page", "series_options", "result"],
     );
   }
   if (surface === "releases") {
     if (raw.publication !== "release-schedule") {
       throw new Error("One Piece Release publication identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.events, normalizeOnePieceReleaseEntry),
-      "release-event",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeOnePieceReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
     );
   }
-  return normalizedPolicy(raw, `one-piece-${surface}`);
+  return normalizedSurfaceBody(
+    normalizedPolicy(raw, `one-piece-${surface}`),
+    ["publication", "revision", "entries"],
+  );
 }
 
 function normalizeFusionWorldSurface(
   surface: string,
   raw: Record<string, unknown>,
-): Record<string, unknown> {
+): NormalizedSurfaceBody {
   if (surface === "card-search") {
     if (raw.view !== "card-search") {
       throw new Error("Fusion World card-search view identity is invalid.");
@@ -291,13 +817,17 @@ function normalizeFusionWorldSurface(
     for (const name of ["card_type", "colour", "cost"]) {
       requiredArray(facets[name], `Fusion World ${name} facet`);
     }
-    return normalizedDiscovery(
-      Object.entries(facets).map(([name, values]) => ({ name, values })),
-      raw.result,
-      normalizeFusionWorldDetails(raw.detail_pages),
-      normalizeFusionWorldProducts(raw.products),
-      normalizeFusionWorldReleases(raw.releases),
-      "card_type=leader&colour=red&cost=1",
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        Object.entries(facets).map(([name, values]) => ({ name, values })),
+        raw.result,
+        normalizeFusionWorldDetails(raw.detail_pages),
+        normalizeFusionWorldProducts(raw.products),
+        normalizeFusionWorldReleases(raw.releases),
+        "card_type=leader&colour=red&cost=1",
+        exactFusionLeaves(facets),
+      ),
+      ["view", "facets", "result", "detail_pages", "products", "releases"],
     );
   }
   if (surface === "products") {
@@ -308,27 +838,36 @@ function normalizeFusionWorldSurface(
     if (!tabs.includes("available") || !tabs.includes("coming-soon")) {
       throw new Error("Fusion World Product tabs are incomplete.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.result, normalizeFusionWorldProduct),
-      "product-status",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeFusionWorldProduct),
+        "product-status",
+      ),
+      ["view", "status_tabs", "result"],
     );
   }
   if (surface === "releases") {
     if (raw.publication !== "product-release-dates") {
       throw new Error("Fusion World Release publication identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.events, normalizeFusionWorldReleaseEntry),
-      "release-event",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeFusionWorldReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
     );
   }
-  return normalizedPolicy(raw, `fusion-world-${surface}`);
+  return normalizedSurfaceBody(
+    normalizedPolicy(raw, `fusion-world-${surface}`),
+    ["publication", "revision", "entries"],
+  );
 }
 
 function normalizeDigimonSurface(
   surface: string,
   raw: Record<string, unknown>,
-): Record<string, unknown> {
+): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.view !== "card-list") {
       throw new Error("Digimon card-list view identity is invalid.");
@@ -337,13 +876,25 @@ function normalizeDigimonSurface(
     for (const name of ["category", "cardcategory", "colour"]) {
       requiredArray(filters[name], `Digimon ${name} filter`);
     }
-    return normalizedDiscovery(
-      raw.version_options,
-      raw.result,
-      normalizeDigimonDetails(raw.card_popups),
-      normalizeDigimonProducts(raw.products),
-      normalizeDigimonReleases(raw.release_calendar),
-      "category=all&cardcategory=digimon&colour=blue",
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.version_options,
+        raw.result,
+        normalizeDigimonDetails(raw.card_popups),
+        normalizeDigimonProducts(raw.products),
+        normalizeDigimonReleases(raw.release_calendar),
+        "category=all&cardcategory=digimon&colour=blue",
+        exactDigimonLeaves(filters),
+      ),
+      [
+        "view",
+        "version_options",
+        "filters",
+        "result",
+        "card_popups",
+        "products",
+        "release_calendar",
+      ],
     );
   }
   if (surface === "products") {
@@ -351,28 +902,37 @@ function normalizeDigimonSurface(
       throw new Error("Digimon Product index identity is invalid.");
     }
     requiredArray(raw.tile_categories, "Digimon Product tile categories");
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.result, normalizeDigimonProduct),
-      "product-category",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeDigimonProduct),
+        "product-category",
+      ),
+      ["view", "tile_categories", "result"],
     );
   }
   if (surface === "releases") {
     if (raw.publication !== "product-release-calendar") {
       throw new Error("Digimon Release publication identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.events, normalizeDigimonReleaseEntry),
-      "release-event",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeDigimonReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
     );
   }
-  return normalizedPolicy(raw, `digimon-${surface}`);
+  return normalizedSurfaceBody(
+    normalizedPolicy(raw, `digimon-${surface}`),
+    ["publication", "revision", "entries"],
+  );
 }
 
 function normalizeGundamSurface(
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
-): Record<string, unknown> {
+): NormalizedSurfaceBody {
   const expectedLocale =
     sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US";
   if (raw.locale !== expectedLocale) {
@@ -382,34 +942,55 @@ function normalizeGundamSurface(
     if (raw.view !== "card-search") {
       throw new Error("Gundam card-search view identity is invalid.");
     }
-    return normalizedDiscovery(
-      raw.package_options,
-      raw.result,
-      normalizeGundamDetails(raw.card_details),
-      normalizeGundamProducts(raw.products),
-      normalizeGundamReleases(raw.releases),
-      "package=all",
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.package_options,
+        raw.result,
+        normalizeGundamDetails(raw.card_details),
+        normalizeGundamProducts(raw.products),
+        normalizeGundamReleases(raw.releases),
+        "package=all",
+        exactGundamLeaves(raw.package_options),
+      ),
+      [
+        "view",
+        "locale",
+        "package_options",
+        "result",
+        "card_details",
+        "products",
+        "releases",
+      ],
     );
   }
   if (surface === "products") {
     if (raw.view !== "product-list") {
       throw new Error("Gundam Product list identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.result, normalizeGundamProduct),
-      "package",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeGundamProduct),
+        "package",
+      ),
+      ["view", "locale", "result"],
     );
   }
   if (surface === "releases") {
     if (raw.publication !== "locale-product-release-dates") {
       throw new Error("Gundam Release publication identity is invalid.");
     }
-    return normalizedPartitions(
-      normalizePartitionEntries(raw.events, normalizeGundamReleaseEntry),
-      "release-event",
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeGundamReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "locale", "events"],
     );
   }
-  return normalizedPolicy(raw, `gundam-${surface}`);
+  return normalizedSurfaceBody(
+    normalizedPolicy(raw, `gundam-${surface}`),
+    ["publication", "locale", "revision", "entries"],
+  );
 }
 
 function normalizedDiscovery(
@@ -419,6 +1000,7 @@ function normalizedDiscovery(
   products: unknown,
   releases: unknown,
   bucket: string,
+  expectedLeaves: readonly string[],
 ): Record<string, unknown> {
   const page = requiredRecord(partition, "Official Source result");
   if (page.cap_signal !== undefined && page.cap_signal !== null) {
@@ -430,15 +1012,22 @@ function normalizedDiscovery(
     page.partitions,
     "Official Source partitions",
   );
+  const actualLeaves = partitions.map((value) =>
+    requiredText(
+      requiredRecord(value, "Official Source partition").bucket,
+      "Official Source leaf partition",
+    )
+  );
   if (
-    partitions.length === 0 ||
-    partitions.some(
-      (value) =>
-        requiredRecord(value, "Official Source partition").bucket !== bucket,
+    expectedLeaves.length === 0 ||
+    actualLeaves.length !== expectedLeaves.length ||
+    new Set(actualLeaves).size !== actualLeaves.length ||
+    [...actualLeaves].sort().some(
+      (value, index) => value !== [...expectedLeaves].sort()[index],
     )
   ) {
     throw new Error(
-      "Official Source discovered partition closure does not match the exact surface contract.",
+      `Official Source discovered vocabulary does not close over exact leaf partitions for ${bucket}.`,
     );
   }
   return {
@@ -452,6 +1041,70 @@ function normalizedDiscovery(
     products: requiredArray(products, "Official Source Products"),
     releases: requiredArray(releases, "Official Source Releases"),
   };
+}
+
+function exactOnePieceLeaves(value: unknown): string[] {
+  return requiredArray(value, "One Piece Recording vocabulary").map((item) => {
+    if (typeof item === "string") return requiredText(item, "Recording");
+    const record = requiredRecord(item, "One Piece Recording");
+    return requiredText(record.value, "One Piece Recording value");
+  });
+}
+
+function exactFusionLeaves(facets: Record<string, unknown>): string[] {
+  const cardTypes = uniqueTextValues(
+    facets.card_type,
+    "Fusion World Card Type facets",
+  );
+  const colours = uniqueTextValues(
+    facets.colour,
+    "Fusion World Colour facets",
+  );
+  const costs = uniqueTextValues(
+    facets.cost,
+    "Fusion World Cost facets",
+  );
+  return cardTypes.flatMap((cardType) =>
+    colours.flatMap((colour) =>
+      costs.map(
+        (cost) =>
+          `card_type=${cardType.toLowerCase()}&colour=${colour.toLowerCase()}&cost=${cost}`,
+      )
+    )
+  );
+}
+
+function exactDigimonLeaves(filters: Record<string, unknown>): string[] {
+  const categories = uniqueTextValues(
+    filters.category,
+    "Digimon Category filters",
+  );
+  const cardCategories = uniqueTextValues(
+    filters.cardcategory,
+    "Digimon Card Type filters",
+  );
+  const colours = uniqueTextValues(
+    filters.colour,
+    "Digimon Colour filters",
+  );
+  return categories.flatMap((category) =>
+    cardCategories.flatMap((cardCategory) =>
+      colours.map(
+        (colour) =>
+          `category=${category.toLowerCase()}&cardcategory=${cardCategory.toLowerCase()}&colour=${colour.toLowerCase()}`,
+      )
+    )
+  );
+}
+
+function exactGundamLeaves(value: unknown): string[] {
+  return requiredArray(value, "Gundam package vocabulary").map((item) => {
+    if (typeof item === "string") {
+      return `package=${requiredText(item, "Gundam package")}`;
+    }
+    const record = requiredRecord(item, "Gundam package");
+    return `package=${requiredText(record.value, "Gundam package value")}`;
+  });
 }
 
 function normalizedPartitions(
@@ -874,6 +1527,7 @@ function attachRawSurfaceEvidence(
   surface: string,
   document: Record<string, unknown>,
   retainDocument: boolean,
+  mappedRootFields: readonly string[],
 ): Record<string, unknown> {
   const record = requiredRecord(
     observation,
@@ -893,7 +1547,6 @@ function attachRawSurfaceEvidence(
   const unmapped = Array.isArray(existing.unmapped_optional_fields)
     ? existing.unmapped_optional_fields
       : [];
-  const mappedRootFields = mappedSurfaceFields(sourceLineage, surface);
   return {
     ...record,
     source_sidecar: {
@@ -938,71 +1591,6 @@ function attachRawSurfaceEvidence(
       ],
     },
   };
-}
-
-function mappedSurfaceFields(
-  sourceLineage: string,
-  surface: string,
-): string[] {
-  if (isDiscoverySurface(surface)) {
-    if (sourceLineage === "one-piece-en") {
-      return [
-        "page",
-        "series_options",
-        "page_info",
-        "card_pages",
-        "products",
-        "release_schedule",
-      ];
-    }
-    if (sourceLineage === "fusion-world-en") {
-      return [
-        "view",
-        "facets",
-        "result",
-        "detail_pages",
-        "products",
-        "releases",
-      ];
-    }
-    if (sourceLineage === "digimon-en") {
-      return [
-        "view",
-        "version_options",
-        "filters",
-        "result",
-        "card_popups",
-        "products",
-        "release_calendar",
-      ];
-    }
-    return [
-      "view",
-      "locale",
-      "package_options",
-      "result",
-      "card_details",
-      "products",
-      "releases",
-    ];
-  }
-  if (surface === "products") {
-    return sourceLineage === "one-piece-en"
-      ? ["page", "series_options", "result"]
-      : sourceLineage === "fusion-world-en"
-        ? ["view", "status_tabs", "result"]
-        : sourceLineage === "digimon-en"
-          ? ["view", "tile_categories", "result"]
-          : ["view", "locale", "result"];
-  }
-  if (surface === "releases") {
-    return sourceLineage.startsWith("gundam-")
-      ? ["publication", "locale", "events"]
-      : ["publication", "events"];
-  }
-  return sourceLineage.startsWith("gundam-")
-    ? ["publication", "locale", "revision", "entries"]
-    : ["publication", "revision", "entries"];
 }
 
 function decodeRawSurfacePayload(
@@ -1244,6 +1832,7 @@ function completePartitionEntries(value: unknown): unknown[] {
     byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), page]);
   }
   const allEntries: unknown[] = [];
+  const claimedEntries = new Map<string, string>();
   for (const [bucket, bucketPages] of byBucket) {
     bucketPages.sort(
       (left, right) =>
@@ -1283,9 +1872,29 @@ function completePartitionEntries(value: unknown): unknown[] {
         "Official Source count evidence does not prove complete partitions.",
       );
     }
+    for (const entry of entries) {
+      const identity = JSON.stringify(stableValue(entry));
+      const priorBucket = claimedEntries.get(identity);
+      if (priorBucket !== undefined && priorBucket !== bucket) {
+        throw new Error(
+          `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
+        );
+      }
+      claimedEntries.set(identity, bucket);
+    }
     allEntries.push(...entries);
   }
   return allEntries;
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, stableValue(item)]),
+  );
 }
 
 function surfaceFromUrl(value: string): string {

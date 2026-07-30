@@ -14,6 +14,7 @@ import {
   githubAppKeyFingerprint,
 } from "../../../src/credentials/github-app-auth.mjs";
 import ingestionWorker from "../src/index";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 
 declare global {
   interface __BaseEnv_Env {
@@ -103,19 +104,7 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
       source_lineage: "one-piece-en",
       adapter_version: "one-piece-json-document@2",
       idempotency_key: "blocked-by-credential-execution",
-      requests: [
-        "card-list",
-        "products",
-        "releases",
-        "restrictions",
-        "block-policy",
-        "errata",
-        "don-rules",
-      ].map((surface) => ({
-        id: `one-piece-en:${surface}`,
-        method: "GET",
-        url: `https://official-source.invalid/one-piece-en/${surface}`,
-      })),
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
     },
   );
   expect(blockedIngestion.status).toBe(409);

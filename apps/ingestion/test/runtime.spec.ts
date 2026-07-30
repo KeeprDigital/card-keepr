@@ -15,6 +15,7 @@ import {
   requiredEvidenceRun,
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 
 declare global {
   interface __BaseEnv_Env {
@@ -645,7 +646,10 @@ test.each([
   "raw discovery %s evidence fails closed after retaining the snapshot",
   async (failure) => {
     const plan = exactOnePiecePlan(`source_exact_${failure}_001`);
-    plan.requests[0]!.url += `?failure=${failure}`;
+    plan.requests[0]!.headers = {
+      ...plan.requests[0]!.headers,
+      "user-agent": `card-keepr-runtime-parser/${failure}`,
+    };
     const created = await administrationRequest(
       "/v1/ingestion-runs/evidence",
       "POST",
@@ -662,7 +666,7 @@ test.each([
     expect(terminal.observation_sets).toHaveLength(6);
     expect(
       terminal.snapshots.some((snapshot) =>
-        snapshot.request.url.includes(`failure=${failure}`)
+        snapshot.request.url === plan.requests[0]!.url
       ),
     ).toBe(true);
   },
@@ -1156,24 +1160,14 @@ async function fixtureEvidenceRequest(body: {
 }
 
 function exactOnePiecePlan(idempotencyKey: string) {
-  const surfaces = [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ];
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-json-document@2",
     idempotency_key: idempotencyKey,
-    requests: surfaces.map((surface) => ({
-      id: `one-piece-en:${surface}`,
-      url: `https://official-source.invalid/one-piece-en/${surface}`,
-    })),
+    requests: officialSourceDiscoveryRequests("one-piece-en").map(
+      (request) => ({ ...request }),
+    ),
   };
 }
 

@@ -179,6 +179,20 @@ export async function productReleaseLifecyclePlan(
         .map(({ id }) => id);
     }),
   );
+  const observedProductIds = new Set(
+    products.flatMap((product) => {
+      if (!product.observed || !observedGames.has(product.game)) return [];
+      const sourceObservations = product.source_observations ?? [];
+      if (sourceObservations.length === 0) {
+        return observedLineages.size === 0 ? [product.id] : [];
+      }
+      return sourceObservations.some(({ evidence }) =>
+          observedLineages.has(evidence.source)
+        )
+        ? [product.id]
+        : [];
+    }),
+  );
   return {
     products: Object.fromEntries(
       products.map((product) => {
@@ -208,7 +222,7 @@ export async function productReleaseLifecyclePlan(
               existing?.first_revision_id ??
               inferred?.first_revision_id ??
               revisionId,
-            last_observed_revision_id: product.observed
+            last_observed_revision_id: observedProductIds.has(product.id)
               ? revisionId
               : existing?.last_observed_revision_id ??
                 inferred?.last_observed_revision_id ??

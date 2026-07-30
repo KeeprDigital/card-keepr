@@ -568,7 +568,20 @@ async function exportRecordFactories(
         lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
       };
     }),
-    "printing-images": () => [],
+    "printing-images": () => (candidate.printing_images ?? []).map(
+      (image) => ({
+        type: "printing_image",
+        id: image.id,
+        printing_id: image.printing_id,
+        role: image.role,
+        media_type: image.media_type,
+        width: image.width,
+        height: image.height,
+        content_sha256: image.content_sha256,
+        content_url:
+          `/v1/printing-images/${encodeURIComponent(image.id)}/content`,
+      }),
+    ),
     products: () => products,
     releases: () => (candidate.products ?? [])
       .flatMap((product) =>

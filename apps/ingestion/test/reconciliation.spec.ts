@@ -13,6 +13,7 @@ import type {
   SupportedGame,
 } from "../../../src/catalogue/fixture";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
@@ -749,18 +750,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@1",
     idempotency_key: "reconcile-production-adapter-without-coverage",
-    requests: [
-      "card-search",
-      "products",
-      "releases",
-      "legality-current",
-      "legality-history",
-      "errata",
-    ].map((surface) => ({
-      id: `fusion-world-en:${surface}`,
-      method: "GET",
-      url: `https://official-source.invalid/fusion-world-en/${surface}`,
-    })),
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
   expect(started.response.status).toBe(201);
   const run = {
@@ -778,35 +768,16 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     state: "awaiting_approval",
     publishable: true,
     diagnostics: [],
-    cards: [expect.objectContaining({ game: "fusion-world" })],
-    printings: [
-      expect.objectContaining({
-        rarity: { raw: null, normalized: null },
-        printed_rules_text: "Official printed rules",
-        game_data: {
-          profile: "fusion-world@1",
-          attributes: {},
-        },
-      }),
-    ],
+    cards: [],
+    printings: [],
   });
   expect((await approve(reconciled.document)).response.status).toBe(200);
 });
 
 test("production plans bind every request identity to its exact Official Source surface URL", async () => {
-  const requests = [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ].map((surface) => ({
-    id: `one-piece-en:${surface}`,
-    method: "GET",
-    url: `https://official-source.invalid/one-piece-en/${surface}`,
-  }));
+  const requests = officialSourceDiscoveryRequests("one-piece-en").map(
+    (request) => ({ ...request }),
+  );
   requests[0]!.url =
     "https://official-source.invalid/one-piece-en/products";
   const started = await post("/v1/ingestion-runs/evidence", {
@@ -3198,19 +3169,7 @@ test("recovery health gates evidence start and reconciliation before mutation", 
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-json-document@2",
     idempotency_key: "blocked-recovery-start",
-    requests: [
-      "card-list",
-      "products",
-      "releases",
-      "restrictions",
-      "block-policy",
-      "errata",
-      "don-rules",
-    ].map((surface) => ({
-      id: `one-piece-en:${surface}`,
-      method: "GET",
-      url: `https://official-source.invalid/one-piece-en/${surface}`,
-    })),
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
   expect(blockedStart.response.status).toBe(409);
   expect(blockedStart.document).toMatchObject({
@@ -3250,6 +3209,32 @@ test("recovery health gates evidence start and reconciliation before mutation", 
   await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(resumed.document, "candidate_digest"),
     idempotency_key: "reject-after-recovery-restored",
+  });
+});
+
+test("the administration boundary requires every accepted lineage for each selected game", async () => {
+  const oneLocale = await post("/v1/ingestion-runs/evidence", {
+    plans: [{
+      supported_game: "gundam",
+      source_lineage: "gundam-en-asia",
+      adapter_version: "gundam-en-asia@1",
+      requests: [
+        "packages",
+        "products",
+        "releases",
+        "legality",
+        "errata",
+      ].map((surface) => ({
+        id: `gundam-en-asia:${surface}`,
+        method: "GET",
+        url: officialGundamUrl("gundam-en-asia", surface),
+      })),
+    }],
+    idempotency_key: `gundam-one-lineage-${crypto.randomUUID()}`,
+  });
+  expect(oneLocale.response.status).toBe(422);
+  expect(oneLocale.document).toMatchObject({
+    code: "incomplete_source_lineages",
   });
 });
 
@@ -3399,6 +3384,60 @@ test("a complete Product fixture publishes separated release and distribution re
         relationship.relationship_value === "ST-15 fuzzy label",
     ),
   ).toBe(false);
+});
+
+test("a Fusion Leader publishes immutable role-labelled Printing Images and export links", async () => {
+  const run = await collect(
+    "/reconciliation/fusion-leader-images",
+    `fusion-leader-images-${crypto.randomUUID()}`,
+    {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fixture-fusion-world-json@1",
+    },
+  );
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  const published = await approve(candidate.document);
+  expect(
+    published.response.status,
+    JSON.stringify(published.document),
+  ).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const images = await exportComponentRecords(
+    revisionId,
+    "printing-images",
+  );
+  expect(images).toEqual([
+    expect.objectContaining({
+      type: "printing_image",
+      role: "back",
+      content_sha256:
+        "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+      content_url: expect.stringMatching(
+        /^\/v1\/printing-images\/[^/]+\/content$/u,
+      ),
+    }),
+    expect.objectContaining({
+      type: "printing_image",
+      role: "front",
+      content_sha256:
+        "46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+      content_url: expect.stringMatching(
+        /^\/v1\/printing-images\/[^/]+\/content$/u,
+      ),
+    }),
+  ]);
+  for (const image of images) {
+    const object = await testEnv.PRINTING_IMAGES.get(
+      `printing-images/${image.content_sha256}`,
+    );
+    expect(object?.size).toBeGreaterThan(0);
+    expect(object?.checksums.sha256).toBeDefined();
+  }
 });
 
 test("distinct official Release events in one region retain stable public identities", async () => {
@@ -4258,8 +4297,13 @@ test("Product freshness is emitted only for an actually checked Product surface"
     "product-freshness-checked",
   );
   const checkedCandidate = await reconcile(checkedRun.id);
+  const checkedPublication = await approve(checkedCandidate.document);
+  expect(
+    checkedPublication.response.status,
+    JSON.stringify(checkedPublication.document),
+  ).toBe(200);
   const checkedRevision = requiredString(
-    (await approve(checkedCandidate.document)).document,
+    checkedPublication.document,
     "resulting_revision_id",
   );
   const checkedSnapshot = await testEnv.CATALOGUE_DB.prepare(
@@ -4302,7 +4346,12 @@ test("Product freshness is emitted only for an actually checked Product surface"
   expect(
     await exportComponentRecords(noCheckRevision, "products"),
   ).toContainEqual(
-    expect.objectContaining({ official_code: "ST-STANDALONE" }),
+    expect.objectContaining({
+      official_code: "ST-STANDALONE",
+      lifecycle: expect.objectContaining({
+        last_observed_revision_id: checkedRevision,
+      }),
+    }),
   );
 });
 
@@ -4638,6 +4687,23 @@ async function collect(
   expect(resumed.response.status).toBe(202);
   const document = await waitForRunState(id, "parsing", waitTimeoutMs);
   return { id, document };
+}
+
+function officialGundamUrl(
+  lineage: "gundam-en-asia" | "gundam-en-us",
+  surface: string,
+): string {
+  const base = lineage === "gundam-en-asia"
+    ? "https://www.gundam-gcg.com/asia-en"
+    : "https://www.gundam-gcg.com/en";
+  const paths: Record<string, string> = {
+    packages: "/cards/index.php",
+    products: "/products/list.php",
+    releases: "/products/list.php",
+    legality: "/rules/",
+    errata: "/news/?subcategory=rules",
+  };
+  return `${base}${paths[surface]}`;
 }
 
 async function collectRequests(

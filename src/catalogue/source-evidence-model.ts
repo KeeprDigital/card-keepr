@@ -2,6 +2,7 @@ import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertAdapterBinding,
   requiredSourceAdapter,
+  sourceAdapterRegistrations,
   type SourceAdapterRegistration,
 } from "./source-adapters";
 import { AdministrationProblem } from "./ingestion";
@@ -147,19 +148,18 @@ export async function validateEvidencePlan(
         "The Evidence Plan must contain every exact required Official Source surface once.",
       );
     }
-    if (adapter.requestPathForSurface === undefined) {
+    if (adapter.requestUrlForSurface === undefined) {
       throw new Error(
-        "A production adapter with required surfaces has no request-path contract.",
+        "A production adapter with required surfaces has no request-URL contract.",
       );
     }
     for (const sourceRequest of requests) {
       const surface = sourceRequest.id.slice(
         `${adapter.sourceLineage}:`.length,
       );
-      const url = new URL(sourceRequest.url);
       if (
-        url.pathname !== adapter.requestPathForSurface(surface) ||
-        url.hash.length > 0
+        new URL(sourceRequest.url).href !==
+          new URL(adapter.requestUrlForSurface(surface)).href
       ) {
         throw new AdministrationProblem(
           422,
@@ -212,6 +212,38 @@ export async function validateEvidencePlans(
       requestIds.add(sourceRequest.id);
     }
     plans.push(plan);
+  }
+  if (planOrigin === "production") {
+    const requiredLineagesByGame = new Map<string, Set<string>>();
+    for (const adapter of sourceAdapterRegistrations) {
+      if (
+        adapter.origin === "production" &&
+        adapter.reconciliationCoverage === "official_source"
+      ) {
+        const lineages =
+          requiredLineagesByGame.get(adapter.supportedGame) ?? new Set();
+        lineages.add(adapter.sourceLineage);
+        requiredLineagesByGame.set(adapter.supportedGame, lineages);
+      }
+    }
+    for (const game of new Set(plans.map(({ supported_game }) => supported_game))) {
+      const required = requiredLineagesByGame.get(game) ?? new Set();
+      const supplied = new Set(
+        plans
+          .filter(({ supported_game }) => supported_game === game)
+          .map(({ source_lineage }) => source_lineage),
+      );
+      if (
+        required.size !== supplied.size ||
+        [...required].some((lineage) => !supplied.has(lineage))
+      ) {
+        throw new AdministrationProblem(
+          422,
+          "incomplete_source_lineages",
+          "Every accepted Official Source lineage for each selected Supported Game must be planned together.",
+        );
+      }
+    }
   }
   return plans;
 }

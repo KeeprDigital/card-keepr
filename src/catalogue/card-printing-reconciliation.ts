@@ -12,6 +12,7 @@ import {
 import type {
   FixtureCandidate,
   FixtureCard,
+  FixturePrintingImage,
   FixturePrinting,
   SupportedGame,
 } from "./fixture";
@@ -106,6 +107,9 @@ export async function reconcileRetainedCardPrintingEvidence(
   );
   const printings = new Map<string, FixturePrinting>(
     priorCandidate?.printings.map((printing) => [printing.id, printing]) ?? [],
+  );
+  const printingImages = new Map<string, FixturePrintingImage>(
+    priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
   const localCardFacts = new Map<string, string>();
   const localPrintingFacts = new Map<
@@ -351,6 +355,33 @@ export async function reconcileRetainedCardPrintingEvidence(
           ...acceptedPrinting,
         });
       }
+      for (const image of observation.printingImages) {
+        const id =
+          `printing_image_${printingId.slice("printing_".length)}_` +
+          `${image.role}_${image.content_sha256.slice(0, 12)}`;
+        const candidateImage: FixturePrintingImage = {
+          id,
+          printing_id: printingId,
+          object_key: `printing-images/${image.content_sha256}`,
+          ...image,
+        };
+        const existingImage = printingImages.get(id);
+        if (
+          existingImage !== undefined &&
+          canonicalJson(existingImage) !== canonicalJson(candidateImage)
+        ) {
+          diagnostics.push({
+            code: "retained_evidence_invalid",
+            source_observation_id: observation.sourceObservationId,
+            locator,
+            candidate_printing_ids: [printingId],
+            detail:
+              "A Printing Image identity maps to conflicting immutable bytes or metadata.",
+          });
+        } else {
+          printingImages.set(id, candidateImage);
+        }
+      }
       if (
         observation.supportedGame === "gundam" &&
         !(await hasOtherGundamLocaleEvidence(
@@ -521,6 +552,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       left.id.localeCompare(right.id),
     ),
     printings: [...printings.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+    printing_images: [...printingImages.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
     products: productCatalogue.products,

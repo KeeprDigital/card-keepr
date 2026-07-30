@@ -45,6 +45,49 @@ export default {
         headers: { etag: `"${pathname.slice(1)}"` },
       });
     }
+    const officialLineage = officialLineageForUrl(url);
+    if (officialLineage !== null) {
+      return new Response(
+        officialBandaiDataset(officialLineage, transportOutcome),
+        {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          etag: `"${officialLineage}-dataset-v1"`,
+        },
+        },
+      );
+    }
+    if (pathname === "/cardlist/") {
+      const parserFailure = request.headers.get("user-agent");
+      return new Response(
+        onePieceBandaiCardList(
+          parserFailure === "card-keepr-acceptance-parser/cap" ||
+            parserFailure === "card-keepr-acceptance-parser/pagination"
+            ? 2
+            : 1,
+        ),
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            etag: '"one-piece-card-list-v1"',
+          },
+        },
+      );
+    }
+    if (
+      pathname === "/products/" ||
+      pathname.startsWith("/rules/")
+    ) {
+      return new Response(
+        "<html><title>ONE PIECE CARD GAME PRODUCT RELEASE RULE ERRATA RESTRICTION</title><main>Official Bandai publication surface.</main></html>",
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            etag: `"one-piece-${pathname.replaceAll("/", "-")}-v1"`,
+          },
+        },
+      );
+    }
     const raw = officialRawSurfacePayload(pathname);
     if (raw !== null) {
       const surface = pathname.slice(pathname.lastIndexOf("/") + 1);
@@ -97,6 +140,117 @@ export default {
     return new Response("not found", { status: 404 });
   },
 };
+
+const officialLineageSurfaces = {
+  "one-piece-en": [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions",
+    "block-policy",
+    "errata",
+    "don-rules",
+  ],
+  "fusion-world-en": [
+    "card-search",
+    "products",
+    "releases",
+    "legality-current",
+    "legality-history",
+    "errata",
+  ],
+  "digimon-en": [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions-current",
+    "restrictions-history",
+    "errata",
+  ],
+  "gundam-en-asia": [
+    "packages",
+    "products",
+    "releases",
+    "legality",
+    "errata",
+  ],
+  "gundam-en-us": [
+    "packages",
+    "products",
+    "releases",
+    "legality",
+    "errata",
+  ],
+};
+
+function officialLineageForUrl(url) {
+  if (url.hostname === "en.onepiece-cardgame.com") return "one-piece-en";
+  if (url.hostname === "www.dbs-cardgame.com") return "fusion-world-en";
+  if (url.hostname === "world.digimoncard.com") return "digimon-en";
+  if (url.hostname === "www.gundam-gcg.com") {
+    return url.pathname.startsWith("/asia-en/")
+      ? "gundam-en-asia"
+      : "gundam-en-us";
+  }
+  return null;
+}
+
+function officialBandaiDataset(lineage, parserSignal) {
+  const publication = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    publisher: { "@type": "Organization", name: "Bandai" },
+    hasPart: officialLineageSurfaces[lineage].map((surface) => {
+      const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+      if (surface === "card-list") {
+        if (parserSignal?.endsWith("/cap")) {
+          payload.page_info.cap_signal = "Too many search results";
+        }
+        if (parserSignal?.endsWith("/pagination")) {
+          payload.page_info.partitions[0].pages = 2;
+          payload.page_info.partitions[0].has_next = true;
+        }
+      }
+      return {
+        "@type": "Dataset",
+        identifier: `${lineage}:${surface}`,
+        payload,
+      };
+    }),
+  };
+  return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title><script type="application/ld+json">${
+    JSON.stringify(publication).replaceAll("<", "\\u003c")
+  }</script></html>`;
+}
+
+function onePieceBandaiCardList(declaredCount) {
+  return `
+    <html><title>ONE PIECE CARD LIST</title>
+    <select id="series">
+      <option value="synthetic-op99">Synthetic Set [OP99]</option>
+    </select>
+    <div class="countCol">${declaredCount} results</div>
+    <dl class="modalCol" id="OP99-001">
+      <dt>
+        <div class="infoCol"><span>OP99-001</span> | <span>L</span> | <span>LEADER</span></div>
+        <div class="cardName">Synthetic Leader</div>
+      </dt>
+      <dd>
+        <div class="frontCol"><img data-src="../images/OP99-001.png"></div>
+        <div class="backCol">
+          <div class="cost"><h3>Life</h3>5</div>
+          <div class="attribute"><h3>Attribute</h3>Strike</div>
+          <div class="power"><h3>Power</h3>5000</div>
+          <div class="counter"><h3>Counter</h3>-</div>
+          <div class="color"><h3>Color</h3>Red</div>
+          <div class="block"><h3>Block icon</h3>1</div>
+          <div class="feature"><h3>Type</h3>Test</div>
+          <div class="text"><h3>Effect</h3>Official effect</div>
+          <div class="getInfo"><h3>Card Set(s)</h3>Synthetic Set [OP99]</div>
+        </div>
+      </dd>
+    </dl></html>`;
+}
 
 export const officialDiscoveryDefinitions = {
   "/catalogue-discovery": digimonDefinition(),
@@ -325,7 +479,16 @@ export function officialRawSurfacePayload(pathname) {
         total: document[keys.listing].entries.length,
         has_next: false,
         entries: document[keys.listing].entries,
-      }],
+      }, ...(lineage === "fusion-world-en"
+        ? [{
+            bucket: "card_type=battle&colour=red&cost=1",
+            page: 1,
+            pages: 1,
+            total: 0,
+            has_next: false,
+            entries: [],
+          }]
+        : [])],
     };
     const details = document[keys.details].map((detail) =>
       upstreamDetail(lineage, detail)

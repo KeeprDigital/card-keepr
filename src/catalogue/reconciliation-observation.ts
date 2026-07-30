@@ -1,5 +1,6 @@
 import type {
   FixtureCard,
+  FixturePrintingImage,
   FixturePrinting,
   SupportedGame,
 } from "./fixture";
@@ -50,6 +51,10 @@ export type ParsedReconciliationObservation = Readonly<{
   treatment: string | null;
   demonstrablyNovel: boolean;
   noveltyProofComplete: boolean;
+  printingImages: readonly Omit<
+    FixturePrintingImage,
+    "id" | "printing_id" | "object_key"
+  >[];
   memberships: Memberships;
   withdrawal: Withdrawal | null;
   productReleaseValue: unknown;
@@ -108,6 +113,11 @@ const appearanceImageFields = new Set([
   "role",
   "source_url",
   "artwork_fingerprint",
+  "media_type",
+  "width",
+  "height",
+  "content_sha256",
+  "content_base64",
 ]);
 const completenessFields = new Set([
   "structurally_complete",
@@ -168,6 +178,7 @@ export function parseReconciliationObservation(
       treatment: null,
       demonstrablyNovel: false,
       noveltyProofComplete: true,
+      printingImages: [],
       memberships: {
         products: [],
         distribution_contexts: [],
@@ -282,6 +293,7 @@ export function parseReconciliationObservation(
       treatment: null,
       demonstrablyNovel: false,
       noveltyProofComplete: true,
+      printingImages: [],
       memberships: parseMemberships(record.memberships),
       withdrawal: parseWithdrawal(record.withdrawal, false),
       productReleaseValue: record.product_release_catalogue,
@@ -369,7 +381,7 @@ export function parseReconciliationObservation(
     identityEvidence.artwork_fingerprint,
     "identity_evidence.artwork_fingerprint",
   );
-  const appearanceComplete = appearanceEvidenceComplete(
+  const appearance = appearanceEvidence(
     record.appearance_evidence,
     artworkFingerprint,
     profile,
@@ -394,11 +406,12 @@ export function parseReconciliationObservation(
     ),
     demonstrablyNovel: identityEvidence.demonstrably_novel === true,
     noveltyProofComplete:
-      appearanceComplete &&
+      appearance.complete &&
       validNoveltyBasis(
         identityEvidence.novelty_basis,
         artworkFingerprint,
       ),
+    printingImages: appearance.images,
     memberships: parseMemberships(record.memberships),
     withdrawal: parseWithdrawal(record.withdrawal, true),
     productReleaseValue: record.product_release_catalogue,
@@ -524,14 +537,26 @@ function inspectSharedObservationFields(
   }
 }
 
-function appearanceEvidenceComplete(
+function appearanceEvidence(
   value: unknown,
   artworkFingerprint: string,
   profile: string,
   cardAttributes: Record<string, unknown>,
-): boolean {
-  if (!isRecord(value) || !Array.isArray(value.images)) return false;
+): {
+  complete: boolean;
+  images: Omit<
+    FixturePrintingImage,
+    "id" | "printing_id" | "object_key"
+  >[];
+} {
+  if (!isRecord(value) || !Array.isArray(value.images)) {
+    return { complete: false, images: [] };
+  }
   const roles = new Set<string>();
+  const captured: Omit<
+    FixturePrintingImage,
+    "id" | "printing_id" | "object_key"
+  >[] = [];
   for (const item of value.images) {
     if (
       !isRecord(item) ||
@@ -540,13 +565,50 @@ function appearanceEvidenceComplete(
       !item.source_url.startsWith("https://") ||
       item.artwork_fingerprint !== artworkFingerprint
     ) {
-      return false;
+      return { complete: false, images: [] };
     }
     roles.add(item.role);
+    if (
+      typeof item.media_type === "string" &&
+      item.media_type.startsWith("image/") &&
+      Number.isInteger(item.width) &&
+      Number(item.width) > 0 &&
+      Number.isInteger(item.height) &&
+      Number(item.height) > 0 &&
+      typeof item.content_sha256 === "string" &&
+      /^[a-f0-9]{64}$/u.test(item.content_sha256) &&
+      typeof item.content_base64 === "string" &&
+      item.content_base64.length > 0
+    ) {
+      const bytes = decodeBase64(item.content_base64);
+      captured.push({
+        role: item.role,
+        media_type: item.media_type as `image/${string}`,
+        width: Number(item.width),
+        height: Number(item.height),
+        content_sha256: item.content_sha256,
+        content_byte_length: bytes.byteLength,
+        source_url: item.source_url,
+        content_base64: item.content_base64,
+      });
+    }
   }
-  return profile === "fusion-world@1" && cardAttributes.card_type === "leader"
+  const complete =
+    profile === "fusion-world@1" && cardAttributes.card_type === "leader"
     ? roles.has("front") && roles.has("back")
     : roles.has("front");
+  return { complete, images: captured };
+}
+
+function decodeBase64(value: string): Uint8Array {
+  try {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) =>
+      character.charCodeAt(0)
+    );
+  } catch {
+    throw new Error("Printing Image captured bytes are not valid base64.");
+  }
 }
 
 function validNoveltyBasis(value: unknown, artworkFingerprint: string): boolean {

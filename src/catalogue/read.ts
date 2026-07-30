@@ -36,6 +36,14 @@ type PrintingEnvelope = {
   disagreements: unknown[];
 };
 
+type PrintingImageRow = {
+  media_type: string;
+  content_sha256: string;
+  content_byte_length: number;
+  object_key: string;
+  current_revision_id: string;
+};
+
 export class PrintingReadProblem extends Error {
   readonly status = 400;
   readonly code = "invalid_parameter";
@@ -171,6 +179,87 @@ export async function currentPrintingResponse(
       links: { self: canonicalDetailSelf(url, include) },
     },
     { headers },
+  );
+}
+
+export async function printingImageContentResponse(
+  request: Request,
+  database: D1Database,
+  bucket: R2Bucket,
+  imageId: string,
+): Promise<Response | null> {
+  const row = await database
+    .prepare(
+      `SELECT
+         image.media_type,
+         image.content_sha256,
+         image.content_byte_length,
+         image.object_key,
+         catalogue.current_revision_id
+       FROM catalogue_state AS catalogue
+       JOIN revision_printing_images AS membership
+         ON membership.catalogue_revision_id =
+           catalogue.current_revision_id
+       JOIN reconciled_printing_images AS image
+         ON image.id = membership.image_id
+       JOIN revision_printings AS printing
+         ON printing.catalogue_revision_id = catalogue.current_revision_id
+        AND printing.printing_id = membership.printing_id
+       WHERE catalogue.singleton = 1 AND image.id = ?`,
+    )
+    .bind(imageId)
+    .first<PrintingImageRow>();
+  if (row === null) return null;
+
+  const etag = `"${row.content_sha256}"`;
+  const baseHeaders = new Headers({
+    "accept-ranges": "bytes",
+    "cache-control": "private, max-age=31536000, immutable",
+    etag,
+    "x-catalogue-revision": row.current_revision_id,
+  });
+  if (ifNoneMatch(request, etag)) {
+    return new Response(null, { status: 304, headers: baseHeaders });
+  }
+  const range = parseRange(
+    request.headers.get("range"),
+    row.content_byte_length,
+  );
+  if (range === "unsatisfiable") {
+    baseHeaders.set(
+      "content-range",
+      `bytes */${row.content_byte_length}`,
+    );
+    baseHeaders.set("cache-control", "no-store");
+    return new Response(null, { status: 416, headers: baseHeaders });
+  }
+  const object =
+    request.method === "HEAD"
+      ? await bucket.head(row.object_key)
+      : await bucket.get(
+          row.object_key,
+          range === null ? {} : { range },
+        );
+  if (object === null || object.size !== row.content_byte_length) {
+    throw new Error("Published Printing Image content is unavailable.");
+  }
+  const responseLength =
+    range === null ? row.content_byte_length : range.length;
+  baseHeaders.set("content-length", String(responseLength));
+  baseHeaders.set("content-type", row.media_type);
+  if (range !== null) {
+    baseHeaders.set(
+      "content-range",
+      `bytes ${range.offset}-${range.offset + range.length - 1}/` +
+        row.content_byte_length,
+    );
+  }
+  return new Response(
+    request.method === "HEAD" ? null : (object as R2ObjectBody).body,
+    {
+      status: range === null ? 200 : 206,
+      headers: baseHeaders,
+    },
   );
 }
 

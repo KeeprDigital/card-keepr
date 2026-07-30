@@ -6,6 +6,7 @@ import {
   currentCardResponse,
   currentCatalogueStatus,
   currentPrintingResponse,
+  printingImageContentResponse,
   PrintingReadProblem,
 } from "../../../src/catalogue/read";
 import {
@@ -134,6 +135,21 @@ const apiWorker = {
           request,
           await currentPrintingsResponse(env.CATALOGUE_DB, request),
         );
+      }
+
+      const printingImageContentMatch =
+        /^\/v1\/printing-images\/([^/]+)\/content$/.exec(url.pathname);
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        printingImageContentMatch !== null
+      ) {
+        const response = await printingImageContentResponse(
+          request,
+          env.CATALOGUE_DB,
+          env.PRINTING_IMAGES,
+          decodeURIComponent(printingImageContentMatch[1]!),
+        );
+        if (response !== null) return withCorsHeaders(request, response);
       }
 
       if (request.method === "GET" && url.pathname === "/v1/products") {

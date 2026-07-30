@@ -20,6 +20,7 @@ export type FixtureCandidate = {
   selected_games: readonly SupportedGame[];
   cards: readonly FixtureCard[];
   printings: readonly FixturePrinting[];
+  printing_images?: readonly FixturePrintingImage[];
   products?: readonly CatalogueProduct[];
   distribution_contexts?: readonly CatalogueDistributionContext[];
   product_relationships?: readonly ProductRelationship[];
@@ -73,6 +74,20 @@ export type FixturePrinting = {
       | "gundam@1";
     attributes: Record<string, unknown>;
   } | null;
+};
+
+export type FixturePrintingImage = {
+  id: string;
+  printing_id: string;
+  role: "front" | "back" | "other";
+  media_type: `image/${string}`;
+  width: number;
+  height: number;
+  content_sha256: string;
+  content_byte_length: number;
+  object_key: string;
+  source_url: string;
+  content_base64: string;
 };
 
 export async function fixtureCandidate(
