@@ -1506,6 +1506,8 @@ function deterministicNoise(seed: number, length: number) {
     value += state.toString(36).padStart(7, "0");
   }
   return value.slice(0, length);
+}
+
 async function apiCredentialConsumerTestResponse(
   request: Request,
 ): Promise<Response> {
