@@ -2,6 +2,7 @@ import { AdministrationProblem } from "./ingestion";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertAdapterBinding,
+  assertAdapterRequestSurface,
   requiredSourceAdapter,
 } from "./source-adapters";
 import {
@@ -54,6 +55,7 @@ export async function parseSnapshot(
     supportedGame: snapshot.supported_game,
     gameProfileVersion: snapshot.game_profile_version,
   });
+  assertAdapterRequestSurface(adapter, new URL(snapshot.request_url));
   if (snapshot.content_byte_length > adapter.maximumSnapshotBytes) {
     throw new AdministrationProblem(
       422,

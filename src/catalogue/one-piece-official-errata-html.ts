@@ -39,6 +39,7 @@ type PairDraft = {
   ordinal: number;
   labelParts: string[];
   valueParts: string[];
+  valueContainerCount: number;
 };
 
 type NoticeDraft = {
@@ -79,6 +80,7 @@ export async function parseOnePieceOfficialErrataHtml(
   let matchedEntryCount = 0;
   let inventoriedHeadingCount = 0;
   const inventoriedModalTargets: string[] = [];
+  const recognizedModalFragments: string[] = [];
 
   const rewriter = new HTMLRewriter()
     .on("h3.pageTit", {
@@ -134,6 +136,20 @@ export async function parseOnePieceOfficialErrataHtml(
           );
         }
         inventoriedModalTargets.push(target);
+      },
+    })
+    .on(".contentsWrap div.errataModal", {
+      element(element) {
+        const id = element.getAttribute("id");
+        if (
+          id === null ||
+          !/^[A-Za-z][A-Za-z0-9_-]+$/.test(id)
+        ) {
+          return parseFailure(
+            "An Official Errata modal fragment is invalid.",
+          );
+        }
+        recognizedModalFragments.push(`#${id}`);
       },
     });
   const entryHandler: HTMLRewriterElementContentHandlers = {
@@ -212,6 +228,7 @@ export async function parseOnePieceOfficialErrataHtml(
         ordinal: activeEntry.nextWordingOrdinal,
         labelParts: [],
         valueParts: [],
+        valueContainerCount: 0,
       };
       activeEntry.nextWordingOrdinal += 1;
       activeEntry.pairs.push(pair);
@@ -230,6 +247,12 @@ export async function parseOnePieceOfficialErrataHtml(
       if (pair === undefined || activeValue !== null) {
         return parseFailure(
           "An Official Erratum field value is invalid.",
+        );
+      }
+      pair.valueContainerCount += 1;
+      if (pair.valueContainerCount !== 1) {
+        return parseFailure(
+          "An Official Erratum field must contain exactly one value container.",
         );
       }
       activeValue = pair.valueParts;
@@ -307,16 +330,20 @@ export async function parseOnePieceOfficialErrataHtml(
   ) {
     return parseFailure("The Official Errata page title is unavailable.");
   }
+  const uniqueModalTargets = new Set(inventoriedModalTargets);
+  const uniqueModalFragments = new Set(recognizedModalFragments);
+  const modalInventoryMatches =
+    uniqueModalTargets.size === inventoriedModalTargets.length &&
+    uniqueModalFragments.size === recognizedModalFragments.length &&
+    uniqueModalTargets.size === uniqueModalFragments.size &&
+    [...uniqueModalTargets].every((target) =>
+      uniqueModalFragments.has(target)
+    );
   if (
     inventoriedHeadingCount === 0 ||
     matchedEntryCount !== inventoriedHeadingCount ||
     observations.length !== inventoriedHeadingCount ||
-    inventoriedModalTargets.some(
-      (target) =>
-        !observations.some(
-          (observation) => observation.source.fragment === target,
-        ),
-    )
+    !modalInventoryMatches
   ) {
     return parseFailure(
       "The Official Errata entry enumeration is incomplete.",
@@ -367,6 +394,7 @@ function parsedEntry(
     ordinal: pair.ordinal,
     label: normalizedText(pair.labelParts),
     value: normalizedLines(pair.valueParts).join("\n"),
+    valueContainerCount: pair.valueContainerCount,
   }));
   const notices = entry.notices.map((notice) => ({
     ordinal: notice.ordinal,
@@ -376,7 +404,8 @@ function parsedEntry(
     pairs.length < 2 ||
     pairs.some((pair) =>
       !["Note:", "Before:", "After:"].includes(pair.label) ||
-      pair.value.length === 0
+      pair.value.length === 0 ||
+      pair.valueContainerCount !== 1
     ) ||
     notices.some((notice) => notice.value.length === 0)
   ) {

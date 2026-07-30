@@ -55,6 +55,23 @@ BEGIN
   SELECT RAISE(ABORT, 'reconciliation_workflow_request_immutable');
 END;
 
+CREATE TABLE reconciliation_terminal_results (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id),
+  result_json TEXT NOT NULL CHECK (json_valid(result_json))
+);
+
+CREATE TRIGGER reconciliation_terminal_results_are_immutable
+BEFORE UPDATE ON reconciliation_terminal_results
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_terminal_result_immutable');
+END;
+
+CREATE TRIGGER reconciliation_terminal_results_are_not_deleted
+BEFORE DELETE ON reconciliation_terminal_results
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_terminal_result_immutable');
+END;
+
 CREATE TABLE catalogue_search_repair_requests (
   idempotency_key TEXT PRIMARY KEY,
   target_revision_id TEXT NOT NULL,

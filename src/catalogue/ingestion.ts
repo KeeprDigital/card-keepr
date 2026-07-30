@@ -413,15 +413,19 @@ export async function administrationStatus(
       database
         .prepare(
           `WITH RECURSIVE retained(revision_id, depth) AS (
-             SELECT state.current_revision_id, 0
+             SELECT revision.id, 0
              FROM catalogue_state AS state
+             JOIN catalogue_revisions AS revision
+               ON revision.id = state.current_revision_id
              WHERE state.singleton = 1
              UNION ALL
-             SELECT revision.expected_previous_revision_id,
+             SELECT previous.id,
                     retained.depth + 1
              FROM retained
              JOIN catalogue_revisions AS revision
                ON revision.id = retained.revision_id
+             JOIN catalogue_revisions AS previous
+               ON previous.id = revision.expected_previous_revision_id
              WHERE retained.depth < 2
            )
            SELECT revision_id, depth

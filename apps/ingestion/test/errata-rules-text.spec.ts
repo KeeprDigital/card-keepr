@@ -9,6 +9,12 @@ import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evid
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import {
+  parseOnePieceOfficialErrataHtml,
+} from "../../../src/catalogue/one-piece-official-errata-html";
+import {
+  onePieceOfficialErrataHtml,
+} from "../../../acceptance/fixtures/one-piece-official-errata-html";
+import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
 } from "./fixture-plan-injection";
@@ -31,6 +37,60 @@ beforeEach(async () => {
 });
 
 describe("Errata rules-text lifecycle", () => {
+  test("the Official Errata parser rejects multiple value containers for one field label", async () => {
+    const malformed = onePieceOfficialErrataHtml.replace(
+      "<dd>This correction applies in every game format.</dd>",
+      "<dd>This correction applies in every game format.</dd>" +
+        "<dd>Injected second value container.</dd>",
+    );
+
+    await expect(
+      parseOnePieceOfficialErrataHtml(malformed),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "source_parse_failed",
+      message:
+        "An Official Erratum field must contain exactly one value container.",
+    });
+  });
+
+  test("the Official Errata parser requires a bijection of unique modal links and modal fragments", async () => {
+    const anchorPattern =
+      /(\s*<a class="modalOpen" data-src="#nov_11_2022_OP01-001">[\s\S]*?<\/a>)/u;
+    const listItemPattern =
+      /(\s*<li>\s*<a class="modalOpen"[\s\S]*?<\/li>)/u;
+    const anchor = anchorPattern.exec(onePieceOfficialErrataHtml)?.[1];
+    const listItem = listItemPattern.exec(onePieceOfficialErrataHtml)?.[1];
+    if (anchor === undefined || listItem === undefined) {
+      throw new Error("The retained modal fixture is unavailable.");
+    }
+    const duplicateModalWithoutLink = listItem.replace(
+      anchorPattern,
+      "",
+    );
+    const malformedDocuments = [
+      onePieceOfficialErrataHtml.replace(anchor, `${anchor}${anchor}`),
+      onePieceOfficialErrataHtml.replace(anchor, ""),
+      onePieceOfficialErrataHtml.replace(
+        'data-src="#nov_11_2022_OP01-001"',
+        'data-src="#orphan_OP01-001"',
+      ),
+      onePieceOfficialErrataHtml.replace(
+        listItem,
+        `${listItem}${duplicateModalWithoutLink}`,
+      ),
+    ];
+
+    for (const malformed of malformedDocuments) {
+      await expect(
+        parseOnePieceOfficialErrataHtml(malformed),
+      ).rejects.toMatchObject({
+        status: 422,
+        code: "source_parse_failed",
+      });
+    }
+  });
+
   test("generic production Card evidence cannot self-assert Official Errata authority", async () => {
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "one-piece",

@@ -767,7 +767,22 @@ async function resolveSearchRepairTarget(
     expectedCurrentRevision,
   );
   if (typeof resolved === "number") return resolved;
-  if (!resolved.repairableRevisionIds.includes(targetRevision)) {
+  const repairableRevisionIds = validatedRepairableRevisionIds(
+    resolved.repairableRevisionIds,
+    expectedCurrentRevision,
+  );
+  if (repairableRevisionIds === null) {
+    return writeFailure(
+      json,
+      {
+        code: "invalid_administration_contract",
+        detail:
+          "Production status did not expose the authoritative retained revision chain.",
+      },
+      8,
+    );
+  }
+  if (!repairableRevisionIds.includes(targetRevision)) {
     return resolvedTargetFailure(
       json,
       "The target Catalogue Revision was not resolved from the authoritative retained revision chain.",
@@ -801,29 +816,34 @@ async function resolveProductionStatus(
   );
   const repairableRevisionIds =
     status.document?.repairable_catalogue_revision_ids;
-  if (
-    productionTarget === null ||
-    !Array.isArray(repairableRevisionIds) ||
-    repairableRevisionIds.length < 1 ||
-    repairableRevisionIds.length > 3 ||
-    repairableRevisionIds[0] !== currentRevision ||
-    !repairableRevisionIds.every(
-      (revision) =>
-        typeof revision === "string" &&
-        /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision),
-    )
-  ) {
+  if (productionTarget === null) {
     return writeFailure(
       json,
       {
         code: "invalid_administration_contract",
         detail:
-          "Production status did not expose exact Cloudflare target identities and the authoritative retained revision chain.",
+          "Production status did not expose exact Cloudflare target identities.",
       },
       8,
     );
   }
   return { productionTarget, repairableRevisionIds };
+}
+
+function validatedRepairableRevisionIds(value, currentRevision) {
+  if (
+    !Array.isArray(value) ||
+    value.length > 3 ||
+    (value.length > 0 && value[0] !== currentRevision) ||
+    !value.every(
+      (revision) =>
+        typeof revision === "string" &&
+        /^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(revision),
+    )
+  ) {
+    return null;
+  }
+  return value;
 }
 
 function confirmProductionTarget(json, productionTarget, confirmation) {
@@ -837,7 +857,7 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
         `Resolved production target ${required}. ` +
         `Re-run with --confirm '${required}'.`,
     },
-    2,
+    3,
   );
 }
 
@@ -986,7 +1006,7 @@ function resolvedTargetFailure(json, detail) {
   return writeFailure(
     json,
     { code: "production_target_mismatch", detail },
-    2,
+    7,
   );
 }
 

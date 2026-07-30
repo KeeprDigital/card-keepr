@@ -8,20 +8,23 @@ without rewriting **Printed Rules Text**.
 The installed One Piece Official Errata adapter is bound to Bandai's documented
 English Errata surface:
 `https://en.onepiece-cardgame.com/rules/errata_card/`. Requests for that
-adapter do not accept substitute HTTPS hosts or paths.
+adapter do not accept substitute HTTPS hosts or paths. Reparse applies the
+same exact-surface check to the immutable `request_url` retained with the
+Source Snapshot before any bytes are parsed.
 
 The retained Source Snapshot is Bandai's UTF-8 HTML, not a producer-normalized
 JSON Card document. The versioned HTML adapter structurally enumerates both
 dated detail entries and historical modal entries inside the page's bounded
 content region. It requires the dated section or modal heading, Card heading,
 correction image, and exact `Before:`/`After:` pair for every enumerated entry;
-an independent inventory of Card headings and modal links must match the
-recognized entry containers and parsed observations, so a new container shape
-cannot disappear merely because known shapes remain. Unrelated footer or
-rules-change content is excluded. `Note:` fields and common notice qualifiers
-are retained with the `Before:`/`After:` fields in source order as
-`official_wording`; an unknown field fails closed. Its dedicated Erratum
-observation keeps the page's
+each field label has exactly one value container. An independent inventory of
+Card headings must match the recognized entry containers and parsed
+observations. Unique modal-link targets and unique recognized modal fragments
+form an exact bijection, so duplicate, missing, orphaned, or newly shaped modal
+content fails closed rather than disappearing. Unrelated footer or rules-change
+content is excluded. `Note:` fields and common notice qualifiers are retained
+with the `Before:`/`After:` fields in source order as `official_wording`; an
+unknown field fails closed. Its dedicated Erratum observation keeps the page's
 published date separate from `effective_from`: a dated page heading does not
 invent an official applicability date, so `effective_from` remains `null`
 unless the source explicitly supplies one. `Before:` is observed Printed Rules

@@ -227,7 +227,11 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     ],
     environment,
   );
-  assert.equal(unconfirmed.code, 2, unconfirmed.stderr);
+  assert.equal(
+    unconfirmed.code,
+    3,
+    "declining exact production confirmation is a confirmation exit",
+  );
   assert.deepEqual(JSON.parse(unconfirmed.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
@@ -261,7 +265,11 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
     ],
     environment,
   );
-  assert.equal(wronglyConfirmed.code, 2, wronglyConfirmed.stderr);
+  assert.equal(
+    wronglyConfirmed.code,
+    3,
+    "altering exact production confirmation is a confirmation exit",
+  );
   assert.equal(
     JSON.parse(wronglyConfirmed.stdout).code,
     "confirmation_required",
@@ -325,7 +333,7 @@ test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10"
         safe_state: {
           current_revision_id: "catrev_cli_demo",
         },
-        repairable_catalogue_revision_ids: ["catrev_cli_demo"],
+        repairable_catalogue_revision_ids: [],
       }));
       return;
     }
@@ -715,7 +723,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     ],
     environment,
   );
-  assert.equal(staleTarget.code, 2, staleTarget.stderr);
+  assert.equal(
+    staleTarget.code,
+    7,
+    "a resolved production revision mismatch is a stale-conflict exit",
+  );
   assert.deepEqual(JSON.parse(staleTarget.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",

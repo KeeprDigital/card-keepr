@@ -44,6 +44,10 @@ test("the repository CLI rejects Official Errata authority outside the documente
     apiKey,
     "Errata authority runtime",
   );
+  const environment = {
+    KEEPR_ADMINISTRATION_KEY: administrationKey,
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+  };
   const result = await runCli(
     [
       "source",
@@ -62,13 +66,49 @@ test("the repository CLI rejects Official Errata authority outside the documente
       "reject-untrusted-errata-authority",
       "--json",
     ],
-    {
-      KEEPR_ADMINISTRATION_KEY: administrationKey,
-      KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
-    },
+    environment,
   );
   assert.equal(result.code, 8, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "official_source_surface_mismatch",
+    detail:
+      "The Official Errata adapter accepts only https://en.onepiece-cardgame.com/rules/errata_card/.",
+  });
+
+  const untrustedRun = await collectSource(
+    {
+      adapter: "one-piece-json-document@1",
+      idempotencyKey: "retain-untrusted-generic-surface",
+      requestId: "untrusted-generic",
+      url: "https://publisher.example/claims/untrusted-card-list.json",
+    },
+    environment,
+  );
+  const completed = await resumeAndWait(
+    untrustedRun.id,
+    environment,
+    runtime,
+  );
+  const snapshotId = completed.snapshots?.[0]?.id;
+  assert.equal(typeof snapshotId, "string");
+  const reparse = await runCli(
+    [
+      "snapshot",
+      "reparse",
+      "--snapshot-id",
+      snapshotId,
+      "--adapter",
+      "one-piece-official-errata-html@1",
+      "--idempotency-key",
+      "reject-retained-untrusted-errata-authority",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(reparse.code, 8, reparse.stderr);
+  assert.deepEqual(JSON.parse(reparse.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
     code: "official_source_surface_mismatch",
@@ -173,30 +213,12 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const initialStatusDocument = JSON.parse(initialStatus.stdout);
   const bootstrapRevision =
     initialStatusDocument.safe_state.current_revision_id;
+  assert.deepEqual(
+    initialStatusDocument.repairable_catalogue_revision_ids,
+    [],
+  );
   cliEnvironment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION =
     JSON.stringify(initialStatusDocument.production_target);
-  const repaired = await runCli(
-    [
-      "catalogue",
-      "search",
-      "repair",
-      "--target-revision",
-      bootstrapRevision,
-      "--expected-current-revision",
-      bootstrapRevision,
-      "--idempotency-key",
-      "repair-bootstrap-search",
-      "--environment",
-      "production",
-      "--confirm",
-      cliEnvironment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION,
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(repaired.code, 0, repaired.stderr);
-  assert.equal(JSON.parse(repaired.stdout).complete, true);
 
   const seedRun = await collectFixtureSource(
     {
@@ -481,7 +503,7 @@ async function resumeAndWait(runId, environment, runtime) {
     environment,
   );
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(runId, "parsing", environment, runtime);
+  return waitForRunState(runId, "parsing", environment, runtime);
 }
 
 async function reconcileAndWait(

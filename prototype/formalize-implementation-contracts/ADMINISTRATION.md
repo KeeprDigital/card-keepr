@@ -72,8 +72,9 @@ revision fails closed.
 HTTP `202`, and exact replays whose Workflow remains queued, running, waiting,
 or paused, exit `10`. Only a terminal result exits `0`. A paused exact instance
 is resumed. An errored or terminated instance deterministically consumes any
-retained reconciliation result, or idempotently finalizes the run as failed
-and releases its global mutation lock when no result was committed. This also
+retained reconciliation result. The first exact no-candidate terminal failure
+result is retained immutably before the global mutation lock is released, so a
+later loss of Workflow output or error detail cannot alter replay. This also
 recovers a Workflow whose failure-finalization step itself exhausted retries.
 
 `catalogue search repair` performs one resumable, byte-bounded repair step. Its
@@ -84,8 +85,16 @@ limited to that revision plus its two immediate predecessors. Every unfinished
 replay atomically rechecks the retained expected-current guard before claiming
 another step. An exact completed replay returns the persisted result; a stale
 expected revision or conflicting idempotency request fails closed.
+Before retaining or claiming an unfinished request, every source
+`revision_cards.document_json` is checked against a durable 65,536-byte UTF-8
+bound. An oversized legacy Card fails with HTTP `422` before any search
+materialization begins. Within that per-Card source bound, each repair step
+remains limited to 25 Cards and 65,536 bytes of bound SQL parameters.
 The CLI resolves that repair window from the authoritative retained revision
 chain in production status, never from the bounded recent-run diagnostic list.
+Every advertised member joins to a real published Catalogue Revision; the
+unpublished bootstrap spine is never a repair target. Reconciliation target
+validation remains independent of this repair-only window.
 
 ## Catalogue Export deletion
 

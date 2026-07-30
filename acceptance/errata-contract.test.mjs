@@ -85,6 +85,23 @@ test("the 0007 schema migration is additive and leaves historical Card backfill 
     /expected_current_revision_id[\s\S]*REFERENCES catalogue_revisions\(id\)/u,
     "the bootstrap Catalogue state identity is valid before the first Catalogue Revision row exists",
   );
+  const terminalResults =
+    /CREATE TABLE reconciliation_terminal_results \(([\s\S]*?)\n\);/u
+      .exec(migration)?.[1] ?? "";
+  assert.match(
+    terminalResults,
+    /ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs\(id\)/u,
+  );
+  assert.match(terminalResults, /result_json TEXT NOT NULL/u);
+  assert.match(terminalResults, /json_valid\(result_json\)/u);
+  assert.match(
+    migration,
+    /CREATE TRIGGER reconciliation_terminal_results_are_immutable/u,
+  );
+  assert.match(
+    migration,
+    /CREATE TRIGGER reconciliation_terminal_results_are_not_deleted/u,
+  );
 });
 
 test("the Card collection contract normatively exposes projection unavailability as 503", async () => {

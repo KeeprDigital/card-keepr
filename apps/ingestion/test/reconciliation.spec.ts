@@ -587,6 +587,7 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
     ).first(),
   ).resolves.toMatchObject({ active_ingestion_run_id: null });
 
+  instanceStatus = { status: "errored" };
   const exactReplay = await startOrObserveReconciliationWorkflow(
     testEnv.CATALOGUE_DB,
     workflow,
@@ -594,53 +595,6 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
     "2026-07-31T03:00:00.000Z",
   );
   expect(exactReplay.document).toEqual(recovered.document);
-});
-
-test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
-  const status = await get("/v1/status");
-  const safeState = requiredRecord(status.document.safe_state, "safe_state");
-  const revisionId = requiredString(safeState, "current_revision_id");
-  const request = {
-    target_revision_id: revisionId,
-    expected_current_revision_id: revisionId,
-    idempotency_key: "guarded-search-repair",
-  };
-  const first = await post(
-    "/v1/catalogue-search-materialization/repair",
-    request,
-  );
-  expect(first.response.status).toBe(200);
-  expect(first.document).toMatchObject({
-    contract: "card-keepr-card-search-repair@1",
-    complete: expect.any(Boolean),
-  });
-  const replay = await post(
-    "/v1/catalogue-search-materialization/repair",
-    request,
-  );
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toEqual(first.document);
-
-  const conflict = await post(
-    "/v1/catalogue-search-materialization/repair",
-    {
-      ...request,
-      target_revision_id: "catrev_conflicting_repair_target",
-    },
-  );
-  expect(conflict.response.status).toBe(409);
-  expect(conflict.document).toMatchObject({ code: "idempotency_conflict" });
-
-  const stale = await post(
-    "/v1/catalogue-search-materialization/repair",
-    {
-      target_revision_id: revisionId,
-      expected_current_revision_id: "catrev_stale_repair_current",
-      idempotency_key: "guarded-search-repair-stale",
-    },
-  );
-  expect(stale.response.status).toBe(409);
-  expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 });
 
 test("an empty published revision has an available projection and concurrent repair steps converge by CAS", async () => {
@@ -6001,6 +5955,121 @@ test("Card search repair permits only retained revisions and revalidates unfinis
   expect(staleReplay.response.status).toBe(409);
   expect(staleReplay.document).toMatchObject({
     code: "current_revision_mismatch",
+  });
+}, 60_000);
+
+test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
+  const run = await collect(
+    "/reconciliation/complete-empty-lineage",
+    "guarded-search-repair-published-target",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const request = {
+    target_revision_id: revisionId,
+    expected_current_revision_id: revisionId,
+    idempotency_key: "guarded-search-repair",
+  };
+  const first = await post(
+    "/v1/catalogue-search-materialization/repair",
+    request,
+  );
+  expect(first.response.status).toBe(200);
+  expect(first.document).toMatchObject({
+    contract: "card-keepr-card-search-repair@1",
+    complete: expect.any(Boolean),
+  });
+  const replay = await post(
+    "/v1/catalogue-search-materialization/repair",
+    request,
+  );
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(first.document);
+
+  const conflict = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      ...request,
+      target_revision_id: "catrev_conflicting_repair_target",
+    },
+  );
+  expect(conflict.response.status).toBe(409);
+  expect(conflict.document).toMatchObject({ code: "idempotency_conflict" });
+
+  const stale = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      target_revision_id: revisionId,
+      expected_current_revision_id: "catrev_stale_repair_current",
+      idempotency_key: "guarded-search-repair-stale",
+    },
+  );
+  expect(stale.response.status).toBe(409);
+  expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
+}, 60_000);
+
+test("Card search repair rejects an oversized legacy Card before materializing it", async () => {
+  const run = await collect(
+    "/reconciliation/base",
+    "oversized-legacy-search-repair",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const oversizedCardId = "card_oversized_legacy_search_repair";
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_cards (
+         catalogue_revision_id, card_id, document_json
+       ) VALUES (?, ?, ?)`,
+    ).bind(
+      revisionId,
+      oversizedCardId,
+      JSON.stringify({
+        type: "card",
+        id: oversizedCardId,
+        game: "one-piece",
+        official_identity: {
+          kind: "card_number",
+          value: "OVERSIZED-001",
+        },
+        name: "Oversized legacy Card",
+        effective_rules_text: "x".repeat(65_536),
+        game_data: {},
+        lifecycle: {},
+        links: {},
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM catalogue_query_revisions
+       WHERE catalogue_revision_id = ?`,
+    ).bind(revisionId),
+  ]);
+
+  const repair = await post(
+    "/v1/catalogue-search-materialization/repair",
+    {
+      target_revision_id: revisionId,
+      expected_current_revision_id: revisionId,
+      idempotency_key: "reject-oversized-legacy-search-repair",
+    },
+  );
+  expect(repair.response.status).toBe(422);
+  expect(repair.document).toMatchObject({
+    code: "catalogue_search_repair_source_too_large",
+    detail:
+      "A retained Card exceeds the durable 65536-byte search repair source bound.",
   });
 }, 60_000);
 

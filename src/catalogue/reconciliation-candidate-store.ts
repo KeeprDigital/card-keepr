@@ -275,12 +275,14 @@ export async function failReconciliation(
   runId: string,
   diagnostics: readonly Record<string, unknown>[],
   observedAt: string,
-): Promise<void> {
+): Promise<Record<string, unknown>> {
   const runDiagnostics = diagnostics.map((diagnostic) => ({
     code: String(diagnostic.code),
     detail: String(diagnostic.detail),
   }));
+  const result = terminalFailureResult(runId, diagnostics);
   await database.batch([
+    terminalResultInsertion(database, runId, result),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -309,6 +311,7 @@ export async function failReconciliation(
       )
       .bind(runId),
   ]);
+  return requiredTerminalResult(database, runId);
 }
 
 export async function failReconciliationWorkflow(
@@ -321,7 +324,9 @@ export async function failReconciliationWorkflow(
     code: "reconciliation_workflow_failed",
     detail,
   };
+  const result = terminalFailureResult(runId, [diagnostic]);
   await database.batch([
+    terminalResultInsertion(database, runId, result),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -347,17 +352,7 @@ export async function failReconciliationWorkflow(
       )
       .bind(runId, runId),
   ]);
-  return {
-    contract: "card-keepr-card-printing-reconciliation@2",
-    run_id: runId,
-    state: "failed",
-    publishable: false,
-    cards: [],
-    printings: [],
-    errata: [],
-    diagnostics: [diagnostic],
-    warnings: [],
-  };
+  return requiredTerminalResult(database, runId);
 }
 
 type CandidatePlanInput = {
@@ -508,6 +503,8 @@ export async function retainedReconciliationResult(
   database: D1Database,
   runId: string,
 ): Promise<Record<string, unknown>> {
+  const terminal = await terminalResult(database, runId);
+  if (terminal !== null) return terminal;
   const row = await database
     .prepare(
       `SELECT run.candidate_json, run.candidate_digest,
@@ -565,6 +562,80 @@ export async function retainedReconciliationResult(
     diagnostics: response.diagnostics,
     warnings: response.warnings,
   };
+}
+
+function terminalFailureResult(
+  runId: string,
+  diagnostics: readonly Record<string, unknown>[],
+): Record<string, unknown> {
+  return {
+    contract: "card-keepr-card-printing-reconciliation@2",
+    run_id: runId,
+    state: "failed",
+    publishable: false,
+    cards: [],
+    printings: [],
+    errata: [],
+    diagnostics,
+    warnings: [],
+  };
+}
+
+function terminalResultInsertion(
+  database: D1Database,
+  runId: string,
+  result: Record<string, unknown>,
+): D1PreparedStatement {
+  return database
+    .prepare(
+      `INSERT OR IGNORE INTO reconciliation_terminal_results (
+         ingestion_run_id, result_json
+       ) VALUES (?, ?)`,
+    )
+    .bind(runId, canonicalJson(result));
+}
+
+async function requiredTerminalResult(
+  database: D1Database,
+  runId: string,
+): Promise<Record<string, unknown>> {
+  const result = await terminalResult(database, runId);
+  if (result === null) {
+    throw new Error("The terminal reconciliation result is unavailable.");
+  }
+  return result;
+}
+
+async function terminalResult(
+  database: D1Database,
+  runId: string,
+): Promise<Record<string, unknown> | null> {
+  const row = await database
+    .prepare(
+      `SELECT result_json
+       FROM reconciliation_terminal_results
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<{ result_json: string }>();
+  if (row === null) return null;
+  const parsed = JSON.parse(row.result_json) as unknown;
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !("contract" in parsed) ||
+    parsed.contract !== "card-keepr-card-printing-reconciliation@2" ||
+    !("run_id" in parsed) ||
+    parsed.run_id !== runId ||
+    !("state" in parsed) ||
+    parsed.state !== "failed" ||
+    !("publishable" in parsed) ||
+    parsed.publishable !== false
+  ) {
+    throw new Error("The retained terminal reconciliation result is invalid.");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function reconciliationResponseMetadata(value: unknown): {

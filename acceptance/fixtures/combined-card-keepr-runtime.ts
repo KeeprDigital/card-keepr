@@ -59,6 +59,7 @@ export default {
     }
     return (
       url.pathname.startsWith("/v1/ingestion-runs/") ||
+      url.pathname.startsWith("/v1/source-snapshots/") ||
       url.pathname === "/v1/status" ||
       url.pathname.startsWith("/v1/reconciliation/") ||
       url.pathname === "/v1/catalogue-search-materialization/repair"

@@ -103,9 +103,11 @@ Reconciliation is an authenticated owner action. Before sending the mutation,
 the CLI resolves the named production Ingestion Run, its bound Catalogue
 Revision, and the exact Cloudflare account, Worker scripts, D1 databases, and
 R2 buckets returned by production status. `--confirm` must equal that complete
-resolved target document; absent or altered confirmation performs no mutation.
-An accepted Workflow that is not yet terminal exits `10`; exact replays return
-`0` only after terminal output is available.
+resolved target document; absent or altered confirmation performs no mutation
+and exits `3`. A stale resolved run, Catalogue Revision, or retained repair
+target exits `7`; exit `2` is reserved for malformed usage. An accepted
+Workflow that is not yet terminal exits `10`; exact replays return `0` only
+after terminal output is available.
 
 After applying the Errata/search migration to a database that already contains
 Catalogue Revisions, run the bounded, idempotent search repair until its JSON
@@ -125,9 +127,12 @@ npm run keepr -- catalogue search repair \
 Card search repair is limited to the authoritative retained chain returned by
 production status: the current Catalogue Revision and its two immediate
 predecessors. It does not infer that chain from the bounded recent-run
-diagnostics. Run the command again with a new idempotency key for each bounded
-step until it reports `"complete": true`. Legacy revisions outside that
-retained window stay archived and cannot be repaired. Newly published revisions
+diagnostics, and it never advertises the unpublished bootstrap spine. Run the
+command again with a new idempotency key for each bounded step until it reports
+`"complete": true`. Legacy revisions outside that retained window stay
+archived and cannot be repaired. A legacy Card whose retained JSON exceeds the
+durable 65,536-byte UTF-8 source bound fails with HTTP `422` before the repair
+request is retained or search materialization begins. Newly published revisions
 write their selective literal n-gram search material and availability marker
 atomically.
 

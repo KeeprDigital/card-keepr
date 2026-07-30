@@ -67,6 +67,18 @@ test("the administration authentication boundary runs in the Workers runtime", a
   });
 });
 
+test("administration status excludes the unpublished bootstrap spine from the repairable revision chain", async () => {
+  const status = await administrationRequest("/v1/status");
+
+  expect(status.response.status).toBe(200);
+  expect(status.document).toMatchObject({
+    safe_state: {
+      current_revision_id: "catrev_spine_000",
+    },
+    repairable_catalogue_revision_ids: [],
+  });
+});
+
 test("a legacy published run upgrades to the strict lifecycle representation without losing its approval audit", async () => {
   const legacyDatabase = testEnv.LEGACY_DB;
   await applyD1Migrations(legacyDatabase, [
@@ -1881,6 +1893,7 @@ test("an unchanged successful retry advances freshness without another revision 
   expect(repairableRevisions[0]).toBe(revisionId);
   expect(repairableRevisions.length).toBeGreaterThanOrEqual(1);
   expect(repairableRevisions.length).toBeLessThanOrEqual(3);
+  expect(repairableRevisions).not.toContain("catrev_spine_000");
   const diagnostics = status.document.diagnostics;
   const expectedNewRevision =
     firstPublished.document.publication_outcome === "revision" ? 1 : 0;

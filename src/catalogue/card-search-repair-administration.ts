@@ -16,6 +16,8 @@ type SearchRepairRequestRow = {
   claim_expires_at: string | null;
 };
 
+const maximumSearchRepairSourceBytes = 64 * 1024;
+
 export async function runGuardedCardSearchRepair(
   database: D1Database,
   input: {
@@ -41,19 +43,27 @@ export async function runGuardedCardSearchRepair(
     if (replay.result_json !== null) {
       return parseRepairResult(replay.result_json);
     }
+    await assertRepairSourceBound(
+      database,
+      input.target_revision_id,
+    );
   } else {
     const target = await database
       .prepare(
         `WITH RECURSIVE retained(revision_id, depth) AS (
-           SELECT state.current_revision_id, 0
+           SELECT revision.id, 0
            FROM catalogue_state AS state
+           JOIN catalogue_revisions AS revision
+             ON revision.id = state.current_revision_id
            WHERE state.singleton = 1
            UNION ALL
-           SELECT revision.expected_previous_revision_id,
+           SELECT previous.id,
                   retained.depth + 1
            FROM retained
            JOIN catalogue_revisions AS revision
              ON revision.id = retained.revision_id
+           JOIN catalogue_revisions AS previous
+             ON previous.id = revision.expected_previous_revision_id
            WHERE retained.depth < 2
          )
          SELECT state.current_revision_id,
@@ -103,6 +113,10 @@ export async function runGuardedCardSearchRepair(
         "Card search repair is limited to the current Catalogue Revision and its two immediate predecessors.",
       );
     }
+    await assertRepairSourceBound(
+      database,
+      input.target_revision_id,
+    );
     await database
       .prepare(
         `INSERT OR IGNORE INTO catalogue_search_repair_requests (
@@ -227,6 +241,30 @@ export async function runGuardedCardSearchRepair(
     throw new Error("The Card search repair result was not retained.");
   }
   return parseRepairResult(completed.result_json);
+}
+
+async function assertRepairSourceBound(
+  database: D1Database,
+  targetRevisionId: string,
+): Promise<void> {
+  const oversized = await database
+    .prepare(
+      `SELECT card_id
+       FROM revision_cards
+       WHERE catalogue_revision_id = ?
+         AND length(CAST(document_json AS BLOB)) > ?
+       ORDER BY card_id
+       LIMIT 1`,
+    )
+    .bind(targetRevisionId, maximumSearchRepairSourceBytes)
+    .first<{ card_id: string }>();
+  if (oversized !== null) {
+    throw new AdministrationProblem(
+      422,
+      "catalogue_search_repair_source_too_large",
+      "A retained Card exceeds the durable 65536-byte search repair source bound.",
+    );
+  }
 }
 
 async function searchRepairRequest(
