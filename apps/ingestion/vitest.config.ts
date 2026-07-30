@@ -776,6 +776,67 @@ function reconciliationSourceDocument(scenario: string) {
       ],
     };
   }
+  if (scenario.startsWith("gundam-printing-")) {
+    const formatting = scenario.includes("-format-");
+    const usSurface = scenario.includes("-us-");
+    const substantiveConflict =
+      scenario.includes("-conflict-") && usSurface;
+    const cardNumber = formatting
+      ? scenario.endsWith("-asia-first") ||
+        scenario.endsWith("-us-second")
+        ? "GD94-001"
+        : "GD93-001"
+      : scenario.endsWith("-asia-first") ||
+          scenario.endsWith("-us-second")
+        ? "GD92-001"
+        : "GD91-001";
+    return {
+      cards: [
+        printingObservation({
+          game: "gundam",
+          profile: "gundam@1",
+          cardNumber,
+          name: "Printing authority",
+          cardAttributes: {
+            card_type: "unit",
+            colours: ["blue"],
+            level: 4,
+            cost: 3,
+            block_icon: "1",
+            effect_text: "Official effect",
+            zone: "space",
+            traits: ["Earth Federation"],
+            link_condition: null,
+            ap: 3,
+            hp: 4,
+            series_titles: ["Mobile Suit Gundam"],
+          },
+          printingAttributes: {
+            alternate_art: substantiveConflict,
+          },
+          printedRulesText: substantiveConflict
+            ? "Substantively different printed rules"
+            : formatting && usSurface
+              ? "  Official   printed rules  "
+              : "Official printed rules",
+          rarityRaw: substantiveConflict
+            ? "Leader Rare"
+            : formatting && usSurface
+              ? "  L  "
+              : "L",
+          locator: `/official/gundam/${scenario}`,
+          variantKey: "base",
+          lineageMarker: `gundam-printing-${cardNumber}`,
+          memberships: {
+            products: [`product_${cardNumber.slice(0, 4).toLowerCase()}`],
+            distribution_contexts: [],
+            source_buckets: ["gundam-card-list"],
+          },
+          printedFieldsMarker: "shared",
+        }),
+      ],
+    };
+  }
   if (
     scenario === "gundam-authority-us" ||
     scenario === "gundam-authority-asia" ||
@@ -943,6 +1004,8 @@ function printingObservation(input: {
   treatment?: string | null;
   variantKey?: string | null;
   printedFieldsMarker?: string;
+  printedRulesText?: string;
+  rarityRaw?: string;
   memberships?: {
     products: string[];
     distribution_contexts: string[];
@@ -967,8 +1030,12 @@ function printingObservation(input: {
       },
     },
     printing: {
-      rarity: { raw: "L", normalized: "leader" },
-      printed_rules_text: "Official printed rules",
+      rarity: {
+        raw: input.rarityRaw ?? "L",
+        normalized: "leader",
+      },
+      printed_rules_text:
+        input.printedRulesText ?? "Official printed rules",
       game_data: {
         profile: input.profile,
         attributes: input.printingAttributes,

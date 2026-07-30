@@ -1276,6 +1276,177 @@ test("Gundam Printing identity is independent of locale observation order when E
   await approve(asia.document);
 });
 
+test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent EN-US evidence arrives later", async () => {
+  const asiaRun = await collect(
+    "/reconciliation/gundam-printing-format-asia-first",
+    "gundam-printing-format-asia-first",
+    {
+      game: "gundam",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@1",
+    },
+  );
+  const asia = await reconcile(asiaRun.id);
+  const printingId = requiredString(
+    requiredFirst(asia.document, "printings"),
+    "id",
+  );
+  const firstPublished = await approve(asia.document);
+  expect(firstPublished.response.status).toBe(200);
+
+  const usRun = await collect(
+    "/reconciliation/gundam-printing-format-us-second",
+    "gundam-printing-format-us-second",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const us = await reconcile(usRun.id);
+  expect(requiredFirst(us.document, "printings")).toMatchObject({
+    id: printingId,
+    rarity: { raw: "L", normalized: "leader" },
+    printed_rules_text: "Official printed rules",
+    game_data: {
+      profile: "gundam@1",
+      attributes: { alternate_art: false },
+    },
+  });
+  const published = await approve(us.document);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const exported = await exportComponentRecords(revisionId, "printings");
+  expect(exported).toContainEqual(
+    expect.objectContaining({
+      id: printingId,
+      rarity: { raw: "L", normalized: "leader" },
+      printed_rules_text: "Official printed rules",
+      game_data: {
+        profile: "gundam@1",
+        attributes: { alternate_art: false },
+      },
+    }),
+  );
+});
+
+test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
+  const usRun = await collect(
+    "/reconciliation/gundam-printing-format-us-first",
+    "gundam-printing-format-us-first",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const us = await reconcile(usRun.id);
+  const printingId = requiredString(
+    requiredFirst(us.document, "printings"),
+    "id",
+  );
+  await approve(us.document);
+
+  const asiaRun = await collect(
+    "/reconciliation/gundam-printing-format-asia-second",
+    "gundam-printing-format-asia-second",
+    {
+      game: "gundam",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@1",
+    },
+  );
+  const asia = await reconcile(asiaRun.id);
+  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+    id: printingId,
+    rarity: { raw: "L", normalized: "leader" },
+    printed_rules_text: "Official printed rules",
+    game_data: {
+      profile: "gundam@1",
+      attributes: { alternate_art: false },
+    },
+  });
+  const published = await approve(asia.document);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const exported = await exportComponentRecords(revisionId, "printings");
+  expect(exported).toContainEqual(
+    expect.objectContaining({
+      id: printingId,
+      rarity: { raw: "L", normalized: "leader" },
+      printed_rules_text: "Official printed rules",
+      game_data: {
+        profile: "gundam@1",
+        attributes: { alternate_art: false },
+      },
+    }),
+  );
+});
+
+test("Gundam substantive Printing fact conflicts outside the identity tuple block in both locale orders", async () => {
+  for (const sequence of [
+    {
+      firstScenario: "gundam-printing-conflict-asia-first",
+      firstLineage: "gundam-en-asia",
+      firstAdapter: "fixture-gundam-en-asia-json@1",
+      secondScenario: "gundam-printing-conflict-us-second",
+      secondLineage: "gundam-en-us",
+      secondAdapter: "fixture-gundam-en-us-json@1",
+    },
+    {
+      firstScenario: "gundam-printing-conflict-us-first",
+      firstLineage: "gundam-en-us",
+      firstAdapter: "fixture-gundam-en-us-json@1",
+      secondScenario: "gundam-printing-conflict-asia-second",
+      secondLineage: "gundam-en-asia",
+      secondAdapter: "fixture-gundam-en-asia-json@1",
+    },
+  ] as const) {
+    const firstRun = await collect(
+      `/reconciliation/${sequence.firstScenario}`,
+      sequence.firstScenario,
+      {
+        game: "gundam",
+        lineage: sequence.firstLineage,
+        adapter: sequence.firstAdapter,
+      },
+    );
+    const first = await reconcile(firstRun.id);
+    const printingId = requiredString(
+      requiredFirst(first.document, "printings"),
+      "id",
+    );
+    await approve(first.document);
+
+    const secondRun = await collect(
+      `/reconciliation/${sequence.secondScenario}`,
+      sequence.secondScenario,
+      {
+        game: "gundam",
+        lineage: sequence.secondLineage,
+        adapter: sequence.secondAdapter,
+      },
+    );
+    const second = await reconcile(secondRun.id);
+    expect(second.response.status).toBe(409);
+    expect(second.document).toMatchObject({
+      diagnostics: [
+        expect.objectContaining({
+          code: "printing_match_contradictory",
+          candidate_printing_ids: [printingId],
+          detail: expect.stringContaining(
+            "canonical Printing facts conflict",
+          ),
+        }),
+      ],
+    });
+  }
+});
+
 test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
   const usRun = await collect(
     "/reconciliation/gundam-authority-us",

@@ -1,4 +1,4 @@
-import type { FixtureCard } from "./fixture";
+import type { FixtureCard, FixturePrinting } from "./fixture";
 import {
   compatibilityFields,
   isGundamEnglishLineage,
@@ -168,6 +168,23 @@ export async function hasCurrentCardObservationFromLineage(
   return row !== null;
 }
 
+export async function hasCurrentPrintingLocatorFromLineage(
+  database: D1Database,
+  printingId: string,
+  sourceLineage: string,
+): Promise<boolean> {
+  const row = await database
+    .prepare(
+      `SELECT printing_id
+       FROM reconciled_printing_locators
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
+       LIMIT 1`,
+    )
+    .bind(printingId, sourceLineage)
+    .first<{ printing_id: string }>();
+  return row !== null;
+}
+
 export async function canonicalCardConflict(
   database: D1Database,
   cardId: string,
@@ -221,6 +238,60 @@ export async function canonicalCardConflict(
     )
     ? null
     : "The retained Card facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
+}
+
+type PrintingFacts = Omit<FixturePrinting, "id" | "card_id">;
+
+export async function canonicalPrintingConflict(
+  database: D1Database,
+  printingId: string,
+  proposed: PrintingFacts,
+  sourceLineage: string,
+): Promise<string | null> {
+  const row = await database
+    .prepare(
+      `SELECT printing.document_json
+       FROM catalogue_state AS state
+       JOIN revision_printings AS printing
+         ON printing.catalogue_revision_id = state.current_revision_id
+       WHERE state.singleton = 1 AND printing.printing_id = ?`,
+    )
+    .bind(printingId)
+    .first<{ document_json: string }>();
+  if (row === null) return null;
+  const current = JSON.parse(row.document_json) as FixturePrinting;
+  const currentCanonical: PrintingFacts = {
+    rarity: current.rarity,
+    printed_rules_text: current.printed_rules_text,
+    game_data: current.game_data,
+  };
+  if (printingFactsFormattingEquivalent(currentCanonical, proposed)) {
+    return null;
+  }
+  const authorities = await database
+    .prepare(
+      `SELECT DISTINCT source_lineage
+       FROM reconciled_printing_locators
+       WHERE printing_id = ? AND current = 1`,
+    )
+    .bind(printingId)
+    .all<{ source_lineage: string }>();
+  if (authorities.results.length === 0) return null;
+  return authorities.results.every(
+    (authority) => authority.source_lineage === sourceLineage,
+  )
+    ? null
+    : "The retained canonical Printing facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
+}
+
+export function printingFactsFormattingEquivalent(
+  left: PrintingFacts,
+  right: PrintingFacts,
+): boolean {
+  return (
+    canonicalJson(normalizedFormatting(left)) ===
+    canonicalJson(normalizedFormatting(right))
+  );
 }
 
 function normalizedFormatting(value: unknown): unknown {

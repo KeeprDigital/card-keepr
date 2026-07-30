@@ -13,9 +13,12 @@ import type { FixtureCandidate, FixtureCard, FixturePrinting } from "./fixture";
 import {
   compatiblePrintings,
   canonicalCardConflict,
+  canonicalPrintingConflict,
   existingCard,
   hasCurrentCardObservationFromLineage,
+  hasCurrentPrintingLocatorFromLineage,
   hasOtherGundamLocaleEvidence,
+  printingFactsFormattingEquivalent,
   printingAtLocator,
   printingsWithAppearance,
 } from "./reconciliation-repository";
@@ -98,6 +101,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.printings.map((printing) => [printing.id, printing]) ?? [],
   );
   const localCardFacts = new Map<string, string>();
+  const localPrintingFacts = new Map<
+    string,
+    Omit<FixturePrinting, "id" | "card_id">
+  >();
   const localCompatibility = new Map<string, string>();
   const localLocators = new Map<
     string,
@@ -270,11 +277,57 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       localCompatibility.set(compatibilityKey, printingId);
       localLocators.set(locator, { compatibility, printingId });
-      printings.set(printingId, {
-        id: printingId,
-        card_id: cardId,
-        ...proposedPrinting,
-      });
+      const carriedPrinting = printings.get(printingId);
+      const publishedPrintingConflict = await canonicalPrintingConflict(
+        database,
+        printingId,
+        proposedPrinting,
+        retained.sourceLineage,
+      );
+      const retainAsiaPrintingAuthority =
+        retained.supportedGame === "gundam" &&
+        retained.sourceLineage === "gundam-en-us" &&
+        carriedPrinting !== undefined &&
+        (await hasCurrentPrintingLocatorFromLineage(
+          database,
+          printingId,
+          "gundam-en-asia",
+        ));
+      let acceptedPrinting = proposedPrinting;
+      if (retainAsiaPrintingAuthority) {
+        const {
+          id: _carriedPrintingId,
+          card_id: _carriedCardId,
+          ...authoritativePrinting
+        } = carriedPrinting;
+        acceptedPrinting = authoritativePrinting;
+      }
+      const priorPrintingFacts = localPrintingFacts.get(printingId);
+      if (
+        publishedPrintingConflict !== null ||
+        (priorPrintingFacts !== undefined &&
+          !printingFactsFormattingEquivalent(
+            priorPrintingFacts,
+            acceptedPrinting,
+          ))
+      ) {
+        diagnostics.push({
+          code: "printing_match_contradictory",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids: [printingId],
+          detail:
+            publishedPrintingConflict ??
+            "Retained observations disagree on canonical Printing facts and no deterministic authority rule resolves them.",
+        });
+      } else {
+        localPrintingFacts.set(printingId, acceptedPrinting);
+        printings.set(printingId, {
+          id: printingId,
+          card_id: cardId,
+          ...acceptedPrinting,
+        });
+      }
       if (
         retained.supportedGame === "gundam" &&
         !(await hasOtherGundamLocaleEvidence(
