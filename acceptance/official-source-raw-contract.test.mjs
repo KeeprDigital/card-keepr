@@ -7,6 +7,7 @@ import {
 import {
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
+  officialRawSurfacePayload,
 } from "./fixtures/synthetic-official-source.mjs";
 
 const expectedSurfaces = {
@@ -131,6 +132,11 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
   for (const contract of officialRawAdapterContracts) {
     for (const surface of contract.requiredSurfaces) {
       const payload = rawSurfacePayload(contract.sourceLineage, surface);
+      assert.equal(
+        Object.hasOwn(payload, "contract"),
+        false,
+        "fixture must retain an upstream-shaped document, not a Keepr envelope",
+      );
       const html = isHtmlSurface(surface);
       const bytes = new TextEncoder().encode(
         html
@@ -144,6 +150,34 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
         url: `https://official.invalid/${contract.sourceLineage}/${surface}`,
       });
       assert.ok(observations.length >= 1);
+      if (
+        surface === "card-list" ||
+        surface === "card-search" ||
+        surface === "packages"
+      ) {
+        const sidecar = observations[0].source_sidecar;
+        assert.equal(
+          sidecar.raw.official_surfaces[0].document.vendor_extension
+            .future_field,
+          true,
+        );
+        assert.ok(
+          sidecar.unmapped_optional_fields.some(
+            ({ path }) => path.endsWith(".vendor_extension"),
+          ),
+        );
+        assert.ok(observations[0].memberships.source_buckets.length > 0);
+        if (contract.sourceLineage === "fusion-world-en") {
+          assert.deepEqual(
+            observations[0].appearance_evidence.images.map(
+              ({ role }) => role,
+            ),
+            ["front", "back"],
+          );
+          assert.equal(observations[0].printing.rarity.raw, null);
+          assert.equal(observations[0].printing.rarity.normalized, null);
+        }
+      }
     }
   }
 });
@@ -153,97 +187,39 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const capped = rawSurfacePayload("one-piece-en", "card-list");
-  capped.partitions[0].result_cap = 1;
+  capped.page_info.cap_signal = "Too many search results";
   assert.throws(
     () => parseHtml(adapter, "card-list", capped),
     /result-cap evidence does not prove complete coverage/u,
   );
 
   const unfinished = rawSurfacePayload("one-piece-en", "card-list");
-  unfinished.partitions[0].pages = 2;
-  unfinished.partitions[0].has_next = true;
+  unfinished.page_info.partitions[0].pages = 2;
+  unfinished.page_info.partitions[0].has_next = true;
   assert.throws(
     () => parseHtml(adapter, "card-list", unfinished),
     /pagination evidence does not prove complete partitions/u,
   );
 
+  const wrongPartition = rawSurfacePayload("one-piece-en", "card-list");
+  wrongPartition.page_info.partitions[0].bucket = "unplanned-series";
+  assert.throws(
+    () => parseHtml(adapter, "card-list", wrongPartition),
+    /discovered partition closure/u,
+  );
+
   const mismatched = rawSurfacePayload("one-piece-en", "card-list");
-  mismatched.surface = "products";
+  mismatched.page = "product-list";
   assert.throws(
     () => parseHtml(adapter, "card-list", mismatched),
-    /surface binding/u,
+    /card-list page identity/u,
   );
 });
 
 function rawSurfacePayload(lineage, surface) {
-  const document = officialDiscoveryDocument(
-    structuredClone(
-      officialDiscoveryDefinitions[lineageFixtures[lineage]],
-    ),
+  return structuredClone(
+    officialRawSurfacePayload(`/${lineage}/${surface}`),
   );
-  const keys = discoveryKeys[lineage];
-  const base = {
-    contract: "card-keepr-official-source-surface@1",
-    lineage,
-    surface,
-  };
-  if (["card-list", "card-search", "packages"].includes(surface)) {
-    return {
-      ...base,
-      source_buckets: ["all-cards"],
-      facets: [{ name: "product", exhaustive: true }],
-      partitions: [{
-        bucket: "all-cards",
-        page: 1,
-        pages: 1,
-        total: document[keys.listing].entries.length,
-        has_next: false,
-        entries: document[keys.listing].entries,
-      }],
-      details: document[keys.details],
-      products: document[keys.products],
-      releases: document[keys.releases],
-      retained_unknown: { preserved_in_snapshot: true },
-    };
-  }
-  if (surface === "products") {
-    return {
-      ...base,
-      partitions: [{
-        bucket: "all-products",
-        page: 1,
-        pages: 1,
-        total: document[keys.products].length,
-        has_next: false,
-        entries: document[keys.products],
-      }],
-    };
-  }
-  if (surface === "releases") {
-    const products = new Map(
-      document[keys.products].map((product) => [product.code, product]),
-    );
-    const entries = document[keys.releases].map((release) => ({
-      product: products.get(release.code),
-      release,
-    }));
-    return {
-      ...base,
-      partitions: [{
-        bucket: "all-releases",
-        page: 1,
-        pages: 1,
-        total: entries.length,
-        has_next: false,
-        entries,
-      }],
-    };
-  }
-  return {
-    ...base,
-    revision: "2026-07",
-    entries: [],
-  };
 }
 
 function isHtmlSurface(surface) {

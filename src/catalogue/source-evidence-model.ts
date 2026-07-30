@@ -147,6 +147,27 @@ export async function validateEvidencePlan(
         "The Evidence Plan must contain every exact required Official Source surface once.",
       );
     }
+    if (adapter.requestPathForSurface === undefined) {
+      throw new Error(
+        "A production adapter with required surfaces has no request-path contract.",
+      );
+    }
+    for (const sourceRequest of requests) {
+      const surface = sourceRequest.id.slice(
+        `${adapter.sourceLineage}:`.length,
+      );
+      const url = new URL(sourceRequest.url);
+      if (
+        url.pathname !== adapter.requestPathForSurface(surface) ||
+        url.hash.length > 0
+      ) {
+        throw new AdministrationProblem(
+          422,
+          "source_surface_binding_mismatch",
+          "Every Source Request identity must use its exact Official Source surface URL contract.",
+        );
+      }
+    }
   }
   return {
     adapter,

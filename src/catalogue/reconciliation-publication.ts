@@ -73,7 +73,16 @@ export type ReconciliationPublicationPlan = {
   >;
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   locatorEvidence: Record<string, LocatorEvidenceCollection>;
+  cardEvidence: Record<string, PublicationEvidenceResource[]>;
+  printingEvidence: Record<string, PublicationEvidenceResource[]>;
   statements: D1PreparedStatement[];
+};
+
+export type PublicationEvidenceResource = {
+  type: "source_observation";
+  id: string;
+  captured_at: string;
+  source: string;
 };
 
 type PublicationRows = {
@@ -94,6 +103,10 @@ export async function reconciliationPublication(
   revisionOrder = revisionId,
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
+  const evidenceByObservation = await publicationEvidenceResources(
+    database,
+    plans,
+  );
   const context = await database
     .prepare(
       `SELECT source_lineage
@@ -164,6 +177,8 @@ export async function reconciliationPublication(
     productRelationshipLifecycles: {},
     relationshipEvidence: {},
     locatorEvidence: {},
+    cardEvidence: {},
+    printingEvidence: {},
     statements: [],
   };
 
@@ -171,6 +186,9 @@ export async function reconciliationPublication(
     const card = cards.get(cardId);
     if (card === undefined) throw new Error("The reconciliation Card plan changed.");
     const existing = existingCards.get(cardId) ?? null;
+    result.cardEvidence[cardId] = grouped.map((plan) =>
+      evidenceByObservation.get(plan.source_observation_id)!
+    );
     const withdrawal = mergedWithdrawal(grouped, "card");
     const withdraw =
       withdrawal?.entity === "card" ||
@@ -221,6 +239,9 @@ export async function reconciliationPublication(
       throw new Error("The reconciliation Printing plan changed.");
     }
     const first = grouped[0]!;
+    result.printingEvidence[printingId] = grouped.map((plan) =>
+      evidenceByObservation.get(plan.source_observation_id)!
+    );
     if (first.compatibility_json === null) {
       throw new Error("The reconciliation Printing compatibility disappeared.");
     }
@@ -351,6 +372,38 @@ export async function reconciliationPublication(
     ),
   );
   return result;
+}
+
+async function publicationEvidenceResources(
+  database: D1Database,
+  plans: readonly CandidatePlanRow[],
+): Promise<Map<string, PublicationEvidenceResource>> {
+  if (plans.length === 0) return new Map();
+  const rows = await database
+    .prepare(
+      `SELECT plan.source_observation_id AS id,
+              plan.source_lineage AS source,
+              snapshot.retrieved_at AS captured_at
+       FROM reconciliation_candidates AS plan
+       JOIN source_snapshots AS snapshot
+         ON snapshot.id = plan.source_snapshot_id
+       WHERE plan.ingestion_run_id = ?
+       ORDER BY plan.source_observation_id`,
+    )
+    .bind(plans[0]!.ingestion_run_id)
+    .all<PublicationEvidenceResource>();
+  const resources = new Map(
+    rows.results.map((row) => [
+      row.id,
+      { ...row, type: "source_observation" as const },
+    ]),
+  );
+  for (const plan of plans) {
+    if (!resources.has(plan.source_observation_id)) {
+      throw new Error("Publication Source Observation evidence disappeared.");
+    }
+  }
+  return resources;
 }
 
 async function aggregateInferredProductLifecycles(
@@ -601,7 +654,7 @@ async function retainCarriedLifecycles(
 }
 
 function documentLifecycle(documentJson: string): NormalizedLifecycle {
-  const document = JSON.parse(documentJson) as {
+  const document = revisionDocumentData(documentJson) as {
     lifecycle?: Partial<NormalizedLifecycle>;
   };
   const lifecycle = document.lifecycle;
@@ -625,7 +678,7 @@ function documentLifecycle(documentJson: string): NormalizedLifecycle {
 function documentRelationshipEvidence(
   documentJson: string,
 ): RelationshipEvidence[] {
-  const document = JSON.parse(documentJson) as {
+  const document = revisionDocumentData(documentJson) as {
     relationship_evidence?: RelationshipEvidence[];
   };
   return Array.isArray(document.relationship_evidence)
@@ -636,10 +689,30 @@ function documentRelationshipEvidence(
 function documentLocatorEvidence(
   documentJson: string,
 ): LocatorEvidenceCollection {
-  const document = JSON.parse(documentJson) as {
+  const document = revisionDocumentData(documentJson) as {
     locator_evidence?: LocatorEvidenceCollection;
   };
   return document.locator_evidence ?? { current: [], historical: [] };
+}
+
+function revisionDocumentData(documentJson: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error("A carried revision document is invalid.");
+  }
+  const document = parsed as Record<string, unknown>;
+  if (
+    document.data !== null &&
+    typeof document.data === "object" &&
+    !Array.isArray(document.data)
+  ) {
+    return document.data as Record<string, unknown>;
+  }
+  return document;
 }
 
 function cardPersistenceRow(

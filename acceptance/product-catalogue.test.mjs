@@ -698,6 +698,34 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ({ official_code }) => official_code === "GD-RAW-01",
   );
   assert.ok(gundam);
+  const gundamCard = cards.find(
+    ({ official_identity }) => official_identity?.value === "GD99-001",
+  );
+  assert.deepEqual(gundamCard.source_lineages, [
+    "gundam-en-asia",
+    "gundam-en-us",
+  ]);
+  const gundamPrinting = printings.find(
+    ({ card_id }) => card_id === gundamCard.id,
+  );
+  assert.deepEqual(gundamPrinting.source_lineages, [
+    "gundam-en-asia",
+    "gundam-en-us",
+  ]);
+  const gundamPrintingResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/printings/${gundamPrinting.id}?include=evidence`,
+    { headers },
+  );
+  assert.equal(gundamPrintingResponse.status, 200);
+  const gundamPrintingDocument = await gundamPrintingResponse.json();
+  assert.deepEqual(gundamPrintingDocument.data.source_lineages, [
+    "gundam-en-asia",
+    "gundam-en-us",
+  ]);
+  assert.deepEqual(
+    gundamPrintingDocument.included.map(({ source }) => source).sort(),
+    ["gundam-en-asia", "gundam-en-us"],
+  );
   assert.deepEqual(
     releases
       .filter(({ product_id }) => product_id === gundam.id)

@@ -144,8 +144,18 @@ export function parseReconciliationObservation(
       sourceObservationId,
       "products-and-releases@1",
       record,
-      new Set(["completeness", "product_release_catalogue"]),
+      new Set([
+        "completeness",
+        "product_release_catalogue",
+        "source_sidecar",
+      ]),
       "",
+      warnings,
+    );
+    inspectSourceSidecar(
+      sourceObservationId,
+      "products-and-releases@1",
+      record.source_sidecar,
       warnings,
     );
     return {

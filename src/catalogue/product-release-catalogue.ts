@@ -58,6 +58,7 @@ export type CatalogueProduct = {
 
 export type CatalogueRelease = {
   id: string;
+  event_key: string;
   product_id: string;
   region: "EN-OCEANIA" | "EN-ASIA" | "EN-US" | "unknown";
   date: {
@@ -124,6 +125,7 @@ export type ProductSourceObservation = {
   officialCode: string | null;
   name: string;
   releases: {
+    eventKey: string;
     region: CatalogueRelease["region"];
     precision: ReleasePrecision;
     value: string | null;
@@ -242,7 +244,11 @@ export async function reconcileProductReleaseCatalogue(
         (lineage) => !checkedLineages.has(lineage),
       );
       return sourceLineages.length === 0
-        ? [context]
+        ? [{
+            ...context,
+            observed: false,
+            source_lineages: [],
+          }]
         : [{ ...context, source_lineages: sourceLineages }];
     },
   );
@@ -437,8 +443,13 @@ async function parseProductReleaseObservation(
         const precision = releasePrecision(date.precision);
         const value = nullableText(date.value, "Release date value");
         assertDatePrecision(precision, value);
+        const region = releaseRegion(release.region);
         return {
-          region: releaseRegion(release.region),
+          eventKey:
+            release.event_key === undefined
+              ? region
+              : text(release.event_key, "Release event_key"),
+          region,
           precision,
           value,
           status: releaseStatus(release.status),
@@ -631,24 +642,31 @@ function resolveProduct(
     disagreements,
   );
   const releaseGroups = new Map<
-    CatalogueRelease["region"],
+    string,
     { release: ObservedProduct["releases"][number]; product: ObservedProduct }[]
   >();
   for (const product of observations) {
     for (const release of product.releases) {
-      releaseGroups.set(release.region, [
-        ...(releaseGroups.get(release.region) ?? []),
+      releaseGroups.set(release.eventKey, [
+        ...(releaseGroups.get(release.eventKey) ?? []),
         { release, product },
       ]);
     }
   }
   const releases = [...releaseGroups]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([region, values], index) => {
+    .map(([eventKey, values], index) => {
       const factInputs = values.map(({ release, product }) => ({
         ...product,
         release,
       }));
+      const region = resolveFact(
+        factInputs,
+        ({ release }) => release.region,
+        `/data/releases/${index}/region`,
+        provenance,
+        disagreements,
+      );
       const precision = resolveFact(
         factInputs,
         ({ release }) => release.precision,
@@ -671,9 +689,10 @@ function resolveProduct(
         disagreements,
       );
       return {
-        id: releaseIdFor(first.id, region),
+        id: releaseIdFor(first.id, eventKey),
+        event_key: eventKey,
         product_id: first.id,
-        region,
+        region: region ?? "unknown",
         date: { precision, value },
         status,
       };
@@ -736,6 +755,7 @@ function sourceObservationsForProduct(
     officialCode: product.official_code,
     name: product.name ?? product.reference.value,
     releases: product.releases.map((release) => ({
+      eventKey: release.event_key ?? release.region,
       region: release.region,
       precision: release.date.precision ?? "unknown",
       value: release.date.value,
@@ -871,9 +891,9 @@ export async function distributionContextIdFor(
 
 function releaseIdFor(
   productId: string,
-  region: CatalogueRelease["region"],
+  eventKey: string,
 ): string {
-  return `release_${productId}:${region}`;
+  return `release_${productId}:${eventKey}`;
 }
 
 async function relationshipIdFor(

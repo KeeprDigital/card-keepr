@@ -116,6 +116,12 @@ export async function buildCatalogueExport(
     >;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
+    cardEvidence?: Readonly<
+      Record<string, readonly { source: string }[]>
+    >;
+    printingEvidence?: Readonly<
+      Record<string, readonly { source: string }[]>
+    >;
   },
   sourceFreshness?: readonly SourceFreshness[],
 ): Promise<BuiltCatalogueExport> {
@@ -380,6 +386,12 @@ async function exportRecordFactories(
     >;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
     locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
+    cardEvidence?: Readonly<
+      Record<string, readonly { source: string }[]>
+    >;
+    printingEvidence?: Readonly<
+      Record<string, readonly { source: string }[]>
+    >;
   },
 ): Promise<
   Record<(typeof componentDefinitions)[number][0], ExportRecordFactory>
@@ -522,6 +534,12 @@ async function exportRecordFactories(
     cards: () => candidate.cards.map((card) => ({
       type: "card",
       ...card,
+      source_lineages: [
+        ...new Set(
+          lifecycles?.cardEvidence?.[card.id]?.map(({ source }) => source) ??
+            [],
+        ),
+      ].sort(),
       lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
     })),
     printings: () => candidate.printings.map((printing) => {
@@ -534,6 +552,13 @@ async function exportRecordFactories(
       return {
         type: "printing",
         ...printing,
+        source_lineages: [
+          ...new Set(
+            lifecycles?.printingEvidence?.[printing.id]?.map(
+              ({ source }) => source,
+            ) ?? [],
+          ),
+        ].sort(),
         products: typed.products,
         distribution_contexts: typed.distribution_contexts,
         locator_evidence: lifecycles?.locators?.[printing.id] ?? {

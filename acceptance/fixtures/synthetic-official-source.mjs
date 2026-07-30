@@ -2,6 +2,27 @@ export default {
   fetch(request) {
     const url = new URL(request.url);
     const pathname = url.pathname;
+    const transportOutcome = request.headers.get("user-agent");
+    if (
+      transportOutcome ===
+      "card-keepr-acceptance-transport/redirect"
+    ) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: "https://synthetic-source.invalid/success",
+        },
+      });
+    }
+    if (
+      transportOutcome ===
+      "card-keepr-acceptance-transport/unavailable"
+    ) {
+      return new Response("temporarily unavailable", {
+        status: 503,
+        headers: { "retry-after": "0" },
+      });
+    }
     if (pathname === "/success") {
       return Response.json(
         { cards: [{ card_number: "OP01-001", name: "Synthetic Card" }] },
@@ -26,30 +47,31 @@ export default {
     }
     const raw = officialRawSurfacePayload(pathname);
     if (raw !== null) {
+      const surface = pathname.slice(pathname.lastIndexOf("/") + 1);
       if (
         url.searchParams.get("failure") === "cap" &&
-        raw.surface === "card-list"
+        surface === "card-list"
       ) {
-        raw.partitions[0].result_cap = 1;
+        raw.page_info.cap_signal = "Too many search results";
       }
       if (
         url.searchParams.get("failure") === "pagination" &&
-        raw.surface === "card-list"
+        surface === "card-list"
       ) {
-        raw.partitions[0].pages = 2;
-        raw.partitions[0].has_next = true;
+        raw.page_info.partitions[0].pages = 2;
+        raw.page_info.partitions[0].has_next = true;
       }
-      const body = isHtmlSurface(raw.surface)
+      const body = isHtmlSurface(surface)
         ? `<main><script type="application/json" data-keepr-official-payload>${
           JSON.stringify(raw)
         }</script></main>`
         : JSON.stringify(raw);
       return new Response(body, {
         headers: {
-          "content-type": isHtmlSurface(raw.surface)
+          "content-type": isHtmlSurface(surface)
             ? "text/html; charset=utf-8"
             : "application/json; charset=utf-8",
-          etag: `"${raw.lineage}-${raw.surface}-v1"`,
+          etag: `"${pathname.slice(1).replaceAll("/", "-")}-v1"`,
         },
       });
     }
@@ -110,8 +132,13 @@ export const officialDiscoveryDefinitions = {
     productCode: "FB-RAW-01",
     productName: "Fusion World Raw Product",
     region: "EN-US",
+    printing: {
+      rarity: null,
+      normalizedRarity: null,
+      attributes: {},
+    },
     attributes: {
-      card_type: "battle",
+      card_type: "leader",
       colours: ["red"],
       cost: 1,
       specified_cost: [{ colour: "red", count: 1 }],
@@ -119,6 +146,22 @@ export const officialDiscoveryDefinitions = {
       combo_power: 5000,
       traits: ["Test"],
       skills: [{ kind: "ordinary", text: "Official skill" }],
+      leader_faces: [
+        {
+          role: "front",
+          name: "Fusion Leader Front",
+          power: 10000,
+          traits: ["Test"],
+          skills: "Official front skill",
+        },
+        {
+          role: "back",
+          name: "Fusion Leader Back",
+          power: 15000,
+          traits: ["Test"],
+          skills: "Official back skill",
+        },
+      ],
     },
   }),
   "/raw-gundam-asia-products": definition({
@@ -130,6 +173,11 @@ export const officialDiscoveryDefinitions = {
     productCode: "GD-RAW-01",
     productName: "Gundam Cross-region Raw Product",
     region: "EN-ASIA",
+    printing: {
+      rarity: "R",
+      normalizedRarity: "rare",
+      attributes: { alternate_art: false },
+    },
     attributes: gundamAttributes(),
   }),
   "/raw-gundam-us-products": definition({
@@ -141,6 +189,11 @@ export const officialDiscoveryDefinitions = {
     productCode: "GD-RAW-01",
     productName: "Gundam Cross-region Raw Product",
     region: "EN-US",
+    printing: {
+      rarity: "R",
+      normalizedRarity: "rare",
+      attributes: { alternate_art: false },
+    },
     attributes: gundamAttributes(),
   }),
 };
@@ -248,53 +301,140 @@ export function officialRawSurfacePayload(pathname) {
   const document = officialDiscoveryDocument(
     officialDiscoveryDefinitions[definitionPath],
   );
-  const base = {
-    contract: "card-keepr-official-source-surface@1",
-    lineage,
-    surface,
-  };
+  const products = document[keys.products].map((product) =>
+    upstreamProduct(lineage, product)
+  );
+  const releases = document[keys.releases].map((release, index) =>
+    upstreamRelease(lineage, release, index)
+  );
   if (["card-list", "card-search", "packages"].includes(surface)) {
-    return {
-      ...base,
-      source_buckets: ["all-cards"],
-      facets: [{ name: "product", exhaustive: true }],
+    const discoveryBucket =
+      lineage === "one-piece-en"
+        ? "recording"
+        : lineage === "fusion-world-en"
+          ? "card_type=leader&colour=red&cost=1"
+          : lineage === "digimon-en"
+            ? "category=all&cardcategory=digimon&colour=blue"
+            : "package=all";
+    const partitionResult = {
+      cap_signal: null,
       partitions: [{
-        bucket: "all-cards",
+        bucket: discoveryBucket,
         page: 1,
         pages: 1,
         total: document[keys.listing].entries.length,
         has_next: false,
         entries: document[keys.listing].entries,
       }],
-      details: document[keys.details],
-      products: document[keys.products],
-      releases: document[keys.releases],
-      retained_unknown: { synthetic_contract_probe: true },
+    };
+    const details = document[keys.details].map((detail) =>
+      upstreamDetail(lineage, detail)
+    );
+    if (lineage === "one-piece-en") {
+      return {
+        page: "card-list",
+        series_options: [{ value: "recording", label: "All recordings" }],
+        page_info: partitionResult,
+        card_pages: details,
+        products,
+        release_schedule: releases,
+        vendor_extension: { future_field: true },
+      };
+    }
+    if (lineage === "fusion-world-en") {
+      return {
+        view: "card-search",
+        facets: {
+          card_type: ["leader", "battle"],
+          colour: ["red"],
+          cost: ["1"],
+        },
+        result: partitionResult,
+        detail_pages: details,
+        products,
+        releases,
+        vendor_extension: { future_field: true },
+      };
+    }
+    if (lineage === "digimon-en") {
+      return {
+        view: "card-list",
+        version_options: [{ value: "en", label: "English" }],
+        filters: {
+          category: ["all"],
+          cardcategory: ["digimon"],
+          colour: ["blue"],
+        },
+        result: partitionResult,
+        card_popups: details,
+        products,
+        release_calendar: releases,
+        vendor_extension: { future_field: true },
+      };
+    }
+    return {
+      view: "card-search",
+      locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US",
+      package_options: [{ value: "all", label: "All packages" }],
+      result: partitionResult,
+      card_details: details,
+      products,
+      releases,
+      vendor_extension: { future_field: true },
     };
   }
   if (surface === "products") {
-    return {
-      ...base,
+    const result = {
+      cap_signal: null,
       partitions: [{
         bucket: "all-products",
         page: 1,
         pages: 1,
         total: document[keys.products].length,
         has_next: false,
-        entries: document[keys.products],
+        entries: products,
       }],
+    };
+    if (lineage === "one-piece-en") {
+      return {
+        page: "product-list",
+        series_options: ["all"],
+        result,
+      };
+    }
+    if (lineage === "fusion-world-en") {
+      return {
+        view: "products",
+        status_tabs: ["available", "coming-soon"],
+        result,
+      };
+    }
+    if (lineage === "digimon-en") {
+      return {
+        view: "product-index",
+        tile_categories: ["card-sets", "starter-decks"],
+        result,
+      };
+    }
+    return {
+      view: "product-list",
+      locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US",
+      result,
     };
   }
   if (surface === "releases") {
     const products = new Map(
-      document[keys.products].map((product) => [product.code, product]),
+      document[keys.products].map((product) => [
+        product.code,
+        upstreamProduct(lineage, product),
+      ]),
     );
-    const entries = document[keys.releases].map((release) => ({
+    const entries = document[keys.releases].map((release, index) => ({
       product: products.get(release.code),
-      release,
+      release: upstreamRelease(lineage, release, index),
     }));
-    return {
-      ...base,
+    const events = {
+      cap_signal: null,
       partitions: [{
         bucket: "all-releases",
         page: 1,
@@ -304,12 +444,227 @@ export function officialRawSurfacePayload(pathname) {
         entries,
       }],
     };
+    if (lineage === "one-piece-en") {
+      return { publication: "release-schedule", events };
+    }
+    if (lineage === "fusion-world-en") {
+      return { publication: "product-release-dates", events };
+    }
+    if (lineage === "digimon-en") {
+      return { publication: "product-release-calendar", events };
+    }
+    return {
+      publication: "locale-product-release-dates",
+      locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US",
+      events,
+    };
   }
   return {
-    ...base,
+    publication: policyPublication(lineage, surface),
+    ...(lineage.startsWith("gundam-")
+      ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" }
+      : {}),
     revision: "2026-07",
     entries: [],
   };
+}
+
+function upstreamProduct(lineage, product) {
+  const rest = {
+    ...(product.campaign_note === undefined
+      ? {}
+      : { campaign_note: product.campaign_note }),
+    ...(product.distribution === undefined
+      ? {}
+      : { distribution: product.distribution }),
+  };
+  if (lineage === "one-piece-en") {
+    return {
+      product_code: product.code,
+      product_name: product.title,
+      ...rest,
+    };
+  }
+  if (lineage === "fusion-world-en") {
+    return {
+      productCode: product.code,
+      productName: product.title,
+      ...rest,
+    };
+  }
+  if (lineage === "digimon-en") {
+    return {
+      productId: product.code,
+      productTitle: product.title,
+      ...rest,
+    };
+  }
+  return {
+    productCode: product.code,
+    productName: product.title,
+    ...rest,
+  };
+}
+
+function upstreamRelease(lineage, release, index) {
+  const eventId =
+    release.event_key ?? `${release.code}-${release.region}-${index + 1}`;
+  const rest = {
+    region: release.region,
+    precision: release.precision,
+    date: release.date,
+    status: release.status,
+  };
+  if (lineage === "one-piece-en") {
+    return {
+      product_code: release.code,
+      announcement_id: eventId,
+      ...rest,
+    };
+  }
+  if (lineage === "fusion-world-en") {
+    return { productCode: release.code, releaseId: eventId, ...rest };
+  }
+  if (lineage === "digimon-en") {
+    return {
+      productId: release.code,
+      calendarEntryId: eventId,
+      ...rest,
+    };
+  }
+  return {
+    productCode: release.code,
+    releaseEventId: eventId,
+    ...rest,
+  };
+}
+
+function upstreamDetail(lineage, detail) {
+  const shared = {
+    profile: detail.profile,
+    product_codes: detail.product_codes,
+    distribution: detail.distribution,
+    ...(detail.printing === undefined
+      ? {}
+      : {
+          printing: {
+            rarity: detail.printing.rarity ?? null,
+            normalized_rarity:
+              detail.printing.normalizedRarity ?? null,
+            attributes: detail.printing.attributes,
+          },
+          printed_rules: detail.printed_rules,
+          variant: detail.variant,
+          artwork_fingerprint: detail.artwork_fingerprint,
+          printed_fields_digest: detail.printed_fields_digest,
+        }),
+  };
+  const attributes = detail.attributes;
+  if (lineage === "one-piece-en") {
+    return {
+      source_record_id: detail.path,
+      card_number: detail.number,
+      name: detail.title,
+      Category: attributes.card_type,
+      Color: attributes.colours,
+      Cost: attributes.cost,
+      Life: attributes.life,
+      Attribute: attributes.battle_attributes,
+      Power: attributes.power,
+      Counter: attributes.counter,
+      Type: attributes.traits,
+      "Block icon": attributes.block_icons,
+      Effect: detail.rules,
+      Trigger: attributes.trigger_text,
+      image_url: detail.image,
+      ...shared,
+    };
+  }
+  if (lineage === "fusion-world-en") {
+    const leader = attributes.card_type === "leader";
+    return {
+      detail_path: detail.path,
+      card_number: detail.number,
+      name: detail.title,
+      card_type: attributes.card_type,
+      color: attributes.colours,
+      cost: attributes.cost,
+      specified_cost: attributes.specified_cost,
+      power: attributes.power,
+      combo_power: attributes.combo_power,
+      special_traits: attributes.traits,
+      skills: attributes.skills,
+      skills_text: detail.rules,
+      ...(attributes.leader_faces === undefined
+        ? {}
+        : { leader_faces: attributes.leader_faces }),
+      image_urls: leader
+        ? [
+            { role: "front", url: detail.image },
+            {
+              role: "back",
+              url: detail.image.replace(".png", "-back.png"),
+            },
+          ]
+        : [{ role: "front", url: detail.image }],
+      ...shared,
+    };
+  }
+  if (lineage === "digimon-en") {
+    return {
+      popup_id: detail.path,
+      card_number: detail.number,
+      name: detail.title,
+      cardcategory: attributes.card_type,
+      Color: attributes.colours,
+      Lv: attributes.level,
+      "Play Cost": attributes.play_cost,
+      "Use Cost": attributes.use_cost,
+      DP: attributes.dp,
+      Form: attributes.form,
+      Attribute: attributes.attribute,
+      Type: attributes.traits,
+      "Digivolution Cost": attributes.digivolution_requirements,
+      text_sections: attributes.text_sections,
+      "DUAL Color": attributes.dual_colours,
+      "DUAL Cost": attributes.dual_cost,
+      "Link DP": attributes.link_dp,
+      Effect: detail.rules,
+      image_url: detail.image,
+      ...shared,
+    };
+  }
+  return {
+    detailSearch: detail.path,
+    card_number: detail.number,
+    name: detail.title,
+    Type: attributes.card_type,
+    Color: attributes.colours,
+    Level: attributes.level,
+    Cost: attributes.cost,
+    Block: attributes.block_icon,
+    Effect: detail.rules,
+    Zone: attributes.zone,
+    Trait: attributes.traits,
+    Link: attributes.link_condition,
+    AP: attributes.ap,
+    HP: attributes.hp,
+    Title: attributes.series_titles,
+    image_url: detail.image,
+    ...shared,
+  };
+}
+
+function policyPublication(lineage, surface) {
+  const prefix =
+    lineage === "one-piece-en"
+      ? "one-piece"
+      : lineage === "fusion-world-en"
+        ? "fusion-world"
+        : lineage === "digimon-en"
+          ? "digimon"
+          : "gundam";
+  return `${prefix}-${surface}`;
 }
 
 function isHtmlSurface(surface) {
@@ -358,6 +713,8 @@ export function officialDiscoveryDocument(input) {
         value: input.productCode,
       },
     },
+    image:
+      `https://synthetic-source.invalid/images/${input.number}.png`,
     ...(input.printing === null
       ? {}
       : {
@@ -368,8 +725,6 @@ export function officialDiscoveryDocument(input) {
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           printed_fields_digest:
             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          image:
-            `https://synthetic-source.invalid/images/${input.number}.png`,
         }),
   };
   const listing = {

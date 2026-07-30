@@ -230,8 +230,13 @@ test("retained immutable evidence publishes stable identities and warns when ear
     .first<{ document_json: string }>();
   const publishedPrintingDocument = JSON.parse(
     publishedPrinting?.document_json ?? "{}",
-  ) as Record<string, unknown>;
+  ) as { data: Record<string, unknown> };
   expect(publishedPrintingDocument).toMatchObject({
+    included: expect.any(Array),
+    provenance: expect.any(Object),
+    disagreements: expect.any(Array),
+  });
+  expect(publishedPrintingDocument.data).toMatchObject({
     distribution_contexts: [
       {
         id: expect.stringMatching(/^distribution_context_[a-f0-9]{64}$/),
@@ -249,14 +254,14 @@ test("retained immutable evidence publishes stable identities and warns when ear
       }),
     ]),
   });
-  expect(publishedPrintingDocument.relationship_evidence).toEqual(
+  expect(publishedPrintingDocument.data.relationship_evidence).toEqual(
     lifecycle.document.relationship_evidence,
   );
   expect(
     JSON.stringify(lifecycle.document.relationship_evidence),
   ).not.toContain("source_bucket");
   expect(
-    JSON.stringify(publishedPrintingDocument.relationship_evidence),
+    JSON.stringify(publishedPrintingDocument.data.relationship_evidence),
   ).not.toContain("source_bucket");
 
   const withdrawalRun = await collect(
@@ -332,10 +337,12 @@ test("retained immutable evidence publishes stable identities and warns when ear
   expect(
     JSON.parse(revisionDocument?.document_json ?? "{}"),
   ).toMatchObject({
-    lifecycle: {
-      first_revision_id: firstRevision,
-      last_observed_revision_id: withdrawalRevision,
-      withdrawn: true,
+    data: {
+      lifecycle: {
+        first_revision_id: firstRevision,
+        last_observed_revision_id: withdrawalRevision,
+        withdrawn: true,
+      },
     },
   });
 });
@@ -425,6 +432,8 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
       productRelationships: publication.productRelationshipLifecycles,
       relationships: publication.relationshipEvidence,
       locators: publication.locatorEvidence,
+      cardEvidence: publication.cardEvidence,
+      printingEvidence: publication.printingEvidence,
     },
     [...exactFreshness.values()].sort(
       (left, right) =>
@@ -770,9 +779,47 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     publishable: true,
     diagnostics: [],
     cards: [expect.objectContaining({ game: "fusion-world" })],
-    printings: [],
+    printings: [
+      expect.objectContaining({
+        rarity: { raw: null, normalized: null },
+        printed_rules_text: "Official printed rules",
+        game_data: {
+          profile: "fusion-world@1",
+          attributes: {},
+        },
+      }),
+    ],
   });
   expect((await approve(reconciled.document)).response.status).toBe(200);
+});
+
+test("production plans bind every request identity to its exact Official Source surface URL", async () => {
+  const requests = [
+    "card-list",
+    "products",
+    "releases",
+    "restrictions",
+    "block-policy",
+    "errata",
+    "don-rules",
+  ].map((surface) => ({
+    id: `one-piece-en:${surface}`,
+    method: "GET",
+    url: `https://official-source.invalid/one-piece-en/${surface}`,
+  }));
+  requests[0]!.url =
+    "https://official-source.invalid/one-piece-en/products";
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-json-document@2",
+    idempotency_key: "forged-production-surface-url",
+    requests,
+  });
+  expect(started.response.status).toBe(422);
+  expect(started.document).toMatchObject({
+    code: "source_surface_binding_mismatch",
+  });
 });
 
 test("the production source-plan route rejects synthetic fixture adapters without creating provenance", async () => {
@@ -3352,6 +3399,69 @@ test("a complete Product fixture publishes separated release and distribution re
         relationship.relationship_value === "ST-15 fuzzy label",
     ),
   ).toBe(false);
+});
+
+test("distinct official Release events in one region retain stable public identities", async () => {
+  const run = await collect(
+    "/reconciliation/product-release-multiple-events",
+    "product-release-multiple-events",
+  );
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  const published = await approve(candidate.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const product = (
+    await exportComponentRecords(revisionId, "products")
+  ).find(({ official_code }) => official_code === "ST-15");
+  if (product === undefined) throw new Error("ST-15 Product missing");
+  const releases = (
+    await exportComponentRecords(revisionId, "releases")
+  ).filter(({ product_id }) => product_id === product.id);
+  expect(releases).toEqual([
+    expect.objectContaining({
+      event_key: "oceania-announcement",
+      region: "EN-OCEANIA",
+      date: { precision: "month", value: "2026-09" },
+      status: "announced",
+    }),
+    expect.objectContaining({
+      event_key: "oceania-retail-release",
+      region: "EN-OCEANIA",
+      date: { precision: "day", value: "2026-09-18" },
+      status: "released",
+    }),
+  ]);
+  expect(new Set(releases.map(({ id }) => id)).size).toBe(2);
+});
+
+test("a disappeared Distribution Context with no remaining lineage is not current", async () => {
+  const firstRun = await collect(
+    "/reconciliation/product-release",
+    "distribution-context-first-observation",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  expect((await approve(firstCandidate.document)).response.status).toBe(200);
+
+  const missingRun = await collect(
+    "/reconciliation/product-standalone-missing",
+    "distribution-context-complete-missing",
+  );
+  const missingCandidate = await reconcile(missingRun.id);
+  const published = await approve(missingCandidate.document);
+  expect(published.response.status).toBe(200);
+  const stored = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current, source_lineages_json
+     FROM reconciled_distribution_contexts
+     WHERE context_key = 'championship-2026-pack'`,
+  ).first<{ current: number; source_lineages_json: string }>();
+  expect(stored).toEqual({
+    current: 0,
+    source_lineages_json: "[]",
+  });
 });
 
 test("conflicting Product and Release facts remain null with source-backed disagreements", async () => {

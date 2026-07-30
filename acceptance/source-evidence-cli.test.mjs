@@ -76,7 +76,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   };
   const rejected = await collectResumeAndShow(
     "cli_rejected_evidence_001",
-    "https://synthetic-source.invalid/redirect",
+    "redirect",
     "failed",
     cliEnvironment,
     ingestion,
@@ -95,7 +95,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
 
   const terminalFailure = await collectResumeAndShow(
     "cli_terminal_evidence_001",
-    "https://synthetic-source.invalid/unavailable",
+    "unavailable",
     "failed",
     cliEnvironment,
     ingestion,
@@ -111,7 +111,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
 
   const successful = await collectResumeAndShow(
     "cli_success_evidence_001",
-    "https://synthetic-source.invalid/one-piece-en/card-list",
+    null,
     "parsing",
     cliEnvironment,
     ingestion,
@@ -133,7 +133,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
 
 async function collectResumeAndShow(
   idempotencyKey,
-  url,
+  transportOutcome,
   expectedState,
   environment,
   ingestion,
@@ -141,7 +141,12 @@ async function collectResumeAndShow(
 ) {
   const planFile = join(directory, `${idempotencyKey}.json`);
   const requests = exactOnePieceRequests();
-  requests[0].url = url;
+  if (transportOutcome !== null) {
+    requests[0].headers = {
+      "user-agent":
+        `card-keepr-acceptance-transport/${transportOutcome}`,
+    };
+  }
   await writeFile(
     planFile,
     JSON.stringify({

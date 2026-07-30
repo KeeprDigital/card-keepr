@@ -45,6 +45,7 @@ WHERE official_code IS NOT NULL;
 CREATE TABLE reconciled_releases (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES reconciled_products(id),
+  event_key TEXT NOT NULL,
   region TEXT NOT NULL,
   date_precision TEXT CHECK (
     date_precision IN ('day', 'month', 'quarter', 'year', 'unknown')
@@ -75,6 +76,9 @@ CREATE TABLE reconciled_distribution_contexts (
   evidence_category TEXT NOT NULL CHECK (
     evidence_category IN ('explicit', 'derived', 'curated')
   ),
+  source_lineages_json TEXT NOT NULL DEFAULT '[]'
+    CHECK (json_valid(source_lineages_json)),
+  current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
   UNIQUE (supported_game, context_key)
 );
 

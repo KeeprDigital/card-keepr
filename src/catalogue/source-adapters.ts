@@ -21,6 +21,7 @@ export type SourceAdapterRegistration = Readonly<{
     context: { mediaType: string | null; url: string },
   ) => readonly unknown[];
   requiredSurfaces?: readonly string[];
+  requestPathForSurface?: (surface: string) => string;
 }>;
 
 const parseSourceDocument = (document: unknown): readonly unknown[] => {
@@ -62,6 +63,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         reconciliationCoverage: "official_source" as const,
         parseBytes: adapter.parseBytes,
         requiredSurfaces: adapter.requiredSurfaces,
+        requestPathForSurface: adapter.requestPathForSurface,
       })),
       ...[
         {

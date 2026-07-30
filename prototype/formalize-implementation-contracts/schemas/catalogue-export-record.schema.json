@@ -227,6 +227,11 @@
         "name": { "type": "string", "minLength": 1 },
         "effective_rules_text": { "$ref": "#/$defs/NullableText" },
         "game_data": { "$ref": "#/$defs/GameData" },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }
     },
@@ -327,6 +332,11 @@
         "locator_evidence": {
           "$ref": "#/$defs/LocatorEvidenceCollection"
         },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }
     },
@@ -375,10 +385,11 @@
     "ReleaseRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "product_id", "region", "date", "status"],
+      "required": ["type", "id", "event_key", "product_id", "region", "date", "status"],
       "properties": {
         "type": { "const": "release" },
         "id": { "$ref": "#/$defs/OpaqueId" },
+        "event_key": { "$ref": "#/$defs/OpaqueId" },
         "product_id": { "$ref": "#/$defs/OpaqueId" },
         "region": { "$ref": "#/$defs/ReleaseRegion" },
         "date": {

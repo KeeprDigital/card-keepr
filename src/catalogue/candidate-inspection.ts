@@ -194,9 +194,17 @@ function documentMap(
   return new Map(
     entries.map((entry) => [
       entry.id,
-      JSON.parse(entry.document_json) as Record<string, unknown>,
+      revisionDocumentData(entry.document_json),
     ]),
   );
+}
+
+function revisionDocumentData(documentJson: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (!isRecord(parsed)) {
+    throw new Error("A prior Catalogue document is invalid.");
+  }
+  return isRecord(parsed.data) ? parsed.data : parsed;
 }
 
 function changed(

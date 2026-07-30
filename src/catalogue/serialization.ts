@@ -5,8 +5,14 @@ const zFixed = 4;
 const zOk = 0;
 
 export function canonicalJson(value: unknown): string {
+  return canonicalJsonAt(value, "$");
+}
+
+function canonicalJsonAt(value: unknown, path: string): string {
   if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+    return `[${value
+      .map((item, index) => canonicalJsonAt(item, `${path}[${index}]`))
+      .join(",")}]`;
   }
   if (value !== null && typeof value === "object") {
     const record = value as Record<string, unknown>;
@@ -14,7 +20,10 @@ export function canonicalJson(value: unknown): string {
     return `{${keys
       .map(
         (key) =>
-          `${JSON.stringify(key.normalize("NFC"))}:${canonicalJson(record[key])}`,
+          `${JSON.stringify(key.normalize("NFC"))}:${canonicalJsonAt(
+            record[key],
+            `${path}.${key}`,
+          )}`,
       )
       .join(",")}}`;
   }
@@ -25,7 +34,9 @@ export function canonicalJson(value: unknown): string {
     typeof value === "number" &&
     (!Number.isFinite(value) || !Number.isInteger(value))
   ) {
-    throw new Error("Canonical catalogue JSON permits finite integers only");
+    throw new Error(
+      `Canonical catalogue JSON permits finite integers only at ${path}`,
+    );
   }
   if (
     value === null ||
@@ -34,7 +45,9 @@ export function canonicalJson(value: unknown): string {
   ) {
     return JSON.stringify(value);
   }
-  throw new Error("Canonical catalogue JSON contains an unsupported value");
+  throw new Error(
+    `Canonical catalogue JSON contains an unsupported value at ${path}`,
+  );
 }
 
 export function canonicalNdjson(records: readonly unknown[]): Uint8Array {

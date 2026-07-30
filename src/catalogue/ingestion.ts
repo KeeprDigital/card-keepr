@@ -659,6 +659,8 @@ async function approveRunAttempt(
             reconciliation.productRelationshipLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
+          cardEvidence: reconciliation.cardEvidence,
+          printingEvidence: reconciliation.printingEvidence,
         },
     sourceFreshness,
   );
@@ -1310,11 +1312,17 @@ function catalogueCard(
   printingIds: readonly string[],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
+  evidenceResources: readonly {
+    source: string;
+  }[] = [],
 ) {
   return {
     type: "card",
     ...card,
     printing_ids: printingIds,
+    source_lineages: [
+      ...new Set(evidenceResources.map(({ source }) => source)),
+    ].sort(),
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/cards/${card.id}`,
@@ -1341,6 +1349,12 @@ async function cataloguePrinting(
   declaredRelationships: readonly NonNullable<
     FixtureCandidate["product_relationships"]
   >[number][] = [],
+  evidenceResources: readonly {
+    type: "source_observation";
+    id: string;
+    captured_at: string;
+    source: string;
+  }[] = [],
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
     (relationship) =>
@@ -1388,7 +1402,7 @@ async function cataloguePrinting(
       ]),
     ).values(),
   ].sort((left, right) => left.id.localeCompare(right.id));
-  return {
+  const data = {
     type: "printing",
     ...printing,
     printing_images: [],
@@ -1396,10 +1410,32 @@ async function cataloguePrinting(
     distribution_contexts: projectedContexts,
     relationship_evidence: canonicalRelationshipEvidence,
     locator_evidence: locatorEvidence,
+    source_lineages: [
+      ...new Set(evidenceResources.map(({ source }) => source)),
+    ].sort(),
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,
     },
+  };
+  const included = [
+    ...new Map(
+      evidenceResources.map((resource) => [resource.id, resource]),
+    ).values(),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  const observationIds = included.map(({ id }) => id);
+  return {
+    data,
+    included,
+    provenance:
+      observationIds.length === 0
+        ? {}
+        : {
+            "/data/rarity": observationIds,
+            "/data/printed_rules_text": observationIds,
+            "/data/game_data": observationIds,
+          },
+    disagreements: [],
   };
 }
 
@@ -1688,6 +1724,7 @@ async function commitVerifiedPublication(
         .map((printing) => printing.id),
       revisionId,
       input.reconciliation?.cardLifecycles[card.id],
+      input.reconciliation?.cardEvidence[card.id] ?? [],
     ),
   }));
   const printingDocuments = await Promise.all(
@@ -1708,6 +1745,7 @@ async function commitVerifiedPublication(
         input.candidate.distribution_contexts ?? [],
         input.candidate.products ?? [],
         input.candidate.product_relationships ?? [],
+        input.reconciliation?.printingEvidence[printing.id] ?? [],
       ),
     })),
   );
@@ -2005,6 +2043,8 @@ async function reconcileReservedPublication(
             reconciliation.productRelationshipLifecycles,
           relationships: reconciliation.relationshipEvidence,
           locators: reconciliation.locatorEvidence,
+          cardEvidence: reconciliation.cardEvidence,
+          printingEvidence: reconciliation.printingEvidence,
         },
     sourceFreshness,
   );

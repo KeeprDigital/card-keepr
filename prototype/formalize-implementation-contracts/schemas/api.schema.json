@@ -213,6 +213,11 @@
         "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
         "name": { "type": "string", "minLength": 1 },
         "game_data": { "$ref": "#/$defs/GameData" },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
@@ -245,6 +250,11 @@
         "printing_ids": {
           "type": "array",
           "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
         },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
@@ -398,6 +408,11 @@
         "locator_evidence": {
           "$ref": "#/$defs/LocatorEvidenceCollection"
         },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }
@@ -424,6 +439,7 @@
       "required": ["id", "region", "date", "status"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
+        "event_key": { "$ref": "#/$defs/OpaqueId" },
         "region": { "$ref": "#/$defs/ReleaseRegion" },
         "date": { "$ref": "#/$defs/ReleaseDate" },
         "status": {

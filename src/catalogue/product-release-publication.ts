@@ -167,15 +167,15 @@ export async function productReleaseLifecyclePlan(
           ? product.releases.map(({ id }) => id)
           : [];
       }
-      const observedRegions = new Set(
+      const observedEventKeys = new Set(
         sourceObservations
           .filter(({ evidence }) => observedLineages.has(evidence.source))
           .flatMap(({ releases: observed }) =>
-            observed.map(({ region }) => region),
+            observed.map(({ eventKey }) => eventKey),
           ),
       );
       return product.releases
-        .filter(({ region }) => observedRegions.has(region))
+        .filter(({ event_key }) => observedEventKeys.has(event_key))
         .map(({ id }) => id);
     }),
   );
@@ -393,11 +393,12 @@ export function productReleasePublicationStatements(
         }),
       ),
       `INSERT INTO reconciled_releases (
-         id, product_id, region, date_precision, date_value,
+         id, product_id, event_key, region, date_precision, date_value,
          release_status, first_revision_id, last_observed_revision_id
        )
        SELECT json_extract(value, '$.id'),
               json_extract(value, '$.product_id'),
+              json_extract(value, '$.event_key'),
               json_extract(value, '$.region'),
               json_extract(value, '$.date.precision'),
               json_extract(value, '$.date.value'),
@@ -406,6 +407,8 @@ export function productReleasePublicationStatements(
               json_extract(value, '$.last_observed_revision_id')
        FROM json_each(?) WHERE true
        ON CONFLICT (id) DO UPDATE SET
+         event_key = excluded.event_key,
+         region = excluded.region,
          date_precision = excluded.date_precision,
          date_value = excluded.date_value,
          release_status = excluded.release_status,
@@ -415,10 +418,12 @@ export function productReleasePublicationStatements(
       database,
       (candidate.distribution_contexts ?? []).map((context) => ({
         ...context,
+        source_lineages_json: JSON.stringify(context.source_lineages ?? []),
+        current: context.observed ? 1 : 0,
       })),
       `INSERT INTO reconciled_distribution_contexts (
          id, supported_game, context_key, kind, label, product_id,
-         evidence_category
+         evidence_category, source_lineages_json, current
        )
        SELECT json_extract(value, '$.id'),
               json_extract(value, '$.game'),
@@ -426,12 +431,16 @@ export function productReleasePublicationStatements(
               json_extract(value, '$.kind'),
               json_extract(value, '$.label'),
               json_extract(value, '$.product_id'),
-              json_extract(value, '$.evidence_category')
+              json_extract(value, '$.evidence_category'),
+              json_extract(value, '$.source_lineages_json'),
+              json_extract(value, '$.current')
        FROM json_each(?) WHERE true
        ON CONFLICT (id) DO UPDATE SET
          label = excluded.label, kind = excluded.kind,
          product_id = excluded.product_id,
-         evidence_category = excluded.evidence_category`,
+         evidence_category = excluded.evidence_category,
+         source_lineages_json = excluded.source_lineages_json,
+         current = excluded.current`,
     ),
     ...statements(
       database,

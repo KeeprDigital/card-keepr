@@ -16,6 +16,7 @@ export type OfficialRawAdapterContract = {
   supportedGame: ProductSourceGame;
   format: DiscoveryFormat;
   requiredSurfaces: readonly string[];
+  requestPathForSurface: (surface: string) => string;
   parseBytes: (
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string },
@@ -100,6 +101,12 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
       Object.freeze({
         ...definition,
         requiredSurfaces: Object.freeze([...definition.requiredSurfaces]),
+        requestPathForSurface: (surface: string) =>
+          exactSurfacePath(
+            definition.sourceLineage,
+            definition.requiredSurfaces,
+            surface,
+          ),
         parseBytes: rawSnapshotDecoder(
           definition.format,
           definition.supportedGame,
@@ -130,7 +137,7 @@ export function officialSourceDiscoveryRequests(
     id: `${sourceLineage}:${surface}`,
     method: "GET",
     url: new URL(
-      `${sourceLineage}/${surface}`,
+      contract.requestPathForSurface(surface).slice(1),
       base.href.endsWith("/") ? base : new URL(`${base.href}/`),
     ).href,
     headers: {
@@ -142,6 +149,19 @@ export function officialSourceDiscoveryRequests(
           : "application/json",
     },
   }));
+}
+
+function exactSurfacePath(
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  surface: string,
+): string {
+  if (!requiredSurfaces.includes(surface)) {
+    throw new Error(
+      `Official Source lineage ${sourceLineage} has no ${surface} surface.`,
+    );
+  }
+  return `/${sourceLineage}/${surface}`;
 }
 
 function rawSnapshotDecoder(
@@ -157,7 +177,17 @@ function rawSnapshotDecoder(
         `Official Source URL does not identify a required ${sourceLineage} surface.`,
       );
     }
-    const document = decodeRawSurfacePayload(bytes, context.mediaType, surface);
+    const rawDocument = decodeRawSurfacePayload(
+      bytes,
+      context.mediaType,
+      surface,
+    );
+    const document = normalizeLineageSurface(
+      format,
+      sourceLineage,
+      surface,
+      rawDocument,
+    );
     if (
       document.contract !== "card-keepr-official-source-surface@1" ||
       document.lineage !== sourceLineage ||
@@ -167,17 +197,812 @@ function rawSnapshotDecoder(
         `Official Source ${surface} bytes do not satisfy the ${sourceLineage} surface binding.`,
       );
     }
+    let observations: readonly unknown[];
     if (isDiscoverySurface(surface)) {
-      return parseRawDiscoverySurface(document, format, game);
+      observations = parseRawDiscoverySurface(document, format, game);
+    } else if (surface === "products") {
+      observations = parseRawProductsSurface(document);
+    } else if (surface === "releases") {
+      observations = parseRawReleasesSurface(document);
+    } else {
+      observations = [rawCoverageObservation(document, surface)];
     }
-    if (surface === "products") {
-      return parseRawProductsSurface(document);
-    }
-    if (surface === "releases") {
-      return parseRawReleasesSurface(document);
-    }
-    return [rawCoverageObservation(document, surface)];
+    return observations.map((observation, index) =>
+      attachRawSurfaceEvidence(
+        observation,
+        sourceLineage,
+        surface,
+        rawDocument,
+        index === 0,
+      )
+    );
   };
+}
+
+function normalizeLineageSurface(
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  surface: string,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized =
+    format === "one-piece"
+      ? normalizeOnePieceSurface(surface, raw)
+      : format === "fusion-world"
+        ? normalizeFusionWorldSurface(surface, raw)
+        : format === "digimon"
+          ? normalizeDigimonSurface(surface, raw)
+          : normalizeGundamSurface(sourceLineage, surface, raw);
+  return {
+    contract: "card-keepr-official-source-surface@1",
+    lineage: sourceLineage,
+    surface,
+    ...normalized,
+  };
+}
+
+function normalizeOnePieceSurface(
+  surface: string,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if (surface === "card-list") {
+    if (raw.page !== "card-list") {
+      throw new Error("One Piece card-list page identity is invalid.");
+    }
+    return normalizedDiscovery(
+      raw.series_options,
+      raw.page_info,
+      normalizeOnePieceDetails(raw.card_pages),
+      normalizeOnePieceProducts(raw.products),
+      normalizeOnePieceReleases(raw.release_schedule),
+      "recording",
+    );
+  }
+  if (surface === "products") {
+    if (raw.page !== "product-list") {
+      throw new Error("One Piece Product page identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.result, normalizeOnePieceProduct),
+      "recording",
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "release-schedule") {
+      throw new Error("One Piece Release publication identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.events, normalizeOnePieceReleaseEntry),
+      "release-event",
+    );
+  }
+  return normalizedPolicy(raw, `one-piece-${surface}`);
+}
+
+function normalizeFusionWorldSurface(
+  surface: string,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if (surface === "card-search") {
+    if (raw.view !== "card-search") {
+      throw new Error("Fusion World card-search view identity is invalid.");
+    }
+    const facets = requiredRecord(raw.facets, "Fusion World facets");
+    for (const name of ["card_type", "colour", "cost"]) {
+      requiredArray(facets[name], `Fusion World ${name} facet`);
+    }
+    return normalizedDiscovery(
+      Object.entries(facets).map(([name, values]) => ({ name, values })),
+      raw.result,
+      normalizeFusionWorldDetails(raw.detail_pages),
+      normalizeFusionWorldProducts(raw.products),
+      normalizeFusionWorldReleases(raw.releases),
+      "card_type=leader&colour=red&cost=1",
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "products") {
+      throw new Error("Fusion World Product view identity is invalid.");
+    }
+    const tabs = uniqueTextValues(raw.status_tabs, "Fusion World Product tabs");
+    if (!tabs.includes("available") || !tabs.includes("coming-soon")) {
+      throw new Error("Fusion World Product tabs are incomplete.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.result, normalizeFusionWorldProduct),
+      "product-status",
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "product-release-dates") {
+      throw new Error("Fusion World Release publication identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.events, normalizeFusionWorldReleaseEntry),
+      "release-event",
+    );
+  }
+  return normalizedPolicy(raw, `fusion-world-${surface}`);
+}
+
+function normalizeDigimonSurface(
+  surface: string,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if (surface === "card-list") {
+    if (raw.view !== "card-list") {
+      throw new Error("Digimon card-list view identity is invalid.");
+    }
+    const filters = requiredRecord(raw.filters, "Digimon filters");
+    for (const name of ["category", "cardcategory", "colour"]) {
+      requiredArray(filters[name], `Digimon ${name} filter`);
+    }
+    return normalizedDiscovery(
+      raw.version_options,
+      raw.result,
+      normalizeDigimonDetails(raw.card_popups),
+      normalizeDigimonProducts(raw.products),
+      normalizeDigimonReleases(raw.release_calendar),
+      "category=all&cardcategory=digimon&colour=blue",
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "product-index") {
+      throw new Error("Digimon Product index identity is invalid.");
+    }
+    requiredArray(raw.tile_categories, "Digimon Product tile categories");
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.result, normalizeDigimonProduct),
+      "product-category",
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "product-release-calendar") {
+      throw new Error("Digimon Release publication identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.events, normalizeDigimonReleaseEntry),
+      "release-event",
+    );
+  }
+  return normalizedPolicy(raw, `digimon-${surface}`);
+}
+
+function normalizeGundamSurface(
+  sourceLineage: string,
+  surface: string,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const expectedLocale =
+    sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US";
+  if (raw.locale !== expectedLocale) {
+    throw new Error("Gundam surface locale does not match its Source Lineage.");
+  }
+  if (surface === "packages") {
+    if (raw.view !== "card-search") {
+      throw new Error("Gundam card-search view identity is invalid.");
+    }
+    return normalizedDiscovery(
+      raw.package_options,
+      raw.result,
+      normalizeGundamDetails(raw.card_details),
+      normalizeGundamProducts(raw.products),
+      normalizeGundamReleases(raw.releases),
+      "package=all",
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "product-list") {
+      throw new Error("Gundam Product list identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.result, normalizeGundamProduct),
+      "package",
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "locale-product-release-dates") {
+      throw new Error("Gundam Release publication identity is invalid.");
+    }
+    return normalizedPartitions(
+      normalizePartitionEntries(raw.events, normalizeGundamReleaseEntry),
+      "release-event",
+    );
+  }
+  return normalizedPolicy(raw, `gundam-${surface}`);
+}
+
+function normalizedDiscovery(
+  discoveredVocabulary: unknown,
+  partition: unknown,
+  details: unknown,
+  products: unknown,
+  releases: unknown,
+  bucket: string,
+): Record<string, unknown> {
+  const page = requiredRecord(partition, "Official Source result");
+  if (page.cap_signal !== undefined && page.cap_signal !== null) {
+    throw new Error(
+      "Official Source partition result-cap evidence does not prove complete coverage.",
+    );
+  }
+  const partitions = requiredArray(
+    page.partitions,
+    "Official Source partitions",
+  );
+  if (
+    partitions.length === 0 ||
+    partitions.some(
+      (value) =>
+        requiredRecord(value, "Official Source partition").bucket !== bucket,
+    )
+  ) {
+    throw new Error(
+      "Official Source discovered partition closure does not match the exact surface contract.",
+    );
+  }
+  return {
+    source_buckets: [bucket],
+    facets: requiredArray(
+      discoveredVocabulary,
+      "Official Source discovered vocabulary",
+    ),
+    partitions,
+    details: requiredArray(details, "Official Source details"),
+    products: requiredArray(products, "Official Source Products"),
+    releases: requiredArray(releases, "Official Source Releases"),
+  };
+}
+
+function normalizedPartitions(
+  value: unknown,
+  bucket: string,
+): Record<string, unknown> {
+  const result = requiredRecord(value, "Official Source partition result");
+  if (result.cap_signal !== undefined && result.cap_signal !== null) {
+    throw new Error(
+      "Official Source partition result-cap evidence does not prove complete coverage.",
+    );
+  }
+  return {
+    partitions: requiredArray(
+      result.partitions,
+      `Official Source ${bucket} partitions`,
+    ),
+  };
+}
+
+function normalizedPolicy(
+  raw: Record<string, unknown>,
+  expectedPublication: string,
+): Record<string, unknown> {
+  if (raw.publication !== expectedPublication) {
+    throw new Error("Official policy publication identity is invalid.");
+  }
+  return {
+    revision: requiredText(raw.revision, "Official policy revision"),
+    entries: requiredArray(raw.entries, "Official policy entries"),
+  };
+}
+
+function normalizePartitionEntries(
+  value: unknown,
+  entry: (value: unknown) => unknown,
+): Record<string, unknown> {
+  const result = requiredRecord(value, "Official Source partition result");
+  return {
+    ...result,
+    partitions: requiredArray(
+      result.partitions,
+      "Official Source partitions",
+    ).map((rawPage) => {
+      const page = requiredRecord(rawPage, "Official Source partition");
+      return {
+        ...page,
+        entries: requiredArray(
+          page.entries,
+          "Official Source partition entries",
+        ).map(entry),
+      };
+    }),
+  };
+}
+
+function normalizeOnePieceDetails(value: unknown): unknown[] {
+  return requiredArray(value, "One Piece Card pages").map((item) => {
+    const card = requiredRecord(item, "One Piece Card page");
+    return canonicalDetail(card, {
+      path: "source_record_id",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: card.Category,
+        colours: card.Color,
+        cost: card.Cost,
+        life: card.Life,
+        battle_attributes: card.Attribute,
+        power: card.Power,
+        counter: card.Counter,
+        traits: card.Type,
+        block_icons: card["Block icon"],
+        effect_text: card.Effect,
+        trigger_text: card.Trigger,
+      },
+      imageFields: [{ role: "front", value: card.image_url }],
+    });
+  });
+}
+
+function normalizeFusionWorldDetails(value: unknown): unknown[] {
+  return requiredArray(value, "Fusion World Card details").map((item) => {
+    const card = requiredRecord(item, "Fusion World Card detail");
+    const images = requiredArray(
+      card.image_urls,
+      "Fusion World Card images",
+    ).map((image) => {
+      const record = requiredRecord(image, "Fusion World Card image");
+      return {
+        role: requiredText(record.role, "Fusion World image role"),
+        value: record.url,
+      };
+    });
+    if (
+      card.card_type === "leader" &&
+      (
+        images.length !== 2 ||
+        new Set(images.map(({ role }) => role)).size !== 2 ||
+        !images.some(({ role }) => role === "front") ||
+        !images.some(({ role }) => role === "back")
+      )
+    ) {
+      throw new Error(
+        "Fusion World Leader requires exact front and back image roles.",
+      );
+    }
+    return canonicalDetail(card, {
+      path: "detail_path",
+      number: "card_number",
+      title: "name",
+      rules: "skills_text",
+      attributes: {
+        card_type: card.card_type,
+        colours: card.color,
+        cost: card.cost,
+        specified_cost: card.specified_cost,
+        power: card.power,
+        combo_power: card.combo_power,
+        traits: card.special_traits,
+        skills: card.skills,
+        ...(card.leader_faces === undefined
+          ? {}
+          : { leader_faces: card.leader_faces }),
+      },
+      imageFields: images,
+    });
+  });
+}
+
+function normalizeDigimonDetails(value: unknown): unknown[] {
+  return requiredArray(value, "Digimon Card popups").map((item) => {
+    const card = requiredRecord(item, "Digimon Card popup");
+    return canonicalDetail(card, {
+      path: "popup_id",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: card.cardcategory,
+        colours: card.Color,
+        level: card.Lv,
+        play_cost: card["Play Cost"],
+        use_cost: card["Use Cost"],
+        dp: card.DP,
+        form: card.Form,
+        attribute: card.Attribute,
+        traits: card.Type,
+        digivolution_requirements: card["Digivolution Cost"],
+        text_sections: card.text_sections,
+        dual_colours: card["DUAL Color"],
+        dual_cost: card["DUAL Cost"],
+        link_dp: card["Link DP"],
+      },
+      imageFields: [{ role: "front", value: card.image_url }],
+    });
+  });
+}
+
+function normalizeGundamDetails(value: unknown): unknown[] {
+  return requiredArray(value, "Gundam Card details").map((item) => {
+    const card = requiredRecord(item, "Gundam Card detail");
+    return canonicalDetail(card, {
+      path: "detailSearch",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: card.Type,
+        colours: card.Color,
+        level: card.Level,
+        cost: card.Cost,
+        block_icon: card.Block,
+        effect_text: card.Effect,
+        zone: card.Zone,
+        traits: card.Trait,
+        link_condition: card.Link,
+        ap: card.AP,
+        hp: card.HP,
+        series_titles: card.Title,
+      },
+      imageFields: [{ role: "front", value: card.image_url }],
+    });
+  });
+}
+
+function canonicalDetail(
+  raw: Record<string, unknown>,
+  mapping: {
+    path: string;
+    number: string;
+    title: string;
+    rules: string;
+    attributes: Record<string, unknown>;
+    imageFields: readonly { role: string; value: unknown }[];
+  },
+): Record<string, unknown> {
+  const printing =
+    raw.printing === undefined
+      ? undefined
+      : requiredRecord(raw.printing, "Official Printing fields");
+  const images =
+    printing === undefined
+      ? []
+      : mapping.imageFields.map(({ role, value }) => ({
+          role,
+          source_url: requiredText(value, "Official Printing image URL"),
+          artwork_fingerprint: requiredText(
+            raw.artwork_fingerprint,
+            "Official artwork fingerprint",
+          ),
+        }));
+  return {
+    path: requiredText(raw[mapping.path], "Official Card locator"),
+    number: requiredText(raw[mapping.number], "Official Card number"),
+    title: requiredText(raw[mapping.title], "Official Card name"),
+    rules: requiredText(raw[mapping.rules], "Official Card rules"),
+    profile: requiredText(raw.profile, "Official Game Profile"),
+    attributes: mapping.attributes,
+    product_codes: requiredTextArray(
+      raw.product_codes,
+      "Official Product codes",
+    ),
+    distribution: requiredRecord(
+      raw.distribution,
+      "Official Distribution",
+    ),
+    ...(printing === undefined
+      ? {}
+      : {
+          printing: {
+            rarity: printing.rarity ?? null,
+            normalizedRarity: printing.normalized_rarity ?? null,
+            attributes: printing.attributes ?? {},
+          },
+          printed_rules: requiredText(
+            raw.printed_rules,
+            "Official printed rules",
+          ),
+          variant: requiredText(raw.variant, "Official Printing variant"),
+          artwork_fingerprint: requiredText(
+            raw.artwork_fingerprint,
+            "Official artwork fingerprint",
+          ),
+          printed_fields_digest: requiredText(
+            raw.printed_fields_digest,
+            "Official printed fields digest",
+          ),
+          image: images[0]!.source_url,
+          images,
+        }),
+  };
+}
+
+function normalizeOnePieceProducts(value: unknown): unknown[] {
+  return requiredArray(value, "One Piece Products").map(
+    normalizeOnePieceProduct,
+  );
+}
+
+function normalizeFusionWorldProducts(value: unknown): unknown[] {
+  return requiredArray(value, "Fusion World Products").map(
+    normalizeFusionWorldProduct,
+  );
+}
+
+function normalizeDigimonProducts(value: unknown): unknown[] {
+  return requiredArray(value, "Digimon Products").map(
+    normalizeDigimonProduct,
+  );
+}
+
+function normalizeGundamProducts(value: unknown): unknown[] {
+  return requiredArray(value, "Gundam Products").map(
+    normalizeGundamProduct,
+  );
+}
+
+function normalizeOnePieceProduct(value: unknown): Record<string, unknown> {
+  const product = requiredRecord(value, "One Piece Product");
+  return canonicalProduct(product, "product_code", "product_name");
+}
+
+function normalizeFusionWorldProduct(value: unknown): Record<string, unknown> {
+  const product = requiredRecord(value, "Fusion World Product");
+  return canonicalProduct(product, "productCode", "productName");
+}
+
+function normalizeDigimonProduct(value: unknown): Record<string, unknown> {
+  const product = requiredRecord(value, "Digimon Product");
+  return canonicalProduct(product, "productId", "productTitle");
+}
+
+function normalizeGundamProduct(value: unknown): Record<string, unknown> {
+  const product = requiredRecord(value, "Gundam Product");
+  return canonicalProduct(product, "productCode", "productName");
+}
+
+function canonicalProduct(
+  product: Record<string, unknown>,
+  codeField: string,
+  nameField: string,
+): Record<string, unknown> {
+  return {
+    code: requiredText(product[codeField], "Official Product code"),
+    title: requiredText(product[nameField], "Official Product name"),
+    ...(product.distribution === undefined
+      ? {}
+      : { distribution: product.distribution }),
+    ...Object.fromEntries(
+      Object.entries(product).filter(([field]) =>
+        field !== codeField &&
+        field !== nameField &&
+        field !== "distribution"
+      ),
+    ),
+  };
+}
+
+function normalizeOnePieceReleases(value: unknown): unknown[] {
+  return requiredArray(value, "One Piece Releases").map((item) =>
+    canonicalRelease(requiredRecord(item, "One Piece Release"), {
+      code: "product_code",
+      event: "announcement_id",
+    })
+  );
+}
+
+function normalizeFusionWorldReleases(value: unknown): unknown[] {
+  return requiredArray(value, "Fusion World Releases").map((item) =>
+    canonicalRelease(requiredRecord(item, "Fusion World Release"), {
+      code: "productCode",
+      event: "releaseId",
+    })
+  );
+}
+
+function normalizeDigimonReleases(value: unknown): unknown[] {
+  return requiredArray(value, "Digimon Releases").map((item) =>
+    canonicalRelease(requiredRecord(item, "Digimon Release"), {
+      code: "productId",
+      event: "calendarEntryId",
+    })
+  );
+}
+
+function normalizeGundamReleases(value: unknown): unknown[] {
+  return requiredArray(value, "Gundam Releases").map((item) =>
+    canonicalRelease(requiredRecord(item, "Gundam Release"), {
+      code: "productCode",
+      event: "releaseEventId",
+    })
+  );
+}
+
+function normalizeOnePieceReleaseEntry(value: unknown): unknown {
+  return canonicalReleaseEntry(value, normalizeOnePieceProduct, (release) =>
+    canonicalRelease(release, {
+      code: "product_code",
+      event: "announcement_id",
+    }));
+}
+
+function normalizeFusionWorldReleaseEntry(value: unknown): unknown {
+  return canonicalReleaseEntry(value, normalizeFusionWorldProduct, (release) =>
+    canonicalRelease(release, {
+      code: "productCode",
+      event: "releaseId",
+    }));
+}
+
+function normalizeDigimonReleaseEntry(value: unknown): unknown {
+  return canonicalReleaseEntry(value, normalizeDigimonProduct, (release) =>
+    canonicalRelease(release, {
+      code: "productId",
+      event: "calendarEntryId",
+    }));
+}
+
+function normalizeGundamReleaseEntry(value: unknown): unknown {
+  return canonicalReleaseEntry(value, normalizeGundamProduct, (release) =>
+    canonicalRelease(release, {
+      code: "productCode",
+      event: "releaseEventId",
+    }));
+}
+
+function canonicalReleaseEntry(
+  value: unknown,
+  product: (value: unknown) => Record<string, unknown>,
+  release: (value: Record<string, unknown>) => Record<string, unknown>,
+): Record<string, unknown> {
+  const entry = requiredRecord(value, "Official Release entry");
+  return {
+    product: product(entry.product),
+    release: release(
+      requiredRecord(entry.release, "Official Release facts"),
+    ),
+  };
+}
+
+function canonicalRelease(
+  release: Record<string, unknown>,
+  fields: { code: string; event: string },
+): Record<string, unknown> {
+  return {
+    code: requiredText(release[fields.code], "Official Release Product code"),
+    event_key: requiredText(release[fields.event], "Official Release identity"),
+    region: release.region,
+    precision: release.precision,
+    date: release.date,
+    status: release.status,
+  };
+}
+
+function attachRawSurfaceEvidence(
+  observation: unknown,
+  sourceLineage: string,
+  surface: string,
+  document: Record<string, unknown>,
+  retainDocument: boolean,
+): Record<string, unknown> {
+  const record = requiredRecord(
+    observation,
+    `Official Source ${surface} observation`,
+  );
+  const existing =
+    record.source_sidecar === undefined
+      ? {}
+      : requiredRecord(record.source_sidecar, "Source sidecar");
+  const raw =
+    existing.raw === undefined
+      ? {}
+      : requiredRecord(existing.raw, "Source sidecar raw fields");
+  const consumed = Array.isArray(existing.consumed_fields)
+    ? existing.consumed_fields
+    : [];
+  const unmapped = Array.isArray(existing.unmapped_optional_fields)
+    ? existing.unmapped_optional_fields
+      : [];
+  const mappedRootFields = mappedSurfaceFields(sourceLineage, surface);
+  return {
+    ...record,
+    source_sidecar: {
+      ...existing,
+      raw: {
+        ...raw,
+        official_surfaces: [
+          ...(
+            Array.isArray(raw.official_surfaces)
+              ? raw.official_surfaces
+              : []
+          ),
+          {
+            source_lineage: sourceLineage,
+            surface,
+            ...(retainDocument
+              ? { document }
+              : { retained_by_observation_ordinal: 1 }),
+          },
+        ],
+      },
+      consumed_fields: [
+        ...new Set([
+          ...consumed,
+          "source_sidecar.raw.official_surfaces[].source_lineage",
+          "source_sidecar.raw.official_surfaces[].surface",
+          ...(retainDocument ? mappedRootFields : []).map(
+            (field) =>
+              `source_sidecar.raw.official_surfaces[0].document.${field}`,
+          ),
+        ]),
+      ].sort(),
+      unmapped_optional_fields: [
+        ...unmapped,
+        ...(retainDocument ? Object.entries(document) : [])
+          .filter(([field]) => !mappedRootFields.includes(field))
+          .map(([field, value]) => ({
+            path:
+              `source_sidecar.raw.official_surfaces[0].document.${field}`,
+            value,
+          })),
+      ],
+    },
+  };
+}
+
+function mappedSurfaceFields(
+  sourceLineage: string,
+  surface: string,
+): string[] {
+  if (isDiscoverySurface(surface)) {
+    if (sourceLineage === "one-piece-en") {
+      return [
+        "page",
+        "series_options",
+        "page_info",
+        "card_pages",
+        "products",
+        "release_schedule",
+      ];
+    }
+    if (sourceLineage === "fusion-world-en") {
+      return [
+        "view",
+        "facets",
+        "result",
+        "detail_pages",
+        "products",
+        "releases",
+      ];
+    }
+    if (sourceLineage === "digimon-en") {
+      return [
+        "view",
+        "version_options",
+        "filters",
+        "result",
+        "card_popups",
+        "products",
+        "release_calendar",
+      ];
+    }
+    return [
+      "view",
+      "locale",
+      "package_options",
+      "result",
+      "card_details",
+      "products",
+      "releases",
+    ];
+  }
+  if (surface === "products") {
+    return sourceLineage === "one-piece-en"
+      ? ["page", "series_options", "result"]
+      : sourceLineage === "fusion-world-en"
+        ? ["view", "status_tabs", "result"]
+        : sourceLineage === "digimon-en"
+          ? ["view", "tile_categories", "result"]
+          : ["view", "locale", "result"];
+  }
+  if (surface === "releases") {
+    return sourceLineage.startsWith("gundam-")
+      ? ["publication", "locale", "events"]
+      : ["publication", "events"];
+  }
+  return sourceLineage.startsWith("gundam-")
+    ? ["publication", "locale", "revision", "entries"]
+    : ["publication", "revision", "entries"];
 }
 
 function decodeRawSurfacePayload(
@@ -299,7 +1124,30 @@ function parseRawDiscoverySurface(
     },
     keys,
     game,
-  );
+  ).map((observation) => {
+    const record = requiredRecord(
+      observation,
+      "Official discovery observation",
+    );
+    const memberships =
+      record.memberships === undefined
+        ? {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: [],
+          }
+        : requiredRecord(
+            record.memberships,
+            "Official discovery memberships",
+          );
+    return {
+      ...record,
+      memberships: {
+        ...memberships,
+        source_buckets: sourceBuckets,
+      },
+    };
+  });
 }
 
 function parseRawProductsSurface(
@@ -720,11 +1568,11 @@ function cardObservation(
       : {
           printing: {
             rarity: {
-              raw: requiredText(
+              raw: nullableText(
                 requiredRecord(detail.printing, "Official Printing").rarity,
                 "Official Printing rarity",
               ),
-              normalized: requiredText(
+              normalized: nullableText(
                 requiredRecord(detail.printing, "Official Printing")
                   .normalizedRarity,
                 "Official normalized rarity",
@@ -762,11 +1610,17 @@ function cardObservation(
             },
           },
           appearance_evidence: {
-            images: [{
-              role: "front",
-              source_url: detail.image,
-              artwork_fingerprint: artwork,
-            }],
+            images:
+              detail.images === undefined
+                ? [{
+                    role: "front",
+                    source_url: detail.image,
+                    artwork_fingerprint: artwork,
+                  }]
+                : requiredArray(
+                    detail.images,
+                    "Official Printing images",
+                  ),
           },
         }),
     memberships: {
@@ -846,6 +1700,7 @@ function catalogue(
         official_code: code,
         name: requiredText(product.title, "Official Product title"),
         releases: (releasesByCode.get(code) ?? []).map((release) => ({
+          event_key: release.event_key,
           region: release.region,
           date: { precision: release.precision, value: release.date },
           status: release.status,
@@ -966,4 +1821,9 @@ function requiredText(value: unknown, name: string): string {
     throw new Error(`${name} is invalid.`);
   }
   return value;
+}
+
+function nullableText(value: unknown, name: string): string | null {
+  if (value === null) return null;
+  return requiredText(value, name);
 }

@@ -54,6 +54,7 @@ export async function persistReviewableCandidate(
       sourceObservationSetId: string;
       sourceSnapshotId: string;
       sourceObservationId: string;
+      sourceLineage: string;
       cardId: string;
       printingId: string | null;
       locator: string | null;
@@ -117,7 +118,6 @@ export async function persistReviewableCandidate(
     ...candidatePlanInsertionStatements(
       database,
       input.runId,
-      input.sourceLineage,
       input.plans,
       canonicalJson(input.warnings),
     ),
@@ -160,6 +160,7 @@ export async function persistBlockedCandidate(
       sourceObservationSetId: string;
       sourceSnapshotId: string;
       sourceObservationId: string;
+      sourceLineage: string;
       cardId: string;
       printingId: string | null;
       locator: string | null;
@@ -223,7 +224,6 @@ export async function persistBlockedCandidate(
     ...candidatePlanInsertionStatements(
       database,
       input.runId,
-      input.sourceLineage,
       input.plans,
       canonicalJson(input.diagnostics),
     ),
@@ -309,6 +309,7 @@ type CandidatePlanInput = {
   sourceObservationSetId: string;
   sourceSnapshotId: string;
   sourceObservationId: string;
+  sourceLineage: string;
   cardId: string;
   printingId: string | null;
   locator: string | null;
@@ -321,7 +322,6 @@ type CandidatePlanInput = {
 function candidatePlanInsertionStatements(
   database: D1Database,
   runId: string,
-  sourceLineage: string,
   plans: readonly CandidatePlanInput[],
   warningsJson: string,
 ): D1PreparedStatement[] {
@@ -329,6 +329,7 @@ function candidatePlanInsertionStatements(
     observation_set_id: plan.sourceObservationSetId,
     snapshot_id: plan.sourceSnapshotId,
     observation_id: plan.sourceObservationId,
+    source_lineage: plan.sourceLineage,
     card_id: plan.cardId,
     printing_id: plan.printingId,
     locator: plan.locator,
@@ -351,7 +352,8 @@ function candidatePlanInsertionStatements(
               json_extract(planned.value, '$.snapshot_id'),
               json_extract(planned.value, '$.observation_id'),
               json_extract(planned.value, '$.card_id'),
-              json_extract(planned.value, '$.printing_id'), ?,
+              json_extract(planned.value, '$.printing_id'),
+              json_extract(planned.value, '$.source_lineage'),
               json_extract(planned.value, '$.locator'),
               json_extract(planned.value, '$.variant_key'),
               json_extract(planned.value, '$.compatibility_json'),
@@ -362,7 +364,6 @@ function candidatePlanInsertionStatements(
     )
     .bind(
       runId,
-      sourceLineage,
       warningsJson,
       chunk,
     ),

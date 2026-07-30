@@ -124,8 +124,13 @@ export async function currentPrintingsResponse(
          )
          AND (
            ? IS NULL OR
-           json_extract(
-             printing.document_json, '$.rarity.normalized'
+           coalesce(
+             json_extract(
+               printing.document_json, '$.data.rarity.normalized'
+             ),
+             json_extract(
+               printing.document_json, '$.rarity.normalized'
+             )
            ) = ?
          )
          AND (
@@ -197,7 +202,7 @@ export async function currentPrintingsResponse(
   const selected = rows.results.map((row) => ({
     id: row.printing_id,
     card_id: row.card_id,
-    document: JSON.parse(row.document_json) as unknown,
+    document: printingData(JSON.parse(row.document_json) as unknown),
   }));
   const data = selected
     .slice(0, limit)
@@ -238,6 +243,20 @@ export async function currentPrintingsResponse(
     },
     { headers: printingHeaders(revisionId, etag) },
   );
+}
+
+function printingData(value: unknown): unknown {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>).data !== null &&
+    typeof (value as Record<string, unknown>).data === "object" &&
+    !Array.isArray((value as Record<string, unknown>).data)
+  ) {
+    return (value as Record<string, unknown>).data;
+  }
+  return value;
 }
 
 function parseLimit(value: string | null): number {

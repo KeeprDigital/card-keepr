@@ -340,19 +340,26 @@ export default defineConfig({
           }
           const rawSurface = officialRawSurfacePayload(url.pathname);
           if (rawSurface !== null) {
+            const surface = url.pathname.slice(
+              url.pathname.lastIndexOf("/") + 1,
+            );
             if (
               url.searchParams.get("failure") === "cap" &&
-              rawSurface.surface === "card-list"
+              surface === "card-list"
             ) {
-              (rawSurface.partitions as Array<Record<string, unknown>>)[0]!
-                .result_cap = 1;
+              (
+                rawSurface.page_info as Record<string, unknown>
+              ).cap_signal = "Too many search results";
             }
             if (
               url.searchParams.get("failure") === "pagination" &&
-              rawSurface.surface === "card-list"
+              surface === "card-list"
             ) {
               const page =
-                (rawSurface.partitions as Array<Record<string, unknown>>)[0]!;
+                (
+                  (rawSurface.page_info as Record<string, unknown>)
+                    .partitions as Array<Record<string, unknown>>
+                )[0]!;
               page.pages = 2;
               page.has_next = true;
             }
@@ -361,7 +368,7 @@ export default defineConfig({
               "card-search",
               "packages",
               "products",
-            ].includes(String(rawSurface.surface));
+            ].includes(surface);
             return new Response(
               html
                 ? `<script type="application/json" data-keepr-official-payload>${
@@ -1632,7 +1639,8 @@ function reconciliationSourceDocument(scenario: string) {
                   distribution_contexts: [],
                   source_buckets: ["identity-product-list"],
                 }
-            : scenario === "product-release"
+            : scenario === "product-release" ||
+                scenario === "product-release-multiple-events"
               ? {
                   products: ["ST-15"],
                   distribution_contexts: ["championship-2026-pack"],
@@ -1682,7 +1690,10 @@ function productReleaseCatalogueForScenario(
     kind: "official_code",
     value,
   });
-  if (scenario === "product-release") {
+  if (
+    scenario === "product-release" ||
+    scenario === "product-release-multiple-events"
+  ) {
     return {
       products: [
         {
@@ -1691,10 +1702,19 @@ function productReleaseCatalogueForScenario(
           name: "Starter Deck RED Edward.Newgate",
           releases: [
             {
+              event_key: "oceania-announcement",
               region: "EN-OCEANIA",
               date: { precision: "month", value: "2026-09" },
               status: "announced",
             },
+            ...(scenario === "product-release-multiple-events"
+              ? [{
+                  event_key: "oceania-retail-release",
+                  region: "EN-OCEANIA",
+                  date: { precision: "day", value: "2026-09-18" },
+                  status: "released",
+                }]
+              : []),
           ],
         },
       ],

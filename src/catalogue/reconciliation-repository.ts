@@ -204,7 +204,7 @@ export async function canonicalCardConflict(
     .bind(cardId)
     .first<{ document_json: string }>();
   if (row === null) return null;
-  const current = JSON.parse(row.document_json) as Record<string, unknown>;
+  const current = revisionDocumentData(row.document_json);
   const currentCanonical = {
     game: current.game,
     official_identity: current.official_identity,
@@ -261,7 +261,9 @@ export async function canonicalPrintingConflict(
     .bind(printingId)
     .first<{ document_json: string }>();
   if (row === null) return null;
-  const current = JSON.parse(row.document_json) as FixturePrinting;
+  const current = revisionDocumentData(
+    row.document_json,
+  ) as FixturePrinting;
   const currentCanonical: PrintingFacts = {
     rarity: current.rarity,
     printed_rules_text: current.printed_rules_text,
@@ -310,6 +312,26 @@ function normalizedFormatting(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function revisionDocumentData(documentJson: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error("A published Catalogue document is invalid.");
+  }
+  const document = parsed as Record<string, unknown>;
+  if (
+    document.data !== null &&
+    typeof document.data === "object" &&
+    !Array.isArray(document.data)
+  ) {
+    return document.data as Record<string, unknown>;
+  }
+  return document;
 }
 
 function compatibilityValues(
