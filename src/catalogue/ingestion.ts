@@ -40,6 +40,7 @@ import {
   repairableCatalogueRevisionWindow,
 } from "./catalogue-revision-retention";
 import { requiredSourceAdapter } from "./source-adapters";
+import { legalityPublicationStatements } from "./legality-publication";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -2262,6 +2263,11 @@ async function commitVerifiedPublication(
         input.run.candidate_digest,
       ),
     ...(input.reconciliation?.statements ?? []),
+    ...legalityPublicationStatements(
+      database,
+      input.candidate,
+      revisionId,
+    ),
     ...revisionCardStatements,
     ...revisionCardQueryStatements,
     ...revisionCardSearchChunkStatements,
@@ -2669,6 +2675,12 @@ function publicationFailureProblem(error: unknown): AdministrationProblem {
       "The publication guards changed after approval was reserved.",
     );
   }
+  console.error(
+    JSON.stringify({
+      message: "Catalogue publication verification failed",
+      error: errorMessage(error),
+    }),
+  );
   return new AdministrationProblem(
     500,
     "export_verification_failed",
@@ -4403,6 +4415,7 @@ function isCatalogueCandidate(
         "product_observed_lineages",
         "source_checks",
         "errata",
+        "legality_rules",
       ],
     ) ||
     value.contract !== catalogueCandidateContract ||
@@ -4413,7 +4426,9 @@ function isCatalogueCandidate(
     !Array.isArray(value.printings) ||
     (value.errata !== undefined &&
       (!Array.isArray(value.errata) ||
-        !value.errata.every(isCatalogueErratum)))
+        !value.errata.every(isCatalogueErratum))) ||
+    (value.legality_rules !== undefined &&
+      !Array.isArray(value.legality_rules))
   ) {
     return false;
   }

@@ -20,6 +20,7 @@ import {
   credentialConsumerProofRequestHeader,
   type CredentialConsumerProofRequestClaims,
 } from "../../src/credentials/consumer-proof";
+import { contextualLegalitySourceDocument } from "./test/contextual-legality-fixture";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
@@ -802,6 +803,12 @@ export default defineConfig({
 });
 
 function reconciliationSourceDocument(scenario: string) {
+  if (scenario === "contextual-legality-asia") {
+    return contextualLegalitySourceDocument("EN-ASIA");
+  }
+  if (scenario === "contextual-legality-us") {
+    return contextualLegalitySourceDocument("EN-US");
+  }
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
   }

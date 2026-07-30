@@ -1,3 +1,7 @@
+import {
+  contextualLegalityDocument,
+} from "./contextual-legality-source.mjs";
+
 let onePieceCardListRequests = 0;
 
 export default {
@@ -158,6 +162,17 @@ export default {
         status: 503,
         headers: { "retry-after": "0" },
       });
+    }
+    if (pathname === "/contextual-legality-asia") {
+      return Response.json(
+        contextualLegalityDocument(
+          "EN-ASIA",
+          url.searchParams.get("representable") !== "false",
+        ),
+      );
+    }
+    if (pathname === "/contextual-legality-us") {
+      return Response.json(contextualLegalityDocument("EN-US"));
     }
     return new Response("not found", { status: 404 });
   },

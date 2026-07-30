@@ -68,7 +68,23 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
     !Array.isArray(document) &&
     Array.isArray((document as { cards?: unknown }).cards)
   ) {
-    return (document as { cards: unknown[] }).cards;
+    const source = document as {
+      cards: unknown[];
+      legality_rules?: unknown;
+      legality_completeness?: unknown;
+    };
+    return [
+      ...source.cards,
+      ...(source.legality_rules === undefined
+        ? []
+        : [
+            {
+              observation_type: "legality_rules",
+              legality_rules: source.legality_rules,
+              completeness: source.legality_completeness,
+            },
+          ]),
+    ];
   }
   return [document];
 };
@@ -191,6 +207,28 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         requestSurface: { kind: "synthetic-fixture" as const },
         reconciliationCapability: "errata" as const,
         parse: parseSourceDocument,
+      },
+      {
+        adapterVersion: "gundam-en-asia@2",
+        sourceLineage: "gundam-en-asia",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "gundam-card-and-legality-document@2",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "official_complete" as const,
+        parse: parseCardDocument,
+      },
+      {
+        adapterVersion: "gundam-en-us@2",
+        sourceLineage: "gundam-en-us",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "gundam-card-and-legality-document@2",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "official_complete" as const,
+        parse: parseCardDocument,
       },
       ...[
         {

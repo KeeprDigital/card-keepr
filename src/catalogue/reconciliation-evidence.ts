@@ -6,6 +6,10 @@ import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parsedOfficialArtworkIdentity,
 } from "./official-artwork-identity.mjs";
+import {
+  parseRetainedLegalityRules,
+  type RetainedLegalityRule,
+} from "./legality-rule";
 
 type PlannedRequestRow = {
   request_id: string;
@@ -182,6 +186,8 @@ export async function retainedReconciliationObservation(
     ),
   );
   const observationIds = new Set<string>();
+  const legalityRules: RetainedLegalityRule[] = [];
+  let declaredLegalityScopes = 0;
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
@@ -200,6 +206,27 @@ export async function retainedReconciliationObservation(
           );
         }
         observationIds.add(wrapped.id);
+        if (
+          isRecord(wrapped.value) &&
+          Array.isArray(wrapped.value.legality_rules)
+        ) {
+          declaredLegalityScopes += 1;
+        }
+        legalityRules.push(
+          ...parseRetainedLegalityRules(wrapped.value, {
+            game: supportedGame(row.supported_game),
+            sourceLineage: row.source_lineage,
+            sourceSnapshotId: row.source_snapshot_id,
+            sourceObservationSetId: row.observation_set_id,
+            sourceObservationId: wrapped.id,
+          }),
+        );
+        if (
+          isRecord(wrapped.value) &&
+          wrapped.value.observation_type === "legality_rules"
+        ) {
+          return null;
+        }
         const parsed = parseReconciliationObservation(
           wrapped.id,
           await attachRetainedPrintingImages(
@@ -231,7 +258,9 @@ export async function retainedReconciliationObservation(
         }),
       );
     }))
-  ).flat().sort((left, right) =>
+  ).flat().flatMap((observation) =>
+    observation === null ? [] : [observation]
+  ).sort((left, right) =>
     left.sourceObservationId.localeCompare(right.sourceObservationId)
   );
   return {
@@ -253,6 +282,7 @@ export async function retainedReconciliationObservation(
       adapterVersion: row.adapter_version,
     })),
     observations: merged,
+    legalityRules,
   };
 }
 

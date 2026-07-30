@@ -117,6 +117,7 @@ const rootFields = new Set([
   "product_release_catalogue",
   "source_sidecar",
   "errata",
+  "legality_rules",
 ]);
 const cardFields = new Set([
   "game",

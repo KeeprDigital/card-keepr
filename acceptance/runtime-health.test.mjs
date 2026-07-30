@@ -243,6 +243,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
           "catalogue:read",
           "printing-image:read",
           "catalogue-export:read",
+          "legality-status:read",
         ],
       },
       {
@@ -254,6 +255,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
           "printing-image:write",
           "export:write",
           "backup:write",
+          "legality-rule:write",
         ],
       },
     ],
@@ -265,8 +267,8 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     humanCli.stdout,
     [
       "Card Keepr runtimes are healthy",
-      "api: ok (catalogue:read, printing-image:read, catalogue-export:read)",
-      "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write)",
+      "api: ok (catalogue:read, printing-image:read, catalogue-export:read, legality-status:read)",
+      "ingestion: ok (catalogue:write, evidence:write, printing-image:write, export:write, backup:write, legality-rule:write)",
       "",
     ].join("\n"),
   );

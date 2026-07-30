@@ -56,6 +56,10 @@ import {
   mergeCatalogueErrata,
   type CatalogueErratum,
 } from "./errata-rules-text";
+import {
+  legalityRulesForCandidate,
+  resolveLegalityRuleCards,
+} from "./legality-rule";
 
 type ActiveRunRow = {
   id: string;
@@ -775,6 +779,26 @@ export async function reconcileRetainedCardPrintingEvidence(
           : "Retained Product evidence is invalid.",
     });
   }
+  let resolvedLegalityRules: ReturnType<
+    typeof resolveLegalityRuleCards
+  > = [];
+  try {
+    resolvedLegalityRules = resolveLegalityRuleCards(
+      retained.legalityRules,
+      [...cards.values()],
+    );
+  } catch (error) {
+    diagnostics.push({
+      code: "retained_evidence_invalid",
+      source_observation_id: null,
+      locator: null,
+      candidate_printing_ids: [],
+      detail:
+        error instanceof Error
+          ? error.message
+          : "Retained Legality Rule evidence is invalid.",
+    });
+  }
   const cardSurfaceObservations = cardPrintingObservations.filter(
     (observation) =>
       observation.candidateWithoutIdentities.card !== null,
@@ -865,6 +889,11 @@ export async function reconcileRetainedCardPrintingEvidence(
       ),
     ],
     errata,
+    legality_rules: legalityRulesForCandidate(
+      priorCandidate,
+      retained.sourceLineage,
+      resolvedLegalityRules,
+    ),
   };
   const cardPrintingPlans = plans.filter(
     (plan) => plan.observationKind === "card_printing",
@@ -1014,6 +1043,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       printings: observedPrintings,
       products: productCatalogue.observedProducts,
       errata,
+      legality_rules: resolvedLegalityRules,
       diagnostics: stableDiagnostics,
       warnings,
     };
@@ -1058,6 +1088,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings: observedPrintings,
     products: productCatalogue.observedProducts,
     errata,
+    legality_rules: resolvedLegalityRules,
     diagnostics: [],
     warnings,
   };
@@ -1179,7 +1210,6 @@ async function candidateAtRevision(
     ),
   ) as CatalogueCandidate;
   const errata = candidate.errata ?? [];
-  if (errata.length === 0) return candidate;
   const provenanceByErratum = new Map<
     string,
     CatalogueErratum["provenance"][number][]
@@ -1217,6 +1247,12 @@ async function candidateAtRevision(
         provenance: provenanceByErratum.get(erratum.id) ?? [],
       })),
     ),
+    legality_rules: (candidate.legality_rules ?? []).map((rule) => ({
+      ...rule,
+      first_revision_id: rule.first_revision_id ?? revisionId,
+      last_observed_revision_id:
+        rule.last_observed_revision_id ?? revisionId,
+    })),
   };
 }
 

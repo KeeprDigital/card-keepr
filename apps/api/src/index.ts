@@ -40,6 +40,10 @@ import {
 import {
   cardCollectionResponse,
 } from "../../../src/catalogue/card-collection-read";
+import {
+  contextualLegalityStatusResponse,
+  LegalityStatusProblem,
+} from "../../../src/catalogue/legality-status";
 
 const apiWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -122,6 +126,40 @@ const apiWorker = {
             requestId,
           ),
         );
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/v1/legality-status"
+      ) {
+        try {
+          return withCorsHeaders(
+            request,
+            await contextualLegalityStatusResponse(
+              request,
+              env.CATALOGUE_DB,
+            ),
+          );
+        } catch (error) {
+          if (error instanceof LegalityStatusProblem) {
+            return withCorsHeaders(
+              request,
+              problemResponse({
+                requestId,
+                status: error.status,
+                code: error.code,
+                title:
+                  error.status === 404
+                    ? "Not found"
+                    : error.status === 422
+                      ? "Invalid Legality region"
+                      : "Invalid request",
+                detail: error.message,
+              }),
+            );
+          }
+          throw error;
+        }
       }
 
       const cardMatch = /^\/v1\/cards\/([^/]+)$/.exec(url.pathname);

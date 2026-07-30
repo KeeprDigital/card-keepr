@@ -80,6 +80,7 @@ export async function fixtureCandidate(
       },
     ],
     errata: [],
+    legality_rules: [],
   };
 
   return {

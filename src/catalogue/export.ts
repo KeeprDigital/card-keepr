@@ -25,6 +25,10 @@ import {
   erratumTargetLifecycleKey,
   exportErratum,
 } from "./errata-rules-text";
+import {
+  legalityRuleExportRecords,
+  legalityRuleRelationshipRecords,
+} from "./legality-export";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8"],
@@ -586,6 +590,10 @@ async function exportRecordFactories(
         product_id: context.product_id,
       })),
   ]);
+  const legalityRelationships = await legalityRuleRelationshipRecords(
+    candidate,
+    revisionId,
+  );
   return {
     "supported-games": () => candidate.selected_games.map((game) => ({
         type: "supported_game",
@@ -661,7 +669,7 @@ async function exportRecordFactories(
     errata: () => (candidate.errata ?? [])
       .map(exportErratum)
       .sort((left, right) => compareUtf8(left.id, right.id)),
-    "legality-rules": () => [],
+    "legality-rules": () => legalityRuleExportRecords(candidate),
     relationships: () => uniqueById([
       ...identifiedRelationships
       .map(({ printing, relationship, relationshipId, targetId }) => ({
@@ -757,6 +765,7 @@ async function exportRecordFactories(
           };
         },
       ),
+      ...legalityRelationships,
     ]),
   };
 }
