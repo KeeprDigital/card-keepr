@@ -3506,7 +3506,7 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
   });
 });
 
-test("conflicting Product and Release facts remain null with source-backed disagreements", async () => {
+test("same-authority Product conflicts fail closed before publication", async () => {
   const run = await collectRequests(
     [
       { id: "product-a", scenario: "product-conflict-a" },
@@ -3515,77 +3515,18 @@ test("conflicting Product and Release facts remain null with source-backed disag
     "product-conflicting-facts",
   );
   const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  const product = requiredFirst(reconciled.document, "products");
-  expect(product).toMatchObject({
-    official_code: "ST-CONFLICT",
-    name: null,
-    releases: [
-      {
-        region: "EN-OCEANIA",
-        date: { precision: null, value: null },
-        status: null,
-      },
+  expect(reconciled.response.status).toBe(409);
+  expect(reconciled.document).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [
+      expect.objectContaining({
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining(
+          "Same-authority Product evidence conflicts at /data/name",
+        ),
+      }),
     ],
-    disagreements: expect.arrayContaining([
-      expect.objectContaining({
-        path: "/data/name",
-        status: "unresolved",
-        candidates: expect.arrayContaining([
-          {
-            value: "Conflicting Starter A",
-            observation_id: expect.stringMatching(/^srcobs_/),
-          },
-          {
-            value: "Conflicting Starter B",
-            observation_id: expect.stringMatching(/^srcobs_/),
-          },
-        ]),
-      }),
-      expect.objectContaining({
-        path: "/data/releases/0/status",
-        status: "unresolved",
-        candidates: expect.arrayContaining([
-          {
-            value: "announced",
-            observation_id: expect.stringMatching(/^srcobs_/),
-          },
-          {
-            value: "released",
-            observation_id: expect.stringMatching(/^srcobs_/),
-          },
-        ]),
-      }),
-    ]),
-    included: expect.arrayContaining([
-      expect.objectContaining({
-        type: "source_observation",
-        id: expect.stringMatching(/^srcobs_/),
-        captured_at: expect.any(String),
-        source: "one-piece-en",
-      }),
-    ]),
-  });
-  const published = await approve(reconciled.document);
-  expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
-  const exported = (
-    await exportComponentRecords(revisionId, "products")
-  ).find((candidate) => candidate.official_code === "ST-CONFLICT");
-  expect(exported).toMatchObject({
-    official_code: "ST-CONFLICT",
-    name: null,
-  });
-  const release = (
-    await exportComponentRecords(revisionId, "releases")
-  ).find((candidate) => candidate.product_id === exported?.id);
-  expect(release).toMatchObject({
-    region: "EN-OCEANIA",
-    date: { precision: null, value: null },
-    status: null,
   });
 });
 

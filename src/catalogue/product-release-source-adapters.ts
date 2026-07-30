@@ -21,10 +21,6 @@ export type OfficialRawAdapterContract = {
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly unknown[];
-  parseFixtureBytes: (
-    bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
-  ) => readonly unknown[];
   discoverRequests: (
     bytes: Uint8Array,
     context: { mediaType: string | null; url: string; requestId?: string },
@@ -174,12 +170,6 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           definition.requiredSurfaces,
           definition.urls,
         ),
-        parseFixtureBytes: rawSnapshotDecoder(
-          definition.format,
-          definition.supportedGame,
-          definition.sourceLineage,
-          definition.requiredSurfaces,
-        ),
         discoverRequests: bandaiRequestDiscovery(
           definition.format,
           definition.sourceLineage,
@@ -189,6 +179,25 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
       }),
     ),
   );
+
+export function parseControlledRawSurfaceFixture(
+  sourceLineage: string,
+  bytes: Uint8Array,
+  context: { mediaType: string | null; url: string; requestId?: string },
+): readonly unknown[] {
+  const definition = rawContractDefinitions.find(
+    (candidate) => candidate.sourceLineage === sourceLineage,
+  );
+  if (definition === undefined) {
+    throw new Error("Controlled fixture names no production lineage.");
+  }
+  return rawSnapshotDecoder(
+    definition.format,
+    definition.supportedGame,
+    definition.sourceLineage,
+    definition.requiredSurfaces,
+  )(bytes, context);
+}
 
 export function officialSourceDiscoveryRequests(
   sourceLineage: string,
@@ -224,7 +233,8 @@ function bandaiRequestDiscovery(
       .toLowerCase();
     if (mediaType !== "text/html") return [];
     const html = decodeUtf8(bytes, "request discovery");
-    const initialSurface = dynamicRequestRole(context.requestId) === null
+    const dynamicRole = dynamicRequestRole(context.requestId);
+    const initialSurface = dynamicRole === null
       ? surfaceFromContext(
           context,
           sourceLineage,
@@ -259,7 +269,10 @@ function bandaiRequestDiscovery(
         );
       }
     }
-    if (initialSurface !== null && isDiscoverySurface(initialSurface)) {
+    if (
+      (initialSurface !== null && isDiscoverySurface(initialSurface)) ||
+      dynamicRole === "listing"
+    ) {
       candidates.push(
         ...discoveredPartitionRequests(format, html, current).map((url) => ({
           role: "listing" as const,
@@ -366,22 +379,7 @@ function discoveredPartitionRequests(
   html: string,
   current: URL,
 ): string[] {
-  const selectedKeys =
-    format === "one-piece"
-      ? ["series", "recording"]
-      : format === "fusion-world"
-        ? ["card_type", "colour", "color", "cost"]
-        : format === "digimon"
-          ? [
-              "version",
-              "category",
-              "cardcategory",
-              "card_type",
-              "colour",
-              "color",
-            ]
-          : ["package"];
-  const values = [...html.matchAll(
+  const facets = [...html.matchAll(
     /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
   )]
     .map((match) => {
@@ -389,9 +387,7 @@ function discoveredPartitionRequests(
       const key =
         htmlAttribute(attributes, "name") ??
         htmlAttribute(attributes, "id");
-      if (key === null || !selectedKeys.includes(key.toLowerCase())) {
-        return null;
-      }
+      if (key === null) return null;
       const options = [...match[2]!.matchAll(
         /<option\b[^>]*\bvalue=["']([^"']+)["'][^>]*>/giu,
       )]
@@ -401,32 +397,61 @@ function discoveredPartitionRequests(
         );
       return options.length === 0
         ? null
-        : { key: key.toLowerCase(), options: [...new Set(options)].sort() };
+        : {
+            key: key.toLowerCase(),
+            options: [...new Set(options)].sort(),
+          };
     })
     .filter(
       (entry): entry is { key: string; options: string[] } => entry !== null,
-    )
-    .sort(
-      (left, right) =>
-        selectedKeys.indexOf(left.key) - selectedKeys.indexOf(right.key),
     );
-  if (values.length === 0) return [];
-  let partitions: Record<string, string>[] = [{}];
-  for (const facet of values) {
-    partitions = partitions.flatMap((partition) =>
-      facet.options.map((value) => ({
-        ...partition,
-        [facet.key]: value,
-      }))
-    );
-  }
-  return partitions.map((partition) => {
+  const stage = nextPartitionFacet(format, facets, current);
+  if (stage === null) return [];
+  return stage.options.map((value) => {
     const url = new URL(current);
-    for (const [key, value] of Object.entries(partition)) {
-      url.searchParams.set(key, value);
-    }
+    url.searchParams.set(stage.key, value);
     return url.href;
   });
+}
+
+function nextPartitionFacet(
+  format: DiscoveryFormat,
+  facets: readonly { key: string; options: string[] }[],
+  current: URL,
+): { key: string; options: string[] } | null {
+  const find = (keys: readonly string[]) =>
+    facets.find(({ key }) => keys.includes(key)) ?? null;
+  if (format === "one-piece") {
+    const recording = find(["recording"]);
+    if (recording === null || current.searchParams.has(recording.key)) {
+      return null;
+    }
+    const numeric = recording.options.filter((value) => /^\d+$/u.test(value));
+    return numeric.length === 0
+      ? null
+      : { key: recording.key, options: numeric };
+  }
+  const hierarchy =
+    format === "fusion-world"
+      ? [["card_type"], ["colour", "color"], ["cost"]]
+      : format === "digimon"
+        ? [
+            ["category", "cardcategory"],
+            ["card_type"],
+            ["colour", "color"],
+          ]
+        : [["package"]];
+  for (const aliases of hierarchy) {
+    const facet = find(aliases);
+    if (facet === null) continue;
+    if (
+      aliases.some((key) => current.searchParams.has(key))
+    ) {
+      continue;
+    }
+    return facet;
+  }
+  return null;
 }
 
 function htmlAttribute(attributes: string, name: string): string | null {
@@ -716,8 +741,11 @@ function parseOnePieceBandaiCardList(
   html: string,
   requestUrl: string,
 ): ParsedBandaiSurface {
-  if (!/<select\b[^>]*\bid=["']series["']/iu.test(html)) {
-    throw new Error("One Piece Card List series discovery is unavailable.");
+  const recordingSelect = html.match(
+    /<select\b[^>]*\b(?:id|name)=["']recording["'][^>]*>([\s\S]*?)<\/select>/iu,
+  );
+  if (recordingSelect === null) {
+    throw new Error("One Piece Card List Recording discovery is unavailable.");
   }
   const declaredMatch = html.match(
     /<div\b[^>]*\bclass=["'][^"']*\bcountCol\b[^"']*["'][^>]*>\s*(\d+)\s+results?\s*<\/div>/iu,
@@ -725,15 +753,15 @@ function parseOnePieceBandaiCardList(
   if (declaredMatch === null) {
     throw new Error("One Piece Card List result count is unavailable.");
   }
-  const series = [...html.matchAll(
+  const recordings = [...recordingSelect[1]!.matchAll(
     /<option\b[^>]*\bvalue=["']([^"']+)["'][^>]*>([\s\S]*?)<\/option>/giu,
   )]
-    .filter((match) => match[1]!.length > 0)
+    .filter((match) => /^\d+$/u.test(match[1]!))
     .map((match) => ({
       value: decodeHtmlText(match[1]!),
       label: htmlText(match[2]!),
     }));
-  if (series.length === 0) {
+  if (recordings.length === 0) {
     throw new Error("One Piece Card List Recording discovery is empty.");
   }
   const modalMatches = [...html.matchAll(
@@ -772,29 +800,22 @@ function parseOnePieceBandaiCardList(
       )[1]!,
     );
     const imageUrl = new URL(imagePath, base).href;
-    const field = (className: string): string | null => {
-      const found = body.match(
-        new RegExp(
-          `<div\\b[^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>` +
-            `<h3[^>]*>[\\s\\S]*?<\\/h3>([\\s\\S]*?)<\\/div>`,
-          "iu",
-        ),
-      );
-      return found === null ? null : htmlText(found[1]!);
-    };
-    const effect = requiredNullableText(field("text"), "Official effect");
-    const setLabel = field("getInfo") ?? "Unclassified Card List";
-    const colour = requiredNullableText(field("color"), "Official colour");
+    const pairs = htmlLabelPairs(body);
+    const field = (...labels: string[]): string | null =>
+      firstLabelValue(pairs, labels);
+    const effect = requiredNullableText(
+      field("Effect", "Card Text", "Text"),
+      "Official effect",
+    );
+    const setLabel =
+      field("Card Set(s)", "Where to get it") ?? "Unclassified Card List";
+    const colour = requiredNullableText(
+      field("Color", "Colour"),
+      "Official colour",
+    );
     const variant =
       locator === cardNumber ? "base" : locator.slice(cardNumber.length);
-    const artworkFingerprint = `material:${JSON.stringify(stableValue({
-      card_number: cardNumber,
-      rarity,
-      card_type: cardType,
-      name,
-      set_label: setLabel,
-      variant,
-    }))}`;
+    const artworkFingerprint = sourceArtworkFingerprint(imagePath);
     const printedFieldsDigest = `printed-material:${
       JSON.stringify(stableValue({
         card_number: cardNumber,
@@ -802,12 +823,14 @@ function parseOnePieceBandaiCardList(
         card_type: cardType,
         rules: effect ?? "",
         colour,
-        cost: field("cost"),
-        attribute: field("attribute"),
-        power: field("power"),
-        counter: field("counter"),
-        feature: field("feature"),
-        block: field("block"),
+        cost: field("Cost"),
+        life: field("Life"),
+        attribute: field("Attribute"),
+        power: field("Power"),
+        counter: field("Counter"),
+        feature: field("Type", "Traits"),
+        block: field("Block icon", "Block"),
+        trigger: field("Trigger"),
       }))
     }`;
     const detail = {
@@ -821,15 +844,18 @@ function parseOnePieceBandaiCardList(
         colours: colour === null
           ? []
           : colour.split("/").map((value) => value.trim().toLowerCase()),
-        cost: integerOrNull(field("cost")),
-        life: cardType === "leader" ? integerOrNull(field("cost")) : null,
-        battle_attributes: textValues(field("attribute")),
-        power: integerOrNull(field("power")),
-        counter: integerOrNull(field("counter")),
-        traits: textValues(field("feature")),
-        block_icons: textValues(field("block")),
+        cost: integerOrNull(field("Cost")),
+        life: cardType === "leader" ? integerOrNull(field("Life")) : null,
+        battle_attributes: textValues(field("Attribute")),
+        power: integerOrNull(field("Power")),
+        counter: integerOrNull(field("Counter")),
+        traits: textValues(field("Type", "Traits")),
+        block_icons: textValues(field("Block icon", "Block")),
         effect_text: effect,
-        trigger_text: null,
+        trigger_text: requiredNullableText(
+          field("Trigger"),
+          "Official trigger",
+        ),
       },
       product_codes: [],
       distribution: {
@@ -868,13 +894,13 @@ function parseOnePieceBandaiCardList(
     observations,
     retainedDocument: {
       page: "card-list",
-      series_options: series,
+      recording_options: recordings,
       declared_record_count: declaredCount,
       parsed_locators: modalMatches.map((match) => decodeHtmlText(match[1]!)),
     },
     consumedFields: [
       "page",
-      "series_options",
+      "recording_options",
       "declared_record_count",
       "parsed_locators",
     ],
@@ -887,10 +913,9 @@ function parseBandaiCardDetail(
   sourceLineage: string,
   requestUrl: string,
 ): Record<string, unknown> {
+  const pairs = htmlLabelPairs(html);
   const field = (names: readonly string[]): string | null =>
-    names
-      .map((name) => labelledHtmlValue(html, name))
-      .find((value) => value !== null) ?? null;
+    firstLabelValue(pairs, names);
   const pageText = htmlText(html);
   const cardNumber =
     field(["Card Number", "Card No.", "Card No", "No."]) ??
@@ -905,8 +930,7 @@ function parseBandaiCardDetail(
     );
   const cardType = field(["Card Type", "Type", "Category"]);
   const colour = field(["Color", "Colour"]);
-  const rules =
-    field(["Effect", "Skill", "Card Text", "Text"]) ?? "";
+  const rules = field(["Effect", "Skill", "Card Text", "Text"]);
   if (
     cardNumber === null ||
     name.length === 0 ||
@@ -917,12 +941,12 @@ function parseBandaiCardDetail(
       `${sourceLineage} Card detail is missing Card Number, name, Card Type, or Color.`,
     );
   }
-  const imageUrls = [...html.matchAll(
+  const discoveredImageUrls = [...html.matchAll(
     /<img\b[^>]*\b(?:data-src|src)=["']([^"']+\.(?:avif|gif|jpe?g|png|webp)(?:\?[^"']*)?)["']/giu,
   )]
     .map((match) => new URL(decodeHtmlText(match[1]!), requestUrl).href)
     .filter((url) => officialHostname(sourceLineage, new URL(url).hostname));
-  if (imageUrls.length === 0) {
+  if (discoveredImageUrls.length === 0) {
     throw new Error(`${sourceLineage} Card detail has no Printing Image URL.`);
   }
   const locator =
@@ -946,6 +970,20 @@ function parseBandaiCardDetail(
       )?.[1] ??
     cardNumber;
   const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
+  const fusionFaces =
+    format === "fusion-world" && normalizedType === "leader"
+      ? explicitFusionLeaderFaces(html, requestUrl, sourceLineage)
+      : null;
+  const imageEvidence =
+    fusionFaces === null
+      ? [{
+          role: "front" as const,
+          source_url: discoveredImageUrls[0]!,
+        }]
+      : fusionFaces.map(({ role, imageUrl }) => ({
+          role,
+          source_url: imageUrl,
+        }));
   const colours = colour === "-"
     ? format === "fusion-world" || format === "gundam"
       ? ["colourless"]
@@ -965,7 +1003,7 @@ function parseBandaiCardDetail(
           counter: integerOrNull(field(["Counter"])),
           traits: textValues(field(["Type", "Traits"])),
           block_icons: textValues(field(["Block icon", "Block"])),
-          effect_text: rules.length === 0 ? null : rules,
+          effect_text: rules,
           trigger_text: field(["Trigger"]),
         }
       : format === "fusion-world"
@@ -973,23 +1011,25 @@ function parseBandaiCardDetail(
             card_type: normalizedType,
             colours,
             cost: integerOrNull(field(["Cost"])),
-            specified_cost: [],
+            specified_cost: textValues(
+              field(["Specified Cost", "Specified cost"]),
+            ),
             power: integerOrNull(field(["Power"])),
             combo_power: integerOrNull(field(["Combo Power"])),
             traits: textValues(field(["Special Trait", "Traits"])),
             skills: [
-              ...(rules.length === 0
+              ...(rules === null
                 ? []
                 : [{ kind: "ordinary", text: rules }]),
             ],
-            ...(normalizedType === "leader"
+            ...(fusionFaces !== null
               ? {
-                  leader_faces: ["front", "back"].map((role) => ({
-                    role,
-                    name,
-                    power: integerOrNull(field(["Power"])),
-                    traits: textValues(field(["Special Trait", "Traits"])),
-                    skills: [],
+                  leader_faces: fusionFaces.map((face) => ({
+                    role: face.role,
+                    name: face.name,
+                    power: face.power,
+                    traits: face.traits,
+                    skills: face.skills,
                   })),
                 }
               : {}),
@@ -1005,9 +1045,12 @@ function parseBandaiCardDetail(
               form: field(["Form"]),
               attribute: field(["Attribute"]),
               traits: textValues(field(["Type", "Traits"])),
-              digivolution_requirements: [],
+              digivolution_requirements: allLabelValues(
+                pairs,
+                ["Digivolve", "Digivolution Cost", "Evolution Cost"],
+              ),
               text_sections: [
-                ...(rules.length === 0
+                ...(rules === null
                   ? []
                   : [{ kind: "effect", text: rules }]),
               ],
@@ -1018,7 +1061,7 @@ function parseBandaiCardDetail(
               level: integerOrNull(field(["Level"])),
               cost: integerOrNull(field(["Cost"])),
               block_icon: field(["Block", "Block icon"]),
-              effect_text: rules.length === 0 ? null : rules,
+              effect_text: rules,
               zone: field(["Zone"]),
               traits: textValues(field(["Trait", "Traits"])),
               link_condition: field(["Link"]),
@@ -1026,17 +1069,32 @@ function parseBandaiCardDetail(
               hp: integerOrNull(field(["HP"])),
               series_titles: textValues(field(["Title", "Series"])),
             };
-  const materialFacts = stableValue({
-    card_number: cardNumber,
-    name,
-    card_type: normalizedType,
-    colours,
-    image_roles:
-      format === "fusion-world" && normalizedType === "leader"
-        ? ["front", "back"]
-        : ["front"],
-  });
-  const artworkFingerprint = `material:${JSON.stringify(materialFacts)}`;
+  const artworkFingerprint = `official-artwork-set:${
+    JSON.stringify(
+      imageEvidence.map(({ role, source_url }) => ({
+        role,
+        fingerprint: sourceArtworkFingerprint(source_url),
+      })),
+    )
+  }`;
+  const productLinks = productLinksFromHtml(html, requestUrl);
+  const products = productLinks.products;
+  const distribution =
+    products.length === 0
+      ? {
+          code: `detail:${new URL(requestUrl).pathname}`,
+          kind: "source_bucket",
+          label: field(["Where to get it", "Card Set(s)"]) ?? "Card detail",
+        }
+      : {
+          code: `product:${products[0]!.code}`,
+          kind: "product",
+          label: products[0]!.title,
+          product_reference: {
+            kind: "official_code",
+            value: products[0]!.code,
+          },
+        };
   const detail = {
     path: locator,
     number: cardNumber,
@@ -1044,12 +1102,9 @@ function parseBandaiCardDetail(
     rules,
     profile: `${format}@1`,
     attributes,
-    product_codes: [],
-    distribution: {
-      code: `detail:${new URL(requestUrl).pathname}`,
-      kind: "source_bucket",
-      label: field(["Where to get it", "Card Set(s)"]) ?? "Card detail",
-    },
+    product_codes: products.map(({ code }) => code),
+    fuzzy_product_labels: productLinks.fuzzyLabels,
+    distribution,
     printing: {
       rarity: field(["Rarity"]),
       normalizedRarity: field(["Rarity"])?.toLowerCase() ?? null,
@@ -1070,23 +1125,16 @@ function parseBandaiCardDetail(
     printed_fields_digest: `printed-material:${
       JSON.stringify(stableValue({ rules, attributes }))
     }`,
-    image: imageUrls[0]!,
-    images: imageUrls.map((url, index) => ({
-      role:
-        format === "fusion-world" &&
-          normalizedType === "leader" &&
-          index === 1
-          ? "back"
-          : index === 0
-            ? "front"
-            : "other",
-      source_url: url,
+    image: imageEvidence[0]!.source_url,
+    images: imageEvidence.map(({ role, source_url }) => ({
+      role,
+      source_url,
       artwork_fingerprint: artworkFingerprint,
     })),
   };
-  return cardObservation(
+  const observation = cardObservation(
     detail,
-    [],
+    products,
     new Map(),
     { revision: "captured-by-policy-surface", entries: [] },
     { revision: "captured-by-policy-surface", entries: [] },
@@ -1098,15 +1146,182 @@ function parseBandaiCardDetail(
           ? "digimon"
           : "gundam",
   );
+  const knownLabels = [
+    "Card Number",
+    "Card No.",
+    "Card No",
+    "No.",
+    "Card Name",
+    "Name",
+    "Card Type",
+    "Type",
+    "Category",
+    "Color",
+    "Colour",
+    "Effect",
+    "Skill",
+    "Card Text",
+    "Text",
+    "Cost",
+    "Life",
+    "Attribute",
+    "Power",
+    "Counter",
+    "Traits",
+    "Block icon",
+    "Block",
+    "Trigger",
+    "Specified Cost",
+    "Specified cost",
+    "Combo Power",
+    "Special Trait",
+    "Level",
+    "Play Cost",
+    "Use Cost",
+    "DP",
+    "Form",
+    "Digivolve",
+    "Digivolution Cost",
+    "Evolution Cost",
+    "Zone",
+    "Trait",
+    "Link",
+    "AP",
+    "HP",
+    "Title",
+    "Series",
+    "Rarity",
+    "Where to get it",
+    "Card Set(s)",
+  ];
+  return attachRawSurfaceEvidence(
+    observation,
+    sourceLineage,
+    "card-detail",
+    Object.fromEntries(pairs.map(({ label, value }) => [label, value])),
+    true,
+    knownLabels,
+  );
+}
+
+function explicitFusionLeaderFaces(
+  html: string,
+  requestUrl: string,
+  sourceLineage: string,
+): {
+  role: "front" | "back";
+  name: string;
+  power: number | null;
+  traits: string[];
+  skills: string;
+  imageUrl: string;
+}[] {
+  const faces = [...html.matchAll(
+    /<(section|div)\b([^>]*\bdata-face=["'](front|back)["'][^>]*)>([\s\S]*?)<\/\1>/giu,
+  )].map((match) => {
+    const role = match[3]!.toLowerCase() as "front" | "back";
+    const body = match[4]!;
+    const pairs = htmlLabelPairs(body);
+    const imageMatches = [...body.matchAll(
+      /<img\b[^>]*\b(?:data-src|src)=["']([^"']+\.(?:avif|gif|jpe?g|png|webp)(?:\?[^"']*)?)["']/giu,
+    )]
+      .map((image) => new URL(decodeHtmlText(image[1]!), requestUrl).href)
+      .filter((url) =>
+        officialHostname(sourceLineage, new URL(url).hostname)
+      );
+    if (imageMatches.length !== 1) {
+      throw new Error(
+        `Fusion World Leader ${role} face requires exactly one role-specific image.`,
+      );
+    }
+    const faceName =
+      firstLabelValue(pairs, ["Name", "Card Name"]) ??
+      htmlText(
+        body.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/iu)?.[1] ?? "",
+      );
+    if (faceName.length === 0) {
+      throw new Error(`Fusion World Leader ${role} face name is missing.`);
+    }
+    return {
+      role,
+      name: faceName,
+      power: integerOrNull(firstLabelValue(pairs, ["Power"])),
+      traits: textValues(
+        firstLabelValue(pairs, ["Special Trait", "Traits"]),
+      ),
+      skills:
+        firstLabelValue(pairs, ["Skill", "Effect", "Card Text"]) ?? "",
+      imageUrl: imageMatches[0]!,
+    };
+  });
+  if (
+    faces.length !== 2 ||
+    faces.filter(({ role }) => role === "front").length !== 1 ||
+    faces.filter(({ role }) => role === "back").length !== 1
+  ) {
+    throw new Error(
+      "Fusion World Leader requires explicit front and back face containers.",
+    );
+  }
+  return faces.sort((left, right) =>
+    (left.role === "front" ? 0 : 1) - (right.role === "front" ? 0 : 1)
+  );
+}
+
+function productLinksFromHtml(
+  html: string,
+  requestUrl: string,
+): {
+  products: { code: string; title: string }[];
+  fuzzyLabels: string[];
+} {
+  const products = [...html.matchAll(
+    /<a\b([^>]*\bdata-product-code=["']([^"']+)["'][^>]*)>([\s\S]*?)<\/a>/giu,
+  )].map((match) => {
+    const href = htmlAttribute(match[1]!, "href");
+    if (href === null) {
+      throw new Error("An explicit Product link has no official href.");
+    }
+    const url = new URL(decodeHtmlText(href), requestUrl);
+    if (url.protocol !== "https:") {
+      throw new Error("An explicit Product link is not HTTPS.");
+    }
+    return {
+      code: decodeHtmlText(match[2]!).normalize("NFC").trim(),
+      title: htmlText(match[3]!),
+    };
+  });
+  for (const product of products) {
+    if (product.code.length === 0 || product.title.length === 0) {
+      throw new Error(
+        "An explicit Product link requires code and title evidence.",
+      );
+    }
+  }
+  const fuzzyLabels = [...html.matchAll(
+    /<a\b([^>]*\bclass=["'][^"']*\bproduct-link\b[^"']*["'][^>]*)>([\s\S]*?)<\/a>/giu,
+  )]
+    .filter((match) => htmlAttribute(match[1]!, "data-product-code") === null)
+    .map((match) => htmlText(match[2]!))
+    .filter((label) => label.length > 0);
+  return {
+    products: [
+      ...new Map(products.map((product) => [product.code, product])).values(),
+    ].sort((left, right) => left.code.localeCompare(right.code)),
+    fuzzyLabels: [...new Set(fuzzyLabels)].sort(),
+  };
 }
 
 function parseBandaiProductDetail(
   html: string,
   sourceLineage: string,
-  requestUrl: string,
+  _requestUrl: string,
 ): Record<string, unknown> {
+  const pairs = htmlLabelPairs(html);
+  const field = (...names: string[]): string | null =>
+    firstLabelValue(pairs, names);
   const code =
-    labelledHtmlValue(html, "Product Code") ??
+    field("Product Code") ??
     htmlText(html).match(/\b[A-Z]{1,6}\d{0,2}-\d{2,5}\b/u)?.[0] ??
     null;
   const title = htmlText(
@@ -1120,46 +1335,178 @@ function parseBandaiProductDetail(
     );
   }
   const product = { code, title };
-  const releaseDate = labelledHtmlValue(html, "Release Date");
+  const releaseDate = field("Release Date", "Available Date", "On Sale");
   const releases = new Map<string, Record<string, unknown>[]>();
   if (releaseDate !== null) {
+    const date = normalizedOfficialReleaseDate(releaseDate);
     releases.set(code, [{
-      event_key: new URL(requestUrl).href,
-      region: labelledHtmlValue(html, "Region") ?? "unknown",
-      precision: /^\d{4}-\d{2}-\d{2}$/u.test(releaseDate) ? "day" : "unknown",
-      date: releaseDate,
-      status: labelledHtmlValue(html, "Status") ?? "announced",
+      event_key:
+        field("Release Event ID", "Release ID", "Event ID") ??
+        `product-release:${code}`,
+      region: normalizedOfficialRegion(
+        field("Region", "Market", "Territory"),
+        sourceLineage,
+      ),
+      precision: date.precision,
+      date: date.value,
+      status: normalizedOfficialReleaseStatus(field("Status")),
     }]);
   }
-  return productOnlyObservation(
+  const observation = productOnlyObservation(
     product,
     releases,
     { revision: "captured-by-policy-surface", entries: [] },
     { revision: "captured-by-policy-surface", entries: [] },
   );
+  return attachRawSurfaceEvidence(
+    observation,
+    sourceLineage,
+    "product-detail",
+    Object.fromEntries(pairs.map(({ label, value }) => [label, value])),
+    true,
+    [
+      "Product Code",
+      "Release Date",
+      "Available Date",
+      "On Sale",
+      "Release Event ID",
+      "Release ID",
+      "Event ID",
+      "Region",
+      "Market",
+      "Territory",
+      "Status",
+    ],
+  );
+}
+
+function normalizedOfficialRegion(
+  value: string | null,
+  sourceLineage: string,
+): "EN-OCEANIA" | "EN-ASIA" | "EN-US" | "unknown" {
+  const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
+  if (
+    /^(?:en[- ]?us|us|usa|united states|north america)$/u.test(normalized)
+  ) {
+    return "EN-US";
+  }
+  if (/^(?:en[- ]?asia|asia|south east asia|southeast asia)$/u.test(normalized)) {
+    return "EN-ASIA";
+  }
+  if (
+    /^(?:en[- ]?oceania|oceania|australia|australia\/new zealand)$/u.test(
+      normalized,
+    )
+  ) {
+    return "EN-OCEANIA";
+  }
+  if (normalized.length === 0) {
+    if (sourceLineage === "gundam-en-us") return "EN-US";
+    if (sourceLineage === "gundam-en-asia") return "EN-ASIA";
+  }
+  return "unknown";
+}
+
+function normalizedOfficialReleaseDate(
+  value: string,
+): { precision: "day" | "month" | "quarter" | "year" | "unknown"; value: string | null } {
+  const normalized = value.normalize("NFC").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
+    return { precision: "day", value: normalized };
+  }
+  if (/^\d{4}-\d{2}$/u.test(normalized)) {
+    return { precision: "month", value: normalized };
+  }
+  const quarter = normalized.match(
+    /^(?:Q([1-4])\s+(\d{4})|(\d{4})[\s-]+Q([1-4]))$/iu,
+  );
+  if (quarter !== null) {
+    const year = quarter[2] ?? quarter[3]!;
+    const number = quarter[1] ?? quarter[4]!;
+    return { precision: "quarter", value: `${year}-Q${number}` };
+  }
+  if (/^\d{4}$/u.test(normalized)) {
+    return { precision: "year", value: normalized };
+  }
+  return { precision: "unknown", value: null };
+}
+
+function normalizedOfficialReleaseStatus(
+  value: string | null,
+): "announced" | "released" | null {
+  const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
+  if (/^(?:released|on sale|available|available now)$/u.test(normalized)) {
+    return "released";
+  }
+  if (/^(?:announced|upcoming|preorder|pre-order)$/u.test(normalized)) {
+    return "announced";
+  }
+  return null;
 }
 
 function labelledHtmlValue(html: string, label: string): string | null {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const patterns = [
-    new RegExp(
-      `<(?:dt|th|h[1-6]|span|div)\\b[^>]*>\\s*${escaped}\\s*:?\\s*</(?:dt|th|h[1-6]|span|div)>\\s*<(?:dd|td|div|span)\\b[^>]*>([\\s\\S]*?)</(?:dd|td|div|span)>`,
-      "iu",
-    ),
-    new RegExp(
-      `<[^>]*\\bdata-field=["']${escaped}["'][^>]*>([\\s\\S]*?)</[^>]+>`,
-      "iu",
-    ),
-  ];
-  for (const pattern of patterns) {
-    const value = html.match(pattern)?.[1];
-    if (value !== undefined) {
-      const text = htmlText(value);
-      if (text.length > 0 && text !== "-") return text;
-      if (text === "-") return "-";
-    }
+  return htmlLabelPairs(html)
+    .find(({ label: candidate }) =>
+      candidate.localeCompare(label, undefined, { sensitivity: "accent" }) === 0
+    )?.value ?? null;
+}
+
+function htmlLabelPairs(
+  html: string,
+): { label: string; value: string }[] {
+  const pairs: { label: string; value: string }[] = [];
+  for (const match of html.matchAll(
+    /<(?:dt|th)\b[^>]*>([\s\S]*?)<\/(?:dt|th)>\s*<(?:dd|td)\b[^>]*>([\s\S]*?)<\/(?:dd|td)>/giu,
+  )) {
+    pairs.push({
+      label: htmlText(match[1]!).replace(/:$/u, "").trim(),
+      value: htmlText(match[2]!),
+    });
+  }
+  for (const match of html.matchAll(
+    /<([a-z][a-z0-9]*)\b([^>]*\bdata-field=["']([^"']+)["'][^>]*)>([\s\S]*?)<\/\1>/giu,
+  )) {
+    pairs.push({
+      label: decodeHtmlText(match[3]!).replace(/:$/u, "").trim(),
+      value: htmlText(match[4]!),
+    });
+  }
+  for (const match of html.matchAll(
+    /<div\b[^>]*>\s*<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>([\s\S]*?)<\/div>/giu,
+  )) {
+    pairs.push({
+      label: htmlText(match[1]!).replace(/:$/u, "").trim(),
+      value: htmlText(match[2]!),
+    });
+  }
+  return pairs.filter(({ label }) => label.length > 0);
+}
+
+function firstLabelValue(
+  pairs: readonly { label: string; value: string }[],
+  names: readonly string[],
+): string | null {
+  for (const name of names) {
+    const found = pairs.find(({ label }) =>
+      label.localeCompare(name, undefined, { sensitivity: "accent" }) === 0
+    );
+    if (found !== undefined) return found.value;
   }
   return null;
+}
+
+function allLabelValues(
+  pairs: readonly { label: string; value: string }[],
+  names: readonly string[],
+): string[] {
+  return pairs
+    .filter(({ label }) =>
+      names.some((name) =>
+        label.localeCompare(name, undefined, { sensitivity: "accent" }) === 0
+      )
+    )
+    .map(({ value }) => value)
+    .filter((value) => value.length > 0 && value !== "-");
 }
 
 function parseBandaiSurfaceCoverage(
@@ -1225,9 +1572,24 @@ function parseBandaiSurfaceCoverage(
       `Official Source ${surface} has no structural publication entries.`,
     );
   }
+  const labelPairs = htmlLabelPairs(html);
+  const parsedPublicationCount =
+    publicationEntries.length > 0
+      ? publicationEntries.length
+      : publicationLinks.length > 0
+        ? publicationLinks.length
+        : discoveredOptions.length;
+  const declaredPublicationCount = Number.parseInt(
+    text.match(/\b(\d+)\s+(?:results?|records?|items?)\b/iu)?.[1] ??
+      String(parsedPublicationCount),
+    10,
+  );
   return {
     observations: [{
-      completeness: completeObservation(),
+      completeness: completeObservation(
+        declaredPublicationCount,
+        parsedPublicationCount,
+      ),
       product_release_catalogue: {
         products: [],
         distribution_contexts: [],
@@ -1244,6 +1606,13 @@ function parseBandaiSurfaceCoverage(
       publication_links: publicationLinks,
       discovered_options: discoveredOptions,
       publication_entries: publicationEntries,
+      ...(labelPairs.length === 0
+        ? {}
+        : {
+            label_values: Object.fromEntries(
+              labelPairs.map(({ label, value }) => [label, value]),
+            ),
+          }),
     },
     consumedFields: [
       "source_lineage",
@@ -1278,6 +1647,20 @@ function htmlText(value: string): string {
     .map((line) => line.replace(/[^\S\r\n]+/gu, " ").trim())
     .filter((line) => line.length > 0)
     .join("\n");
+}
+
+function sourceArtworkFingerprint(source: string): string {
+  const path = new URL(source, "https://official.invalid").pathname;
+  const asset = path.split("/").at(-1) ?? path;
+  const stableAsset = asset
+    .replace(/\.(?:avif|gif|jpe?g|png|webp)$/iu, "")
+    .replace(/(?:[-_.](?:thumb|thumbnail|small|medium|large|web|retina|2x))+$/iu, "")
+    .normalize("NFC")
+    .toLocaleLowerCase();
+  if (stableAsset.length === 0) {
+    throw new Error("Official Printing Image has no stable artwork asset identity.");
+  }
+  return `official-artwork:${stableAsset}`;
 }
 
 function decodeHtmlText(value: string): string {
@@ -2250,11 +2633,12 @@ function attachRawSurfaceEvidence(
         ...unmapped,
         ...(retainDocument ? Object.entries(document) : [])
           .filter(([field]) => !mappedRootFields.includes(field))
-          .map(([field, value]) => ({
-            path:
+          .flatMap(([field, value]) =>
+            leafEntries(
+              value,
               `source_sidecar.raw.official_surfaces[0].document.${field}`,
-            value,
-          })),
+            )
+          ),
       ],
     },
   };
@@ -2793,6 +3177,22 @@ function cardObservation(
       },
     ];
   });
+  if (Array.isArray(detail.fuzzy_product_labels)) {
+    for (const label of detail.fuzzy_product_labels) {
+      if (typeof label !== "string" || label.trim().length === 0) continue;
+      relationships.push({
+        kind: detail.printing === undefined
+          ? "product-card"
+          : "printing-product",
+        product_reference: {
+          kind: "name",
+          value: label.trim(),
+        },
+        evidence_category: "derived",
+        resolution: "warning",
+      });
+    }
+  }
   if (detail.printing !== undefined && !sourceBucket) {
     relationships.push({
       kind: "printing-distribution-context",
@@ -2837,7 +3237,10 @@ function cardObservation(
         value: requiredText(detail.number, "Official Card number"),
       },
       name: requiredText(detail.title, "Official Card title"),
-      effective_rules_text: requiredText(detail.rules, "Official Card rules"),
+      effective_rules_text: nullableText(
+        detail.rules,
+        "Official Card rules",
+      ),
       game_data: {
         profile: requiredText(detail.profile, "Official Card profile"),
         attributes: detail.attributes,
@@ -2858,7 +3261,7 @@ function cardObservation(
                 "Official normalized rarity",
               ),
             },
-            printed_rules_text: requiredText(
+            printed_rules_text: nullableText(
               detail.printed_rules,
               "Official printed rules",
             ),
@@ -2904,8 +3307,10 @@ function cardObservation(
           },
         }),
     memberships: {
-      products: [],
-      distribution_contexts: [],
+      products: products.map((product) =>
+        requiredText(product.code, "Official Product code")
+      ),
+      distribution_contexts: sourceBucket ? [] : [distributionCode],
       source_buckets: sourceBucket ? [distributionCode] : [],
     },
     product_release_catalogue: {
@@ -3079,13 +3484,16 @@ function requiredSurface(value: unknown, name: string) {
   return surface;
 }
 
-function completeObservation() {
+function completeObservation(
+  declaredRecordCount = 1,
+  parsedRecordCount = 1,
+) {
   return {
     structurally_complete: true,
     required_surfaces_complete: true,
     partitions_complete: true,
-    declared_record_count: 1,
-    parsed_record_count: 1,
+    declared_record_count: declaredRecordCount,
+    parsed_record_count: parsedRecordCount,
   };
 }
 

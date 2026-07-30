@@ -231,10 +231,29 @@ END;
 
 -- The legacy aggregate document is retained only for deterministic fixtures.
 -- Production lineages parse immutable per-surface bytes under exact contracts.
+INSERT INTO source_adapter_versions (
+  adapter_version,
+  source_lineage,
+  supported_game,
+  game_profile_version,
+  parser_contract,
+  adapter_origin
+) VALUES (
+  'one-piece-en@1',
+  'one-piece-en',
+  'one-piece',
+  'one-piece@1',
+  'one-piece-en-raw-surfaces@1',
+  'production'
+);
+
 UPDATE source_adapter_versions
 SET parser_contract = 'synthetic-fixture-card-document@1',
     adapter_origin = 'synthetic_fixture'
-WHERE adapter_version = 'one-piece-json-document@1';
+WHERE adapter_version IN (
+  'one-piece-json-document@1',
+  'one-piece-json-document@2'
+);
 
 UPDATE source_adapter_versions
 SET parser_contract = 'one-piece-en-raw-surfaces@1'

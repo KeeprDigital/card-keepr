@@ -83,6 +83,13 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           parserContract: "synthetic-fixture-card-document@1",
         },
         {
+          adapterVersion: "one-piece-json-document@2",
+          sourceLineage: "one-piece-en",
+          supportedGame: "one-piece",
+          gameProfileVersion: "one-piece@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
           adapterVersion: "fixture-one-piece-json@1",
           sourceLineage: "one-piece-en",
           supportedGame: "one-piece",

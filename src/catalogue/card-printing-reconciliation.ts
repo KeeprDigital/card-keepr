@@ -497,6 +497,8 @@ export async function reconcileRetainedCardPrintingEvidence(
             sourceObservationSetId: observation.sourceObservationSetId,
             sourceSnapshotId: observation.sourceSnapshotId,
             sourceLineage: observation.sourceLineage,
+            sourceSurface: observation.sourceSurface,
+            requestRole: observation.sourceRequestRole,
             capturedAt: observation.sourceCapturedAt,
             currentCardId: plan?.cardId ?? null,
             currentPrintingId: plan?.printingId ?? null,

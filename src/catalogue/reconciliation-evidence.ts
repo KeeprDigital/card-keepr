@@ -7,6 +7,9 @@ import { evidencePlanForRequest } from "./source-evidence-repository";
 type PlannedRequestRow = {
   request_id: string;
   sequence_number: number;
+  url: string;
+  request_role: "surface" | "listing" | "detail" | "product_detail" | "image";
+  discovered_from_request_id: string | null;
   state: string;
   source_snapshot_id: string | null;
 };
@@ -44,7 +47,8 @@ export async function retainedReconciliationObservation(
   const [requests, observations, printingImageSnapshots] = await Promise.all([
     database
       .prepare(
-        `SELECT request_id, sequence_number, state, source_snapshot_id
+        `SELECT request_id, sequence_number, url, request_role,
+                discovered_from_request_id, state, source_snapshot_id
          FROM source_requests
          WHERE ingestion_run_id = ?
          ORDER BY sequence_number, request_id`,
@@ -165,6 +169,7 @@ export async function retainedReconciliationObservation(
       retainedObservationDocument(evidenceObjects, row),
     ),
   );
+  assertClosedRequestGraph(requests.results, orderedRows, documents);
   const retainedImages = new Map(
     await Promise.all(
       printingImageSnapshots.results.map(async (row) => [
@@ -174,8 +179,12 @@ export async function retainedReconciliationObservation(
     ),
   );
   const observationIds = new Set<string>();
+  const requestsById = new Map(
+    requests.results.map((request) => [request.request_id, request]),
+  );
   const merged = documents.flatMap((document, index) => {
     const row = orderedRows[index]!;
+    const request = requests.results[index]!;
     return document.observations
       .map((wrapped) => {
         if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
@@ -190,12 +199,23 @@ export async function retainedReconciliationObservation(
         return {
           ...parseReconciliationObservation(
             wrapped.id,
-            attachRetainedPrintingImages(wrapped.value, retainedImages),
+            attachRetainedPrintingImages(
+              wrapped.value,
+              retainedImages,
+              requiredSourceAdapter(row.adapter_version).origin ===
+                "production",
+            ),
           ),
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
           sourceCapturedAt: row.retrieved_at,
           sourceLineage: row.source_lineage,
+          sourceRequestRole: request.request_role,
+          sourceSurface: sourceSurfaceForRequest(
+            request,
+            requestsById,
+            row,
+          ),
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
         };
@@ -224,6 +244,206 @@ export async function retainedReconciliationObservation(
   };
 }
 
+function sourceSurfaceForRequest(
+  request: PlannedRequestRow,
+  requests: ReadonlyMap<string, PlannedRequestRow>,
+  row: Pick<
+    EvidenceRow,
+    "adapter_version" | "plan_origin" | "source_lineage"
+  >,
+): string | undefined {
+  const adapter = requiredSourceAdapter(row.adapter_version);
+  if (
+    adapter.origin === "synthetic_fixture" &&
+    row.plan_origin === "synthetic_fixture"
+  ) {
+    return undefined;
+  }
+  let current = request;
+  const visited = new Set<string>();
+  while (current.request_role !== "surface") {
+    if (
+      current.discovered_from_request_id === null ||
+      visited.has(current.request_id)
+    ) {
+      throw new Error(
+        `Discovered Source Request ${request.request_id} has no closed root surface lineage.`,
+      );
+    }
+    visited.add(current.request_id);
+    const parent = requests.get(current.discovered_from_request_id);
+    if (parent === undefined) {
+      throw new Error(
+        `Discovered Source Request ${request.request_id} names an unavailable parent.`,
+      );
+    }
+    current = parent;
+  }
+  const prefix = `${row.source_lineage}:`;
+  if (!current.request_id.startsWith(prefix)) {
+    throw new Error(
+      "Root Source Request identity does not match its retained lineage.",
+    );
+  }
+  return current.request_id.slice(prefix.length);
+}
+
+function assertClosedRequestGraph(
+  requests: readonly PlannedRequestRow[],
+  rows: readonly EvidenceRow[],
+  documents: readonly {
+    observations: unknown[];
+    evidenceSummary: {
+      observation_count: number;
+      declared_record_count: number;
+      parsed_record_count: number;
+    };
+  }[],
+): void {
+  const byId = new Map(requests.map((request) => [request.request_id, request]));
+  const rootSurfaces = new Map<string, Set<string>>();
+  const listingLocators = new Map<string, string>();
+  const listingPages = new Map<string, Set<number>>();
+  requests.forEach((request, index) => {
+    const row = rows[index]!;
+    const document = documents[index]!;
+    if (
+      document.evidenceSummary.observation_count !==
+        document.observations.length ||
+      document.evidenceSummary.declared_record_count !==
+        document.evidenceSummary.parsed_record_count
+    ) {
+      throw new Error(
+        `Source Request ${request.request_id} has incomplete declared/parsed count closure.`,
+      );
+    }
+    const adapter = requiredSourceAdapter(row.adapter_version);
+    if (
+      adapter.origin === "synthetic_fixture" &&
+      row.plan_origin === "synthetic_fixture"
+    ) {
+      return;
+    }
+    if (
+      adapter.origin !== "production" ||
+      row.plan_origin !== "production"
+    ) {
+      throw new Error(
+        `Source Request ${request.request_id} has mismatched graph authority.`,
+      );
+    }
+    if (request.request_role === "surface") {
+      const prefix = `${row.source_lineage}:`;
+      if (
+        request.discovered_from_request_id !== null ||
+        !request.request_id.startsWith(prefix)
+      ) {
+        throw new Error("Root Source Request graph identity is invalid.");
+      }
+      const surface = request.request_id.slice(prefix.length);
+      rootSurfaces.set(row.adapter_version, new Set([
+        ...(rootSurfaces.get(row.adapter_version) ?? []),
+        surface,
+      ]));
+      return;
+    }
+    if (request.discovered_from_request_id === null) {
+      throw new Error(
+        `Discovered Source Request ${request.request_id} has no parent.`,
+      );
+    }
+    const parent = byId.get(request.discovered_from_request_id);
+    if (
+      parent === undefined ||
+      parent.sequence_number >= request.sequence_number
+    ) {
+      throw new Error(
+        `Discovered Source Request ${request.request_id} does not close over an earlier retained parent.`,
+      );
+    }
+    if (
+      request.request_role === "image" &&
+      document.observations.length !== 0
+    ) {
+      throw new Error("Printing Image requests cannot invent catalogue facts.");
+    }
+    if (
+      (request.request_role === "detail" ||
+        request.request_role === "product_detail") &&
+      document.observations.length === 0
+    ) {
+      throw new Error(
+        `Required ${request.request_role} request ${request.request_id} parsed no retained detail.`,
+      );
+    }
+    if (request.request_role === "listing") {
+      for (const observation of document.observations) {
+        if (!isRecord(observation) || !isRecord(observation.value)) continue;
+        const identity = observation.value.identity_evidence;
+        if (!isRecord(identity) || typeof identity.locator !== "string") {
+          continue;
+        }
+        const prior = listingLocators.get(identity.locator);
+        if (prior !== undefined && prior !== request.request_id) {
+          throw new Error(
+            `Official Source leaf partitions overlap at locator ${identity.locator}.`,
+          );
+        }
+        listingLocators.set(identity.locator, request.request_id);
+      }
+      const url = new URL(request.url);
+      const pageEntry = [...url.searchParams.entries()].find(([key]) =>
+        /^(?:page|paged|offset)$/u.test(key)
+      );
+      if (pageEntry !== undefined) {
+        const page = Number.parseInt(pageEntry[1], 10);
+        if (!Number.isInteger(page) || page < 0) {
+          throw new Error("Official Source listing page identity is invalid.");
+        }
+        url.searchParams.delete(pageEntry[0]);
+        const key = `${row.source_lineage}:${url.pathname}?${
+          url.searchParams.toString()
+        }`;
+        listingPages.set(key, new Set([
+          ...(listingPages.get(key) ?? []),
+          page,
+        ]));
+      }
+    }
+  });
+  for (const [partition, pages] of listingPages) {
+    const ordered = [...pages].sort((left, right) => left - right);
+    const firstPage = ordered[0]!;
+    for (let page = firstPage; page <= ordered.at(-1)!; page += 1) {
+      if (!pages.has(page)) {
+        throw new Error(
+          `Official Source listing partition ${partition} has unfinished page closure.`,
+        );
+      }
+    }
+  }
+  for (const [adapterVersion, actual] of rootSurfaces) {
+    const adapter = requiredSourceAdapter(adapterVersion);
+    if (
+      adapter.origin !== "production" ||
+      adapter.reconciliationCoverage !== "official_source"
+    ) {
+      throw new Error(
+        `Official Source ${adapterVersion} has invalid production coverage authority.`,
+      );
+    }
+    const expected = new Set(adapter.requiredSurfaces ?? []);
+    if (
+      actual.size !== expected.size ||
+      [...expected].some((surface) => !actual.has(surface))
+    ) {
+      throw new Error(
+        `Official Source ${adapterVersion} request graph does not close over every required root surface.`,
+      );
+    }
+  }
+}
+
 function attachRetainedPrintingImages(
   value: unknown,
   images: ReadonlyMap<
@@ -236,19 +456,75 @@ function attachRetainedPrintingImages(
       content_base64: string;
     }
   >,
+  normalizeArtworkIdentity: boolean,
 ): unknown {
   if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
   const declared = value.appearance_evidence.images;
   if (!Array.isArray(declared)) return value;
+  const retainedImages = declared.map((item) => {
+    if (!isRecord(item) || typeof item.source_url !== "string") return item;
+    const retained = images.get(item.source_url);
+    return retained === undefined ? item : { ...item, ...retained };
+  });
+  const identity = value.identity_evidence;
+  if (
+    !normalizeArtworkIdentity ||
+    !isRecord(identity) ||
+    typeof identity.artwork_fingerprint !== "string" ||
+    !retainedImages.every((item) =>
+      isRecord(item) &&
+      typeof item.role === "string" &&
+      Number.isInteger(item.width) &&
+      Number.isInteger(item.height) &&
+      typeof item.content_sha256 === "string"
+    )
+  ) {
+    return {
+      ...value,
+      appearance_evidence: {
+        ...value.appearance_evidence,
+        images: retainedImages,
+      },
+    };
+  }
+  const normalizedArtworkFingerprint =
+    `retained-artwork:${
+      JSON.stringify({
+        source_artwork_identity: identity.artwork_fingerprint,
+        role_geometry: retainedImages
+          .map((item) => ({
+            role: (item as Record<string, unknown>).role,
+            width: (item as Record<string, unknown>).width,
+            height: (item as Record<string, unknown>).height,
+          }))
+          .sort((left, right) =>
+            String(left.role).localeCompare(String(right.role))
+          ),
+      })
+    }`;
+  const noveltyBasis = isRecord(identity.novelty_basis)
+    ? {
+        ...identity.novelty_basis,
+        artwork_fingerprint: normalizedArtworkFingerprint,
+      }
+    : identity.novelty_basis;
   return {
     ...value,
+    identity_evidence: {
+      ...identity,
+      artwork_fingerprint: normalizedArtworkFingerprint,
+      novelty_basis: noveltyBasis,
+    },
     appearance_evidence: {
       ...value.appearance_evidence,
-      images: declared.map((item) => {
-        if (!isRecord(item) || typeof item.source_url !== "string") return item;
-        const retained = images.get(item.source_url);
-        return retained === undefined ? item : { ...item, ...retained };
-      }),
+      images: retainedImages.map((item) =>
+        isRecord(item)
+          ? {
+              ...item,
+              artwork_fingerprint: normalizedArtworkFingerprint,
+            }
+          : item
+      ),
     },
   };
 }
@@ -400,7 +676,14 @@ function base64(bytes: Uint8Array): string {
 async function retainedObservationDocument(
   evidenceObjects: R2Bucket,
   row: EvidenceRow,
-): Promise<{ observations: unknown[] }> {
+): Promise<{
+  observations: unknown[];
+  evidenceSummary: {
+    observation_count: number;
+    declared_record_count: number;
+    parsed_record_count: number;
+  };
+}> {
   const object = await evidenceObjects.get(row.content_object_key);
   if (object === null || object.size !== row.content_byte_length) {
     throw new Error("Retained Source Observation Set bytes are unavailable.");
@@ -435,7 +718,14 @@ async function retainedObservationDocument(
   ) {
     throw new Error("Retained Source Observation Set provenance is invalid.");
   }
-  return { observations: document.observations };
+  return {
+    observations: document.observations,
+    evidenceSummary: document.evidence_summary as {
+      observation_count: number;
+      declared_record_count: number;
+      parsed_record_count: number;
+    },
+  };
 }
 
 function validEvidenceSummary(
@@ -450,8 +740,9 @@ function validEvidenceSummary(
     value.partitions_complete === true &&
     observationCount === observations.length &&
     value.observation_count === observationCount &&
-    value.declared_record_count === observationCount &&
-    value.parsed_record_count === observationCount
+    Number.isInteger(value.declared_record_count) &&
+    Number.isInteger(value.parsed_record_count) &&
+    value.declared_record_count === value.parsed_record_count
   );
 }
 

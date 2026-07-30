@@ -252,8 +252,7 @@ function observationEvidenceSummary(observations: readonly unknown[]) {
       completeness.every(
         (item) => item?.structurally_complete === true,
       ) &&
-      declaredRecordCount === parsedRecordCount &&
-      parsedRecordCount === observations.length,
+      declaredRecordCount === parsedRecordCount,
   };
 }
 

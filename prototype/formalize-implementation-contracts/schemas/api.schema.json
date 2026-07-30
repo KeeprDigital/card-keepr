@@ -371,7 +371,6 @@
         "printed_rules_text",
         "game_data",
         "printing_images",
-        "products",
         "distribution_contexts",
         "relationship_evidence",
         "locator_evidence",
@@ -422,12 +421,7 @@
       "additionalProperties": false,
       "required": ["precision", "value"],
       "properties": {
-        "precision": {
-          "oneOf": [
-            { "enum": ["day", "month", "quarter", "year", "unknown"] },
-            { "type": "null" }
-          ]
-        },
+        "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
         "value": {
           "oneOf": [{ "type": "string" }, { "type": "null" }]
         }
@@ -436,7 +430,7 @@
     "Release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "region", "date", "status"],
+      "required": ["id", "region", "date"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "event_key": { "$ref": "#/$defs/OpaqueId" },
@@ -491,7 +485,9 @@
       "required": ["path", "status", "candidates"],
       "properties": {
         "path": { "type": "string", "pattern": "^/" },
-        "status": { "const": "unresolved" },
+        "status": {
+          "enum": ["unresolved", "resolved_by_authority"]
+        },
         "candidates": {
           "type": "array",
           "minItems": 2,
@@ -683,7 +679,22 @@
         "type": { "enum": ["source_observation", "curated_revision"] },
         "id": { "$ref": "#/$defs/OpaqueId" },
         "captured_at": { "$ref": "#/$defs/Timestamp" },
-        "source": { "type": "string", "minLength": 1 }
+        "source": { "type": "string", "minLength": 1 },
+        "surface": { "type": "string", "minLength": 1 },
+        "request_role": {
+          "enum": ["surface", "listing", "detail", "product_detail", "image"]
+        },
+        "authority_class": {
+          "enum": [
+            "product_detail",
+            "release_schedule",
+            "product_listing",
+            "card_detail",
+            "card_listing",
+            "policy",
+            "unknown"
+          ]
+        }
       }
     },
     "LegalityStatus": {

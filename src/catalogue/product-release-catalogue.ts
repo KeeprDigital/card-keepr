@@ -21,11 +21,23 @@ export type ProductEvidenceResource = {
   id: string;
   captured_at: string;
   source: string;
+  surface?: string;
+  request_role?: "surface" | "listing" | "detail" | "product_detail" | "image";
+  authority_class?: ProductAuthorityClass;
 };
+
+export type ProductAuthorityClass =
+  | "product_detail"
+  | "release_schedule"
+  | "product_listing"
+  | "card_detail"
+  | "card_listing"
+  | "policy"
+  | "unknown";
 
 export type ProductDisagreement = {
   path: string;
-  status: "unresolved";
+  status: "unresolved" | "resolved_by_authority";
   candidates: { value: unknown; observation_id: string }[];
 };
 
@@ -115,6 +127,8 @@ export type ProductReleaseEvidenceInput = {
   sourceObservationSetId: string;
   sourceSnapshotId: string;
   sourceLineage: string;
+  sourceSurface?: string;
+  requestRole?: "surface" | "listing" | "detail" | "product_detail" | "image";
   capturedAt: string;
   currentCardId: string | null;
   currentPrintingId: string | null;
@@ -130,7 +144,7 @@ export type ProductSourceObservation = {
     region: CatalogueRelease["region"];
     precision: ReleasePrecision;
     value: string | null;
-    status: ReleaseStatus;
+    status: ReleaseStatus | null;
   }[];
   withdrawal: ProductWithdrawal | null;
   evidence: ProductEvidenceResource;
@@ -424,6 +438,13 @@ async function parseProductReleaseObservation(
     id: input.sourceObservationId,
     captured_at: input.capturedAt,
     source: input.sourceLineage,
+    ...(input.sourceSurface === undefined
+      ? {}
+      : { surface: input.sourceSurface }),
+    ...(input.requestRole === undefined
+      ? {}
+      : { request_role: input.requestRole }),
+    authority_class: productAuthorityClass(input),
   };
   const products: ObservedProduct[] = [];
   const productsByReference = new Map<string, ObservedProduct>();
@@ -766,7 +787,7 @@ function sourceObservationsForProduct(
       region: release.region,
       precision: release.date.precision ?? "unknown",
       value: release.date.value,
-      status: release.status ?? "announced",
+      status: release.status,
     })),
     withdrawal:
       product.withdrawal?.evidence.source_lineage === evidence.source
@@ -844,14 +865,70 @@ function resolveFact<T extends { evidence: ProductEvidenceResource }, V>(
     ].sort();
     return candidates[0]!.value;
   }
+  const bestAuthority = Math.min(
+    ...observations.map(({ evidence }) =>
+      productAuthorityRank(evidence.authority_class ?? "unknown")
+    ),
+  );
+  const authoritative = observations.filter(({ evidence }) =>
+    productAuthorityRank(evidence.authority_class ?? "unknown") ===
+      bestAuthority
+  );
+  const authoritativeValues = new Map(
+    authoritative.map((observation) => [
+      canonicalJson(value(observation)),
+      observation,
+    ]),
+  );
+  if (authoritativeValues.size > 1) {
+    throw new Error(
+      `Same-authority Product evidence conflicts at ${path}.`,
+    );
+  }
+  const selected = value(authoritative[0]!);
+  provenance[path] = authoritative
+    .filter((observation) =>
+      canonicalJson(value(observation)) === canonicalJson(selected)
+    )
+    .map(({ evidence }) => evidence.id)
+    .sort();
   disagreements.push({
     path,
-    status: "unresolved",
+    status: "resolved_by_authority",
     candidates: [...distinct.values()].sort((left, right) =>
       left.observation_id.localeCompare(right.observation_id),
     ),
   });
-  return null;
+  return selected;
+}
+
+function productAuthorityClass(
+  input: ProductReleaseEvidenceInput,
+): ProductAuthorityClass {
+  if (input.requestRole === "product_detail") return "product_detail";
+  if (input.sourceSurface === "releases") return "release_schedule";
+  if (input.sourceSurface === "products") return "product_listing";
+  if (input.requestRole === "detail") return "card_detail";
+  if (input.requestRole === "listing") return "card_listing";
+  if (
+    input.sourceSurface !== undefined &&
+    /(?:restriction|legality|errata|policy|rules)/u.test(input.sourceSurface)
+  ) {
+    return "policy";
+  }
+  return "unknown";
+}
+
+function productAuthorityRank(authority: ProductAuthorityClass): number {
+  return {
+    product_detail: 0,
+    release_schedule: 1,
+    product_listing: 2,
+    card_detail: 3,
+    card_listing: 4,
+    policy: 5,
+    unknown: 6,
+  }[authority];
 }
 
 function aggregateRelationships(
@@ -1097,7 +1174,8 @@ function releasePrecision(value: unknown): ReleasePrecision {
   return value;
 }
 
-function releaseStatus(value: unknown): ReleaseStatus {
+function releaseStatus(value: unknown): ReleaseStatus | null {
+  if (value === null || value === undefined) return null;
   if (value !== "announced" && value !== "released") {
     throw new Error("Release status is invalid.");
   }
