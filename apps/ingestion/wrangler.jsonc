@@ -5,7 +5,15 @@
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "ADMINISTRATION_CLOCK_MODE": "system"
+    "ADMINISTRATION_CLOCK_MODE": "system",
+    "CLOUDFLARE_ACCOUNT_ID": "0123456789abcdef0123456789abcdef",
+    "CATALOGUE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000001",
+    "DISPOSABLE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000002",
+    "GITHUB_REPOSITORY_ID": "1313489088",
+    "GITHUB_APP_ID": "0",
+    "GITHUB_INSTALLATION_ID": "0",
+    "GITHUB_ENVIRONMENT_ID": "0",
+    "GITHUB_WORKFLOW_ID": "0"
   },
   "placement": {
     "mode": "smart"
@@ -23,6 +31,11 @@
     }
   ],
   "services": [
+    {
+      "binding": "API_CREDENTIAL_CONSUMER",
+      "service": "card-keepr-api",
+      "entrypoint": "ApiCredentialConsumer"
+    },
     {
       "binding": "OFFICIAL_SOURCE_TRANSPORT",
       "service": "card-keepr-ingestion",

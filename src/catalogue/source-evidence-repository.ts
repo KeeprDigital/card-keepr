@@ -181,6 +181,17 @@ export async function startEvidenceRun(
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
     }
+    if (
+      errorMessage(error).includes(
+        "credential_execution_in_progress",
+      )
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "credential_execution_in_progress",
+        "Credential execution blocks new Ingestion Runs.",
+      );
+    }
     if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
       throw new AdministrationProblem(
         409,
@@ -270,6 +281,17 @@ export async function retryEvidenceRun(
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
+    }
+    if (
+      errorMessage(error).includes(
+        "credential_execution_in_progress",
+      )
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "credential_execution_in_progress",
+        "Credential execution blocks new Ingestion Runs.",
+      );
     }
     if (errorMessage(error).includes("ingestion_runs.idempotency_key")) {
       throw new AdministrationProblem(

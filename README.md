@@ -116,7 +116,8 @@ binding changes with `npm run types:generate`.
 The API Worker has catalogue, Printing Image, and Catalogue Export read
 responsibilities and no evidence, export-mutation, or backup binding. The
 ingestion Worker has the corresponding mutation bindings plus the private
-backup bucket. R2 buckets have no `r2.dev` or custom-domain configuration and
+backup bucket and a service binding to the API Worker for credential
+observation. R2 buckets have no `r2.dev` or custom-domain configuration and
 remain reachable only through authenticated Worker routes.
 
 Cloudflare D1 and R2 bindings are resource-scoped rather than method-scoped, so
@@ -124,9 +125,99 @@ the API's least-privilege boundary is the smaller attached resource set plus its
 read-only routes and separate bearer credential. Evidence, Catalogue Export,
 backup, and administration capabilities are attached only to ingestion.
 
-Before a first deployment, provision the named APAC D1 database and private R2
-buckets, then replace the placeholder D1 identifier in both configurations
-with the same real database identifier. Set `API_BEARER_KEY` only on the API
-Worker and `ADMINISTRATION_KEY` only on the ingestion Worker using
-`wrangler secret put`. Set the production CORS allowlist to the exact owner
-origins before deploying.
+Before a first deployment, provision and record every production target rather
+than reusing the checked-in Cloudflare placeholders:
+
+- the Cloudflare account ID;
+- `card-keepr-api` and `card-keepr-ingestion` Worker scripts;
+- the APAC `card-keepr-catalogue` D1 database and a separate disposable
+  verification D1 database;
+- the private `card-keepr-evidence`, `card-keepr-printing-images`,
+  `card-keepr-catalogue-exports`, and `card-keepr-backups` R2 buckets;
+- the `card-keepr-evidence-ingestion` and `card-keepr-evidence-host`
+  Workflows;
+- the numeric GitHub repository, GitHub App, App installation, production
+  environment, and credential-boundary workflow IDs.
+
+Replace `CLOUDFLARE_ACCOUNT_ID`, both D1 IDs, and all GitHub numeric IDs in
+`apps/ingestion/wrangler.jsonc`. The checked-in GitHub repository ID
+`1313489088` is the authoritative ID for `KeeprDigital/card-keepr`; the
+App, installation, environment, and workflow values remain `0` until those
+resources are provisioned. A zero or non-numeric value intentionally prevents
+credential-rotation execution.
+
+Record the GitHub App and installation IDs and resolve the remaining GitHub
+IDs. Credential rotation receives the App private key through its secret
+descriptor, binds the App ID and SPKI public-key fingerprint in the plan, and
+mints a fresh short-lived JWT in memory. The provider queries that exact
+installation, requires
+selected-repository access and the exact configured permissions, then mints an
+installation token scoped to the one configured repository and those same
+permissions. Use the minted token to verify the repository, environment,
+workflow, and bot actor:
+
+```sh
+gh api repos/KeeprDigital/card-keepr --jq .id
+gh api installation/repositories \
+  --jq '{repository_selection,total_count,repositories:[.repositories[].id]}'
+gh api graphql -f query='query { viewer { login } }' --jq .data.viewer.login
+gh api repos/KeeprDigital/card-keepr/environments/production --jq .id
+gh api repos/KeeprDigital/card-keepr/actions/workflows \
+  --jq '.workflows[] | select(.path == ".github/workflows/production-release.yml") | .id'
+```
+
+Both the installation and minted token must expose exactly `actions:write`,
+`contents:read`, `environments:write`, and `metadata:read`.
+`GET /installation/repositories` must return exactly the one configured
+repository. The authenticated GraphQL viewer must be the installation's bot
+actor; each production release verifies that exact actor. Persisted consumer
+slots `a` and `b` map at the GitHub boundary to the serialized
+`production-release.yml` workflow's `active` and `replacement` inputs
+respectively; a usable proof performs the real API and ingestion Worker
+deployment. Cloudflare management tokens
+are class-minimal: Worker bearer classes use token read plus Worker-secret
+write, D1 classes additionally use token write, and GitHub deployment uses
+token read/write without Worker-secret write. Rotated D1 tokens are
+account-scoped because
+Cloudflare API-token policy resources do not support a D1-database resource
+scope; Keepr therefore enforces the exact account, permission, configured
+database ID, and request path for every operation. D1 export proof is a
+non-mutating metadata read. D1 write proof uses a challenge-owned table in the
+configured disposable database and always attempts exact cleanup.
+
+Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
+the ingestion Worker using `wrangler secret put`. Runtime authentication
+requires the presented key to remain present in that Worker's live secret
+bindings, so provider deletion takes effect even if catalogue finalization
+must be reconciled later. Set the production CORS
+allowlist to the exact owner origins before deploying. API and administration
+bearer replacements use token68 characters and must encode at least 128 bits
+(22 characters without padding). Set `CREDENTIAL_CONSUMER_PROOF_KEY` on both
+Workers and set `CREDENTIAL_BOUNDARY_ATTESTATION_KEY` only on the ingestion
+Worker. Set `GITHUB_APP_ID` to the stable GitHub App ID and
+`GITHUB_APP_PRIVATE_KEY` only on ingestion to the App's PEM private key. The
+ingestion Worker verifies that stable key fingerprint against the plan, mints
+a fresh short-lived App JWT for each observation, verifies the installation's
+exact policy, then mints an exact one-repository token. No private key or JWT
+plaintext is persisted or returned. Set
+`GITHUB_OBSERVATION_ACTOR` to the exact GitHub App bot login that owns those
+runs. Set `CLOUDFLARE_OBSERVATION_TOKEN` only on ingestion to an independently
+managed observation token with account-token read and Worker-secret metadata
+read access. Attestation uses it to verify exact issuer identity and policy,
+authoritative old-issuer deletion, exact management-token policy, and the
+selected Worker secret name independently of the mutation caller.
+
+The attestation and consumer-proof keys are server-owned and never enter the
+CLI or a child process. Credential CLI input is provided through its secret
+file descriptor and contains only the credentials needed for the requested
+provider mutation. The ingestion Worker issues plan-bound consumer-proof
+request tokens and is the only Worker that accepts the proof POST or consumes
+its single-use nonce in D1. For an API bearer observation, ingestion invokes
+the API's private named service entrypoint with that signed request token; API
+performs its normal bearer-authenticated `GET /health` check and returns a
+stateless signed observation. The default API router exposes no proof route.
+The CLI passes a validated, versioned plan envelope on a dedicated descriptor;
+neither the plan nor its single-use execution capability appears in
+child-process arguments. After trusted consumer observations succeed,
+ingestion derives the facts itself and issues the final boundary attestation.
+Caller-authored provider facts are never signed.

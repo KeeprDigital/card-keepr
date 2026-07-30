@@ -1,4 +1,5 @@
-import { authenticateBearer } from "../../../src/http/authentication";
+import { WorkerEntrypoint } from "cloudflare:workers";
+import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   catalogueExportComponentResponse,
   catalogueExportResponse,
@@ -21,8 +22,11 @@ import {
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
+import {
+  handleApiCredentialConsumerObservation,
+} from "../../../src/credentials/consumer-proof";
 
-export default {
+const apiWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
 
@@ -69,9 +73,11 @@ export default {
         }
       }
 
-      const authenticationFailure = await authenticateBearer(
+      const authenticationFailure = await authenticateCredentialBearer(
         request,
-        env.API_BEARER_KEY,
+        env.CATALOGUE_DB,
+        "api_bearer_key",
+        [env.API_BEARER_KEY, env.API_BEARER_KEY_REPLACEMENT],
         requestId,
         {
           missing: "authentication_required",
@@ -189,6 +195,31 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+export default apiWorker;
+
+export class ApiCredentialConsumer extends WorkerEntrypoint<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    return (
+      await handleApiCredentialConsumerObservation(
+        request,
+        this.env,
+        async (secret) => {
+          const response = await apiWorker.fetch(
+            new Request(new URL("/health", request.url), {
+              headers: {
+                authorization: `Bearer ${secret}`,
+              },
+            }),
+            this.env,
+          );
+          await response.body?.cancel();
+          return response.status === 200;
+        },
+      )
+    ) ?? new Response(null, { status: 404 });
+  }
+}
 
 function isPrintingImageContent(pathname: string): boolean {
   return (

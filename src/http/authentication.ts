@@ -1,4 +1,8 @@
 import { problemResponse } from "./problem";
+import {
+  credentialSecretMatches,
+  type CredentialClass,
+} from "../catalogue/credential-rotation";
 
 export type AuthenticationCodes = {
   missing: string;
@@ -37,6 +41,46 @@ export async function authenticateBearer(
     });
   }
 
+  return null;
+}
+
+export async function authenticateCredentialBearer(
+  request: Request,
+  database: D1Database,
+  credentialClass: CredentialClass,
+  bootstrapKeys: readonly (string | undefined)[],
+  requestId: string,
+  codes: AuthenticationCodes,
+): Promise<Response | null> {
+  const authorization = request.headers.get("authorization");
+  if (authorization === null) {
+    return problemResponse({
+      requestId,
+      status: 401,
+      code: codes.missing,
+      title: "Authentication required",
+      detail: "Supply a bearer credential in the Authorization header.",
+    });
+  }
+
+  const providedKey = /^Bearer ([^\s]+)$/.exec(authorization)?.[1];
+  if (
+    providedKey === undefined ||
+    !(await credentialSecretMatches(
+      database,
+      credentialClass,
+      providedKey,
+      bootstrapKeys,
+    ))
+  ) {
+    return problemResponse({
+      requestId,
+      status: 401,
+      code: codes.invalid,
+      title: "Invalid credential",
+      detail: "The supplied bearer credential is not valid.",
+    });
+  }
   return null;
 }
 

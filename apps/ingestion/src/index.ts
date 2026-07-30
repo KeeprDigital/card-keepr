@@ -1,4 +1,4 @@
-import { authenticateBearer } from "../../../src/http/authentication";
+import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   AdministrationProblem,
   administrationStatus,
@@ -15,6 +15,7 @@ import {
 } from "../../../src/http/health";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
+import { readBoundedJsonObject } from "../../../src/http/bounded-json";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
   reparseSourceSnapshot,
@@ -29,17 +30,75 @@ import {
   showReconciledPrinting,
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { resumeEvidenceRun } from "./evidence-administration";
+import {
+  CredentialRotationProblem,
+} from "../../../src/catalogue/credential-rotation";
+import {
+  handleCredentialAdministration,
+  handleCredentialExecutionCapability,
+} from "./credential-administration";
+import {
+  credentialConsumerProofRequestHeader,
+  handleCredentialConsumerProof,
+} from "../../../src/credentials/consumer-proof";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
 } from "./evidence-workflows";
 export { OfficialSourceTransport } from "./official-source-transport";
 
-export default {
+const ingestionWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const requestId = crypto.randomUUID();
 
     try {
+      const consumerProof = await handleCredentialConsumerProof(
+        request,
+        env,
+        [
+          "api_bearer_key",
+          "ingestion_admin_key",
+          "d1_export_token",
+          "d1_verification_token",
+        ],
+        async (secret) => {
+          const response = await ingestionWorker.fetch(
+            new Request(new URL("/health", request.url), {
+              headers: {
+                authorization: `Bearer ${secret}`,
+              },
+            }),
+            env,
+          );
+          await response.body?.cancel();
+          return response.status === 200;
+        },
+        async (requestToken) => {
+          const response = await env.API_CREDENTIAL_CONSUMER.fetch(
+            new Request("https://card-keepr-api.invalid/health", {
+              headers: {
+                [credentialConsumerProofRequestHeader]: requestToken,
+              },
+            }),
+          );
+          return response.json();
+        },
+      );
+      if (consumerProof !== null) return consumerProof;
+      const executionCapability =
+        await handleCredentialExecutionCapability(
+          request,
+          env.CATALOGUE_DB,
+          administrationObservedAt(request, env),
+          env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+          env.CREDENTIAL_CONSUMER_PROOF_KEY,
+          env.CLOUDFLARE_OBSERVATION_TOKEN,
+          env.GITHUB_APP_PRIVATE_KEY,
+          env.GITHUB_APP_ID,
+          env.GITHUB_WORKFLOW_ID,
+          env.GITHUB_OBSERVATION_ACTOR,
+        );
+      if (executionCapability !== null) return executionCapability;
       const rateLimited = await rateLimitFailure(
         request,
         env.ADMINISTRATION_RATE_LIMIT,
@@ -47,9 +106,14 @@ export default {
       );
       if (rateLimited !== null) return rateLimited;
 
-      const authenticationFailure = await authenticateBearer(
+      const authenticationFailure = await authenticateCredentialBearer(
         request,
-        env.ADMINISTRATION_KEY,
+        env.CATALOGUE_DB,
+        "ingestion_admin_key",
+        [
+          env.ADMINISTRATION_KEY,
+          env.ADMINISTRATION_KEY_REPLACEMENT,
+        ],
         requestId,
         {
           missing: "authentication_required",
@@ -76,6 +140,26 @@ export default {
         });
       }
       const observedAt = administrationObservedAt(request, env);
+
+      const credentialResponse = await handleCredentialAdministration(
+        request,
+        env.CATALOGUE_DB,
+        observedAt,
+        {
+          cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+          catalogue_d1_database_id: env.CATALOGUE_D1_DATABASE_ID,
+          disposable_d1_database_id:
+            env.DISPOSABLE_D1_DATABASE_ID,
+          github_repository_id: env.GITHUB_REPOSITORY_ID,
+          github_app_id: env.GITHUB_APP_ID,
+          github_installation_id: env.GITHUB_INSTALLATION_ID,
+          github_environment_id: env.GITHUB_ENVIRONMENT_ID,
+          github_workflow_id: env.GITHUB_WORKFLOW_ID,
+        },
+        env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
+        env.CREDENTIAL_CONSUMER_PROOF_KEY,
+      );
+      if (credentialResponse !== null) return credentialResponse;
 
       if (
         request.method === "POST" &&
@@ -396,7 +480,10 @@ export default {
         detail: "The requested administration operation does not exist.",
       });
     } catch (error) {
-      if (error instanceof AdministrationProblem) {
+      if (
+        error instanceof AdministrationProblem ||
+        error instanceof CredentialRotationProblem
+      ) {
         return problemResponse({
           requestId,
           status: error.status,
@@ -424,59 +511,17 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
+export default ingestionWorker;
+
 async function readAdministrationBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
-  const maximumBytes = 16_384;
-  const declaredLength = request.headers.get("content-length");
-  if (
-    declaredLength !== null &&
-    Number.parseInt(declaredLength, 10) > maximumBytes
-  ) {
-    throw new AdministrationProblem(
-      413,
-      "request_too_large",
-      "The administration request body exceeds 16 KiB.",
-    );
-  }
-  const reader = request.body?.getReader();
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let text = "";
-  if (reader !== undefined) {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      bytesRead += chunk.value.byteLength;
-      if (bytesRead > maximumBytes) {
-        await reader.cancel();
-        throw new AdministrationProblem(
-          413,
-          "request_too_large",
-          "The administration request body exceeds 16 KiB.",
-        );
-      }
-      text += decoder.decode(chunk.value, { stream: true });
-    }
-    text += decoder.decode();
-  }
-  try {
-    const value: unknown = JSON.parse(text);
-    if (
-      value === null ||
-      typeof value !== "object" ||
-      Array.isArray(value)
-    ) {
-      throw new Error("not an object");
-    }
-    return value as Record<string, unknown>;
-  } catch {
-    throw new AdministrationProblem(
-      400,
-      "invalid_json",
-      "The administration request body must be a JSON object.",
-    );
-  }
+  return readBoundedJsonObject(
+    request,
+    16_384,
+    (status, code, detail) =>
+      new AdministrationProblem(status, code, detail),
+  );
 }
 
 function requiredString(

@@ -27,6 +27,10 @@ override a machine-readable artifact.
 - Every operation is under `/v1`, read-only, and authenticated by the API
   bearer traffic gate. `OPTIONS` preflight is unauthenticated infrastructure
   behavior, not a catalogue operation.
+- Credential proof orchestration and replay-nonce mutation belong to the
+  ingestion Worker. API accepts a signed observation only through a private
+  named service entrypoint, verifies the selected live secret through its
+  normal bearer `GET /health` path, and signs the result without writing D1.
 - Browser requests additionally require an exact environment-specific origin.
   Preflight permits `GET`, `HEAD`, and `OPTIONS` plus `Authorization`; actual
   responses expose `ETag` and `X-Catalogue-Revision` and send `Vary: Origin`.
@@ -120,9 +124,10 @@ override a machine-readable artifact.
 - Ingestion and deployment are blocked throughout a recovery operation.
   Mutation reopens only after restored state passes the agreed integrity and API
   checks and the owner explicitly accepts it.
-- Pull-request and `main` CI never mutate production. Only a serialized,
-  manually dispatched production release workflow holds deployment credentials,
-  and the guarded repository CLI is its entry point.
+- Pull-request and `main` CI never mutate production. Only the serialized,
+  manually dispatched `.github/workflows/production-release.yml` workflow
+  holds deployment credentials and deploys both production Workers, and the
+  guarded repository CLI is its entry point.
 
 ## Credential isolation
 
@@ -131,7 +136,7 @@ The five credential classes are distinct:
 1. browser-visible API bearer traffic gate — API Worker only;
 2. high-entropy ingestion administration key — ingestion Worker and owner CLI;
 3. D1 export token — ingestion runtime, export operation only;
-4. D1 disposable-verification token with Account D1 Edit — ingestion runtime
+4. D1 disposable-verification token with Account D1 Write — ingestion runtime
    only, never API Worker or deployment workflow; and
 5. Cloudflare deployment token — manually dispatched release workflow only.
 
@@ -140,6 +145,18 @@ old value is revoked. Single-holder Cloudflare tokens rotate by installing and
 verifying the replacement in their owning boundary before revocation. Secret
 values never appear in CLI arguments, output, logs, source, snapshots, or
 diagnostic bundles.
+
+Runtime bearer authentication requires the presented value to match a secret
+currently bound to the owning Worker. Catalogue rotation state can explicitly
+deny an `old_revoked` value, but it cannot keep a provider-removed binding
+alive; deletion therefore takes effect before an interrupted finalization is
+reconciled.
+
+The ingestion Worker is the sole public consumer-proof mutation boundary. It
+consumes each signed request nonce before dispatching to the owning consumer.
+API bearer proof dispatch uses a Worker service binding and a harmless
+authenticated health observation; API's default router exposes no proof route
+and performs no consumer-proof D1 write.
 
 ## Acceptance scenarios
 

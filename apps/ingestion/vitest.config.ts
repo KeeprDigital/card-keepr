@@ -3,12 +3,30 @@ import {
   readD1Migrations,
 } from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
+import {
+  createHmac,
+  generateKeyPairSync,
+  timingSafeEqual,
+} from "node:crypto";
 import { defineConfig } from "vitest/config";
+import {
+  consumerProofMessage,
+  credentialConsumerProofRequestHeader,
+  type CredentialConsumerProofRequestClaims,
+} from "../../src/credentials/consumer-proof";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
+const ambiguousD1Tables = new Map<string, string>();
+const unconfirmedD1Drops = new Set<string>();
+const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+}).privateKey.export({
+  type: "pkcs8",
+  format: "pem",
+}).toString();
 
 export default defineConfig({
   plugins: [
@@ -18,13 +36,280 @@ export default defineConfig({
       },
       miniflare: {
         d1Databases: ["LEGACY_DB"],
+        serviceBindings: {
+          API_CREDENTIAL_CONSUMER:
+            apiCredentialConsumerTestResponse,
+        },
         bindings: {
           ADMINISTRATION_KEY: "vitest-administration-key",
+          ADMINISTRATION_KEY_REPLACEMENT:
+            "vitest-administration-key-replacement-slot",
           ADMINISTRATION_CLOCK_MODE: "request",
+          CREDENTIAL_BOUNDARY_ATTESTATION_KEY:
+            "vitest-boundary-attestation-key",
+          CREDENTIAL_CONSUMER_PROOF_KEY:
+            "vitest-consumer-proof-key",
+          CLOUDFLARE_OBSERVATION_TOKEN:
+            "vitest-cloudflare-observation-token",
+          GITHUB_APP_PRIVATE_KEY: githubAppTestPrivateKey,
+          GITHUB_OBSERVATION_ACTOR: "keepr-rotation[bot]",
+          D1_VERIFICATION_TOKEN:
+            "vitest-d1-verification-token-active",
+          D1_VERIFICATION_TOKEN_REPLACEMENT:
+            "vitest-d1-verification-token-replacement",
+          GITHUB_REPOSITORY_ID: "1313489088",
+          GITHUB_APP_ID: "11111111",
+          GITHUB_INSTALLATION_ID: "22222222",
+          GITHUB_ENVIRONMENT_ID: "33333333",
+          GITHUB_WORKFLOW_ID: "44444444",
           TEST_MIGRATIONS: migrations,
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/query")
+          ) {
+            const body = await request.clone().json<{
+              sql?: string;
+              params?: string[];
+            }>();
+            const table = /"(__keepr_probe_[0-9a-f]+)"/u.exec(
+              body.sql ?? "",
+            )?.[1];
+            const owner = body.params?.[0];
+            if (
+              body.sql?.startsWith("CREATE TABLE") &&
+              table !== undefined &&
+              typeof owner === "string" &&
+              ["8".repeat(64), "9".repeat(64)].includes(
+                owner,
+              )
+            ) {
+              ambiguousD1Tables.set(table, owner);
+              if (owner === "9".repeat(64)) {
+                throw new Error("CREATE response lost after apply");
+              }
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            if (
+              body.sql?.startsWith("SELECT owner") &&
+              table !== undefined &&
+              ambiguousD1Tables.has(table)
+            ) {
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: [{
+                    owner: ambiguousD1Tables.get(table),
+                  }],
+                }],
+              });
+            }
+            if (
+              body.sql?.startsWith("DROP TABLE") &&
+              table !== undefined &&
+              ambiguousD1Tables.has(table)
+            ) {
+              const storedOwner = ambiguousD1Tables.get(table);
+              if (storedOwner === "8".repeat(64)) {
+                ambiguousD1Tables.delete(table);
+                unconfirmedD1Drops.add(table);
+                throw new Error("DROP response lost after apply");
+              }
+              if (storedOwner !== "9".repeat(64)) {
+                return Response.json(
+                  { success: false, errors: [{ code: 9000 }] },
+                  { status: 500 },
+                );
+              }
+              ambiguousD1Tables.delete(table);
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            if (
+              body.sql?.startsWith(
+                "SELECT name FROM sqlite_schema",
+              )
+            ) {
+              const inspected = body.params?.[0] ?? "";
+              if (unconfirmedD1Drops.delete(inspected)) {
+                return Response.json(
+                  { success: false, errors: [{ code: 9000 }] },
+                  { status: 500 },
+                );
+              }
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: ambiguousD1Tables.has(inspected)
+                    ? [{ name: inspected }]
+                    : [],
+                }],
+              });
+            }
+            if (body.sql?.startsWith("CREATE TABLE")) {
+              if (table !== undefined && owner !== undefined) {
+                ambiguousD1Tables.set(table, owner);
+              }
+              return Response.json({
+                success: true,
+                result: [{ success: true }],
+              });
+            }
+            return Response.json(
+              { success: false, errors: [{ code: 9000 }] },
+              { status: 500 },
+            );
+          }
+          if (url.hostname === "api.cloudflare.com") {
+            const accountId =
+              "0123456789abcdef0123456789abcdef";
+            if (url.pathname.endsWith("/secrets")) {
+              const expected = JSON.parse(
+                request.headers.get(
+                  "x-keepr-observation-expected-secrets",
+                ) ?? "[]",
+              ) as Array<{ name: string; status: string }>;
+              return Response.json({
+                success: true,
+                result: expected
+                  .filter((item) => item.status === "usable")
+                  .map((item) => ({ name: item.name })),
+              });
+            }
+            if (
+              request.headers.get(
+                "x-keepr-observation-expected-status",
+              ) === "unusable"
+            ) {
+              return Response.json(
+                { success: false, errors: [{ code: 1000 }] },
+                { status: 404 },
+              );
+            }
+            const issuerId = decodeURIComponent(
+              url.pathname.split("/").at(-1) ?? "",
+            );
+            const permissions = request.headers.get(
+              "x-keepr-observation-required-permissions",
+            )?.split(",") ??
+              [request.headers.get(
+                "x-keepr-observation-required-permission",
+              ) ?? ""];
+            return Response.json({
+              success: true,
+              result: {
+                id: issuerId,
+                status: "active",
+                policies: [{
+                  effect: "allow",
+                  permission_groups: permissions.map(
+                    (name) => ({ name }),
+                  ),
+                  resources: {
+                    [`com.cloudflare.api.account.${accountId}`]:
+                      "*",
+                  },
+                }],
+              },
+            });
+          }
+          if (url.hostname === "api.github.com") {
+            const permissions = {
+              actions: "write",
+              contents: "read",
+              environments: "write",
+              metadata: "read",
+            };
+            if (url.pathname === "/app/installations/22222222") {
+              return Response.json({
+                id: 22222222,
+                repository_selection: "selected",
+                permissions,
+              });
+            }
+            if (url.pathname.endsWith("/access_tokens")) {
+              return Response.json({
+                token: "vitest-exact-installation-observation-token",
+                permissions,
+                repositories: [{ id: 1313489088 }],
+              });
+            }
+            if (url.pathname === "/installation/repositories") {
+              return Response.json({
+                repository_selection: "selected",
+                total_count: 1,
+                repositories: [{ id: 1313489088 }],
+              });
+            }
+            if (url.pathname === "/graphql") {
+              return Response.json({
+                data: {
+                  viewer: { login: "keepr-rotation[bot]" },
+                },
+              });
+            }
+            if (url.pathname === "/repositories/1313489088") {
+              return Response.json({ id: 1313489088 });
+            }
+            if (
+              url.pathname ===
+              "/repos/KeeprDigital/card-keepr/environments/production"
+            ) {
+              return Response.json({ id: 33333333 });
+            }
+            if (
+              url.pathname ===
+              "/repos/KeeprDigital/card-keepr/actions/workflows/44444444"
+            ) {
+              return Response.json({
+                id: 44444444,
+                path:
+                  ".github/workflows/production-release.yml",
+                state: "active",
+              });
+            }
+            if (url.pathname.endsWith("/git/ref/heads/main")) {
+              return Response.json({
+                object: { sha: "d".repeat(40) },
+              });
+            }
+            if (url.pathname.endsWith("/runs")) {
+              const titles = JSON.parse(
+                request.headers.get(
+                  "x-keepr-observation-run-titles",
+                ) ?? "[]",
+              ) as string[];
+              const startedAt =
+                request.headers.get(
+                  "x-keepr-observation-started-at",
+                ) ?? "2026-07-29T00:00:00.000Z";
+              return Response.json({
+                workflow_runs: titles.map((displayTitle, index) => ({
+                  id: index + 1,
+                  workflow_id: 44444444,
+                  event: "workflow_dispatch",
+                  display_title: displayTitle,
+                  head_sha: "d".repeat(40),
+                  created_at: startedAt,
+                  status: "completed",
+                  conclusion: "success",
+                  actor: { login: "keepr-rotation[bot]" },
+                })),
+              });
+            }
+            return new Response("unknown GitHub observation", {
+              status: 404,
+            });
+          }
           if (!url.hostname.endsWith("official-source.invalid")) {
             return new Response("unknown synthetic Official Source", {
               status: 404,
@@ -1221,4 +1506,53 @@ function deterministicNoise(seed: number, length: number) {
     value += state.toString(36).padStart(7, "0");
   }
   return value.slice(0, length);
+}
+
+async function apiCredentialConsumerTestResponse(
+  request: Request,
+): Promise<Response> {
+  const token = request.headers.get(
+    credentialConsumerProofRequestHeader,
+  );
+  const match =
+    /^v1\.([A-Za-z0-9_-]{32,4096})\.([0-9a-f]{64})$/.exec(
+      token ?? "",
+    );
+  if (match === null) return new Response(null, { status: 401 });
+  const expectedSignature = createHmac(
+    "sha256",
+    "vitest-consumer-proof-key",
+  ).update(`request\0${match[1]!}`).digest();
+  const suppliedSignature = Buffer.from(match[2]!, "hex");
+  if (
+    expectedSignature.byteLength !== suppliedSignature.byteLength ||
+    !timingSafeEqual(expectedSignature, suppliedSignature)
+  ) {
+    return new Response(null, { status: 401 });
+  }
+  const claims = JSON.parse(
+    Buffer.from(match[1]!, "base64url").toString("utf8"),
+  ) as CredentialConsumerProofRequestClaims;
+  if (
+    claims.credential_class !== "api_bearer_key" ||
+    claims.expected_status !== "usable"
+  ) {
+    return new Response(null, { status: 409 });
+  }
+  return Response.json({
+    contract: "card-keepr-credential-consumer-proof@1",
+    request_nonce: claims.request_nonce,
+    credential_class: claims.credential_class,
+    expected_fingerprint: claims.expected_fingerprint,
+    challenge: claims.plan_digest,
+    plan_nonce: claims.plan_nonce,
+    execution_attempt: claims.execution_attempt,
+    execution_expires_at: claims.execution_expires_at,
+    slot: claims.slot,
+    status: claims.expected_status,
+    proof: createHmac(
+      "sha256",
+      "vitest-consumer-proof-key",
+    ).update(consumerProofMessage(claims)).digest("hex"),
+  });
 }

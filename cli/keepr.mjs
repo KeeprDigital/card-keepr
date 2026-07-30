@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
+import { pathToFileURL } from "node:url";
 import {
   apiCapabilities,
   ingestionCapabilities,
 } from "../src/runtime-capabilities.mjs";
+import { runCredentialCommand } from "./credential-rotation.mjs";
+import {
+  exitCodeForStatus,
+  parseOptions,
+  writeCliFailure as writeFailure,
+} from "./command-support.mjs";
 
-const exit = await main(process.argv.slice(2), process.env);
-process.exitCode = exit;
-
-async function main(arguments_, environment) {
+export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
   if (arguments_[0] === "health") {
     if (arguments_.slice(1).some((option) => option !== "--json")) {
@@ -64,8 +68,22 @@ async function main(arguments_, environment) {
   if (isCommand(arguments_, "snapshot", "reparse")) {
     return reparseSourceSnapshot(arguments_.slice(2), environment, json);
   }
+  if (arguments_[0] === "credential") {
+    return runCredentialCommand(
+      arguments_.slice(1),
+      environment,
+      json,
+    );
+  }
 
   return usageFailure(json);
+}
+
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.exitCode = await main(process.argv.slice(2), process.env);
 }
 
 async function health(environment, json) {
@@ -546,52 +564,16 @@ function isCommand(arguments_, first, second) {
   return arguments_[0] === first && arguments_[1] === second;
 }
 
-function parseOptions(
-  arguments_,
-  valueOptions,
-  flagOptions = ["--json"],
-) {
-  const values = {};
-  const flags = new Set();
-  for (let index = 0; index < arguments_.length; index += 1) {
-    const option = arguments_[index];
-    if (flagOptions.includes(option) || option === "--json") {
-      if (flags.has(option)) return { error: "duplicate", values, flags };
-      flags.add(option);
-      continue;
-    }
-    if (!valueOptions.includes(option) || values[option] !== undefined) {
-      return { error: "unknown", values, flags };
-    }
-    const value = arguments_[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      return { error: "missing", values, flags };
-    }
-    values[option] = value;
-    index += 1;
-  }
-  return { error: null, values, flags };
-}
-
 function usageFailure(json) {
   return writeFailure(
     json,
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse",
+        "Usage: keepr health | status | run start | run show | candidate inspect | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
-}
-
-function exitCodeForStatus(status) {
-  if (status === 401) return 4;
-  if (status === 403) return 5;
-  if (status === 404) return 6;
-  if (status === 409) return 7;
-  if (status === 400 || status === 413 || status === 422) return 8;
-  return 9;
 }
 
 function formatAdministrationResult(document) {
@@ -840,20 +822,4 @@ function sameStrings(actual, expected) {
     actual.length === expected.length &&
     actual.every((value, index) => value === expected[index])
   );
-}
-
-function writeFailure(json, failure, exitCode) {
-  if (json) {
-    const document = {
-      contract: "card-keepr-cli-problem@1",
-      status: "error",
-      code: failure.code,
-      detail: failure.detail,
-      ...(failure.runtime ? { runtime: failure.runtime } : {}),
-    };
-    process.stdout.write(`${JSON.stringify(document)}\n`);
-  } else {
-    process.stderr.write(`${failure.detail}\n`);
-  }
-  return exitCode;
 }
