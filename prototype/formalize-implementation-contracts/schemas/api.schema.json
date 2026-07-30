@@ -132,7 +132,7 @@
       "properties": {
         "source_lineage": { "type": "string", "minLength": 1 },
         "relationship_kind": {
-          "enum": ["product", "distribution_context", "source_bucket"]
+          "enum": ["product", "distribution_context"]
         },
         "relationship_value": { "type": "string", "minLength": 1 },
         "source_observation_ids": {

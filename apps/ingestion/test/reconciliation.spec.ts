@@ -1402,6 +1402,171 @@ test("fresh provenance changes the approval digest but records semantic no-chang
   });
 });
 
+test("locator and SourceBucket evidence refresh without minting Catalogue Revisions or exports", async () => {
+  const baseRun = await collect(
+    "/reconciliation/semantic-evidence-base",
+    "reconcile-semantic-evidence-base",
+  );
+  const base = await reconcile(baseRun.id);
+  const printingId = requiredString(
+    requiredFirst(base.document, "printings"),
+    "id",
+  );
+  const basePublished = await approve(base.document);
+  const revisionId = requiredString(
+    basePublished.document,
+    "resulting_revision_id",
+  );
+  const exportIdentity = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key, manifest_digest
+     FROM catalogue_exports
+     WHERE catalogue_revision_id = ?`,
+  )
+    .bind(revisionId)
+    .first<{ manifest_key: string; manifest_digest: string }>();
+  const revisionCount = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT COUNT(*) AS count FROM catalogue_revisions",
+  ).first<{ count: number }>();
+
+  const locatorRun = await collect(
+    "/reconciliation/semantic-evidence-locator",
+    "reconcile-semantic-evidence-locator",
+  );
+  const locator = await reconcile(locatorRun.id);
+  expect(locator.document.candidate_digest).not.toBe(
+    base.document.candidate_digest,
+  );
+  const locatorDigests = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT run.candidate_catalogue_digest, revision.content_digest
+     FROM ingestion_runs AS run
+     JOIN catalogue_revisions AS revision ON revision.id = ?
+     WHERE run.id = ?`,
+  )
+    .bind(revisionId, locatorRun.id)
+    .first<{
+      candidate_catalogue_digest: string;
+      content_digest: string;
+    }>();
+  expect(locatorDigests?.candidate_catalogue_digest).toBe(
+    locatorDigests?.content_digest,
+  );
+  const locatorPublished = await approve(locator.document);
+  expect(locatorPublished.document).toMatchObject({
+    publication_outcome: "no_change",
+    resulting_revision_id: revisionId,
+  });
+  const retainedLocator = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT last_observed_revision_id, current
+     FROM reconciled_printing_locators
+     WHERE printing_id = ? AND locator = '/official/evidence/relocated'`,
+  )
+    .bind(printingId)
+    .first<{
+      last_observed_revision_id: string;
+      current: number;
+    }>();
+  expect(retainedLocator).toMatchObject({
+    last_observed_revision_id: revisionId,
+    current: 1,
+  });
+  const retainedLocatorPlan = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id
+     FROM reconciliation_candidates
+     WHERE ingestion_run_id = ?
+       AND printing_id = ?
+       AND locator = '/official/evidence/relocated'`,
+  )
+    .bind(locatorRun.id, printingId)
+    .first<{ source_observation_id: string }>();
+  expect(retainedLocatorPlan?.source_observation_id).toMatch(
+    /^srcobs_/,
+  );
+
+  const sourceBucketRun = await collect(
+    "/reconciliation/semantic-evidence-source-bucket",
+    "reconcile-semantic-evidence-source-bucket",
+  );
+  const sourceBucket = await reconcile(sourceBucketRun.id);
+  expect(sourceBucket.document.candidate_digest).not.toBe(
+    locator.document.candidate_digest,
+  );
+  const sourceBucketDigests = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT run.candidate_catalogue_digest, revision.content_digest
+     FROM ingestion_runs AS run
+     JOIN catalogue_revisions AS revision ON revision.id = ?
+     WHERE run.id = ?`,
+  )
+    .bind(revisionId, sourceBucketRun.id)
+    .first<{
+      candidate_catalogue_digest: string;
+      content_digest: string;
+    }>();
+  expect(sourceBucketDigests?.candidate_catalogue_digest).toBe(
+    sourceBucketDigests?.content_digest,
+  );
+  const sourceBucketPublished = await approve(sourceBucket.document);
+  expect(sourceBucketPublished.document).toMatchObject({
+    publication_outcome: "no_change",
+    resulting_revision_id: revisionId,
+  });
+  const retainedBucket = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id, last_observed_revision_id, current
+     FROM reconciled_printing_memberships
+     WHERE printing_id = ?
+       AND relationship_kind = 'source_bucket'
+       AND relationship_value = 'secondary-card-list'`,
+  )
+    .bind(printingId)
+    .first<{
+      source_observation_id: string;
+      last_observed_revision_id: string;
+      current: number;
+    }>();
+  expect(retainedBucket).toMatchObject({
+    source_observation_id: expect.stringMatching(/^srcobs_/),
+    last_observed_revision_id: revisionId,
+    current: 1,
+  });
+  const lifecycle = await get(
+    `/v1/reconciliation/printings/${printingId}`,
+  );
+  expect(lifecycle.document).toMatchObject({
+    locators: [
+      "/official/evidence/base",
+      "/official/evidence/relocated",
+    ],
+    memberships: {
+      current: {
+        source_buckets: ["secondary-card-list"],
+      },
+      historical: {
+        source_buckets: [
+          expect.objectContaining({
+            id: "primary-card-list",
+            current: false,
+            last_missing_revision_id: revisionId,
+          }),
+        ],
+      },
+    },
+  });
+  expect(
+    JSON.stringify(lifecycle.document.relationship_evidence),
+  ).not.toContain("source_bucket");
+  const afterRevisionCount = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT COUNT(*) AS count FROM catalogue_revisions",
+  ).first<{ count: number }>();
+  const afterExportIdentity = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key, manifest_digest
+     FROM catalogue_exports
+     WHERE catalogue_revision_id = ?`,
+  )
+    .bind(revisionId)
+    .first<{ manifest_key: string; manifest_digest: string }>();
+  expect(afterRevisionCount).toEqual(revisionCount);
+  expect(afterExportIdentity).toEqual(exportIdentity);
+});
+
 test("reversed retained observation provenance preserves the semantic relationship result", async () => {
   const forwardRun = await collect(
     "/reconciliation/deterministic-forward",

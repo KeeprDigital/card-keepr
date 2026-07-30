@@ -160,3 +160,33 @@ test("the public Printing response validates full Distribution Context objects",
     },
   });
 });
+
+test("the normative Printing schema excludes SourceBucket from canonical relationship evidence", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validate = ajv.getSchema(
+    `${apiSchema.$id}#/$defs/RelationshipEvidence`,
+  );
+  expect(validate).toBeDefined();
+  const relationship = {
+    source_lineage: "one-piece-en",
+    relationship_kind: "product",
+    relationship_value: "product_op10",
+    source_observation_ids: ["srcobs_contract_1"],
+    first_revision_id: "catrev_contract",
+    last_observed_revision_id: "catrev_contract",
+    current: true,
+    last_missing_revision_id: null,
+  };
+  expect(validate!(relationship), JSON.stringify(validate!.errors)).toBe(
+    true,
+  );
+  expect(
+    validate!({
+      ...relationship,
+      relationship_kind: "source_bucket",
+      relationship_value: "primary-card-list",
+    }),
+  ).toBe(false);
+});

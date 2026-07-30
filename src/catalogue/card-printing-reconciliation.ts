@@ -528,7 +528,7 @@ async function catalogueDataDigest(
     candidate.printings.map((printing) => printing.id),
   );
   const cardIds = new Set(candidate.cards.map((card) => card.id));
-  const [storedMemberships, storedLocators, storedCards, storedPrintings] =
+  const [storedMemberships, storedCards, storedPrintings] =
     await Promise.all([
       database
         .prepare(
@@ -544,19 +544,6 @@ async function catalogueDataDigest(
           source_lineage: string;
           relationship_kind: string;
           relationship_value: string;
-        }>(),
-      database
-        .prepare(
-          `SELECT printing_id, source_lineage, locator, variant_key
-           FROM reconciled_printing_locators
-           WHERE current = 1
-           ORDER BY printing_id, source_lineage, locator`,
-        )
-        .all<{
-          printing_id: string;
-          source_lineage: string;
-          locator: string;
-          variant_key: string | null;
         }>(),
       database
         .prepare(
@@ -579,7 +566,8 @@ async function catalogueDataDigest(
   for (const row of storedMemberships.results) {
     if (
       !printingIds.has(row.printing_id) ||
-      row.source_lineage === observedSourceLineage
+      row.source_lineage === observedSourceLineage ||
+      row.relationship_kind === "source_bucket"
     ) {
       continue;
     }
@@ -590,22 +578,6 @@ async function catalogueDataDigest(
       relationship_value: row.relationship_value,
     };
     memberships.set(canonicalJson(semantic), semantic);
-  }
-  const locators = new Map<string, Record<string, unknown>>();
-  for (const row of storedLocators.results) {
-    if (
-      !printingIds.has(row.printing_id) ||
-      row.source_lineage === observedSourceLineage
-    ) {
-      continue;
-    }
-    const semantic = {
-      printing_id: row.printing_id,
-      source_lineage: row.source_lineage,
-      locator: row.locator,
-      variant_key: row.variant_key,
-    };
-    locators.set(canonicalJson(semantic), semantic);
   }
   const withdrawals = new Map<string, Record<string, unknown>>();
   for (const [entityType, rows, identities] of [
@@ -639,10 +611,6 @@ async function catalogueDataDigest(
           kind: "distribution_context",
           value,
         })),
-        ...plan.memberships.source_buckets.map((value) => ({
-          kind: "source_bucket",
-          value,
-        })),
       ]) {
         const semantic = {
           printing_id: plan.printingId,
@@ -651,15 +619,6 @@ async function catalogueDataDigest(
           relationship_value: membership.value,
         };
         memberships.set(canonicalJson(semantic), semantic);
-      }
-      if (plan.locator !== null) {
-        const semantic = {
-          printing_id: plan.printingId,
-          source_lineage: observedSourceLineage,
-          locator: plan.locator,
-          variant_key: plan.variantKey,
-        };
-        locators.set(canonicalJson(semantic), semantic);
       }
     }
     if (plan.withdrawal === null) continue;
@@ -688,7 +647,6 @@ async function catalogueDataDigest(
     canonicalJson({
       catalogue_data: candidate,
       current_memberships: [...memberships.values()].sort(compareCanonical),
-      current_locators: [...locators.values()].sort(compareCanonical),
       withdrawals: [...withdrawals.values()].sort(compareCanonical),
     }),
   );

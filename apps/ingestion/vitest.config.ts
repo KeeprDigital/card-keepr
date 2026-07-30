@@ -745,6 +745,38 @@ function reconciliationSourceDocument(scenario: string) {
     };
   }
   if (
+    scenario === "semantic-evidence-base" ||
+    scenario === "semantic-evidence-locator" ||
+    scenario === "semantic-evidence-source-bucket"
+  ) {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP10-001",
+          name: "Evidence-only evolution",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator:
+            scenario === "semantic-evidence-base"
+              ? "/official/evidence/base"
+              : "/official/evidence/relocated",
+          lineageMarker: "semantic-evidence",
+          memberships: {
+            products: ["product_op10"],
+            distribution_contexts: [],
+            source_buckets: [
+              scenario === "semantic-evidence-source-bucket"
+                ? "secondary-card-list"
+                : "primary-card-list",
+            ],
+          },
+        }),
+      ],
+    };
+  }
+  if (
     scenario === "gundam-authority-us" ||
     scenario === "gundam-authority-asia" ||
     scenario === "gundam-authority-us-conflict" ||
