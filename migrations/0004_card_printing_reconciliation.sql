@@ -240,11 +240,12 @@ CREATE TABLE reconciled_printing_locators (
   source_lineage TEXT NOT NULL,
   locator TEXT NOT NULL,
   variant_key TEXT,
+  variant_identity TEXT NOT NULL,
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
   last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
-  PRIMARY KEY (source_lineage, locator)
+  PRIMARY KEY (source_lineage, locator, variant_identity)
 );
 
 CREATE TABLE reconciled_printing_memberships (
@@ -349,6 +350,33 @@ CREATE TABLE reconciliation_contexts (
     REFERENCES source_observation_sets (id, source_snapshot_id)
 );
 
+CREATE TABLE reconciliation_evidence_partitions (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  sequence_number INTEGER NOT NULL,
+  request_id TEXT NOT NULL,
+  source_observation_set_id TEXT NOT NULL REFERENCES source_observation_sets(id),
+  source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
+  source_lineage TEXT NOT NULL,
+  supported_game TEXT NOT NULL,
+  game_profile_version TEXT NOT NULL,
+  adapter_version TEXT NOT NULL,
+  PRIMARY KEY (ingestion_run_id, sequence_number),
+  UNIQUE (ingestion_run_id, request_id),
+  UNIQUE (source_observation_set_id),
+  FOREIGN KEY (source_observation_set_id, source_snapshot_id)
+    REFERENCES source_observation_sets (id, source_snapshot_id)
+);
+
+CREATE TABLE reconciliation_payload_chunks (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  payload_kind TEXT NOT NULL CHECK (
+    payload_kind IN ('candidate', 'digest')
+  ),
+  chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
+  content TEXT NOT NULL CHECK (length(CAST(content AS BLOB)) <= 524288),
+  PRIMARY KEY (ingestion_run_id, payload_kind, chunk_index)
+);
+
 CREATE TRIGGER reconciliation_contexts_are_immutable_on_update
 BEFORE UPDATE ON reconciliation_contexts
 BEGIN
@@ -371,6 +399,30 @@ CREATE TRIGGER reconciliation_candidates_are_immutable_on_delete
 BEFORE DELETE ON reconciliation_candidates
 BEGIN
   SELECT RAISE(ABORT, 'reconciliation_candidate_immutable');
+END;
+
+CREATE TRIGGER reconciliation_evidence_partitions_are_immutable_on_update
+BEFORE UPDATE ON reconciliation_evidence_partitions
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_evidence_partition_immutable');
+END;
+
+CREATE TRIGGER reconciliation_evidence_partitions_are_immutable_on_delete
+BEFORE DELETE ON reconciliation_evidence_partitions
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_evidence_partition_immutable');
+END;
+
+CREATE TRIGGER reconciliation_payload_chunks_are_immutable_on_update
+BEFORE UPDATE ON reconciliation_payload_chunks
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_payload_chunk_immutable');
+END;
+
+CREATE TRIGGER reconciliation_payload_chunks_are_immutable_on_delete
+BEFORE DELETE ON reconciliation_payload_chunks
+BEGIN
+  SELECT RAISE(ABORT, 'reconciliation_payload_chunk_immutable');
 END;
 
 CREATE TRIGGER reconciled_card_identity_is_immutable

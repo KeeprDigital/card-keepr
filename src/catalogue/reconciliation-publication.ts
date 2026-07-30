@@ -19,6 +19,10 @@ import type {
   ReconciledCardRow,
   ReconciledPrintingRow,
 } from "./reconciliation-repository";
+import {
+  byteBoundedJsonArrays,
+  retainedPayload,
+} from "./reconciliation-payload";
 import { canonicalJson } from "./serialization";
 
 export type NormalizedLifecycle = {
@@ -707,7 +711,8 @@ async function locatorRowsByPrinting(
               current, last_missing_revision_id
        FROM reconciled_printing_locators
        WHERE printing_id IN (SELECT value FROM json_each(?))
-       ORDER BY printing_id, source_lineage, locator`,
+       ORDER BY printing_id, source_lineage, locator,
+                COALESCE(variant_key, '')`,
     )
     .bind(canonicalJson(printingIds))
     .all<LocatorRow & { printing_id: string }>();
@@ -752,15 +757,18 @@ function publicationStatements(
       evidence_json: canonicalJson(withdrawal.evidence),
     }));
   });
-  const json = (value: readonly Record<string, unknown>[]) =>
-    canonicalJson(value);
   const unique = (
     values: readonly Record<string, unknown>[],
   ): Record<string, unknown>[] => [
     ...new Map(values.map((value) => [canonicalJson(value), value])).values(),
   ];
+  const statements = (
+    values: readonly Record<string, unknown>[],
+    prepare: (payload: string) => D1PreparedStatement,
+  ) => byteBoundedJsonArrays(values).map(prepare);
   return [
-    database
+    ...statements(withdrawals, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_withdrawal_assertions (
            entity_type, entity_id, source_lineage, source_snapshot_id,
@@ -782,8 +790,10 @@ function publicationStatements(
          ON CONFLICT (entity_type, entity_id, source_observation_id)
          DO NOTHING`,
       )
-      .bind(revisionId, json(withdrawals)),
-    database
+      .bind(revisionId, payload),
+    ),
+    ...statements(rows.cards, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_cards (
            id, supported_game, official_identity_kind,
@@ -814,15 +824,17 @@ function publicationStatements(
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_cards.withdrawal_evidence_json END`,
       )
-      .bind(revisionId, json(rows.cards)),
-    setDeactivationStatement(
+      .bind(revisionId, payload),
+    ),
+    ...setDeactivationStatements(
       database,
       "reconciled_card_observations",
       "card_id",
       unique(rows.cardDeactivations),
       revisionId,
     ),
-    database
+    ...statements(rows.cardObservations, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_card_observations (
            card_id, source_lineage, source_observation_id,
@@ -835,8 +847,10 @@ function publicationStatements(
                 json_extract(value, '$.canonical_facts_json'), 1, NULL
          FROM json_each(?)`,
       )
-      .bind(revisionId, json(rows.cardObservations)),
-    database
+      .bind(revisionId, payload),
+    ),
+    ...statements(rows.printings, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_printings (
            id, card_id, source_lineage, artwork_fingerprint,
@@ -873,40 +887,45 @@ function publicationStatements(
              THEN excluded.withdrawal_evidence_json
              ELSE reconciled_printings.withdrawal_evidence_json END`,
       )
-      .bind(revisionId, json(rows.printings)),
-    setDeactivationStatement(
+      .bind(revisionId, payload),
+    ),
+    ...setDeactivationStatements(
       database,
       "reconciled_printing_locators",
       "printing_id",
       unique(rows.locatorDeactivations),
       revisionId,
     ),
-    database
+    ...statements(rows.locators, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_printing_locators (
            printing_id, source_lineage, locator, variant_key,
+           variant_identity,
            first_revision_id, last_observed_revision_id, current,
            last_missing_revision_id
          )
          SELECT json_extract(value, '$.printing_id'),
                 json_extract(value, '$.source_lineage'),
                 json_extract(value, '$.locator'),
-                json_extract(value, '$.variant_key'), ?, ?, 1, NULL
+                json_extract(value, '$.variant_key'),
+                COALESCE(json_extract(value, '$.variant_key'), ''), ?, ?, 1, NULL
          FROM json_each(?) WHERE true
-         ON CONFLICT (source_lineage, locator) DO UPDATE SET
-           variant_key = excluded.variant_key,
+         ON CONFLICT (source_lineage, locator, variant_identity) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
            current = 1, last_missing_revision_id = NULL`,
       )
-      .bind(revisionId, revisionId, json(rows.locators)),
-    setDeactivationStatement(
+      .bind(revisionId, revisionId, payload),
+    ),
+    ...setDeactivationStatements(
       database,
       "reconciled_printing_memberships",
       "printing_id",
       unique(rows.membershipDeactivations),
       revisionId,
     ),
-    database
+    ...statements(rows.memberships, (payload) =>
+      database
       .prepare(
         `INSERT INTO reconciled_printing_memberships (
            printing_id, source_lineage, source_observation_id,
@@ -926,11 +945,12 @@ function publicationStatements(
            last_observed_revision_id = excluded.last_observed_revision_id,
            current = 1, last_missing_revision_id = NULL`,
       )
-      .bind(revisionId, revisionId, json(rows.memberships)),
+      .bind(revisionId, revisionId, payload),
+    ),
   ];
 }
 
-function setDeactivationStatement(
+function setDeactivationStatements(
   database: D1Database,
   table:
     | "reconciled_card_observations"
@@ -939,19 +959,21 @@ function setDeactivationStatement(
   idColumn: "card_id" | "printing_id",
   rows: readonly Record<string, unknown>[],
   revisionId: string,
-): D1PreparedStatement {
-  return database
-    .prepare(
-      `UPDATE ${table}
-       SET current = 0, last_missing_revision_id = ?
-       WHERE current = 1
-         AND (${idColumn}, source_lineage) IN (
-           SELECT json_extract(planned.value, '$.${idColumn}'),
-                  json_extract(planned.value, '$.source_lineage')
-           FROM json_each(?) AS planned
-         )`,
-    )
-    .bind(revisionId, canonicalJson(rows));
+): D1PreparedStatement[] {
+  return byteBoundedJsonArrays(rows).map((payload) =>
+    database
+      .prepare(
+        `UPDATE ${table}
+         SET current = 0, last_missing_revision_id = ?
+         WHERE current = 1
+           AND (${idColumn}, source_lineage) IN (
+             SELECT json_extract(planned.value, '$.${idColumn}'),
+                    json_extract(planned.value, '$.source_lineage')
+             FROM json_each(?) AS planned
+           )`,
+      )
+      .bind(revisionId, payload),
+  );
 }
 
 function nextRelationshipEvidence(
@@ -1010,7 +1032,7 @@ function nextLocatorEvidence(
   for (const row of existing) {
     const current = row.current === 1;
     byBinding.set(
-      canonicalJson([row.source_lineage, row.locator]),
+      canonicalJson([row.source_lineage, row.locator, row.variant_key]),
       {
         ...row,
         current: current && !observedLineages.has(row.source_lineage),
@@ -1025,7 +1047,11 @@ function nextLocatorEvidence(
     if (plan.locator === null) {
       throw new Error("The reconciliation Printing locator disappeared.");
     }
-    const key = canonicalJson([plan.source_lineage, plan.locator]);
+    const key = canonicalJson([
+      plan.source_lineage,
+      plan.locator,
+      plan.variant_key,
+    ]);
     const previous = byBinding.get(key);
     byBinding.set(key, {
       source_lineage: plan.source_lineage,
@@ -1050,7 +1076,8 @@ function locatorEvidenceOrder(
 ): number {
   return (
     left.source_lineage.localeCompare(right.source_lineage) ||
-    left.locator.localeCompare(right.locator)
+    left.locator.localeCompare(right.locator) ||
+    (left.variant_key ?? "").localeCompare(right.variant_key ?? "")
   );
 }
 
@@ -1160,5 +1187,10 @@ async function requiredRunCandidate(
     .bind(runId)
     .first<{ candidate_json: string }>();
   if (row === null) throw new Error("Reconciled candidate is unavailable.");
-  return row.candidate_json;
+  return retainedPayload(
+    database,
+    runId,
+    "candidate",
+    row.candidate_json,
+  );
 }

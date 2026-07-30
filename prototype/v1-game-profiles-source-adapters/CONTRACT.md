@@ -226,11 +226,13 @@ material contradiction, or an insufficiently evidenced zero-match blocks
 publication. A zero-match creates a new Printing only when the source record is
 internally complete and its appearance is demonstrably novel.
 
-For Gundam cross-locale merging, the two source records must additionally agree
-on card number, variant key/suffix, artwork and treatment, rules fields, rarity,
-and equivalent Product code. Different URL, encoding, regional Release, or
-regional Legality facts do not prevent the merge. Observation on only one
-English surface is publishable with a warning.
+Gundam cross-locale merging uses the same exact material identity fields:
+Card, source family/lineage, normalized artwork fingerprint, printed
+rules-relevant fields, normalized rarity, and explicit treatment. Variant
+key/suffix and Product, set, source-bucket, Release, and Legality memberships
+are corroborating provenance only and never identity gates. A substantive
+conflict in the exact material fields blocks publication. Observation on only
+one English surface is publishable with a warning.
 
 Distribution through an additional Product, source bucket, event, or promotion
 never creates a Printing by itself.

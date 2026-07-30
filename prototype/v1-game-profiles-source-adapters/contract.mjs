@@ -3,6 +3,17 @@ const WARNING = "warning";
 
 export const contractVersion = "card-keepr-game-contracts@1";
 
+export function validatePrintingIdentityContract(text) {
+  const required =
+    "Variant key/suffix and Product, set, source-bucket, Release, and Legality memberships are corroborating provenance only and never identity gates.";
+  if (!text.replaceAll("\n", " ").replaceAll(/\s+/g, " ").includes(required)) {
+    throw new Error("The Printing identity contract must keep memberships out of identity.");
+  }
+  if (text.includes("must additionally agree") && text.includes("Product code")) {
+    throw new Error("The stale Gundam Product/variant identity gate is forbidden.");
+  }
+}
+
 const nullableInteger = { type: ["integer", "null"], minimum: 0 };
 const nullableString = { type: ["string", "null"] };
 const stringArray = { type: "array", items: { type: "string" }, uniqueItems: true };

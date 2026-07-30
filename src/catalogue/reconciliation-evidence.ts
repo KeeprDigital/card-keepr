@@ -172,6 +172,16 @@ export async function retainedReconciliationObservation(
     sourceLineage: first.source_lineage,
     supportedGame: supportedGame(first.supported_game),
     structurallyComplete: true,
+    partitions: orderedRows.map((row, index) => ({
+      sequenceNumber: requests.results[index]!.sequence_number,
+      requestId: requests.results[index]!.request_id,
+      observationSetId: row.observation_set_id,
+      sourceSnapshotId: row.source_snapshot_id,
+      sourceLineage: row.source_lineage,
+      supportedGame: row.supported_game,
+      gameProfileVersion: row.game_profile_version,
+      adapterVersion: row.adapter_version,
+    })),
     observations: merged,
   };
 }

@@ -324,8 +324,11 @@ test("retained immutable evidence publishes stable identities and warns when ear
 });
 
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {
-  const run = await collect(
-    "/reconciliation/base",
+  const run = await collectRequests(
+    [
+      { id: "non-empty", scenario: "base" },
+      { id: "empty", scenario: "complete-empty-lineage" },
+    ],
     "reconcile-interrupted",
   );
   const reconciled = await reconcile(run.id);
@@ -335,8 +338,25 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     "expected_current_revision_id",
   );
   const persisted = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT candidate_json, candidate_catalogue_digest
-     FROM ingestion_runs WHERE id = ?`,
+    `SELECT
+       CASE
+         WHEN candidate_json =
+           '{"chunked_reconciliation_payload":"candidate"}'
+         THEN (
+           SELECT group_concat(content, '')
+           FROM (
+             SELECT content
+             FROM reconciliation_payload_chunks
+             WHERE ingestion_run_id = ingestion_runs.id
+               AND payload_kind = 'candidate'
+             ORDER BY chunk_index
+           )
+         )
+         ELSE candidate_json
+       END AS candidate_json,
+       candidate_catalogue_digest
+     FROM ingestion_runs
+     WHERE id = ?`,
   )
     .bind(run.id)
     .first<{
@@ -2155,10 +2175,18 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     state: "rejected",
   });
   const retainedCandidate = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT candidate.candidate_digest, plan.digest_payload_json
+    `SELECT candidate.candidate_digest,
+            (
+              SELECT group_concat(content, '')
+              FROM (
+                SELECT content
+                FROM reconciliation_payload_chunks
+                WHERE ingestion_run_id = candidate.id
+                  AND payload_kind = 'digest'
+                ORDER BY chunk_index
+              )
+            ) AS digest_payload_json
      FROM ingestion_runs AS candidate
-     JOIN reconciliation_candidates AS plan
-       ON plan.ingestion_run_id = candidate.id
      WHERE candidate.id = ?
      LIMIT 1`,
   )
@@ -2389,6 +2417,103 @@ test("historical locator bindings reactivate only for the same Printing and expo
   );
 }, 15_000);
 
+test("locator variant evolution preserves effective-dated suffix history across disappearance and reactivation", async () => {
+  const firstRun = await collect(
+    "/reconciliation/locator-variant-v1",
+    "locator-variant-v1",
+  );
+  const first = await reconcile(firstRun.id);
+  const printingId = requiredString(
+    requiredFirst(first.document, "printings"),
+    "id",
+  );
+  const firstRevision = requiredString(
+    (await approve(first.document)).document,
+    "resulting_revision_id",
+  );
+  const secondRun = await collect(
+    "/reconciliation/locator-variant-v2",
+    "locator-variant-v2",
+  );
+  const second = await reconcile(secondRun.id);
+  expect(requiredFirst(second.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  const secondRevision = requiredString(
+    (await approve(second.document)).document,
+    "resulting_revision_id",
+  );
+  const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
+  expect(evolved.document.locators).toMatchObject({
+    current: [
+      expect.objectContaining({
+        locator: "/official/locator-variant/stable",
+        variant_key: "suffix-b",
+        first_revision_id: secondRevision,
+        current: true,
+      }),
+    ],
+    historical: [
+      expect.objectContaining({
+        locator: "/official/locator-variant/stable",
+        variant_key: "suffix-a",
+        first_revision_id: firstRevision,
+        last_observed_revision_id: firstRevision,
+        current: false,
+        last_missing_revision_id: secondRevision,
+      }),
+    ],
+  });
+  const missingRun = await collect(
+    "/reconciliation/complete-empty-lineage",
+    "locator-variant-missing",
+  );
+  const missing = await reconcile(missingRun.id);
+  const missingRevision = requiredString(
+    (await approve(missing.document)).document,
+    "resulting_revision_id",
+  );
+  const reactivatedRun = await collect(
+    "/reconciliation/locator-variant-v1",
+    "locator-variant-reactivate-v1",
+  );
+  const reactivated = await reconcile(reactivatedRun.id);
+  const reactivatedRevision = requiredString(
+    (await approve(reactivated.document)).document,
+    "resulting_revision_id",
+  );
+  const lifecycle = await get(
+    `/v1/reconciliation/printings/${printingId}`,
+  );
+  expect(lifecycle.document.locators).toMatchObject({
+    current: [
+      expect.objectContaining({
+        variant_key: "suffix-a",
+        first_revision_id: firstRevision,
+        last_observed_revision_id: reactivatedRevision,
+        last_missing_revision_id: null,
+      }),
+    ],
+    historical: [
+      expect.objectContaining({
+        variant_key: "suffix-b",
+        first_revision_id: secondRevision,
+        last_observed_revision_id: secondRevision,
+        last_missing_revision_id: missingRevision,
+      }),
+    ],
+  });
+  expect(
+    await exportComponentRecords(reactivatedRevision, "printings"),
+  ).toContainEqual(
+    expect.objectContaining({
+      id: printingId,
+      locator_evidence: lifecycle.document.locators,
+    }),
+  );
+  expect(missingRevision).not.toBe(reactivatedRevision);
+}, 20_000);
+
 test("every planned request contributes exactly one provenance-bound observation set in deterministic request order", async () => {
   const run = await collectRequests(
     [
@@ -2439,6 +2564,70 @@ test("every planned request contributes exactly one provenance-bound observation
     idempotency_key: "reject-multi-request-complete-coverage",
   });
 });
+
+test("empty first, middle, and last partitions remain durable and digest-bound", async () => {
+  for (const emptyIndex of [0, 1, 2]) {
+    const requests = ["base", "new-locator", "base"].map(
+      (scenario, index) => ({
+        id: `partition-${index}`,
+        scenario:
+          index === emptyIndex ? "complete-empty-lineage" : scenario,
+      }),
+    );
+    const run = await collectRequests(
+      requests,
+      `durable-empty-partition-${emptyIndex}`,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(200);
+    const partitions = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT sequence_number, request_id, source_snapshot_id,
+              source_observation_set_id
+       FROM reconciliation_evidence_partitions
+       WHERE ingestion_run_id = ?
+       ORDER BY sequence_number`,
+    )
+      .bind(run.id)
+      .all<{
+        sequence_number: number;
+        request_id: string;
+        source_snapshot_id: string;
+        source_observation_set_id: string;
+      }>();
+    expect(partitions.results.map(({ request_id }) => request_id)).toEqual(
+      requests.map(({ id }) => id),
+    );
+    expect(
+      partitions.results.every(
+        (row) =>
+          row.source_snapshot_id.startsWith("srcsnap_") &&
+          row.source_observation_set_id.startsWith("srcobsset_"),
+      ),
+    ).toBe(true);
+    const digest = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT group_concat(content, '') AS value
+       FROM (
+         SELECT content
+         FROM reconciliation_payload_chunks
+         WHERE ingestion_run_id = ? AND payload_kind = 'digest'
+         ORDER BY chunk_index
+       )`,
+    )
+      .bind(run.id)
+      .first<{ value: string }>();
+    expect(digest?.value).toContain('"evidence_partitions"');
+    for (const request of requests) {
+      expect(digest?.value).toContain(`"requestId":"${request.id}"`);
+    }
+    await post(`/v1/ingestion-runs/${run.id}/rejection`, {
+      candidate_digest: requiredString(
+        reconciled.document,
+        "candidate_digest",
+      ),
+      idempotency_key: `reject-durable-empty-${emptyIndex}`,
+    });
+  }
+}, 30_000);
 
 test("missing, duplicate, and unplanned collection sets fail reconciliation with stable public diagnostics", async () => {
   const missing = await collectRequests(
@@ -2641,7 +2830,52 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(
     persisted?.count ?? 0,
   );
-}, 60_000);
+  const chunks = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count,
+            MAX(length(CAST(content AS BLOB))) AS maximum_bytes,
+            SUM(
+              CASE WHEN payload_kind = 'candidate'
+                THEN length(CAST(content AS BLOB))
+                ELSE 0
+              END
+            ) AS candidate_bytes
+     FROM reconciliation_payload_chunks
+     WHERE ingestion_run_id = ?`,
+  )
+    .bind(run.id)
+    .first<{
+      count: number;
+      maximum_bytes: number;
+      candidate_bytes: number;
+    }>();
+  expect(chunks?.count).toBeGreaterThan(32);
+  expect(chunks?.count).toBeLessThan(900);
+  expect(chunks?.maximum_bytes).toBeLessThanOrEqual(524_288);
+  expect(chunks?.candidate_bytes).toBeGreaterThan(8 * 1024 * 1024);
+  const storedRun = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT candidate_json FROM ingestion_runs WHERE id = ?",
+  )
+    .bind(run.id)
+    .first<{ candidate_json: string }>();
+  expect(storedRun?.candidate_json).toContain(
+    '"chunked_reconciliation_payload":"candidate"',
+  );
+  const exportRow = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key FROM catalogue_exports
+     WHERE catalogue_revision_id = ?`,
+  )
+    .bind(revisionId)
+    .first<{ manifest_key: string }>();
+  const manifest = await (
+    await testEnv.CATALOGUE_EXPORTS.get(exportRow?.manifest_key ?? "")
+  )?.json<{ components: { compressed_bytes: number }[] }>();
+  expect(
+    manifest?.components.reduce(
+      (total, component) => total + component.compressed_bytes,
+      0,
+    ),
+  ).toBeGreaterThan(1_048_576);
+}, 120_000);
 
 test("recovery health gates evidence start and reconciliation before mutation", async () => {
   await testEnv.CATALOGUE_DB.prepare(

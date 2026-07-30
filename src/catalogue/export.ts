@@ -8,8 +8,6 @@ import { exportedGameProfileSchema } from "./reconciliation-profile";
 import { verifyExportSchemas } from "./export-validation";
 import {
   canonicalJson,
-  canonicalNdjson,
-  deterministicGzip,
   sha256,
   sha256Text,
   utf8,
@@ -28,7 +26,8 @@ const componentDefinitions = [
   ["legality-rules", "LegalityRuleRecord", "id:utf8"],
   ["relationships", "RelationshipRecord", "id:utf8"],
 ] as const;
-const maximumFixtureExportBytes = 1_048_576;
+const maximumExportRecordBytes = 524_288;
+const targetExportChunkBytes = 262_144;
 
 export type ExportObject = {
   key: string;
@@ -102,8 +101,8 @@ export async function buildCatalogueExport(
 
   for (const [name, schemaDefinition, order] of componentDefinitions) {
     const componentRecords = records[name];
-    const uncompressed = canonicalNdjson(componentRecords);
-    const compressed = deterministicGzip(uncompressed);
+    const { uncompressed, compressed } =
+      await chunkedComponentBytes(componentRecords);
     const [contentDigest, compressedDigest] = await Promise.all([
       sha256(uncompressed),
       sha256(compressed),
@@ -128,7 +127,6 @@ export async function buildCatalogueExport(
       contentType: "application/x-ndjson",
       contentEncoding: "gzip",
     });
-    assertFixtureExportIsBounded(objects);
   }
 
   const manifestWithPlaceholder: CatalogueExportManifest = {
@@ -169,7 +167,6 @@ export async function buildCatalogueExport(
     contentType: "application/json",
   };
   const boundedObjects = [...objects, manifestObject];
-  assertFixtureExportIsBounded(boundedObjects);
 
   return {
     manifest,
@@ -179,18 +176,59 @@ export async function buildCatalogueExport(
   };
 }
 
-function assertFixtureExportIsBounded(
-  objects: readonly ExportObject[],
-): void {
-  const bytes = objects.reduce(
-    (total, object) => total + object.bytes.byteLength,
-    0,
-  );
-  if (bytes > maximumFixtureExportBytes) {
-    throw new Error(
-      "The controlled fixture Catalogue Export exceeds its 1 MiB memory bound",
-    );
+async function chunkedComponentBytes(records: readonly unknown[]): Promise<{
+  uncompressed: Uint8Array;
+  compressed: Uint8Array;
+}> {
+  const chunks: Uint8Array[] = [];
+  let current: Uint8Array[] = [];
+  let currentBytes = 0;
+  for (const record of records) {
+    const bytes = utf8(`${canonicalJson(record)}\n`);
+    if (bytes.byteLength > maximumExportRecordBytes) {
+      throw new Error("One Catalogue Export record exceeds 512 KiB.");
+    }
+    if (
+      current.length > 0 &&
+      currentBytes + bytes.byteLength > targetExportChunkBytes
+    ) {
+      chunks.push(concatenateBytes(current));
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(bytes);
+    currentBytes += bytes.byteLength;
   }
+  if (current.length > 0) chunks.push(concatenateBytes(current));
+  if (chunks.length === 0) chunks.push(new Uint8Array());
+  const uncompressed = concatenateBytes(chunks);
+  return {
+    uncompressed,
+    compressed: await gzipChunks(chunks),
+  };
+}
+
+async function gzipChunks(
+  chunks: readonly Uint8Array[],
+): Promise<Uint8Array> {
+  const stream = new CompressionStream("gzip");
+  const writer = stream.writable.getWriter();
+  const compressed = new Response(stream.readable).arrayBuffer();
+  for (const chunk of chunks) await writer.write(chunk);
+  await writer.close();
+  return new Uint8Array(await compressed);
+}
+
+function concatenateBytes(values: readonly Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(
+    values.reduce((total, value) => total + value.byteLength, 0),
+  );
+  let offset = 0;
+  for (const value of values) {
+    result.set(value, offset);
+    offset += value.byteLength;
+  }
+  return result;
 }
 
 async function exportRecords(

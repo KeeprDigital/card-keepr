@@ -131,7 +131,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         },
       ].map((adapter) => ({
         ...adapter,
-        maximumJsonBytes: 1024 * 1024,
+        maximumJsonBytes: 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         reconciliationCoverage: "synthetic_fixture" as const,
         parse: parseCardDocument,

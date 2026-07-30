@@ -16,6 +16,11 @@ import {
 } from "./reconciliation-publication";
 import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
+import {
+  byteBoundedJsonArrays,
+  guardedAtomicBatch,
+  retainedPayload,
+} from "./reconciliation-payload";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -457,7 +462,14 @@ export async function inspectCandidate(
       "The Ingestion Run does not have an inspectable reconciliation candidate.",
     );
   }
-  const candidate = parseCandidate(row);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      row.id,
+      "candidate",
+      row.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const diff = await inspectCatalogueCandidate(database, {
     runId: row.id,
     expectedRevisionId: row.expected_current_revision_id,
@@ -603,7 +615,14 @@ async function approveRunAttempt(
     );
   }
 
-  const candidate = parseCandidate(run);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      run.id,
+      "candidate",
+      run.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const revisionId = `catrev_${crypto.randomUUID()}`;
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(
@@ -1648,24 +1667,42 @@ async function commitVerifiedPublication(
       ),
     })),
   );
-  const revisionCardsStatement = database
-    .prepare(
-      `INSERT INTO revision_cards (
-         catalogue_revision_id, card_id, document_json
-       )
-       SELECT ?, json_extract(value, '$.card_id'),
-              json_extract(value, '$.document_json')
-       FROM json_each(?)`,
-    )
-    .bind(
-      revisionId,
-      canonicalJson(
-        cardDocuments.map(({ card, document }) => ({
-          card_id: card.id,
-          document_json: JSON.stringify(document),
-        })),
-      ),
-    );
+  const revisionCardStatements = byteBoundedJsonArrays(
+    cardDocuments.map(({ card, document }) => ({
+      card_id: card.id,
+      document_json: JSON.stringify(document),
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_cards (
+           catalogue_revision_id, card_id, document_json
+         )
+         SELECT ?, json_extract(value, '$.card_id'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
+  const revisionPrintingStatements = byteBoundedJsonArrays(
+    printingDocuments.map(({ printing, document }) => ({
+      printing_id: printing.id,
+      card_id: printing.card_id,
+      document_json: JSON.stringify(document),
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_printings (
+           catalogue_revision_id, printing_id, card_id, document_json
+         )
+         SELECT ?, json_extract(value, '$.printing_id'),
+                json_extract(value, '$.card_id'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
   const commitStatements = [
     database
       .prepare(
@@ -1687,27 +1724,8 @@ async function commitVerifiedPublication(
         input.run.candidate_digest,
       ),
     ...(input.reconciliation?.statements ?? []),
-    revisionCardsStatement,
-    database
-      .prepare(
-        `INSERT INTO revision_printings (
-           catalogue_revision_id, printing_id, card_id, document_json
-         )
-         SELECT ?, json_extract(value, '$.printing_id'),
-                json_extract(value, '$.card_id'),
-                json_extract(value, '$.document_json')
-         FROM json_each(?)`,
-      )
-      .bind(
-        revisionId,
-        canonicalJson(
-          printingDocuments.map(({ printing, document }) => ({
-            printing_id: printing.id,
-            card_id: printing.card_id,
-            document_json: JSON.stringify(document),
-          })),
-        ),
-      ),
+    ...revisionCardStatements,
+    ...revisionPrintingStatements,
     database
       .prepare(
         `INSERT INTO catalogue_exports (
@@ -1769,7 +1787,7 @@ async function commitVerifiedPublication(
       claimOwner: input.claimOwner ?? null,
     }),
   ];
-  await database.batch(commitStatements);
+  await database.batch(guardedAtomicBatch(commitStatements));
   return resultingRun;
 }
 
@@ -1833,7 +1851,14 @@ async function reconcileReservedPublication(
   run: RunRow,
   observedAt: string,
 ): Promise<void> {
-  const candidate = parseCandidate(run);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      run.id,
+      "candidate",
+      run.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const approval = parseApproval(run.approval_json);
   const revisionId = requiredPublicationValue(
     run.publication_revision_id,
@@ -3606,6 +3631,17 @@ async function failRun(
 
 function parseCandidate(row: RunRow): FixtureCandidate {
   const parsed: unknown = JSON.parse(row.candidate_json);
+  if (
+    isRecord(parsed) &&
+    parsed.chunked_reconciliation_payload === "candidate"
+  ) {
+    return {
+      fixture: "first-catalogue",
+      selected_games: parseSelectedGames(row.selected_games_json),
+      cards: [],
+      printings: [],
+    };
+  }
   if (!isFixtureCandidate(parsed)) {
     throw new Error("The persisted fixture candidate is invalid.");
   }

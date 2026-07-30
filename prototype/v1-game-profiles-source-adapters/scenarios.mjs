@@ -248,12 +248,16 @@ export const scenarios = [
             { locale: "EN-ASIA", detailSearch: "DEMO-G01_p1" },
             { locale: "EN-US", detailSearch: "DEMO-G01_p1" }
           ],
-          identity_evidence: {
+          material_identity_evidence: {
             card_number: "equal",
-            variant_key: "equal",
+            source_family: "equal",
             artwork_fingerprint: "equal",
             rules_fields: "equal",
             rarity: "equal",
+            treatment: "equal"
+          },
+          provenance_corroboration: {
+            variant_key: "equal",
             product_code: "equal"
           }
         },

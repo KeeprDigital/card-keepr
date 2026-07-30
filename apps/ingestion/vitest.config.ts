@@ -155,7 +155,7 @@ function reconciliationSourceDocument(scenario: string) {
             value: `OP20-${String(index + 1).padStart(4, "0")}`,
           },
           name: `S${index + 1}`,
-          effective_rules_text: null,
+          effective_rules_text: deterministicNoise(index + 1, 9_000),
           game_data: {
             profile: "one-piece@1",
             attributes: {
@@ -878,18 +878,31 @@ function reconciliationSourceDocument(scenario: string) {
   if (
     scenario === "locator-binding-base" ||
     scenario === "locator-binding-compatible" ||
-    scenario === "locator-binding-incompatible"
+    scenario === "locator-binding-incompatible" ||
+    scenario === "locator-variant-v1" ||
+    scenario === "locator-variant-v2"
   ) {
+    const variantScenario = scenario.startsWith("locator-variant-");
     return {
       cards: [
         printingObservation({
           game: "one-piece",
           profile: "one-piece@1",
-          cardNumber: "OP12-001",
-          name: "Historical locator binding",
+          cardNumber: variantScenario ? "OP12-002" : "OP12-001",
+          name: variantScenario
+            ? "Historical locator variant"
+            : "Historical locator binding",
           cardAttributes: onePieceLeaderAttributes(),
           printingAttributes: { illustration_types: [] },
-          locator: "/official/locator-binding/stable",
+          locator: variantScenario
+            ? "/official/locator-variant/stable"
+            : "/official/locator-binding/stable",
+          variantKey:
+            scenario === "locator-variant-v1"
+              ? "suffix-a"
+              : scenario === "locator-variant-v2"
+                ? "suffix-b"
+                : undefined,
           lineageMarker:
             scenario === "locator-binding-incompatible"
               ? "different"
@@ -1172,4 +1185,14 @@ function onePieceLeaderAttributes() {
     effect_text: "Official effective rules",
     trigger_text: null,
   };
+}
+
+function deterministicNoise(seed: number, length: number) {
+  let state = seed >>> 0;
+  let value = "";
+  while (value.length < length) {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    value += state.toString(36).padStart(7, "0");
+  }
+  return value.slice(0, length);
 }

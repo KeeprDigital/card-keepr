@@ -34,6 +34,7 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
+import { retainedPayload } from "./reconciliation-payload";
 
 type ActiveRunRow = {
   id: string;
@@ -441,6 +442,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   );
   const digestPayloadJson = canonicalJson({
     catalogue_data: candidate,
+    evidence_partitions: retained.partitions,
     observation_plans: digestObservationPlans(plans),
   });
   const candidateDigest = await sha256Text(digestPayloadJson);
@@ -467,6 +469,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       observationSetId: retained.observationSetId,
       sourceSnapshotId: retained.sourceSnapshotId,
       sourceLineage: retained.sourceLineage,
+      partitions: retained.partitions,
       plans,
       diagnostics: stableDiagnostics,
       candidate,
@@ -494,6 +497,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     observationSetId: retained.observationSetId,
     sourceSnapshotId: retained.sourceSnapshotId,
     sourceLineage: retained.sourceLineage,
+    partitions: retained.partitions,
     plans,
     warnings,
     candidate,
@@ -523,15 +527,22 @@ async function candidateAtRevision(
 ): Promise<FixtureCandidate | null> {
   const row = await database
     .prepare(
-      `SELECT run.candidate_json
+      `SELECT run.id AS ingestion_run_id, run.candidate_json
        FROM catalogue_revisions AS revision
        JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
        WHERE revision.id = ?`,
     )
     .bind(revisionId)
-    .first<{ candidate_json: string }>();
+    .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) return null;
-  return JSON.parse(row.candidate_json) as FixtureCandidate;
+  return JSON.parse(
+    await retainedPayload(
+      database,
+      row.ingestion_run_id,
+      "candidate",
+      row.candidate_json,
+    ),
+  ) as FixtureCandidate;
 }
 
 export async function showReconciledPrinting(
