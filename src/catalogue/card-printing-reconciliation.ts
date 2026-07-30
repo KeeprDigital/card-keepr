@@ -42,6 +42,14 @@ import {
 import { canonicalJson, sha256Text } from "./serialization";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import { retainedPayload } from "./reconciliation-payload";
+import {
+  canonicalErratum,
+  deriveEffectiveRulesText,
+  ErratumRulesTextError,
+  identifyRulesTextErrata,
+  mergeCatalogueErrata,
+  type CatalogueErratum,
+} from "./errata-rules-text";
 
 type ActiveRunRow = {
   id: string;
@@ -136,6 +144,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     withdrawal: ProvenancedWithdrawal | null;
   }[] = [];
   const sourceWarnings: Record<string, unknown>[] = [];
+  const observedErrata: CatalogueErratum[] = [];
 
   for (const observation of retained.observations) {
     const proposedCard = observation.candidateWithoutIdentities.card;
@@ -467,6 +476,30 @@ export async function reconcileRetainedCardPrintingEvidence(
               source_observation_id: observation.sourceObservationId,
             },
     });
+    try {
+      observedErrata.push(
+        ...(await identifyRulesTextErrata({
+          game: proposedCard.game,
+          cardId,
+          printingId,
+          sourceLineage: retained.sourceLineage,
+          sourceObservationId: observation.sourceObservationId,
+          errata: observation.errata,
+        })),
+      );
+    } catch (error) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.locator,
+        candidate_printing_ids:
+          printingId === null ? [] : [printingId],
+        detail:
+          error instanceof ErratumRulesTextError
+            ? error.message
+            : "Retained Erratum evidence is invalid.",
+      });
+    }
     sourceWarnings.push(...observation.sourceWarnings);
   }
 
@@ -574,6 +607,20 @@ export async function reconcileRetainedCardPrintingEvidence(
   const productSurfaceObservations = retained.observations.filter(
     (observation) => observation.productReleaseValue !== undefined,
   );
+  const errata = mergeCatalogueErrata(
+    priorCandidate?.errata ?? [],
+    observedErrata,
+  );
+  const candidateCards = [...cards.values()]
+    .map((card) => ({
+      ...card,
+      effective_rules_text: deriveEffectiveRulesText(
+        card,
+        errata,
+        observedAt,
+      ),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
   const candidate: FixtureCandidate = {
     fixture: "first-catalogue",
     selected_games: [
@@ -584,9 +631,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ),
       ]),
     ].sort(),
-    cards: [...cards.values()].sort((left, right) =>
-      left.id.localeCompare(right.id),
-    ),
+    cards: candidateCards,
     printings: [...printings.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
@@ -621,6 +666,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         }),
       ),
     ],
+    errata,
   };
   const groupedMemberships = mergedPlanMemberships(plans);
   const relationshipWarnings = (
@@ -694,7 +740,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     plans,
     checkedSourceLineages,
   );
-  const observedCards = [...cards.values()]
+  const observedCards = candidateCards
     .filter((card) => localCardFacts.has(card.id))
     .sort((left, right) => left.id.localeCompare(right.id));
   const observedPrintings = [...printings.values()]
@@ -731,6 +777,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       cards: observedCards,
       printings: observedPrintings,
       products: productCatalogue.observedProducts,
+      errata,
       diagnostics: stableDiagnostics,
       warnings,
     };
@@ -760,6 +807,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     cards: observedCards,
     printings: observedPrintings,
     products: productCatalogue.observedProducts,
+    errata,
     diagnostics: [],
     warnings,
   };
@@ -1044,6 +1092,9 @@ function semanticCatalogueCandidate(
         source_observation_ids: _observationIds,
         ...relationship
       }) => relationship,
+    ),
+    errata: (candidate.errata ?? []).map((erratum) =>
+      JSON.parse(canonicalErratum(erratum))
     ),
   };
 }

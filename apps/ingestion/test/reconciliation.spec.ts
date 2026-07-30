@@ -35,6 +35,248 @@ beforeEach(async () => {
   );
 });
 
+function registerErrataRulesTextTests(): void {
+  test("an official Erratum preserves observed and Printed Rules Text while publishing corrected Effective Rules Text", async () => {
+    const run = await collect(
+      "/reconciliation/errata-card-rules-text",
+      "reconcile-errata-card-rules-text",
+    );
+    const reconciled = await reconcile(run.id);
+
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      state: "awaiting_approval",
+      publishable: true,
+      cards: [
+        {
+          effective_rules_text:
+            "[On Play] Draw 2 cards, then discard 1 card.",
+        },
+      ],
+      printings: [
+        {
+          printed_rules_text: "[On Play] Draw 1 card.",
+        },
+      ],
+      errata: [
+        {
+          target_type: "card",
+          effective_from: "2026-07-01",
+          official_wording:
+            'Replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".',
+          corrected_value:
+            "[On Play] Draw 2 cards, then discard 1 card.",
+        },
+      ],
+    });
+
+    const published = await approve(reconciled.document);
+    expect(published.response.status).toBe(200);
+    const revisionId = requiredString(
+      published.document,
+      "resulting_revision_id",
+    );
+    const [cards, printings, errata] = await Promise.all([
+      exportComponentRecords(revisionId, "cards"),
+      exportComponentRecords(revisionId, "printings"),
+      exportComponentRecords(revisionId, "errata"),
+    ]);
+    expect(cards).toContainEqual(
+      expect.objectContaining({
+        effective_rules_text:
+          "[On Play] Draw 2 cards, then discard 1 card.",
+      }),
+    );
+    expect(printings).toContainEqual(
+      expect.objectContaining({
+        printed_rules_text: "[On Play] Draw 1 card.",
+      }),
+    );
+    expect(errata).toContainEqual(
+      expect.objectContaining({
+        target_type: "card",
+        effective_from: "2026-07-01",
+        corrected_value:
+          "[On Play] Draw 2 cards, then discard 1 card.",
+      }),
+    );
+    const erratum = errata[0]!;
+    const persisted = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT erratum.id, provenance.source_lineage,
+              provenance.source_observation_id
+       FROM reconciled_errata AS erratum
+       JOIN erratum_provenance AS provenance
+         ON provenance.erratum_id = erratum.id
+       JOIN revision_errata AS revision
+         ON revision.erratum_id = erratum.id
+       WHERE revision.catalogue_revision_id = ? AND erratum.id = ?`,
+    )
+      .bind(revisionId, erratum.id)
+      .first<{
+        id: string;
+        source_lineage: string;
+        source_observation_id: string;
+      }>();
+    expect(persisted).toMatchObject({
+      id: erratum.id,
+      source_lineage: "one-piece-en",
+      source_observation_id: expect.stringMatching(/^srcobs_/),
+    });
+    await expect(
+      testEnv.CATALOGUE_DB.prepare(
+        `UPDATE reconciled_errata
+         SET corrected_value_json = '"mutated wording"'
+         WHERE id = ?`,
+      )
+        .bind(erratum.id)
+        .run(),
+    ).rejects.toThrow(/reconciled_erratum_immutable/);
+    const observationSet = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT observation.content_object_key
+       FROM source_observation_sets AS observation
+       JOIN source_snapshots AS snapshot
+         ON snapshot.id = observation.source_snapshot_id
+       WHERE snapshot.ingestion_run_id = ?`,
+    )
+      .bind(run.id)
+      .first<{ content_object_key: string }>();
+    const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(
+      observationSet?.content_object_key ?? "",
+    );
+    expect(await retainedObservation?.text()).toContain(
+      '"effective_rules_text":"[On Play] Draw 1 card."',
+    );
+  });
+
+  test("future and Printing-scoped Errata do not rewrite the Card or physical Printing history", async () => {
+    const run = await collect(
+      "/reconciliation/errata-effective-scope",
+      "reconcile-errata-effective-scope",
+    );
+    const reconciled = await reconcile(run.id);
+
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      state: "awaiting_approval",
+      publishable: true,
+      cards: [
+        {
+          effective_rules_text: "Observed Card Rules Text.",
+        },
+      ],
+      printings: [
+        {
+          printed_rules_text: "Physical Printing Rules Text.",
+        },
+      ],
+    });
+    expect(reconciled.document.errata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target_type: "card",
+          effective_from: "2099-01-01",
+          corrected_value: "Future Card Rules Text.",
+        }),
+        expect.objectContaining({
+          target_type: "printing",
+          effective_from: "2026-07-01",
+          corrected_value: "Printing-scoped corrected wording.",
+        }),
+      ]),
+    );
+    const rejected = await post(
+      `/v1/ingestion-runs/${run.id}/rejection`,
+      {
+        candidate_digest: requiredString(
+          reconciled.document,
+          "candidate_digest",
+        ),
+        idempotency_key: "reject-errata-effective-scope",
+      },
+    );
+    expect(rejected.response.status).toBe(200);
+  });
+
+  test("Erratum wording that requires invented precision hard-blocks publication", async () => {
+    const run = await collect(
+      "/reconciliation/errata-unrepresentable",
+      "reconcile-errata-unrepresentable",
+    );
+    const blocked = await reconcile(run.id);
+
+    expect(blocked.response.status).toBe(409);
+    expect(blocked.document).toMatchObject({
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            "cannot be represented without invented precision",
+          ),
+        }),
+      ],
+    });
+  });
+
+  test("later effective Errata supersede current wording without mutating earlier Errata or Printed Rules Text", async () => {
+    const firstRun = await collect(
+      "/reconciliation/errata-card-rules-text",
+      "reconcile-errata-layer-first",
+    );
+    const first = await reconcile(firstRun.id);
+    const firstPublished = await approve(first.document);
+    expect(firstPublished.response.status).toBe(200);
+    const firstErratum = requiredFirst(first.document, "errata");
+
+    const secondRun = await collect(
+      "/reconciliation/errata-card-rules-text-v2",
+      "reconcile-errata-layer-second",
+    );
+    const second = await reconcile(secondRun.id);
+
+    expect(second.response.status).toBe(200);
+    expect(second.document).toMatchObject({
+      state: "awaiting_approval",
+      publishable: true,
+      cards: [
+        {
+          effective_rules_text:
+            "[On Play] Draw 2 cards, then discard 2 cards.",
+        },
+      ],
+      printings: [
+        {
+          printed_rules_text: "[On Play] Draw 1 card.",
+        },
+      ],
+    });
+    const layeredErrata = second.document.errata;
+    expect(layeredErrata).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: firstErratum.id }),
+        expect.objectContaining({
+          effective_from: "2026-07-15",
+          corrected_value:
+            "[On Play] Draw 2 cards, then discard 2 cards.",
+        }),
+      ]),
+    );
+    expect(layeredErrata).toHaveLength(2);
+    const rejected = await post(
+      `/v1/ingestion-runs/${secondRun.id}/rejection`,
+      {
+        candidate_digest: requiredString(
+          second.document,
+          "candidate_digest",
+        ),
+        idempotency_key: "reject-errata-layer-second",
+      },
+    );
+    expect(rejected.response.status).toBe(200);
+  });
+}
+
 test("retained immutable evidence publishes stable identities and warns when earlier membership disappears", async () => {
   const firstRun = await collect("/reconciliation/base", "reconcile-base");
   const first = await reconcile(firstRun.id);
@@ -5049,6 +5291,8 @@ test("a Product-heavy export publishes bounded verified R2 components", async ()
     expect(stored?.checksums.sha256).toBeDefined();
   }
 }, 120_000);
+
+registerErrataRulesTextTests();
 
 async function collect(
   path: string,

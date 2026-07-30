@@ -18,6 +18,7 @@ import {
   utf8,
 } from "./serialization";
 import { typedPrintingProjections } from "./product-release-projection";
+import { exportErratum } from "./errata-rules-text";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8"],
@@ -482,6 +483,36 @@ async function exportRecordFactories(
       },
     ),
   );
+  const identifiedErratumRelationships = await Promise.all(
+    (candidate.errata ?? []).flatMap((erratum) => {
+      const observationsByLineage = new Map<string, string[]>();
+      for (const provenance of erratum.provenance) {
+        const observationIds =
+          observationsByLineage.get(provenance.source_lineage) ?? [];
+        observationIds.push(provenance.source_observation_id);
+        observationsByLineage.set(
+          provenance.source_lineage,
+          observationIds,
+        );
+      }
+      return [...observationsByLineage].map(
+        async ([sourceLineage, sourceObservationIds]) => ({
+          erratum,
+          sourceLineage,
+          sourceObservationIds: sourceObservationIds.sort(),
+          relationshipId: `relationship_${await sha256Text(
+            canonicalJson({
+              kind: "erratum-target",
+              erratum_id: erratum.id,
+              target_type: erratum.target_type,
+              target_id: erratum.target_id,
+              source_lineage: sourceLineage,
+            }),
+          )}`,
+        }),
+      );
+    }),
+  );
   const inferredProducts =
     identifiedRelationships
       .filter(
@@ -619,7 +650,7 @@ async function exportRecordFactories(
       )
       .sort((left, right) => compareUtf8(left.id, right.id)),
     "distribution-contexts": () => distributionContexts,
-    errata: () => [],
+    errata: () => (candidate.errata ?? []).map(exportErratum),
     "legality-rules": () => [],
     relationships: () => uniqueById([
       ...identifiedRelationships
@@ -682,6 +713,33 @@ async function exportRecordFactories(
             last_missing_revision_id: null,
           },
       })),
+      ...identifiedErratumRelationships.map(
+        ({
+          erratum,
+          relationshipId,
+          sourceLineage,
+          sourceObservationIds,
+        }) => ({
+          type: "relationship",
+          id: relationshipId,
+          kind: "erratum-target",
+          from: { type: "erratum", id: erratum.id },
+          to: {
+            type: erratum.target_type,
+            id: erratum.target_id,
+          },
+          evidence_category: "explicit",
+          source_lineage: sourceLineage,
+          source_observation_ids: sourceObservationIds,
+          relationship_value: "effective_rules_text",
+          lifecycle: {
+            first_revision_id: revisionId,
+            last_observed_revision_id: revisionId,
+            current: true,
+            last_missing_revision_id: null,
+          },
+        }),
+      ),
     ]),
   };
 }

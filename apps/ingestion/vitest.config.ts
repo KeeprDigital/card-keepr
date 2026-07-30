@@ -805,6 +805,133 @@ function reconciliationSourceDocument(scenario: string) {
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
   }
+  if (
+    scenario === "errata-card-rules-text" ||
+    scenario === "errata-card-rules-text-v2"
+  ) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP29-001",
+      name: "Errata Rules Card",
+      cardAttributes: {
+        ...onePieceLeaderAttributes(),
+        effect_text: "[On Play] Draw 1 card.",
+      },
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/errata/OP29-001",
+      lineageMarker: "errata-card-rules-text",
+      printedRulesText: "[On Play] Draw 1 card.",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: "[On Play] Draw 1 card.",
+          },
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2026-07-01",
+              official_wording:
+                scenario === "errata-card-rules-text-v2"
+                  ? 'Replace the corrected "discard 1 card" with "discard 2 cards".'
+                  : 'Replace "Draw 1 card" with "Draw 2 cards, then discard 1 card".',
+              corrected_value:
+                scenario === "errata-card-rules-text-v2"
+                  ? "[On Play] Draw 2 cards, then discard 2 cards."
+                  : "[On Play] Draw 2 cards, then discard 1 card.",
+              ...(scenario === "errata-card-rules-text-v2"
+                ? { effective_from: "2026-07-15" }
+                : {}),
+            },
+          ],
+        },
+      ],
+    };
+  }
+  if (scenario === "errata-effective-scope") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP29-002",
+      name: "Errata Scope Card",
+      cardAttributes: {
+        ...onePieceLeaderAttributes(),
+        effect_text: "Observed Card Rules Text.",
+      },
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/errata/OP29-002",
+      lineageMarker: "errata-effective-scope",
+      printedRulesText: "Physical Printing Rules Text.",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          card: {
+            ...observation.card,
+            effective_rules_text: "Observed Card Rules Text.",
+          },
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2099-01-01",
+              official_wording: "Future correction.",
+              corrected_value: "Future Card Rules Text.",
+            },
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "printing",
+              effective_from: "2026-07-01",
+              official_wording:
+                "Correction applies to this Printing only.",
+              corrected_value: "Printing-scoped corrected wording.",
+            },
+          ],
+        },
+      ],
+    };
+  }
+  if (scenario === "errata-unrepresentable") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP29-003",
+      name: "Unrepresentable Errata Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/errata/OP29-003",
+      lineageMarker: "errata-unrepresentable",
+    });
+    return {
+      cards: [
+        {
+          ...observation,
+          errata: [
+            {
+              authority: "official_errata",
+              field: "effective_rules_text",
+              target_type: "card",
+              effective_from: "2026-07-01",
+              official_wording:
+                "Apply the updated timing described in the accompanying diagram.",
+              corrected_value: {
+                timing: "after the unspecified diagram event",
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
   if (scenario === "scale-1001-cards") {
     return {
       cards: Array.from({ length: 1_001 }, (_, index) => ({

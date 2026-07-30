@@ -15,6 +15,10 @@ import {
 import {
   parsedOfficialArtworkIdentity,
 } from "./official-artwork-identity.mjs";
+import {
+  parseRulesTextErrata,
+  type ParsedRulesTextErratum,
+} from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{
   card_id: string;
@@ -64,6 +68,7 @@ export type ParsedReconciliationObservation = Readonly<{
   withdrawal: Withdrawal | null;
   productReleaseValue: unknown;
   sourceWarnings: readonly ReconciliationWarning[];
+  errata: readonly ParsedRulesTextErratum[];
 }>;
 
 export type Withdrawal = Readonly<{
@@ -83,6 +88,7 @@ const rootFields = new Set([
   "withdrawal",
   "product_release_catalogue",
   "source_sidecar",
+  "errata",
 ]);
 const cardFields = new Set([
   "game",
@@ -193,6 +199,7 @@ export function parseReconciliationObservation(
       withdrawal: null,
       productReleaseValue: record.product_release_catalogue,
       sourceWarnings: sortedWarnings(warnings),
+      errata: [],
     };
   }
   const rawCard = requiredRecord(record.card, "card");
@@ -305,6 +312,7 @@ export function parseReconciliationObservation(
       withdrawal: parseWithdrawal(record.withdrawal, false),
       productReleaseValue: record.product_release_catalogue,
       sourceWarnings: sortedWarnings(warnings),
+      errata: parseRulesTextErrata(record.errata),
     };
   }
 
@@ -428,6 +436,7 @@ export function parseReconciliationObservation(
     withdrawal: parseWithdrawal(record.withdrawal, true),
     productReleaseValue: record.product_release_catalogue,
     sourceWarnings: sortedWarnings(warnings),
+    errata: parseRulesTextErrata(record.errata),
   };
 }
 

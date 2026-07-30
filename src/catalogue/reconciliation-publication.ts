@@ -370,6 +370,11 @@ export async function reconciliationPublication(
       plans,
       revisionId,
     ),
+    ...errataPublicationStatements(
+      database,
+      candidate.errata ?? [],
+      revisionId,
+    ),
   );
   return result;
 }
@@ -404,6 +409,87 @@ async function publicationEvidenceResources(
     }
   }
   return resources;
+}
+
+function errataPublicationStatements(
+  database: D1Database,
+  errata: NonNullable<FixtureCandidate["errata"]>,
+  revisionId: string,
+): D1PreparedStatement[] {
+  const statements = (
+    values: readonly Record<string, unknown>[],
+    prepare: (payload: string) => D1PreparedStatement,
+  ) => byteBoundedJsonArrays(values).map(prepare);
+  const canonicalRows = errata.map((erratum) => ({
+    id: erratum.id,
+    game: erratum.game,
+    target_type: erratum.target_type,
+    target_id: erratum.target_id,
+    effective_from: erratum.effective_from,
+    official_wording: erratum.official_wording,
+    corrected_value_json: canonicalJson(erratum.corrected_value),
+  }));
+  const provenanceRows = errata.flatMap((erratum) =>
+    erratum.provenance.map((provenance) => ({
+      erratum_id: erratum.id,
+      source_lineage: provenance.source_lineage,
+      source_observation_id: provenance.source_observation_id,
+    })),
+  );
+  const revisionRows = errata.map((erratum) => ({
+    erratum_id: erratum.id,
+  }));
+  return [
+    ...statements(canonicalRows, (payload) =>
+      database
+        .prepare(
+          `INSERT INTO reconciled_errata (
+             id, game, target_type, target_id, effective_from,
+             official_wording, corrected_value_json,
+             first_revision_id, last_observed_revision_id
+           )
+           SELECT json_extract(value, '$.id'),
+                  json_extract(value, '$.game'),
+                  json_extract(value, '$.target_type'),
+                  json_extract(value, '$.target_id'),
+                  json_extract(value, '$.effective_from'),
+                  json_extract(value, '$.official_wording'),
+                  json_extract(value, '$.corrected_value_json'), ?, ?
+           FROM json_each(?) WHERE true
+           ON CONFLICT (id) DO UPDATE SET
+             last_observed_revision_id = excluded.last_observed_revision_id`,
+        )
+        .bind(revisionId, revisionId, payload),
+    ),
+    ...statements(provenanceRows, (payload) =>
+      database
+        .prepare(
+          `INSERT INTO erratum_provenance (
+             erratum_id, source_lineage, source_observation_id,
+             first_revision_id, last_observed_revision_id
+           )
+           SELECT json_extract(value, '$.erratum_id'),
+                  json_extract(value, '$.source_lineage'),
+                  json_extract(value, '$.source_observation_id'), ?, ?
+           FROM json_each(?) WHERE true
+           ON CONFLICT (erratum_id, source_lineage, source_observation_id)
+           DO UPDATE SET
+             last_observed_revision_id = excluded.last_observed_revision_id`,
+        )
+        .bind(revisionId, revisionId, payload),
+    ),
+    ...statements(revisionRows, (payload) =>
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO revision_errata (
+             catalogue_revision_id, erratum_id
+           )
+           SELECT ?, json_extract(value, '$.erratum_id')
+           FROM json_each(?)`,
+        )
+        .bind(revisionId, payload),
+    ),
+  ];
 }
 
 async function aggregateInferredProductLifecycles(

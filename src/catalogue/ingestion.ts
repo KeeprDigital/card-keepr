@@ -4030,6 +4030,7 @@ function isFixtureCandidate(
         "card_observed_games",
         "product_observed_games",
         "product_observed_lineages",
+        "errata",
       ],
     ) ||
     value.fixture !== "first-catalogue" ||
@@ -4037,7 +4038,10 @@ function isFixtureCandidate(
     value.selected_games.length === 0 ||
     !value.selected_games.every(isSupportedGame) ||
     !Array.isArray(value.cards) ||
-    !Array.isArray(value.printings)
+    !Array.isArray(value.printings) ||
+    (value.errata !== undefined &&
+      (!Array.isArray(value.errata) ||
+        !value.errata.every(isCatalogueErratum)))
   ) {
     return false;
   }
@@ -4124,6 +4128,42 @@ function isFixtureCandidate(
         value.product_observed_lineages.every(
           (lineage) => typeof lineage === "string" && lineage.length > 0,
         )))
+  );
+}
+
+function isCatalogueErratum(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "game",
+      "target_type",
+      "target_id",
+      "effective_from",
+      "official_wording",
+      "corrected_value",
+      "provenance",
+    ]) &&
+    typeof value.id === "string" &&
+    isSupportedGame(value.game) &&
+    (value.target_type === "card" ||
+      value.target_type === "printing") &&
+    typeof value.target_id === "string" &&
+    (value.effective_from === null ||
+      typeof value.effective_from === "string") &&
+    typeof value.official_wording === "string" &&
+    typeof value.corrected_value === "string" &&
+    Array.isArray(value.provenance) &&
+    value.provenance.every(
+      (provenance) =>
+        isRecord(provenance) &&
+        hasOnlyKeys(provenance, [
+          "source_lineage",
+          "source_observation_id",
+        ]) &&
+        typeof provenance.source_lineage === "string" &&
+        typeof provenance.source_observation_id === "string",
+    )
   );
 }
 

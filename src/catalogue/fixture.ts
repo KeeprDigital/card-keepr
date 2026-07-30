@@ -4,6 +4,7 @@ import type {
   CatalogueProduct,
   ProductRelationship,
 } from "./product-release-catalogue";
+import type { CatalogueErratum } from "./errata-rules-text";
 
 export const firstCatalogueFixture = "first-catalogue";
 export const firstFixtureCardId = "card_01k_first_catalogue_0001";
@@ -32,6 +33,7 @@ export type FixtureCandidate = {
     area: "cards-and-printings" | "products-and-releases";
     checked_at: string;
   }[];
+  errata?: readonly CatalogueErratum[];
 };
 
 export type FixtureCard = {
@@ -161,6 +163,7 @@ export async function fixtureCandidate(
         },
       },
     ],
+    errata: [],
   };
 
   return {

@@ -36,6 +36,9 @@ import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
   handleApiCredentialConsumerObservation,
 } from "../../../src/credentials/consumer-proof";
+import {
+  currentCardCollectionResponse,
+} from "../../../src/catalogue/errata-rules-text-read";
 
 const apiWorker = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -106,6 +109,13 @@ const apiWorker = {
             await currentCatalogueStatus(env.CATALOGUE_DB),
             request,
           ),
+        );
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/cards") {
+        return withCorsHeaders(
+          request,
+          await currentCardCollectionResponse(env.CATALOGUE_DB, request),
         );
       }
 
