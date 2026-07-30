@@ -52,6 +52,7 @@ export type EvidenceHostWorkflowParams = {
 
 export async function validateEvidencePlan(
   request: StartEvidenceRunRequest,
+  planOrigin: SourceAdapterRegistration["origin"] = "production",
 ): Promise<{
   plan: EvidencePlan;
   adapter: SourceAdapterRegistration;
@@ -61,6 +62,15 @@ export async function validateEvidencePlan(
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const adapter = requiredSourceAdapter(request.adapter_version);
+  if (adapter.origin !== planOrigin) {
+    throw new AdministrationProblem(
+      422,
+      "adapter_origin_not_permitted",
+      planOrigin === "production"
+        ? "Synthetic fixture adapters are unavailable on the production source-plan route."
+        : "The internal fixture source-plan route accepts only synthetic fixture adapters.",
+    );
+  }
   assertAdapterBinding(adapter, {
     sourceLineage: request.source_lineage,
     supportedGame: request.supported_game,

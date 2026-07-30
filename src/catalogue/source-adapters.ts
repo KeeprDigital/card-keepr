@@ -7,10 +7,12 @@ export type SourceAdapterRegistration = Readonly<{
   gameProfileVersion: string;
   parserContract: string;
   maximumJsonBytes: number;
+  origin: "production" | "synthetic_fixture";
+  reconciliationCoverage: "synthetic_fixture" | "unavailable";
   parse: (document: unknown) => readonly unknown[];
 }>;
 
-const parseOnePieceCardDocument = (document: unknown): readonly unknown[] => {
+const parseCardDocument = (document: unknown): readonly unknown[] => {
   if (
     typeof document === "object" &&
     document !== null &&
@@ -32,7 +34,9 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
-        parse: parseOnePieceCardDocument,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
       },
       {
         adapterVersion: "one-piece-json-document@2",
@@ -41,8 +45,97 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         gameProfileVersion: "one-piece@1",
         parserContract: "one-piece-card-document@1",
         maximumJsonBytes: 1024 * 1024,
-        parse: parseOnePieceCardDocument,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
       },
+      {
+        adapterVersion: "fusion-world-en@1",
+        sourceLineage: "fusion-world-en",
+        supportedGame: "fusion-world",
+        gameProfileVersion: "fusion-world@1",
+        parserContract: "fusion-world-card-document@1",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
+      },
+      {
+        adapterVersion: "digimon-en@1",
+        sourceLineage: "digimon-en",
+        supportedGame: "digimon",
+        gameProfileVersion: "digimon@1",
+        parserContract: "digimon-card-document@1",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
+      },
+      {
+        adapterVersion: "gundam-en-asia@1",
+        sourceLineage: "gundam-en-asia",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "gundam-card-document@1",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
+      },
+      {
+        adapterVersion: "gundam-en-us@1",
+        sourceLineage: "gundam-en-us",
+        supportedGame: "gundam",
+        gameProfileVersion: "gundam@1",
+        parserContract: "gundam-card-document@1",
+        maximumJsonBytes: 1024 * 1024,
+        origin: "production" as const,
+        reconciliationCoverage: "unavailable" as const,
+        parse: parseCardDocument,
+      },
+      ...[
+        {
+          adapterVersion: "fixture-one-piece-json@1",
+          sourceLineage: "one-piece-en",
+          supportedGame: "one-piece",
+          gameProfileVersion: "one-piece@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-fusion-world-json@1",
+          sourceLineage: "fusion-world-en",
+          supportedGame: "fusion-world",
+          gameProfileVersion: "fusion-world@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-digimon-json@1",
+          sourceLineage: "digimon-en",
+          supportedGame: "digimon",
+          gameProfileVersion: "digimon@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-gundam-en-asia-json@1",
+          sourceLineage: "gundam-en-asia",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+        {
+          adapterVersion: "fixture-gundam-en-us-json@1",
+          sourceLineage: "gundam-en-us",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document@1",
+        },
+      ].map((adapter) => ({
+        ...adapter,
+        maximumJsonBytes: 16 * 1024 * 1024,
+        origin: "synthetic_fixture" as const,
+        reconciliationCoverage: "synthetic_fixture" as const,
+        parse: parseCardDocument,
+      })),
     ].map((adapter) => Object.freeze(adapter)),
   );
 

@@ -42,7 +42,7 @@ export const scenarios = [
   {
     key: "2",
     name: "One Piece DON!! boundary",
-    question: "Can the generic DON!! Card exist truthfully without Printings or image coverage?",
+    question: "Can the generic DON!! Card retain known Printings without claiming comprehensive image coverage?",
     operation: "run",
     input: {
       required_areas: ["play-guide"],
@@ -70,7 +70,7 @@ export const scenarios = [
           },
           printings: []
         },
-        coverage_statement: "DON!! Printings and Printing Images are intentionally excluded."
+        coverage_statement: "Known DON!! Printings may be catalogued, but v1 Printing and Printing Image coverage is non-comprehensive and absence never proves zero Printings."
       }
     }
   },
@@ -248,12 +248,16 @@ export const scenarios = [
             { locale: "EN-ASIA", detailSearch: "DEMO-G01_p1" },
             { locale: "EN-US", detailSearch: "DEMO-G01_p1" }
           ],
-          identity_evidence: {
+          material_identity_evidence: {
             card_number: "equal",
-            variant_key: "equal",
+            source_family: "equal",
             artwork_fingerprint: "equal",
             rules_fields: "equal",
             rarity: "equal",
+            treatment: "equal"
+          },
+          provenance_corroboration: {
+            variant_key: "equal",
             product_code: "equal"
           }
         },

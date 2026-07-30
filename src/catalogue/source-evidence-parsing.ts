@@ -106,6 +106,15 @@ export async function parseSnapshot(
       game_profile_version: snapshot.game_profile_version,
       adapter_version: adapter.adapterVersion,
       parsed_at: operation.parsed_at,
+      coverage_proof:
+        adapter.reconciliationCoverage === "synthetic_fixture"
+          ? {
+              kind: "synthetic_fixture",
+              adapter_version: adapter.adapterVersion,
+              parser_contract: adapter.parserContract,
+            }
+          : null,
+      evidence_summary: observationEvidenceSummary(observations),
       observations: observations.map((value, index) => ({
         id: `srcobs_${operation.observation_set_id.slice(10)}_${index + 1}`,
         ordinal: index + 1,
@@ -136,6 +145,53 @@ export async function parseSnapshot(
       .run();
   }
   return finalizeParseOperation(database, operation.id, snapshot);
+}
+
+function observationEvidenceSummary(observations: readonly unknown[]) {
+  const completeness = observations.map((observation) => {
+    if (!isRecord(observation) || !isRecord(observation.completeness)) {
+      return null;
+    }
+    return observation.completeness;
+  });
+  const declaredRecordCount = completeness.reduce(
+    (total, item) =>
+      total +
+      (item !== null && Number.isInteger(item.declared_record_count)
+        ? Number(item.declared_record_count)
+        : 0),
+    0,
+  );
+  const parsedRecordCount = completeness.reduce(
+    (total, item) =>
+      total +
+      (item !== null && Number.isInteger(item.parsed_record_count)
+        ? Number(item.parsed_record_count)
+        : 0),
+    0,
+  );
+  return {
+    observation_count: observations.length,
+    declared_record_count: declaredRecordCount,
+    parsed_record_count: parsedRecordCount,
+    required_surfaces_complete: completeness.every(
+      (item) => item?.required_surfaces_complete === true,
+    ),
+    partitions_complete: completeness.every(
+      (item) => item?.partitions_complete === true,
+    ),
+    structurally_complete:
+      completeness.length === observations.length &&
+      completeness.every(
+        (item) => item?.structurally_complete === true,
+      ) &&
+      declaredRecordCount === parsedRecordCount &&
+      parsedRecordCount === observations.length,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export async function reparseSnapshot(

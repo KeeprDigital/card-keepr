@@ -52,7 +52,80 @@
       "properties": {
         "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "withdrawn": { "type": "boolean" }
+        "withdrawn": { "type": "boolean" },
+        "withdrawal": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["revision_id", "evidence"],
+              "properties": {
+                "revision_id": { "$ref": "#/$defs/OpaqueId" },
+                "evidence": { "type": "object" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "LocatorEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_lineage",
+        "locator",
+        "variant_key",
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "variant_key": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "LocatorEvidenceCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "historical"],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        },
+        "historical": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        }
+      }
+    },
+    "RelationshipLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
       }
     },
     "OfficialIdentity": {
@@ -164,6 +237,7 @@
         "rarity",
         "printed_rules_text",
         "game_data",
+        "locator_evidence",
         "lifecycle"
       ],
       "properties": {
@@ -174,6 +248,9 @@
         "printed_rules_text": { "$ref": "#/$defs/NullableText" },
         "game_data": {
           "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
+        },
+        "locator_evidence": {
+          "$ref": "#/$defs/LocatorEvidenceCollection"
         },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }
@@ -315,13 +392,25 @@
     "RelationshipRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "kind", "from", "to", "evidence_category"],
+      "required": [
+        "type",
+        "id",
+        "kind",
+        "from",
+        "to",
+        "evidence_category",
+        "source_lineage",
+        "source_observation_ids",
+        "relationship_value",
+        "lifecycle"
+      ],
       "properties": {
         "type": { "const": "relationship" },
         "id": { "$ref": "#/$defs/OpaqueId" },
         "kind": {
           "enum": [
             "printing-distribution-context",
+            "printing-product",
             "distribution-context-product",
             "product-card",
             "erratum-target",
@@ -346,7 +435,16 @@
             "id": { "$ref": "#/$defs/OpaqueId" }
           }
         },
-        "evidence_category": { "enum": ["explicit", "derived", "curated"] }
+        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "relationship_value": { "type": "string", "minLength": 1 },
+        "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
       }
     }
   }

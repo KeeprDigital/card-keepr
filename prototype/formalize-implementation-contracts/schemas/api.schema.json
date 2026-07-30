@@ -99,7 +99,95 @@
       "properties": {
         "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "withdrawn": { "type": "boolean" }
+        "withdrawn": { "type": "boolean" },
+        "withdrawal": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["revision_id", "evidence"],
+              "properties": {
+                "revision_id": { "$ref": "#/$defs/OpaqueId" },
+                "evidence": { "type": "object" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "RelationshipEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_lineage",
+        "relationship_kind",
+        "relationship_value",
+        "source_observation_ids",
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "relationship_kind": {
+          "enum": ["product", "distribution_context"]
+        },
+        "relationship_value": { "type": "string", "minLength": 1 },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "LocatorEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_lineage",
+        "locator",
+        "variant_key",
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "variant_key": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "LocatorEvidenceCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "historical"],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        },
+        "historical": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        }
       }
     },
     "CardSummary": {
@@ -235,6 +323,8 @@
         "game_data",
         "printing_images",
         "distribution_contexts",
+        "relationship_evidence",
+        "locator_evidence",
         "lifecycle",
         "links"
       ],
@@ -256,6 +346,13 @@
         "distribution_contexts": {
           "type": "array",
           "items": { "$ref": "#/$defs/DistributionContext" }
+        },
+        "relationship_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RelationshipEvidence" }
+        },
+        "locator_evidence": {
+          "$ref": "#/$defs/LocatorEvidenceCollection"
         },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" },
         "links": { "$ref": "#/$defs/SelfLink" }

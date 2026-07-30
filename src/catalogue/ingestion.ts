@@ -1,13 +1,26 @@
 import {
   buildCatalogueExport,
+  distributionContextExportId,
   type BuiltCatalogueExport,
 } from "./export";
 import {
   FixtureInputError,
   fixtureCandidate,
   type FixtureCandidate,
+  type SupportedGame,
 } from "./fixture";
 import { canonicalJson, sha256 } from "./serialization";
+import {
+  reconciliationPublication,
+  type ReconciliationPublicationPlan,
+} from "./reconciliation-publication";
+import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
+import { inspectCatalogueCandidate } from "./candidate-inspection";
+import {
+  byteBoundedJsonArrays,
+  guardedAtomicBatch,
+  retainedPayload,
+} from "./reconciliation-payload";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -42,6 +55,7 @@ type RunRow = {
   linked_run_id: string | null;
   idempotency_key: string;
   candidate_digest: string | null;
+  candidate_catalogue_digest: string | null;
   candidate_created_at: string | null;
   approval_deadline: string | null;
   approval_json: string | null;
@@ -223,6 +237,19 @@ export async function retryRun(
           409,
           "source_run_not_terminal",
           "Only a terminal Ingestion Run can be retried.",
+        );
+      }
+      const evidencePlan = await database
+        .prepare(
+          "SELECT ingestion_run_id FROM ingestion_evidence_plans WHERE ingestion_run_id = ?",
+        )
+        .bind(source.id)
+        .first<{ ingestion_run_id: string }>();
+      if (evidencePlan !== null) {
+        throw new AdministrationProblem(
+          409,
+          "evidence_retry_required",
+          "Evidence-backed runs must be retried through their linked collection workflow so immutable provenance is retained.",
         );
       }
       const candidate = parseCandidate(source);
@@ -417,15 +444,38 @@ export async function inspectCandidate(
   );
   assertOpaqueId(runId, "run_id");
   const row = await requiredRun(database, runId);
-  if (row.state !== "awaiting_approval") {
+  const blockedReconciliation =
+    row.state === "failed" &&
+    row.candidate_digest !== null &&
+    (await database
+      .prepare(
+        `SELECT 1 AS present
+         FROM reconciliation_contexts
+         WHERE ingestion_run_id = ?`,
+      )
+      .bind(row.id)
+      .first<{ present: number }>()) !== null;
+  if (row.state !== "awaiting_approval" && !blockedReconciliation) {
     throw new AdministrationProblem(
       409,
       "candidate_not_approvable",
-      "The Ingestion Run does not have a candidate awaiting approval.",
+      "The Ingestion Run does not have an inspectable reconciliation candidate.",
     );
   }
-  const candidate = parseCandidate(row);
-  const warnings = parseWarnings(row.warnings_json);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      row.id,
+      "candidate",
+      row.candidate_json,
+    ),
+  ) as FixtureCandidate;
+  const diff = await inspectCatalogueCandidate(database, {
+    runId: row.id,
+    expectedRevisionId: row.expected_current_revision_id,
+    candidate,
+    fallbackWarnings: parseWarnings(row.warnings_json),
+  });
   return {
     run_id: row.id,
     candidate_digest: row.candidate_digest,
@@ -433,24 +483,7 @@ export async function inspectCandidate(
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
     progress: parseProgress(row.progress_json),
-    diff: {
-      summary: {
-        cards_added: candidate.cards.length,
-        printings_added: candidate.printings.length,
-        warnings: warnings.length,
-      },
-      cards: {
-        added: candidate.cards.map((card) => card.id),
-        changed: [],
-        missing_observations: [],
-      },
-      printings: {
-        added: candidate.printings.map((printing) => printing.id),
-        changed: [],
-        identity_matches: [],
-      },
-      warnings,
-    },
+    diff,
   };
 }
 
@@ -567,7 +600,10 @@ async function approveRunAttempt(
     )
     .bind(catalogueState.current_revision_id)
     .first<{ content_digest: string }>();
-  if (currentRevision?.content_digest === request.candidate_digest) {
+  if (
+    run.candidate_catalogue_digest !== null &&
+    currentRevision?.content_digest === run.candidate_catalogue_digest
+  ) {
     return publishNoChange(
       database,
       run,
@@ -579,14 +615,43 @@ async function approveRunAttempt(
     );
   }
 
-  const candidate = parseCandidate(run);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      run.id,
+      "candidate",
+      run.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const revisionId = `catrev_${crypto.randomUUID()}`;
   const writerToken = publicationWriterToken(revisionId);
-  const catalogueExport = await buildCatalogueExport(
-    candidate,
-    request.candidate_digest,
+  const reconciliation = await reconciliationPublication(
+    database,
+    run.id,
     revisionId,
     now,
+  );
+  const sourceFreshness = await sourceFreshnessForExport(
+    database,
+    candidate.selected_games,
+    parseSelectedGames(run.selected_games_json),
+    now,
+  );
+  const catalogueExport = await buildCatalogueExport(
+    candidate,
+    requiredCandidateCatalogueDigest(run),
+    revisionId,
+    now,
+    reconciliation === null
+      ? undefined
+      : {
+          cards: reconciliation.cardLifecycles,
+          printings: reconciliation.printingLifecycles,
+          products: reconciliation.productLifecycles,
+          relationships: reconciliation.relationshipEvidence,
+          locators: reconciliation.locatorEvidence,
+        },
+    sourceFreshness,
   );
   try {
     await reservePublication(
@@ -634,6 +699,7 @@ async function approveRunAttempt(
       run: await requiredRun(database, run.id),
       candidate,
       catalogueExport,
+      reconciliation,
       requestJson,
       completedAt: now,
       claimOwner,
@@ -867,6 +933,7 @@ async function startPreparedRun(
     linked_run_id: input.linkedRunId,
     idempotency_key: input.idempotencyKey,
     candidate_digest: input.candidateDigest,
+    candidate_catalogue_digest: input.candidateDigest,
     candidate_created_at: startedAt,
     approval_deadline: approvalDeadline,
     approval_json: null,
@@ -902,6 +969,7 @@ async function startPreparedRun(
             linked_run_id,
             idempotency_key,
             candidate_digest,
+            candidate_catalogue_digest,
             candidate_created_at,
             approval_deadline,
             approval_json,
@@ -919,7 +987,7 @@ async function startPreparedRun(
             freshness_checked_at
           ) VALUES (
             ?, 'planning', ?, ?, ?, ?, ?,
-            NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
+            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
             NULL, ?, '[]', '[]', NULL, NULL, NULL
           )`,
         )
@@ -950,12 +1018,14 @@ async function startPreparedRun(
           `UPDATE ingestion_runs
           SET state = 'awaiting_approval',
               candidate_digest = ?,
+              candidate_catalogue_digest = ?,
               candidate_created_at = ?,
               approval_deadline = ?,
               progress_json = ?
           WHERE id = ? AND state = 'reconciling'`,
         )
         .bind(
+          input.candidateDigest,
           input.candidateDigest,
           startedAt,
           approvalDeadline,
@@ -1024,7 +1094,12 @@ async function publishNoChange(
     resulting_revision_id: request.expected_current_revision_id,
     freshness_checked_at: now,
   });
-  const candidate = parseCandidate(run);
+  const reconciliation = await reconciliationPublication(
+    database,
+    run.id,
+    request.expected_current_revision_id,
+    now,
+  );
   try {
     await database.batch([
       database
@@ -1059,7 +1134,13 @@ async function publishNoChange(
           JSON.stringify(progressFor("publishing")),
           run.id,
         ),
-      ...freshnessStatements(database, candidate.selected_games, run.id, now),
+      ...(reconciliation?.statements ?? []),
+      ...freshnessStatements(
+        database,
+        parseSelectedGames(run.selected_games_json),
+        run.id,
+        now,
+      ),
       database
         .prepare(
           `UPDATE ingestion_runs
@@ -1200,30 +1281,71 @@ async function throwApprovalFailure(
   );
 }
 
-function catalogueCard(candidate: FixtureCandidate, revisionId: string) {
-  const card = candidate.cards[0];
+function catalogueCard(
+  card: FixtureCandidate["cards"][number],
+  printingIds: readonly string[],
+  revisionId: string,
+  reconciledLifecycle?: Record<string, unknown>,
+) {
   return {
     type: "card",
     ...card,
-    printing_ids: candidate.printings.map((printing) => printing.id),
-    lifecycle: lifecycle(revisionId),
+    printing_ids: printingIds,
+    lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/cards/${card.id}`,
     },
   };
 }
 
-function cataloguePrinting(
-  candidate: FixtureCandidate,
+async function cataloguePrinting(
+  printing: FixtureCandidate["printings"][number],
+  game: SupportedGame,
   revisionId: string,
+  reconciledLifecycle?: Record<string, unknown>,
+  relationshipEvidence: readonly Record<string, unknown>[] = [],
+  locatorEvidence: Record<string, unknown> = {
+    current: [],
+    historical: [],
+  },
 ) {
-  const printing = candidate.printings[0];
+  const canonicalRelationshipEvidence = relationshipEvidence.filter(
+    (relationship) =>
+      relationship.relationship_kind !== "source_bucket",
+  );
+  const contexts = await Promise.all(
+    canonicalRelationshipEvidence
+      .filter(
+        (relationship) =>
+          relationship.current === true &&
+          relationship.relationship_kind === "distribution_context",
+      )
+      .map(async (relationship) => ({
+        id: await distributionContextExportId(
+          game,
+          String(relationship.source_lineage),
+          String(relationship.relationship_value),
+        ),
+        kind: "other",
+        label: relationship.relationship_value,
+        product_id: null,
+        evidence_category: "explicit",
+      })),
+  );
   return {
     type: "printing",
     ...printing,
     printing_images: [],
-    distribution_contexts: [],
-    lifecycle: lifecycle(revisionId),
+    distribution_contexts: contexts
+      .filter(
+        (context, index, contexts) =>
+          contexts.findIndex((candidate) => candidate.id === context.id) ===
+          index,
+      )
+      .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    relationship_evidence: canonicalRelationshipEvidence,
+    locator_evidence: locatorEvidence,
+    lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,
     },
@@ -1476,6 +1598,7 @@ async function commitVerifiedPublication(
     run: RunRow;
     candidate: FixtureCandidate;
     catalogueExport: BuiltCatalogueExport;
+    reconciliation: ReconciliationPublicationPlan | null;
     requestJson: string;
     completedAt: string;
     claimOwner?: IdempotencyClaimOwner;
@@ -1515,12 +1638,72 @@ async function commitVerifiedPublication(
     resulting_revision_id: revisionId,
     freshness_checked_at: input.completedAt,
   });
-  const cardDocument = catalogueCard(input.candidate, revisionId);
-  const printingDocument = cataloguePrinting(
-    input.candidate,
-    revisionId,
+  const cardDocuments = input.candidate.cards.map((card) => ({
+    card,
+    document: catalogueCard(
+      card,
+      input.candidate.printings
+        .filter((printing) => printing.card_id === card.id)
+        .map((printing) => printing.id),
+      revisionId,
+      input.reconciliation?.cardLifecycles[card.id],
+    ),
+  }));
+  const printingDocuments = await Promise.all(
+    input.candidate.printings.map(async (printing) => ({
+      printing,
+      document: await cataloguePrinting(
+        printing,
+        input.candidate.cards.find(
+          (card) => card.id === printing.card_id,
+        )!.game,
+        revisionId,
+        input.reconciliation?.printingLifecycles[printing.id],
+        input.reconciliation?.relationshipEvidence[printing.id] ?? [],
+        input.reconciliation?.locatorEvidence[printing.id] ?? {
+          current: [],
+          historical: [],
+        },
+      ),
+    })),
   );
-  await database.batch([
+  const revisionCardStatements = byteBoundedJsonArrays(
+    cardDocuments.map(({ card, document }) => ({
+      card_id: card.id,
+      document_json: JSON.stringify(document),
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_cards (
+           catalogue_revision_id, card_id, document_json
+         )
+         SELECT ?, json_extract(value, '$.card_id'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
+  const revisionPrintingStatements = byteBoundedJsonArrays(
+    printingDocuments.map(({ printing, document }) => ({
+      printing_id: printing.id,
+      card_id: printing.card_id,
+      document_json: JSON.stringify(document),
+    })),
+  ).map((chunk) =>
+    database
+      .prepare(
+        `INSERT INTO revision_printings (
+           catalogue_revision_id, printing_id, card_id, document_json
+         )
+         SELECT ?, json_extract(value, '$.printing_id'),
+                json_extract(value, '$.card_id'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(revisionId, chunk),
+  );
+  const commitStatements = [
     database
       .prepare(
         `INSERT INTO catalogue_revisions (
@@ -1536,38 +1719,13 @@ async function commitVerifiedPublication(
         revisionId,
         input.run.id,
         publishedAt,
-        input.run.candidate_digest,
+        requiredCandidateCatalogueDigest(input.run),
         input.run.expected_current_revision_id,
         input.run.candidate_digest,
       ),
-    database
-      .prepare(
-        `INSERT INTO revision_cards (
-          catalogue_revision_id,
-          card_id,
-          document_json
-        ) VALUES (?, ?, ?)`,
-      )
-      .bind(
-        revisionId,
-        input.candidate.cards[0].id,
-        JSON.stringify(cardDocument),
-      ),
-    database
-      .prepare(
-        `INSERT INTO revision_printings (
-          catalogue_revision_id,
-          printing_id,
-          card_id,
-          document_json
-        ) VALUES (?, ?, ?, ?)`,
-      )
-      .bind(
-        revisionId,
-        input.candidate.printings[0].id,
-        input.candidate.printings[0].card_id,
-        JSON.stringify(printingDocument),
-      ),
+    ...(input.reconciliation?.statements ?? []),
+    ...revisionCardStatements,
+    ...revisionPrintingStatements,
     database
       .prepare(
         `INSERT INTO catalogue_exports (
@@ -1592,7 +1750,7 @@ async function commitVerifiedPublication(
       ),
     ...freshnessStatements(
       database,
-      input.candidate.selected_games,
+      parseSelectedGames(input.run.selected_games_json),
       input.run.id,
       input.completedAt,
     ),
@@ -1628,7 +1786,8 @@ async function commitVerifiedPublication(
       createdAt: input.completedAt,
       claimOwner: input.claimOwner ?? null,
     }),
-  ]);
+  ];
+  await database.batch(guardedAtomicBatch(commitStatements));
   return resultingRun;
 }
 
@@ -1692,7 +1851,14 @@ async function reconcileReservedPublication(
   run: RunRow,
   observedAt: string,
 ): Promise<void> {
-  const candidate = parseCandidate(run);
+  const candidate = JSON.parse(
+    await retainedPayload(
+      database,
+      run.id,
+      "candidate",
+      run.candidate_json,
+    ),
+  ) as FixtureCandidate;
   const approval = parseApproval(run.approval_json);
   const revisionId = requiredPublicationValue(
     run.publication_revision_id,
@@ -1710,6 +1876,9 @@ async function reconcileReservedPublication(
     run.approval_idempotency_key,
     "idempotency key",
   );
+  const digestPayload =
+    (await digestBoundCandidatePayload(database, run.id)) ??
+    canonicalJson(candidate);
   if (
     approval.candidate_digest !== run.candidate_digest ||
     approval.expected_current_revision_id !==
@@ -1720,12 +1889,11 @@ async function reconcileReservedPublication(
     !isOpaqueIdentity(revisionId) ||
     run.publication_writer_token !==
       publicationWriterToken(revisionId) ||
-    !isExactStringTuple(
-      JSON.parse(run.selected_games_json),
-      candidate.selected_games,
+    !parseSelectedGames(run.selected_games_json).every((game) =>
+      candidate.selected_games.includes(game as SupportedGame),
     ) ||
     (await sha256(
-      new TextEncoder().encode(canonicalJson(candidate)),
+      new TextEncoder().encode(digestPayload),
     )) !== run.candidate_digest
   ) {
     throw new Error("The reserved publication metadata is invalid.");
@@ -1736,11 +1904,33 @@ async function reconcileReservedPublication(
     expected_current_revision_id:
       approval.expected_current_revision_id,
   });
-  const catalogueExport = await buildCatalogueExport(
-    candidate,
-    approval.candidate_digest,
+  const reconciliation = await reconciliationPublication(
+    database,
+    run.id,
     revisionId,
     publishedAt,
+  );
+  const sourceFreshness = await sourceFreshnessForExport(
+    database,
+    candidate.selected_games,
+    parseSelectedGames(run.selected_games_json),
+    publishedAt,
+  );
+  const catalogueExport = await buildCatalogueExport(
+    candidate,
+    requiredCandidateCatalogueDigest(run),
+    revisionId,
+    publishedAt,
+    reconciliation === null
+      ? undefined
+      : {
+          cards: reconciliation.cardLifecycles,
+          printings: reconciliation.printingLifecycles,
+          products: reconciliation.productLifecycles,
+          relationships: reconciliation.relationshipEvidence,
+          locators: reconciliation.locatorEvidence,
+        },
+    sourceFreshness,
   );
   const exactExport =
     catalogueExport.manifest.manifest_sha256 === manifestDigest &&
@@ -1770,6 +1960,7 @@ async function reconcileReservedPublication(
       run,
       candidate,
       catalogueExport,
+      reconciliation,
       requestJson,
       completedAt: observedAt,
       ...(claimOwner === null ? {} : { claimOwner }),
@@ -1799,6 +1990,16 @@ async function reconcileReservedPublication(
     observedAt,
     problem,
   );
+}
+
+function requiredCandidateCatalogueDigest(run: RunRow): string {
+  if (
+    run.candidate_catalogue_digest === null ||
+    !isSha256Digest(run.candidate_catalogue_digest)
+  ) {
+    throw new Error("The candidate Catalogue Data digest is invalid.");
+  }
+  return run.candidate_catalogue_digest;
 }
 
 async function listCatalogueExportPrefix(
@@ -3314,6 +3515,34 @@ function freshnessStatements(
   );
 }
 
+async function sourceFreshnessForExport(
+  database: D1Database,
+  catalogueGames: readonly SupportedGame[],
+  refreshedGames: readonly string[],
+  publishedAt: string,
+): Promise<Partial<Record<SupportedGame, string>>> {
+  const prior = await database
+    .prepare(
+      `SELECT game, checked_at
+       FROM source_freshness
+       WHERE area = 'cards-and-printings'
+       ORDER BY game`,
+    )
+    .all<{ game: SupportedGame; checked_at: string }>();
+  const freshness: Partial<Record<SupportedGame, string>> = {};
+  for (const row of prior.results) {
+    if (catalogueGames.includes(row.game)) {
+      freshness[row.game] = row.checked_at;
+    }
+  }
+  for (const game of refreshedGames) {
+    if (catalogueGames.includes(game as SupportedGame)) {
+      freshness[game as SupportedGame] = publishedAt;
+    }
+  }
+  return freshness;
+}
+
 async function expireOverdueRuns(
   database: D1Database,
   observedAt: string,
@@ -3402,6 +3631,17 @@ async function failRun(
 
 function parseCandidate(row: RunRow): FixtureCandidate {
   const parsed: unknown = JSON.parse(row.candidate_json);
+  if (
+    isRecord(parsed) &&
+    parsed.chunked_reconciliation_payload === "candidate"
+  ) {
+    return {
+      fixture: "first-catalogue",
+      selected_games: parseSelectedGames(row.selected_games_json),
+      cards: [],
+      printings: [],
+    };
+  }
   if (!isFixtureCandidate(parsed)) {
     throw new Error("The persisted fixture candidate is invalid.");
   }
@@ -3440,98 +3680,98 @@ function isFixtureCandidate(
     ]) ||
     value.fixture !== "first-catalogue" ||
     !Array.isArray(value.selected_games) ||
-    value.selected_games.length !== 1 ||
-    value.selected_games[0] !== "one-piece" ||
+    value.selected_games.length === 0 ||
+    !value.selected_games.every(isSupportedGame) ||
     !Array.isArray(value.cards) ||
-    value.cards.length !== 1 ||
-    !Array.isArray(value.printings) ||
-    value.printings.length !== 1
+    value.cards.length === 0 ||
+    !Array.isArray(value.printings)
   ) {
     return false;
   }
-  const card = value.cards[0];
-  const printing = value.printings[0];
-  return (
-    isRecord(card) &&
-    hasOnlyKeys(card, [
+  const cards = value.cards;
+  const cardIds = new Set<string>();
+  for (const card of cards) {
+    if (
+      !isRecord(card) ||
+      !hasOnlyKeys(card, [
       "id",
       "game",
       "official_identity",
       "name",
       "effective_rules_text",
       "game_data",
-    ]) &&
-    typeof card.id === "string" &&
-    card.game === "one-piece" &&
-    typeof card.name === "string" &&
-    typeof card.effective_rules_text === "string" &&
-    isRecord(card.official_identity) &&
-    hasOnlyKeys(card.official_identity, ["kind", "value"]) &&
-    card.official_identity.kind === "card_number" &&
-    typeof card.official_identity.value === "string" &&
-    isRecord(card.game_data) &&
-    hasOnlyKeys(card.game_data, ["profile", "attributes"]) &&
-    card.game_data.profile === "one-piece@1" &&
-    isFixtureCardAttributes(card.game_data.attributes) &&
-    isRecord(printing) &&
-    hasOnlyKeys(printing, [
-      "id",
-      "card_id",
-      "rarity",
-      "printed_rules_text",
-      "game_data",
-    ]) &&
-    typeof printing.id === "string" &&
-    typeof printing.card_id === "string" &&
-    printing.card_id === card.id &&
-    typeof printing.printed_rules_text === "string" &&
-    isRecord(printing.rarity) &&
-    hasOnlyKeys(printing.rarity, ["normalized", "raw"]) &&
-    typeof printing.rarity.normalized === "string" &&
-    typeof printing.rarity.raw === "string" &&
-    isRecord(printing.game_data) &&
-    hasOnlyKeys(printing.game_data, ["profile", "attributes"]) &&
-    printing.game_data.profile === "one-piece@1" &&
-    isRecord(printing.game_data.attributes) &&
-    hasOnlyKeys(printing.game_data.attributes, [
-      "illustration_types",
-    ]) &&
-    Array.isArray(
-      printing.game_data.attributes.illustration_types,
-    ) &&
-    printing.game_data.attributes.illustration_types.length === 0
+      ]) ||
+      typeof card.id !== "string" ||
+      !isSupportedGame(card.game) ||
+      typeof card.name !== "string" ||
+      (card.effective_rules_text !== null &&
+        typeof card.effective_rules_text !== "string") ||
+      !isRecord(card.official_identity) ||
+      !hasOnlyKeys(card.official_identity, ["kind", "value"]) ||
+      !validOfficialIdentity(card.official_identity, card.game) ||
+      !isRecord(card.game_data) ||
+      !hasOnlyKeys(card.game_data, ["profile", "attributes"]) ||
+      card.game_data.profile !== `${card.game}@1` ||
+      !isRecord(card.game_data.attributes)
+    ) {
+      return false;
+    }
+    cardIds.add(card.id);
+  }
+  return value.printings.every((printing) => {
+    if (
+      !isRecord(printing) ||
+      !hasOnlyKeys(printing, [
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+      ]) ||
+      typeof printing.id !== "string" ||
+      typeof printing.card_id !== "string" ||
+      !cardIds.has(printing.card_id) ||
+      (printing.printed_rules_text !== null &&
+        typeof printing.printed_rules_text !== "string") ||
+      !isRecord(printing.rarity) ||
+      !hasOnlyKeys(printing.rarity, ["normalized", "raw"]) ||
+      (printing.rarity.normalized !== null &&
+        typeof printing.rarity.normalized !== "string") ||
+      (printing.rarity.raw !== null &&
+        typeof printing.rarity.raw !== "string")
+    ) {
+      return false;
+    }
+    return (
+      printing.game_data === null ||
+      (isRecord(printing.game_data) &&
+        hasOnlyKeys(printing.game_data, ["profile", "attributes"]) &&
+        typeof printing.game_data.profile === "string" &&
+        isRecord(printing.game_data.attributes))
+    );
+  });
+}
+
+function validOfficialIdentity(
+  identity: Record<string, unknown>,
+  game: SupportedGame,
+): boolean {
+  return (
+    (identity.kind === "card_number" &&
+      typeof identity.value === "string" &&
+      identity.value.length > 0) ||
+    (game === "one-piece" &&
+      identity.kind === "functional_designation" &&
+      identity.value === "DON!!")
   );
 }
 
-function isFixtureCardAttributes(value: unknown): boolean {
+function isSupportedGame(value: unknown): value is SupportedGame {
   return (
-    isRecord(value) &&
-    hasOnlyKeys(value, [
-      "card_type",
-      "colours",
-      "cost",
-      "life",
-      "battle_attributes",
-      "power",
-      "counter",
-      "traits",
-      "block_icons",
-      "effect_text",
-      "trigger_text",
-    ]) &&
-    value.card_type === "leader" &&
-    isExactStringTuple(value.colours, ["red"]) &&
-    value.cost === null &&
-    typeof value.life === "number" &&
-    Number.isInteger(value.life) &&
-    isExactStringTuple(value.battle_attributes, ["strike"]) &&
-    typeof value.power === "number" &&
-    Number.isInteger(value.power) &&
-    value.counter === null &&
-    isExactStringTuple(value.traits, ["Straw Hat Crew"]) &&
-    isExactStringTuple(value.block_icons, ["1"]) &&
-    typeof value.effect_text === "string" &&
-    value.trigger_text === null
+    value === "one-piece" ||
+    value === "fusion-world" ||
+    value === "digimon" ||
+    value === "gundam"
   );
 }
 
@@ -3557,12 +3797,16 @@ function hasOnlyKeys(
   );
 }
 
-function parseSelectedGames(value: string): readonly ["one-piece"] {
+function parseSelectedGames(value: string): readonly SupportedGame[] {
   const parsed: unknown = JSON.parse(value);
-  if (!isExactStringTuple(parsed, ["one-piece"])) {
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every(isSupportedGame)
+  ) {
     throw new Error("The persisted selected games are invalid.");
   }
-  return ["one-piece"];
+  return parsed;
 }
 
 function parseProgress(
@@ -3818,7 +4062,11 @@ function publicRun(
   const approvalHistory = parseApprovalHistory(
     row.approval_history_json,
   );
-  if (!isExactStringTuple(selectedGames, candidate.selected_games)) {
+  if (
+    !selectedGames.every((game) =>
+      candidate.selected_games.includes(game),
+    )
+  ) {
     throw new Error(
       "The persisted Ingestion Run document is inconsistent.",
     );
@@ -3932,7 +4180,9 @@ function decodePublicRunDocument(
     !isOpaqueIdentity(value.id) ||
     typeof value.state !== "string" ||
     !runStates.has(value.state) ||
-    !isExactStringTuple(value.selected_games, ["one-piece"]) ||
+    !Array.isArray(value.selected_games) ||
+    value.selected_games.length === 0 ||
+    !value.selected_games.every(isSupportedGame) ||
     !isIsoInstant(value.started_at) ||
     typeof value.expected_current_revision_id !== "string" ||
     !isOpaqueIdentity(value.expected_current_revision_id) ||

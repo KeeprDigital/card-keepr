@@ -1,6 +1,13 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import {
+  cloudflareTest,
+  readD1Migrations,
+} from "@cloudflare/vitest-pool-workers";
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
+
+const migrations = await readD1Migrations(
+  resolve(import.meta.dirname, "../../migrations"),
+);
 
 export default defineConfig({
   plugins: [
@@ -11,6 +18,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           API_BEARER_KEY: "vitest-api-key",
+          TEST_MIGRATIONS: migrations,
         },
       },
     }),

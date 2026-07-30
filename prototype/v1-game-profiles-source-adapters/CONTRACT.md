@@ -106,10 +106,13 @@ it.
 ### DON!! exception
 
 The generic DON!! Card uses
-`{"kind":"functional_designation","value":"DON!!"}`, `card_type: "don"`, no
-catalogued Printings, and no Printing Image completeness promise. Official
-Product observations about DON!! designs remain source evidence and do not
-create Printings.
+`{"kind":"functional_designation","value":"DON!!"}` and `card_type: "don"`.
+Officially distinguished DON!! artworks or treatments may be catalogued as
+Printings when the ordinary exact identity evidence is present. Version 1
+coverage of those Printings and Printing Images is explicitly
+non-comprehensive: absence never proves that the DON!! Card has zero
+Printings. Product membership by itself remains Source Observation evidence
+and does not create a Printing.
 
 ## `fusion-world@1`
 
@@ -223,11 +226,13 @@ material contradiction, or an insufficiently evidenced zero-match blocks
 publication. A zero-match creates a new Printing only when the source record is
 internally complete and its appearance is demonstrably novel.
 
-For Gundam cross-locale merging, the two source records must additionally agree
-on card number, variant key/suffix, artwork and treatment, rules fields, rarity,
-and equivalent Product code. Different URL, encoding, regional Release, or
-regional Legality facts do not prevent the merge. Observation on only one
-English surface is publishable with a warning.
+Gundam cross-locale merging uses the same exact material identity fields:
+Card, source family/lineage, normalized artwork fingerprint, printed
+rules-relevant fields, normalized rarity, and explicit treatment. Variant
+key/suffix and Product, set, source-bucket, Release, and Legality memberships
+are corroborating provenance only and never identity gates. A substantive
+conflict in the exact material fields blocks publication. Observation on only
+one English surface is publishable with a warning.
 
 Distribution through an additional Product, source bucket, event, or promotion
 never creates a Printing by itself.
@@ -379,7 +384,8 @@ not independently make the candidate unpublishable.
 The executable prototype covers these contract boundaries:
 
 1. one One Piece Printing repeated across multiple Recordings;
-2. the generic DON!! Card with no Printing coverage;
+2. the generic DON!! Card with known Printings allowed but explicitly
+   non-comprehensive Printing and Printing Image coverage;
 3. a Fusion World Leader that exists only with a suffixed locator;
 4. a broad-query cap that blocks publication;
 5. a new Digimon mechanic retained raw as a warning;

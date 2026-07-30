@@ -8,7 +8,6 @@ import {
   retryPublicationCleanup,
   retryRun,
   showRun,
-  startFixtureRun,
 } from "../../../src/catalogue/ingestion";
 import {
   assertBindingsAvailable,
@@ -25,6 +24,10 @@ import {
   sourceSnapshotContent,
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
+import {
+  reconcileRetainedCardPrintingEvidence,
+  showReconciledPrinting,
+} from "../../../src/catalogue/card-printing-reconciliation";
 import { resumeEvidenceRun } from "./evidence-administration";
 export {
   EvidenceHostWorkflow,
@@ -76,37 +79,6 @@ export default {
 
       if (
         request.method === "POST" &&
-        url.pathname === "/v1/ingestion-runs"
-      ) {
-        const body = await readAdministrationBody(request);
-        assertOnlyFields(body, [
-          "fixture",
-          "selected_games",
-          "idempotency_key",
-        ]);
-        const result = await startFixtureRun(
-          env.CATALOGUE_DB,
-          env.CATALOGUE_EXPORTS,
-          {
-            fixture: requiredString(body, "fixture"),
-            selected_games: requiredStringArray(
-              body,
-              "selected_games",
-            ),
-            idempotency_key: requiredString(
-              body,
-              "idempotency_key",
-            ),
-          },
-          observedAt,
-        );
-        return Response.json(result, {
-          status: administrationResultStatus(result, 201),
-        });
-      }
-
-      if (
-        request.method === "POST" &&
         url.pathname === "/v1/ingestion-runs/evidence"
       ) {
         const body = await readAdministrationBody(request);
@@ -126,6 +98,40 @@ export default {
             requests: requiredSourceRequests(body, "requests"),
           }),
           { status: 201 },
+        );
+      }
+
+      const reconciliationMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/reconciliation$/.exec(
+          url.pathname,
+        );
+      if (request.method === "POST" && reconciliationMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, []);
+        const result = await reconcileRetainedCardPrintingEvidence(
+          env.CATALOGUE_DB,
+          env.EVIDENCE_OBJECTS,
+          decodeURIComponent(reconciliationMatch[1]!),
+          observedAt,
+        );
+        return Response.json(result, {
+          status: result.publishable === true ? 200 : 409,
+        });
+      }
+
+      const reconciledPrintingMatch =
+        /^\/v1\/reconciliation\/printings\/([^/]+)$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "GET" &&
+        reconciledPrintingMatch !== null
+      ) {
+        return Response.json(
+          await showReconciledPrinting(
+            env.CATALOGUE_DB,
+            decodeURIComponent(reconciledPrintingMatch[1]!),
+          ),
         );
       }
 

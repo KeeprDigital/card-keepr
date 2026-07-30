@@ -603,7 +603,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
 
   const constrained = await env.CATALOGUE_DB.prepare(
     `SELECT adapter_version, source_lineage, supported_game,
-            game_profile_version, parser_contract
+            game_profile_version, parser_contract, adapter_origin
      FROM source_adapter_versions ORDER BY adapter_version`,
   ).all<{
     adapter_version: string;
@@ -611,6 +611,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
     supported_game: string;
     game_profile_version: string;
     parser_contract: string;
+    adapter_origin: string;
   }>();
   expect(constrained.results).toEqual(
     sourceAdapterRegistrations
@@ -620,6 +621,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
         supported_game: adapter.supportedGame,
         game_profile_version: adapter.gameProfileVersion,
         parser_contract: adapter.parserContract,
+        adapter_origin: adapter.origin,
       }))
       .sort((left, right) =>
         left.adapter_version.localeCompare(right.adapter_version),
