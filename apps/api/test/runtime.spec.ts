@@ -66,6 +66,20 @@ test("the public Printing response validates full Distribution Context objects",
         last_missing_revision_id: null,
       },
     ],
+    locator_evidence: {
+      current: [
+        {
+          source_lineage: "one-piece-en",
+          locator: "/official/api-context",
+          variant_key: null,
+          first_revision_id: "catrev_api_context",
+          last_observed_revision_id: "catrev_api_context",
+          current: true,
+          last_missing_revision_id: null,
+        },
+      ],
+      historical: [],
+    },
     lifecycle: {
       first_revision_id: "catrev_api_context",
       last_observed_revision_id: "catrev_api_context",

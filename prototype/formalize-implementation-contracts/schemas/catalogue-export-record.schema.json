@@ -69,6 +69,47 @@
         }
       }
     },
+    "LocatorEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_lineage",
+        "locator",
+        "variant_key",
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "variant_key": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "LocatorEvidenceCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "historical"],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        },
+        "historical": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        }
+      }
+    },
     "RelationshipLifecycle": {
       "type": "object",
       "additionalProperties": false,
@@ -196,6 +237,7 @@
         "rarity",
         "printed_rules_text",
         "game_data",
+        "locator_evidence",
         "lifecycle"
       ],
       "properties": {
@@ -206,6 +248,9 @@
         "printed_rules_text": { "$ref": "#/$defs/NullableText" },
         "game_data": {
           "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
+        },
+        "locator_evidence": {
+          "$ref": "#/$defs/LocatorEvidenceCollection"
         },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }

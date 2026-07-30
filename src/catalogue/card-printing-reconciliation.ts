@@ -111,6 +111,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     { compatibility: PrintingCompatibility; printingId: string }
   >();
   const plans: {
+    sourceObservationSetId: string;
+    sourceSnapshotId: string;
     sourceObservationId: string;
     cardId: string;
     printingId: string | null;
@@ -355,6 +357,8 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     }
     plans.push({
+      sourceObservationSetId: observation.sourceObservationSetId,
+      sourceSnapshotId: observation.sourceSnapshotId,
       sourceObservationId: observation.sourceObservationId,
       cardId,
       printingId,
@@ -369,8 +373,9 @@ export async function reconcileRetainedCardPrintingEvidence(
               ...observation.withdrawal,
               assertion: "withdrawn",
               source_lineage: retained.sourceLineage,
-              source_snapshot_id: retained.sourceSnapshotId,
-              source_observation_set_id: retained.observationSetId,
+              source_snapshot_id: observation.sourceSnapshotId,
+              source_observation_set_id:
+                observation.sourceObservationSetId,
               source_observation_id: observation.sourceObservationId,
             },
     });

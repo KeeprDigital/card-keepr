@@ -87,7 +87,21 @@ test("retained immutable evidence publishes stable identities and warns when ear
   expect(lifecycle.document).toMatchObject({
     id: firstPrinting.id,
     card_id: firstCard.id,
-    locators: ["/official/base", "/official/renamed"],
+    locators: {
+      current: [
+        expect.objectContaining({
+          locator: "/official/renamed",
+          current: true,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          locator: "/official/base",
+          current: false,
+          last_missing_revision_id: secondRevision,
+        }),
+      ],
+    },
     memberships: {
       current: {
         products: ["product_promotion"],
@@ -355,6 +369,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
       printings: publication.printingLifecycles,
       products: publication.productLifecycles,
       relationships: publication.relationshipEvidence,
+      locators: publication.locatorEvidence,
     },
   );
   const approval = {
@@ -1088,10 +1103,21 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   const lifecycle = await get(
     `/v1/reconciliation/printings/${printingId}`,
   );
-  expect(lifecycle.document.locators).toEqual([
-    "/official/gundam/gundam-cross-asia",
-    "/official/gundam/gundam-cross-us",
-  ]);
+  expect(lifecycle.document.locators).toMatchObject({
+    current: [
+      expect.objectContaining({
+        locator: "/official/gundam/gundam-cross-asia",
+        source_lineage: "gundam-en-asia",
+        current: true,
+      }),
+      expect.objectContaining({
+        locator: "/official/gundam/gundam-cross-us",
+        source_lineage: "gundam-en-us",
+        current: true,
+      }),
+    ],
+    historical: [],
+  });
   expect(lifecycle.document.relationship_evidence).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -1445,7 +1471,7 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
       ],
     });
   }
-});
+}, 15_000);
 
 test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
   const usRun = await collect(
@@ -1702,10 +1728,20 @@ test("locator and SourceBucket evidence refresh without minting Catalogue Revisi
     `/v1/reconciliation/printings/${printingId}`,
   );
   expect(lifecycle.document).toMatchObject({
-    locators: [
-      "/official/evidence/base",
-      "/official/evidence/relocated",
-    ],
+    locators: {
+      current: [
+        expect.objectContaining({
+          locator: "/official/evidence/relocated",
+          current: true,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          locator: "/official/evidence/base",
+          current: false,
+        }),
+      ],
+    },
     memberships: {
       current: {
         source_buckets: ["secondary-card-list"],
@@ -2204,6 +2240,409 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
   expect(rejected.response.status).toBe(200);
 }, 15_000);
 
+test("historical locator bindings reactivate only for the same Printing and expose lifecycle evidence", async () => {
+  const baseRun = await collect(
+    "/reconciliation/locator-binding-base",
+    "locator-binding-base",
+  );
+  const base = await reconcile(baseRun.id);
+  const printingId = requiredString(
+    requiredFirst(base.document, "printings"),
+    "id",
+  );
+  const basePublished = await approve(base.document);
+  const firstRevision = requiredString(
+    basePublished.document,
+    "resulting_revision_id",
+  );
+
+  const missingRun = await collect(
+    "/reconciliation/complete-empty-lineage",
+    "locator-binding-missing-first",
+  );
+  const missing = await reconcile(missingRun.id);
+  const missingPublished = await approve(missing.document);
+  const missingRevision = requiredString(
+    missingPublished.document,
+    "resulting_revision_id",
+  );
+  const stale = await get(
+    `/v1/reconciliation/printings/${printingId}`,
+  );
+  expect(stale.document).toMatchObject({
+    locators: {
+      current: [],
+      historical: [
+        {
+          locator: "/official/locator-binding/stable",
+          source_lineage: "one-piece-en",
+          variant_key: null,
+          first_revision_id: firstRevision,
+          last_observed_revision_id: firstRevision,
+          current: false,
+          last_missing_revision_id: missingRevision,
+        },
+      ],
+    },
+  });
+  expect(
+    await exportComponentRecords(missingRevision, "printings"),
+  ).toContainEqual(
+    expect.objectContaining({
+      id: printingId,
+      locator_evidence: stale.document.locators,
+    }),
+  );
+
+  const compatibleRun = await collect(
+    "/reconciliation/locator-binding-compatible",
+    "locator-binding-compatible-return",
+  );
+  const compatible = await reconcile(compatibleRun.id);
+  expect(requiredFirst(compatible.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  const compatiblePublished = await approve(compatible.document);
+  const reactivatedRevision = requiredString(
+    compatiblePublished.document,
+    "resulting_revision_id",
+  );
+  const reactivated = await get(
+    `/v1/reconciliation/printings/${printingId}`,
+  );
+  expect(reactivated.document).toMatchObject({
+    locators: {
+      current: [
+        {
+          locator: "/official/locator-binding/stable",
+          source_lineage: "one-piece-en",
+          variant_key: null,
+          first_revision_id: firstRevision,
+          last_observed_revision_id: reactivatedRevision,
+          current: true,
+          last_missing_revision_id: null,
+        },
+      ],
+      historical: [],
+    },
+  });
+
+  const missingAgainRun = await collect(
+    "/reconciliation/complete-empty-lineage",
+    "locator-binding-missing-second",
+  );
+  const missingAgain = await reconcile(missingAgainRun.id);
+  const missingAgainPublished = await approve(missingAgain.document);
+  const missingAgainRevision = requiredString(
+    missingAgainPublished.document,
+    "resulting_revision_id",
+  );
+  const incompatibleRun = await collect(
+    "/reconciliation/locator-binding-incompatible",
+    "locator-binding-incompatible-return",
+  );
+  const incompatible = await reconcile(incompatibleRun.id);
+  expect(incompatible.response.status).toBe(409);
+  expect(incompatible.document).toMatchObject({
+    diagnostics: [
+      {
+        code: "printing_match_contradictory",
+        locator: "/official/locator-binding/stable",
+        candidate_printing_ids: [printingId],
+        detail: expect.stringContaining(
+          "retained locator contradicts",
+        ),
+      },
+    ],
+  });
+  const retainedBinding = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT printing_id, current, last_missing_revision_id
+     FROM reconciled_printing_locators
+     WHERE source_lineage = 'one-piece-en'
+       AND locator = '/official/locator-binding/stable'`,
+  ).first<{
+    printing_id: string;
+    current: number;
+    last_missing_revision_id: string;
+  }>();
+  expect(retainedBinding).toEqual({
+    printing_id: printingId,
+    current: 0,
+    last_missing_revision_id: missingAgainRevision,
+  });
+  expect(
+    await exportComponentRecords(missingAgainRevision, "printings"),
+  ).toContainEqual(
+    expect.objectContaining({
+      id: printingId,
+      locator_evidence: {
+        current: [],
+        historical: [
+          expect.objectContaining({
+            locator: "/official/locator-binding/stable",
+            current: false,
+            last_missing_revision_id: missingAgainRevision,
+          }),
+        ],
+      },
+    }),
+  );
+}, 15_000);
+
+test("every planned request contributes exactly one provenance-bound observation set in deterministic request order", async () => {
+  const run = await collectRequests(
+    [
+      { id: "partition-a", scenario: "base" },
+      { id: "partition-b", scenario: "new-locator" },
+    ],
+    "multi-request-complete-coverage",
+  );
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.document.publishable).toBe(true);
+  expect(requiredFirst(reconciled.document, "cards")).toMatchObject({
+    name: "Monkey.D.Luffy",
+  });
+  expect(requiredFirst(reconciled.document, "printings")).toMatchObject({
+    rarity: { normalized: "leader" },
+  });
+  const plans = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT request.request_id, candidate.source_snapshot_id,
+            candidate.source_observation_set_id
+     FROM reconciliation_candidates AS candidate
+     JOIN source_snapshots AS snapshot
+       ON snapshot.id = candidate.source_snapshot_id
+     JOIN source_requests AS request
+       ON request.ingestion_run_id = snapshot.ingestion_run_id
+      AND request.source_snapshot_id = snapshot.id
+     WHERE candidate.ingestion_run_id = ?
+     ORDER BY request.sequence_number`,
+  )
+    .bind(run.id)
+    .all<{
+      request_id: string;
+      source_snapshot_id: string;
+      source_observation_set_id: string;
+    }>();
+  expect(plans.results.map((row) => row.request_id)).toEqual([
+    "partition-a",
+    "partition-b",
+  ]);
+  expect(new Set(plans.results.map((row) => row.source_snapshot_id)).size).toBe(
+    2,
+  );
+  expect(
+    new Set(plans.results.map((row) => row.source_observation_set_id)).size,
+  ).toBe(2);
+  await post(`/v1/ingestion-runs/${run.id}/rejection`, {
+    candidate_digest: requiredString(reconciled.document, "candidate_digest"),
+    idempotency_key: "reject-multi-request-complete-coverage",
+  });
+});
+
+test("missing, duplicate, and unplanned collection sets fail reconciliation with stable public diagnostics", async () => {
+  const missing = await collectRequests(
+    [{ id: "partition-a", scenario: "base" }],
+    "multi-request-missing-coverage",
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_requests (
+       ingestion_run_id, request_id, sequence_number, method, url,
+       request_headers_json, representation_fingerprint, state
+     ) VALUES (?, 'partition-missing', 1, 'GET',
+       'https://official-source.invalid/reconciliation/new-locator',
+       '{}', 'missing', 'pending')`,
+  )
+    .bind(missing.id)
+    .run();
+  await expectRetainedEvidenceInvalid(missing.id, "has no observed Source Snapshot");
+
+  const duplicate = await collectRequests(
+    [{ id: "partition-a", scenario: "base" }],
+    "multi-request-duplicate-set",
+  );
+  const duplicateSuffix = crypto.randomUUID();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_parse_operations (
+       id, source_snapshot_id, adapter_version, intent, idempotency_key,
+       observation_set_id, content_object_key, parsed_at, state,
+       content_digest, content_byte_length, observation_count
+     )
+     SELECT ?, source_snapshot_id, adapter_version, 'collection', ?,
+            ?, ?, parsed_at, 'finalized',
+            content_digest, content_byte_length, observation_count
+     FROM source_parse_operations
+     WHERE source_snapshot_id = (
+       SELECT source_snapshot_id FROM source_requests
+       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+     ) AND intent = 'collection'`,
+  )
+    .bind(
+      `parse_${duplicateSuffix}`,
+      `duplicate-${duplicateSuffix}`,
+      `srcobsset_${duplicateSuffix}`,
+      `source-observations/duplicate-${duplicateSuffix}.json`,
+      duplicate.id,
+    )
+    .run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_observation_sets (
+       id, parse_operation_id, source_snapshot_id, source_lineage,
+       supported_game, game_profile_version, adapter_version, parsed_at,
+       content_digest, content_byte_length, content_object_key,
+       observation_count
+     )
+     SELECT ?, ?, source_snapshot_id, source_lineage, supported_game,
+            game_profile_version, adapter_version, parsed_at,
+            content_digest, content_byte_length, ?, observation_count
+     FROM source_observation_sets
+     WHERE source_snapshot_id = (
+       SELECT source_snapshot_id FROM source_requests
+       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+     ) ORDER BY id LIMIT 1`,
+  )
+    .bind(
+      `srcobsset_${duplicateSuffix}`,
+      `parse_${duplicateSuffix}`,
+      `source-observations/duplicate-${duplicateSuffix}.json`,
+      duplicate.id,
+    )
+    .run();
+  await expectRetainedEvidenceInvalid(
+    duplicate.id,
+    "requires exactly one collection Source Observation Set",
+  );
+
+  const unplanned = await collectRequests(
+    [{ id: "partition-a", scenario: "base" }],
+    "multi-request-unplanned-set",
+  );
+  const rogue = crypto.randomUUID();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_fetch_attempts (
+       id, ingestion_run_id, request_id, attempt_number, requested_at,
+       completed_at, outcome, http_status, response_headers_json,
+       retry_after_ms, diagnostic
+     )
+     SELECT ?, ingestion_run_id, request_id, 99, requested_at,
+            completed_at, outcome, http_status, response_headers_json,
+            retry_after_ms, diagnostic
+     FROM source_fetch_attempts
+     WHERE ingestion_run_id = ? ORDER BY attempt_number LIMIT 1`,
+  )
+    .bind(`fetch_${rogue}`, unplanned.id)
+    .run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_snapshots (
+       id, ingestion_run_id, request_id, fetch_attempt_id, request_method,
+       request_url, request_headers_json, representation_fingerprint,
+       response_vary_json, retrieved_at, http_status, response_headers_json,
+       media_type, content_digest, content_byte_length, content_object_key,
+       source_lineage, supported_game, game_profile_version, adapter_version,
+       reused_source_snapshot_id
+     )
+     SELECT ?, ingestion_run_id, request_id, ?, request_method,
+            request_url, request_headers_json, representation_fingerprint,
+            response_vary_json, retrieved_at, http_status,
+            response_headers_json, media_type, content_digest,
+            content_byte_length, content_object_key, source_lineage,
+            supported_game, game_profile_version, adapter_version, NULL
+     FROM source_snapshots
+     WHERE id = (
+       SELECT source_snapshot_id FROM source_requests
+       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+     )`,
+  )
+    .bind(`snapshot_${rogue}`, `fetch_${rogue}`, unplanned.id)
+    .run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_parse_operations (
+       id, source_snapshot_id, adapter_version, intent, idempotency_key,
+       observation_set_id, content_object_key, parsed_at, state,
+       content_digest, content_byte_length, observation_count
+     )
+     SELECT ?, ?, adapter_version, 'collection', ?, ?, ?, parsed_at,
+            'finalized', content_digest, content_byte_length,
+            observation_count
+     FROM source_parse_operations
+     WHERE source_snapshot_id = (
+       SELECT source_snapshot_id FROM source_requests
+       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+     ) AND intent = 'collection'`,
+  )
+    .bind(
+      `parse_${rogue}`,
+      `snapshot_${rogue}`,
+      `rogue-${rogue}`,
+      `srcobsset_${rogue}`,
+      `source-observations/rogue-${rogue}.json`,
+      unplanned.id,
+    )
+    .run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_observation_sets (
+       id, parse_operation_id, source_snapshot_id, source_lineage,
+       supported_game, game_profile_version, adapter_version, parsed_at,
+       content_digest, content_byte_length, content_object_key,
+       observation_count
+     )
+     SELECT ?, ?, ?, source_lineage, supported_game, game_profile_version,
+            adapter_version, parsed_at, content_digest, content_byte_length,
+            ?, observation_count
+     FROM source_observation_sets
+     WHERE source_snapshot_id = (
+       SELECT source_snapshot_id FROM source_requests
+       WHERE ingestion_run_id = ? AND request_id = 'partition-a'
+     ) ORDER BY id LIMIT 1`,
+  )
+    .bind(
+      `srcobsset_${rogue}`,
+      `parse_${rogue}`,
+      `snapshot_${rogue}`,
+      `source-observations/rogue-${rogue}.json`,
+      unplanned.id,
+    )
+    .run();
+  await expectRetainedEvidenceInvalid(
+    unplanned.id,
+    "Unplanned Source Observation Set",
+  );
+});
+
+test("a 1001-entity reconciliation publishes atomically within bounded D1 statement budgets", async () => {
+  const run = await collect(
+    "/reconciliation/scale-1001-cards",
+    "bounded-d1-scale-1001-cards",
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  expect(reconciled.response.status).toBe(200);
+  expect(
+    Array.isArray(reconciled.document.cards)
+      ? reconciled.document.cards
+      : [],
+  ).toHaveLength(1_001);
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const persisted = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM revision_cards
+     WHERE catalogue_revision_id = ?`,
+  )
+    .bind(revisionId)
+    .first<{ count: number }>();
+  expect(persisted?.count).toBeGreaterThan(1_000);
+  expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(
+    persisted?.count ?? 0,
+  );
+}, 60_000);
+
 test("recovery health gates evidence start and reconciliation before mutation", async () => {
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
@@ -2294,6 +2733,50 @@ async function collect(
   expect(resumed.response.status).toBe(202);
   const document = await waitForRunState(id, "parsing");
   return { id, document };
+}
+
+async function collectRequests(
+  requests: readonly { id: string; scenario: string }[],
+  key: string,
+): Promise<{ id: string; document: Record<string, unknown> }> {
+  const started = await postFixtureEvidence({
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: key,
+    requests: requests.map((request) => ({
+      id: request.id,
+      method: "GET" as const,
+      url: `https://official-source.invalid/reconciliation/${request.scenario}`,
+      headers: { accept: "application/json" },
+    })),
+  });
+  expect(started.response.status).toBe(201);
+  const id = requiredString(started.document, "id");
+  const resumed = await post(
+    `/v1/ingestion-runs/${id}/collection/resume`,
+    {},
+  );
+  expect(resumed.response.status).toBe(202);
+  return { id, document: await waitForRunState(id, "parsing") };
+}
+
+async function expectRetainedEvidenceInvalid(
+  runId: string,
+  detail: string,
+): Promise<void> {
+  const blocked = await reconcile(runId);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    publishable: false,
+    state: "failed",
+    diagnostics: [
+      expect.objectContaining({
+        code: "retained_evidence_invalid",
+        detail: expect.stringContaining(detail),
+      }),
+    ],
+  });
 }
 
 async function waitForRunState(

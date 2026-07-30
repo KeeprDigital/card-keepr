@@ -120,8 +120,7 @@ export async function printingAtLocator(
        JOIN reconciled_printings AS printing
          ON printing.id = locator.printing_id
        WHERE locator.source_lineage = ?
-         AND locator.locator = ?
-         AND locator.current = 1`,
+         AND locator.locator = ?`,
     )
     .bind(sourceLineage, locator)
     .first<ReconciledPrintingRow>();

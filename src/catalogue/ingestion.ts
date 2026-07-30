@@ -630,6 +630,7 @@ async function approveRunAttempt(
           printings: reconciliation.printingLifecycles,
           products: reconciliation.productLifecycles,
           relationships: reconciliation.relationshipEvidence,
+          locators: reconciliation.locatorEvidence,
         },
     sourceFreshness,
   );
@@ -1284,6 +1285,10 @@ async function cataloguePrinting(
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
   relationshipEvidence: readonly Record<string, unknown>[] = [],
+  locatorEvidence: Record<string, unknown> = {
+    current: [],
+    historical: [],
+  },
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
     (relationship) =>
@@ -1320,6 +1325,7 @@ async function cataloguePrinting(
       )
       .sort((left, right) => String(left.id).localeCompare(String(right.id))),
     relationship_evidence: canonicalRelationshipEvidence,
+    locator_evidence: locatorEvidence,
     lifecycle: reconciledLifecycle ?? lifecycle(revisionId),
     links: {
       self: `/v1/printings/${printing.id}`,
@@ -1635,10 +1641,104 @@ async function commitVerifiedPublication(
         revisionId,
         input.reconciliation?.printingLifecycles[printing.id],
         input.reconciliation?.relationshipEvidence[printing.id] ?? [],
+        input.reconciliation?.locatorEvidence[printing.id] ?? {
+          current: [],
+          historical: [],
+        },
       ),
     })),
   );
-  await database.batch([
+  const revisionCardsStatement =
+    input.reconciliation === null
+      ? database
+          .prepare(
+            `INSERT INTO revision_cards (
+               catalogue_revision_id, card_id, document_json
+             )
+             SELECT ?, json_extract(value, '$.card_id'),
+                    json_extract(value, '$.document_json')
+             FROM json_each(?)`,
+          )
+          .bind(
+            revisionId,
+            canonicalJson(
+              cardDocuments.map(({ card, document }) => ({
+                card_id: card.id,
+                document_json: JSON.stringify(document),
+              })),
+            ),
+          )
+      : database
+          .prepare(
+            `INSERT INTO revision_cards (
+               catalogue_revision_id, card_id, document_json
+             )
+             SELECT ?, reconciled.id,
+               CASE
+                 WHEN reconciled.withdrawal_revision_id IS NULL
+                   OR reconciled.withdrawal_evidence_json IS NULL
+                 THEN json_set(
+                   candidate.value,
+                   '$.type', 'card',
+                   '$.printing_ids', json(COALESCE((
+                     SELECT json_group_array(
+                       json_extract(printing.value, '$.id')
+                     )
+                     FROM json_each(run.candidate_json, '$.printings')
+                       AS printing
+                     WHERE json_extract(printing.value, '$.card_id') =
+                           reconciled.id
+                   ), '[]')),
+                   '$.lifecycle', json_object(
+                     'first_revision_id', reconciled.first_revision_id,
+                     'last_observed_revision_id',
+                       reconciled.last_observed_revision_id,
+                     'withdrawn',
+                       json(CASE WHEN reconciled.withdrawn = 1
+                         THEN 'true' ELSE 'false' END)
+                   ),
+                   '$.links', json_object(
+                     'self', '/v1/cards/' || reconciled.id
+                   )
+                 )
+                 ELSE json_set(
+                   candidate.value,
+                   '$.type', 'card',
+                   '$.printing_ids', json(COALESCE((
+                     SELECT json_group_array(
+                       json_extract(printing.value, '$.id')
+                     )
+                     FROM json_each(run.candidate_json, '$.printings')
+                       AS printing
+                     WHERE json_extract(printing.value, '$.card_id') =
+                           reconciled.id
+                   ), '[]')),
+                   '$.lifecycle', json_object(
+                     'first_revision_id', reconciled.first_revision_id,
+                     'last_observed_revision_id',
+                       reconciled.last_observed_revision_id,
+                     'withdrawn',
+                       json(CASE WHEN reconciled.withdrawn = 1
+                         THEN 'true' ELSE 'false' END),
+                     'withdrawal', json_object(
+                       'revision_id', reconciled.withdrawal_revision_id,
+                       'evidence',
+                         json(reconciled.withdrawal_evidence_json)
+                     )
+                   ),
+                   '$.links', json_object(
+                     'self', '/v1/cards/' || reconciled.id
+                   )
+                 )
+               END
+             FROM ingestion_runs AS run
+             JOIN json_each(run.candidate_json, '$.cards') AS candidate
+             JOIN reconciled_cards AS reconciled
+               ON reconciled.id = json_extract(candidate.value, '$.id')
+             WHERE run.id = ?`,
+          )
+          .bind(revisionId, input.run.id);
+  const commitStatements = [
     database
       .prepare(
         `INSERT INTO catalogue_revisions (
@@ -1659,34 +1759,27 @@ async function commitVerifiedPublication(
         input.run.candidate_digest,
       ),
     ...(input.reconciliation?.statements ?? []),
-    ...cardDocuments.map(({ card, document }) =>
-      database
-        .prepare(
-          `INSERT INTO revision_cards (
-            catalogue_revision_id,
-            card_id,
-            document_json
-          ) VALUES (?, ?, ?)`,
-        )
-        .bind(revisionId, card.id, JSON.stringify(document)),
-    ),
-    ...printingDocuments.map(({ printing, document }) =>
-      database
-        .prepare(
-          `INSERT INTO revision_printings (
-            catalogue_revision_id,
-            printing_id,
-            card_id,
-            document_json
-          ) VALUES (?, ?, ?, ?)`,
-        )
-        .bind(
-          revisionId,
-          printing.id,
-          printing.card_id,
-          JSON.stringify(document),
+    revisionCardsStatement,
+    database
+      .prepare(
+        `INSERT INTO revision_printings (
+           catalogue_revision_id, printing_id, card_id, document_json
+         )
+         SELECT ?, json_extract(value, '$.printing_id'),
+                json_extract(value, '$.card_id'),
+                json_extract(value, '$.document_json')
+         FROM json_each(?)`,
+      )
+      .bind(
+        revisionId,
+        canonicalJson(
+          printingDocuments.map(({ printing, document }) => ({
+            printing_id: printing.id,
+            card_id: printing.card_id,
+            document_json: JSON.stringify(document),
+          })),
         ),
-    ),
+      ),
     database
       .prepare(
         `INSERT INTO catalogue_exports (
@@ -1747,7 +1840,8 @@ async function commitVerifiedPublication(
       createdAt: input.completedAt,
       claimOwner: input.claimOwner ?? null,
     }),
-  ]);
+  ];
+  await database.batch(commitStatements);
   return resultingRun;
 }
 
@@ -1881,6 +1975,7 @@ async function reconcileReservedPublication(
           printings: reconciliation.printingLifecycles,
           products: reconciliation.productLifecycles,
           relationships: reconciliation.relationshipEvidence,
+          locators: reconciliation.locatorEvidence,
         },
     sourceFreshness,
   );

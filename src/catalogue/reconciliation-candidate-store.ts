@@ -32,6 +32,8 @@ export async function persistReviewableCandidate(
     sourceSnapshotId: string;
     sourceLineage: string;
     plans: readonly {
+      sourceObservationSetId: string;
+      sourceSnapshotId: string;
       sourceObservationId: string;
       cardId: string;
       printingId: string | null;
@@ -80,37 +82,13 @@ export async function persistReviewableCandidate(
          WHERE id = ? AND state = 'parsing'`,
       )
       .bind(input.runId),
-    ...input.plans.map((plan) =>
-      database
-        .prepare(
-          `INSERT INTO reconciliation_candidates (
-            ingestion_run_id, source_observation_set_id, source_snapshot_id,
-            source_observation_id, card_id, printing_id, source_lineage,
-            locator, variant_key, compatibility_json, memberships_json,
-            withdrawal_json,
-            warnings_json, digest_payload_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          input.runId,
-          input.observationSetId,
-          input.sourceSnapshotId,
-          plan.sourceObservationId,
-          plan.cardId,
-          plan.printingId,
-          input.sourceLineage,
-          plan.locator,
-          plan.variantKey,
-          plan.compatibility === null
-            ? null
-            : canonicalJson(plan.compatibility),
-          canonicalJson(plan.memberships),
-          plan.withdrawal === null
-            ? null
-            : canonicalJson(plan.withdrawal),
-          canonicalJson(input.warnings),
-          input.digestPayloadJson,
-        ),
+    candidatePlanInsertionStatement(
+      database,
+      input.runId,
+      input.sourceLineage,
+      input.plans,
+      canonicalJson(input.warnings),
+      input.digestPayloadJson,
     ),
     database
       .prepare(
@@ -146,6 +124,8 @@ export async function persistBlockedCandidate(
     sourceSnapshotId: string;
     sourceLineage: string;
     plans: readonly {
+      sourceObservationSetId: string;
+      sourceSnapshotId: string;
       sourceObservationId: string;
       cardId: string;
       printingId: string | null;
@@ -194,37 +174,13 @@ export async function persistBlockedCandidate(
          WHERE id = ? AND state = 'parsing'`,
       )
       .bind(input.runId),
-    ...input.plans.map((plan) =>
-      database
-        .prepare(
-          `INSERT INTO reconciliation_candidates (
-            ingestion_run_id, source_observation_set_id, source_snapshot_id,
-            source_observation_id, card_id, printing_id, source_lineage,
-            locator, variant_key, compatibility_json, memberships_json,
-            withdrawal_json,
-            warnings_json, digest_payload_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          input.runId,
-          input.observationSetId,
-          input.sourceSnapshotId,
-          plan.sourceObservationId,
-          plan.cardId,
-          plan.printingId,
-          input.sourceLineage,
-          plan.locator,
-          plan.variantKey,
-          plan.compatibility === null
-            ? null
-            : canonicalJson(plan.compatibility),
-          canonicalJson(plan.memberships),
-          plan.withdrawal === null
-            ? null
-            : canonicalJson(plan.withdrawal),
-          canonicalJson(input.diagnostics),
-          input.digestPayloadJson,
-        ),
+    candidatePlanInsertionStatement(
+      database,
+      input.runId,
+      input.sourceLineage,
+      input.plans,
+      canonicalJson(input.diagnostics),
+      input.digestPayloadJson,
     ),
     database
       .prepare(
@@ -301,6 +257,72 @@ export async function failReconciliation(
       )
       .bind(runId),
   ]);
+}
+
+type CandidatePlanInput = {
+  sourceObservationSetId: string;
+  sourceSnapshotId: string;
+  sourceObservationId: string;
+  cardId: string;
+  printingId: string | null;
+  locator: string | null;
+  variantKey: string | null;
+  compatibility: PrintingCompatibility | null;
+  memberships: Memberships;
+  withdrawal: ProvenancedWithdrawal | null;
+};
+
+function candidatePlanInsertionStatement(
+  database: D1Database,
+  runId: string,
+  sourceLineage: string,
+  plans: readonly CandidatePlanInput[],
+  warningsJson: string,
+  digestPayloadJson: string,
+): D1PreparedStatement {
+  const rows = plans.map((plan) => ({
+    observation_set_id: plan.sourceObservationSetId,
+    snapshot_id: plan.sourceSnapshotId,
+    observation_id: plan.sourceObservationId,
+    card_id: plan.cardId,
+    printing_id: plan.printingId,
+    locator: plan.locator,
+    variant_key: plan.variantKey,
+    compatibility_json:
+      plan.compatibility === null ? null : canonicalJson(plan.compatibility),
+    memberships_json: canonicalJson(plan.memberships),
+    withdrawal_json:
+      plan.withdrawal === null ? null : canonicalJson(plan.withdrawal),
+  }));
+  return database
+    .prepare(
+      `INSERT INTO reconciliation_candidates (
+         ingestion_run_id, source_observation_set_id, source_snapshot_id,
+         source_observation_id, card_id, printing_id, source_lineage,
+         locator, variant_key, compatibility_json, memberships_json,
+         withdrawal_json, warnings_json, digest_payload_json
+       )
+       SELECT ?, json_extract(planned.value, '$.observation_set_id'),
+              json_extract(planned.value, '$.snapshot_id'),
+              json_extract(planned.value, '$.observation_id'),
+              json_extract(planned.value, '$.card_id'),
+              json_extract(planned.value, '$.printing_id'), ?,
+              json_extract(planned.value, '$.locator'),
+              json_extract(planned.value, '$.variant_key'),
+              json_extract(planned.value, '$.compatibility_json'),
+              json_extract(planned.value, '$.memberships_json'),
+              json_extract(planned.value, '$.withdrawal_json'), ?,
+              CASE WHEN planned.key = 0
+                THEN ? ELSE '{"reconciliation_context":"shared"}' END
+       FROM json_each(?) AS planned`,
+    )
+    .bind(
+      runId,
+      sourceLineage,
+      warningsJson,
+      digestPayloadJson,
+      canonicalJson(rows),
+    );
 }
 
 export async function reconciliationCandidatePlans(

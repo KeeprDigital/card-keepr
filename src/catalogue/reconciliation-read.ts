@@ -5,6 +5,10 @@ import {
   membershipEntries,
   type RelationshipEvidenceRow,
 } from "./reconciliation-relationships";
+import type {
+  LocatorEvidence,
+  LocatorEvidenceCollection,
+} from "./reconciliation-publication";
 
 type MembershipRow = RelationshipEvidenceRow;
 
@@ -59,10 +63,6 @@ export async function printingDisappearanceWarnings(
   sourceLineage: string,
   observedPrintingIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  const exclusion =
-    observedPrintingIds.length === 0
-      ? ""
-      : `AND printing.id NOT IN (${observedPrintingIds.map(() => "?").join(", ")})`;
   const result = await database
     .prepare(
       `SELECT DISTINCT printing.id
@@ -71,11 +71,14 @@ export async function printingDisappearanceWarnings(
          ON locator.printing_id = printing.id
        WHERE locator.source_lineage = ?
          AND locator.current = 1
-         ${exclusion}
+         AND NOT EXISTS (
+           SELECT 1 FROM json_each(?) AS observed
+           WHERE observed.value = printing.id
+         )
          AND printing.withdrawn = 0
        ORDER BY printing.id`,
     )
-    .bind(sourceLineage, ...observedPrintingIds)
+    .bind(sourceLineage, JSON.stringify(observedPrintingIds))
     .all<{ id: string }>();
   return result.results.map((row) => ({
     code: "record_not_observed",
@@ -90,10 +93,6 @@ export async function cardDisappearanceWarnings(
   sourceLineage: string,
   observedCardIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  const exclusion =
-    observedCardIds.length === 0
-      ? ""
-      : `AND card.id NOT IN (${observedCardIds.map(() => "?").join(", ")})`;
   const result = await database
     .prepare(
       `SELECT DISTINCT card.id
@@ -102,11 +101,14 @@ export async function cardDisappearanceWarnings(
          ON observation.card_id = card.id
        WHERE observation.source_lineage = ?
          AND observation.current = 1
-         ${exclusion}
+         AND NOT EXISTS (
+           SELECT 1 FROM json_each(?) AS observed
+           WHERE observed.value = card.id
+         )
          AND card.withdrawn = 0
        ORDER BY card.id`,
     )
-    .bind(sourceLineage, ...observedCardIds)
+    .bind(sourceLineage, JSON.stringify(observedCardIds))
     .all<{ id: string }>();
   return result.results.map((row) => ({
     code: "record_not_observed",
@@ -128,11 +130,16 @@ export async function publicReconciledPrinting(
   const [locators, memberships] = await Promise.all([
     database
       .prepare(
-        `SELECT locator FROM reconciled_printing_locators
+        `SELECT source_lineage, locator, variant_key,
+                first_revision_id, last_observed_revision_id,
+                current, last_missing_revision_id
+         FROM reconciled_printing_locators
          WHERE printing_id = ? ORDER BY locator`,
       )
       .bind(printingId)
-      .all<{ locator: string }>(),
+      .all<
+        Omit<LocatorEvidence, "current"> & { current: number }
+      >(),
     database
       .prepare(
         `SELECT source_lineage, source_observation_id,
@@ -190,7 +197,7 @@ export async function publicReconciledPrinting(
   return {
     id: printing.id,
     card_id: printing.card_id,
-    locators: locators.results.map((row) => row.locator),
+    locators: locatorEvidenceCollection(locators.results),
     memberships: { current, historical },
     relationship_evidence: allRelationshipEvidence.filter(
       (relationship) => relationship.relationship_kind !== "source_bucket",
@@ -202,6 +209,21 @@ export async function publicReconciledPrinting(
       printing.withdrawal_revision_id,
       printing.withdrawal_evidence_json,
     ),
+  };
+}
+
+function locatorEvidenceCollection(
+  rows: readonly (
+    Omit<LocatorEvidence, "current"> & { current: number }
+  )[],
+): LocatorEvidenceCollection {
+  const evidence = rows.map((row) => ({
+    ...row,
+    current: row.current === 1,
+  }));
+  return {
+    current: evidence.filter((locator) => locator.current),
+    historical: evidence.filter((locator) => !locator.current),
   };
 }
 

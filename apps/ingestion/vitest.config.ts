@@ -144,6 +144,43 @@ function reconciliationSourceDocument(scenario: string) {
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
   }
+  if (scenario === "scale-1001-cards") {
+    return {
+      cards: Array.from({ length: 1_001 }, (_, index) => ({
+        card: {
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: `OP20-${String(index + 1).padStart(4, "0")}`,
+          },
+          name: `S${index + 1}`,
+          effective_rules_text: null,
+          game_data: {
+            profile: "one-piece@1",
+            attributes: {
+              card_type: "leader",
+              colours: [],
+              cost: null,
+              life: 0,
+              battle_attributes: [],
+              power: null,
+              counter: null,
+              traits: [],
+              block_icons: [],
+              effect_text: null,
+              trigger_text: null,
+            },
+          },
+        },
+        completeness: completeEvidence(),
+        memberships: {
+          products: [],
+          distribution_contexts: [],
+          source_buckets: [],
+        },
+      })),
+    };
+  }
   if (scenario === "multi-printing") {
     const base = printingObservation({
       game: "one-piece",
@@ -833,6 +870,34 @@ function reconciliationSourceDocument(scenario: string) {
             source_buckets: ["gundam-card-list"],
           },
           printedFieldsMarker: "shared",
+        }),
+      ],
+    };
+  }
+  if (
+    scenario === "locator-binding-base" ||
+    scenario === "locator-binding-compatible" ||
+    scenario === "locator-binding-incompatible"
+  ) {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP12-001",
+          name: "Historical locator binding",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/locator-binding/stable",
+          lineageMarker:
+            scenario === "locator-binding-incompatible"
+              ? "different"
+              : "locator-binding",
+          memberships: {
+            products: ["product_op12"],
+            distribution_contexts: [],
+            source_buckets: ["locator-binding-list"],
+          },
         }),
       ],
     };

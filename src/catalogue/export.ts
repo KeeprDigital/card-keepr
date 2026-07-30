@@ -1,6 +1,7 @@
 import type { FixtureCandidate, SupportedGame } from "./fixture";
 import type {
   NormalizedLifecycle,
+  LocatorEvidenceCollection,
   RelationshipEvidence,
 } from "./reconciliation-publication";
 import { exportedGameProfileSchema } from "./reconciliation-profile";
@@ -87,6 +88,7 @@ export async function buildCatalogueExport(
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     products?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
+    locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
   sourceFreshness?: Readonly<Partial<Record<SupportedGame, string>>>,
 ): Promise<BuiltCatalogueExport> {
@@ -199,6 +201,7 @@ async function exportRecords(
     printings: Readonly<Record<string, NormalizedLifecycle>>;
     products?: Readonly<Record<string, NormalizedLifecycle>>;
     relationships?: Readonly<Record<string, readonly RelationshipEvidence[]>>;
+    locators?: Readonly<Record<string, LocatorEvidenceCollection>>;
   },
 ): Promise<
   Record<(typeof componentDefinitions)[number][0], readonly unknown[]>
@@ -306,6 +309,10 @@ async function exportRecords(
     printings: candidate.printings.map((printing) => ({
       type: "printing",
       ...printing,
+      locator_evidence: lifecycles?.locators?.[printing.id] ?? {
+        current: [],
+        historical: [],
+      },
       lifecycle: lifecycles?.printings[printing.id] ?? defaultLifecycle,
     })),
     "printing-images": [],
