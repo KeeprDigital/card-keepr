@@ -14,6 +14,7 @@ import {
 import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,
+  type PublicationEvidenceResource,
   type ReconciliationPublicationPlan,
 } from "./reconciliation-publication";
 import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
@@ -676,9 +677,12 @@ async function approveRunAttempt(
   const sourceFreshness = await sourceFreshnessForExport(
     database,
     candidate.selected_games,
-    checkedFreshnessAreas(
+    await checkedFreshnessAreasForRun(
+      database,
       parseSelectedGames(run.selected_games_json),
+      run.id,
       candidate,
+      now,
     ),
     now,
   );
@@ -1371,11 +1375,9 @@ function catalogueCard(
   printingIds: readonly string[],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
-  evidenceResources: readonly {
-    source: string;
-  }[] = [],
+  evidenceResources: readonly PublicationEvidenceResource[] = [],
 ) {
-  return {
+  const data = {
     type: "card",
     ...card,
     printing_ids: printingIds,
@@ -1386,6 +1388,21 @@ function catalogueCard(
     links: {
       self: `/v1/cards/${card.id}`,
     },
+  };
+  const included = [
+    ...new Map(
+      evidenceResources.map((resource) => [resource.id, resource]),
+    ).values(),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  const observationIds = included.map(({ id }) => id);
+  return {
+    data,
+    included,
+    provenance:
+      observationIds.length === 0
+        ? {}
+        : { "/data/effective_rules_text": observationIds },
+    disagreements: [],
   };
 }
 
@@ -1986,16 +2003,16 @@ async function commitVerifiedPublication(
       card,
       document,
       summary: {
-        type: document.type,
-        id: document.id,
-        game: document.game,
-        official_identity: document.official_identity,
-        name: document.name,
-        game_data: document.game_data,
-        lifecycle: document.lifecycle,
-        links: document.links,
+        type: document.data.type,
+        id: document.data.id,
+        game: document.data.game,
+        official_identity: document.data.official_identity,
+        name: document.data.name,
+        game_data: document.data.game_data,
+        lifecycle: document.data.lifecycle,
+        links: document.data.links,
       },
-      searchText: cardSearchText(document),
+      searchText: cardSearchText(document.data),
     };
   });
   const printingDocuments = await Promise.all(
@@ -2459,9 +2476,12 @@ async function reconcileReservedPublication(
   const sourceFreshness = await sourceFreshnessForExport(
     database,
     candidate.selected_games,
-    checkedFreshnessAreas(
+    await checkedFreshnessAreasForRun(
+      database,
       parseSelectedGames(run.selected_games_json),
+      run.id,
       candidate,
+      publishedAt,
     ),
     publishedAt,
   );
@@ -4068,30 +4088,36 @@ async function freshnessStatementsForRun(
   candidate: FixtureCandidate,
   checkedAt: string,
 ): Promise<D1PreparedStatement[]> {
+  return freshnessStatements(
+    database,
+    await checkedFreshnessAreasForRun(
+      database,
+      games,
+      runId,
+      candidate,
+      checkedAt,
+    ),
+    runId,
+  );
+}
+
+async function checkedFreshnessAreasForRun(
+  database: D1Database,
+  games: readonly string[],
+  runId: string,
+  candidate: FixtureCandidate,
+  checkedAt: string,
+): Promise<SourceFreshness[]> {
   const area = await freshnessArea(database, runId);
   if (area === null) return [];
   if (area === "cards-and-printings") {
-    return freshnessStatements(
-      database,
-      checkedFreshnessAreas(games, candidate, checkedAt),
-      runId,
-    );
+    return checkedFreshnessAreas(games, candidate, checkedAt);
   }
-  return games.map((game) =>
-    database
-      .prepare(
-        `INSERT INTO source_freshness (
-          game,
-          area,
-          checked_at,
-          ingestion_run_id
-        ) VALUES (?, ?, ?, ?)
-        ON CONFLICT (game, area) DO UPDATE SET
-          checked_at = excluded.checked_at,
-          ingestion_run_id = excluded.ingestion_run_id`,
-      )
-      .bind(game, area, checkedAt, runId),
-  );
+  return games.map((game) => ({
+    game: game as SupportedGame,
+    area,
+    checked_at: checkedAt,
+  }));
 }
 
 function freshnessStatements(
@@ -4191,7 +4217,10 @@ async function sourceFreshnessForExport(
     .prepare(
       `SELECT game, area, checked_at
        FROM source_freshness
-       WHERE area IN ('cards-and-printings', 'products-and-releases')
+       WHERE area IN (
+         'cards-and-printings', 'products-and-releases',
+         'legality-rules', 'errata'
+       )
        ORDER BY game, area`,
     )
     .all<SourceFreshness>();

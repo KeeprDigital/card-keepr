@@ -145,6 +145,7 @@ export async function reconciliationPublication(
     plans.filter((plan) => plan.observation_kind === "card_printing"),
     (plan) => plan.card_id,
   );
+  const cardEvidencePlans = groupedPlans(plans, (plan) => plan.card_id);
   const printingPlans = groupedPlans(
     plans.filter(
       (plan) =>
@@ -195,13 +196,16 @@ export async function reconciliationPublication(
     statements: [],
   };
 
+  for (const [cardId, grouped] of cardEvidencePlans) {
+    result.cardEvidence[cardId] = grouped.map((plan) =>
+      evidenceByObservation.get(plan.source_observation_id)!
+    );
+  }
+
   for (const [cardId, grouped] of cardPlans) {
     const card = cards.get(cardId);
     if (card === undefined) throw new Error("The reconciliation Card plan changed.");
     const existing = existingCards.get(cardId) ?? null;
-    result.cardEvidence[cardId] = grouped.map((plan) =>
-      evidenceByObservation.get(plan.source_observation_id)!
-    );
     const withdrawal = mergedWithdrawal(grouped, "card");
     const withdraw =
       withdrawal?.entity === "card" ||

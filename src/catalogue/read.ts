@@ -29,11 +29,15 @@ type RevisionDocumentRow = CatalogueStateRow & {
   document_json: string;
 };
 
-type PrintingEnvelope = {
+type DetailEnvelope = {
   data: unknown;
   included: unknown[];
   provenance: Record<string, string[]>;
   disagreements: unknown[];
+};
+
+type PrintingDocumentRow = {
+  document_json: string;
 };
 
 type PrintingImageRow = {
@@ -45,6 +49,11 @@ type PrintingImageRow = {
 };
 
 export class PrintingReadProblem extends Error {
+  readonly status = 400;
+  readonly code = "invalid_parameter";
+}
+
+export class CardReadProblem extends Error {
   readonly status = 400;
   readonly code = "invalid_parameter";
 }
@@ -106,6 +115,7 @@ export async function currentCatalogueStatus(database: D1Database) {
 export async function currentCardResponse(
   database: D1Database,
   cardId: string,
+  request: Request,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -121,11 +131,56 @@ export async function currentCardResponse(
     .bind(cardId)
     .first<RevisionDocumentRow>();
   if (row === null) return null;
-  return revisionDocumentResponse(
-    JSON.parse(row.document_json),
-    row,
-    `/v1/cards/${encodeURIComponent(cardId)}`,
-    `card:${cardId}:${row.current_revision_id}`,
+  const url = new URL(request.url);
+  const include = detailIncludeProjection(
+    url,
+    () => new CardReadProblem("Card include projection is invalid."),
+    ["printings", "evidence", "disagreements"],
+  );
+  const envelope = detailEnvelope(row.document_json);
+  const etag = `"card:${cardId}:${row.current_revision_id}:` +
+    `${detailRepresentationKey(include)}"`;
+  const headers = revisionHeaders(row.current_revision_id, etag);
+  if (ifNoneMatch(request, etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  const printings = include.has("printings")
+    ? await database
+        .prepare(
+          `SELECT document_json
+           FROM revision_printings
+           WHERE catalogue_revision_id = ? AND card_id = ?
+           ORDER BY printing_id`,
+        )
+        .bind(row.current_revision_id, cardId)
+        .all<PrintingDocumentRow>()
+    : { results: [] as PrintingDocumentRow[] };
+  return Response.json(
+    {
+      data: envelope.data,
+      ...(include.has("printings") || include.has("evidence")
+        ? {
+            included: [
+              ...printings.results.map(({ document_json }) =>
+                detailEnvelope(document_json).data
+              ),
+              ...(include.has("evidence") ? envelope.included : []),
+            ],
+          }
+        : {}),
+      ...(include.has("evidence")
+        ? { provenance: envelope.provenance }
+        : {}),
+      ...(include.has("disagreements")
+        ? { disagreements: envelope.disagreements }
+        : {}),
+      meta: {
+        catalogue_revision_id: row.current_revision_id,
+        published_at: row.published_at,
+      },
+      links: { self: canonicalDetailSelf(url, include) },
+    },
+    { headers },
   );
 }
 
@@ -153,7 +208,7 @@ export async function currentPrintingResponse(
     url,
     () => new PrintingReadProblem("Printing include projection is invalid."),
   );
-  const envelope = printingEnvelope(row.document_json);
+  const envelope = detailEnvelope(row.document_json);
   const etag = `"printing:${printingId}:${row.current_revision_id}:` +
     `${detailRepresentationKey(include)}"`;
   const headers = revisionHeaders(row.current_revision_id, etag);
@@ -266,10 +321,10 @@ export async function printingImageContentResponse(
   );
 }
 
-function printingEnvelope(documentJson: string): PrintingEnvelope {
+function detailEnvelope(documentJson: string): DetailEnvelope {
   const parsed: unknown = JSON.parse(documentJson);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("A revision-pinned Printing document is invalid.");
+    throw new Error("A revision-pinned detail document is invalid.");
   }
   const value = parsed as Record<string, unknown>;
   const data =

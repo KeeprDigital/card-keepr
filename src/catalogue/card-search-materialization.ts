@@ -175,15 +175,41 @@ async function repairCardSearchMaterializationStep(
          )
          SELECT catalogue_revision_id, card_id,
                 json_object(
-                  'type', json_extract(document_json, '$.type'),
-                  'id', json_extract(document_json, '$.id'),
-                  'game', json_extract(document_json, '$.game'),
+                  'type', COALESCE(
+                    json_extract(document_json, '$.data.type'),
+                    json_extract(document_json, '$.type')
+                  ),
+                  'id', COALESCE(
+                    json_extract(document_json, '$.data.id'),
+                    json_extract(document_json, '$.id')
+                  ),
+                  'game', COALESCE(
+                    json_extract(document_json, '$.data.game'),
+                    json_extract(document_json, '$.game')
+                  ),
                   'official_identity',
-                    json_extract(document_json, '$.official_identity'),
-                  'name', json_extract(document_json, '$.name'),
-                  'game_data', json_extract(document_json, '$.game_data'),
-                  'lifecycle', json_extract(document_json, '$.lifecycle'),
-                  'links', json_extract(document_json, '$.links')
+                    COALESCE(
+                      json_extract(
+                        document_json, '$.data.official_identity'
+                      ),
+                      json_extract(document_json, '$.official_identity')
+                    ),
+                  'name', COALESCE(
+                    json_extract(document_json, '$.data.name'),
+                    json_extract(document_json, '$.name')
+                  ),
+                  'game_data', COALESCE(
+                    json_extract(document_json, '$.data.game_data'),
+                    json_extract(document_json, '$.game_data')
+                  ),
+                  'lifecycle', COALESCE(
+                    json_extract(document_json, '$.data.lifecycle'),
+                    json_extract(document_json, '$.lifecycle')
+                  ),
+                  'links', COALESCE(
+                    json_extract(document_json, '$.data.links'),
+                    json_extract(document_json, '$.links')
+                  )
                 ),
                 ''
          FROM revision_cards
@@ -222,7 +248,7 @@ async function repairCardSearchMaterializationStep(
     throw new Error("The Card search repair source Card is unavailable.");
   }
   const searchText = cardSearchText(
-    JSON.parse(row.document_json) as SearchableCard,
+    searchableCard(row.document_json),
   );
   const searchBytes = encoder.encode(searchText);
   if (revision.repair_search_offset < searchBytes.byteLength) {
@@ -419,6 +445,20 @@ async function repairCardSearchMaterializationStep(
     boundBytes(revision.catalogue_revision_id, revision.repair_card_id),
     targetRevisionId,
   );
+}
+
+function searchableCard(documentJson: string): SearchableCard {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("The Card search repair source Card is invalid.");
+  }
+  const document = parsed as Record<string, unknown>;
+  const data = document.data;
+  return (
+    data !== null && typeof data === "object" && !Array.isArray(data)
+      ? data
+      : document
+  ) as SearchableCard;
 }
 
 async function pendingRevision(

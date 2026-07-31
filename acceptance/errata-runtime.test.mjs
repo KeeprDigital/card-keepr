@@ -250,6 +250,22 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cliEnvironment,
     runtime,
   );
+  const seededManifest = await apiJson(
+    `/v1/catalogue-exports/${seededRevision}`,
+    apiKey,
+  );
+  const seededCardFreshness = seededManifest.data.source_freshness.find(
+    (check) =>
+      check.game === "one-piece" &&
+      check.area === "cards-and-printings",
+  );
+  assert.notEqual(seededCardFreshness, undefined);
+  assert.equal(
+    seededManifest.data.source_freshness.some(
+      (check) => check.game === "one-piece" && check.area === "errata",
+    ),
+    false,
+  );
 
   const run = await collectSource(
     {
@@ -354,11 +370,58 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(oversizedQuery.status, 400);
   assert.equal((await oversizedQuery.json()).code, "invalid_parameter");
 
-  const cardRead = await apiJson(`/v1/cards/${card.id}`, apiKey);
+  const cardResponse = await fetch(
+    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}` +
+      "?include=printings,evidence,disagreements",
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  if (cardResponse.status !== 200) {
+    assert.equal(cardResponse.status, 200, await cardResponse.text());
+  }
+  const cardRead = await cardResponse.json();
   assert.match(
     cardRead.data.effective_rules_text,
     /DON!! cards: Select up to 1 \{Egghead\} type card/,
   );
+  const cardIncluded = cardRead.included ?? [];
+  assert.equal(
+    cardIncluded.some(
+      (resource) =>
+        resource.type === "printing" && resource.id === printing.id,
+    ),
+    true,
+  );
+  const errataEvidence = cardIncluded.find(
+    (resource) => resource.type === "source_observation",
+  );
+  assert.notEqual(errataEvidence, undefined);
+  assert.deepEqual(
+    cardRead.provenance["/data/effective_rules_text"],
+    [errataEvidence.id],
+  );
+  assert.deepEqual(cardRead.disagreements, []);
+  const cardEtag = cardResponse.headers.get("etag");
+  assert.notEqual(cardEtag, null);
+  const conditionalCard = await fetch(
+    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}` +
+      "?include=printings,evidence,disagreements",
+    {
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "if-none-match": cardEtag,
+      },
+    },
+  );
+  const conditionalCardBody = await conditionalCard.text();
+  assert.equal(conditionalCard.status, 304, conditionalCardBody);
+  assert.equal(conditionalCardBody, "");
+  const invalidCardInclude = await fetch(
+    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}?include=unknown`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  const invalidCardIncludeBody = await invalidCardInclude.json();
+  assert.equal(invalidCardInclude.status, 400);
+  assert.equal(invalidCardIncludeBody.code, "invalid_parameter");
   const printingRead = await apiJson(
     `/v1/printings/${printing.id}`,
     apiKey,
@@ -372,6 +435,21 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     apiKey,
   );
   assert.equal(manifest.meta.catalogue_revision_id, revisionId);
+  const preservedCardFreshness = manifest.data.source_freshness.find(
+    (check) =>
+      check.game === "one-piece" &&
+      check.area === "cards-and-printings",
+  );
+  assert.deepEqual(preservedCardFreshness, seededCardFreshness);
+  const errataFreshness = manifest.data.source_freshness.find(
+    (check) => check.game === "one-piece" && check.area === "errata",
+  );
+  assert.notEqual(errataFreshness, undefined);
+  assert.equal(
+    Date.parse(errataFreshness.checked_at) >=
+      Date.parse(seededManifest.data.published_at),
+    true,
+  );
 
   const [cardsBytes, printingsBytes, errataBytes, relationshipBytes] =
     await Promise.all([

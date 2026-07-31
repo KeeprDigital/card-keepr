@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
+  CardReadProblem,
   catalogueExportComponentResponse,
   catalogueExportResponse,
   currentCardResponse,
@@ -128,6 +129,7 @@ const apiWorker = {
         const response = await currentCardResponse(
           env.CATALOGUE_DB,
           decodeURIComponent(cardMatch[1]!),
+          request,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -268,6 +270,18 @@ const apiWorker = {
               error.status === 409
                 ? "Cursor revision unavailable"
                 : "Invalid Printing request",
+            detail: error.message,
+          }),
+        );
+      }
+      if (error instanceof CardReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title: "Invalid Card request",
             detail: error.message,
           }),
         );

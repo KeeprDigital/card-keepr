@@ -1,8 +1,9 @@
-export type DetailInclude = "evidence" | "disagreements";
+export type DetailInclude = "printings" | "evidence" | "disagreements";
 
 export function detailIncludeProjection(
   url: URL,
   invalid: (message: string) => Error,
+  allowed: readonly DetailInclude[] = ["evidence", "disagreements"],
 ): ReadonlySet<DetailInclude> {
   const rawValues = url.searchParams.getAll("include");
   const values = rawValues.flatMap((value) =>
@@ -12,9 +13,7 @@ export function detailIncludeProjection(
   if (
     rawValues.length > 1 ||
     include.size !== values.length ||
-    [...include].some(
-      (value) => value !== "evidence" && value !== "disagreements",
-    )
+    [...include].some((value) => !allowed.includes(value as DetailInclude))
   ) {
     throw invalid("Detail include projection is invalid.");
   }
@@ -24,7 +23,7 @@ export function detailIncludeProjection(
 export function detailRepresentationKey(
   include: ReadonlySet<DetailInclude>,
 ): string {
-  return [...include].sort().join(",");
+  return [...include].sort().join("+");
 }
 
 export function canonicalDetailSelf(

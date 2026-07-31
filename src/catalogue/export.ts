@@ -61,7 +61,11 @@ export type BuiltCatalogueExport = {
 
 export type SourceFreshness = {
   game: SupportedGame;
-  area: "cards-and-printings" | "products-and-releases";
+  area:
+    | "cards-and-printings"
+    | "products-and-releases"
+    | "legality-rules"
+    | "errata";
   checked_at: string;
 };
 
@@ -76,11 +80,7 @@ type CatalogueExportManifest = {
   published_at: string;
   export_created_at: string;
   supported_games: readonly SupportedGame[];
-  source_freshness: readonly {
-    game: SupportedGame;
-    area: "cards-and-printings" | "products-and-releases";
-    checked_at: string;
-  }[];
+  source_freshness: readonly SourceFreshness[];
   components: readonly ExportComponent[];
   manifest_sha256: string;
 };
