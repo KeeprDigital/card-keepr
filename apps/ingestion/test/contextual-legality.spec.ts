@@ -344,12 +344,265 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     `SELECT name FROM sqlite_master
      WHERE type = 'trigger' AND name IN (
        'guard_legality_rule_identity',
-       'legality_rules_immutable_delete'
+       'legality_rule_provenance_owner_insert',
+       'legality_rule_provenance_owner_update',
+       'legality_rule_provenance_immutable',
+       'legality_rules_immutable_delete',
+       'revision_legality_rule_matches_canonical',
+       'revision_legality_rules_immutable_delete',
+       'revision_legality_rules_immutable_update'
      ) ORDER BY name`,
   ).all<{ name: string }>();
   expect(guards.results.map((row) => row.name)).toEqual([
     "guard_legality_rule_identity",
+    "legality_rule_provenance_immutable",
+    "legality_rule_provenance_owner_insert",
+    "legality_rule_provenance_owner_update",
     "legality_rules_immutable_delete",
+    "revision_legality_rule_matches_canonical",
+    "revision_legality_rules_immutable_delete",
+    "revision_legality_rules_immutable_update",
+  ]);
+
+  const requestPlan = JSON.stringify({
+    requests: [{
+      id: "upgraded-legality",
+      method: "GET",
+      url: "https://en.onepiece-cardgame.com/rules/restriction/",
+      headers: {},
+      representation_fingerprint: "5".repeat(64),
+    }],
+  });
+  const sourceFieldPointers = JSON.stringify({
+    official_wording:
+      "/observations/0/value/legality_rules/0/official_wording",
+  });
+  const upgradedRule = {
+    id: "legality_rule_upgraded_guard",
+    official_id: "upgraded-guard",
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    card_ids: ["card_upgraded_guard"],
+    official_wording: "The upgraded guard remains authoritative.",
+    effect: { type: "ban" },
+    source_lineage: "one-piece-en",
+    source_snapshot_id: "srcsnap_upgraded_legality_guard",
+    source_observation_set_id: "srcobsset_upgraded_legality_guard",
+    source_observation_id: "srcobs_upgraded_legality_guard",
+    source_observation_pointer: "/observations/0/value/legality_rules/0",
+    source_field_pointers: JSON.parse(sourceFieldPointers),
+    first_revision_id: "catrev_upgraded_legality_guard",
+    last_observed_revision_id: "catrev_upgraded_legality_guard",
+    current: true,
+    last_missing_revision_id: null,
+  };
+  await legacyDatabase.batch([
+    legacyDatabase.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, candidate_json
+       ) VALUES ('run_upgraded_legality_guard', 'publishing',
+         '["one-piece"]', '2026-08-01T00:00:00.000Z',
+         'catrev_spine_000', NULL, 'upgraded-legality-guard', ?,
+         '2026-08-01T00:00:02.000Z', '2099-01-01T00:00:00.000Z', ?, '{}')`,
+    ).bind(
+      "8".repeat(64),
+      JSON.stringify({
+        candidate_digest: "8".repeat(64),
+        expected_current_revision_id: "catrev_spine_000",
+      }),
+    ),
+    legacyDatabase.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = 'run_upgraded_legality_guard'
+       WHERE singleton = 1`,
+    ),
+    legacyDatabase.prepare(
+      `INSERT INTO ingestion_evidence_plans (
+         ingestion_run_id, source_lineage, supported_game,
+         game_profile_version, adapter_version, request_plan_json,
+         plan_origin
+       ) VALUES ('run_upgraded_legality_guard', 'one-piece-en',
+         'one-piece', 'one-piece@1', 'one-piece-json-document@1', ?,
+         'production')`,
+    ).bind(requestPlan),
+    legacyDatabase.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state,
+         source_snapshot_id
+       ) VALUES ('run_upgraded_legality_guard', 'upgraded-legality', 0,
+         'GET', 'https://en.onepiece-cardgame.com/rules/restriction/',
+         '{}', ?, 'observed', 'srcsnap_upgraded_legality_guard')`,
+    ).bind("5".repeat(64)),
+    legacyDatabase.prepare(
+      `INSERT INTO source_fetch_attempts (
+         id, ingestion_run_id, request_id, attempt_number,
+         requested_at, completed_at, outcome, http_status,
+         response_headers_json, retry_after_ms, diagnostic
+       ) VALUES ('srcfetch_upgraded_legality_guard',
+         'run_upgraded_legality_guard', 'upgraded-legality', 1,
+         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
+         'success', 200, '{}', NULL, NULL)`,
+    ),
+    legacyDatabase.prepare(
+      `INSERT INTO source_snapshots (
+         id, ingestion_run_id, request_id, fetch_attempt_id,
+         request_method, request_url, request_headers_json,
+         representation_fingerprint, response_vary_json, retrieved_at,
+         http_status, response_headers_json, media_type, content_digest,
+         content_byte_length, content_object_key, source_lineage,
+         supported_game, game_profile_version, adapter_version,
+         reused_source_snapshot_id
+       ) VALUES ('srcsnap_upgraded_legality_guard',
+         'run_upgraded_legality_guard', 'upgraded-legality',
+         'srcfetch_upgraded_legality_guard', 'GET',
+         'https://en.onepiece-cardgame.com/rules/restriction/', '{}', ?,
+         '[]', '2026-08-01T00:00:01.000Z', 200, '{}',
+         'application/json', ?, 2,
+         'source-snapshots/upgraded-legality-guard.bin', 'one-piece-en',
+         'one-piece', 'one-piece@1', 'one-piece-json-document@1', NULL)`,
+    ).bind("5".repeat(64), "6".repeat(64)),
+    legacyDatabase.prepare(
+      `INSERT INTO source_parse_operations (
+         id, source_snapshot_id, adapter_version, intent,
+         idempotency_key, observation_set_id, content_object_key,
+         parsed_at, state, content_digest, content_byte_length,
+         observation_count
+       ) VALUES ('srcparse_upgraded_legality_guard',
+         'srcsnap_upgraded_legality_guard', 'one-piece-json-document@1',
+         'collection', 'upgraded-legality-guard-parse',
+         'srcobsset_upgraded_legality_guard',
+         'source-observations/upgraded-legality-guard.json',
+         '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
+    ).bind("7".repeat(64)),
+    legacyDatabase.prepare(
+      `INSERT INTO source_observation_sets (
+         id, parse_operation_id, source_snapshot_id, source_lineage,
+         supported_game, game_profile_version, adapter_version, parsed_at,
+         content_digest, content_byte_length, content_object_key,
+         observation_count
+       ) VALUES ('srcobsset_upgraded_legality_guard',
+         'srcparse_upgraded_legality_guard',
+         'srcsnap_upgraded_legality_guard', 'one-piece-en', 'one-piece',
+         'one-piece@1', 'one-piece-json-document@1',
+         '2026-08-01T00:00:02.000Z', ?, 2,
+         'source-observations/upgraded-legality-guard.json', 1)`,
+    ).bind("7".repeat(64)),
+    legacyDatabase.prepare(
+      `INSERT INTO catalogue_revisions (
+         id, ingestion_run_id, published_at, content_digest,
+         expected_previous_revision_id, approved_candidate_digest
+       ) VALUES ('catrev_upgraded_legality_guard',
+         'run_upgraded_legality_guard', '2026-08-01T00:00:03.000Z', ?,
+         'catrev_spine_000', ?)`,
+    ).bind("8".repeat(64), "8".repeat(64)),
+    legacyDatabase.prepare(
+      `INSERT INTO legality_rules (
+         id, official_id, supported_game, region, format, event_tier,
+         effective_from, effective_until, official_wording, effect_json,
+         card_ids_json, source_lineage, source_snapshot_id,
+         source_observation_set_id, source_observation_id,
+         source_observation_pointer, source_field_pointers_json,
+         first_revision_id, last_observed_revision_id, current,
+         last_missing_revision_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         1, NULL)`,
+    ).bind(
+      upgradedRule.id,
+      upgradedRule.official_id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      upgradedRule.official_wording,
+      JSON.stringify(upgradedRule.effect),
+      JSON.stringify(upgradedRule.card_ids),
+      upgradedRule.source_lineage,
+      upgradedRule.source_snapshot_id,
+      upgradedRule.source_observation_set_id,
+      upgradedRule.source_observation_id,
+      upgradedRule.source_observation_pointer,
+      sourceFieldPointers,
+      upgradedRule.first_revision_id,
+      upgradedRule.last_observed_revision_id,
+    ),
+    legacyDatabase.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      upgradedRule.id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      JSON.stringify(upgradedRule.card_ids),
+      JSON.stringify(upgradedRule),
+    ),
+  ]);
+  const upgradedProvenanceMutation = await rejectedError(
+    legacyDatabase.prepare(
+      `UPDATE legality_rules
+       SET source_snapshot_id = 'srcsnap_attacker'
+       WHERE id = ?`,
+    ).bind(upgradedRule.id).run(),
+  );
+  const upgradedCrossOwner = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO legality_rules (
+         id, official_id, supported_game, region, format, event_tier,
+         effective_from, effective_until, official_wording, effect_json,
+         card_ids_json, source_lineage, source_snapshot_id,
+         source_observation_set_id, source_observation_id,
+         source_observation_pointer, source_field_pointers_json,
+         first_revision_id, last_observed_revision_id, current,
+         last_missing_revision_id
+       ) VALUES ('legality_rule_upgraded_cross_owner', 'cross-owner',
+         'one-piece', 'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL,
+         'Cross-owner rule.', '{"type":"ban"}', '[]', 'one-piece-en',
+         'srcsnap_attacker', 'srcobsset_upgraded_legality_guard',
+         'srcobs_attacker', '/observations/0/value/legality_rules/1', '{}',
+         'catrev_upgraded_legality_guard',
+         'catrev_upgraded_legality_guard', 1, NULL)`,
+    ).run(),
+  );
+  const upgradedRevisionMutation = await rejectedError(
+    legacyDatabase.prepare(
+      `UPDATE revision_legality_rules SET format = 'attacker-format'
+       WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
+         AND legality_rule_id = ?`,
+    ).bind(upgradedRule.id).run(),
+  );
+  const upgradedRevisionDelete = await rejectedError(
+    legacyDatabase.prepare(
+      `DELETE FROM revision_legality_rules
+       WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
+         AND legality_rule_id = ?`,
+    ).bind(upgradedRule.id).run(),
+  );
+  expect([
+    String(upgradedProvenanceMutation),
+    String(upgradedCrossOwner),
+    String(upgradedRevisionMutation),
+    String(upgradedRevisionDelete),
+  ]).toEqual([
+    expect.stringMatching(/legality_rule_provenance_immutable/),
+    expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
+    expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_immutable/),
   ]);
 });
 
@@ -801,17 +1054,160 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       }),
     ).run(),
   );
+  const canonicalSnapshot = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT canonical.*, revision.document_json
+     FROM legality_rules AS canonical
+     JOIN revision_legality_rules AS revision
+       ON revision.legality_rule_id = canonical.id
+     WHERE revision.catalogue_revision_id = ?
+     ORDER BY canonical.id
+     LIMIT 1`,
+  ).bind(
+    requiredString(emptyPublished.document, "resulting_revision_id"),
+  ).first<Record<string, string | number | null>>();
+  if (canonicalSnapshot === null) {
+    throw new Error("Published canonical Legality Rule is absent");
+  }
+  const revisionUpdate = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_legality_rules
+       SET format = 'attacker-format'
+       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
+    ).bind(
+      requiredString(emptyPublished.document, "resulting_revision_id"),
+      canonicalSnapshot.id,
+    ).run(),
+  );
+  const revisionDelete = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM revision_legality_rules
+       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
+    ).bind(
+      requiredString(emptyPublished.document, "resulting_revision_id"),
+      canonicalSnapshot.id,
+    ).run(),
+  );
+  const inconsistentRevisionContext = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_spine_000', ?, ?, ?, 'attacker-format', ?, ?, ?,
+         ?, ?)`,
+    ).bind(
+      canonicalSnapshot.id,
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.card_ids_json,
+      canonicalSnapshot.document_json,
+    ).run(),
+  );
+  const inconsistentDocument = JSON.stringify({
+    ...JSON.parse(String(canonicalSnapshot.document_json)),
+    official_wording: "Attacker-controlled wording.",
+  });
+  const inconsistentRevisionDocument = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      canonicalSnapshot.id,
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.format,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.card_ids_json,
+      inconsistentDocument,
+    ).run(),
+  );
+  const provenanceOwners = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT id, source_snapshot_id
+     FROM source_observation_sets
+     ORDER BY id`,
+  ).all<{ id: string; source_snapshot_id: string }>();
+  const firstOwner = provenanceOwners.results[0];
+  const differentOwner = provenanceOwners.results.find(
+    (row) => row.source_snapshot_id !== firstOwner?.source_snapshot_id,
+  );
+  if (firstOwner === undefined || differentOwner === undefined) {
+    throw new Error("Distinct provenance owners are absent");
+  }
+  const provenanceUpdate = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE legality_rules SET source_snapshot_id = ? WHERE id = ?`,
+    ).bind(differentOwner.source_snapshot_id, canonicalSnapshot.id).run(),
+  );
+  const crossOwnedProvenance = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO legality_rules (
+         id, official_id, supported_game, region, format, event_tier,
+         effective_from, effective_until, official_wording, effect_json,
+         card_ids_json, source_lineage, source_snapshot_id,
+         source_observation_set_id, source_observation_id,
+         source_observation_pointer, source_field_pointers_json,
+         first_revision_id, last_observed_revision_id, current,
+         last_missing_revision_id
+       ) VALUES ('legality_rule_cross_owned', 'cross-owned', ?, ?, ?, ?, ?, ?,
+         ?, ?, ?, ?, ?, ?, 'srcobs_cross_owned',
+         '/observations/0/value/legality_rules/0', ?, ?, ?, 1, NULL)`,
+    ).bind(
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.format,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.official_wording,
+      canonicalSnapshot.effect_json,
+      canonicalSnapshot.card_ids_json,
+      canonicalSnapshot.source_lineage,
+      firstOwner.source_snapshot_id,
+      differentOwner.id,
+      canonicalSnapshot.source_field_pointers_json,
+      canonicalSnapshot.first_revision_id,
+      canonicalSnapshot.last_observed_revision_id,
+    ).run(),
+  );
   expect([
     String(identityUpdate),
     String(firstRevisionUpdate),
     String(canonicalDelete),
     String(orphanRevisionRule),
+    String(revisionUpdate),
+    String(revisionDelete),
+    String(inconsistentRevisionContext),
+    String(inconsistentRevisionDocument),
+    String(provenanceUpdate),
+    String(crossOwnedProvenance),
   ]).toEqual([
     expect.stringMatching(/legality_rule_identity_conflict/),
     expect.stringMatching(/legality_rule_identity_conflict/),
     expect.stringMatching(/legality_rule_immutable/),
-    expect.stringMatching(/FOREIGN KEY constraint failed/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/legality_rule_provenance_immutable/),
+    expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
   ]);
+  const immutableResponse = await contextualLegalityStatusResponse(
+    new Request(
+      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    ),
+    testEnv.CATALOGUE_DB,
+  );
+  expect(immutableResponse.status).toBe(200);
+  expect(await immutableResponse.json()).toEqual(status);
 });
 
 test.each(["event-tier", "effective-until"])(

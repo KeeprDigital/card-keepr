@@ -1507,6 +1507,8 @@ function semanticCatalogueCandidate(
         source_snapshot_id: _sourceSnapshotId,
         source_observation_set_id: _sourceObservationSetId,
         source_observation_id: _sourceObservationId,
+        source_observation_pointer: _sourceObservationPointer,
+        source_field_pointers: _sourceFieldPointers,
         first_revision_id: _firstRevisionId,
         last_observed_revision_id: _lastObservedRevisionId,
         last_missing_revision_id: _lastMissingRevisionId,

@@ -496,26 +496,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         ) VALUES (?, ?, ?)`,
       ).bind(revisionId, card.id, JSON.stringify(card))
     ),
-    ...rules.map((rule) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_legality_rules (
-          catalogue_revision_id, legality_rule_id, supported_game,
-          region, format, event_tier, effective_from, effective_until,
-          card_ids_json, document_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        revisionId,
-        rule.id,
-        rule.game,
-        rule.region,
-        rule.format,
-        rule.event_tier,
-        rule.effective_from,
-        rule.effective_until,
-        JSON.stringify(rule.card_ids),
-        JSON.stringify(rule),
-      )
-    ),
+    ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
        WHERE singleton = 1`,
@@ -686,26 +667,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
         ) VALUES (?, ?, ?)`,
       ).bind(revisionId, card.id, JSON.stringify(card))
     ),
-    ...rules.map((rule) =>
-      testEnv.CATALOGUE_DB.prepare(
-        `INSERT INTO revision_legality_rules (
-          catalogue_revision_id, legality_rule_id, supported_game,
-          region, format, event_tier, effective_from, effective_until,
-          card_ids_json, document_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        revisionId,
-        rule.id,
-        rule.game,
-        rule.region,
-        rule.format,
-        rule.event_tier,
-        rule.effective_from,
-        rule.effective_until,
-        JSON.stringify(rule.card_ids),
-        JSON.stringify(rule),
-      )
-    ),
+    ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
        WHERE singleton = 1`,
@@ -1951,6 +1913,7 @@ function canonicalLegalityRuleStatements(
 ): D1PreparedStatement[] {
   return rules.map((rule, index) => {
     const pointer = `/observations/0/value/legality_rules/${index}`;
+    const cardIds = canonicalLegalityCardIds(rule);
     return testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO legality_rules (
         id, official_id, supported_game, region, format, event_tier,
@@ -1973,7 +1936,7 @@ function canonicalLegalityRuleStatements(
       rule.effective_until,
       rule.official_wording,
       JSON.stringify(rule.effect),
-      JSON.stringify(rule.card_ids),
+      JSON.stringify(cardIds),
       rule.source_lineage,
       rule.source_snapshot_id,
       rule.source_observation_set_id,
@@ -1984,4 +1947,55 @@ function canonicalLegalityRuleStatements(
       revisionId,
     );
   });
+}
+
+function revisionLegalityRuleStatements(
+  revisionId: string,
+  rules: Parameters<typeof canonicalLegalityRuleStatements>[1],
+): D1PreparedStatement[] {
+  return rules.map((rule, index) => {
+    const pointer = `/observations/0/value/legality_rules/${index}`;
+    const document = {
+      ...rule,
+      source_observation_pointer: pointer,
+      source_field_pointers: {
+        official_wording: `${pointer}/official_wording`,
+      },
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      current: true,
+      last_missing_revision_id: null,
+    };
+    return testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+        catalogue_revision_id, legality_rule_id, supported_game,
+        region, format, event_tier, effective_from, effective_until,
+        card_ids_json, document_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      revisionId,
+      rule.id,
+      rule.game,
+      rule.region,
+      rule.format,
+      rule.event_tier,
+      rule.effective_from,
+      rule.effective_until,
+      JSON.stringify(canonicalLegalityCardIds(rule)),
+      JSON.stringify(document),
+    );
+  });
+}
+
+function canonicalLegalityCardIds(
+  rule: Parameters<typeof canonicalLegalityRuleStatements>[1][number],
+): string[] {
+  const effect = rule.effect as { type?: unknown; with_card_ids?: unknown };
+  const companionIds = effect.type === "prohibited_combination" &&
+      Array.isArray(effect.with_card_ids)
+    ? effect.with_card_ids.filter((value): value is string =>
+      typeof value === "string"
+    )
+    : [];
+  return [...new Set([...rule.card_ids, ...companionIds])].sort();
 }

@@ -178,6 +178,7 @@ export default {
           url.searchParams.get("membership"),
           {
             copyLimit: url.searchParams.get("copy-limit"),
+            order: url.searchParams.get("order"),
             rules: url.searchParams.get("rules"),
             semantics: url.searchParams.get("semantics"),
           },

@@ -4,6 +4,7 @@ export function contextualLegalityDomainDocument(
   membershipVariant = null,
   {
     copyLimit = null,
+    order = null,
     rules: rulesVariant = null,
     semantics = null,
   } = {},
@@ -79,6 +80,7 @@ export function contextualLegalityDomainDocument(
       representable,
     });
   }
+  if (order === "reversed") legalityRules.reverse();
   return {
     cards,
     legality_rules: legalityRules,

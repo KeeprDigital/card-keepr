@@ -178,6 +178,53 @@ CREATE INDEX legality_rules_context
     effective_until
   );
 
+CREATE TRIGGER legality_rule_provenance_owner_insert
+BEFORE INSERT ON legality_rules
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM source_observation_sets AS observation_set
+  JOIN source_snapshots AS snapshot
+    ON snapshot.id = observation_set.source_snapshot_id
+  WHERE observation_set.id = NEW.source_observation_set_id
+    AND observation_set.source_snapshot_id = NEW.source_snapshot_id
+    AND observation_set.source_lineage = NEW.source_lineage
+    AND observation_set.supported_game = NEW.supported_game
+    AND snapshot.source_lineage = NEW.source_lineage
+    AND snapshot.supported_game = NEW.supported_game
+)
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_provenance_owner_mismatch');
+END;
+
+CREATE TRIGGER legality_rule_provenance_owner_update
+BEFORE UPDATE OF supported_game, source_lineage, source_snapshot_id,
+  source_observation_set_id
+ON legality_rules
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM source_observation_sets AS observation_set
+  JOIN source_snapshots AS snapshot
+    ON snapshot.id = observation_set.source_snapshot_id
+  WHERE observation_set.id = NEW.source_observation_set_id
+    AND observation_set.source_snapshot_id = NEW.source_snapshot_id
+    AND observation_set.source_lineage = NEW.source_lineage
+    AND observation_set.supported_game = NEW.supported_game
+    AND snapshot.source_lineage = NEW.source_lineage
+    AND snapshot.supported_game = NEW.supported_game
+)
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_provenance_owner_mismatch');
+END;
+
+CREATE TRIGGER legality_rule_provenance_immutable
+BEFORE UPDATE OF supported_game, source_lineage, source_snapshot_id,
+  source_observation_set_id, source_observation_id,
+  source_observation_pointer, source_field_pointers_json
+ON legality_rules
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_provenance_immutable');
+END;
+
 CREATE TRIGGER guard_legality_rule_identity
 BEFORE UPDATE ON legality_rules
 WHEN OLD.id <> NEW.id
@@ -236,3 +283,88 @@ CREATE INDEX revision_legality_rules_context
     effective_from,
     effective_until
   );
+
+CREATE TRIGGER revision_legality_rule_matches_canonical
+BEFORE INSERT ON revision_legality_rules
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM legality_rules AS canonical
+  WHERE canonical.id = NEW.legality_rule_id
+    AND canonical.supported_game = NEW.supported_game
+    AND canonical.region = NEW.region
+    AND canonical.format = NEW.format
+    AND canonical.event_tier IS NEW.event_tier
+    AND canonical.effective_from = NEW.effective_from
+    AND canonical.effective_until IS NEW.effective_until
+    AND canonical.card_ids_json = NEW.card_ids_json
+    AND json_extract(NEW.document_json, '$.id') = canonical.id
+    AND json_extract(NEW.document_json, '$.official_id') =
+      canonical.official_id
+    AND json_extract(NEW.document_json, '$.game') =
+      canonical.supported_game
+    AND json_extract(NEW.document_json, '$.region') = canonical.region
+    AND json_extract(NEW.document_json, '$.format') = canonical.format
+    AND json_extract(NEW.document_json, '$.event_tier') IS
+      canonical.event_tier
+    AND json_extract(NEW.document_json, '$.effective_from') =
+      canonical.effective_from
+    AND json_extract(NEW.document_json, '$.effective_until') IS
+      canonical.effective_until
+    AND NOT EXISTS (
+      SELECT value FROM json_each(canonical.card_ids_json)
+      EXCEPT
+      SELECT value FROM (
+        SELECT value FROM json_each(NEW.document_json, '$.card_ids')
+        UNION
+        SELECT value
+        FROM json_each(NEW.document_json, '$.effect.with_card_ids')
+      )
+    )
+    AND NOT EXISTS (
+      SELECT value FROM json_each(NEW.document_json, '$.card_ids')
+      UNION
+      SELECT value
+      FROM json_each(NEW.document_json, '$.effect.with_card_ids')
+      EXCEPT
+      SELECT value FROM json_each(canonical.card_ids_json)
+    )
+    AND json_extract(NEW.document_json, '$.official_wording') =
+      canonical.official_wording
+    AND json_extract(NEW.document_json, '$.effect') =
+      canonical.effect_json
+    AND json_extract(NEW.document_json, '$.source_lineage') =
+      canonical.source_lineage
+    AND json_extract(NEW.document_json, '$.source_snapshot_id') =
+      canonical.source_snapshot_id
+    AND json_extract(NEW.document_json, '$.source_observation_set_id') =
+      canonical.source_observation_set_id
+    AND json_extract(NEW.document_json, '$.source_observation_id') =
+      canonical.source_observation_id
+    AND json_extract(NEW.document_json, '$.source_observation_pointer') =
+      canonical.source_observation_pointer
+    AND json_extract(NEW.document_json, '$.source_field_pointers') =
+      canonical.source_field_pointers_json
+    AND json_extract(NEW.document_json, '$.first_revision_id') =
+      canonical.first_revision_id
+    AND json_extract(NEW.document_json, '$.last_observed_revision_id') =
+      canonical.last_observed_revision_id
+    AND json_extract(NEW.document_json, '$.current') = canonical.current
+    AND json_extract(NEW.document_json, '$.last_missing_revision_id') IS
+      canonical.last_missing_revision_id
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 21
+)
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_canonical_mismatch');
+END;
+
+CREATE TRIGGER revision_legality_rules_immutable_update
+BEFORE UPDATE ON revision_legality_rules
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
+END;
+
+CREATE TRIGGER revision_legality_rules_immutable_delete
+BEFORE DELETE ON revision_legality_rules
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
+END;

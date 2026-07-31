@@ -87,14 +87,6 @@ export function legalityPublicationStatements(
                   json_extract(value, '$.last_missing_revision_id')
            FROM json_each(?) WHERE true
            ON CONFLICT (id) DO UPDATE SET
-             source_snapshot_id = excluded.source_snapshot_id,
-             source_observation_set_id =
-               excluded.source_observation_set_id,
-             source_observation_id = excluded.source_observation_id,
-             source_observation_pointer =
-               excluded.source_observation_pointer,
-             source_field_pointers_json =
-               excluded.source_field_pointers_json,
              last_observed_revision_id =
                excluded.last_observed_revision_id,
              current = excluded.current,
@@ -111,16 +103,35 @@ export function legalityPublicationStatements(
              region, format, event_tier, effective_from, effective_until,
              card_ids_json, document_json
            )
-           SELECT ?, json_extract(value, '$.id'),
-                  json_extract(value, '$.game'),
-                  json_extract(value, '$.region'),
-                  json_extract(value, '$.format'),
-                  json_extract(value, '$.event_tier'),
-                  json_extract(value, '$.effective_from'),
-                  json_extract(value, '$.effective_until'),
-                  json_extract(value, '$.card_ids_json'),
-                  json_extract(value, '$.document_json')
-           FROM json_each(?)`,
+           SELECT ?, canonical.id, canonical.supported_game,
+                  canonical.region, canonical.format,
+                  canonical.event_tier, canonical.effective_from,
+                  canonical.effective_until, canonical.card_ids_json,
+                  json_set(
+                    json_extract(value, '$.document_json'),
+                    '$.source_snapshot_id',
+                    canonical.source_snapshot_id,
+                    '$.source_observation_set_id',
+                    canonical.source_observation_set_id,
+                    '$.source_observation_id',
+                    canonical.source_observation_id,
+                    '$.source_observation_pointer',
+                    canonical.source_observation_pointer,
+                    '$.source_field_pointers',
+                    json(canonical.source_field_pointers_json),
+                    '$.first_revision_id',
+                    canonical.first_revision_id,
+                    '$.last_observed_revision_id',
+                    canonical.last_observed_revision_id,
+                    '$.current',
+                    json(CASE canonical.current
+                      WHEN 1 THEN 'true' ELSE 'false' END),
+                    '$.last_missing_revision_id',
+                    canonical.last_missing_revision_id
+                  )
+           FROM json_each(?) AS incoming
+           JOIN legality_rules AS canonical
+             ON canonical.id = json_extract(value, '$.id')`,
         )
         .bind(revisionId, chunk),
     ),

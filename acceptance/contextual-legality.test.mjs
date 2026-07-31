@@ -271,6 +271,41 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   const asiaRevisionId = asiaPublication.resulting_revision_id;
   assert.match(asiaRevisionId, /^catrev_/);
 
+  const reorderedAsia = await ingestAndReconcile({
+    adapter: "fixture-gundam-en-asia-json@1",
+    idempotencyKey: "acceptance-contextual-legality-asia-reordered",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-domain-asia?order=reversed",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const originalEligibleRule = asia.legality_rules.find(
+    (rule) => rule.official_id === "legality_rule_asia_eligible",
+  );
+  const reorderedEligibleRule = reorderedAsia.legality_rules.find(
+    (rule) => rule.official_id === "legality_rule_asia_eligible",
+  );
+  const reorderedAsiaPublication = await approve(
+    reorderedAsia,
+    "approve-acceptance-contextual-legality-asia-reordered",
+    administrationEnvironment,
+  );
+  await t.test(
+    "reordered identical rules refresh approval evidence without minting a revision",
+    () => {
+      assert.notEqual(
+        reorderedEligibleRule.source_observation_pointer,
+        originalEligibleRule.source_observation_pointer,
+      );
+      assert.notEqual(reorderedAsia.candidate_digest, asia.candidate_digest);
+      assert.equal(reorderedAsiaPublication.publication_outcome, "no_change");
+      assert.equal(
+        reorderedAsiaPublication.resulting_revision_id,
+        asiaRevisionId,
+      );
+    },
+  );
+
   const us = await ingestAndReconcile({
     adapter: "fixture-gundam-en-us-json@1",
     idempotencyKey: "acceptance-contextual-legality-us",
