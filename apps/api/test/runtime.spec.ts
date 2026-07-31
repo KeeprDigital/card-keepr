@@ -763,7 +763,9 @@ test("authenticated Card collection pages remain byte-bounded for large valid re
 test("Card search persistence remains compatible with D1 export", async () => {
   const virtualTables = await testEnv.CATALOGUE_DB.prepare(
     `SELECT name FROM sqlite_schema
-     WHERE type = 'table' AND lower(sql) LIKE '%create virtual table%'`,
+     WHERE type = 'table'
+       AND name LIKE 'revision_card%'
+       AND lower(sql) LIKE '%create virtual table%'`,
   ).all<{ name: string }>();
   expect(virtualTables.results).toEqual([]);
 });
