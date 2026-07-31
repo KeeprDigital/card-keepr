@@ -820,8 +820,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     selected_games: [
       ...new Set([
         ...(priorCandidate?.selected_games ?? []),
-        ...retained.observations.map(
-          ({ supportedGame }) => supportedGame,
+        ...retained.partitions.map(
+          ({ supportedGame }) => supportedGame as SupportedGame,
         ),
       ]),
     ].sort(),
