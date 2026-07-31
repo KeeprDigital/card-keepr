@@ -214,7 +214,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         run.state === "parsing" &&
         run.plan_origin === "production" &&
         requiredSourceAdapter(run.adapter_version)
-            .reconciliationCoverage === "official_source"
+            .reconciliationCapability === "catalogue"
       ) {
         const reconciliation = await step.do(
           "reconcile retained Official Source evidence",

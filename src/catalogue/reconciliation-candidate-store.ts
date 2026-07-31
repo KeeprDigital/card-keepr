@@ -1,4 +1,4 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import type {
   Memberships,
   PrintingCompatibility,
@@ -68,7 +68,7 @@ export async function persistReviewableCandidate(
       sourceCardFactsJson: string | null;
     }[];
     warnings: readonly (ReconciliationWarning | Record<string, unknown>)[];
-    candidate: FixtureCandidate;
+    candidate: CatalogueCandidate;
     digestPayloadJson: string;
     candidateDigest: string;
     candidateCatalogueDigest: string;
@@ -176,7 +176,7 @@ export async function persistBlockedCandidate(
       sourceCardFactsJson: string | null;
     }[];
     diagnostics: readonly Record<string, unknown>[];
-    candidate: FixtureCandidate;
+    candidate: CatalogueCandidate;
     digestPayloadJson: string;
     candidateDigest: string;
     candidateCatalogueDigest: string;
@@ -532,7 +532,7 @@ export async function retainedReconciliationResult(
       "candidate",
       row.candidate_json,
     ),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   const digestPayload = JSON.parse(
     await retainedPayload(
       database,

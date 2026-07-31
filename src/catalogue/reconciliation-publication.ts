@@ -1,4 +1,4 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import {
   reconciliationCandidatePlans,
   type CandidatePlanRow,
@@ -140,7 +140,7 @@ export async function reconciliationPublication(
       : [context.source_lineage];
   const candidate = JSON.parse(
     await requiredRunCandidate(database, runId),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
   const printings = new Map(
     candidate.printings.map((printing) => [printing.id, printing]),
@@ -209,9 +209,11 @@ export async function reconciliationPublication(
   };
 
   for (const [cardId, grouped] of cardEvidencePlans) {
-    result.cardEvidence[cardId] = grouped.map((plan) =>
+    const evidence = grouped.map((plan) =>
       evidenceByObservation.get(plan.source_observation_id)!
     );
+    result.cardEvidence[cardId] = evidence;
+    result.cardEffectiveRulesEvidence[cardId] = evidence;
   }
   for (const [cardId, grouped] of cardEffectiveRulesEvidencePlans) {
     result.cardEffectiveRulesEvidence[cardId] = grouped.map((plan) =>
@@ -376,10 +378,8 @@ export async function reconciliationPublication(
     result,
     publicationRows,
     observedSourceLineages,
-    ["official_source", "synthetic_fixture"].includes(
-      requiredSourceAdapter(context.adapter_version)
-        .reconciliationCoverage,
-    ),
+    requiredSourceAdapter(context.adapter_version)
+      .reconciliationCapability === "catalogue",
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(
@@ -464,7 +464,7 @@ async function publicationEvidenceResources(
 
 function errataPublicationStatements(
   database: D1Database,
-  errata: NonNullable<FixtureCandidate["errata"]>,
+  errata: NonNullable<CatalogueCandidate["errata"]>,
   observedProvenance: ReadonlySet<string>,
   revisionId: string,
 ): D1PreparedStatement[] {
@@ -560,7 +560,7 @@ function errataPublicationStatements(
 
 async function erratumTargetLifecycles(
   database: D1Database,
-  errata: NonNullable<FixtureCandidate["errata"]>,
+  errata: NonNullable<CatalogueCandidate["errata"]>,
   observedProvenance: ReadonlySet<string>,
   revisionId: string,
 ): Promise<Record<string, NormalizedLifecycle>> {
@@ -672,7 +672,7 @@ function provenanceKey(
 
 async function aggregateInferredProductLifecycles(
   database: D1Database,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   relationships: Readonly<Record<string, readonly RelationshipEvidence[]>>,
   revisionId: string,
   revisionOrder: string,
@@ -790,7 +790,7 @@ function inferredProductLifecycleKey(
 async function retainCarriedLifecycles(
   database: D1Database,
   runId: string,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   result: ReconciliationPublicationPlan,
   publicationRows: PublicationRows,
   observedSourceLineages: readonly string[],
@@ -830,9 +830,26 @@ async function retainCarriedLifecycles(
   );
   for (const row of cards.results) {
     if (!candidateCardIds.has(row.id)) continue;
+    const carriedEvidence = documentPublicationEvidence(row.document_json);
     if (result.cardEvidence[row.id] === undefined) {
-      result.cardEvidence[row.id] = documentPublicationEvidence(
+      const effectiveRulesEvidence = documentFieldEvidence(
         row.document_json,
+        "/data/effective_rules_text",
+      );
+      const effectiveRulesIds = new Set(
+        effectiveRulesEvidence.map(({ id }) => id),
+      );
+      const generalEvidence = carriedEvidence.filter(
+        ({ id }) => !effectiveRulesIds.has(id),
+      );
+      result.cardEvidence[row.id] = generalEvidence.length === 0
+        ? carriedEvidence
+        : generalEvidence;
+    }
+    if (result.cardEffectiveRulesEvidence[row.id] === undefined) {
+      result.cardEffectiveRulesEvidence[row.id] = documentFieldEvidence(
+        row.document_json,
+        "/data/effective_rules_text",
       );
     }
     if (result.cardLifecycles[row.id] === undefined) {
@@ -998,6 +1015,46 @@ function documentPublicationEvidence(
   });
 }
 
+function documentFieldEvidence(
+  documentJson: string,
+  pointer: string,
+): PublicationEvidenceResource[] {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("A carried revision document is invalid.");
+  }
+  const provenance = (parsed as { provenance?: unknown }).provenance;
+  if (provenance === undefined) return [];
+  if (
+    provenance === null ||
+    typeof provenance !== "object" ||
+    Array.isArray(provenance)
+  ) {
+    throw new Error("Carried publication provenance is invalid.");
+  }
+  const observationIds = (provenance as Record<string, unknown>)[pointer];
+  if (observationIds === undefined) return [];
+  if (
+    !Array.isArray(observationIds) ||
+    observationIds.some((id) => typeof id !== "string")
+  ) {
+    throw new Error("Carried publication provenance is invalid.");
+  }
+  const evidenceById = new Map(
+    documentPublicationEvidence(documentJson).map((evidence) => [
+      evidence.id,
+      evidence,
+    ]),
+  );
+  return observationIds.map((id) => {
+    const evidence = evidenceById.get(id as string);
+    if (evidence === undefined) {
+      throw new Error("Carried publication provenance is invalid.");
+    }
+    return evidence;
+  });
+}
+
 function documentRelationshipEvidence(
   documentJson: string,
 ): RelationshipEvidence[] {
@@ -1040,7 +1097,7 @@ function revisionDocumentData(documentJson: string): Record<string, unknown> {
 
 function cardPersistenceRow(
   plan: CandidatePlanRow,
-  card: FixtureCandidate["cards"][number],
+  card: CatalogueCandidate["cards"][number],
   revisionId: string,
   existing: ReconciledCardRow | null,
   withdrawal: ProvenancedWithdrawal | null,

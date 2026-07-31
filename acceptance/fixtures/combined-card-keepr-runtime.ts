@@ -28,6 +28,9 @@ export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
+    if (pathname === "/errata-without-vegapunk") {
+      return Response.json({ cards: [errataWithoutVegapunk()] });
+    }
     return Response.json({ cards: await seedObservations() });
   }
 }
@@ -177,6 +180,46 @@ async function seedObservation(input: {
       source_buckets: ["official-card-list"],
     },
     errata: [],
+  };
+}
+
+function errataWithoutVegapunk() {
+  return {
+    kind: "official_erratum",
+    game: "one-piece",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "OP03-047" },
+    },
+    published_on: "2023-07-14",
+    effective_from: null,
+    observed_printed_rules_text:
+      "[DON!! x1] When this Character's attack deals damage to your " +
+      "opponent's Life, you may trash 7 cards from the top of your deck.\n" +
+      "[On Play] You may return up to 1 Character with a cost of 3 or " +
+      "less to the owner's hand, and trash 2 cards from the top of your deck.",
+    corrected_rules_text:
+      "[DON!! x1] When this Character's attack deals damage to your " +
+      "opponent's Life, you may trash 7 cards from the top of your deck.\n" +
+      "[On Play] Return up to 1 Character with a cost of 3 or less to " +
+      "the owner's hand, and you may trash 2 cards from the top of your deck.",
+    official_wording:
+      "Before: Prior Zeff wording.\nAfter: Corrected Zeff wording.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#errata_10",
+      display_name: "OP03-047 Zeff",
+      image_url:
+        "https://en.onepiece-cardgame.com/images/rules/cards/" +
+        "20230714/op03-047_dummy.png",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-import type { SupportedGame } from "./fixture";
+import type { SupportedGame } from "./catalogue-candidate";
 import { canonicalJson } from "./serialization";
 
 export type ProfileWarning = Readonly<{

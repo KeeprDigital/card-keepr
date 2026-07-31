@@ -1,6 +1,6 @@
 import { sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
-import type { SupportedGame } from "./fixture";
+import type { SupportedGame } from "./catalogue-candidate";
 import { requiredSourceAdapter } from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
@@ -211,7 +211,7 @@ export async function retainedReconciliationObservation(
         assertObservationAuthority(
           parsed,
           requiredSourceAdapter(row.adapter_version)
-            .reconciliationCoverage,
+            .reconciliationCapability,
         );
         return {
           ...parsed,
@@ -239,8 +239,8 @@ export async function retainedReconciliationObservation(
     sourceSnapshotId: first.source_snapshot_id,
     sourceLineage: first.source_lineage,
     supportedGame: supportedGame(first.supported_game),
-    reconciliationCoverage:
-      requiredSourceAdapter(first.adapter_version).reconciliationCoverage,
+    reconciliationCapability:
+      requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
     partitions: orderedRows.map((row, index) => ({
       sequenceNumber: requests.results[index]!.sequence_number,
@@ -435,8 +435,7 @@ function assertClosedRequestGraph(
     const adapter = requiredSourceAdapter(adapterVersion);
     if (
       adapter.origin !== "production" ||
-      (adapter.reconciliationCoverage !== "official_source" &&
-        adapter.reconciliationCoverage !== "official_errata")
+      adapter.reconciliationCapability === "unavailable"
     ) {
       throw new Error(
         `Official Source ${adapterVersion} has invalid production coverage authority.`,
@@ -687,15 +686,14 @@ function assertObservationAuthority(
   observation: ReturnType<typeof parseReconciliationObservation>,
   coverage: ReturnType<
     typeof requiredSourceAdapter
-  >["reconciliationCoverage"],
+  >["reconciliationCapability"],
 ): void {
-  const errataOnly = coverage === "official_errata" ||
-    coverage === "synthetic_errata_fixture";
+  const errataOnly = coverage === "errata";
   if (
     (observation.kind === "official_erratum") !== errataOnly ||
     (observation.kind === "card_printing" &&
       observation.errata.length > 0 &&
-      coverage !== "synthetic_fixture")
+      coverage !== "catalogue")
   ) {
     throw new Error(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
@@ -733,10 +731,10 @@ async function retainedObservationDocument(
     document.supported_game !== row.supported_game ||
     document.game_profile_version !== row.game_profile_version ||
     document.adapter_version !== row.adapter_version ||
-    adapter.reconciliationCoverage === "unavailable" ||
+    adapter.reconciliationCapability === "unavailable" ||
     row.plan_origin !== adapter.origin ||
     !isRecord(document.coverage_proof) ||
-    document.coverage_proof.kind !== adapter.reconciliationCoverage ||
+    document.coverage_proof.kind !== adapter.reconciliationCapability ||
     document.coverage_proof.adapter_version !== adapter.adapterVersion ||
     document.coverage_proof.parser_contract !== adapter.parserContract ||
     !validEvidenceSummary(

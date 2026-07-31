@@ -1,7 +1,7 @@
 import type {
-  FixtureCard,
+  CatalogueCard,
   SupportedGame,
-} from "./fixture";
+} from "./catalogue-candidate";
 import { canonicalJson, sha256Text } from "./serialization";
 
 export type CatalogueErratum = Readonly<{
@@ -178,7 +178,7 @@ export function mergeCatalogueErrata(
 }
 
 export function deriveEffectiveRulesText(
-  card: FixtureCard,
+  card: CatalogueCard,
   errata: readonly CatalogueErratum[],
   observedAt: string,
 ): string | null {

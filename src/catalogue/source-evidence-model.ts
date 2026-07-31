@@ -198,11 +198,15 @@ export async function validateEvidencePlans(
   }
   const plans: EvidencePlan[] = [];
   const requestIds = new Set<string>();
+  const reconciliationCapabilities = new Set<
+    SourceAdapterRegistration["reconciliationCapability"]
+  >();
   for (const input of inputs) {
-    const { plan } = await validateEvidencePlan(
+    const { adapter, plan } = await validateEvidencePlan(
       { ...input, idempotency_key: request.idempotency_key },
       planOrigin,
     );
+    reconciliationCapabilities.add(adapter.reconciliationCapability);
     for (const sourceRequest of plan.requests) {
       if (requestIds.has(sourceRequest.id)) {
         throw new AdministrationProblem(
@@ -215,12 +219,19 @@ export async function validateEvidencePlans(
     }
     plans.push(plan);
   }
+  if (reconciliationCapabilities.size > 1) {
+    throw new AdministrationProblem(
+      422,
+      "heterogeneous_reconciliation_coverage",
+      "One Evidence Plan cannot mix Errata-only and complete Catalogue coverage.",
+    );
+  }
   if (planOrigin === "production") {
     const requiredLineagesByGame = new Map<string, Set<string>>();
     for (const adapter of sourceAdapterRegistrations) {
       if (
         adapter.origin === "production" &&
-        adapter.reconciliationCoverage === "official_source"
+        adapter.reconciliationCapability === "catalogue"
       ) {
         const lineages =
           requiredLineagesByGame.get(adapter.supportedGame) ?? new Set();

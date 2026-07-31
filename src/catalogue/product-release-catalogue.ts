@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SupportedGame } from "./fixture";
+import type { SupportedGame } from "./catalogue-candidate";
 import { canonicalJson, sha256Text } from "./serialization";
 
 export type EvidenceCategory = "explicit" | "derived" | "curated";

@@ -9,13 +9,14 @@ import {
   type PrintingCompatibility,
   type ProvenancedWithdrawal,
 } from "./reconciliation-model";
-import type {
-  FixtureCandidate,
-  FixtureCard,
-  FixturePrintingImage,
-  FixturePrinting,
-  SupportedGame,
-} from "./fixture";
+import {
+  catalogueCandidateContract,
+  type CatalogueCandidate,
+  type CatalogueCard,
+  type CataloguePrintingImage,
+  type CataloguePrinting,
+  type SupportedGame,
+} from "./catalogue-candidate";
 import {
   compatiblePrintings,
   canonicalCardConflict,
@@ -114,19 +115,19 @@ export async function reconcileRetainedCardPrintingEvidence(
     database,
     run.expected_current_revision_id,
   );
-  const cards = new Map<string, FixtureCard>(
+  const cards = new Map<string, CatalogueCard>(
     priorCandidate?.cards.map((card) => [card.id, card]) ?? [],
   );
-  const printings = new Map<string, FixturePrinting>(
+  const printings = new Map<string, CataloguePrinting>(
     priorCandidate?.printings.map((printing) => [printing.id, printing]) ?? [],
   );
-  const printingImages = new Map<string, FixturePrintingImage>(
+  const printingImages = new Map<string, CataloguePrintingImage>(
     priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
   const localCardFacts = new Map<string, string>();
   const localPrintingFacts = new Map<
     string,
-    Omit<FixturePrinting, "id" | "card_id">
+    Omit<CataloguePrinting, "id" | "card_id">
   >();
   const localCompatibility = new Map<string, string>();
   const localLocators = new Map<
@@ -443,7 +444,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         const id =
           `printing_image_${printingId.slice("printing_".length)}_` +
           `${image.role}_${image.content_sha256.slice(0, 12)}`;
-        const candidateImage: FixturePrintingImage = {
+        const candidateImage: CataloguePrintingImage = {
           id,
           printing_id: printingId,
           object_key: `printing-images/${image.content_sha256}`,
@@ -815,8 +816,8 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     })
     .sort((left, right) => left.id.localeCompare(right.id));
-  const candidate: FixtureCandidate = {
-    fixture: "first-catalogue",
+  const candidate: CatalogueCandidate = {
+    contract: catalogueCandidateContract,
     selected_games: [
       ...new Set([
         ...(priorCandidate?.selected_games ?? []),
@@ -866,9 +867,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     (plan) => plan.observationKind === "card_printing",
   );
   const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
-  const errataOnlyEvidence = retained.reconciliationCoverage ===
-      "official_errata" ||
-    retained.reconciliationCoverage === "synthetic_errata_fixture";
+  const errataOnlyEvidence = retained.reconciliationCapability === "errata";
   const relationshipWarnings = (
     await Promise.all(
       groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>
@@ -1125,14 +1124,14 @@ async function finalizedReconciliationResult(
 }
 
 function reconciliationDigestPayload(input: {
-  candidate: FixtureCandidate;
+  candidate: CatalogueCandidate;
   partitions: readonly unknown[];
   plans: Parameters<typeof digestObservationPlans>[0];
   state: "awaiting_approval" | "failed";
   publishable: boolean;
   sourceObservationSetId: string;
-  observedCards: readonly FixtureCard[];
-  observedPrintings: readonly FixturePrinting[];
+  observedCards: readonly CatalogueCard[];
+  observedPrintings: readonly CataloguePrinting[];
   observedProducts: readonly { id: string }[];
   diagnostics: readonly Record<string, unknown>[];
   warnings: readonly Record<string, unknown>[];
@@ -1157,7 +1156,7 @@ function reconciliationDigestPayload(input: {
 async function candidateAtRevision(
   database: D1Database,
   revisionId: string,
-): Promise<FixtureCandidate | null> {
+): Promise<CatalogueCandidate | null> {
   const row = await database
     .prepare(
       `SELECT run.id AS ingestion_run_id, run.candidate_json
@@ -1175,7 +1174,7 @@ async function candidateAtRevision(
       "candidate",
       row.candidate_json,
     ),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
 }
 
 export async function showReconciledPrinting(
@@ -1218,7 +1217,7 @@ function digestObservationPlans(
 
 async function catalogueDataDigest(
   database: D1Database,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   plans: readonly {
     cardId: string;
     printingId: string | null;
@@ -1361,10 +1360,10 @@ async function catalogueDataDigest(
 }
 
 function semanticCatalogueCandidate(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
 ): Record<string, unknown> {
   return {
-    fixture: candidate.fixture,
+    contract: candidate.contract,
     selected_games: candidate.selected_games,
     cards: candidate.cards,
     printings: candidate.printings,
@@ -1654,8 +1653,8 @@ async function blockedResult(
 }
 
 function printingImageEvidenceEquivalent(
-  left: FixturePrintingImage,
-  right: FixturePrintingImage,
+  left: CataloguePrintingImage,
+  right: CataloguePrintingImage,
 ): boolean {
   const { source_url: _leftSourceUrl, ...leftEvidence } = left;
   const { source_url: _rightSourceUrl, ...rightEvidence } = right;

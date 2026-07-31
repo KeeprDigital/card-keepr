@@ -57,9 +57,9 @@ const expectedSurfaces = {
 };
 
 const productionAdapterVersions = sourceAdapterRegistrations
-  .filter(({ origin, reconciliationCoverage, parseBytes }) =>
+  .filter(({ origin, reconciliationCapability, parseBytes }) =>
     origin === "production" &&
-    reconciliationCoverage === "official_source" &&
+    reconciliationCapability === "catalogue" &&
     typeof parseBytes === "function"
   )
   .map(({ adapterVersion }) => adapterVersion);
@@ -85,7 +85,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       })
     );
     assert.equal(adapter.origin, "production");
-    assert.equal(adapter.reconciliationCoverage, "official_source");
+    assert.equal(adapter.reconciliationCapability, "catalogue");
     assert.equal(
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,

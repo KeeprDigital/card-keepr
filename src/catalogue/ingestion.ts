@@ -7,10 +7,14 @@ import {
 } from "./export";
 import {
   FixtureInputError,
+  firstCatalogueFixture,
   fixtureCandidate,
-  type FixtureCandidate,
-  type SupportedGame,
 } from "./fixture";
+import type {
+  CatalogueCandidate,
+  SupportedGame,
+} from "./catalogue-candidate";
+import { catalogueCandidateContract } from "./catalogue-candidate";
 import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,
@@ -210,7 +214,7 @@ export async function startFixtureRun(
         catalogueExports,
         observedAt,
       );
-      const candidate = await validatedFixtureCandidate(request);
+      const candidate = await validatedCatalogueCandidate(request);
       return startPreparedRun(database, {
         candidate: candidate.candidate,
         candidateDigest: candidate.digest,
@@ -502,7 +506,7 @@ export async function inspectCandidate(
       "candidate",
       row.candidate_json,
     ),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   const diff = await inspectCatalogueCandidate(database, {
     runId: row.id,
     expectedRevisionId: row.expected_current_revision_id,
@@ -628,7 +632,7 @@ async function approveRunAttempt(
       "candidate",
       run.candidate_json,
     ),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   assertErrataClockFresh(
     candidate,
     parseSelectedGames(run.selected_games_json),
@@ -797,7 +801,7 @@ async function approveRunAttempt(
 }
 
 function assertErrataClockFresh(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   selectedGames: readonly SupportedGame[],
   candidateCreatedAt: string | null,
   approvalObservedAt: string,
@@ -963,7 +967,7 @@ export { AdministrationProblem } from "./administration-problem.mjs";
 async function startPreparedRun(
   database: D1Database,
   input: {
-    candidate: FixtureCandidate;
+    candidate: CatalogueCandidate;
     candidateDigest: string;
     idempotencyKey: string;
     idempotencyOperation: string;
@@ -1167,7 +1171,7 @@ async function publishNoChange(
   approval: Record<string, unknown>,
   now: string,
   claimOwner: IdempotencyClaimOwner,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
 ): Promise<Record<string, unknown>> {
   const resultingRun = publicRun({
     ...run,
@@ -1371,7 +1375,7 @@ async function throwApprovalFailure(
 }
 
 function catalogueCard(
-  card: FixtureCandidate["cards"][number],
+  card: CatalogueCandidate["cards"][number],
   printingIds: readonly string[],
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
@@ -1401,22 +1405,21 @@ function catalogueCard(
   const effectiveRulesObservationIds = [
     ...new Set(effectiveRulesEvidence.map(({ id }) => id)),
   ].sort();
-  const observationIds = effectiveRulesObservationIds.length === 0
-    ? included.map(({ id }) => id)
-    : effectiveRulesObservationIds;
   return {
     data,
     included,
     provenance:
-      observationIds.length === 0
+      effectiveRulesObservationIds.length === 0
         ? {}
-        : { "/data/effective_rules_text": observationIds },
+        : {
+            "/data/effective_rules_text": effectiveRulesObservationIds,
+          },
     disagreements: [],
   };
 }
 
 async function cataloguePrinting(
-  printing: FixtureCandidate["printings"][number],
+  printing: CatalogueCandidate["printings"][number],
   game: SupportedGame,
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
@@ -1426,13 +1429,13 @@ async function cataloguePrinting(
     historical: [],
   },
   declaredContexts: readonly NonNullable<
-    FixtureCandidate["distribution_contexts"]
+    CatalogueCandidate["distribution_contexts"]
   >[number][] = [],
   declaredProducts: readonly NonNullable<
-    FixtureCandidate["products"]
+    CatalogueCandidate["products"]
   >[number][] = [],
   declaredRelationships: readonly NonNullable<
-    FixtureCandidate["product_relationships"]
+    CatalogueCandidate["product_relationships"]
   >[number][] = [],
   evidenceResources: readonly {
     type: "source_observation";
@@ -1441,7 +1444,7 @@ async function cataloguePrinting(
     source: string;
   }[] = [],
   printingImages: readonly NonNullable<
-    FixtureCandidate["printing_images"]
+    CatalogueCandidate["printing_images"]
   >[number][] = [],
 ) {
   const canonicalRelationshipEvidence = relationshipEvidence.filter(
@@ -1528,7 +1531,7 @@ async function cataloguePrinting(
 }
 
 function publicPrintingImage(
-  image: NonNullable<FixtureCandidate["printing_images"]>[number],
+  image: NonNullable<CatalogueCandidate["printing_images"]>[number],
 ) {
   return {
     type: "printing_image",
@@ -1657,7 +1660,7 @@ async function storeAndVerifyExport(
 }
 
 async function storeAndVerifyPrintingImages(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   bucket: R2Bucket | undefined,
 ): Promise<void> {
   const images = candidate.printing_images ?? [];
@@ -1714,7 +1717,7 @@ function decodeBase64Bytes(value: string): Uint8Array {
 async function assertStoredPrintingImage(
   bucket: R2Bucket,
   object: R2Object,
-  image: NonNullable<FixtureCandidate["printing_images"]>[number],
+  image: NonNullable<CatalogueCandidate["printing_images"]>[number],
 ): Promise<void> {
   if (object.size !== image.content_byte_length) {
     throw new Error("Immutable Printing Image object key collision.");
@@ -1738,7 +1741,7 @@ async function assertStoredPrintingImage(
 }
 
 function assertPublicationAggregateBudget(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
 ): void {
   const encoder = new TextEncoder();
   const candidateBytes = encoder.encode(
@@ -1949,7 +1952,7 @@ async function commitVerifiedPublication(
   database: D1Database,
   input: {
     run: RunRow;
-    candidate: FixtureCandidate;
+    candidate: CatalogueCandidate;
     catalogueExport: BuiltCatalogueExport;
     reconciliation: ReconciliationPublicationPlan | null;
     requestJson: string;
@@ -2431,7 +2434,7 @@ async function reconcileReservedPublication(
       "candidate",
       run.candidate_json,
     ),
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   const approval = parseApproval(run.approval_json);
   const revisionId = requiredPublicationValue(
     run.publication_revision_id,
@@ -3174,9 +3177,9 @@ function publicationCleanupNotBefore(
   ).toISOString();
 }
 
-async function validatedFixtureCandidate(
+async function validatedCatalogueCandidate(
   request: StartRunRequest,
-): Promise<{ candidate: FixtureCandidate; digest: string }> {
+): Promise<{ candidate: CatalogueCandidate; digest: string }> {
   return fixtureCandidate(
     request.fixture,
     request.selected_games,
@@ -3921,7 +3924,7 @@ async function replayLegacyAdministration(
   ) {
     const candidate = parseCandidate(run);
     const legacyRequestJson = canonicalJson({
-      fixture: candidate.fixture,
+      fixture: firstCatalogueFixture,
       selected_games: candidate.selected_games,
     });
     if (legacyRequestJson === requestJson) return publicRun(run);
@@ -4095,7 +4098,7 @@ async function freshnessStatementsForRun(
   database: D1Database,
   games: readonly string[],
   runId: string,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   checkedAt: string,
 ): Promise<D1PreparedStatement[]> {
   return freshnessStatements(
@@ -4115,7 +4118,7 @@ async function checkedFreshnessAreasForRun(
   database: D1Database,
   games: readonly string[],
   runId: string,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   checkedAt: string,
 ): Promise<SourceFreshness[]> {
   const area = await freshnessArea(database, runId);
@@ -4154,7 +4157,7 @@ function freshnessStatements(
 
 function checkedFreshnessAreas(
   games: readonly string[],
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   checkedAt = "",
 ): SourceFreshness[] {
   const capturedChecks = new Map(
@@ -4204,15 +4207,11 @@ async function freshnessArea(
     .first<{ adapter_version: string }>();
   if (plan === null) return "cards-and-printings";
   const coverage = requiredSourceAdapter(plan.adapter_version)
-    .reconciliationCoverage;
-  if (
-    coverage === "official_errata" ||
-    coverage === "synthetic_errata_fixture"
-  ) {
+    .reconciliationCapability;
+  if (coverage === "errata") {
     return "errata";
   }
-  return coverage === "official_source" ||
-      coverage === "synthetic_fixture"
+  return coverage === "catalogue"
     ? "cards-and-printings"
     : null;
 }
@@ -4344,21 +4343,21 @@ async function failRun(
   ]);
 }
 
-function parseCandidate(row: RunRow): FixtureCandidate {
+function parseCandidate(row: RunRow): CatalogueCandidate {
   const parsed: unknown = JSON.parse(row.candidate_json);
   if (
     isRecord(parsed) &&
     parsed.chunked_reconciliation_payload === "candidate"
   ) {
     return {
-      fixture: "first-catalogue",
+      contract: catalogueCandidateContract,
       selected_games: parseSelectedGames(row.selected_games_json),
       cards: [],
       printings: [],
     };
   }
-  if (!isFixtureCandidate(parsed)) {
-    throw new Error("The persisted fixture candidate is invalid.");
+  if (!isCatalogueCandidate(parsed)) {
+    throw new Error("The persisted Catalogue Candidate is invalid.");
   }
   return parsed;
 }
@@ -4382,29 +4381,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function isFixtureCandidate(
+function isCatalogueCandidate(
   value: unknown,
-): value is FixtureCandidate {
+): value is CatalogueCandidate {
   if (
     !isRecord(value) ||
     !hasRequiredAndAllowedKeys(
       value,
-      ["fixture", "selected_games", "cards", "printings"],
+      ["contract", "selected_games", "cards", "printings"],
       [
-        "fixture",
+        "contract",
         "selected_games",
         "cards",
         "printings",
+        "printing_images",
         "products",
         "distribution_contexts",
         "product_relationships",
         "card_observed_games",
         "product_observed_games",
         "product_observed_lineages",
+        "source_checks",
         "errata",
       ],
     ) ||
-    value.fixture !== "first-catalogue" ||
+    value.contract !== catalogueCandidateContract ||
     !Array.isArray(value.selected_games) ||
     value.selected_games.length === 0 ||
     !value.selected_games.every(isSupportedGame) ||

@@ -1,4 +1,4 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import type { NormalizedLifecycle } from "./reconciliation-publication";
 import { byteBoundedJsonArrays } from "./reconciliation-payload";
 
@@ -54,7 +54,7 @@ type InferredProductLifecycleRow = {
 
 export async function productReleaseLifecyclePlan(
   database: D1Database,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
 ): Promise<ProductReleaseLifecyclePlan> {
   const products = candidate.products ?? [];
@@ -297,7 +297,7 @@ export async function productReleaseLifecyclePlan(
 
 export function productReleasePublicationStatements(
   database: D1Database,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
   lifecycles: ProductReleaseLifecyclePlan,
 ): D1PreparedStatement[] {

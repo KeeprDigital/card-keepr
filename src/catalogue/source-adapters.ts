@@ -16,12 +16,7 @@ export type SourceAdapterRegistration = Readonly<{
     | Readonly<{ kind: "credential-free-https" }>
     | Readonly<{ kind: "exact-url"; url: string }>
     | Readonly<{ kind: "synthetic-fixture" }>;
-  reconciliationCoverage:
-    | "official_source"
-    | "official_errata"
-    | "synthetic_errata_fixture"
-    | "synthetic_fixture"
-    | "unavailable";
+  reconciliationCapability: "catalogue" | "errata" | "unavailable";
   parse?: (
     document: unknown,
   ) => readonly unknown[] | Promise<readonly unknown[]>;
@@ -100,7 +95,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           }
           return "https://en.onepiece-cardgame.com/rules/errata_card/";
         },
-        reconciliationCoverage: "official_errata" as const,
+        reconciliationCapability: "errata" as const,
         parseBytes: (bytes: Uint8Array) => {
           const document = new TextDecoder(
             "utf-8",
@@ -118,7 +113,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumSnapshotBytes: 16 * 1024 * 1024,
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
-        reconciliationCoverage: "official_source" as const,
+        reconciliationCapability: "catalogue" as const,
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
@@ -183,7 +178,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         ...adapter,
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
-        reconciliationCoverage: "unavailable" as const,
+        reconciliationCapability: "unavailable" as const,
       })),
       {
         adapterVersion: "fixture-one-piece-official-errata-json@1",
@@ -194,7 +189,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumSnapshotBytes: 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         requestSurface: { kind: "synthetic-fixture" as const },
-        reconciliationCoverage: "synthetic_errata_fixture" as const,
+        reconciliationCapability: "errata" as const,
         parse: parseSourceDocument,
       },
       ...[
@@ -254,7 +249,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         requestSurface: { kind: "synthetic-fixture" as const },
-        reconciliationCoverage: "synthetic_fixture" as const,
+        reconciliationCapability: "catalogue" as const,
         parse: parseSourceDocument,
       })),
     ].map((adapter) => Object.freeze(adapter)),

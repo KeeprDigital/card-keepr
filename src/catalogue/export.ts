@@ -1,5 +1,8 @@
 import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
-import type { FixtureCandidate, SupportedGame } from "./fixture";
+import type {
+  CatalogueCandidate,
+  SupportedGame,
+} from "./catalogue-candidate";
 import type {
   NormalizedLifecycle,
   LocatorEvidenceCollection,
@@ -100,7 +103,7 @@ type ExportComponent = {
 };
 
 export async function buildCatalogueExport(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   candidateDigest: string,
   catalogueRevisionId: string,
   publishedAt: string,
@@ -396,7 +399,7 @@ function digestHex(digest: ArrayBuffer): string {
 }
 
 async function exportRecordFactories(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
   lifecycles?: {
     cards: Readonly<Record<string, NormalizedLifecycle>>;

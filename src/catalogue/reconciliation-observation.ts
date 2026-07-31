@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import type {
-  FixtureCard,
-  FixturePrintingImage,
-  FixturePrinting,
+  CatalogueCard,
+  CataloguePrintingImage,
+  CataloguePrinting,
   SupportedGame,
-} from "./fixture";
+} from "./catalogue-candidate";
 import { canonicalJson } from "./serialization";
 import {
   canonicalProfileAttributes,
@@ -50,8 +50,8 @@ export type ParsedCardPrintingObservation = Readonly<{
   kind: "card_printing";
   sourceObservationId: string;
   candidateWithoutIdentities: {
-    card: Omit<FixtureCard, "id"> | null;
-    printing: Omit<FixturePrinting, "id" | "card_id"> | null;
+    card: Omit<CatalogueCard, "id"> | null;
+    printing: Omit<CataloguePrinting, "id" | "card_id"> | null;
   };
   locator: string | null;
   variantKey: string | null;
@@ -62,7 +62,7 @@ export type ParsedCardPrintingObservation = Readonly<{
   demonstrablyNovel: boolean;
   noveltyProofComplete: boolean;
   printingImages: readonly Omit<
-    FixturePrintingImage,
+    CataloguePrintingImage,
     "id" | "printing_id" | "object_key"
   >[];
   memberships: Memberships;
@@ -79,11 +79,11 @@ export type ParsedOfficialErratumObservation = Readonly<{
   target:
     | Readonly<{
         type: "card";
-        officialIdentity: FixtureCard["official_identity"];
+        officialIdentity: CatalogueCard["official_identity"];
       }>
     | Readonly<{
         type: "printing";
-        officialIdentity: FixtureCard["official_identity"];
+        officialIdentity: CatalogueCard["official_identity"];
         locator: string;
       }>;
   publishedOn: string;
@@ -293,7 +293,7 @@ export function parseReconciliationObservation(
     warnings,
   );
   const identity = parseOfficialIdentity(rawCard.official_identity, contract.game);
-  const card: Omit<FixtureCard, "id"> = {
+  const card: Omit<CatalogueCard, "id"> = {
     game: contract.game,
     official_identity: identity,
     name: requiredString(rawCard.name, "card.name"),
@@ -302,7 +302,7 @@ export function parseReconciliationObservation(
       "card.effective_rules_text",
     ),
     game_data: {
-      profile: profile as FixtureCard["game_data"]["profile"],
+      profile: profile as CatalogueCard["game_data"]["profile"],
       attributes: canonicalCardAttributes,
     },
   };
@@ -393,7 +393,7 @@ export function parseReconciliationObservation(
     rawPrintingAttributes,
     warnings,
   );
-  const printing: Omit<FixturePrinting, "id" | "card_id"> = {
+  const printing: Omit<CataloguePrinting, "id" | "card_id"> = {
     rarity: {
       raw: nullableString(rarity.raw, "printing.rarity.raw"),
       normalized: nullableString(
@@ -406,9 +406,9 @@ export function parseReconciliationObservation(
       "printing.printed_rules_text",
     ),
     game_data: {
-      profile: profile as FixturePrinting["game_data"] extends null
+      profile: profile as CataloguePrinting["game_data"] extends null
         ? never
-        : NonNullable<FixturePrinting["game_data"]>["profile"],
+        : NonNullable<CataloguePrinting["game_data"]>["profile"],
       attributes: canonicalPrintingAttributes,
     },
   };
@@ -659,7 +659,7 @@ function exactDate(value: unknown, name: string): string {
 function parseOfficialIdentity(
   value: unknown,
   game: SupportedGame,
-): FixtureCard["official_identity"] {
+): CatalogueCard["official_identity"] {
   const identity = requiredRecord(value, "card.official_identity");
   if (
     identity.kind === "functional_designation" &&
@@ -757,7 +757,7 @@ function appearanceEvidence(
 ): {
   complete: boolean;
   images: Omit<
-    FixturePrintingImage,
+    CataloguePrintingImage,
     "id" | "printing_id" | "object_key"
   >[];
 } {
@@ -767,7 +767,7 @@ function appearanceEvidence(
   const declaredRoles = new Set<string>();
   const capturedRoles = new Set<string>();
   const captured: Omit<
-    FixturePrintingImage,
+    CataloguePrintingImage,
     "id" | "printing_id" | "object_key"
   >[] = [];
   for (const item of value.images) {

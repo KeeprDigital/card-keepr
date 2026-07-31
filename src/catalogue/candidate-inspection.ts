@@ -1,4 +1,4 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import { canonicalJson } from "./serialization";
 
 export async function inspectCatalogueCandidate(
@@ -6,7 +6,7 @@ export async function inspectCatalogueCandidate(
   input: {
     runId: string;
     expectedRevisionId: string;
-    candidate: FixtureCandidate;
+    candidate: CatalogueCandidate;
     fallbackWarnings: readonly Record<string, unknown>[];
   },
 ) {

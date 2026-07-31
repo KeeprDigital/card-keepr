@@ -1,4 +1,4 @@
-import type { FixtureCard } from "./fixture";
+import type { CatalogueCard } from "./catalogue-candidate";
 import type { Withdrawal } from "./reconciliation-observation";
 import {
   compatibilityFields,
@@ -30,7 +30,7 @@ export type ProvenancedWithdrawal = Withdrawal & {
 };
 
 export async function cardIdFor(
-  card: Omit<FixtureCard, "id">,
+  card: Omit<CatalogueCard, "id">,
 ): Promise<string> {
   return `card_${(
     await sha256Text(

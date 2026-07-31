@@ -1,4 +1,7 @@
-import type { FixtureCard, FixturePrinting } from "./fixture";
+import type {
+  CatalogueCard,
+  CataloguePrinting,
+} from "./catalogue-candidate";
 import {
   compatibilityFields,
   isGundamEnglishLineage,
@@ -214,7 +217,7 @@ export async function hasPrintingLocatorFromLineage(
 export async function canonicalCardConflict(
   database: D1Database,
   cardId: string,
-  proposed: Omit<FixtureCard, "id">,
+  proposed: Omit<CatalogueCard, "id">,
   sourceLineage: string,
   authority: { effectiveRulesText: boolean } = {
     effectiveRulesText: false,
@@ -283,7 +286,7 @@ export async function canonicalCardConflict(
     : "The retained Card facts conflict across authoritative source lineages and no deterministic authority rule resolves them.";
 }
 
-type PrintingFacts = Omit<FixturePrinting, "id" | "card_id">;
+type PrintingFacts = Omit<CataloguePrinting, "id" | "card_id">;
 
 export async function canonicalPrintingConflict(
   database: D1Database,
@@ -304,7 +307,7 @@ export async function canonicalPrintingConflict(
   if (row === null) return null;
   const current = revisionDocumentData(
     row.document_json,
-  ) as FixturePrinting;
+  ) as CataloguePrinting;
   const currentCanonical: PrintingFacts = {
     rarity: current.rarity,
     printed_rules_text: current.printed_rules_text,

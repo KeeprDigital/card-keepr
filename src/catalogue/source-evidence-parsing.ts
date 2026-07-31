@@ -127,9 +127,9 @@ export async function parseSnapshot(
       adapter_version: adapter.adapterVersion,
       parsed_at: operation.parsed_at,
       coverage_proof:
-        adapter.reconciliationCoverage !== "unavailable"
+        adapter.reconciliationCapability !== "unavailable"
           ? {
-              kind: adapter.reconciliationCoverage,
+              kind: adapter.reconciliationCapability,
               adapter_version: adapter.adapterVersion,
               parser_contract: adapter.parserContract,
             }

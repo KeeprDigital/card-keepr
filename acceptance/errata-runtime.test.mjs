@@ -181,6 +181,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const administrationKey = crypto.randomUUID();
   const environmentFile = join(directory, "runtime.env");
   const runtimeConfig = join(directory, "runtime.wrangler.json");
+  const heterogeneousPlan = join(directory, "heterogeneous-plan.json");
   await Promise.all([
     writeFile(
       environmentFile,
@@ -188,6 +189,26 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
       { mode: 0o600 },
     ),
     writeRuntimeConfig(runtimeConfig),
+    writeFile(
+      heterogeneousPlan,
+      JSON.stringify({
+        plans: [
+          {
+            supported_game: "one-piece",
+            source_lineage: "one-piece-en",
+            adapter_version: "one-piece-official-errata-html@1",
+            requests: [{
+              id: "one-piece-en:errata",
+              url:
+                "https://en.onepiece-cardgame.com/rules/errata_card/",
+              headers: { accept: "text/html" },
+            }],
+          },
+          digimonOfficialPlan(),
+        ],
+      }),
+      { mode: 0o600 },
+    ),
   ]);
   applyMigrations(runtimeConfig, statePath);
 
@@ -221,6 +242,42 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   cliEnvironment.KEEPR_ACCEPTANCE_PRODUCTION_CONFIRMATION =
     JSON.stringify(initialStatusDocument.production_target);
+
+  const heterogeneous = await runCli(
+    [
+      "source",
+      "collect",
+      "--plan-file",
+      heterogeneousPlan,
+      "--idempotency-key",
+      "reject-heterogeneous-coverage-before-mutation",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(heterogeneous.code, 8, heterogeneous.stderr);
+  assert.deepEqual(JSON.parse(heterogeneous.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "heterogeneous_reconciliation_coverage",
+    detail:
+      "One Evidence Plan cannot mix Errata-only and complete Catalogue coverage.",
+  });
+  const statusAfterHeterogeneousPlan = await runCli(
+    ["status", "--json"],
+    cliEnvironment,
+  );
+  assert.equal(statusAfterHeterogeneousPlan.code, 0);
+  assert.equal(
+    JSON.parse(statusAfterHeterogeneousPlan.stdout).safe_state
+      .current_revision_id,
+    bootstrapRevision,
+  );
+  assert.equal(
+    JSON.parse(statusAfterHeterogeneousPlan.stdout).safe_state
+      .active_ingestion_run_id,
+    null,
+  );
 
   const seedRun = await collectFixtureSource(
     {
@@ -602,7 +659,89 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     cardsBytes + printingsBytes + errataBytes + relationshipBytes,
     /snapshot|raw_payload/i,
   );
+
+  const omissionRun = await collectFixtureSource(
+    {
+      adapter: "fixture-one-piece-official-errata-json@1",
+      idempotencyKey: "errata-runtime-omit-vegapunk",
+      requestId: "errata-without-vegapunk",
+      url: "https://synthetic-fixture.invalid/errata-without-vegapunk",
+    },
+    cliEnvironment,
+  );
+  await resumeAndWait(omissionRun.id, cliEnvironment, runtime);
+  const omissionCandidate = await reconcileAndWait(
+    omissionRun.id,
+    revisionId,
+    "reconcile-errata-without-vegapunk",
+    cliEnvironment,
+    runtime,
+  );
+  assert.equal(
+    omissionCandidate.warnings.some(
+      (warning) => warning.code === "erratum_not_observed",
+    ),
+    true,
+  );
+  const omissionRevision = await approveCandidate(
+    omissionRun.id,
+    "approve-errata-without-vegapunk",
+    cliEnvironment,
+    runtime,
+  );
+  const carriedCardRead = await apiJson(
+    `/v1/cards/${card.id}?include=evidence`,
+    apiKey,
+  );
+  assert.match(
+    carriedCardRead.data.effective_rules_text,
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+  );
+  assert.deepEqual(
+    carriedCardRead.provenance["/data/effective_rules_text"],
+    effectiveRulesEvidenceIds,
+  );
+  const carriedCardsBytes = await exportComponent(
+    omissionRevision,
+    "cards",
+    apiKey,
+  );
+  const carriedExportedCard = carriedCardsBytes.trim().split("\n").map(
+    (line) => JSON.parse(line),
+  ).find((candidate) => candidate.id === card.id);
+  assert.equal(
+    carriedExportedCard.effective_rules_text,
+    exportedCard.effective_rules_text,
+  );
+  assert.deepEqual(
+    carriedExportedCard.source_lineages,
+    exportedCard.source_lineages,
+  );
 });
+
+function digimonOfficialPlan() {
+  const urls = {
+    "card-list":
+      "https://world.digimoncard.com/cards/index.php?search=true",
+    products: "https://world.digimoncard.com/products/",
+    releases: "https://world.digimoncard.com/products/",
+    "restrictions-current":
+      "https://world.digimoncard.com/rule/restriction_card/",
+    "restrictions-history":
+      "https://world.digimoncard.com/rule/restriction_card/",
+    errata: "https://world.digimoncard.com/rule/errata_card/",
+  };
+  return {
+    supported_game: "digimon",
+    source_lineage: "digimon-en",
+    adapter_version: "digimon-en@2",
+    requests: Object.entries(urls).map(([surface, url]) => ({
+      id: `digimon-en:${surface}`,
+      url,
+      headers: { accept: "text/html" },
+    })),
+  };
+}
 
 async function collectSource(input, environment, runtime) {
   const result = await runCli(

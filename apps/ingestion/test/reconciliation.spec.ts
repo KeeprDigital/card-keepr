@@ -22,10 +22,11 @@ import {
   startOrObserveReconciliationWorkflow,
   type ReconciliationWorkflowParams,
 } from "../../../src/catalogue/reconciliation-workflow";
-import type {
-  FixtureCandidate,
-  SupportedGame,
-} from "../../../src/catalogue/fixture";
+import {
+  catalogueCandidateContract,
+  type CatalogueCandidate,
+  type SupportedGame,
+} from "../../../src/catalogue/catalogue-candidate";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import {
@@ -1199,7 +1200,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     }>();
   const candidate = JSON.parse(
     persisted?.candidate_json ?? "{}",
-  ) as FixtureCandidate;
+  ) as CatalogueCandidate;
   const revisionId = "catrev_reconciliation_interrupted";
   const approvedAt = "2026-07-29T02:00:00.000Z";
   const reconcileAfter = "2026-07-29T02:05:00.000Z";
@@ -5795,7 +5796,7 @@ test.each([
 test("streamed catalogue gzip is byte-identical to the checked-in golden bytes", async () => {
   const built = await buildCatalogueExport(
     {
-      fixture: "first-catalogue",
+      contract: catalogueCandidateContract,
       selected_games: ["one-piece"],
       cards: [],
       printings: [],
@@ -5851,7 +5852,7 @@ test("every v2 export component orders opaque IDs by normalized UTF-8 bytes", as
   });
   const built = await buildCatalogueExport(
     {
-      fixture: "first-catalogue",
+      contract: catalogueCandidateContract,
       selected_games: ["one-piece"],
       cards: [],
       printings: [],
@@ -5920,7 +5921,7 @@ test("deterministic gzip profile matches independent full-byte edge-case goldens
     source_observations: [],
   });
   const base = {
-    fixture: "first-catalogue" as const,
+    contract: catalogueCandidateContract,
     selected_games: ["one-piece" as const],
     cards: [],
     printings: [],
