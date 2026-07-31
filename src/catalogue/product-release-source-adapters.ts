@@ -774,7 +774,7 @@ function parseOnePieceBandaiCardList(
     throw new Error("One Piece Card List Recording discovery is empty.");
   }
   const modalMatches = [...html.matchAll(
-    /<dl\b[^>]*\bclass=["'][^"']*\bmodalCol\b[^"']*["'][^>]*\bid=["']([^"']+)["'][^>]*>([\s\S]*?)<\/dl>/giu,
+    /<dl\b[^>]*\bclass=["'][^"']*\bmodalCol\b[^"']*["'][^>]*\s+id=["']([^"']+)["'][^>]*>([\s\S]*?)<\/dl>/giu,
   )];
   const declaredCount = Number.parseInt(declaredMatch[1]!, 10);
   if (modalMatches.length !== declaredCount) {
@@ -824,10 +824,19 @@ function parseOnePieceBandaiCardList(
     );
     const variant =
       locator === cardNumber ? "base" : locator.slice(cardNumber.length);
+    const modalTag = match[0]!.slice(0, match[0]!.indexOf(">") + 1);
+    const artworkId =
+      htmlAttribute(modalTag, "data-artwork-id") ??
+      field("Artwork ID", "Artwork Identifier", "Illustration ID");
+    const treatment = officialArtworkTreatment(
+      htmlAttribute(modalTag, "data-artwork-treatment") ??
+        field("Artwork Treatment", "Treatment"),
+      "One Piece artwork treatment",
+    );
     const artworkFingerprint = sourceArtworkFingerprint(
       cardNumber,
       ["front"],
-      null,
+      artworkId,
     );
     const printedFieldsDigest = `printed-material:${
       JSON.stringify(stableValue({
@@ -883,6 +892,7 @@ function parseOnePieceBandaiCardList(
           : rarity.toLowerCase(),
         attributes: { illustration_types: [] },
       },
+      treatment,
       printed_rules: effect ?? "",
       variant,
       artwork_fingerprint: artworkFingerprint,
@@ -1126,15 +1136,21 @@ function parseBandaiCardDetail(
               hp: integerOrNull(field(["HP"])),
               series_titles: textValues(field(["Title", "Series"])),
             };
+  const alternateArtworkValue =
+    format === "digimon"
+      ? field(["Alternative Art"])
+      : format === "gundam"
+        ? field(["Alternate Art", "Alternative Art"])
+        : null;
   const alternateArtwork =
     format === "digimon"
       ? officialBoolean(
-          field(["Alternative Art"]),
+          alternateArtworkValue,
           "Digimon Alternative Art",
         )
       : format === "gundam"
         ? officialBoolean(
-            field(["Alternate Art", "Alternative Art"]),
+            alternateArtworkValue,
             "Gundam Alternate Art",
           )
         : null;
@@ -1194,8 +1210,8 @@ function parseBandaiCardDetail(
               : {},
     },
     treatment:
-      alternateArtwork === null
-        ? "standard"
+      alternateArtworkValue === null
+        ? null
         : alternateArtwork
           ? "alternate"
           : "standard",
@@ -1421,17 +1437,20 @@ function parseBandaiProductDetail(
   const field = (...names: string[]): string | null =>
     firstLabelValue(pairs, names);
   const code =
-    field("Product Code") ??
-    htmlText(html).match(/\b[A-Z]{1,6}\d{0,2}-\d{2,5}\b/u)?.[0] ??
-    null;
+    htmlAttribute(
+      html.match(/<[^>]*\bdata-product-code=["'][^"']+["'][^>]*>/iu)?.[0] ??
+        "",
+      "data-product-code",
+    ) ??
+    field("Product Code");
   const title = htmlText(
     html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/iu)?.[1] ??
       html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ??
       "",
   );
-  if (code === null || title.length === 0) {
+  if (title.length === 0) {
     throw new Error(
-      `${sourceLineage} Product detail is missing its official code or title.`,
+      `${sourceLineage} Product detail is missing its official title.`,
     );
   }
   const product = { code, title };
@@ -1439,10 +1458,10 @@ function parseBandaiProductDetail(
   const releases = new Map<string, Record<string, unknown>[]>();
   if (releaseDate !== null) {
     const date = normalizedOfficialReleaseDate(releaseDate);
-    releases.set(code, [{
+    releases.set(productMapKey(product), [{
       event_key:
         field("Release Event ID", "Release ID", "Event ID") ??
-        `product-release:${code}`,
+        `product-release:${productMapKey(product)}`,
       region: normalizedOfficialRegion(
         field("Region", "Market", "Territory"),
         sourceLineage,
@@ -1702,6 +1721,27 @@ function parseBandaiProductIndex(
   html: string,
   requestUrl: string,
 ): Record<string, unknown>[] {
+  type ProductIndexEntry =
+    | {
+        product: {
+          code: string | null;
+          title: string;
+          distribution: {
+            code: string;
+            kind: string;
+            label: string;
+          };
+        };
+        announced: boolean;
+      }
+    | {
+        non_card_context: {
+          key: string;
+          kind: string;
+          label: string;
+          evidence_category: "explicit";
+        };
+      };
   const containers = [...html.matchAll(
     /<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
   )].map((match) => ({ attributes: match[2]!, body: match[3]! }));
@@ -1712,7 +1752,8 @@ function parseBandaiProductIndex(
       )].map((match) => ({ attributes: "", body: match[0]! })),
     );
   }
-  const entries = containers.flatMap(({ attributes, body }) => {
+  const entries = containers.flatMap<ProductIndexEntry>(
+    ({ attributes, body }) => {
     const link = body.match(
       /<a\b([^>]*\bhref=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/iu,
     );
@@ -1723,34 +1764,69 @@ function parseBandaiProductIndex(
     const resolved = new URL(decodeHtmlText(href), requestUrl);
     const code =
       htmlAttribute(link[1]!, "data-product-code")?.normalize("NFC").trim() ??
-      title.match(/\[([A-Z0-9-]+)\]/u)?.[1];
-    if (code === undefined || code.length === 0 || title.length === 0) return [];
+      firstLabelValue(htmlLabelPairs(body), ["Product Code"]);
+    if (title.length === 0) return [];
     const classificationText = `${attributes} ${body} ${resolved.pathname}`;
-    const classification =
-      /(?:booster|starter|deck|card|set)/iu.test(classificationText)
+    const nonCard =
+      /(?:accessor|sleeve|storage|binder|playmat)/iu.test(classificationText);
+    const cardBearing =
+      /(?:booster|starter|deck|card|set)/iu.test(classificationText);
+    const classification = nonCard
+      ? { kind: "other", label: "accessory" }
+      : cardBearing
         ? { kind: "product", label: "booster" }
-        : /(?:accessor|sleeve|storage|binder|playmat)/iu.test(classificationText)
-          ? { kind: "other", label: "accessory" }
-          : { kind: "other", label: "other" };
+        : { kind: "other", label: "other" };
+    if (nonCard || !cardBearing) {
+      return [{
+        non_card_context: {
+          key: `non-card:${classification.label}:${
+            (code ?? title).normalize("NFC").trim().toLocaleLowerCase()
+          }`,
+          ...classification,
+          evidence_category: "explicit",
+        },
+      }];
+    }
+    const product = {
+      code: code === null || code.length === 0 ? null : code,
+      title,
+    };
     return [{
       product: {
-        code,
-        title,
+        ...product,
         distribution: {
-          code: `product-classification:${classification.label}:${code}`,
+          code:
+            `product-classification:${classification.label}:${productMapKey(product)}`,
           ...classification,
         },
       },
       announced: /(?:coming soon|upcoming|announced)/iu.test(htmlText(body)),
     }];
-  });
+    },
+  );
   return [
-    ...new Map(entries.map((entry) => [entry.product.code, entry])).values(),
-  ].map(({ product, announced }) => {
+    ...new Map(entries.map((entry) => [
+      "product" in entry
+        ? `product:${productMapKey(entry.product)}`
+        : `context:${entry.non_card_context.key}`,
+      entry,
+    ])).values(),
+  ].map((entry) => {
+    if ("non_card_context" in entry) {
+      return {
+        completeness: completeObservation(),
+        product_release_catalogue: {
+          products: [],
+          distribution_contexts: [entry.non_card_context],
+          relationships: [],
+        },
+      };
+    }
+    const { product, announced } = entry;
     const releases = new Map<string, Record<string, unknown>[]>();
     if (announced) {
-      releases.set(product.code, [{
-        event_key: `product-index-announcement:${product.code}`,
+      releases.set(productMapKey(product), [{
+        event_key: `product-index-announcement:${productMapKey(product)}`,
         region: "unknown",
         precision: "unknown",
         date: null,
@@ -1891,6 +1967,21 @@ function officialBoolean(value: string | null, field: string): boolean {
   }
   if (["no", "false", "standard", "base", "-"].includes(normalized)) {
     return false;
+  }
+  throw new Error(`Unrecognized official ${field} value: ${value}`);
+}
+
+function officialArtworkTreatment(
+  value: string | null,
+  field: string,
+): "standard" | "alternate" | null {
+  if (value === null) return null;
+  const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
+  if (["standard", "base"].includes(normalized)) return "standard";
+  if (["alternate", "alternative", "alternate art", "alternative art"].includes(
+    normalized,
+  )) {
+    return "alternate";
   }
   throw new Error(`Unrecognized official ${field} value: ${value}`);
 }
@@ -3550,9 +3641,10 @@ function cardObservation(
               "Official printed fields digest",
             ),
             treatment:
-              typeof detail.treatment === "string"
+              detail.treatment === "standard" ||
+                detail.treatment === "alternate"
                 ? detail.treatment
-                : "standard",
+                : null,
             // A Source Adapter can declare the image role and URL, but only
             // retained and digest-verified image bytes can prove novelty.
             demonstrably_novel: false,
@@ -3651,12 +3743,12 @@ function catalogue(
 ) {
   return {
     products: products.map((product) => {
-      const code = requiredText(product.code, "Official Product code");
+      const code = nullableText(product.code, "Official Product code");
       return {
         reference: productReference(product),
         official_code: code,
         name: requiredText(product.title, "Official Product title"),
-        releases: (releasesByCode.get(code) ?? []).map((release) => ({
+        releases: (releasesByCode.get(productMapKey(product)) ?? []).map((release) => ({
           event_key: release.event_key,
           region: release.region,
           date: { precision: release.precision, value: release.date },
@@ -3769,11 +3861,21 @@ function completeObservation(
 
 function productReference(
   product: Record<string, unknown>,
-): { kind: "official_code"; value: string } {
-  return {
-    kind: "official_code",
-    value: requiredText(product.code, "Official Product code"),
-  };
+): { kind: "official_code" | "name"; value: string } {
+  const code = nullableText(product.code, "Official Product code");
+  return code === null
+    ? {
+        kind: "name",
+        value: requiredText(product.title, "Official Product title"),
+      }
+    : { kind: "official_code", value: code };
+}
+
+function productMapKey(product: Record<string, unknown>): string {
+  const reference = productReference(product);
+  return reference.kind === "official_code"
+    ? reference.value
+    : `name:${reference.value}`;
 }
 
 function productReferenceValue(

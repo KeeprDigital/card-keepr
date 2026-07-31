@@ -668,6 +668,22 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   ]) {
     assert.ok(products.some(({ official_code }) => official_code === code));
   }
+  const onePieceCard = cards.find(
+    ({ official_identity }) => official_identity?.value === "OP99-001",
+  );
+  assert.ok(onePieceCard);
+  const onePiecePrinting = printings.find(
+    ({ card_id }) => card_id === onePieceCard.id,
+  );
+  assert.ok(onePiecePrinting);
+  assert.deepEqual(onePiecePrinting.source_lineages, ["one-piece-en"]);
+  assert.ok(
+    onePiecePrinting.locator_evidence.current.some(
+      ({ locator, source_lineage }) =>
+        locator === "/cards/OP99-001" &&
+        source_lineage === "one-piece-en",
+    ),
+  );
   const gundam = products.find(
     ({ official_code }) => official_code === "GD-RAW-01",
   );

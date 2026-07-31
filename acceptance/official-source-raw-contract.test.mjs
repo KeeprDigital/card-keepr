@@ -106,7 +106,8 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
         <a class="modalOpen" data-src="#OP99-001">
           <img data-src="../images/cardlist/card/OP99-001.png" alt="Test Leader">
         </a>
-        <dl class="modalCol" id="OP99-001">
+        <dl class="modalCol" id="OP99-001"
+            data-artwork-id="op99-001-standard-art">
           <dt>
             <div class="infoCol"><span>OP99-001</span> | <span>L</span> | <span>LEADER</span></div>
             <div class="cardName">Test Leader</div>
@@ -137,6 +138,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
   assert.equal(observations.length, 1);
   assert.equal(observations[0].card.official_identity.value, "OP99-001");
+  assert.equal(observations[0].identity_evidence.locator, "OP99-001");
   assert.equal(
     observations[0].appearance_evidence.images[0].source_url,
     "https://en.onepiece-cardgame.com/images/cardlist/card/OP99-001.png",
@@ -163,6 +165,11 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     observations[0].identity_evidence.artwork_fingerprint,
     /https?:|OP99-001\.png|#OP99-001/u,
   );
+  assert.equal(
+    observations[0].identity_evidence.artwork_fingerprint,
+    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":"op99-001-standard-art"}',
+  );
+  assert.equal(observations[0].identity_evidence.treatment, null);
   assert.equal(
     observations[0].identity_evidence.demonstrably_novel,
     false,
@@ -206,6 +213,19 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     redistributed[0].identity_evidence.artwork_fingerprint,
     observations[0].identity_evidence.artwork_fingerprint,
   );
+  const unidentified = adapter.parseBytes(
+    new TextEncoder().encode(
+      html.replace(' data-artwork-id="op99-001-standard-art"', ""),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  );
+  assert.equal(
+    unidentified[0].identity_evidence.artwork_fingerprint,
+    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":null}',
+  );
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -216,6 +236,45 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       new URL(url).searchParams.get("recording") === "569114"
     ),
   );
+});
+
+test("One Piece aggregate JSON-LD retains an explicit first Printing identity", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "one-piece-en",
+  );
+  const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  const publication = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    publisher: { "@type": "Organization", name: "Bandai" },
+    hasPart: [{
+      "@type": "Dataset",
+      identifier: "one-piece-en:card-list",
+      payload,
+    }],
+  };
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(
+      `<html><script type="application/ld+json">${
+        JSON.stringify(publication)
+      }</script></html>`,
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  );
+  const observation = observations.find(
+    ({ card }) => card?.official_identity?.value === "OP99-001",
+  );
+  assert.ok(observation?.printing);
+  assert.equal(
+    observation.identity_evidence.artwork_fingerprint,
+    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":"one-piece-op99-001-standard"}',
+  );
+  assert.equal(observation.identity_evidence.locator, "/cards/OP99-001");
+  assert.equal(observation.identity_evidence.treatment, null);
 });
 
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
@@ -758,6 +817,11 @@ test("live Product indexes emit typed Products, classifications, and announced r
           <a data-product-code="FB-SLEEVE-01"
              href="/fw/en/products/accessory/fb-sleeve-01/">Official Sleeves</a>
         </article>
+        <article class="booster">
+          <a href="/fw/en/products/booster/name-only/">
+            Name-only Booster
+          </a>
+        </article>
       </html>
     `),
     {
@@ -773,7 +837,7 @@ test("live Product indexes emit typed Products, classifications, and announced r
     catalogues.flatMap(({ products }) =>
       products.map(({ official_code }) => official_code)
     ).sort(),
-    ["FB-BOOST-01", "FB-SLEEVE-01"],
+    ["FB-BOOST-01", null],
   );
   assert.ok(
     catalogues.flatMap(({ distribution_contexts }) => distribution_contexts)
@@ -785,13 +849,30 @@ test("live Product indexes emit typed Products, classifications, and announced r
   );
   assert.equal(
     catalogues.flatMap(({ products }) => products)
+      .some(({ official_code, name }) =>
+        official_code === "FB-SLEEVE-01" || name === "Official Sleeves"
+      ),
+    false,
+  );
+  assert.deepEqual(
+    catalogues.flatMap(({ products }) => products)
+      .find(({ name }) => name === "Name-only Booster"),
+    {
+      reference: { kind: "name", value: "Name-only Booster" },
+      official_code: null,
+      name: "Name-only Booster",
+      releases: [],
+    },
+  );
+  assert.equal(
+    catalogues.flatMap(({ products }) => products)
       .find(({ official_code }) => official_code === "FB-BOOST-01")
       .releases[0].status,
     "announced",
   );
 });
 
-test("a Product URL slug cannot become a canonical official code", () => {
+test("a Product URL slug cannot become a canonical official code but its authoritative name is retained", () => {
   const adapter = officialRawAdapterContracts.find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
@@ -811,12 +892,41 @@ test("a Product URL slug cannot become a canonical official code", () => {
       requestId: "fusion-world-en:products",
     },
   );
+  const products = observations.flatMap(
+    ({ product_release_catalogue }) =>
+      product_release_catalogue?.products ?? [],
+  );
+  assert.deepEqual(products, [{
+    reference: { kind: "name", value: "Presentation-only Product" },
+    official_code: null,
+    name: "Presentation-only Product",
+    releases: [],
+  }]);
+});
+
+test("Product detail ignores unrelated code-shaped prose without losing name authority", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
+  );
+  const observation = adapter.parseBytes(
+    new TextEncoder().encode(`
+      <h1>Name-authoritative Booster</h1>
+      <p>Compatible with card GD99-001.</p>
+    `),
+    {
+      mediaType: "text/html",
+      url: "https://www.gundam-gcg.com/en/products/detail.php?id=name-only",
+      requestId: `gundam-en-us:product_detail:${"f".repeat(64)}`,
+    },
+  )[0];
   assert.deepEqual(
-    observations.flatMap(
-      ({ product_release_catalogue }) =>
-        product_release_catalogue?.products ?? [],
-    ),
-    [],
+    observation.product_release_catalogue.products,
+    [{
+      reference: { kind: "name", value: "Name-authoritative Booster" },
+      official_code: null,
+      name: "Name-authoritative Booster",
+      releases: [],
+    }],
   );
 });
 

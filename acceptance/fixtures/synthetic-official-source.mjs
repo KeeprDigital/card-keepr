@@ -271,6 +271,11 @@ export const officialDiscoveryDefinitions = {
     productCode: "OP-RAW-01",
     productName: "One Piece Raw Product",
     region: "EN-OCEANIA",
+    printing: {
+      rarity: "L",
+      normalizedRarity: "leader",
+      attributes: { illustration_types: [] },
+    },
     attributes: {
       card_type: "leader",
       colours: ["red"],
