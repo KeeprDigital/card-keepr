@@ -13,7 +13,7 @@ INSERT INTO source_adapter_versions (
     'one-piece-en',
     'one-piece',
     'one-piece@1',
-    'one-piece-card-and-legality-document@2',
+    'one-piece-official-surfaces@3',
     'production'
   ),
   (
@@ -21,7 +21,7 @@ INSERT INTO source_adapter_versions (
     'fusion-world-en',
     'fusion-world',
     'fusion-world@1',
-    'fusion-world-card-and-legality-document@2',
+    'fusion-world-official-surfaces@3',
     'production'
   ),
   (
@@ -29,7 +29,7 @@ INSERT INTO source_adapter_versions (
     'digimon-en',
     'digimon',
     'digimon@1',
-    'digimon-card-and-legality-document@2',
+    'digimon-official-surfaces@3',
     'production'
   ),
   (
@@ -37,7 +37,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-asia',
     'gundam',
     'gundam@1',
-    'gundam-card-and-legality-document@2',
+    'gundam-official-surfaces@3',
     'production'
   ),
   (
@@ -45,7 +45,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-us',
     'gundam',
     'gundam@1',
-    'gundam-card-and-legality-document@2',
+    'gundam-official-surfaces@3',
     'production'
   );
 

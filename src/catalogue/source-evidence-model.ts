@@ -90,6 +90,9 @@ export async function validateEvidencePlan(
       "requests must contain between 1 and 100 Official Source requests.",
     );
   }
+  if (adapter.reconciliationCoverage === "official_complete") {
+    validateOfficialDiscoverySeed(adapter, request.requests);
+  }
   const requestIds = new Set<string>();
   const requests: EvidencePlanRequest[] = [];
   for (const sourceRequest of request.requests) {

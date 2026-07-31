@@ -637,7 +637,7 @@ export async function parseCapturedRequest(
     sourceRequest.request_id,
   );
   try {
-    await parseSnapshot(
+    const observationSet = await parseSnapshot(
       database,
       evidenceObjects,
       snapshotId,

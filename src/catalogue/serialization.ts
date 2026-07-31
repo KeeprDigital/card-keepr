@@ -1,5 +1,4 @@
 import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
-
 const encoder = new TextEncoder();
 const zFixed = 4;
 const zOk = 0;
@@ -77,7 +76,6 @@ export function deterministicGzip(value: Uint8Array): Uint8Array {
   }
   return Uint8Array.from(compressor.result);
 }
-
 export async function sha256(value: BufferSource): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", value);
   return Array.from(new Uint8Array(digest), (byte) =>

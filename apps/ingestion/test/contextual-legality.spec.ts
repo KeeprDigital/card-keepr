@@ -24,22 +24,36 @@ test("the production repository ingests effective-dated regional Legality Rules 
     idempotency_key: "contextual-legality-asia",
     requests: [
       {
-        id: "cards-and-legality",
+        id: "discovery",
         method: "GET",
         url:
-          "https://official-source.invalid/reconciliation/contextual-legality-asia",
+          "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-asia",
         headers: { accept: "application/json" },
       },
     ],
   });
-  expect(started.response.status).toBe(201);
+  expect(
+    started.response.status,
+    JSON.stringify(started.document),
+  ).toBe(201);
   const runId = requiredString(started.document, "id");
   const resumed = await request(
     `/v1/ingestion-runs/${runId}/collection/resume`,
     {},
   );
   expect(resumed.response.status).toBe(202);
-  await waitForState(runId, "parsing");
+  const collected = await waitForState(runId, "parsing");
+  expect(collected.snapshots).toHaveLength(9);
+  expect(collected.observation_sets).toHaveLength(9);
+  expect(
+    (collected.snapshots as {
+      request: { url: string };
+    }[]).every(({ request }) =>
+      request.url.startsWith(
+        "https://www.gundam-gcg.com/asia-en/",
+      ),
+    ),
+  ).toBe(true);
 
   const reconciled = await request(
     `/v1/ingestion-runs/${runId}/reconciliation`,
@@ -156,15 +170,33 @@ test.each([
       game,
       lineage,
       scenario,
-      terminalAfterAccepted: true,
     });
-    const terminal = await waitForState(runId, "failed");
-    expect(terminal).toMatchObject({
+    const parsing = await waitForState(runId, "parsing");
+    expect(parsing).toMatchObject({
       id: runId,
-      state: "failed",
-      failure_code: "source_parse_failed",
+      state: "parsing",
     });
-    expect(terminal.observation_sets).toHaveLength(1);
+    expect(
+      Array.isArray(parsing.observation_sets)
+        ? parsing.observation_sets.length
+        : 0,
+    ).toBeGreaterThanOrEqual(9);
+    const reconciled = await request(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      {},
+    );
+    expect(
+      reconciled.response.status,
+      JSON.stringify(reconciled.document),
+    ).toBe(409);
+    expect(reconciled.document).toMatchObject({
+      state: "failed",
+      diagnostics: [
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+        }),
+      ],
+    });
   },
 );
 
@@ -172,6 +204,9 @@ test.each([
   ["contextual-legality-missing-rules"],
   ["contextual-legality-false-empty-rules"],
   ["contextual-legality-missing-product-details"],
+  ["contextual-legality-empty-product-details"],
+  ["contextual-legality-malformed-product-details"],
+  ["contextual-legality-incomplete-discovery"],
 ])(
   "the production adapter fails closed for %s through HTTP",
   async (scenario) => {
@@ -190,18 +225,37 @@ test.each([
   },
 );
 
+test("a complete adapter rejects an arbitrary HTTPS discovery authority before creating a run", async () => {
+  const blocked = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "gundam",
+    source_lineage: "gundam-en-asia",
+    adapter_version: "gundam-en-asia@2",
+    idempotency_key: "contextual-legality-arbitrary-authority",
+    requests: [
+      {
+        id: "discovery",
+        method: "GET",
+        url:
+          "https://attacker.example/asia-en/reconciliation/contextual-legality-asia",
+      },
+    ],
+  });
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "invalid_parameter",
+  });
+});
+
 async function startAdapterCollection({
   adapter,
   game,
   lineage,
   scenario,
-  terminalAfterAccepted = false,
 }: {
   adapter: string;
   game: string;
   lineage: string;
   scenario: string;
-  terminalAfterAccepted?: boolean;
 }): Promise<string> {
   const idempotencyKey =
     `contextual-legality-adapter-${adapter}-${scenario}`;
@@ -212,22 +266,11 @@ async function startAdapterCollection({
     idempotency_key: idempotencyKey,
     requests: [
       {
-        id: "cards-and-legality",
+        id: "discovery",
         method: "GET",
-        url:
-          `https://official-source.invalid/reconciliation/${scenario}`,
+        url: officialAdapterUrl(adapter, scenario),
         headers: { accept: "application/json" },
       },
-      ...(terminalAfterAccepted
-        ? [
-            {
-              id: "terminal-invalid-document",
-              method: "GET",
-              url: "https://official-source.invalid/invalid-json",
-              headers: { accept: "application/json" },
-            },
-          ]
-        : []),
     ],
   });
   expect(started.response.status).toBe(201);
@@ -240,8 +283,24 @@ async function startAdapterCollection({
   return runId;
 }
 
+function officialAdapterUrl(adapter: string, scenario: string): string {
+  if (adapter === "one-piece-json-document@3") {
+    return `https://en.onepiece-cardgame.com/reconciliation/${scenario}`;
+  }
+  if (adapter === "fusion-world-en@2") {
+    return `https://www.dbs-cardgame.com/fw/en/reconciliation/${scenario}`;
+  }
+  if (adapter === "digimon-en@2") {
+    return `https://world.digimoncard.com/reconciliation/${scenario}`;
+  }
+  if (adapter === "gundam-en-asia@2") {
+    return `https://www.gundam-gcg.com/asia-en/reconciliation/${scenario}`;
+  }
+  return `https://www.gundam-gcg.com/en/reconciliation/${scenario}`;
+}
+
 async function waitForState(runId: string, expected: string) {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const shown = await request(`/v1/ingestion-runs/${runId}`);
     if (shown.document.state === expected) return shown.document;

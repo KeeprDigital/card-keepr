@@ -702,9 +702,19 @@ export default defineConfig({
               document,
             );
           }
-          if (url.pathname.startsWith("/reconciliation/")) {
-            const scenario = url.pathname.slice("/reconciliation/".length);
-            return Response.json(reconciliationSourceDocument(scenario));
+          const reconciliationAt =
+            url.pathname.indexOf("/reconciliation/");
+          if (reconciliationAt !== -1) {
+            const scenario = url.pathname.slice(
+              reconciliationAt + "/reconciliation/".length,
+            );
+            return Response.json(
+              reconciliationSourceDocument(
+                scenario,
+                url.searchParams.get("surface") ?? "discovery",
+                url.href,
+              ),
+            );
           }
           if (url.pathname === "/redirect") {
             return new Response(null, {
@@ -798,46 +808,110 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/ingestion/test/**/*.spec.ts"],
-    testTimeout: 15_000,
+    testTimeout: 30_000,
   },
 });
 
-function reconciliationSourceDocument(scenario: string) {
+function reconciliationSourceDocument(
+  scenario: string,
+  surface: string,
+  requestUrl: string,
+) {
   if (scenario === "contextual-legality-empty-oceania") {
-    return emptyOfficialCatalogueDocument("EN-OCEANIA");
+    return emptyOfficialCatalogueDocument(
+      "EN-OCEANIA",
+      surface,
+      requestUrl,
+    );
   }
   if (scenario === "contextual-legality-empty-one-piece") {
     return emptyOfficialCatalogueDocument(
       "EN-OCEANIA",
+      surface,
+      requestUrl,
       "complete",
       "one-piece",
     );
   }
   if (scenario === "contextual-legality-empty-asia") {
-    return emptyOfficialCatalogueDocument("EN-ASIA");
+    return emptyOfficialCatalogueDocument("EN-ASIA", surface, requestUrl);
   }
   if (scenario === "contextual-legality-empty-us") {
-    return emptyOfficialCatalogueDocument("EN-US");
+    return emptyOfficialCatalogueDocument("EN-US", surface, requestUrl);
   }
   if (scenario === "contextual-legality-missing-rules") {
-    return emptyOfficialCatalogueDocument("EN-ASIA", "missing");
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+      "missing",
+    );
   }
   if (scenario === "contextual-legality-false-empty-rules") {
-    return emptyOfficialCatalogueDocument("EN-ASIA", "false-empty");
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+      "false-empty",
+    );
   }
   if (scenario === "contextual-legality-missing-product-details") {
     return emptyOfficialCatalogueDocument(
       "EN-ASIA",
+      surface,
+      requestUrl,
       "complete",
       "gundam",
       "product_details",
     );
   }
+  if (scenario === "contextual-legality-empty-product-details") {
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+      "complete",
+      "gundam",
+      undefined,
+      "empty",
+    );
+  }
+  if (scenario === "contextual-legality-malformed-product-details") {
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+      "complete",
+      "gundam",
+      undefined,
+      "malformed",
+    );
+  }
+  if (scenario === "contextual-legality-incomplete-discovery") {
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+      "complete",
+      "gundam",
+      undefined,
+      undefined,
+      "missing",
+    );
+  }
   if (scenario === "contextual-legality-asia") {
-    return contextualLegalitySourceDocument("EN-ASIA");
+    return contextualLegalitySourceDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+    );
   }
   if (scenario === "contextual-legality-us") {
-    return contextualLegalitySourceDocument("EN-US");
+    return contextualLegalitySourceDocument(
+      "EN-US",
+      surface,
+      requestUrl,
+    );
   }
   if (scenario === "complete-empty-lineage") {
     return { cards: [] };
@@ -2948,47 +3022,123 @@ function productReleaseCatalogueForScenario(
 
 function emptyOfficialCatalogueDocument(
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+  surface: string,
+  requestUrl: string,
   legalityVariant: "complete" | "missing" | "false-empty" =
     "complete",
   game: "one-piece" | "fusion-world" | "digimon" | "gundam" =
     "gundam",
   omittedSurface?: string,
+  productDetailsVariant?: "empty" | "malformed",
+  discoveryVariant?: "missing",
 ) {
-  const emptySurface = {
-    partition,
-    declared_record_count: 0,
-    pages: [],
-  };
-  const surfaces: Record<string, unknown> = {
-    discovery: emptySurface,
-    card_listings: emptySurface,
-    card_details: emptySurface,
-    cards: emptySurface,
-    product_listings: emptySurface,
-    product_details: emptySurface,
-    legality_rules:
-      legalityVariant === "false-empty"
-        ? {
-            partition,
-            declared_record_count: 1,
-            pages: [],
-          }
-        : emptySurface,
-    legality_history: emptySurface,
-    errata: emptySurface,
+  if (
+    (legalityVariant === "missing" && surface === "legality_rules") ||
+    surface === omittedSurface
+  ) {
+    return { surface: { name: "not-a-required-surface" } };
+  }
+  if (
+    legalityVariant === "false-empty" &&
+    surface === "legality_rules"
+  ) {
+    return {
+      surface: {
+        name: surface,
+        partition,
+        declared_record_count: 1,
+        pages: [],
+      },
+    };
+  }
+  const requiredSurfaces = [
+    "discovery",
+    "card_listings",
+    "card_details",
+    "cards",
+    "product_listings",
+    "product_details",
+    "legality_rules",
+    "legality_history",
+    "errata",
     ...(game === "one-piece"
-      ? {
-          block_policy: emptySurface,
-          release_timing: emptySurface,
-          don_rules: emptySurface,
-        }
-      : {}),
-  };
-  if (legalityVariant === "missing") delete surfaces.legality_rules;
-  if (omittedSurface !== undefined) delete surfaces[omittedSurface];
+      ? ["block_policy", "release_timing", "don_rules"]
+      : []),
+  ];
+  const records = officialSurfaceRecords({
+    discoveryVariant,
+    productDetailsVariant,
+    requestUrl,
+    requiredSurfaces,
+    surface,
+  });
   return {
-    surfaces,
+    surface: {
+      name: surface,
+      partition,
+      declared_record_count: records.length,
+      pages:
+        records.length === 0
+          ? []
+          : [
+              {
+                number: 1,
+                total_pages: 1,
+                declared_record_count: records.length,
+                records,
+              },
+            ],
+    },
   };
+}
+
+function officialSurfaceRecords(input: {
+  discoveryVariant?: "missing";
+  productDetailsVariant?: "empty" | "malformed";
+  requestUrl: string;
+  requiredSurfaces: string[];
+  surface: string;
+}): unknown[] {
+  if (input.surface === "discovery") {
+    return input.requiredSurfaces
+      .filter((name) => name !== "discovery")
+      .filter(
+        (name) =>
+          input.discoveryVariant !== "missing" || name !== "errata",
+      )
+      .map((name) => ({
+        surface: name,
+        url: officialSurfaceUrl(input.requestUrl, name),
+      }));
+  }
+  if (input.surface === "cards") {
+    return [{ retained_test_card: true }];
+  }
+  if (input.surface === "legality_rules") return [];
+  if (
+    input.surface === "product_details" &&
+    input.productDetailsVariant === "empty"
+  ) {
+    return [];
+  }
+  if (
+    input.surface === "product_details" &&
+    input.productDetailsVariant === "malformed"
+  ) {
+    return [{ source_id: "malformed-product-detail" }];
+  }
+  return [
+    {
+      source_id: `${input.surface}-representative`,
+      source_url: input.requestUrl,
+    },
+  ];
+}
+
+function officialSurfaceUrl(requestUrl: string, surface: string): string {
+  const url = new URL(requestUrl);
+  url.searchParams.set("surface", surface);
+  return url.href;
 }
 
 function printingObservation(input: {

@@ -15,17 +15,24 @@ The complete production adapters are:
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Their JSON document contains a closed `surfaces` object. Every production
-adapter requires discovery, Card listing/detail, canonical Card, Product
-listing/detail, current Legality Rule, Legality history, and Errata surfaces.
+Each immutable Source Snapshot contains exactly one closed `surface` document.
+The adapter-owned discovery seed expands to separate planned requests for
+discovery, Card listing/detail, canonical Card, Product listing/detail, current
+Legality Rule, Legality history, and Errata surfaces.
 The One Piece adapter also requires block-policy, release-timing, and DON-rule
-surfaces. Each surface declares the adapter's exact regional partition, its
-total record count, and a complete ordered set of pages; every page declares
+surfaces. Planning rejects origins and locale paths outside the adapter's
+Official Source authority. Live discovery must enumerate the exact URL of
+every other planned request, and reconciliation verifies that graph against
+the separately retained snapshots. Each surface declares the adapter's exact
+regional partition, its total record count, and a complete ordered set of
+pages; every page declares
 its page number, total page count, record count, and records. A truly empty
-surface is represented by a declared total of zero and no pages. Non-Card
-surfaces prove that a production capture covered the required Official Source
-areas; their exact response bytes remain retained Source Snapshot evidence and
-are not interpreted as Product or Erratum catalogue records by this feature.
+Legality Rule surface may be represented by a declared total of zero and no
+pages. Other required live surfaces must retain at least one structurally
+valid record. Non-Card surface records prove that a production capture covered
+the required Official Source areas; they remain immutable Source Observation
+evidence and are not interpreted as Product or Erratum catalogue records by
+this feature.
 The adapter derives completeness from this structure and rejects missing
 surfaces, incomplete page sets, mismatched counts, unexpected partitions, and
 unknown envelope fields.

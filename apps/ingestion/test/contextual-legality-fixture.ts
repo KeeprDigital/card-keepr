@@ -1,30 +1,65 @@
 type Region = "EN-ASIA" | "EN-US";
 
-export function contextualLegalitySourceDocument(region: Region) {
+export function contextualLegalitySourceDocument(
+  region: Region,
+  surface: string,
+  requestUrl: string,
+) {
   const cardNumbers =
     region === "EN-ASIA"
       ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
   const rules = legalityRules(region);
-  const proof = completeSurface(region, []);
+  const records =
+    surface === "discovery"
+      ? discoveredSurfaces(requestUrl)
+      : surface === "cards"
+        ? cards
+        : surface === "legality_rules"
+          ? rules
+          : [
+              {
+                source_id: `${surface}-representative`,
+                source_url: requestUrl,
+              },
+            ];
   return {
-    surfaces: {
-      discovery: proof,
-      card_listings: proof,
-      card_details: proof,
-      cards: completeSurface(region, cards),
-      product_listings: proof,
-      product_details: proof,
-      legality_rules: completeSurface(region, rules),
-      legality_history: proof,
-      errata: proof,
-    },
+    surface: completeSurface(region, surface, records),
   };
 }
 
-function completeSurface(partition: Region, records: readonly unknown[]) {
+const requiredSurfaces = [
+  "discovery",
+  "card_listings",
+  "card_details",
+  "cards",
+  "product_listings",
+  "product_details",
+  "legality_rules",
+  "legality_history",
+  "errata",
+];
+
+function discoveredSurfaces(requestUrl: string) {
+  const seed = new URL(requestUrl);
+  seed.searchParams.delete("surface");
+  return requiredSurfaces
+    .filter((surface) => surface !== "discovery")
+    .map((surface) => {
+      const url = new URL(seed);
+      url.searchParams.set("surface", surface);
+      return { surface, url: url.href };
+    });
+}
+
+function completeSurface(
+  partition: Region,
+  name: string,
+  records: readonly unknown[],
+) {
   return {
+    name,
     partition,
     declared_record_count: records.length,
     pages:

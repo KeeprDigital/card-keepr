@@ -83,8 +83,9 @@ Each component is one gzip member over the canonical NDJSON, with:
 - MTIME `0`;
 - XFL `2`;
 - OS `255`;
-- raw DEFLATE produced by the checked-in, lockfile-pinned export compressor with
-  level `9`, window bits `15`, memory level `8`, and fixed-Huffman strategy;
+- raw DEFLATE produced by the lockfile-pinned `pako@2.1.0` export compressor
+  with level `9`, window bits `15`, memory level `8`, and fixed-Huffman
+  strategy;
 - CRC32 and ISIZE derived from the canonical NDJSON.
 
 The production implementation must pin one compressor version and must retain
@@ -92,6 +93,8 @@ golden byte fixtures covering ASCII, non-ASCII NFC, nulls, empty components, and
 more than one DEFLATE block. A compressor upgrade is accepted only if every
 golden byte remains identical; otherwise it requires a new serialization
 profile and export-schema major.
+The authenticated export-boundary goldens are checked in at
+`acceptance/fixtures/catalogue-export-gzip-golden.json`.
 
 `compressed_sha256` and `compressed_bytes` in the manifest cover the complete
 gzip member. An immutable R2 component key is derived from

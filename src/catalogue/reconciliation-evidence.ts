@@ -193,7 +193,6 @@ export async function retainedReconciliationObservation(
   );
   const observationIds = new Set<string>();
   const legalityRules: RetainedLegalityRule[] = [];
-  let declaredLegalityScopes = 0;
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
@@ -212,12 +211,6 @@ export async function retainedReconciliationObservation(
           );
         }
         observationIds.add(wrapped.id);
-        if (
-          isRecord(wrapped.value) &&
-          Array.isArray(wrapped.value.legality_rules)
-        ) {
-          declaredLegalityScopes += 1;
-        }
         legalityRules.push(
           ...parseRetainedLegalityRules(wrapped.value, {
             game: supportedGame(row.supported_game),

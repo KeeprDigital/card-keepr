@@ -6,6 +6,9 @@ export function contextualLegalityDocument(
     copyLimit = null,
     rules: rulesVariant = null,
     semantics = null,
+    surface = "discovery",
+    requestUrl =
+      "https://www.gundam-gcg.com/asia-en/contextual-legality",
   } = {},
 ) {
   const numbers =
@@ -76,28 +79,69 @@ export function contextualLegalityDocument(
       representable,
     });
   }
-  return officialSurfaceDocument(region, cards, legalityRules);
+  return officialSurfaceDocument(
+    region,
+    surface,
+    requestUrl,
+    cards,
+    legalityRules,
+  );
 }
 
-function officialSurfaceDocument(region, cards, legalityRules) {
-  const proof = completeSurface(region, []);
+const requiredSurfaces = [
+  "discovery",
+  "card_listings",
+  "card_details",
+  "cards",
+  "product_listings",
+  "product_details",
+  "legality_rules",
+  "legality_history",
+  "errata",
+];
+
+function officialSurfaceDocument(
+  region,
+  surface,
+  requestUrl,
+  cards,
+  legalityRules,
+) {
+  const records =
+    surface === "discovery"
+      ? discoveredSurfaces(requestUrl)
+      : surface === "cards"
+        ? cards
+        : surface === "legality_rules"
+          ? legalityRules
+          : [
+              {
+                source_id: `${surface}-representative`,
+                source_url: requestUrl,
+                retained_label:
+                  `Representative live ${surface.replaceAll("_", " ")} record`,
+              },
+            ];
   return {
-    surfaces: {
-      discovery: proof,
-      card_listings: proof,
-      card_details: proof,
-      cards: completeSurface(region, cards),
-      product_listings: proof,
-      product_details: proof,
-      legality_rules: completeSurface(region, legalityRules),
-      legality_history: proof,
-      errata: proof,
-    },
+    surface: completeSurface(region, surface, records),
   };
 }
 
-function completeSurface(partition, records) {
+function discoveredSurfaces(requestUrl) {
+  const seed = new URL(requestUrl);
+  seed.searchParams.delete("surface");
+  return requiredSurfaces
+    .filter((surface) => surface !== "discovery")
+    .map((surface) => {
+      const url = new URL(seed);
+      url.searchParams.set("surface", surface);
+      return { surface, url: url.href };
+    });
+}
+
+function completeSurface(partition, name, records) {
   return {
+    name,
     partition,
     declared_record_count: records.length,
     pages:
@@ -141,7 +185,7 @@ function rules(region) {
       id: "legality_rule_asia_eligible",
       card_numbers: [],
       official_wording:
-        "Cards satisfying the published Standard eligibility rules may be used.",
+        `Cafe\u0301 serialization golden ${serializationNoise(24_000)}`,
       effect: { type: "eligible" },
     },
     {
@@ -246,6 +290,16 @@ function rules(region) {
       effect: { type: "eligible" },
     })),
   ];
+}
+
+function serializationNoise(length) {
+  let state = 0x30cafe;
+  let value = "";
+  while (value.length < length) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    value += String.fromCharCode(33 + (state % 90));
+  }
+  return value;
 }
 
 function gundamObservation(cardNumber) {

@@ -5,6 +5,7 @@ import {
   parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,
+  type EvidencePlanRequest,
   type StartEvidenceRunRequest,
   validateEvidencePlans,
 } from "./source-evidence-model";
@@ -124,7 +125,7 @@ export async function startEvidenceRun(
     request.idempotency_key,
   );
   if (replay !== null) {
-    if (replay.request_plan_json !== planJson) {
+    if (!sameEvidencePlanIntent(replay.request_plan_json, planJson)) {
       throw new AdministrationProblem(
         409,
         "idempotency_key_reused",
@@ -191,7 +192,10 @@ export async function startEvidenceRun(
       database,
       request.idempotency_key,
     );
-    if (concurrent !== null && concurrent.request_plan_json === planJson) {
+    if (
+      concurrent !== null &&
+      sameEvidencePlanIntent(concurrent.request_plan_json, planJson)
+    ) {
       return showEvidenceRun(database, concurrent.id);
     }
     await throwIfRecoveryBlocked(database);
@@ -220,6 +224,30 @@ export async function startEvidenceRun(
     throw error;
   }
   return showEvidenceRun(database, runId);
+}
+
+function sameEvidencePlanIntent(
+  retainedJson: string,
+  requestedJson: string,
+): boolean {
+  if (retainedJson === requestedJson) return true;
+  const retained = parseEvidencePlan(retainedJson);
+  const requested = parseEvidencePlan(requestedJson);
+  if (
+    retained.adapter_version !== requested.adapter_version ||
+    retained.source_lineage !== requested.source_lineage ||
+    retained.supported_game !== requested.supported_game ||
+    retained.game_profile_version !== requested.game_profile_version ||
+    requested.requests.length !== 1 ||
+    requested.requests[0]!.id !== "discovery" ||
+    retained.requests.length < 1
+  ) {
+    return false;
+  }
+  return (
+    canonicalJson(retained.requests[0]) ===
+    canonicalJson(requested.requests[0])
+  );
 }
 
 export async function retryEvidenceRun(
@@ -512,6 +540,63 @@ export async function appendDiscoveredEvidenceRequests(
     inserted.push(retained);
   }
   return inserted;
+}
+
+export async function appendDiscoveredEvidenceRequests(
+  database: D1Database,
+  runId: string,
+  discoveredRequests: readonly EvidencePlanRequest[],
+): Promise<void> {
+  const run = await requiredEvidenceRun(database, runId);
+  const current = parseEvidencePlan(run.request_plan_json);
+  if (
+    current.requests.length === 0 ||
+    current.requests[0]!.id !== "discovery"
+  ) {
+    throw new Error(
+      "Complete Official Source planning lost its discovery seed.",
+    );
+  }
+  const expanded: EvidencePlan = {
+    ...current,
+    requests: [current.requests[0]!, ...discoveredRequests],
+  };
+  const expandedJson = canonicalJson(expanded);
+  if (current.requests.length > 1) {
+    if (run.request_plan_json !== expandedJson) {
+      throw new Error(
+        "Live Official Source discovery changed after plan expansion.",
+      );
+    }
+    return;
+  }
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans
+         SET request_plan_json = ?
+         WHERE ingestion_run_id = ? AND request_plan_json = ?`,
+      )
+      .bind(expandedJson, runId, run.request_plan_json),
+    ...discoveredRequests.map((request, index) =>
+      database
+        .prepare(
+          `INSERT INTO source_requests (
+             ingestion_run_id, request_id, sequence_number, method, url,
+             request_headers_json, representation_fingerprint, state,
+             source_snapshot_id, failure_code
+           ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL)`,
+        )
+        .bind(
+          runId,
+          request.id,
+          index + 1,
+          request.url,
+          canonicalJson(request.headers),
+          request.representation_fingerprint,
+        ),
+    ),
+  ]);
 }
 
 export async function requiredEvidenceRun(

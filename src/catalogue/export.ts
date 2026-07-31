@@ -16,7 +16,6 @@ import {
 import {
   canonicalJson,
   compareUtf8,
-  deterministicGzip,
   sha256,
   sha256Text,
   utf8,

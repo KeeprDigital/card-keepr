@@ -262,6 +262,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+export async function retainedOfficialDiscoveryRecords(
+  evidenceObjects: R2Bucket,
+  observationSet: ObservationSetRow,
+): Promise<unknown[]> {
+  const object = await evidenceObjects.get(
+    observationSet.content_object_key,
+  );
+  if (
+    object === null ||
+    object.size !== observationSet.content_byte_length
+  ) {
+    throw new Error(
+      "Official Source discovery observations are unavailable.",
+    );
+  }
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if ((await sha256(bytes)) !== observationSet.content_digest) {
+    throw new Error(
+      "Official Source discovery observations failed digest verification.",
+    );
+  }
+  const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  if (!isRecord(document) || !Array.isArray(document.observations)) {
+    throw new Error("Official Source discovery observations are invalid.");
+  }
+  const discoveries = document.observations.filter(
+    (wrapped) =>
+      isRecord(wrapped) &&
+      isRecord(wrapped.value) &&
+      wrapped.value.observation_type === "official_surface_evidence" &&
+      wrapped.value.surface === "discovery" &&
+      Array.isArray(wrapped.value.records),
+  );
+  if (discoveries.length !== 1) {
+    throw new Error(
+      "Official Source discovery retained an invalid surface count.",
+    );
+  }
+  return (discoveries[0] as {
+    value: { records: unknown[] };
+  }).value.records;
+}
+
 export async function reparseSnapshot(
   database: D1Database,
   evidenceObjects: R2Bucket,

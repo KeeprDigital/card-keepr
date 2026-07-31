@@ -7,7 +7,9 @@ let onePieceCardListRequests = 0;
 export default {
   fetch(request) {
     const url = new URL(request.url);
-    const pathname = url.pathname;
+    const pathname = url.pathname
+      .replace(/^\/asia-en/, "")
+      .replace(/^\/en/, "");
     const transportOutcome = request.headers.get("user-agent");
     if (
       transportOutcome ===
@@ -173,6 +175,9 @@ export default {
             copyLimit: url.searchParams.get("copy-limit"),
             rules: url.searchParams.get("rules"),
             semantics: url.searchParams.get("semantics"),
+            surface:
+              url.searchParams.get("surface") ?? "discovery",
+            requestUrl: url.href,
           },
         ),
       );
@@ -183,7 +188,12 @@ export default {
           "EN-US",
           true,
           null,
-          { rules: url.searchParams.get("rules") },
+          {
+            rules: url.searchParams.get("rules"),
+            surface:
+              url.searchParams.get("surface") ?? "discovery",
+            requestUrl: url.href,
+          },
         ),
       );
     }

@@ -90,47 +90,57 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
 };
 
 function officialCatalogueParser(
-  requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
-  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  contract: OfficialSourceContract,
 ): (document: unknown) => readonly unknown[] {
   return (document) => {
     const envelope = requiredRecord(
       document,
-      "Official Source catalogue document",
+      "Official Source surface document",
     );
-    assertOnlyFields(envelope, ["surfaces"]);
-    const surfaces = requiredRecord(
-      envelope.surfaces,
-      "Official Source surfaces",
+    assertOnlyFields(envelope, ["surface"]);
+    const surface = requiredRecord(
+      envelope.surface,
+      "Official Source surface",
     );
-    const requiredSurfaces = officialSurfaceNames(supportedGame);
-    assertOnlyFields(surfaces, requiredSurfaces);
-    const parsedSurfaces = new Map<string, unknown[]>();
-    for (const name of requiredSurfaces) {
-      if (surfaces[name] === undefined) {
-        throw new Error(
-          `The required ${officialSurfaceLabel(name)} surface is missing.`,
-        );
-      }
-      parsedSurfaces.set(
-        name,
-        parseOfficialSurface(
-          surfaces[name],
-          officialSurfaceLabel(name),
-          requiredPartition,
-        ),
+    if (
+      typeof surface.name !== "string" ||
+      !contract.requiredSurfaces.includes(surface.name)
+    ) {
+      throw new Error(
+        "The Official Source response does not identify one required surface.",
       );
     }
-    const cards = parsedSurfaces.get("cards")!;
-    const legalityRules = parsedSurfaces.get("legality_rules")!;
+    const name = surface.name;
+    const records = parseOfficialSurface(
+      surface,
+      officialSurfaceLabel(name),
+      contract,
+      name === "legality_rules",
+    );
+    validateOfficialSurfaceRecords(name, records, contract);
+    const retainedSurfaceEvidence = {
+      observation_type: "official_surface_evidence",
+      surface: name,
+      records,
+      completeness: completeObservationEvidence(),
+    };
+    if (name === "cards") {
+      return [
+        retainedSurfaceEvidence,
+        ...records.map((card) => ({
+          ...requiredRecord(card, "Official Card record"),
+          completeness: completeObservationEvidence(),
+        })),
+      ];
+    }
+    if (name !== "legality_rules") {
+      return [retainedSurfaceEvidence];
+    }
     return [
-      ...cards.map((card) => ({
-        ...requiredRecord(card, "Official Card record"),
-        completeness: completeObservationEvidence(),
-      })),
+      retainedSurfaceEvidence,
       {
         observation_type: "legality_rules",
-        legality_rules: legalityRules,
+        legality_rules: records,
         completeness: completeObservationEvidence(),
       },
     ];
@@ -162,6 +172,67 @@ function officialSurfaceNames(
     : commonOfficialSurfaceNames;
 }
 
+function officialSourceContract(
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  partition: OfficialSourceContract["partition"],
+  origin: string,
+  pathnamePrefix: string,
+): OfficialSourceContract {
+  return Object.freeze({
+    partition,
+    origin,
+    pathnamePrefix,
+    requiredSurfaces: Object.freeze([
+      ...officialSurfaceNames(supportedGame),
+    ]),
+  });
+}
+
+const onePieceOfficialSource = officialSourceContract(
+  "one-piece",
+  "EN-OCEANIA",
+  "https://en.onepiece-cardgame.com",
+  "/",
+);
+const fusionWorldOfficialSource = officialSourceContract(
+  "fusion-world",
+  "EN-OCEANIA",
+  "https://www.dbs-cardgame.com",
+  "/fw/en/",
+);
+const digimonOfficialSource = officialSourceContract(
+  "digimon",
+  "EN-OCEANIA",
+  "https://world.digimoncard.com",
+  "/",
+);
+const gundamAsiaOfficialSource = officialSourceContract(
+  "gundam",
+  "EN-ASIA",
+  "https://www.gundam-gcg.com",
+  "/asia-en/",
+);
+const gundamUsOfficialSource = officialSourceContract(
+  "gundam",
+  "EN-US",
+  "https://www.gundam-gcg.com",
+  "/en/",
+);
+
+export function requiredOfficialSourceContract(
+  adapter: SourceAdapterRegistration,
+): OfficialSourceContract {
+  if (
+    adapter.reconciliationCoverage !== "official_complete" ||
+    adapter.officialSourceContract === undefined
+  ) {
+    throw new Error(
+      `Adapter ${adapter.adapterVersion} has no complete Official Source contract.`,
+    );
+  }
+  return adapter.officialSourceContract;
+}
+
 function officialSurfaceLabel(name: string): string {
   return name
     .split("_")
@@ -172,15 +243,17 @@ function officialSurfaceLabel(name: string): string {
 function parseOfficialSurface(
   value: unknown,
   name: string,
-  requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+  contract: OfficialSourceContract,
+  allowEmpty: boolean,
 ): unknown[] {
   const surface = requiredRecord(value, `${name} surface`);
   assertOnlyFields(surface, [
+    "name",
     "partition",
     "declared_record_count",
     "pages",
   ]);
-  if (surface.partition !== requiredPartition) {
+  if (surface.partition !== contract.partition) {
     throw new Error(
       `${name} surface partition does not match its Source Lineage.`,
     );
@@ -234,7 +307,69 @@ function parseOfficialSurface(
       `${name} surface declared and parsed record counts differ.`,
     );
   }
+  if (!allowEmpty && records.length === 0) {
+    throw new Error(
+      `${name} surface cannot prove live Official Source coverage with no records.`,
+    );
+  }
   return records;
+}
+
+function validateOfficialSurfaceRecords(
+  name: string,
+  records: readonly unknown[],
+  contract: OfficialSourceContract,
+): void {
+  if (name === "cards" || name === "legality_rules") return;
+  for (const recordValue of records) {
+    const record = requiredRecord(
+      recordValue,
+      `${officialSurfaceLabel(name)} record`,
+    );
+    if (name === "discovery") {
+      if (
+        typeof record.surface !== "string" ||
+        record.surface === "discovery" ||
+        !contract.requiredSurfaces.includes(record.surface) ||
+        typeof record.url !== "string"
+      ) {
+        throw new Error(
+          "Official Source discovery records must identify one required surface and URL.",
+        );
+      }
+      assertOfficialSourceUrl(record.url, contract);
+      continue;
+    }
+    if (
+      typeof record.source_id !== "string" ||
+      record.source_id.length === 0 ||
+      typeof record.source_url !== "string"
+    ) {
+      throw new Error(
+        `${officialSurfaceLabel(name)} records require source_id and source_url provenance.`,
+      );
+    }
+    assertOfficialSourceUrl(record.source_url, contract);
+  }
+}
+
+export function assertOfficialSourceUrl(
+  value: string,
+  contract: OfficialSourceContract,
+): URL {
+  const url = new URL(value);
+  if (
+    url.origin !== contract.origin ||
+    !url.pathname.startsWith(contract.pathnamePrefix) ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.hash !== ""
+  ) {
+    throw new Error(
+      `Official Source URL must be within ${contract.origin}${contract.pathnamePrefix}.`,
+    );
+  }
+  return url;
 }
 
 function completeObservationEvidence() {
@@ -407,22 +542,24 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         sourceLineage: "gundam-en-asia",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
-        parserContract: "gundam-card-and-legality-document@2",
+        parserContract: "gundam-official-surfaces@3",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: officialCatalogueParser("EN-ASIA", "gundam"),
+        officialSourceContract: gundamAsiaOfficialSource,
+        parse: officialCatalogueParser(gundamAsiaOfficialSource),
       },
       {
         adapterVersion: "gundam-en-us@2",
         sourceLineage: "gundam-en-us",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
-        parserContract: "gundam-card-and-legality-document@2",
+        parserContract: "gundam-official-surfaces@3",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: officialCatalogueParser("EN-US", "gundam"),
+        officialSourceContract: gundamUsOfficialSource,
+        parse: officialCatalogueParser(gundamUsOfficialSource),
       },
       ...[
         {

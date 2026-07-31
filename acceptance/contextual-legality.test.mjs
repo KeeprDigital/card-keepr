@@ -41,6 +41,15 @@ const exportRecordSchemaV2 = JSON.parse(
     "utf8",
   ),
 );
+const gzipGolden = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "acceptance/fixtures/catalogue-export-gzip-golden.json",
+    ),
+    "utf8",
+  ),
+);
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(apiSchema);
@@ -722,9 +731,43 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   const exportComponent = manifestDocument.data.components.find(
     (component) => component.name === "legality-rules",
   );
+  const emptyComponentResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/printing-images`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(emptyComponentResponse.status, 200);
+  const emptyComponentBytes = new Uint8Array(
+    await emptyComponentResponse.arrayBuffer(),
+  );
+  const emptyComponent = manifestDocument.data.components.find(
+    (component) => component.name === "printing-images",
+  );
+  const emptyComponentText = await new Response(
+    new Response(emptyComponentBytes).body.pipeThrough(
+      new DecompressionStream("gzip"),
+    ),
+  ).text();
   await t.test(
-    "authenticated export bytes use the pinned deterministic gzip profile",
+    "authenticated export bytes match the pinned deterministic gzip goldens",
     () => {
+      assert.equal(gzipGolden.profile, "card-keepr-ndjson-gzip@1");
+      assert.equal(gzipGolden.compressor, "pako@2.1.0");
+      assert.deepEqual(gzipGolden.cases.empty.coverage, ["empty"]);
+      assert.equal(emptyComponentText, "");
+      assert.deepEqual(
+        gzipGolden.cases.contextual_legality.coverage,
+        ["ascii", "nfc_unicode", "null", "multiple_deflate_blocks"],
+      );
+      assertGoldenComponent(
+        emptyComponentBytes,
+        emptyComponent,
+        gzipGolden.cases.empty,
+      );
+      assertGoldenComponent(
+        exportBytes,
+        exportComponent,
+        gzipGolden.cases.contextual_legality,
+      );
       assert.deepEqual(Array.from(exportBytes.subarray(0, 4)), [
         0x1f, 0x8b, 0x08, 0x00,
       ]);
@@ -734,6 +777,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       assert.equal(exportBytes[8], 0x02);
       assert.equal(exportBytes[9], 0xff);
       assert.equal((exportBytes[10] >> 1) & 0x03, 0x01);
+      assert.ok(fixedDeflateBlockCount(exportBytes) > 1);
       assert.equal(
         createHash("sha256").update(exportBytes).digest("hex"),
         exportComponent.compressed_sha256,
@@ -744,11 +788,28 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   const decompressed = new Response(exportBytes).body.pipeThrough(
     new DecompressionStream("gzip"),
   );
-  const exportedRules = (await new Response(decompressed).text())
+  const exportedRulesText = await new Response(decompressed).text();
+  assert.match(exportedRulesText, /"event_tier":null/);
+  const exportedRules = exportedRulesText
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
   assert.equal(exportedRules.length, 17);
+  assert.ok(
+    exportedRules.some((rule) =>
+      rule.official_wording.startsWith(
+        "Café serialization golden ",
+      ),
+    ),
+  );
+  assert.equal(
+    exportedRules.some((rule) =>
+      rule.official_wording.startsWith(
+        "Cafe\u0301 serialization golden ",
+      ),
+    ),
+    false,
+  );
   for (const exportedRule of exportedRules) {
     assert.equal(
       validateLegalityRuleExport(exportedRule),
@@ -951,9 +1012,11 @@ async function ingestAndReconcile({
       "--adapter",
       adapter,
       "--request-id",
-      idempotencyKey,
+      "discovery",
       "--url",
-      `https://synthetic-source.invalid${sourcePath}`,
+      `https://www.gundam-gcg.com/${
+        lineage === "gundam-en-asia" ? "asia-en" : "en"
+      }${sourcePath}`,
       "--idempotency-key",
       idempotencyKey,
       "--json",
@@ -1083,6 +1146,138 @@ function legalityArguments(cardId, extraArguments) {
   ];
 }
 
+function assertGoldenComponent(bytes, component, golden) {
+  assert.equal(component.name, golden.component);
+  assert.equal(component.content_sha256, golden.content_sha256);
+  assert.equal(
+    component.compressed_sha256,
+    golden.compressed_sha256,
+  );
+  assert.equal(Buffer.from(bytes).toString("base64"), golden.gzip_base64);
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    golden.compressed_sha256,
+  );
+}
+
+function fixedDeflateBlockCount(gzipBytes) {
+  const reader = new DeflateBitReader(
+    gzipBytes.subarray(10, gzipBytes.length - 8),
+  );
+  const literalTable = fixedLiteralTable();
+  const distanceTable = canonicalDecodeTable(
+    Array.from({ length: 32 }, () => 5),
+  );
+  const lengthExtraBits = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1,
+    2, 2, 2, 2,
+    3, 3, 3, 3,
+    4, 4, 4, 4,
+    5, 5, 5, 5,
+    0,
+  ];
+  const distanceExtraBits = [
+    0, 0, 0, 0,
+    1, 1,
+    2, 2,
+    3, 3,
+    4, 4,
+    5, 5,
+    6, 6,
+    7, 7,
+    8, 8,
+    9, 9,
+    10, 10,
+    11, 11,
+    12, 12,
+    13, 13,
+  ];
+  let blocks = 0;
+  while (true) {
+    const final = reader.readBits(1);
+    assert.equal(
+      reader.readBits(2),
+      1,
+      "golden DEFLATE contains a non-fixed block",
+    );
+    blocks += 1;
+    while (true) {
+      const symbol = decodeSymbol(reader, literalTable, 9);
+      if (symbol < 256) continue;
+      if (symbol === 256) break;
+      assert.ok(symbol >= 257 && symbol <= 285);
+      reader.readBits(lengthExtraBits[symbol - 257]);
+      const distance = decodeSymbol(reader, distanceTable, 5);
+      assert.ok(distance <= 29);
+      reader.readBits(distanceExtraBits[distance]);
+    }
+    if (final === 1) return blocks;
+  }
+}
+
+class DeflateBitReader {
+  constructor(bytes) {
+    this.bytes = bytes;
+    this.offset = 0;
+  }
+
+  readBits(count) {
+    let value = 0;
+    for (let index = 0; index < count; index += 1) {
+      const byte = this.bytes[this.offset >> 3];
+      assert.notEqual(byte, undefined, "truncated golden DEFLATE");
+      value |= ((byte >> (this.offset & 7)) & 1) << index;
+      this.offset += 1;
+    }
+    return value;
+  }
+}
+
+function fixedLiteralTable() {
+  const lengths = Array.from({ length: 288 }, (_, symbol) =>
+    symbol <= 143 ? 8 : symbol <= 255 ? 9 : symbol <= 279 ? 7 : 8,
+  );
+  return canonicalDecodeTable(lengths);
+}
+
+function canonicalDecodeTable(lengths) {
+  const counts = [];
+  for (const length of lengths) {
+    counts[length] = (counts[length] ?? 0) + 1;
+  }
+  const nextCode = [];
+  let code = 0;
+  for (let bits = 1; bits <= Math.max(...lengths); bits += 1) {
+    code = (code + (counts[bits - 1] ?? 0)) << 1;
+    nextCode[bits] = code;
+  }
+  const table = new Map();
+  for (const [symbol, length] of lengths.entries()) {
+    const canonical = nextCode[length]++;
+    table.set(`${length}:${reverseBits(canonical, length)}`, symbol);
+  }
+  return table;
+}
+
+function decodeSymbol(reader, table, maximumBits) {
+  let code = 0;
+  for (let length = 1; length <= maximumBits; length += 1) {
+    code |= reader.readBits(1) << (length - 1);
+    const symbol = table.get(`${length}:${code}`);
+    if (symbol !== undefined) return symbol;
+  }
+  assert.fail("golden DEFLATE contains an invalid fixed-Huffman code");
+}
+
+function reverseBits(value, length) {
+  let reversed = 0;
+  for (let index = 0; index < length; index += 1) {
+    reversed = (reversed << 1) | ((value >> index) & 1);
+  }
+  return reversed;
+}
+
 function canonicalRuleId(sourceLineage, officialId) {
   const digest = createHash("sha256")
     .update(
@@ -1096,7 +1291,7 @@ function canonicalRuleId(sourceLineage, officialId) {
 }
 
 async function waitForRunState(runId, expected, environment, worker) {
-  const deadline = Date.now() + 40_000;
+  const deadline = Date.now() + 90_000;
   let lastShown = "";
   while (Date.now() < deadline) {
     const shown = await runCli(
