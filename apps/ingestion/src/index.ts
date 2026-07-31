@@ -227,7 +227,10 @@ const ingestionWorker = {
           observedAt,
         );
         return Response.json(result.document, {
-          status: result.created ? 202 : 200,
+          status:
+            result.created && result.document.status !== "complete"
+              ? 202
+              : 200,
         });
       }
 

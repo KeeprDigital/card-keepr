@@ -271,22 +271,29 @@ async function workflowOutput(
     !("result_json" in value) ||
     typeof value.result_json !== "string"
   ) {
-    throw new Error("The reconciliation Workflow result is invalid.");
+    return recoverMalformedCompleteWorkflow(database, request);
   }
-  const reference = JSON.parse(value.result_json) as unknown;
+  let reference: unknown;
+  try {
+    reference = JSON.parse(value.result_json) as unknown;
+  } catch {
+    return recoverMalformedCompleteWorkflow(database, request);
+  }
   if (
     reference === null ||
     typeof reference !== "object" ||
     Array.isArray(reference)
   ) {
-    throw new Error("The reconciliation Workflow result is invalid.");
+    return recoverMalformedCompleteWorkflow(database, request);
   }
   const result = reference as Record<string, unknown>;
   if (
     result.contract !==
-      "card-keepr-reconciliation-workflow-result@1" ||
-    result.run_id !== request.ingestion_run_id
+      "card-keepr-reconciliation-workflow-result@1"
   ) {
+    return recoverMalformedCompleteWorkflow(database, request);
+  }
+  if (result.run_id !== request.ingestion_run_id) {
     throw new Error("The reconciliation Workflow result is invalid.");
   }
   if (
@@ -294,10 +301,22 @@ async function workflowOutput(
     typeof result.result === "object" &&
     !Array.isArray(result.result)
   ) {
-    return result.result as Record<string, unknown>;
+    const retained = await retainedReconciliationResult(
+      database,
+      request.ingestion_run_id,
+    );
+    if (
+      canonicalJson(retained) !==
+        canonicalJson(result.result as Record<string, unknown>)
+    ) {
+      throw new Error(
+        "The reconciliation Workflow result does not bind the retained reconciliation.",
+      );
+    }
+    return retained;
   }
   if (typeof result.candidate_digest !== "string") {
-    throw new Error("The reconciliation Workflow result is invalid.");
+    return recoverMalformedCompleteWorkflow(database, request);
   }
   const retained = await retainedReconciliationResult(
     database,
@@ -309,6 +328,17 @@ async function workflowOutput(
     );
   }
   return retained;
+}
+
+function recoverMalformedCompleteWorkflow(
+  database: D1Database,
+  request: ReconciliationWorkflowRequestRow,
+): Promise<Record<string, unknown>> {
+  return recoverTerminalWorkflow(
+    database,
+    request,
+    "The completed reconciliation Workflow output was unavailable.",
+  );
 }
 
 async function workflowRequest(

@@ -244,6 +244,34 @@ CREATE TABLE reconciled_errata (
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id)
 );
 
+CREATE TRIGGER reconciled_card_erratum_target_is_valid
+BEFORE INSERT ON reconciled_errata
+WHEN NEW.target_type = 'card'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM reconciled_cards AS card
+    WHERE card.id = NEW.target_id
+      AND card.supported_game = NEW.game
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'reconciled_erratum_target_invalid');
+END;
+
+CREATE TRIGGER reconciled_printing_erratum_target_is_valid
+BEFORE INSERT ON reconciled_errata
+WHEN NEW.target_type = 'printing'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM reconciled_printings AS printing
+    JOIN reconciled_cards AS card
+      ON card.id = printing.card_id
+    WHERE printing.id = NEW.target_id
+      AND card.supported_game = NEW.game
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'reconciled_erratum_target_invalid');
+END;
+
 CREATE TABLE erratum_provenance (
   erratum_id TEXT NOT NULL REFERENCES reconciled_errata(id),
   source_lineage TEXT NOT NULL CHECK (length(source_lineage) > 0),

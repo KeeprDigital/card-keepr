@@ -37,6 +37,55 @@ beforeEach(async () => {
 });
 
 describe("Errata rules-text lifecycle", () => {
+  test("the Official Errata parser consumes an exact semantic child inventory in source order", async () => {
+    const observations = await parseOnePieceOfficialErrataHtml(
+      onePieceOfficialErrataHtml,
+    );
+    const zeff = observations.find(
+      (observation) =>
+        observation.target.official_identity.value === "OP03-047",
+    );
+    expect(zeff?.official_wording).toBe(
+      "*Also applies to parallel card version.\n" +
+        "Before: [DON!! x1] When this Character's attack deals damage to your opponent's Life, you may trash 7 cards from the top of your deck.\n" +
+        "[On Play] You may return up to 1 Character with a cost of 3 or less to the owner's hand, and trash 2 cards from the top of your deck.\n" +
+        "After: [DON!! x1] When this Character's attack deals damage to your opponent's Life, you may trash 7 cards from the top of your deck.\n" +
+        "[On Play] Return up to 1 Character with a cost of 3 or less to the owner's hand, and you may trash 2 cards from the top of your deck.",
+    );
+
+    const malformedDocuments = [
+      onePieceOfficialErrataHtml.replace(
+        "                <dl>\n" +
+          '                  <dt class="txtBlack mtS">Note:</dt>',
+        "                <p>Injected residual wording.</p>\n" +
+          "                <dl>\n" +
+          '                  <dt class="txtBlack mtS">Note:</dt>',
+      ),
+      onePieceOfficialErrataHtml.replace(
+        '<ul class="commonNoticeList isHalf">',
+        '<ul class="alternateNotice">',
+      ),
+      onePieceOfficialErrataHtml.replace(
+        "<dd>[On Play] Draw 1 card.</dd>",
+        "<dd><p>[On Play] Draw 1 card.</p></dd>",
+      ),
+      onePieceOfficialErrataHtml.replace(
+        "<dd>[On Play] Draw 1 card.</dd>",
+        '<dd data-unrecognized="true">[On Play] Draw 1 card.</dd>',
+      ),
+    ];
+    for (const malformed of malformedDocuments) {
+      await expect(
+        parseOnePieceOfficialErrataHtml(malformed),
+      ).rejects.toMatchObject({
+        status: 422,
+        code: "source_parse_failed",
+        message:
+          "An Official Erratum contains unsupported semantic content.",
+      });
+    }
+  });
+
   test("the Official Errata parser rejects multiple value containers for one field label", async () => {
     const malformed = onePieceOfficialErrataHtml.replace(
       "<dd>This correction applies in every game format.</dd>",
@@ -1104,6 +1153,96 @@ describe("Errata rules-text lifecycle", () => {
         }),
       }),
     );
+  });
+
+  test("D1 rejects Errata whose typed target is absent or belongs to another Supported Game", async () => {
+    const run = await collect(
+      "/reconciliation/base",
+      "erratum-target-integrity",
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(200);
+    const card = requiredFirst(reconciled.document, "cards");
+    const printing = requiredFirst(reconciled.document, "printings");
+    const published = await approve(reconciled.document);
+    expect(published.response.status).toBe(200);
+    const revisionId = requiredString(
+      published.document,
+      "resulting_revision_id",
+    );
+    const insert = (
+      id: string,
+      game: "one-piece" | "gundam",
+      targetType: "card" | "printing",
+      targetId: string,
+    ) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO reconciled_errata (
+           id, game, target_type, target_id, effective_from,
+           official_wording, corrected_value_json,
+           first_revision_id, last_observed_revision_id
+         ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      )
+        .bind(
+          id,
+          game,
+          targetType,
+          targetId,
+          "Before: old\nAfter: corrected",
+          JSON.stringify("corrected"),
+          revisionId,
+          revisionId,
+        )
+        .run();
+
+    for (const invalid of [
+      ["erratum_missing_card_target", "one-piece", "card", "card_missing_target"],
+      [
+        "erratum_wrong_game_card_target",
+        "gundam",
+        "card",
+        requiredString(card, "id"),
+      ],
+      [
+        "erratum_missing_printing_target",
+        "one-piece",
+        "printing",
+        "printing_missing_target",
+      ],
+      [
+        "erratum_wrong_game_printing_target",
+        "gundam",
+        "printing",
+        requiredString(printing, "id"),
+      ],
+    ]) {
+      await expect(
+        insert(
+          invalid[0]!,
+          invalid[1]! as "one-piece" | "gundam",
+          invalid[2]! as "card" | "printing",
+          invalid[3]!,
+        ),
+      ).rejects.toThrow(
+        "reconciled_erratum_target_invalid",
+      );
+    }
+    await expect(
+      insert(
+        "erratum_valid_card_target",
+        "one-piece",
+        "card",
+        requiredString(card, "id"),
+      ),
+    ).resolves.toMatchObject({ success: true });
+    await expect(
+      insert(
+        "erratum_valid_printing_target",
+        "one-piece",
+        "printing",
+        requiredString(printing, "id"),
+      ),
+    ).resolves.toMatchObject({ success: true });
   });
 });
 

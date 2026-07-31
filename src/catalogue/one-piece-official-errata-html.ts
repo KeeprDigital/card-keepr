@@ -58,6 +58,7 @@ type EntryDraft = {
   notices: NoticeDraft[];
   nextWordingOrdinal: number;
   allTextParts: string[];
+  residualTextParts: string[];
 };
 
 const canonicalOrigin = "https://en.onepiece-cardgame.com";
@@ -171,6 +172,7 @@ export async function parseOnePieceOfficialErrataHtml(
         notices: [],
         nextWordingOrdinal: 0,
         allTextParts: [],
+        residualTextParts: [],
       };
       matchedEntryCount += 1;
       activeEntry = entry;
@@ -184,6 +186,15 @@ export async function parseOnePieceOfficialErrataHtml(
     },
     text(text) {
       activeEntry?.allTextParts.push(text.text);
+      if (
+        activeEntry !== null &&
+        activeHeading === null &&
+        activeLabel === null &&
+        activeValue === null &&
+        activeNotice === null
+      ) {
+        activeEntry.residualTextParts.push(text.text);
+      }
     },
   };
   const headingHandler: HTMLRewriterElementContentHandlers = {
@@ -193,6 +204,7 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum Card heading is unavailable.",
         );
       }
+      assertExactAttributes(element, [["class", "smallTitRed"]]);
       activeEntry.headingCount += 1;
       activeHeading = activeEntry.headingParts;
       element.onEndTag(() => {
@@ -204,7 +216,8 @@ export async function parseOnePieceOfficialErrataHtml(
     },
   };
   const headingBreakHandler: HTMLRewriterElementContentHandlers = {
-    element() {
+    element(element) {
+      assertExactAttributes(element, []);
       activeHeading?.push("\n");
     },
   };
@@ -214,6 +227,10 @@ export async function parseOnePieceOfficialErrataHtml(
       if (activeEntry === null || source === null) {
         return parseFailure("An Official Erratum image is unavailable.");
       }
+      assertExactAttributes(element, [
+        ["alt", element.getAttribute("alt") ?? ""],
+        ["src", source],
+      ]);
       activeEntry.imagePaths.push(source);
     },
   };
@@ -224,6 +241,7 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum field label is invalid.",
         );
       }
+      assertExactAttributes(element, [["class", "txtBlack mtS"]]);
       const pair: PairDraft = {
         ordinal: activeEntry.nextWordingOrdinal,
         labelParts: [],
@@ -249,6 +267,7 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum field value is invalid.",
         );
       }
+      assertExactAttributes(element, []);
       pair.valueContainerCount += 1;
       if (pair.valueContainerCount !== 1) {
         return parseFailure(
@@ -265,7 +284,8 @@ export async function parseOnePieceOfficialErrataHtml(
     },
   };
   const valueBreakHandler: HTMLRewriterElementContentHandlers = {
-    element() {
+    element(element) {
+      assertExactAttributes(element, []);
       activeValue?.push("\n");
     },
   };
@@ -276,6 +296,7 @@ export async function parseOnePieceOfficialErrataHtml(
           "An Official Erratum notice is invalid.",
         );
       }
+      assertExactAttributes(element, []);
       const notice: NoticeDraft = {
         ordinal: activeEntry.nextWordingOrdinal,
         valueParts: [],
@@ -291,19 +312,58 @@ export async function parseOnePieceOfficialErrataHtml(
       activeNotice?.push(text.text);
     },
   };
+  const unsupportedSemanticHandler: HTMLRewriterElementContentHandlers = {
+    element() {
+      return parseFailure(
+        "An Official Erratum contains unsupported semantic content.",
+      );
+    },
+  };
+  const definitionListHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      assertExactAttributes(element, []);
+    },
+  };
+  const noticeListHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      assertExactAttributes(element, [
+        ["class", "commonNoticeList isHalf"],
+      ]);
+    },
+  };
+  const valueChildHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (element.tagName === "br") {
+        assertExactAttributes(element, []);
+        return;
+      }
+      if (element.tagName === "span") {
+        assertExactAttributes(element, [["class", "txtStrong"]]);
+        return;
+      }
+      return parseFailure(
+        "An Official Erratum contains unsupported semantic content.",
+      );
+    },
+  };
   for (const entrySelector of entrySelectors) {
     rewriter
       .on(entrySelector, entryHandler)
       .on(`${entrySelector} h5.smallTitRed`, headingHandler)
       .on(`${entrySelector} h5.smallTitRed br`, headingBreakHandler)
       .on(`${entrySelector} .typographicalImg img`, imageHandler)
+      .on(`${entrySelector} dl`, definitionListHandler)
       .on(`${entrySelector} dl > dt`, labelHandler)
       .on(`${entrySelector} dl > dd`, valueHandler)
       .on(`${entrySelector} dl > dd br`, valueBreakHandler)
+      .on(`${entrySelector} dl > dd *`, valueChildHandler)
+      .on(`${entrySelector} ul`, noticeListHandler)
       .on(
         `${entrySelector} ul.commonNoticeList > li`,
         noticeHandler,
-      );
+      )
+      .on(`${entrySelector} p`, unsupportedSemanticHandler)
+      .on(`${entrySelector} ol`, unsupportedSemanticHandler);
   }
 
   const parsed = rewriter.transform(
@@ -401,6 +461,7 @@ function parsedEntry(
     value: normalizedText(notice.valueParts),
   }));
   if (
+    normalizedText(entry.residualTextParts).length > 0 ||
     pairs.length < 2 ||
     pairs.some((pair) =>
       !["Note:", "Before:", "After:"].includes(pair.label) ||
@@ -519,6 +580,38 @@ function normalizedLines(parts: readonly string[]): string[] {
 
 function normalizedText(parts: readonly string[]): string {
   return normalizedLines(parts).join(" ");
+}
+
+function assertExactAttributes(
+  element: Element,
+  expected: readonly (readonly [string, string])[],
+): void {
+  const observed = [...element.attributes]
+    .map((attribute) => {
+      const name = attribute[0];
+      const value = attribute[1];
+      if (name === undefined || value === undefined) {
+        return parseFailure(
+          "An Official Erratum contains unsupported semantic content.",
+        );
+      }
+      return [name, value] as const;
+    })
+    .sort(([left], [right]) => left.localeCompare(right));
+  const exact = [...expected]
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (
+    observed.length !== exact.length ||
+    observed.some(
+      ([name, value], index) =>
+        name !== exact[index]?.[0] ||
+        value !== exact[index]?.[1],
+    )
+  ) {
+    return parseFailure(
+      "An Official Erratum contains unsupported semantic content.",
+    );
+  }
 }
 
 function parseFailure(detail: string): never {

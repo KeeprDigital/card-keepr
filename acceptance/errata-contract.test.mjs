@@ -102,6 +102,14 @@ test("the 0007 schema migration is additive and leaves historical Card backfill 
     migration,
     /CREATE TRIGGER reconciliation_terminal_results_are_not_deleted/u,
   );
+  assert.match(
+    migration,
+    /CREATE TRIGGER reconciled_card_erratum_target_is_valid\s+BEFORE INSERT ON reconciled_errata\s+WHEN NEW\.target_type = 'card'[\s\S]*?reconciled_cards[\s\S]*?card\.id = NEW\.target_id[\s\S]*?card\.supported_game = NEW\.game/u,
+  );
+  assert.match(
+    migration,
+    /CREATE TRIGGER reconciled_printing_erratum_target_is_valid\s+BEFORE INSERT ON reconciled_errata\s+WHEN NEW\.target_type = 'printing'[\s\S]*?reconciled_printings[\s\S]*?reconciled_cards[\s\S]*?printing\.id = NEW\.target_id[\s\S]*?card\.supported_game = NEW\.game/u,
+  );
 });
 
 test("the Card collection contract normatively exposes projection unavailability as 503", async () => {

@@ -69,13 +69,18 @@ request is exactly `{expected_current_revision_id, idempotency_key}` and is
 bound to the run identity in the route. An exact replay observes the same
 Workflow instance; reuse of the idempotency key for another run or expected
 revision fails closed.
-HTTP `202`, and exact replays whose Workflow remains queued, running, waiting,
-or paused, exit `10`. Only a terminal result exits `0`. A paused exact instance
-is resumed. An errored or terminated instance deterministically consumes any
-retained reconciliation result. The first exact no-candidate terminal failure
-result is retained immutably before the global mutation lock is released, so a
-later loss of Workflow output or error detail cannot alter replay. This also
-recovers a Workflow whose failure-finalization step itself exhausted retries.
+The initial request returns HTTP `202` only when its Workflow is non-terminal;
+an instance that completes during creation and every terminal replay returns
+HTTP `200`. A queued, running, waiting, or paused document exits `10`; a
+terminal document exits `0` regardless of whether the server returned it from
+the initial POST or a replay. A paused exact instance is resumed. An errored or
+terminated instance deterministically consumes any retained reconciliation
+result. Missing or malformed completed-Workflow output also recovers the exact
+retained candidate or immutable terminal result, while a valid output remains
+binding-checked. The first exact no-candidate terminal failure result is
+retained immutably before the global mutation lock is released, so a later loss
+of Workflow output or error detail cannot alter replay. This also recovers a
+Workflow whose failure-finalization step itself exhausted retries.
 
 `catalogue search repair` performs one resumable, byte-bounded repair step. Its
 request is exactly
@@ -89,7 +94,11 @@ Before retaining or claiming an unfinished request, every source
 `revision_cards.document_json` is checked against a durable 65,536-byte UTF-8
 bound. An oversized legacy Card fails with HTTP `422` before any search
 materialization begins. Within that per-Card source bound, each repair step
-remains limited to 25 Cards and 65,536 bytes of bound SQL parameters.
+completes up to 25 Cards. It advances through CAS-guarded D1 batches of at most
+500 search entries plus one cursor statement, never binds more than 65,536
+bytes to one statement, and stops after a 20-second cooperative invocation
+budget. Progress within a Card is durable, so a complex Card resumes without
+requiring one immutable administration request per search term.
 The CLI resolves that repair window from the authoritative retained revision
 chain in production status, never from the bounded recent-run diagnostic list.
 Every advertised member joins to a real published Catalogue Revision; the

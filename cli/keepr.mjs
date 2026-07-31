@@ -639,8 +639,7 @@ async function administrationRequest(
   }
   return document.contract ===
       "card-keepr-reconciliation-workflow@1" &&
-      (observed.responseStatus === 202 ||
-        document.status !== "complete")
+      document.status !== "complete"
     ? 10
     : 0;
 }

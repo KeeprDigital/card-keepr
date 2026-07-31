@@ -1646,17 +1646,7 @@ async function blockedResult(
   const stable = [...diagnostics].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  await failReconciliation(database, runId, stable, observedAt);
-  return {
-    contract: "card-keepr-card-printing-reconciliation@2",
-    run_id: runId,
-    state: "failed",
-    publishable: false,
-    cards: [],
-    printings: [],
-    diagnostics: stable,
-    warnings: [],
-  };
+  return failReconciliation(database, runId, stable, observedAt);
 }
 
 function printingImageEvidenceEquivalent(

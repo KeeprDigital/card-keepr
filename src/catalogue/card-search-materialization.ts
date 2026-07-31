@@ -31,7 +31,9 @@ export type CardSearchRepairResult = {
 };
 
 const defaultMaximumBoundParameterBytes = 64 * 1024;
-const maximumTermsPerInvocation = 25;
+const maximumCardsPerInvocation = 25;
+const maximumMaterializationEntriesPerBatch = 500;
+const maximumInvocationDurationMilliseconds = 20_000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", {
   fatal: true,
@@ -46,9 +48,13 @@ export async function repairCardSearchMaterialization(
     targetRevisionId?: string;
   } = {},
 ): Promise<CardSearchRepairResult> {
-  const limit = options.limit ?? 50;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-    throw new Error("Card search repair limit must be from 1 to 100.");
+  const limit = options.limit ?? maximumCardsPerInvocation;
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > maximumCardsPerInvocation
+  ) {
+    throw new Error("Card search repair limit must be from 1 to 25 Cards.");
   }
   const maximumBoundParameterBytes =
     options.maximumBoundParameterBytes ?? defaultMaximumBoundParameterBytes;
@@ -60,7 +66,42 @@ export async function repairCardSearchMaterialization(
       "Card search repair parameter bytes must be exactly 65536.",
     );
   }
+  const startedAt = Date.now();
+  let processedCards = 0;
+  let maximumObservedBoundParameterBytes = 0;
+  let result: CardSearchRepairResult;
+  do {
+    result = await repairCardSearchMaterializationStep(database, {
+      maximumBoundParameterBytes,
+      targetRevisionId: options.targetRevisionId,
+    });
+    processedCards += result.processed_cards;
+    maximumObservedBoundParameterBytes = Math.max(
+      maximumObservedBoundParameterBytes,
+      result.maximum_bound_parameter_bytes,
+    );
+  } while (
+    !result.complete &&
+    processedCards < limit &&
+    Date.now() - startedAt < maximumInvocationDurationMilliseconds
+  );
+  return {
+    ...result,
+    processed_cards: processedCards,
+    maximum_bound_parameter_bytes:
+      maximumObservedBoundParameterBytes,
+  };
+}
 
+async function repairCardSearchMaterializationStep(
+  database: D1Database,
+  options: {
+    maximumBoundParameterBytes: number;
+    targetRevisionId?: string;
+  },
+): Promise<CardSearchRepairResult> {
+  const maximumBoundParameterBytes =
+    options.maximumBoundParameterBytes;
   const targetRevisionId = options.targetRevisionId;
   const revision = await pendingRevision(database, targetRevisionId);
   if (revision === null) {
@@ -264,7 +305,8 @@ export async function repairCardSearchMaterialization(
   if (revision.repair_term_offset < entries.length) {
     const selectedEntries = entries.slice(
       revision.repair_term_offset,
-      revision.repair_term_offset + maximumTermsPerInvocation,
+      revision.repair_term_offset +
+        maximumMaterializationEntriesPerBatch,
     );
     const statements = selectedEntries.map((entry) => {
       const measured = boundBytes(
@@ -455,7 +497,7 @@ function assertCasPair(results: readonly D1Result<unknown>[]): void {
   if (
     (changes[0] !== 0 && changes[0] !== 1) ||
     (changes[1] !== 0 && changes[1] !== 1) ||
-    changes[0] !== changes[1]
+    (changes[0] === 1 && changes[1] === 0)
   ) {
     throw new Error("The Card search repair offset CAS was not atomic.");
   }

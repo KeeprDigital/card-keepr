@@ -417,6 +417,82 @@ test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10"
   ]);
 });
 
+test("CLI reconciliation exits zero for a terminal Workflow returned by the initial POST", async (t) => {
+  const server = createServer(async (request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: {
+          current_revision_id: "catrev_cli_demo",
+        },
+        repairable_catalogue_revision_ids: [],
+      }));
+      return;
+    }
+    if (request.method === "GET") {
+      response.end(JSON.stringify(run));
+      return;
+    }
+    response.statusCode = 202;
+    response.end(JSON.stringify({
+      contract: "card-keepr-reconciliation-workflow@1",
+      ingestion_run_id: "run_cli_demo",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "reconcile-cli-terminal-on-create",
+      workflow_instance_id: "reconcile-cli-terminal-on-create-instance",
+      status: "complete",
+      output: {
+        contract: "card-keepr-card-printing-reconciliation@2",
+        run_id: "run_cli_demo",
+        state: "failed",
+        publishable: false,
+        cards: [],
+        printings: [],
+        errata: [],
+        diagnostics: [],
+        warnings: [],
+      },
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+
+  const result = await runCli(
+    [
+      "run",
+      "reconcile",
+      "--run-id",
+      "run_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "reconcile-cli-terminal-on-create",
+      "--environment",
+      "production",
+      "--confirm",
+      productionConfirmation,
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, "complete");
+});
+
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {

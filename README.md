@@ -106,8 +106,8 @@ R2 buckets returned by production status. `--confirm` must equal that complete
 resolved target document; absent or altered confirmation performs no mutation
 and exits `3`. A stale resolved run, Catalogue Revision, or retained repair
 target exits `7`; exit `2` is reserved for malformed usage. An accepted
-Workflow that is not yet terminal exits `10`; exact replays return `0` only
-after terminal output is available.
+Workflow that is not yet terminal exits `10`; a Workflow that completes during
+the initial POST and every terminal replay return HTTP `200` and exit `0`.
 
 After applying the Errata/search migration to a database that already contains
 Catalogue Revisions, run the bounded, idempotent search repair until its JSON
@@ -134,7 +134,10 @@ archived and cannot be repaired. A legacy Card whose retained JSON exceeds the
 durable 65,536-byte UTF-8 source bound fails with HTTP `422` before the repair
 request is retained or search materialization begins. Newly published revisions
 write their selective literal n-gram search material and availability marker
-atomically.
+atomically. Each repair invocation completes up to 25 Cards through
+CAS-guarded batches of at most 500 search entries plus one cursor statement,
+with a 20-second cooperative invocation budget and a 65,536-byte per-statement
+parameter bound.
 
 The parent Cloudflare Workflow dynamically starts one child Workflow per
 Official Source hostname. Requests for a hostname are sequential and durably

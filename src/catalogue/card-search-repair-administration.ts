@@ -2,6 +2,9 @@ import {
   repairCardSearchMaterialization,
   type CardSearchRepairResult,
 } from "./card-search-materialization";
+import {
+  repairableCatalogueRevisionTarget,
+} from "./catalogue-revision-retention";
 import { AdministrationProblem } from "./ingestion";
 import { canonicalJson } from "./serialization";
 import { assertIdentifier } from "./source-evidence-model";
@@ -48,42 +51,10 @@ export async function runGuardedCardSearchRepair(
       input.target_revision_id,
     );
   } else {
-    const target = await database
-      .prepare(
-        `WITH RECURSIVE retained(revision_id, depth) AS (
-           SELECT revision.id, 0
-           FROM catalogue_state AS state
-           JOIN catalogue_revisions AS revision
-             ON revision.id = state.current_revision_id
-           WHERE state.singleton = 1
-           UNION ALL
-           SELECT previous.id,
-                  retained.depth + 1
-           FROM retained
-           JOIN catalogue_revisions AS revision
-             ON revision.id = retained.revision_id
-           JOIN catalogue_revisions AS previous
-             ON previous.id = revision.expected_previous_revision_id
-           WHERE retained.depth < 2
-         )
-         SELECT state.current_revision_id,
-                EXISTS (
-                  SELECT 1 FROM catalogue_revisions AS revision
-                  WHERE revision.id = ?
-                ) AS target_exists,
-                EXISTS (
-                  SELECT 1 FROM retained
-                  WHERE revision_id = ?
-                ) AS target_retained
-         FROM catalogue_state AS state
-         WHERE state.singleton = 1`,
-      )
-      .bind(input.target_revision_id, input.target_revision_id)
-      .first<{
-        current_revision_id: string;
-        target_exists: number;
-        target_retained: number;
-      }>();
+    const target = await repairableCatalogueRevisionTarget(
+      database,
+      input.target_revision_id,
+    );
     if (
       target === null ||
       (
