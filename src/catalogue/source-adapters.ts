@@ -2,7 +2,7 @@ import { AdministrationProblem } from "./administration-problem.mjs";
 import {
   officialRawAdapterContracts,
 } from "./official-raw-adapter-contracts.mjs";
-import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
+import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.mjs";
 
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
@@ -92,6 +92,13 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         requestSurface: {
           kind: "exact-url" as const,
           url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+        },
+        requiredSurfaces: ["errata"],
+        requestUrlForSurface: (surface: string) => {
+          if (surface !== "errata") {
+            throw new Error("Official Errata surface identity is invalid.");
+          }
+          return "https://en.onepiece-cardgame.com/rules/errata_card/";
         },
         reconciliationCoverage: "official_errata" as const,
         parseBytes: (bytes: Uint8Array) => {

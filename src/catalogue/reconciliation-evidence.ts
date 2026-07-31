@@ -435,7 +435,8 @@ function assertClosedRequestGraph(
     const adapter = requiredSourceAdapter(adapterVersion);
     if (
       adapter.origin !== "production" ||
-      adapter.reconciliationCoverage !== "official_source"
+      (adapter.reconciliationCoverage !== "official_source" &&
+        adapter.reconciliationCoverage !== "official_errata")
     ) {
       throw new Error(
         `Official Source ${adapterVersion} has invalid production coverage authority.`,

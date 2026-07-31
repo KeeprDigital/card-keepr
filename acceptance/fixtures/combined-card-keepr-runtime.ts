@@ -21,12 +21,14 @@ export {
 };
 
 export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
-  fetch(request: Request): Response {
-    return new URL(request.url).pathname === "/rules/errata_card/"
-      ? new Response(onePieceOfficialErrataHtml, {
-          headers: { "content-type": "text/html; charset=utf-8" },
-        })
-      : Response.json({ cards: seedObservations() });
+  async fetch(request: Request): Promise<Response> {
+    const pathname = new URL(request.url).pathname;
+    if (pathname === "/rules/errata_card/") {
+      return new Response(onePieceOfficialErrataHtml, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    return Response.json({ cards: await seedObservations() });
   }
 }
 
@@ -69,14 +71,13 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-function seedObservations() {
-  return [
+async function seedObservations() {
+  return Promise.all([
     seedObservation({
       identity: "OP07-097",
       name: "Vegapunk",
       rules:
         "This Leader cannot attack.\n[Activate: Main] [Once Per Turn] You may rest 1 of your DON!! cards Select up to 1 {Egghead} typSelectup to 1 {Egghead} type card with a cost of 5 or less from your hand and play it or add it to the top of your Life cards face-up.",
-      fingerprintCharacter: "a",
       printedDigestCharacter: "b",
     }),
     seedObservation({
@@ -84,29 +85,26 @@ function seedObservations() {
       name: "Zeff",
       rules:
         "[DON!! x1] When this Character's attack deals damage to your opponent's Life, you may trash 7 cards from the top of your deck.\n[On Play] You may return up to 1 Character with a cost of 3 or less to the owner's hand, and trash 2 cards from the top of your deck.",
-      fingerprintCharacter: "c",
       printedDigestCharacter: "d",
     }),
     seedObservation({
       identity: "OP01-001",
       name: "Monkey D. Luffy",
       rules: "[On Play] Draw 1 card.",
-      fingerprintCharacter: "e",
       printedDigestCharacter: "f",
     }),
-  ];
+  ]);
 }
 
-function seedObservation(input: {
+async function seedObservation(input: {
   identity: string;
   name: string;
   rules: string;
-  fingerprintCharacter: string;
   printedDigestCharacter: string;
 }) {
-  const artworkFingerprint = `sha256:${
-    input.fingerprintCharacter.repeat(64)
-  }`;
+  const imageBytes = printingImageBytes(input.identity);
+  const imageDigest = await sha256Hex(imageBytes);
+  const artworkFingerprint = `sha256:${imageDigest}`;
   return {
     card: {
       game: "one-piece",
@@ -159,6 +157,11 @@ function seedObservation(input: {
         source_url:
           `https://en.onepiece-cardgame.com/images/cardlist/card/${input.identity}.png`,
         artwork_fingerprint: artworkFingerprint,
+        media_type: "image/png",
+        width: 1,
+        height: 1,
+        content_sha256: imageDigest,
+        content_base64: btoa(String.fromCharCode(...imageBytes)),
       }],
     },
     completeness: {
@@ -175,4 +178,15 @@ function seedObservation(input: {
     },
     errata: [],
   };
+}
+
+function printingImageBytes(identity: string): Uint8Array {
+  return new TextEncoder().encode(`fixture-printing-image:${identity}`);
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }

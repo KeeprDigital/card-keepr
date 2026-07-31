@@ -85,6 +85,7 @@ test("the repository CLI rejects Official Errata authority outside the documente
       url: "https://publisher.example/claims/untrusted-card-list.json",
     },
     environment,
+    runtime,
   );
   const completed = await resumeAndWait(
     untrustedRun.id,
@@ -157,10 +158,11 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
     {
       adapter: "one-piece-official-errata-html@1",
       idempotencyKey: "reject-bandai-errata-shape-drift",
-      requestId: "errata-shape-drift",
+      requestId: "one-piece-en:errata",
       url: "https://en.onepiece-cardgame.com/rules/errata_card/",
     },
     environment,
+    runtime,
   );
   const resumed = await runCli(
     ["source", "resume", "--run-id", run.id, "--json"],
@@ -253,10 +255,11 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     {
       adapter: "one-piece-official-errata-html@1",
       idempotencyKey: "errata-runtime-source",
-      requestId: "errata-rules-text",
+      requestId: "one-piece-en:errata",
       url: "https://en.onepiece-cardgame.com/rules/errata_card/",
     },
     cliEnvironment,
+    runtime,
   );
   await resumeAndWait(run.id, cliEnvironment, runtime);
   const evidence = await runCli(
@@ -441,7 +444,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
 });
 
-async function collectSource(input, environment) {
+async function collectSource(input, environment, runtime) {
   const result = await runCli(
     [
       "source",
@@ -462,7 +465,11 @@ async function collectSource(input, environment) {
     ],
     environment,
   );
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(
+    result.code,
+    0,
+    `${result.stdout}\n${result.stderr}\n${runtime.getOutput()}`,
+  );
   return JSON.parse(result.stdout);
 }
 
@@ -603,6 +610,9 @@ async function writeRuntimeConfig(
     service: config.name,
     entrypoint: sourceEntrypoint,
   }];
+  config.ratelimits.find(
+    ({ name }) => name === "ADMINISTRATION_RATE_LIMIT",
+  ).simple.limit = 300;
   config.ratelimits.push(...apiConfig.ratelimits);
   config.vars.CORS_ALLOWED_ORIGINS = apiConfig.vars.CORS_ALLOWED_ORIGINS;
   await writeFile(destination, JSON.stringify(config));
