@@ -121,17 +121,22 @@ export async function resolveLegalityRuleCards(
         rule.effect.includes_any,
       );
     }
-    const cardIds = rule.card_numbers.map((number) =>
-      requiredCardId(cardsByOfficialIdentity, rule.game, number),
+    const cardIds = canonicalCardIds(
+      rule.card_numbers.map((number) =>
+        requiredCardId(cardsByOfficialIdentity, rule.game, number)
+      ),
     );
     const effect =
       rule.effect.type === "prohibited_combination"
-        ? {
-            type: "prohibited_combination" as const,
-            with_card_ids: rule.effect.with_card_numbers.map((number) =>
-              requiredCardId(cardsByOfficialIdentity, rule.game, number),
+        ? resolvedProhibitedCombination(
+            rule,
+            cardIds,
+            canonicalCardIds(
+              rule.effect.with_card_numbers.map((number) =>
+                requiredCardId(cardsByOfficialIdentity, rule.game, number)
+              ),
             ),
-          }
+          )
         : rule.effect;
     const { card_numbers: _numbers, ...withoutNumbers } = rule;
     resolved.push({
@@ -142,6 +147,30 @@ export async function resolveLegalityRuleCards(
     });
   }
   return resolved;
+}
+
+function canonicalCardIds(cardIds: readonly string[]): string[] {
+  return [...new Set(cardIds)].sort(compareUtf8);
+}
+
+function resolvedProhibitedCombination(
+  rule: RetainedLegalityRule,
+  cardIds: readonly string[],
+  withCardIds: readonly string[],
+): LegalityRuleEffect {
+  const directCardIds = new Set(cardIds);
+  const overlappingCardId = withCardIds.find((cardId) =>
+    directCardIds.has(cardId)
+  );
+  if (overlappingCardId !== undefined) {
+    throw new Error(
+      `Legality Rule ${rule.official_id} assigns Card ${overlappingCardId} to both direct and prohibited-combination operands.`,
+    );
+  }
+  return {
+    type: "prohibited_combination",
+    with_card_ids: withCardIds,
+  };
 }
 
 export function legalityRulesForCandidate(

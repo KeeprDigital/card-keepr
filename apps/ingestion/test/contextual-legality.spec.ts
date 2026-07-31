@@ -1748,6 +1748,146 @@ test.each(["missing", "false"])(
   },
 );
 
+test("resolved opaque Card identities are canonical before approval and publication", async () => {
+  const directCardNumbers = ["GD30-001", "GD30-002"];
+  const companionCardNumbers = ["GD30-003", "GD30-004"];
+  const collected = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=resolved-card-order",
+    "contextual-legality-resolved-card-order",
+  );
+  expect(collected.reconciled).toMatchObject({
+    state: "awaiting_approval",
+    publishable: true,
+  });
+  const cards = collected.reconciled.cards as Array<Record<string, unknown>>;
+  const cardsByNumber = new Map(cards.map((card) => [
+    requiredString(
+      card.official_identity as Record<string, unknown>,
+      "value",
+    ),
+    requiredString(card, "id"),
+  ]));
+  const cardIds = (cardNumbers: readonly string[]) =>
+    cardNumbers.map((number) => {
+      const id = cardsByNumber.get(number);
+      if (id === undefined) throw new Error(`Card ${number} is absent`);
+      return id;
+    });
+  const directIdsInNumberOrder = cardIds(directCardNumbers);
+  const companionIdsInNumberOrder = cardIds(companionCardNumbers);
+  const canonicalDirectIds = [...directIdsInNumberOrder].sort();
+  const canonicalCompanionIds = [...companionIdsInNumberOrder].sort();
+  const canonicalCardIds = [
+    ...canonicalDirectIds,
+    ...canonicalCompanionIds,
+  ].sort();
+  expect(directIdsInNumberOrder).not.toEqual(canonicalDirectIds);
+  expect(companionIdsInNumberOrder).not.toEqual(canonicalCompanionIds);
+
+  const candidateRule = (
+    collected.reconciled.legality_rules as Array<Record<string, unknown>>
+  ).find((rule) =>
+    rule.official_id === "legality_rule_asia_resolved_card_order"
+  );
+  expect(candidateRule).toBeDefined();
+  expect(candidateRule!.card_ids).toEqual(canonicalDirectIds);
+  expect(candidateRule!.effect).toEqual({
+    type: "prohibited_combination",
+    with_card_ids: canonicalCompanionIds,
+  });
+
+  const published = await approve(
+    collected.reconciled,
+    "publish-resolved-card-order",
+  );
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const revisionRule = await revisionLegalityRule(
+    revisionId,
+    "legality_rule_asia_resolved_card_order",
+  );
+  expect(revisionRule?.card_ids).toEqual(canonicalDirectIds);
+  expect(revisionRule?.effect).toEqual({
+    type: "prohibited_combination",
+    with_card_ids: canonicalCompanionIds,
+  });
+  const canonicalRule = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT direct_card_ids_json, card_ids_json, effect_json
+     FROM legality_rules
+     WHERE official_id = ?`,
+  ).bind("legality_rule_asia_resolved_card_order")
+    .first<{
+      direct_card_ids_json: string;
+      card_ids_json: string;
+      effect_json: string;
+    }>();
+  expect(canonicalRule).not.toBeNull();
+  expect(JSON.parse(canonicalRule!.direct_card_ids_json)).toEqual(
+    canonicalDirectIds,
+  );
+  expect(JSON.parse(canonicalRule!.card_ids_json)).toEqual(
+    canonicalCardIds,
+  );
+  expect(JSON.parse(canonicalRule!.effect_json)).toEqual({
+    type: "prohibited_combination",
+    with_card_ids: canonicalCompanionIds,
+  });
+  const exportedRule = await exportedLegalityRule(
+    revisionId,
+    "legality_rule_asia_resolved_card_order",
+  );
+  expect(exportedRule.card_ids).toEqual(canonicalCardIds);
+  expect(exportedRule.effect).toEqual({
+    type: "prohibited_combination",
+    with_card_ids: canonicalCompanionIds,
+  });
+});
+
+test("overlapping prohibited-combination operands fail before a candidate can be approved or published", async () => {
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first();
+  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first();
+  const rulesBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM legality_rules`,
+  ).first();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map((object) => object.key).sort();
+
+  const blocked = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=operand-overlap",
+    "contextual-legality-operand-overlap",
+    409,
+  );
+  expect(blocked.reconciled).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [
+      expect.objectContaining({
+        code: "retained_evidence_invalid",
+        detail:
+          "Legality Rule legality_rule_asia_operand_overlap assigns Card card_83d4134414dab2492b3a209cd1758dd1 to both direct and prohibited-combination operands.",
+      }),
+    ],
+  });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first()).toEqual(currentBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first()).toEqual(revisionsBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM legality_rules`,
+  ).first()).toEqual(rulesBefore);
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map((object) => object.key).sort()).toEqual(objectsBefore);
+});
+
 async function collectFixtureLegality(
   url: string,
   idempotencyKey: string,

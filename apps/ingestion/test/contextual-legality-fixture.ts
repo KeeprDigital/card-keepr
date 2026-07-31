@@ -42,7 +42,9 @@ export function contextualLegalityFixtureDocument(
     | "omitted"
     | "empty"
     | "omit-event-tier"
-    | "omit-effective-until" = "current",
+    | "omit-effective-until"
+    | "resolved-card-order"
+    | "operand-overlap" = "current",
 ) {
   const cardNumbers =
     region === "EN-ASIA"
@@ -50,9 +52,34 @@ export function contextualLegalityFixtureDocument(
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
   if (rulesVariant === "omitted") return { cards };
+  const rules = legalityRules(region);
   const retainedRules = rulesVariant === "empty"
     ? []
-    : legalityRules(region).map((rule, index) => {
+    : rulesVariant === "resolved-card-order"
+      ? [{
+          ...rules[0]!,
+          id: "legality_rule_asia_resolved_card_order",
+          card_numbers: ["GD30-001", "GD30-002"],
+          official_wording:
+            "GD30-001 and GD30-002 may not be included with GD30-003 and GD30-004 in the same deck.",
+          effect: {
+            type: "prohibited_combination",
+            with_card_numbers: ["GD30-003", "GD30-004"],
+          },
+        }]
+      : rulesVariant === "operand-overlap"
+        ? [{
+            ...rules[2]!,
+            id: "legality_rule_asia_operand_overlap",
+            card_numbers: ["GD30-002"],
+            official_wording:
+              "GD30-002 may not be included with GD30-002 in the same deck.",
+            effect: {
+              type: "prohibited_combination",
+              with_card_numbers: ["GD30-002"],
+            },
+          }]
+        : rules.map((rule, index) => {
         if (index !== 0) return rule;
         if (rulesVariant === "omit-event-tier") {
           const { event_tier: _eventTier, ...withoutEventTier } = rule;

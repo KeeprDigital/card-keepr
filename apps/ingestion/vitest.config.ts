@@ -950,7 +950,9 @@ function reconciliationSourceDocument(
       "EN-ASIA",
       rules === "omitted" || rules === "empty" ||
           rules === "omit-event-tier" ||
-          rules === "omit-effective-until"
+          rules === "omit-effective-until" ||
+          rules === "resolved-card-order" ||
+          rules === "operand-overlap"
         ? rules
         : "current",
     );
