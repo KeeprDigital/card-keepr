@@ -329,11 +329,28 @@ async function preservePublishedProductIdentity(
   priorProducts: readonly CatalogueProduct[],
   game: SupportedGame,
 ): Promise<ParsedObservation> {
-  const replacements = new Map<string, string>();
+  const replacements = new Map<
+    string,
+    {
+      id: string;
+      reference: ProductReference;
+      officialCode: string | null;
+    }
+  >();
   const warnings: Record<string, unknown>[] = [];
   for (const product of observation.products) {
     const gameProducts = priorProducts.filter(
       (prior) => prior.game === game,
+    );
+    const nameCandidates = gameProducts.filter(
+      (prior) =>
+        normalizedProductName(prior.name) ===
+          normalizedProductName(product.name),
+    );
+    const sameLineageNameCandidates = nameCandidates.filter((prior) =>
+      sourceObservationsForProduct(prior).some(
+        ({ evidence }) => evidence.source === product.evidence.source,
+      )
     );
     const officialCodeCandidates =
       product.officialCode === null
@@ -344,16 +361,27 @@ async function preservePublishedProductIdentity(
     const candidates =
       officialCodeCandidates.length > 0
         ? officialCodeCandidates
-        : gameProducts.filter(
+        : nameCandidates.filter(
             (prior) =>
               (product.officialCode === null ||
-                prior.official_code === null) &&
-              normalizedProductName(prior.name) ===
-              normalizedProductName(product.name),
+                prior.official_code === null),
           );
     const candidateIds = [...new Set(candidates.map(({ id }) => id))];
     if (candidateIds.length === 1) {
-      replacements.set(product.id, candidateIds[0]!);
+      const candidate = candidates.find(({ id }) => id === candidateIds[0])!;
+      const preservesEstablishedCode =
+        product.officialCode === null &&
+        candidate.official_code !== null &&
+        sameLineageNameCandidates.some(({ id }) => id === candidate.id);
+      replacements.set(product.id, {
+        id: candidate.id,
+        reference: preservesEstablishedCode
+          ? { kind: "official_code", value: candidate.official_code! }
+          : product.reference,
+        officialCode: preservesEstablishedCode
+          ? candidate.official_code
+          : product.officialCode,
+      });
     } else if (candidateIds.length > 1) {
       throw new Error(
         "The Product identity matched multiple published Products and " +
@@ -367,17 +395,24 @@ async function preservePublishedProductIdentity(
       warnings: [...observation.warnings, ...warnings],
     };
   }
-  const products = observation.products.map((product) => ({
-    ...product,
-    id: replacements.get(product.id) ?? product.id,
-  }));
+  const products = observation.products.map((product) => {
+    const replacement = replacements.get(product.id);
+    return replacement === undefined
+      ? product
+      : {
+          ...product,
+          id: replacement.id,
+          reference: replacement.reference,
+          officialCode: replacement.officialCode,
+        };
+  });
   const distributionContexts = observation.distributionContexts.map(
     (context) => ({
       ...context,
       product_id:
         context.product_id === null
           ? null
-          : replacements.get(context.product_id) ?? context.product_id,
+          : replacements.get(context.product_id)?.id ?? context.product_id,
     }),
   );
   const relationships = await Promise.all(
@@ -385,12 +420,14 @@ async function preservePublishedProductIdentity(
       const from = {
         ...relationship.from,
         id:
-          replacements.get(relationship.from.id) ??
+          replacements.get(relationship.from.id)?.id ??
           relationship.from.id,
       };
       const to = {
         ...relationship.to,
-        id: replacements.get(relationship.to.id) ?? relationship.to.id,
+        id:
+          replacements.get(relationship.to.id)?.id ??
+          relationship.to.id,
       };
       return {
         ...relationship,

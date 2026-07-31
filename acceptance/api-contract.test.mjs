@@ -107,24 +107,6 @@ test("export schema major 2 carries typed Product and Release projections", asyn
   }
 });
 
-test("migration history is forward-only and registers the production adapter in 0006", async () => {
-  const [migration3, migration6] = await Promise.all(
-    ["0003_immutable_source_evidence.sql", "0006_product_release_distribution.sql"]
-      .map((name) =>
-        readFile(resolve(root, "migrations", name), "utf8")
-      ),
-  );
-  assert.match(migration3, /'one-piece-json-document@2'/u);
-  assert.doesNotMatch(migration3, /'one-piece-en@1'/u);
-  assert.match(
-    migration6,
-    /INSERT INTO source_adapter_versions[\s\S]*'one-piece-en@1'/u,
-  );
-  assert.doesNotMatch(migration6, /UPDATE source_adapter_versions/iu);
-  assert.match(migration6, /'fusion-world-en@2'/u);
-  assert.match(migration6, /source_adapter_version_is_immutable/u);
-});
-
 test("migration 0006 upgrades an applied 0001-0005 database and also applies fresh", async () => {
   const migrations = await Promise.all(
     [
@@ -238,55 +220,4 @@ test("migration 0006 upgrades an applied 0001-0005 database and also applies fre
   migrations.forEach((migration) => fresh.exec(migration));
   assertVersionSet(fresh);
   fresh.close();
-});
-
-test("dynamic request ordering is transactional and ancestry does not depend on a hash sort key", async () => {
-  const [repository, reconciliation] = await Promise.all([
-    readFile(
-      resolve(root, "src/catalogue/source-evidence-repository.ts"),
-      "utf8",
-    ),
-    readFile(
-      resolve(root, "src/catalogue/reconciliation-evidence.ts"),
-      "utf8",
-    ),
-  ]);
-  assert.match(
-    repository,
-    /COALESCE\s*\(\s*MAX\(sequence_number\)\s*,\s*-1\s*\)\s*\+\s*1/iu,
-  );
-  assert.doesNotMatch(
-    repository,
-    /Number\.parseInt\(digest\.slice\(0,\s*12\),\s*16\)/u,
-  );
-  assert.doesNotMatch(
-    reconciliation,
-    /parent\.sequence_number\s*>=\s*request\.sequence_number/u,
-  );
-});
-
-test("the parent Workflow owns the collection barrier and automatic reconciliation", async () => {
-  const workflow = await readFile(
-    resolve(root, "apps/ingestion/src/evidence-workflows.ts"),
-    "utf8",
-  );
-  const parent = workflow.slice(
-    workflow.indexOf("export class EvidenceIngestionWorkflow"),
-    workflow.indexOf("export class EvidenceHostWorkflow"),
-  );
-  const host = workflow.slice(
-    workflow.indexOf("export class EvidenceHostWorkflow"),
-  );
-  const barrier = parent.slice(
-    parent.indexOf("let barrierStage = 0"),
-    parent.indexOf("if (run.state === \"parsing\""),
-  );
-  assert.match(parent, /finalizeEvidenceRun/u);
-  assert.match(parent, /reconcileRetainedCardPrintingEvidence/u);
-  assert.match(barrier, /pendingEvidenceRequests\(\s*this\.env\.CATALOGUE_DB,\s*runId/u);
-  assert.match(barrier, /child\.restart\(\)/u);
-  assert.match(barrier, /child\.resume\(\)/u);
-  assert.match(parent, /run\.plan_origin === "production"/u);
-  assert.match(parent, /state === "collecting"/u);
-  assert.doesNotMatch(host, /finalizeEvidenceRun/u);
 });

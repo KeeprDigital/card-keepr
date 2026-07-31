@@ -998,6 +998,167 @@ test("accessory detail traversal retains non-card evidence without publishing a 
   );
 });
 
+test("structured accessory Products remain Distribution Context evidence on every Product-bearing surface", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  const accessory = {
+    productCode: "FB-SLEEVE-01",
+    productName: "Official Storage Sleeves",
+  };
+  for (const surface of ["products", "card-search"]) {
+    const payload = structuredClone(
+      officialRawSurfacePayload(`/fusion-world-en/${surface}`),
+    );
+    if (surface === "products") {
+      payload.result.partitions[0].entries = [accessory];
+      payload.result.partitions[0].total = 1;
+    } else {
+      payload.products.push(accessory);
+    }
+    const observations = adapter.parseBytes(
+      new TextEncoder().encode(
+        `<html><script type="application/ld+json">${
+          JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Dataset",
+            publisher: { "@type": "Organization", name: "Bandai" },
+            hasPart: [{
+              "@type": "Dataset",
+              identifier: `fusion-world-en:${surface}`,
+              payload,
+            }],
+          })
+        }</script></html>`,
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface(surface),
+        requestId: `fusion-world-en:${surface}`,
+      },
+    );
+    assert.equal(
+      observations.flatMap(
+        ({ product_release_catalogue }) =>
+          product_release_catalogue.products,
+      ).some(({ official_code }) => official_code === "FB-SLEEVE-01"),
+      false,
+    );
+    assert.ok(
+      observations.flatMap(
+        ({ product_release_catalogue }) =>
+          product_release_catalogue.distribution_contexts,
+      ).some(
+        ({ kind, label }) => kind === "other" && label === "accessory",
+      ),
+    );
+  }
+});
+
+test("code-less structured Products and Releases retain name identity with valid event keys", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  const product = {
+    productCode: null,
+    productName: "Announced Product Without Code",
+  };
+  const release = {
+    productCode: null,
+    releaseId: "announced-product-without-code",
+    region: "EN-US",
+    precision: "unknown",
+    date: null,
+    status: "announced",
+  };
+  for (const surface of ["products", "releases"]) {
+    const payload = structuredClone(
+      officialRawSurfacePayload(`/fusion-world-en/${surface}`),
+    );
+    const partition = (surface === "products"
+      ? payload.result
+      : payload.events).partitions[0];
+    partition.entries = surface === "products"
+      ? [product]
+      : [{ product, release }];
+    partition.total = 1;
+    const observations = adapter.parseBytes(
+      new TextEncoder().encode(
+        `<html><script type="application/ld+json">${
+          JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Dataset",
+            publisher: { "@type": "Organization", name: "Bandai" },
+            hasPart: [{
+              "@type": "Dataset",
+              identifier: `fusion-world-en:${surface}`,
+              payload,
+            }],
+          })
+        }</script></html>`,
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface(surface),
+        requestId: `fusion-world-en:${surface}`,
+      },
+    );
+    const observed = observations.flatMap(
+      ({ product_release_catalogue }) =>
+        product_release_catalogue.products,
+    );
+    assert.deepEqual(
+      observed.map(({ reference, official_code, name }) => ({
+        reference,
+        official_code,
+        name,
+      })),
+      [{
+        reference: {
+          kind: "name",
+          value: "Announced Product Without Code",
+        },
+        official_code: null,
+        name: "Announced Product Without Code",
+      }],
+    );
+    for (const { event_key } of observed.flatMap(({ releases }) => releases)) {
+      assert.match(event_key, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u);
+    }
+  }
+});
+
+test("code-less HTML Product announcements derive stable opaque event identities", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
+  );
+  const parse = () =>
+    adapter.parseBytes(
+      new TextEncoder().encode(`
+        <h1>Future Product Without Code</h1>
+        <dl><dt>Release Date</dt><dd>TBA</dd></dl>
+      `),
+      {
+        mediaType: "text/html",
+        url: "https://www.gundam-gcg.com/en/products/future-product/",
+        requestId: `gundam-en-us:product_detail:${"c".repeat(64)}`,
+      },
+    )[0].product_release_catalogue.products[0];
+  const first = parse();
+  const second = parse();
+  assert.equal(first.official_code, null);
+  assert.deepEqual(first.reference, {
+    kind: "name",
+    value: "Future Product Without Code",
+  });
+  assert.equal(first.releases[0].event_key, second.releases[0].event_key);
+  assert.match(
+    first.releases[0].event_key,
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u,
+  );
+  assert.equal(first.releases[0].event_key.includes("Future Product"), false);
+});
+
 test("unavailable Product release vocabulary normalizes to reviewable unknown values", () => {
   const adapter = officialRawAdapterContracts.find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",

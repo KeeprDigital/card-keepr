@@ -3660,6 +3660,162 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
   );
 }, 30_000);
 
+test("registered Product detail evidence outranks its conflicting listing through publication", async () => {
+  const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+    (request) =>
+      request.id === "fusion-world-en:products" ||
+        request.id === "fusion-world-en:releases"
+        ? {
+            ...request,
+            headers: {
+              ...request.headers,
+              "user-agent": "card-keepr-product-authority",
+            },
+          }
+        : request,
+  );
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@2",
+    idempotency_key: "registered-product-detail-authority",
+    requests,
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
+    ).response.status,
+  ).toBe(202);
+  await waitForRunState(runId, "awaiting_approval", 20_000);
+  const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
+  expect(candidate.response.status).toBe(200);
+  const published = await approve(candidate.document);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const productDocument = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json
+     FROM revision_products
+     WHERE catalogue_revision_id = ?
+       AND json_extract(document_json, '$.data.official_code') = ?`,
+  )
+    .bind(revisionId, "FB-AUTHORITY")
+    .first<{ document_json: string }>();
+  expect(JSON.parse(productDocument?.document_json ?? "{}")).toMatchObject({
+    data: { name: "Authoritative Product Detail" },
+    disagreements: [
+      expect.objectContaining({
+        path: "/data/name",
+        status: "resolved_by_authority",
+      }),
+    ],
+  });
+  expect(
+    (await exportComponentRecords(revisionId, "products")).find(
+      ({ official_code }) => official_code === "FB-AUTHORITY",
+    ),
+  ).toMatchObject({
+    name: "Authoritative Product Detail",
+  });
+}, 30_000);
+
+test("a registered code-less Product refresh preserves its established code", async () => {
+  const start = async (
+    state: "coded" | "codeless",
+  ) => {
+    const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+      (request) =>
+        request.id === "fusion-world-en:products"
+          ? {
+              ...request,
+              headers: {
+                ...request.headers,
+                "user-agent": `card-keepr-product-identity-${state}`,
+              },
+            }
+          : request,
+    );
+    const started = await post("/v1/ingestion-runs/evidence", {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@2",
+      idempotency_key:
+        `registered-product-identity-${state}-${crypto.randomUUID()}`,
+      requests,
+    });
+    expect(started.response.status).toBe(201);
+    const runId = requiredString(started.document, "id");
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
+      ).response.status,
+    ).toBe(202);
+    const runDocument = await waitForRunState(
+      runId,
+      "awaiting_approval",
+      20_000,
+    );
+    return {
+      candidate: await get(`/v1/ingestion-runs/${runId}/candidate`),
+      runDocument,
+    };
+  };
+
+  const { candidate: firstCandidate } = await start(
+    "coded",
+  );
+  expect(firstCandidate.response.status).toBe(200);
+  const firstPublication = await approve(firstCandidate.document);
+  expect(firstPublication.response.status).toBe(200);
+  const firstRevision = requiredString(
+    firstPublication.document,
+    "resulting_revision_id",
+  );
+  const firstProduct = (
+    await exportComponentRecords(firstRevision, "products")
+  ).find(({ official_code }) => official_code === "FB-STABLE");
+  expect(firstProduct).toMatchObject({
+    id: expect.any(String),
+    name: "Stable Product Identity",
+  });
+
+  const { candidate: refreshCandidate } = await start(
+    "codeless",
+  );
+  expect(refreshCandidate.response.status).toBe(200);
+  const refreshPublication = await approve(refreshCandidate.document);
+  expect(
+    refreshPublication.response.status,
+    JSON.stringify(refreshPublication.document),
+  ).toBe(200);
+  const refreshRevision = requiredString(
+    refreshPublication.document,
+    "resulting_revision_id",
+  );
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      `SELECT json_extract(document_json, '$.data.official_code') AS official_code
+       FROM revision_products
+       WHERE catalogue_revision_id = ?
+         AND product_id = ?`,
+    )
+      .bind(refreshRevision, firstProduct?.id)
+      .first<{ official_code: string | null }>(),
+  ).toEqual({ official_code: "FB-STABLE" });
+  expect(
+    (await exportComponentRecords(refreshRevision, "products")).find(
+      ({ id }) => id === firstProduct?.id,
+    ),
+  ).toMatchObject({
+    official_code: "FB-STABLE",
+    name: "Stable Product Identity",
+  });
+}, 45_000);
+
 test("same-authority Product conflicts fail closed before publication", async () => {
   const run = await collectRequests(
     [

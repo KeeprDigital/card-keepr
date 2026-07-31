@@ -1519,7 +1519,7 @@ function parseBandaiProductDetail(
     releases.set(productMapKey(product), [{
       event_key:
         field("Release Event ID", "Release ID", "Event ID") ??
-        `product-release:${productMapKey(product)}`,
+        productEventKey("product-release", product),
       region: normalizedOfficialRegion(
         field("Region", "Market", "Territory"),
         sourceLineage,
@@ -1887,7 +1887,7 @@ function parseBandaiProductIndex(
     const releases = new Map<string, Record<string, unknown>[]>();
     if (announced) {
       releases.set(productMapKey(product), [{
-        event_key: `product-index-announcement:${productMapKey(product)}`,
+        event_key: productEventKey("product-index-announcement", product),
         region: "unknown",
         precision: "unknown",
         date: null,
@@ -2843,7 +2843,10 @@ function canonicalProduct(
   nameField: string,
 ): Record<string, unknown> {
   return {
-    code: requiredText(product[codeField], "Official Product code"),
+    code: optionalOfficialCode(
+      product[codeField],
+      "Official Product code",
+    ),
     title: requiredText(product[nameField], "Official Product name"),
     ...(product.distribution === undefined
       ? {}
@@ -2945,7 +2948,10 @@ function canonicalRelease(
   fields: { code: string; event: string },
 ): Record<string, unknown> {
   return {
-    code: requiredText(release[fields.code], "Official Release Product code"),
+    code: optionalOfficialCode(
+      release[fields.code],
+      "Official Release Product code",
+    ),
     event_key: requiredText(release[fields.event], "Official Release identity"),
     region: release.region,
     precision: release.precision,
@@ -3124,35 +3130,52 @@ function parseRawDiscoverySurface(
     surface.products,
     "Official Source referenced Products",
   );
+  const productRecords = products.map((value) =>
+    requiredRecord(value, "Official Source referenced Product")
+  );
+  const cardProducts = productRecords.filter(
+    (product) => productNonCardClassification(product) === null,
+  );
+  const nonCardProducts = productRecords.filter(
+    (product) => productNonCardClassification(product) !== null,
+  );
   const releases = requiredArray(
     surface.releases,
     "Official Source referenced Releases",
   );
   const keys = surfaceKeys[format];
-  return parseOfficialDiscovery(
-    {
-      [keys.listing]: {
-        page: 1,
-        pages: 1,
-        total: entries.length,
-        has_next: false,
-        entries,
+  return [
+    ...parseOfficialDiscovery(
+      {
+        [keys.listing]: {
+          page: 1,
+          pages: 1,
+          total: entries.length,
+          has_next: false,
+          entries,
+        },
+        [keys.details]: details,
+        [keys.products]: cardProducts,
+        [keys.releases]: releases,
+        [keys.legality]: {
+          revision: "captured-by-required-policy-surfaces",
+          entries: [],
+        },
+        [keys.errata]: {
+          revision: "captured-by-required-policy-surfaces",
+          entries: [],
+        },
       },
-      [keys.details]: details,
-      [keys.products]: products,
-      [keys.releases]: releases,
-      [keys.legality]: {
-        revision: "captured-by-required-policy-surfaces",
-        entries: [],
-      },
-      [keys.errata]: {
-        revision: "captured-by-required-policy-surfaces",
-        entries: [],
-      },
-    },
-    keys,
-    game,
-  ).map((observation) => {
+      keys,
+      game,
+    ),
+    ...nonCardProducts.map((product) =>
+      nonCardProductObservation(
+        product,
+        productNonCardClassification(product)!,
+      )
+    ),
+  ].map((observation) => {
     const record = requiredRecord(
       observation,
       "Official discovery observation",
@@ -3188,9 +3211,12 @@ function parseRawProductsSurface(
     revision: "captured-by-required-policy-surfaces",
     entries: [],
   };
-  return products.map((product) =>
-    productOnlyObservation(product, releasesByCode, policy, policy)
-  );
+  return products.map((product) => {
+    const classification = productNonCardClassification(product);
+    return classification === null
+      ? productOnlyObservation(product, releasesByCode, policy, policy)
+      : nonCardProductObservation(product, classification);
+  });
 }
 
 function parseRawReleasesSurface(
@@ -3200,36 +3226,50 @@ function parseRawReleasesSurface(
     .map((value) => requiredRecord(value, "Official Source Release entry"));
   const products = new Map<string, Record<string, unknown>>();
   const releases = new Map<string, Record<string, unknown>[]>();
+  const nonCardProducts = new Map<string, Record<string, unknown>>();
   for (const entry of entries) {
     const product = requiredRecord(
       entry.product,
       "Official Source Release Product",
     );
-    const code = requiredText(product.code, "Official Release Product code");
+    const code = nullableText(product.code, "Official Release Product code");
     const release = requiredRecord(
       entry.release,
       "Official Source Release value",
     );
-    if (requiredText(release.code, "Official Release code") !== code) {
+    if (nullableText(release.code, "Official Release code") !== code) {
       throw new Error(
         "Official Source Release Product binding is inconsistent.",
       );
     }
-    products.set(code, product);
-    releases.set(code, [...(releases.get(code) ?? []), release]);
+    const key = productMapKey(product);
+    if (productNonCardClassification(product) !== null) {
+      nonCardProducts.set(key, product);
+      continue;
+    }
+    products.set(key, product);
+    releases.set(key, [...(releases.get(key) ?? []), release]);
   }
   const policy = {
     revision: "captured-by-required-policy-surfaces",
     entries: [],
   };
-  return [...products.entries()].map(([code, product]) =>
-    productOnlyObservation(
-      product,
-      new Map([[code, releases.get(code) ?? []]]),
-      policy,
-      policy,
-    )
-  );
+  return [
+    ...[...products.entries()].map(([key, product]) =>
+      productOnlyObservation(
+        product,
+        new Map([[key, releases.get(key) ?? []]]),
+        policy,
+        policy,
+      )
+    ),
+    ...[...nonCardProducts.values()].map((product) =>
+      nonCardProductObservation(
+        product,
+        productNonCardClassification(product)!,
+      )
+    ),
+  ];
 }
 
 function rawCoverageObservation(
@@ -3406,13 +3446,6 @@ const surfaceKeys = {
     errata: "errata",
   },
 } as const;
-
-export function officialDiscoveryAdapter(
-  format: DiscoveryFormat,
-  game: ProductSourceGame,
-): (document: unknown) => readonly unknown[] {
-  return (document) => parseOfficialDiscovery(document, surfaceKeys[format], game);
-}
 
 function parseOfficialDiscovery(
   document: unknown,
@@ -3770,6 +3803,46 @@ function productOnlyObservation(
   };
 }
 
+function productNonCardClassification(
+  product: Record<string, unknown>,
+): "accessory" | null {
+  return nonCardProductClassification(
+    JSON.stringify({
+      code: product.code ?? null,
+      title: product.title ?? null,
+      distribution: product.distribution ?? null,
+      raw: product,
+    }),
+  );
+}
+
+function nonCardProductObservation(
+  product: Record<string, unknown>,
+  classification: "accessory",
+): Record<string, unknown> {
+  const policy = {
+    revision: "captured-by-required-policy-surfaces",
+    entries: [],
+  };
+  return {
+    completeness: completeObservation(),
+    product_release_catalogue: {
+      products: [],
+      distribution_contexts: [{
+        key:
+          `non-card:${classification}:${
+            productMapKey(product).normalize("NFC").trim().toLocaleLowerCase()
+          }`,
+        kind: "other",
+        label: classification,
+        evidence_category: "explicit",
+      }],
+      relationships: [],
+    },
+    source_sidecar: sourceSidecar(null, [product], policy, policy),
+  };
+}
+
 function catalogue(
   products: Record<string, unknown>[],
   releasesByCode: Map<string, Record<string, unknown>[]>,
@@ -3911,6 +3984,30 @@ function productMapKey(product: Record<string, unknown>): string {
     : `name:${reference.value}`;
 }
 
+function productEventKey(
+  prefix: string,
+  product: Record<string, unknown>,
+): string {
+  const reference = productReference(product);
+  if (reference.kind === "official_code") {
+    return `${prefix}:${reference.value}`;
+  }
+  const bytes = new TextEncoder().encode(
+    reference.value.normalize("NFC").trim(),
+  );
+  const readablePrefix = [...bytes.slice(0, 64)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return `${prefix}:name-${readablePrefix}-${
+    hash.toString(16).padStart(16, "0")
+  }`;
+}
+
 function productReferenceValue(
   value: unknown,
   name: string,
@@ -3977,4 +4074,10 @@ function requiredText(value: unknown, name: string): string {
 function nullableText(value: unknown, name: string): string | null {
   if (value === null) return null;
   return requiredText(value, name);
+}
+
+function optionalOfficialCode(value: unknown, name: string): string | null {
+  return value === undefined || value === null
+    ? null
+    : requiredText(value, name);
 }

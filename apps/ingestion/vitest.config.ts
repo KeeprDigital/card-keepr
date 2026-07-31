@@ -329,6 +329,106 @@ export default defineConfig({
           ) {
             const artworkMarker = request.headers.get("user-agent");
             if (
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/products/" &&
+              artworkMarker === "card-keepr-product-authority"
+            ) {
+              return new Response(
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+                  <article class="booster">
+                    <a data-product-code="FB-AUTHORITY"
+                       href="/fw/en/products/booster/fb-authority/">
+                      Conflicting Product Listing
+                    </a>
+                  </article>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"product-authority-listing"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/products/" &&
+              artworkMarker?.startsWith("card-keepr-product-identity-")
+            ) {
+              const state = artworkMarker.slice(
+                "card-keepr-product-identity-".length,
+              );
+              const code = state === "codeless"
+                ? ""
+                : "FB-STABLE";
+              return new Response(
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+                  <article class="booster">
+                    <a ${code === "" ? "" : `data-product-code="${code}"`}
+                       href="/fw/en/products/booster/fb-stable-${state}/">
+                      Stable Product Identity
+                    </a>
+                  </article>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"product-identity-${state}-listing"`,
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/products/booster/fb-authority/"
+            ) {
+              return new Response(
+                `<html>
+                  <h1>Authoritative Product Detail</h1>
+                  <dl>
+                    <dt>Product Code</dt><dd>FB-AUTHORITY</dd>
+                  </dl>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"product-authority-detail"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname.startsWith(
+                "/fw/en/products/booster/fb-stable-",
+              )
+            ) {
+              const state = url.pathname.match(
+                /fb-stable-(coded|codeless)/u,
+              )?.[1];
+              const code = state === "codeless"
+                ? ""
+                : "FB-STABLE";
+              return new Response(
+                `<html>
+                  <h1>Stable Product Identity</h1>
+                  ${
+                    code === ""
+                      ? ""
+                      : `<dl><dt>Product Code</dt><dd>${code}</dd></dl>`
+                  }
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"product-identity-${state}-detail"`,
+                  },
+                },
+              );
+            }
+            if (
               url.hostname === "world.digimoncard.com" &&
               url.pathname === "/cards/index.php" &&
               artworkMarker?.startsWith("card-keepr-artwork-digest-")
