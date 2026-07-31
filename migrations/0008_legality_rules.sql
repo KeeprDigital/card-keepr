@@ -351,6 +351,7 @@ WHEN NOT EXISTS (
     AND json_extract(NEW.document_json, '$.current') = canonical.current
     AND json_extract(NEW.document_json, '$.last_missing_revision_id') IS
       canonical.last_missing_revision_id
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 21
     AND NOT EXISTS (
       SELECT value
       FROM json_each(

@@ -646,6 +646,28 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       }),
     ).run(),
   );
+  const upgradedDuplicateRequiredKey = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      upgradedRule.id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      JSON.stringify(upgradedRule.card_ids),
+      JSON.stringify(upgradedRule).replace(
+        /\}$/u,
+        ',"official_wording":"Attacker-controlled duplicate."}',
+      ),
+    ).run(),
+  );
   expect([
     String(upgradedProvenanceMutation),
     String(upgradedCrossOwner),
@@ -653,11 +675,13 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     String(upgradedRevisionDelete),
     String(upgradedMissingNullableKey),
     String(upgradedArbitraryKeySubstitution),
+    String(upgradedDuplicateRequiredKey),
   ]).toEqual([
     expect.stringMatching(/legality_rule_provenance_immutable/),
     expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
   ]);
@@ -1238,6 +1262,28 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       }),
     ).run(),
   );
+  const duplicateRequiredDocumentKey = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      canonicalSnapshot.id,
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.format,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.card_ids_json,
+      String(canonicalSnapshot.document_json).replace(
+        /\}$/u,
+        ',"official_wording":"Attacker-controlled duplicate."}',
+      ),
+    ).run(),
+  );
   const provenanceOwners = await testEnv.CATALOGUE_DB.prepare(
     `SELECT id, source_snapshot_id
      FROM source_observation_sets
@@ -1297,6 +1343,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     String(inconsistentRevisionDocument),
     String(missingNullableDocumentKey),
     String(arbitraryDocumentKeySubstitution),
+    String(duplicateRequiredDocumentKey),
     String(provenanceUpdate),
     String(crossOwnedProvenance),
   ]).toEqual([
@@ -1306,6 +1353,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),

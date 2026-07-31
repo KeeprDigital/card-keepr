@@ -2485,17 +2485,19 @@ async function reconcileAbandonedPublication(
       observedAt,
       error instanceof AdministrationProblem
         ? error
-        : errorMessage(error).includes("publication_guard_failed")
-          ? new AdministrationProblem(
-              409,
-              "publication_precondition_failed",
-              "The publication guards changed while the reserved publication was interrupted.",
-            )
-          : new AdministrationProblem(
-              500,
-              "publication_abandoned",
-              "The reserved publication could not be safely reconciled.",
-            ),
+        : error instanceof CatalogueExportLimitError
+          ? publicationFailureProblem(error)
+          : errorMessage(error).includes("publication_guard_failed")
+            ? new AdministrationProblem(
+                409,
+                "publication_precondition_failed",
+                "The publication guards changed while the reserved publication was interrupted.",
+              )
+            : new AdministrationProblem(
+                500,
+                "publication_abandoned",
+                "The reserved publication could not be safely reconciled.",
+              ),
     );
   }
 }

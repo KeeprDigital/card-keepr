@@ -6543,6 +6543,145 @@ test("an oversized legality relationship export fails terminally before reservat
   ).first()).toEqual(revisionsBefore);
 });
 
+test("reserved oversized legality relationship recovery preserves the typed terminal problem", async () => {
+  const run = await collect(
+    "/reconciliation/legality-relationship-over-budget",
+    "reconcile-reserved-legality-relationship-over-budget",
+    undefined,
+    30_000,
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  const digest = requiredString(reconciled.document, "candidate_digest");
+  const expectedRevision = requiredString(
+    reconciled.document,
+    "expected_current_revision_id",
+  );
+  const approvalKey = "approve-reserved-legality-relationship-over-budget";
+  const revisionId = "catrev_reserved_legality_relationship_over_budget";
+  const approvalRequest = {
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+    idempotency_key: approvalKey,
+  };
+  const approval = {
+    action: "approved",
+    approved_at: "2026-07-29T02:00:00.000Z",
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+     SET state = 'publishing',
+         approval_json = ?,
+         approval_idempotency_key = ?,
+         approval_history_json = ?,
+         progress_json = ?,
+         publication_revision_id = ?,
+         publication_started_at = ?,
+         publication_reconcile_after = ?,
+         publication_manifest_digest = ?,
+         publication_writer_token = ?
+     WHERE id = ? AND state = 'awaiting_approval'`,
+  )
+    .bind(
+      JSON.stringify(approval),
+      approvalKey,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+          "awaiting_approval",
+        ],
+        current_stage: "publishing",
+      }),
+      revisionId,
+      approval.approved_at,
+      "2026-07-29T02:05:00.000Z",
+      "a".repeat(64),
+      `writer:${revisionId}`,
+      run.id,
+    )
+    .run();
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first<{ current_revision_id: string }>();
+  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first<{ count: number }>();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list())
+    .objects.map((object) => object.key).sort();
+
+  const blocked = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    approvalRequest,
+  );
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "catalogue_export_too_large",
+  });
+  const shown = await get(`/v1/ingestion-runs/${run.id}`);
+  expect(shown.document).toMatchObject({
+    state: "failed",
+    failure_code: "catalogue_export_too_large",
+  });
+  const lifecycle = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM administration_idempotency_claims
+        WHERE idempotency_key = ?) AS claims,
+       (SELECT COUNT(*) FROM administration_idempotency
+        WHERE idempotency_key = ?
+          AND operation = 'approve_ingestion_run'
+          AND outcome = 'problem' AND http_status = 422) AS outcomes,
+       (SELECT active_ingestion_run_id FROM operation_state
+        WHERE singleton = 1) AS active_ingestion_run_id,
+       (SELECT state FROM ingestion_publication_cleanup
+        WHERE ingestion_run_id = ?) AS cleanup_state,
+       (SELECT object_keys_json FROM ingestion_publication_cleanup
+        WHERE ingestion_run_id = ?) AS cleanup_keys`,
+  )
+    .bind(approvalKey, approvalKey, run.id, run.id)
+    .first<{
+      claims: number;
+      outcomes: number;
+      active_ingestion_run_id: string | null;
+      cleanup_state: string;
+      cleanup_keys: string;
+    }>();
+  expect(lifecycle).toEqual({
+    claims: 0,
+    outcomes: 1,
+    active_ingestion_run_id: null,
+    cleanup_state: "pending",
+    cleanup_keys: "[]",
+  });
+
+  const replay = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    approvalRequest,
+  );
+  expect(replay.response.status).toBe(422);
+  expect(replay.document).toMatchObject({
+    code: blocked.document.code,
+    detail: blocked.document.detail,
+    status: blocked.document.status,
+    type: blocked.document.type,
+  });
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map((object) => object.key).sort()).toEqual(objectsBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first()).toEqual(currentBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first()).toEqual(revisionsBefore);
+});
+
 async function collect(
   path: string,
   key: string,
