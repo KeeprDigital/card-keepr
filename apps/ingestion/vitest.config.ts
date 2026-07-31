@@ -431,6 +431,76 @@ export default defineConfig({
             if (
               url.hostname === "world.digimoncard.com" &&
               url.pathname === "/cards/index.php" &&
+              artworkMarker === "card-keepr-product-fuzzy-warning"
+            ) {
+              return new Response(
+                `<html><title>BANDAI DIGIMON CARD publication</title>
+                  <main><article>
+                    <a href="/cards/detail.php?card=BT99-999">
+                      Fuzzy Product Link Test
+                    </a>
+                  </article></main></html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"digimon-product-fuzzy-list"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/cards/detail.php" &&
+              url.searchParams.get("card") === "BT99-999"
+            ) {
+              return new Response(
+                `<html data-card-id="BT99-999">
+                  <h1>Fuzzy Product Link Test</h1>
+                  <dl><dt>Card Number</dt><dd>BT99-999</dd></dl>
+                  <dl><dt>Card Type</dt><dd>Digimon</dd></dl>
+                  <dl><dt>Color</dt><dd>Blue</dd></dl>
+                  <dl><dt>Level</dt><dd>4</dd></dl>
+                  <dl><dt>Play Cost</dt><dd>5</dd></dl>
+                  <dl><dt>DP</dt><dd>6,000</dd></dl>
+                  <dl><dt>Effect</dt><dd>Fuzzy link test effect</dd></dl>
+                  <dl><dt>Alternative Art</dt><dd>No</dd></dl>
+                  <a class="product-link"
+                     href="/products/possible-booster/">
+                    Possible Booster Product
+                  </a>
+                  <img class="card-image"
+                    src="https://images.digimoncard.com/cards/BT99-999-fuzzy.png">
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"digimon-product-fuzzy-detail"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "images.digimoncard.com" &&
+              url.pathname === "/cards/BT99-999-fuzzy.png"
+            ) {
+              return new Response(
+                new Uint8Array([
+                  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+                  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+                  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                  0x08, 0x06, 0x00, 0x00, 0x00,
+                ]),
+                {
+                  headers: {
+                    "content-type": "image/png",
+                    etag: '"digimon-product-fuzzy-image"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/cards/index.php" &&
               artworkMarker?.startsWith("card-keepr-artwork-digest-")
             ) {
               digimonArtworkVariant =

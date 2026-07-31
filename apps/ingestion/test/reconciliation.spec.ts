@@ -3816,6 +3816,72 @@ test("a registered code-less Product refresh preserves its established code", as
   });
 }, 45_000);
 
+test("a registered fuzzy Product link remains a review warning through publication", async () => {
+  const requests = officialSourceDiscoveryRequests("digimon-en").map(
+    (request) =>
+      request.id === "digimon-en:card-list"
+        ? {
+            ...request,
+            headers: {
+              ...request.headers,
+              "user-agent": "card-keepr-product-fuzzy-warning",
+            },
+          }
+        : request,
+  );
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "digimon",
+    source_lineage: "digimon-en",
+    adapter_version: "digimon-en@2",
+    idempotency_key: `registered-product-fuzzy-${crypto.randomUUID()}`,
+    requests,
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect(
+    (
+      await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
+    ).response.status,
+  ).toBe(202);
+  await waitForRunState(runId, "awaiting_approval", 20_000, 250);
+  const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
+  expect(candidate.response.status).toBe(200);
+  expect(
+    (candidate.document.diff as { warnings?: unknown[] }).warnings,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "product_relationship_unresolved",
+        relationship_value: "Possible Booster Product",
+      }),
+    ]),
+  );
+  const publication = await approve(candidate.document);
+  expect(
+    publication.response.status,
+    JSON.stringify(publication.document),
+  ).toBe(200);
+  const revisionId = requiredString(
+    publication.document,
+    "resulting_revision_id",
+  );
+  expect(
+    await testEnv.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count
+       FROM reconciled_product_relationships
+       WHERE relationship_value = ?`,
+    )
+      .bind("Possible Booster Product")
+      .first<{ count: number }>(),
+  ).toEqual({ count: 0 });
+  expect(
+    (await exportComponentRecords(revisionId, "relationships")).some(
+      ({ relationship_value }) =>
+        relationship_value === "Possible Booster Product",
+    ),
+  ).toBe(false);
+}, 30_000);
+
 test("same-authority Product conflicts fail closed before publication", async () => {
   const run = await collectRequests(
     [

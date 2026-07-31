@@ -193,25 +193,6 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
     ),
   );
 
-export function parseControlledRawSurfaceFixture(
-  sourceLineage: string,
-  bytes: Uint8Array,
-  context: { mediaType: string | null; url: string; requestId?: string },
-): readonly unknown[] {
-  const definition = rawContractDefinitions.find(
-    (candidate) => candidate.sourceLineage === sourceLineage,
-  );
-  if (definition === undefined) {
-    throw new Error("Controlled fixture names no production lineage.");
-  }
-  return rawSnapshotDecoder(
-    definition.format,
-    definition.supportedGame,
-    definition.sourceLineage,
-    definition.requiredSurfaces,
-  )(bytes, context);
-}
-
 export function officialSourceDiscoveryRequests(
   sourceLineage: string,
 ): readonly {
@@ -2076,34 +2057,6 @@ function requiredNullableText(value: string | null, name: string): string | null
   return value;
 }
 
-function rawSnapshotDecoder(
-  format: DiscoveryFormat,
-  game: ProductSourceGame,
-  sourceLineage: string,
-  requiredSurfaces: readonly string[],
-): OfficialRawAdapterContract["parseBytes"] {
-  return (bytes, context) => {
-    const surface = surfaceFromUrl(context.url);
-    if (!requiredSurfaces.includes(surface)) {
-      throw new Error(
-        `Official Source URL does not identify a required ${sourceLineage} surface.`,
-      );
-    }
-    const rawDocument = decodeRawSurfacePayload(
-      bytes,
-      context.mediaType,
-      surface,
-    );
-    return normalizedSurfaceObservations(
-      format,
-      game,
-      sourceLineage,
-      surface,
-      rawDocument,
-    );
-  };
-}
-
 function normalizedSurfaceObservations(
   format: DiscoveryFormat,
   game: ProductSourceGame,
@@ -3039,69 +2992,6 @@ function attachRawSurfaceEvidence(
   };
 }
 
-function decodeRawSurfacePayload(
-  bytes: Uint8Array,
-  mediaType: string | null,
-  surface: string,
-): Record<string, unknown> {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", {
-      fatal: true,
-      ignoreBOM: false,
-    }).decode(bytes);
-  } catch {
-    throw new Error(`Official Source ${surface} bytes are not valid UTF-8.`);
-  }
-  const normalizedMediaType = mediaType?.split(";", 1)[0]?.trim().toLowerCase();
-  let json: string;
-  if (
-    isDiscoverySurface(surface) ||
-    surface === "products"
-  ) {
-    if (normalizedMediaType !== "text/html") {
-      throw new Error(
-        `Official Source ${surface} must be captured as text/html.`,
-      );
-    }
-    const matches = [
-      ...text.matchAll(
-        /<script\s+type=["']application\/json["']\s+data-keepr-official-payload(?:=["'][^"']*["'])?\s*>([\s\S]*?)<\/script>/giu,
-      ),
-    ];
-    if (matches.length !== 1) {
-      throw new Error(
-        `Official Source ${surface} HTML must contain exactly one official payload.`,
-      );
-    }
-    json = matches[0]![1]!;
-  } else {
-    if (
-      normalizedMediaType !== "application/json" &&
-      normalizedMediaType !== "application/ld+json"
-    ) {
-      throw new Error(
-        `Official Source ${surface} must be captured as application/json.`,
-      );
-    }
-    json = text;
-  }
-  try {
-    return requiredRecord(
-      JSON.parse(json),
-      `Official Source ${surface} payload`,
-    );
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.startsWith("Official Source")
-    ) {
-      throw error;
-    }
-    throw new Error(`Official Source ${surface} payload is not valid JSON.`);
-  }
-}
-
 function parseRawDiscoverySurface(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
@@ -3611,7 +3501,7 @@ function cardObservation(
           value: label.trim(),
         },
         evidence_category: "derived",
-        resolution: "warning",
+        resolution: "fuzzy",
       });
     }
   }
@@ -3646,7 +3536,7 @@ function cardObservation(
         ),
       },
       evidence_category: "explicit",
-      resolution: "warning",
+      resolution: "fuzzy",
     });
   }
   const artwork = detail.artwork_fingerprint;

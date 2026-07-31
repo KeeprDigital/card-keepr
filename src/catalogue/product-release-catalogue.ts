@@ -1264,7 +1264,11 @@ function relationshipResolution(
   value: unknown,
 ): "explicit" | "deterministic" | "warning" {
   if (value === "explicit" || value === "deterministic") return value;
-  if (value === "ambiguous" || value === "fuzzy") return "warning";
+  if (
+    value === "ambiguous" ||
+    value === "fuzzy" ||
+    value === "warning"
+  ) return "warning";
   throw new Error("Product relationship resolution is invalid.");
 }
 

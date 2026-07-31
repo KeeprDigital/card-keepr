@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   officialRawAdapterContracts,
   officialSourceDiscoveryRequests,
-  parseControlledRawSurfaceFixture,
 } from "../src/catalogue/product-release-source-adapters.ts";
 import {
   officialDiscoveryDefinitions,
@@ -574,21 +573,17 @@ test("live Product detail maps official display dates and fails closed on new st
 });
 
 test("nested raw unknown leaves remain warnings when their container is mapped", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "one-piece-en",
+  );
   const document = rawSurfacePayload("one-piece-en", "card-list");
   document.card_pages[0].future_nested = {
     vendor_rule: "retain this nested leaf",
   };
-  const observation = parseControlledRawSurfaceFixture(
-    "one-piece-en",
-    new TextEncoder().encode(
-      `<main><script type="application/json" data-keepr-official-payload>${
-        JSON.stringify(document)
-      }</script></main>`,
-    ),
-    {
-      mediaType: "text/html; charset=utf-8",
-      url: "https://official.invalid/one-piece-en/card-list",
-    },
+  const observation = parseRegisteredSurface(
+    adapter,
+    "card-list",
+    document,
   )[0];
   assert.ok(
     observation.source_sidecar.unmapped_optional_fields.some(
@@ -645,7 +640,7 @@ test("explicit Product links produce typed memberships and relationships", () =>
   assert.ok(
     observation.product_release_catalogue.relationships.some(
       ({ resolution, product_reference }) =>
-        resolution === "warning" &&
+        resolution === "fuzzy" &&
         product_reference.value === "Possible product",
     ),
   );
@@ -1338,21 +1333,10 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
         false,
         "fixture must retain an upstream-shaped document, not a Keepr envelope",
       );
-      const html = isHtmlSurface(surface);
-      const bytes = new TextEncoder().encode(
-        html
-          ? `<main><script type="application/json" data-keepr-official-payload>${
-            JSON.stringify(payload)
-          }</script></main>`
-          : JSON.stringify(payload),
-      );
-      const observations = parseControlledRawSurfaceFixture(
-        contract.sourceLineage,
-        bytes,
-        {
-          mediaType: html ? "text/html; charset=utf-8" : "application/json",
-          url: `https://official.invalid/${contract.sourceLineage}/${surface}`,
-        },
+      const observations = parseRegisteredSurface(
+        contract,
+        surface,
+        payload,
       );
       assert.ok(observations.length >= 1);
       if (
@@ -1394,7 +1378,7 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
   const capped = rawSurfacePayload("one-piece-en", "card-list");
   capped.page_info.cap_signal = "Too many search results";
   assert.throws(
-    () => parseHtml(adapter, "card-list", capped),
+    () => parseRegisteredSurface(adapter, "card-list", capped),
     /result-cap evidence does not prove complete coverage/u,
   );
 
@@ -1402,21 +1386,21 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
   unfinished.page_info.partitions[0].pages = 2;
   unfinished.page_info.partitions[0].has_next = true;
   assert.throws(
-    () => parseHtml(adapter, "card-list", unfinished),
+    () => parseRegisteredSurface(adapter, "card-list", unfinished),
     /pagination evidence does not prove complete partitions/u,
   );
 
   const wrongPartition = rawSurfacePayload("one-piece-en", "card-list");
   wrongPartition.page_info.partitions[0].bucket = "unplanned-series";
   assert.throws(
-    () => parseHtml(adapter, "card-list", wrongPartition),
+    () => parseRegisteredSurface(adapter, "card-list", wrongPartition),
     /discovered vocabulary.*exact leaf partitions/iu,
   );
 
   const mismatched = rawSurfacePayload("one-piece-en", "card-list");
   mismatched.page = "product-list";
   assert.throws(
-    () => parseHtml(adapter, "card-list", mismatched),
+    () => parseRegisteredSurface(adapter, "card-list", mismatched),
     /card-list page identity/u,
   );
 });
@@ -1428,7 +1412,7 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
   const incomplete = rawSurfacePayload("fusion-world-en", "card-search");
   incomplete.result.partitions.pop();
   assert.throws(
-    () => parseFixtureHtml(adapter, "card-search", incomplete),
+    () => parseRegisteredSurface(adapter, "card-search", incomplete),
     /discovered vocabulary.*exact leaf partitions/iu,
   );
   incomplete.result.partitions.push({
@@ -1440,7 +1424,7 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     entries: [],
   });
   assert.doesNotThrow(
-    () => parseFixtureHtml(adapter, "card-search", incomplete),
+    () => parseRegisteredSurface(adapter, "card-search", incomplete),
   );
 
   const overlapping = rawSurfacePayload(
@@ -1452,7 +1436,7 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
   );
   overlapping.result.partitions[1].total = 1;
   assert.throws(
-    () => parseFixtureHtml(adapter, "card-search", overlapping),
+    () => parseRegisteredSurface(adapter, "card-search", overlapping),
     /leaf partitions overlap/iu,
   );
 });
@@ -1463,36 +1447,28 @@ function rawSurfacePayload(lineage, surface) {
   );
 }
 
-function isHtmlSurface(surface) {
-  return ["card-list", "card-search", "packages", "products"].includes(surface);
-}
-
-function parseHtml(adapter, surface, payload) {
-  return parseControlledRawSurfaceFixture(
-    adapter.sourceLineage,
+function parseRegisteredSurface(adapter, surface, payload) {
+  const publication = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    publisher: { "@type": "Organization", name: "Bandai" },
+    hasPart: [{
+      "@type": "Dataset",
+      identifier: `${adapter.sourceLineage}:${surface}`,
+      payload,
+    }],
+  };
+  return adapter.parseBytes(
     new TextEncoder().encode(
-      `<script type="application/json" data-keepr-official-payload>${
-        JSON.stringify(payload)
+      `<html><title>BANDAI Official publication</title>
+       <script type="application/ld+json">${
+        JSON.stringify(publication).replaceAll("<", "\\u003c")
       }</script>`,
     ),
     {
-      mediaType: "text/html",
-      url: `https://official.invalid/one-piece-en/${surface}`,
-    },
-  );
-}
-
-function parseFixtureHtml(adapter, surface, payload) {
-  return parseControlledRawSurfaceFixture(
-    adapter.sourceLineage,
-    new TextEncoder().encode(
-      `<script type="application/json" data-keepr-official-payload>${
-        JSON.stringify(payload)
-      }</script>`,
-    ),
-    {
-      mediaType: "text/html",
-      url: `https://fixture.invalid/${adapter.sourceLineage}/${surface}`,
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface(surface),
+      requestId: `${adapter.sourceLineage}:${surface}`,
     },
   );
 }
