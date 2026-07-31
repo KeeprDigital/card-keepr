@@ -77,6 +77,10 @@ export type ReconciliationPublicationPlan = {
   relationshipEvidence: Record<string, RelationshipEvidence[]>;
   locatorEvidence: Record<string, LocatorEvidenceCollection>;
   cardEvidence: Record<string, PublicationEvidenceResource[]>;
+  cardEffectiveRulesEvidence: Record<
+    string,
+    PublicationEvidenceResource[]
+  >;
   printingEvidence: Record<string, PublicationEvidenceResource[]>;
   statements: D1PreparedStatement[];
 };
@@ -145,7 +149,14 @@ export async function reconciliationPublication(
     plans.filter((plan) => plan.observation_kind === "card_printing"),
     (plan) => plan.card_id,
   );
-  const cardEvidencePlans = groupedPlans(plans, (plan) => plan.card_id);
+  const cardEvidencePlans = groupedPlans(
+    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    (plan) => plan.card_id,
+  );
+  const cardEffectiveRulesEvidencePlans = groupedPlans(
+    plans.filter((plan) => plan.observation_kind === "official_erratum"),
+    (plan) => plan.card_id,
+  );
   const printingPlans = groupedPlans(
     plans.filter(
       (plan) =>
@@ -192,12 +203,18 @@ export async function reconciliationPublication(
     relationshipEvidence: {},
     locatorEvidence: {},
     cardEvidence: {},
+    cardEffectiveRulesEvidence: {},
     printingEvidence: {},
     statements: [],
   };
 
   for (const [cardId, grouped] of cardEvidencePlans) {
     result.cardEvidence[cardId] = grouped.map((plan) =>
+      evidenceByObservation.get(plan.source_observation_id)!
+    );
+  }
+  for (const [cardId, grouped] of cardEffectiveRulesEvidencePlans) {
+    result.cardEffectiveRulesEvidence[cardId] = grouped.map((plan) =>
       evidenceByObservation.get(plan.source_observation_id)!
     );
   }
@@ -812,10 +829,13 @@ async function retainCarriedLifecycles(
     candidate.printings.map((printing) => printing.id),
   );
   for (const row of cards.results) {
-    if (
-      candidateCardIds.has(row.id) &&
-      result.cardLifecycles[row.id] === undefined
-    ) {
+    if (!candidateCardIds.has(row.id)) continue;
+    if (result.cardEvidence[row.id] === undefined) {
+      result.cardEvidence[row.id] = documentPublicationEvidence(
+        row.document_json,
+      );
+    }
+    if (result.cardLifecycles[row.id] === undefined) {
       result.cardLifecycles[row.id] = documentLifecycle(
         row.document_json,
       );
@@ -830,6 +850,14 @@ async function retainCarriedLifecycles(
     }
   }
   for (const row of printings.results) {
+    if (
+      candidatePrintingIds.has(row.id) &&
+      result.printingEvidence[row.id] === undefined
+    ) {
+      result.printingEvidence[row.id] = documentPublicationEvidence(
+        row.document_json,
+      );
+    }
     const omittedPrinting =
       candidatePrintingIds.has(row.id) &&
       result.printingLifecycles[row.id] === undefined;
@@ -926,9 +954,48 @@ function documentLifecycle(documentJson: string): NormalizedLifecycle {
     first_revision_id: lifecycle.first_revision_id,
     last_observed_revision_id: lifecycle.last_observed_revision_id,
     withdrawn: lifecycle.withdrawn,
-    withdrawal:
-      lifecycle.withdrawal === undefined ? null : lifecycle.withdrawal,
+    ...(lifecycle.withdrawal === undefined
+      ? {}
+      : { withdrawal: lifecycle.withdrawal }),
   };
+}
+
+function documentPublicationEvidence(
+  documentJson: string,
+): PublicationEvidenceResource[] {
+  const parsed: unknown = JSON.parse(documentJson);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("A carried revision document is invalid.");
+  }
+  const included = (parsed as { included?: unknown }).included;
+  if (included === undefined) return [];
+  if (!Array.isArray(included)) {
+    throw new Error("Carried publication evidence is invalid.");
+  }
+  return included.flatMap((resource): PublicationEvidenceResource[] => {
+    if (
+      resource === null ||
+      typeof resource !== "object" ||
+      Array.isArray(resource) ||
+      (resource as { type?: unknown }).type !== "source_observation"
+    ) {
+      return [];
+    }
+    const evidence = resource as Partial<PublicationEvidenceResource>;
+    if (
+      typeof evidence.id !== "string" ||
+      typeof evidence.captured_at !== "string" ||
+      typeof evidence.source !== "string"
+    ) {
+      throw new Error("Carried publication evidence is invalid.");
+    }
+    return [{
+      type: "source_observation",
+      id: evidence.id,
+      captured_at: evidence.captured_at,
+      source: evidence.source,
+    }];
+  });
 }
 
 function documentRelationshipEvidence(

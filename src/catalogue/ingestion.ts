@@ -1376,6 +1376,7 @@ function catalogueCard(
   revisionId: string,
   reconciledLifecycle?: Record<string, unknown>,
   evidenceResources: readonly PublicationEvidenceResource[] = [],
+  effectiveRulesEvidence: readonly PublicationEvidenceResource[] = [],
 ) {
   const data = {
     type: "card",
@@ -1391,10 +1392,18 @@ function catalogueCard(
   };
   const included = [
     ...new Map(
-      evidenceResources.map((resource) => [resource.id, resource]),
+      [...evidenceResources, ...effectiveRulesEvidence].map((resource) => [
+        resource.id,
+        resource,
+      ]),
     ).values(),
   ].sort((left, right) => left.id.localeCompare(right.id));
-  const observationIds = included.map(({ id }) => id);
+  const effectiveRulesObservationIds = [
+    ...new Set(effectiveRulesEvidence.map(({ id }) => id)),
+  ].sort();
+  const observationIds = effectiveRulesObservationIds.length === 0
+    ? included.map(({ id }) => id)
+    : effectiveRulesObservationIds;
   return {
     data,
     included,
@@ -1998,6 +2007,7 @@ async function commitVerifiedPublication(
       revisionId,
       input.reconciliation?.cardLifecycles[card.id],
       input.reconciliation?.cardEvidence[card.id] ?? [],
+      input.reconciliation?.cardEffectiveRulesEvidence[card.id] ?? [],
     );
     return {
       card,
