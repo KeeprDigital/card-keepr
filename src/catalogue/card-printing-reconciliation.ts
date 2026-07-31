@@ -1254,9 +1254,7 @@ async function candidateAtRevision(
       ...rule,
       first_revision_id: rule.first_revision_id ?? revisionId,
       last_observed_revision_id:
-        rule.current === false
-          ? rule.last_observed_revision_id ?? revisionId
-          : revisionId,
+        rule.last_observed_revision_id ?? revisionId,
       current: rule.current ?? true,
       last_missing_revision_id:
         rule.current === false

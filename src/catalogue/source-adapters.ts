@@ -91,6 +91,7 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
 
 function officialCatalogueParser(
   requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam",
 ): (document: unknown) => readonly unknown[] {
   return (document) => {
     const envelope = requiredRecord(
@@ -102,23 +103,26 @@ function officialCatalogueParser(
       envelope.surfaces,
       "Official Source surfaces",
     );
-    assertOnlyFields(surfaces, ["cards", "legality_rules"]);
-    if (surfaces.cards === undefined) {
-      throw new Error("The required Card surface is missing.");
+    const requiredSurfaces = officialSurfaceNames(supportedGame);
+    assertOnlyFields(surfaces, requiredSurfaces);
+    const parsedSurfaces = new Map<string, unknown[]>();
+    for (const name of requiredSurfaces) {
+      if (surfaces[name] === undefined) {
+        throw new Error(
+          `The required ${officialSurfaceLabel(name)} surface is missing.`,
+        );
+      }
+      parsedSurfaces.set(
+        name,
+        parseOfficialSurface(
+          surfaces[name],
+          officialSurfaceLabel(name),
+          requiredPartition,
+        ),
+      );
     }
-    if (surfaces.legality_rules === undefined) {
-      throw new Error("The required Legality Rule surface is missing.");
-    }
-    const cards = parseOfficialSurface(
-      surfaces.cards,
-      "Card",
-      requiredPartition,
-    );
-    const legalityRules = parseOfficialSurface(
-      surfaces.legality_rules,
-      "Legality Rule",
-      requiredPartition,
-    );
+    const cards = parsedSurfaces.get("cards")!;
+    const legalityRules = parsedSurfaces.get("legality_rules")!;
     return [
       ...cards.map((card) => ({
         ...requiredRecord(card, "Official Card record"),
@@ -133,9 +137,41 @@ function officialCatalogueParser(
   };
 }
 
+const commonOfficialSurfaceNames = [
+  "discovery",
+  "card_listings",
+  "card_details",
+  "cards",
+  "product_listings",
+  "product_details",
+  "legality_rules",
+  "legality_history",
+  "errata",
+] as const;
+
+function officialSurfaceNames(
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam",
+): readonly string[] {
+  return supportedGame === "one-piece"
+    ? [
+        ...commonOfficialSurfaceNames,
+        "block_policy",
+        "release_timing",
+        "don_rules",
+      ]
+    : commonOfficialSurfaceNames;
+}
+
+function officialSurfaceLabel(name: string): string {
+  return name
+    .split("_")
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function parseOfficialSurface(
   value: unknown,
-  name: "Card" | "Legality Rule",
+  name: string,
   requiredPartition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
 ): unknown[] {
   const surface = requiredRecord(value, `${name} surface`);
@@ -375,7 +411,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: officialCatalogueParser("EN-ASIA"),
+        parse: officialCatalogueParser("EN-ASIA", "gundam"),
       },
       {
         adapterVersion: "gundam-en-us@2",
@@ -386,7 +422,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_complete" as const,
-        parse: officialCatalogueParser("EN-US"),
+        parse: officialCatalogueParser("EN-US", "gundam"),
       },
       ...[
         {

@@ -7,10 +7,18 @@ export function contextualLegalitySourceDocument(region: Region) {
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
   const rules = legalityRules(region);
+  const proof = completeSurface(region, []);
   return {
     surfaces: {
+      discovery: proof,
+      card_listings: proof,
+      card_details: proof,
       cards: completeSurface(region, cards),
+      product_listings: proof,
+      product_details: proof,
       legality_rules: completeSurface(region, rules),
+      legality_history: proof,
+      errata: proof,
     },
   };
 }

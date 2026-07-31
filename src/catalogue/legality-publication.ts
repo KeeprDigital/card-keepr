@@ -11,9 +11,8 @@ export function legalityPublicationStatements(
   const rows = (candidate.legality_rules ?? []).map((rule) => {
     const current = rule.current ?? true;
     const firstRevisionId = rule.first_revision_id ?? revisionId;
-    const lastObservedRevisionId = current
-      ? revisionId
-      : rule.last_observed_revision_id ?? revisionId;
+    const lastObservedRevisionId =
+      rule.last_observed_revision_id ?? revisionId;
     const lastMissingRevisionId = current
       ? rule.last_missing_revision_id ?? null
       : rule.last_missing_revision_id ?? revisionId;

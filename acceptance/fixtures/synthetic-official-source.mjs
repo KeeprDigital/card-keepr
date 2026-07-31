@@ -178,7 +178,14 @@ export default {
       );
     }
     if (pathname === "/contextual-legality-us") {
-      return Response.json(contextualLegalityDocument("EN-US"));
+      return Response.json(
+        contextualLegalityDocument(
+          "EN-US",
+          true,
+          null,
+          { rules: url.searchParams.get("rules") },
+        ),
+      );
     }
     return new Response("not found", { status: 404 });
   },

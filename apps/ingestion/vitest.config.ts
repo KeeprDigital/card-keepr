@@ -806,6 +806,13 @@ function reconciliationSourceDocument(scenario: string) {
   if (scenario === "contextual-legality-empty-oceania") {
     return emptyOfficialCatalogueDocument("EN-OCEANIA");
   }
+  if (scenario === "contextual-legality-empty-one-piece") {
+    return emptyOfficialCatalogueDocument(
+      "EN-OCEANIA",
+      "complete",
+      "one-piece",
+    );
+  }
   if (scenario === "contextual-legality-empty-asia") {
     return emptyOfficialCatalogueDocument("EN-ASIA");
   }
@@ -817,6 +824,14 @@ function reconciliationSourceDocument(scenario: string) {
   }
   if (scenario === "contextual-legality-false-empty-rules") {
     return emptyOfficialCatalogueDocument("EN-ASIA", "false-empty");
+  }
+  if (scenario === "contextual-legality-missing-product-details") {
+    return emptyOfficialCatalogueDocument(
+      "EN-ASIA",
+      "complete",
+      "gundam",
+      "product_details",
+    );
   }
   if (scenario === "contextual-legality-asia") {
     return contextualLegalitySourceDocument("EN-ASIA");
@@ -2935,28 +2950,44 @@ function emptyOfficialCatalogueDocument(
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
   legalityVariant: "complete" | "missing" | "false-empty" =
     "complete",
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam" =
+    "gundam",
+  omittedSurface?: string,
 ) {
   const emptySurface = {
     partition,
     declared_record_count: 0,
     pages: [],
   };
+  const surfaces: Record<string, unknown> = {
+    discovery: emptySurface,
+    card_listings: emptySurface,
+    card_details: emptySurface,
+    cards: emptySurface,
+    product_listings: emptySurface,
+    product_details: emptySurface,
+    legality_rules:
+      legalityVariant === "false-empty"
+        ? {
+            partition,
+            declared_record_count: 1,
+            pages: [],
+          }
+        : emptySurface,
+    legality_history: emptySurface,
+    errata: emptySurface,
+    ...(game === "one-piece"
+      ? {
+          block_policy: emptySurface,
+          release_timing: emptySurface,
+          don_rules: emptySurface,
+        }
+      : {}),
+  };
+  if (legalityVariant === "missing") delete surfaces.legality_rules;
+  if (omittedSurface !== undefined) delete surfaces[omittedSurface];
   return {
-    surfaces: {
-      cards: emptySurface,
-      ...(legalityVariant === "missing"
-        ? {}
-        : {
-            legality_rules:
-              legalityVariant === "false-empty"
-                ? {
-                    partition,
-                    declared_record_count: 1,
-                    pages: [],
-                  }
-                : emptySurface,
-          }),
-    },
+    surfaces,
   };
 }
 

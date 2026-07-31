@@ -198,7 +198,83 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   );
   const usRevisionId = usPublication.resulting_revision_id;
   assert.match(usRevisionId, /^catrev_/);
-  let revisionId = usRevisionId;
+  const usExpanded = await ingestAndReconcile({
+    adapter: "gundam-en-us@2",
+    idempotencyKey: "acceptance-contextual-legality-us-expanded",
+    lineage: "gundam-en-us",
+    sourcePath: "/contextual-legality-us?rules=expanded",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const usExpandedPublication = await approve(
+    usExpanded,
+    "approve-acceptance-contextual-legality-us-expanded",
+    administrationEnvironment,
+  );
+  const usExpandedRevisionId =
+    usExpandedPublication.resulting_revision_id;
+  assert.equal(usExpandedPublication.publication_outcome, "revision");
+  assert.match(usExpandedRevisionId, /^catrev_/);
+  assert.notEqual(usExpandedRevisionId, usRevisionId);
+  let revisionId = usExpandedRevisionId;
+
+  await stopWorker(ingestion);
+  api = startWorker({
+    config: apiConfig,
+    envFile: apiEnv,
+    inspectorPort: portBase + 103,
+    port: apiPort,
+    statePath,
+  });
+  await waitForResponse(
+    `http://127.0.0.1:${apiPort}/health`,
+    api,
+    "API Worker after unrelated-lineage publication",
+    { authorization: `Bearer ${apiKey}` },
+  );
+  const carriedAsiaStatus = await legalityStatus(
+    cards.get("GD30-001"),
+    ["--region", "EN-ASIA"],
+    {
+      KEEPR_API_KEY: apiKey,
+      KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
+    },
+  );
+  assert.equal(carriedAsiaStatus.data[0].status, "legal");
+  const expandedRelationshipsResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${usExpandedRevisionId}/components/relationships`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(expandedRelationshipsResponse.status, 200);
+  const expandedRelationshipsStream =
+    expandedRelationshipsResponse.body.pipeThrough(
+      new DecompressionStream("gzip"),
+    );
+  const expandedRelationships = (
+    await new Response(expandedRelationshipsStream).text()
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const carriedAsiaRelationship = expandedRelationships.find(
+    (relationship) =>
+      relationship.kind === "legality-rule-card" &&
+      relationship.from.id ===
+        asiaRuleId("legality_rule_asia_membership"),
+  );
+  await t.test(
+    "an unrelated regional publication preserves carried rule observation provenance",
+    () => {
+      assert.equal(carriedAsiaRelationship.source_lineage, "gundam-en-asia");
+      assert.equal(carriedAsiaRelationship.lifecycle.current, true);
+      assert.equal(
+        carriedAsiaRelationship.lifecycle.last_observed_revision_id,
+        asiaRevisionId,
+      );
+    },
+  );
+  await stopWorker(api);
+  api = null;
   await restartIngestion();
 
   const asiaRefresh = await ingestAndReconcile({
@@ -218,7 +294,8 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     adapter: "gundam-en-us@2",
     idempotencyKey: "acceptance-contextual-legality-us-refresh",
     lineage: "gundam-en-us",
-    sourcePath: "/contextual-legality-us?refresh=us",
+    sourcePath:
+      "/contextual-legality-us?refresh=us&rules=expanded",
     environment: administrationEnvironment,
     ingestion,
   });
@@ -236,7 +313,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       );
       assert.equal(
         asiaRefreshPublication.resulting_revision_id,
-        usRevisionId,
+        usExpandedRevisionId,
       );
       assert.equal(
         usRefreshPublication.publication_outcome,
@@ -244,7 +321,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       );
       assert.equal(
         usRefreshPublication.resulting_revision_id,
-        usRevisionId,
+        usExpandedRevisionId,
       );
     },
   );
@@ -356,6 +433,14 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   const missingRuleDocument = await missingRuleResponse.json();
+  const missingRegionalDocument = await legalityStatus(
+    cards.get("GD30-001"),
+    [],
+    {
+      KEEPR_API_KEY: apiKey,
+      KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
+    },
+  );
   await t.test(
     "a disappeared regional rule scope becomes indeterminate at the authenticated consumer boundary",
     () => {
@@ -365,6 +450,31 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       assert.match(
         missingRuleDocument.data[0].derivation,
         /no effective published Legality Rule/i,
+      );
+    },
+  );
+  await t.test(
+    "omitting region retains every supported regional result when one scope has no current rule",
+    () => {
+      assert.deepEqual(
+        missingRegionalDocument.data.map((result) => result.region),
+        ["EN-ASIA", "EN-US"],
+      );
+      assert.deepEqual(
+        missingRegionalDocument.data.find(
+          (result) => result.region === "EN-ASIA",
+        ),
+        {
+          card_id: cards.get("GD30-001"),
+          on: "2026-07-30",
+          format: "standard",
+          event_tier: "championship",
+          region: "EN-ASIA",
+          status: "indeterminate",
+          rule_ids: [],
+          derivation:
+            "Indeterminate because no effective published Legality Rule establishes this Card's status for the requested context.",
+        },
       );
     },
   );
@@ -600,14 +710,45 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(exportResponse.status, 200);
-  const decompressed = exportResponse.body.pipeThrough(
+  const exportBytes = new Uint8Array(await exportResponse.arrayBuffer());
+  const repeatedExportResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(repeatedExportResponse.status, 200);
+  const repeatedExportBytes = new Uint8Array(
+    await repeatedExportResponse.arrayBuffer(),
+  );
+  const exportComponent = manifestDocument.data.components.find(
+    (component) => component.name === "legality-rules",
+  );
+  await t.test(
+    "authenticated export bytes use the pinned deterministic gzip profile",
+    () => {
+      assert.deepEqual(Array.from(exportBytes.subarray(0, 4)), [
+        0x1f, 0x8b, 0x08, 0x00,
+      ]);
+      assert.deepEqual(Array.from(exportBytes.subarray(4, 8)), [
+        0x00, 0x00, 0x00, 0x00,
+      ]);
+      assert.equal(exportBytes[8], 0x02);
+      assert.equal(exportBytes[9], 0xff);
+      assert.equal((exportBytes[10] >> 1) & 0x03, 0x01);
+      assert.equal(
+        createHash("sha256").update(exportBytes).digest("hex"),
+        exportComponent.compressed_sha256,
+      );
+      assert.deepEqual(repeatedExportBytes, exportBytes);
+    },
+  );
+  const decompressed = new Response(exportBytes).body.pipeThrough(
     new DecompressionStream("gzip"),
   );
   const exportedRules = (await new Response(decompressed).text())
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(exportedRules.length, 16);
+  assert.equal(exportedRules.length, 17);
   for (const exportedRule of exportedRules) {
     assert.equal(
       validateLegalityRuleExport(exportedRule),

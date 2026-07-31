@@ -15,14 +15,20 @@ The complete production adapters are:
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Their JSON document contains a closed `surfaces` object with mandatory
-`cards` and `legality_rules` surfaces. Each surface declares the adapter's
-exact regional partition, its total record count, and a complete ordered set
-of pages; every page declares its page number, total page count, record count,
-and records. A truly empty surface is represented by a declared total of zero
-and no pages. The adapter derives completeness from this structure and rejects
-missing surfaces, incomplete page sets, mismatched counts, unexpected
-partitions, and unknown envelope fields.
+Their JSON document contains a closed `surfaces` object. Every production
+adapter requires discovery, Card listing/detail, canonical Card, Product
+listing/detail, current Legality Rule, Legality history, and Errata surfaces.
+The One Piece adapter also requires block-policy, release-timing, and DON-rule
+surfaces. Each surface declares the adapter's exact regional partition, its
+total record count, and a complete ordered set of pages; every page declares
+its page number, total page count, record count, and records. A truly empty
+surface is represented by a declared total of zero and no pages. Non-Card
+surfaces prove that a production capture covered the required Official Source
+areas; their exact response bytes remain retained Source Snapshot evidence and
+are not interpreted as Product or Erratum catalogue records by this feature.
+The adapter derives completeness from this structure and rejects missing
+surfaces, incomplete page sets, mismatched counts, unexpected partitions, and
+unknown envelope fields.
 
 Each rule retains its Official Source identity as `official_id`, exact wording,
 game, region, format, nullable event tier, effective interval, affected Card
@@ -61,7 +67,8 @@ keepr legality status \
   --json
 ```
 
-Omitting `--region` returns each applicable regional result separately.
+Omitting `--region` returns every supported regional result separately,
+including an `indeterminate` result where no effective published rule exists.
 Every result includes the applicable Legality Rule IDs and an auditable
 derivation. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the

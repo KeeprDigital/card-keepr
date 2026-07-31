@@ -99,17 +99,8 @@ export async function contextualLegalityStatusResponse(
   ).filter((rule) => rule.current !== false);
   const regions =
     query.region === null
-      ? supportedRegions.filter((region) =>
-          rules.some((rule) => rule.region === region),
-        )
+      ? supportedRegions
       : [query.region];
-  if (regions.length === 0) {
-    throw new LegalityStatusProblem(
-      404,
-      "not_found",
-      "No applicable regional Legality Rule scope exists for this context.",
-    );
-  }
   const data = regions.map((region) =>
     deriveRegionStatus(card, rules, query, region),
   );

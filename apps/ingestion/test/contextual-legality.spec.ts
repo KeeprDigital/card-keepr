@@ -122,7 +122,7 @@ test.each([
     adapter: "one-piece-json-document@3",
     game: "one-piece",
     lineage: "one-piece-en",
-    scenario: "contextual-legality-empty-oceania",
+    scenario: "contextual-legality-empty-one-piece",
   },
   {
     adapter: "fusion-world-en@2",
@@ -171,6 +171,7 @@ test.each([
 test.each([
   ["contextual-legality-missing-rules"],
   ["contextual-legality-false-empty-rules"],
+  ["contextual-legality-missing-product-details"],
 ])(
   "the production adapter fails closed for %s through HTTP",
   async (scenario) => {

@@ -60,14 +60,38 @@ export function contextualLegalityDocument(
   if (rulesVariant === "empty") {
     legalityRules.length = 0;
   }
+  if (rulesVariant === "expanded" && region === "EN-US") {
+    legalityRules.push({
+      game: "gundam",
+      region,
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-01-01",
+      effective_until: null,
+      id: "legality_rule_us_expanded",
+      card_numbers: ["GD30-001"],
+      official_wording:
+        "GD30-001 is also eligible under the expanded EN-US notice.",
+      effect: { type: "eligible" },
+      representable,
+    });
+  }
   return officialSurfaceDocument(region, cards, legalityRules);
 }
 
 function officialSurfaceDocument(region, cards, legalityRules) {
+  const proof = completeSurface(region, []);
   return {
     surfaces: {
+      discovery: proof,
+      card_listings: proof,
+      card_details: proof,
       cards: completeSurface(region, cards),
+      product_listings: proof,
+      product_details: proof,
       legality_rules: completeSurface(region, legalityRules),
+      legality_history: proof,
+      errata: proof,
     },
   };
 }
