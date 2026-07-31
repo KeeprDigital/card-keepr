@@ -29,6 +29,7 @@ import {
   type ProductRelationshipLifecycle,
 } from "./product-release-publication";
 import { erratumTargetLifecycleKey } from "./errata-rules-text";
+import { requiredSourceAdapter } from "./source-adapters";
 
 export type NormalizedLifecycle = {
   first_revision_id: string;
@@ -354,7 +355,10 @@ export async function reconciliationPublication(
     result,
     publicationRows,
     observedSourceLineages,
-    cardPlans.size > 0,
+    ["official_source", "synthetic_fixture"].includes(
+      requiredSourceAdapter(context.adapter_version)
+        .reconciliationCoverage,
+    ),
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(
