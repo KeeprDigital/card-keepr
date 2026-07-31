@@ -190,13 +190,15 @@ export async function reconcileRetainedCardPrintingEvidence(
     let acceptedCard = proposedCard;
     if (retainAsiaAuthority) {
       const { id: _carriedId, ...authoritativeCard } = carriedCard;
-      acceptedCard = authoritativeCard;
+      acceptedCard = fillAuthorityGaps(authoritativeCard, proposedCard);
     }
     const canonicalFacts = canonicalJson(acceptedCard);
     const priorFacts = localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
-      (priorFacts !== undefined && priorFacts !== canonicalFacts)
+      (priorFacts !== undefined &&
+        priorFacts !== canonicalFacts &&
+        !retainAsiaAuthority)
     ) {
       diagnostics.push({
         code: "canonical_card_conflict",
@@ -327,12 +329,16 @@ export async function reconcileRetainedCardPrintingEvidence(
           card_id: _carriedCardId,
           ...authoritativePrinting
         } = carriedPrinting;
-        acceptedPrinting = authoritativePrinting;
+        acceptedPrinting = fillAuthorityGaps(
+          authoritativePrinting,
+          proposedPrinting,
+        );
       }
       const priorPrintingFacts = localPrintingFacts.get(printingId);
       if (
         publishedPrintingConflict !== null ||
         (priorPrintingFacts !== undefined &&
+          !retainAsiaPrintingAuthority &&
           !printingFactsFormattingEquivalent(
             priorPrintingFacts,
             acceptedPrinting,
@@ -742,6 +748,31 @@ export async function reconcileRetainedCardPrintingEvidence(
     diagnostics: [],
     warnings,
   };
+}
+
+function fillAuthorityGaps<T>(authority: T, fallback: T): T {
+  if (authority === null || authority === undefined) return fallback;
+  if (
+    Array.isArray(authority) ||
+    Array.isArray(fallback) ||
+    typeof authority !== "object" ||
+    authority === null ||
+    typeof fallback !== "object" ||
+    fallback === null
+  ) {
+    return authority;
+  }
+  const authoritative = authority as Record<string, unknown>;
+  const corroborating = fallback as Record<string, unknown>;
+  return Object.fromEntries(
+    [...new Set([
+      ...Object.keys(authoritative),
+      ...Object.keys(corroborating),
+    ])].map((field) => [
+      field,
+      fillAuthorityGaps(authoritative[field], corroborating[field]),
+    ]),
+  ) as T;
 }
 
 async function candidateAtRevision(

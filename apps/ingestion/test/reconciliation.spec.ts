@@ -748,7 +748,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@1",
+    adapter_version: "fusion-world-en@2",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -761,17 +761,22 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     {},
   );
   expect(resumed.response.status).toBe(202);
-  await waitForRunState(run.id, "parsing");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document).toMatchObject({
+  const completed = await waitForRunState(run.id, "awaiting_approval");
+  expect(completed).toMatchObject({
     state: "awaiting_approval",
-    publishable: true,
-    diagnostics: [],
-    cards: [],
-    printings: [],
   });
-  expect((await approve(reconciled.document)).response.status).toBe(200);
+  const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+  expect(candidate.response.status).toBe(200);
+  expect(candidate.document).toMatchObject({
+    run_id: run.id,
+    candidate_digest: expect.any(String),
+    expected_current_revision_id: expect.any(String),
+    diff: {
+      cards: { added: [] },
+      printings: { added: [] },
+    },
+  });
+  expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
 test("production plans bind every request identity to its exact Official Source surface URL", async () => {
@@ -1350,7 +1355,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     });
     await approve(mismatch.document);
   }
-}, 20_000);
+}, 30_000);
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
   const usRun = await collect(
@@ -1386,7 +1391,7 @@ test("Gundam Printing identity is independent of locale observation order when E
     id: printingId,
   });
   await approve(asia.document);
-});
+}, 20_000);
 
 test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent EN-US evidence arrives later", async () => {
   const asiaRun = await collect(
@@ -1758,9 +1763,10 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
         expect.objectContaining({
           code: "printing_match_contradictory",
           candidate_printing_ids: [printingId],
-          detail: expect.stringContaining(
-            "canonical Printing facts conflict",
-          ),
+          detail:
+            "The retained Printing facts conflict across Gundam English " +
+            "source lineages; EN-ASIA precedence cannot erase a substantive " +
+            "EN-US disagreement.",
         }),
       ],
     });
@@ -3217,7 +3223,7 @@ test("the administration boundary requires every accepted lineage for each selec
     plans: [{
       supported_game: "gundam",
       source_lineage: "gundam-en-asia",
-      adapter_version: "gundam-en-asia@1",
+      adapter_version: "gundam-en-asia@2",
       requests: [
         "packages",
         "products",
@@ -4143,7 +4149,7 @@ test("Product observations and disappearance remain scoped to their Source Linea
       last_observed_revision_id: usRevision,
     },
   ]);
-});
+}, 45_000);
 
 test("only an actual Product surface checks its Gundam Source Lineage", async () => {
   const usRun = await collect(

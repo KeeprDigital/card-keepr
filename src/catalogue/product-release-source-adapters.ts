@@ -1,3 +1,11 @@
+import {
+  normalizedOfficialReleaseDate,
+  normalizedOfficialReleaseStatus,
+} from "./official-source-release-normalization.mjs";
+import {
+  partitionMappedOfficialLeaves,
+} from "./official-source-field-coverage.mjs";
+
 type ProductSourceGame =
   | "one-piece"
   | "fusion-world"
@@ -59,7 +67,7 @@ const rawContractDefinitions = [
     },
   },
   {
-    adapterVersion: "fusion-world-en@1",
+    adapterVersion: "fusion-world-en@2",
     sourceLineage: "fusion-world-en",
     supportedGame: "fusion-world",
     format: "fusion-world",
@@ -83,7 +91,7 @@ const rawContractDefinitions = [
     },
   },
   {
-    adapterVersion: "digimon-en@1",
+    adapterVersion: "digimon-en@2",
     sourceLineage: "digimon-en",
     supportedGame: "digimon",
     format: "digimon",
@@ -108,7 +116,7 @@ const rawContractDefinitions = [
     },
   },
   {
-    adapterVersion: "gundam-en-asia@1",
+    adapterVersion: "gundam-en-asia@2",
     sourceLineage: "gundam-en-asia",
     supportedGame: "gundam",
     format: "gundam",
@@ -129,7 +137,7 @@ const rawContractDefinitions = [
     },
   },
   {
-    adapterVersion: "gundam-en-us@1",
+    adapterVersion: "gundam-en-us@2",
     sourceLineage: "gundam-en-us",
     supportedGame: "gundam",
     format: "gundam",
@@ -436,8 +444,8 @@ function nextPartitionFacet(
       ? [["card_type"], ["colour", "color"], ["cost"]]
       : format === "digimon"
         ? [
-            ["category", "cardcategory"],
-            ["card_type"],
+            ["category"],
+            ["cardcategory", "card_type"],
             ["colour", "color"],
           ]
         : [["package"]];
@@ -624,6 +632,7 @@ function bandaiSnapshotDecoder(
         ? parseOnePieceBandaiCardList(html, context.url)
         : parseBandaiSurfaceCoverage(
             html,
+            format,
             sourceLineage,
             surface,
             context.url,
@@ -815,7 +824,10 @@ function parseOnePieceBandaiCardList(
     );
     const variant =
       locator === cardNumber ? "base" : locator.slice(cardNumber.length);
-    const artworkFingerprint = sourceArtworkFingerprint(imagePath);
+    const artworkFingerprint = sourceArtworkFingerprint(
+      cardNumber,
+      ["front"],
+    );
     const printedFieldsDigest = `printed-material:${
       JSON.stringify(stableValue({
         card_number: cardNumber,
@@ -941,13 +953,52 @@ function parseBandaiCardDetail(
       `${sourceLineage} Card detail is missing Card Number, name, Card Type, or Color.`,
     );
   }
-  const discoveredImageUrls = [...html.matchAll(
-    /<img\b[^>]*\b(?:data-src|src)=["']([^"']+\.(?:avif|gif|jpe?g|png|webp)(?:\?[^"']*)?)["']/giu,
-  )]
-    .map((match) => new URL(decodeHtmlText(match[1]!), requestUrl).href)
-    .filter((url) => officialHostname(sourceLineage, new URL(url).hostname));
+  const discoveredImageUrls = [...html.matchAll(/<img\b([^>]*)>/giu)]
+    .flatMap((match) => {
+      const attributes = match[1]!;
+      const rawUrl =
+        htmlAttribute(attributes, "data-src") ??
+        htmlAttribute(attributes, "src");
+      if (
+        rawUrl === null ||
+        !/\.(?:avif|gif|jpe?g|png|webp)(?:$|\?)/iu.test(rawUrl)
+      ) {
+        return [];
+      }
+      const roleMarker = [
+        htmlAttribute(attributes, "class"),
+        htmlAttribute(attributes, "id"),
+        htmlAttribute(attributes, "data-face"),
+        htmlAttribute(attributes, "data-role"),
+      ].filter((value): value is string => value !== null).join(" ");
+      if (
+        !/(?:card|face|front|back|image|pic)/iu.test(roleMarker) &&
+        !rawUrl.toLocaleLowerCase().includes(
+          cardNumber.toLocaleLowerCase(),
+        )
+      ) {
+        return [];
+      }
+      const resolved = new URL(decodeHtmlText(rawUrl), requestUrl).href;
+      return officialHostname(sourceLineage, new URL(resolved).hostname)
+        ? [resolved]
+        : [];
+    });
   if (discoveredImageUrls.length === 0) {
     throw new Error(`${sourceLineage} Card detail has no Printing Image URL.`);
+  }
+  const requestedCardIdentity = [...new URL(requestUrl).searchParams.entries()]
+    .find(([key]) =>
+      /^(?:card(?:id|no|number)?|detailSearch|popup)$/iu.test(key)
+    )?.[1];
+  if (
+    requestedCardIdentity !== undefined &&
+    requestedCardIdentity.normalize("NFC").trim().toLocaleUpperCase() !==
+      cardNumber.normalize("NFC").trim().toLocaleUpperCase()
+  ) {
+    throw new Error(
+      `${sourceLineage} requested Card identity does not match the parsed Card Number.`,
+    );
   }
   const locator =
     htmlAttribute(
@@ -1011,7 +1062,7 @@ function parseBandaiCardDetail(
             card_type: normalizedType,
             colours,
             cost: integerOrNull(field(["Cost"])),
-            specified_cost: textValues(
+            specified_cost: specifiedCosts(
               field(["Specified Cost", "Specified cost"]),
             ),
             power: integerOrNull(field(["Power"])),
@@ -1045,9 +1096,11 @@ function parseBandaiCardDetail(
               form: field(["Form"]),
               attribute: field(["Attribute"]),
               traits: textValues(field(["Type", "Traits"])),
-              digivolution_requirements: allLabelValues(
-                pairs,
-                ["Digivolve", "Digivolution Cost", "Evolution Cost"],
+              digivolution_requirements: digivolutionRequirements(
+                allLabelValues(
+                  pairs,
+                  ["Digivolve", "Digivolution Cost", "Evolution Cost"],
+                ),
               ),
               text_sections: [
                 ...(rules === null
@@ -1069,14 +1122,10 @@ function parseBandaiCardDetail(
               hp: integerOrNull(field(["HP"])),
               series_titles: textValues(field(["Title", "Series"])),
             };
-  const artworkFingerprint = `official-artwork-set:${
-    JSON.stringify(
-      imageEvidence.map(({ role, source_url }) => ({
-        role,
-        fingerprint: sourceArtworkFingerprint(source_url),
-      })),
-    )
-  }`;
+  const artworkFingerprint = sourceArtworkFingerprint(
+    cardNumber,
+    imageEvidence.map(({ role }) => role),
+  );
   const productLinks = productLinksFromHtml(html, requestUrl);
   const products = productLinks.products;
   const distribution =
@@ -1407,43 +1456,6 @@ function normalizedOfficialRegion(
   return "unknown";
 }
 
-function normalizedOfficialReleaseDate(
-  value: string,
-): { precision: "day" | "month" | "quarter" | "year" | "unknown"; value: string | null } {
-  const normalized = value.normalize("NFC").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
-    return { precision: "day", value: normalized };
-  }
-  if (/^\d{4}-\d{2}$/u.test(normalized)) {
-    return { precision: "month", value: normalized };
-  }
-  const quarter = normalized.match(
-    /^(?:Q([1-4])\s+(\d{4})|(\d{4})[\s-]+Q([1-4]))$/iu,
-  );
-  if (quarter !== null) {
-    const year = quarter[2] ?? quarter[3]!;
-    const number = quarter[1] ?? quarter[4]!;
-    return { precision: "quarter", value: `${year}-Q${number}` };
-  }
-  if (/^\d{4}$/u.test(normalized)) {
-    return { precision: "year", value: normalized };
-  }
-  return { precision: "unknown", value: null };
-}
-
-function normalizedOfficialReleaseStatus(
-  value: string | null,
-): "announced" | "released" | null {
-  const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
-  if (/^(?:released|on sale|available|available now)$/u.test(normalized)) {
-    return "released";
-  }
-  if (/^(?:announced|upcoming|preorder|pre-order)$/u.test(normalized)) {
-    return "announced";
-  }
-  return null;
-}
-
 function labelledHtmlValue(html: string, label: string): string | null {
   return htmlLabelPairs(html)
     .find(({ label: candidate }) =>
@@ -1511,6 +1523,7 @@ function allLabelValues(
 
 function parseBandaiSurfaceCoverage(
   html: string,
+  format: DiscoveryFormat,
   sourceLineage: string,
   surface: string,
   url: string,
@@ -1519,7 +1532,8 @@ function parseBandaiSurfaceCoverage(
   if (
     surface === "listing" &&
     /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu
-      .test(text)
+      .test(text) &&
+    discoveredPartitionRequests(format, html, new URL(url)).length === 0
   ) {
     throw new Error(
       "Official Source leaf partition still displays its result-cap signal.",
@@ -1584,18 +1598,25 @@ function parseBandaiSurfaceCoverage(
       String(parsedPublicationCount),
     10,
   );
+  const productIndexObservations =
+    surface === "products" || surface === "releases"
+      ? parseBandaiProductIndex(html, url)
+      : [];
   return {
-    observations: [{
-      completeness: completeObservation(
-        declaredPublicationCount,
-        parsedPublicationCount,
-      ),
-      product_release_catalogue: {
-        products: [],
-        distribution_contexts: [],
-        relationships: [],
-      },
-    }],
+    observations:
+      productIndexObservations.length > 0
+        ? productIndexObservations
+        : [{
+            completeness: completeObservation(
+              declaredPublicationCount,
+              parsedPublicationCount,
+            ),
+            product_release_catalogue: {
+              products: [],
+              distribution_contexts: [],
+              relationships: [],
+            },
+          }],
     retainedDocument: {
       source_lineage: sourceLineage,
       surface,
@@ -1626,6 +1647,80 @@ function parseBandaiSurfaceCoverage(
   };
 }
 
+function parseBandaiProductIndex(
+  html: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  const containers = [...html.matchAll(
+    /<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
+  )].map((match) => ({ attributes: match[2]!, body: match[3]! }));
+  if (containers.length === 0) {
+    containers.push(
+      ...[...html.matchAll(
+        /<a\b[^>]*\bhref=["'][^"']+["'][^>]*>[\s\S]*?<\/a>/giu,
+      )].map((match) => ({ attributes: "", body: match[0]! })),
+    );
+  }
+  const entries = containers.flatMap(({ attributes, body }) => {
+    const link = body.match(
+      /<a\b([^>]*\bhref=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/iu,
+    );
+    if (link === null) return [];
+    const href = htmlAttribute(link[1]!, "href");
+    if (href === null || !/\/products?\//iu.test(href)) return [];
+    const title = htmlText(link[2]!);
+    const resolved = new URL(decodeHtmlText(href), requestUrl);
+    const pathCode = resolved.pathname.split("/").filter(Boolean).at(-1);
+    const code =
+      htmlAttribute(link[1]!, "data-product-code")?.normalize("NFC").trim() ??
+      title.match(/\[([A-Z0-9-]+)\]/u)?.[1] ??
+      pathCode?.normalize("NFC").trim().toLocaleUpperCase();
+    if (code === undefined || code.length === 0 || title.length === 0) {
+      throw new Error(
+        "Official Product index entry has no stable code or title.",
+      );
+    }
+    const classificationText = `${attributes} ${body} ${resolved.pathname}`;
+    const classification =
+      /(?:booster|starter|deck|card|set)/iu.test(classificationText)
+        ? { kind: "product", label: "booster" }
+        : /(?:accessor|sleeve|storage|binder|playmat)/iu.test(classificationText)
+          ? { kind: "other", label: "accessory" }
+          : { kind: "other", label: "other" };
+    return [{
+      product: {
+        code,
+        title,
+        distribution: {
+          code: `product-classification:${classification.label}:${code}`,
+          ...classification,
+        },
+      },
+      announced: /(?:coming soon|upcoming|announced)/iu.test(htmlText(body)),
+    }];
+  });
+  return [
+    ...new Map(entries.map((entry) => [entry.product.code, entry])).values(),
+  ].map(({ product, announced }) => {
+    const releases = new Map<string, Record<string, unknown>[]>();
+    if (announced) {
+      releases.set(product.code, [{
+        event_key: `product-index-announcement:${product.code}`,
+        region: "unknown",
+        precision: "unknown",
+        date: null,
+        status: "announced",
+      }]);
+    }
+    return productOnlyObservation(
+      product,
+      releases,
+      { revision: "captured-by-policy-surface", entries: [] },
+      { revision: "captured-by-policy-surface", entries: [] },
+    );
+  });
+}
+
 function requiredHtmlMatch(
   value: string,
   pattern: RegExp,
@@ -1649,18 +1744,20 @@ function htmlText(value: string): string {
     .join("\n");
 }
 
-function sourceArtworkFingerprint(source: string): string {
-  const path = new URL(source, "https://official.invalid").pathname;
-  const asset = path.split("/").at(-1) ?? path;
-  const stableAsset = asset
-    .replace(/\.(?:avif|gif|jpe?g|png|webp)$/iu, "")
-    .replace(/(?:[-_.](?:thumb|thumbnail|small|medium|large|web|retina|2x))+$/iu, "")
-    .normalize("NFC")
-    .toLocaleLowerCase();
-  if (stableAsset.length === 0) {
-    throw new Error("Official Printing Image has no stable artwork asset identity.");
+function sourceArtworkFingerprint(
+  officialCardIdentity: string,
+  roles: readonly string[],
+): string {
+  const card = officialCardIdentity.normalize("NFC").trim().toUpperCase();
+  const stableRoles = [...new Set(
+    roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()),
+  )].sort();
+  if (card.length === 0 || stableRoles.some((role) => role.length === 0)) {
+    throw new Error("Official Printing has no stable semantic artwork identity.");
   }
-  return `official-artwork:${stableAsset}`;
+  return `official-artwork:${
+    JSON.stringify({ official_card_identity: card, roles: stableRoles })
+  }`;
 }
 
 function decodeHtmlText(value: string): string {
@@ -1685,6 +1782,57 @@ function textValues(value: string | null): string[] {
   return value === null || value === "-"
     ? []
     : [...new Set(value.split("/").map((item) => item.trim()).filter(Boolean))];
+}
+
+function specifiedCosts(
+  value: string | null,
+): { colour: string; count: number }[] {
+  if (value === null || value === "-" || value.trim() === "") return [];
+  return value.split(/[,/]/u).map((part) => {
+    const text = part.normalize("NFC").trim();
+    const colour = text.match(/\b(red|blue|green|yellow|black)\b/iu)?.[1]
+      ?.toLocaleLowerCase();
+    const count = text.match(/\b(\d+)\b/u)?.[1];
+    if (colour === undefined || count === undefined || Number(count) < 1) {
+      throw new Error(
+        `Unrecognized official Fusion World specified cost: ${text}`,
+      );
+    }
+    return { colour, count: Number.parseInt(count, 10) };
+  });
+}
+
+function digivolutionRequirements(
+  values: readonly string[],
+): {
+  index: number;
+  from_level: number | null;
+  colours: string[];
+  cost: number;
+  raw_condition: string | null;
+}[] {
+  return values.map((value, index) => {
+    const normalized = value.normalize("NFC").trim();
+    const cost = normalized.match(/(?::|\bcost\s*)\s*(\d+)\s*$/iu)?.[1];
+    if (cost === undefined) {
+      throw new Error(
+        `Unrecognized official Digimon digivolution requirement: ${value}`,
+      );
+    }
+    return {
+      index: index + 1,
+      from_level:
+        Number(
+          normalized.match(/\bLv\.?\s*(\d+)\b/iu)?.[1] ?? Number.NaN,
+        ) || null,
+      colours: [...new Set(
+        [...normalized.matchAll(/\b(red|blue|green|yellow|black|purple|white)\b/giu)]
+          .map((match) => match[1]!.toLocaleLowerCase()),
+      )],
+      cost: Number.parseInt(cost, 10),
+      raw_condition: normalized,
+    };
+  });
 }
 
 function requiredNullableText(value: string | null, name: string): string | null {
@@ -2597,6 +2745,14 @@ function attachRawSurfaceEvidence(
   const unmapped = Array.isArray(existing.unmapped_optional_fields)
     ? existing.unmapped_optional_fields
       : [];
+  const retainedMappedLeaves = retainDocument
+    ? mappedRootFields.flatMap((field) =>
+        partitionMappedOfficialLeaves(
+          document[field],
+          `source_sidecar.raw.official_surfaces[0].document.${field}`,
+        )
+      )
+    : [];
   return {
     ...record,
     source_sidecar: {
@@ -2623,14 +2779,12 @@ function attachRawSurfaceEvidence(
           ...consumed,
           "source_sidecar.raw.official_surfaces[].source_lineage",
           "source_sidecar.raw.official_surfaces[].surface",
-          ...(retainDocument ? mappedRootFields : []).map(
-            (field) =>
-              `source_sidecar.raw.official_surfaces[0].document.${field}`,
-          ),
+          ...retainedMappedLeaves.flatMap(({ consumed }) => consumed),
         ]),
       ].sort(),
       unmapped_optional_fields: [
         ...unmapped,
+        ...retainedMappedLeaves.flatMap(({ unmapped }) => unmapped),
         ...(retainDocument ? Object.entries(document) : [])
           .filter(([field]) => !mappedRootFields.includes(field))
           .flatMap(([field, value]) =>

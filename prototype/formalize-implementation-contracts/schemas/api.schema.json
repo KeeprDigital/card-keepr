@@ -430,7 +430,7 @@
     "Release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "region", "date"],
+      "required": ["id", "event_key", "region", "date", "status"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "event_key": { "$ref": "#/$defs/OpaqueId" },

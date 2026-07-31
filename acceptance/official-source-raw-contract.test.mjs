@@ -183,6 +183,24 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     relocated[0].identity_evidence.artwork_fingerprint,
     observations[0].identity_evidence.artwork_fingerprint,
   );
+  const redistributed = adapter.parseBytes(
+    new TextEncoder().encode(
+      html
+        .replaceAll(
+          "OP99-001.png",
+          "unrelated-distribution-filename.webp?width=2048&encoding=next",
+        )
+        .replace("<img data-src=", '<img width="2048" height="2856" data-src='),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  );
+  assert.equal(
+    redistributed[0].identity_evidence.artwork_fingerprint,
+    observations[0].identity_evidence.artwork_fingerprint,
+  );
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -277,6 +295,51 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
     digimonRoot.map(({ url }) => new URL(url).searchParams.get("category")),
     ["booster", "starter"],
   );
+  const digimonCardType = digimon.discoverRequests(
+    encode(`
+      <select name="category"><option value="booster">Booster</option></select>
+      <select name="cardcategory">
+        <option value="digimon">Digimon</option>
+        <option value="option">Option</option>
+      </select>
+      <select name="colour"><option value="blue">Blue</option></select>
+    `),
+    {
+      mediaType: "text/html",
+      url: `${digimon.requestUrlForSurface("card-list")}&category=booster`,
+      requestId: `digimon-en:listing:${"9".repeat(64)}`,
+    },
+  ).filter(({ role }) => role === "listing");
+  assert.deepEqual(
+    digimonCardType.map(({ url }) =>
+      new URL(url).searchParams.get("cardcategory")
+    ),
+    ["digimon", "option"],
+  );
+
+  const cappedIntermediate = `
+    <html><title>BANDAI DRAGON BALL CARD search</title>
+      <p>More than 1,000 results were capped</p>
+      ${facets}
+    </html>
+  `;
+  assert.doesNotThrow(() =>
+    fusion.parseBytes(encode(cappedIntermediate), {
+      mediaType: "text/html",
+      url: `${fusion.requestUrlForSurface("card-search")}?card_type=leader`,
+      requestId: `fusion-world-en:listing:${"8".repeat(64)}`,
+    })
+  );
+  assert.throws(
+    () =>
+      fusion.parseBytes(encode(cappedIntermediate), {
+        mediaType: "text/html",
+        url:
+          `${fusion.requestUrlForSurface("card-search")}?card_type=leader&colour=red&cost=1`,
+        requestId: `fusion-world-en:listing:${"7".repeat(64)}`,
+      }),
+    /leaf partition still displays/iu,
+  );
 });
 
 test("Fusion leaders require explicit role-owned faces and images", () => {
@@ -288,6 +351,7 @@ test("Fusion leaders require explicit role-owned faces and images", () => {
     <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
     <dl><dt>Card Type</dt><dd>Leader</dd></dl>
     <dl><dt>Color</dt><dd>Red</dd></dl>
+    <dl><dt>Specified Cost</dt><dd>Red 2</dd></dl>
     <section class="card-face" data-face="front">
       <img src="/fw/images/cards/FB99-001-front.png">
       <dl><dt>Name</dt><dd>Test Leader</dd></dl>
@@ -313,6 +377,10 @@ test("Fusion leaders require explicit role-owned faces and images", () => {
   assert.deepEqual(
     observation.appearance_evidence.images.map(({ role }) => role),
     ["front", "back"],
+  );
+  assert.deepEqual(
+    observation.card.game_data.attributes.specified_cost,
+    [{ colour: "red", count: 2 }],
   );
   assert.deepEqual(
     observation.card.game_data.attributes.leader_faces.map(
@@ -384,6 +452,70 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
   );
 });
 
+test("live Product detail maps official display dates and fails closed on new status vocabulary", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
+  );
+  const base = `
+    <h1>Display Date Booster</h1>
+    <dl><dt>Product Code</dt><dd>GD98</dd></dl>
+    <dl><dt>Release Event ID</dt><dd>display-launch</dd></dl>
+    <dl><dt>Release Date</dt><dd>September 12, 2027</dd></dl>
+    <dl><dt>Region</dt><dd>North America</dd></dl>
+    <dl><dt>Status</dt><dd>Coming Soon</dd></dl>
+  `;
+  const context = {
+    mediaType: "text/html",
+    url: "https://www.gundam-gcg.com/en/products/detail.php?id=display",
+    requestId: `gundam-en-us:product_detail:${"e".repeat(64)}`,
+  };
+  const release = adapter.parseBytes(
+    new TextEncoder().encode(base),
+    context,
+  )[0].product_release_catalogue.products[0].releases[0];
+  assert.deepEqual(release.date, {
+    precision: "day",
+    value: "2027-09-12",
+  });
+  assert.equal(release.status, "announced");
+  assert.throws(
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(
+          base.replace("Coming Soon", "Vendor Future Phase"),
+        ),
+        context,
+      ),
+    /unrecognized official Release status/iu,
+  );
+});
+
+test("nested raw unknown leaves remain warnings when their container is mapped", () => {
+  const document = rawSurfacePayload("one-piece-en", "card-list");
+  document.card_pages[0].future_nested = {
+    vendor_rule: "retain this nested leaf",
+  };
+  const observation = parseControlledRawSurfaceFixture(
+    "one-piece-en",
+    new TextEncoder().encode(
+      `<main><script type="application/json" data-keepr-official-payload>${
+        JSON.stringify(document)
+      }</script></main>`,
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://official.invalid/one-piece-en/card-list",
+    },
+  )[0];
+  assert.ok(
+    observation.source_sidecar.unmapped_optional_fields.some(
+      ({ path, value }) =>
+        path.endsWith(".card_pages[0].future_nested.vendor_rule") &&
+        value === "retain this nested leaf",
+    ),
+  );
+});
+
 test("explicit Product links produce typed memberships and relationships", () => {
   const adapter = officialRawAdapterContracts.find(
     ({ sourceLineage }) => sourceLineage === "digimon-en",
@@ -399,6 +531,7 @@ test("explicit Product links produce typed memberships and relationships", () =>
       <a class="product-link" data-product-code="BT99"
          href="/products/booster/bt99/">Test Booster [BT99]</a>
       <a class="product-link" href="/products/unknown/">Possible product</a>
+      <img class="site-logo" src="/images/site-logo.png">
       <img class="card-image" src="/images/cards/BT99-001.png">
     `),
     {
@@ -408,9 +541,19 @@ test("explicit Product links produce typed memberships and relationships", () =>
     },
   )[0];
   assert.deepEqual(observation.memberships.products, ["BT99"]);
+  assert.match(
+    observation.appearance_evidence.images[0].source_url,
+    /BT99-001\.png$/u,
+  );
   assert.deepEqual(
     observation.card.game_data.attributes.digivolution_requirements,
-    ["Blue Lv.3: 2"],
+    [{
+      index: 1,
+      from_level: 3,
+      colours: ["blue"],
+      cost: 2,
+      raw_condition: "Blue Lv.3: 2",
+    }],
   );
   assert.equal(
     observation.product_release_catalogue.relationships[0].resolution,
@@ -422,6 +565,24 @@ test("explicit Product links produce typed memberships and relationships", () =>
         resolution === "warning" &&
         product_reference.value === "Possible product",
     ),
+  );
+  assert.throws(
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(`
+          <h1>Test Digimon</h1>
+          <dl><dt>Card Number</dt><dd>BT99-001</dd></dl>
+          <dl><dt>Card Type</dt><dd>Digimon</dd></dl>
+          <dl><dt>Color</dt><dd>Blue</dd></dl>
+          <img class="card-image" src="/images/cards/BT99-001.png">
+        `),
+        {
+          mediaType: "text/html",
+          url: "https://world.digimoncard.com/cards/detail.php?card=BT99-999",
+          requestId: `digimon-en:detail:${"f".repeat(64)}`,
+        },
+      ),
+    /requested Card identity does not match/iu,
   );
 });
 
@@ -453,6 +614,55 @@ test("every production lineage parses its exact real HTML policy surfaces", () =
     ]);
     assert.equal(retained.publication_links.length, 1);
   }
+});
+
+test("live Product indexes emit typed Products, classifications, and announced releases", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(`
+      <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+        <article class="booster">
+          <a data-product-code="FB-BOOST-01"
+             href="/fw/en/products/booster/fb-boost-01/">Booster Set 01</a>
+          <span>Coming Soon</span>
+        </article>
+        <article class="accessory">
+          <a data-product-code="FB-SLEEVE-01"
+             href="/fw/en/products/accessory/fb-sleeve-01/">Official Sleeves</a>
+        </article>
+      </html>
+    `),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("products"),
+      requestId: "fusion-world-en:products",
+    },
+  );
+  const catalogues = observations.map(
+    ({ product_release_catalogue }) => product_release_catalogue,
+  );
+  assert.deepEqual(
+    catalogues.flatMap(({ products }) =>
+      products.map(({ official_code }) => official_code)
+    ).sort(),
+    ["FB-BOOST-01", "FB-SLEEVE-01"],
+  );
+  assert.ok(
+    catalogues.flatMap(({ distribution_contexts }) => distribution_contexts)
+      .some(({ kind, label }) => kind === "product" && label === "booster"),
+  );
+  assert.ok(
+    catalogues.flatMap(({ distribution_contexts }) => distribution_contexts)
+      .some(({ kind, label }) => kind === "other" && label === "accessory"),
+  );
+  assert.equal(
+    catalogues.flatMap(({ products }) => products)
+      .find(({ official_code }) => official_code === "FB-BOOST-01")
+      .releases[0].status,
+    "announced",
+  );
 });
 
 test("production coverage rejects keyword-only HTML without structural entries", () => {

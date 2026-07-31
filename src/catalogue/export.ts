@@ -61,9 +61,9 @@ export type SourceFreshness = {
 };
 
 type CatalogueExportManifest = {
-  format: "card-keepr-catalogue-export-manifest@1";
+  format: "card-keepr-catalogue-export-manifest@2";
   serialization_profile: "card-keepr-ndjson-gzip@1";
-  export_schema_major: 1;
+  export_schema_major: 2;
   catalogue_revision: {
     id: string;
     content_sha256: string;
@@ -141,7 +141,7 @@ export async function buildCatalogueExport(
       name,
       media_type: "application/x-ndjson",
       compression: "gzip",
-      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/${schemaDefinition}`,
+      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/${schemaDefinition}`,
       order,
       records: analysis.records,
       uncompressed_bytes: analysis.uncompressedBytes,
@@ -165,9 +165,9 @@ export async function buildCatalogueExport(
   }
 
   const manifestWithPlaceholder: CatalogueExportManifest = {
-    format: "card-keepr-catalogue-export-manifest@1",
+    format: "card-keepr-catalogue-export-manifest@2",
     serialization_profile: "card-keepr-ndjson-gzip@1",
-    export_schema_major: 1,
+    export_schema_major: 2,
     catalogue_revision: {
       id: catalogueRevisionId,
       content_sha256: candidateDigest,

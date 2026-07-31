@@ -234,6 +234,16 @@ export async function canonicalCardConflict(
     .bind(cardId)
     .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
+  if (
+    sourceLineage === "gundam-en-us" &&
+    authorities.results.some(
+      ({ source_lineage }) => source_lineage === "gundam-en-asia",
+    )
+  ) {
+    return substantiveFactsConflict(currentCanonical, proposedCanonical)
+      ? "The retained Card facts conflict across Gundam English source lineages; EN-ASIA precedence cannot erase a substantive EN-US disagreement."
+      : null;
+  }
   return authorities.results.length > 0 &&
     authorities.results.every(
       (authority) => authority.source_lineage === sourceLineage,
@@ -281,6 +291,20 @@ export async function canonicalPrintingConflict(
     .bind(printingId)
     .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
+  if (
+    (sourceLineage === "gundam-en-asia" ||
+      sourceLineage === "gundam-en-us") &&
+    authorities.results.some(
+      ({ source_lineage }) =>
+        (source_lineage === "gundam-en-asia" ||
+          source_lineage === "gundam-en-us") &&
+        source_lineage !== sourceLineage,
+    )
+  ) {
+    return substantiveFactsConflict(currentCanonical, proposed)
+      ? "The retained Printing facts conflict across Gundam English source lineages; EN-ASIA precedence cannot erase a substantive EN-US disagreement."
+      : null;
+  }
   return authorities.results.every(
     (authority) => authority.source_lineage === sourceLineage,
   )
@@ -312,6 +336,36 @@ function normalizedFormatting(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function substantiveFactsConflict(
+  authoritative: unknown,
+  corroborating: unknown,
+): boolean {
+  if (
+    authoritative === null ||
+    authoritative === undefined ||
+    corroborating === null ||
+    corroborating === undefined
+  ) {
+    return false;
+  }
+  if (Array.isArray(authoritative) || Array.isArray(corroborating)) {
+    return canonicalJson(normalizedFormatting(authoritative)) !==
+      canonicalJson(normalizedFormatting(corroborating));
+  }
+  if (
+    typeof authoritative === "object" &&
+    typeof corroborating === "object"
+  ) {
+    const left = authoritative as Record<string, unknown>;
+    const right = corroborating as Record<string, unknown>;
+    return [...new Set([...Object.keys(left), ...Object.keys(right)])].some(
+      (field) => substantiveFactsConflict(left[field], right[field]),
+    );
+  }
+  return canonicalJson(normalizedFormatting(authoritative)) !==
+    canonicalJson(normalizedFormatting(corroborating));
 }
 
 function revisionDocumentData(documentJson: string): Record<string, unknown> {

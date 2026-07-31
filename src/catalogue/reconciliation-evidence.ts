@@ -202,8 +202,6 @@ export async function retainedReconciliationObservation(
             attachRetainedPrintingImages(
               wrapped.value,
               retainedImages,
-              requiredSourceAdapter(row.adapter_version).origin ===
-                "production",
             ),
           ),
           sourceObservationSetId: row.observation_set_id,
@@ -353,12 +351,9 @@ function assertClosedRequestGraph(
       );
     }
     const parent = byId.get(request.discovered_from_request_id);
-    if (
-      parent === undefined ||
-      parent.sequence_number >= request.sequence_number
-    ) {
+    if (parent === undefined) {
       throw new Error(
-        `Discovered Source Request ${request.request_id} does not close over an earlier retained parent.`,
+        `Discovered Source Request ${request.request_id} does not close over a retained parent.`,
       );
     }
     if (
@@ -456,7 +451,6 @@ function attachRetainedPrintingImages(
       content_base64: string;
     }
   >,
-  normalizeArtworkIdentity: boolean,
 ): unknown {
   if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
   const declared = value.appearance_evidence.images;
@@ -466,65 +460,11 @@ function attachRetainedPrintingImages(
     const retained = images.get(item.source_url);
     return retained === undefined ? item : { ...item, ...retained };
   });
-  const identity = value.identity_evidence;
-  if (
-    !normalizeArtworkIdentity ||
-    !isRecord(identity) ||
-    typeof identity.artwork_fingerprint !== "string" ||
-    !retainedImages.every((item) =>
-      isRecord(item) &&
-      typeof item.role === "string" &&
-      Number.isInteger(item.width) &&
-      Number.isInteger(item.height) &&
-      typeof item.content_sha256 === "string"
-    )
-  ) {
-    return {
-      ...value,
-      appearance_evidence: {
-        ...value.appearance_evidence,
-        images: retainedImages,
-      },
-    };
-  }
-  const normalizedArtworkFingerprint =
-    `retained-artwork:${
-      JSON.stringify({
-        source_artwork_identity: identity.artwork_fingerprint,
-        role_geometry: retainedImages
-          .map((item) => ({
-            role: (item as Record<string, unknown>).role,
-            width: (item as Record<string, unknown>).width,
-            height: (item as Record<string, unknown>).height,
-          }))
-          .sort((left, right) =>
-            String(left.role).localeCompare(String(right.role))
-          ),
-      })
-    }`;
-  const noveltyBasis = isRecord(identity.novelty_basis)
-    ? {
-        ...identity.novelty_basis,
-        artwork_fingerprint: normalizedArtworkFingerprint,
-      }
-    : identity.novelty_basis;
   return {
     ...value,
-    identity_evidence: {
-      ...identity,
-      artwork_fingerprint: normalizedArtworkFingerprint,
-      novelty_basis: noveltyBasis,
-    },
     appearance_evidence: {
       ...value.appearance_evidence,
-      images: retainedImages.map((item) =>
-        isRecord(item)
-          ? {
-              ...item,
-              artwork_fingerprint: normalizedArtworkFingerprint,
-            }
-          : item
-      ),
+      images: retainedImages,
     },
   };
 }

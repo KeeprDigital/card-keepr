@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://card-keepr.invalid/schemas/catalogue-export-record@1",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-record@2",
   "title": "Card Keepr Catalogue Export record",
   "oneOf": [
     { "$ref": "#/$defs/SupportedGameRecord" },
@@ -380,7 +380,15 @@
     "ReleaseRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "product_id", "region", "date"],
+      "required": [
+        "type",
+        "id",
+        "product_id",
+        "event_key",
+        "region",
+        "date",
+        "status"
+      ],
       "properties": {
         "type": { "const": "release" },
         "id": { "$ref": "#/$defs/OpaqueId" },

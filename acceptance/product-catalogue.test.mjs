@@ -38,7 +38,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@1"),
+          officialPlan("digimon", "digimon-en", "digimon-en@2"),
         ],
       }),
       { mode: 0o600 },
@@ -47,7 +47,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@1"),
+          officialPlan("digimon", "digimon-en", "digimon-en@2"),
           officialPlan(
             "one-piece",
             "one-piece-en",
@@ -56,17 +56,17 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "fusion-world",
             "fusion-world-en",
-            "fusion-world-en@1",
+            "fusion-world-en@2",
           ),
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@1",
+            "gundam-en-asia@2",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@1",
+            "gundam-en-us@2",
           ),
         ],
       }),
@@ -160,66 +160,10 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(resumed.code, 0, resumed.stderr);
   await waitForRunState(
     collectedRun.id,
-    "parsing",
+    "awaiting_approval",
     cliEnvironment,
     ingestion,
   );
-  const reconciled = await reconcileWorkflowStage(
-    collectedRun.id,
-    cliEnvironment,
-  );
-  const reconciliationDiagnostic =
-    reconciled.code === 0
-      ? ""
-      : await (
-          await fetch(
-            `http://127.0.0.1:${ingestionPort}/v1/ingestion-runs/` +
-              collectedRun.id,
-            {
-              headers: {
-                authorization: `Bearer ${administrationKey}`,
-                "cf-connecting-ip": "203.0.113.28",
-              },
-            },
-          )
-        ).text();
-  assert.equal(
-    reconciled.code,
-    0,
-    `${reconciled.stdout}\n${reconciled.stderr}\n` +
-      `${reconciliationDiagnostic}\n${ingestion.getOutput()}`,
-  );
-  const reconciliation = JSON.parse(reconciled.stdout);
-  assert.equal(reconciliation.cards.length, 1);
-  assert.equal(reconciliation.printings.length, 1);
-  assert.equal(reconciliation.products.length, 2);
-  assert.ok(
-    reconciliation.warnings.some(
-      ({ code, path, raw_value }) =>
-        code === "unknown_source_field" &&
-        path === "source_sidecar.raw.products[0].campaign_note" &&
-        raw_value === "Optional Official Source marketing copy",
-    ),
-  );
-  assert.ok(
-    reconciliation.warnings.some(
-      ({ code, path, raw_value }) =>
-        code === "unknown_source_field" &&
-        path ===
-          "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
-        raw_value === "official-web",
-    ),
-  );
-  const printingId = reconciliation.printings[0].id;
-  const productOnly = reconciliation.products.find(
-    ({ official_code }) => official_code === "BT-PRODUCT-ONLY",
-  );
-  const cardBearing = reconciliation.products.find(
-    ({ official_code }) => official_code === "BT-CARD-BEARING",
-  );
-  assert.ok(productOnly);
-  assert.ok(cardBearing);
-  const productId = productOnly.id;
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", collectedRun.id, "--json"],
     cliEnvironment,
@@ -228,6 +172,25 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   const inspection = JSON.parse(inspected.stdout);
   assert.equal(inspection.run_id, collectedRun.id);
   assert.equal(inspection.diff.summary.cards_added, 1);
+  assert.equal(inspection.diff.summary.printings_added, 1);
+  assert.ok(
+    inspection.diff.warnings.some(
+      ({ code, path, raw_value }) =>
+        code === "unknown_source_field" &&
+        path === "source_sidecar.raw.products[0].campaign_note" &&
+        raw_value === "Optional Official Source marketing copy",
+    ),
+  );
+  assert.ok(
+    inspection.diff.warnings.some(
+      ({ code, path, raw_value }) =>
+        code === "unknown_source_field" &&
+        path ===
+          "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
+        raw_value === "official-web",
+    ),
+  );
+  const [printingId] = inspection.diff.printings.added;
   const approved = await runCli(
     [
       "run",
@@ -294,11 +257,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@1",
+        adapter_version: "digimon-en@2",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@1",
+          "digimon-en@2",
         ).requests.map(({ id }) => id),
       },
       {
@@ -314,31 +277,31 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@1",
+        adapter_version: "fusion-world-en@2",
         request_ids: officialPlan(
           "fusion-world",
           "fusion-world-en",
-          "fusion-world-en@1",
+          "fusion-world-en@2",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@1",
+        adapter_version: "gundam-en-asia@2",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@1",
+          "gundam-en-asia@2",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@1",
+        adapter_version: "gundam-en-us@2",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@1",
+          "gundam-en-us@2",
         ).requests.map(({ id }) => id),
       },
     ],
@@ -358,18 +321,9 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
   await waitForRunState(
     multiRun.id,
-    "parsing",
+    "awaiting_approval",
     cliEnvironment,
     ingestion,
-  );
-  const multiReconciled = await reconcileWorkflowStage(
-    multiRun.id,
-    cliEnvironment,
-  );
-  assert.equal(
-    multiReconciled.code,
-    0,
-    `${multiReconciled.stdout}\n${multiReconciled.stderr}\n${ingestion.getOutput()}`,
   );
   const multiInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", multiRun.id, "--json"],
@@ -433,12 +387,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ).code,
     0,
   );
-  await waitForRunState(carryRun.id, "parsing", cliEnvironment, ingestion);
-  assert.equal(
-    (
-      await reconcileWorkflowStage(carryRun.id, cliEnvironment)
-    ).code,
-    0,
+  await waitForRunState(
+    carryRun.id,
+    "awaiting_approval",
+    cliEnvironment,
+    ingestion,
   );
   const carryInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", carryRun.id, "--json"],
@@ -512,6 +465,21 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       Number.isFinite(Date.parse(checked_at))
     ),
   );
+  const publishedProducts = await exportRecords(
+    apiPort,
+    apiKey,
+    revisionId,
+    "products",
+  );
+  const productOnly = publishedProducts.find(
+    ({ official_code }) => official_code === "BT-PRODUCT-ONLY",
+  );
+  const cardBearing = publishedProducts.find(
+    ({ official_code }) => official_code === "BT-CARD-BEARING",
+  );
+  assert.ok(productOnly);
+  assert.ok(cardBearing);
+  const productId = productOnly.id;
   const productResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/products/${productId}?include=evidence`,
     { headers },
@@ -876,29 +844,6 @@ async function stopWorker(worker) {
     new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
   ]);
   if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-async function reconcileWorkflowStage(runId, environment) {
-  const response = await fetch(
-    `${environment.KEEPR_INGESTION_URL}/v1/ingestion-runs/${
-      encodeURIComponent(runId)
-    }/reconciliation`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-        "cf-connecting-ip": "203.0.113.28",
-        "content-type": "application/json",
-      },
-      body: "{}",
-    },
-  );
-  const stdout = await response.text();
-  return {
-    code: response.ok ? 0 : 1,
-    stdout,
-    stderr: response.ok ? "" : stdout,
-  };
 }
 
 function runCli(arguments_, environment) {

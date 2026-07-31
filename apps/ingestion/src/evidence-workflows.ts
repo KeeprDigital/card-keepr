@@ -24,6 +24,9 @@ import {
   recordWorkflowIds,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
+import {
+  reconcileRetainedCardPrintingEvidence,
+} from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
 
 const deterministicDatabaseStep = {
@@ -132,14 +135,94 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
           return pendingChildren.map((child) => child.id);
         },
       );
-    } else {
-      await step.do(
-        "finalize empty evidence plan",
-        deterministicDatabaseStep,
-        () => finalizeEvidenceRun(this.env.CATALOGUE_DB, runId),
-      );
     }
-    return { ingestion_run_id: runId, child_workflow_ids: allChildIds };
+    let barrierStage = 0;
+    for (;;) {
+      const pendingChildren = await step.do(
+        `reload pending hostname workflows stage ${barrierStage}`,
+        deterministicDatabaseStep,
+        async () =>
+          Promise.all(
+            [...new Set(
+              (await pendingEvidenceRequests(this.env.CATALOGUE_DB, runId))
+                .map((request) => new URL(request.url).hostname),
+            )]
+              .sort()
+              .map(async (hostname) => ({
+                hostname,
+                id: await evidenceHostWorkflowId(runId, hostname),
+              })),
+          ),
+      );
+      if (pendingChildren.length > 0) {
+        await step.do(
+          `recover pending hostname workflows stage ${barrierStage}`,
+          deterministicDatabaseStep,
+          async () => {
+            const children = await Promise.all(
+              pendingChildren.map((child) =>
+                this.env.EVIDENCE_HOST_WORKFLOW.get(child.id),
+              ),
+            );
+            for (const child of children) {
+              const status = await child.status();
+              if (
+                status.status === "errored" ||
+                status.status === "terminated"
+              ) {
+                await child.restart();
+              } else if (status.status === "paused") {
+                await child.resume();
+              }
+            }
+            return pendingChildren.map((child) => child.id);
+          },
+        );
+      }
+      const run = await step.do(
+        `finalize collection barrier stage ${barrierStage}`,
+        deterministicDatabaseStep,
+        async () => {
+          await finalizeEvidenceRun(this.env.CATALOGUE_DB, runId);
+          return requiredEvidenceRun(this.env.CATALOGUE_DB, runId);
+        },
+      );
+      if (run.state === "collecting") {
+        await step.sleep(
+          `await collection barrier stage ${barrierStage}`,
+          "1 second",
+        );
+        barrierStage += 1;
+        continue;
+      }
+      if (run.state === "parsing" && run.plan_origin === "production") {
+        const reconciliation = await step.do(
+          "reconcile retained Official Source evidence",
+          deterministicDatabaseStep,
+          async () =>
+            JSON.parse(
+              canonicalJson(
+                await reconcileRetainedCardPrintingEvidence(
+                  this.env.CATALOGUE_DB,
+                  this.env.EVIDENCE_OBJECTS,
+                  runId,
+                  run.collection_completed_at ?? new Date().toISOString(),
+                ),
+              ),
+            ),
+        );
+        return {
+          ingestion_run_id: runId,
+          child_workflow_ids: allChildIds,
+          reconciliation,
+        };
+      }
+      return {
+        ingestion_run_id: runId,
+        child_workflow_ids: allChildIds,
+        state: run.state,
+      };
+    }
   }
 }
 
@@ -297,11 +380,6 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
       }
       break;
     }
-    await step.do(
-      "finalize ingestion collection phase",
-      deterministicDatabaseStep,
-      () => finalizeEvidenceRun(this.env.CATALOGUE_DB, runId),
-    );
     return { ingestion_run_id: runId, hostname };
   }
 }

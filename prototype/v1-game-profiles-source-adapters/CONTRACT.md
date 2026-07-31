@@ -277,7 +277,7 @@ never discarded.
 - Card Set(s), Recording membership, Notes, and Product links remain separate
   evidence. Repeated compatible source records aggregate onto one Printing.
 
-### `fusion-world-en@1`
+### `fusion-world-en@2`
 
 - Locale authority: `/fw/en/`, explicitly covering Oceania.
 - Card identity: `(fusion-world, card_number)`.
@@ -299,7 +299,7 @@ never discarded.
 - Leader detail must yield exactly one front and one back face and Printing
   Image. Energy Marker rarity may be null.
 
-### `digimon-en@1`
+### `digimon-en@2`
 
 - Locale authority: the official English site. Release region remains explicit
   or `unknown`; a US-oriented date is never relabelled Oceania.
@@ -321,7 +321,7 @@ never discarded.
 - Notes and category memberships create at most explicit or deterministic
   relationship evidence; fuzzy matches never publish a Product relationship.
 
-### `gundam-en-asia@1` and `gundam-en-us@1`
+### `gundam-en-asia@2` and `gundam-en-us@2`
 
 - Each locale is a separate source lineage with its own opaque package IDs.
 - Card identity: `(gundam, card_number)`.

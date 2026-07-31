@@ -323,7 +323,7 @@ export const adapterContracts = {
       legality: "dated-rules-and-restriction-surfaces"
     }
   },
-  "fusion-world-en@1": {
+  "fusion-world-en@2": {
     game: "fusion-world",
     profile: "fusion-world@1",
     sourceLineage: "fusion-world-en",
@@ -372,7 +372,7 @@ export const adapterContracts = {
       legality: "rules-hub-current-list-and-dated-history"
     }
   },
-  "digimon-en@1": {
+  "digimon-en@2": {
     game: "digimon",
     profile: "digimon@1",
     sourceLineage: "digimon-en",
@@ -435,7 +435,7 @@ export const adapterContracts = {
       caveat: "english-source-states-japanese-list-has-priority"
     }
   },
-  "gundam-en-asia@1": {
+  "gundam-en-asia@2": {
     game: "gundam",
     profile: "gundam@1",
     sourceLineage: "gundam-en-asia",
@@ -486,7 +486,7 @@ export const adapterContracts = {
       effectiveRulesText: "official-errata-over-card-detail"
     }
   },
-  "gundam-en-us@1": {
+  "gundam-en-us@2": {
     game: "gundam",
     profile: "gundam@1",
     sourceLineage: "gundam-en-us",

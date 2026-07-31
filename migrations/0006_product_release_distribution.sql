@@ -229,8 +229,8 @@ BEGIN
   );
 END;
 
--- The legacy aggregate document is retained only for deterministic fixtures.
--- Production lineages parse immutable per-surface bytes under exact contracts.
+-- Adapter versions are append-only identities. Existing rows retain the
+-- parser contract and origin under which evidence was captured.
 INSERT INTO source_adapter_versions (
   adapter_version,
   source_lineage,
@@ -238,39 +238,66 @@ INSERT INTO source_adapter_versions (
   game_profile_version,
   parser_contract,
   adapter_origin
-) VALUES (
-  'one-piece-en@1',
-  'one-piece-en',
-  'one-piece',
-  'one-piece@1',
-  'one-piece-en-raw-surfaces@1',
-  'production'
-);
+) VALUES
+  (
+    'one-piece-en@1',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'one-piece-en-raw-surfaces@1',
+    'production'
+  ),
+  (
+    'fixture-one-piece-json@2',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'synthetic-fixture-card-document@1',
+    'synthetic_fixture'
+  ),
+  (
+    'fixture-one-piece-json-capped@1',
+    'one-piece-en',
+    'one-piece',
+    'one-piece@1',
+    'synthetic-fixture-card-document@1',
+    'synthetic_fixture'
+  ),
+  (
+    'fusion-world-en@2',
+    'fusion-world-en',
+    'fusion-world',
+    'fusion-world@1',
+    'fusion-world-en-raw-surfaces@1',
+    'production'
+  ),
+  (
+    'digimon-en@2',
+    'digimon-en',
+    'digimon',
+    'digimon@1',
+    'digimon-en-raw-surfaces@1',
+    'production'
+  ),
+  (
+    'gundam-en-asia@2',
+    'gundam-en-asia',
+    'gundam',
+    'gundam@1',
+    'gundam-en-asia-raw-surfaces@1',
+    'production'
+  ),
+  (
+    'gundam-en-us@2',
+    'gundam-en-us',
+    'gundam',
+    'gundam@1',
+    'gundam-en-us-raw-surfaces@1',
+    'production'
+  );
 
-UPDATE source_adapter_versions
-SET parser_contract = 'synthetic-fixture-card-document@1',
-    adapter_origin = 'synthetic_fixture'
-WHERE adapter_version IN (
-  'one-piece-json-document@1',
-  'one-piece-json-document@2'
-);
-
-UPDATE source_adapter_versions
-SET parser_contract = 'one-piece-en-raw-surfaces@1'
-WHERE adapter_version = 'one-piece-en@1';
-
-UPDATE source_adapter_versions
-SET parser_contract = 'fusion-world-en-raw-surfaces@1'
-WHERE adapter_version = 'fusion-world-en@1';
-
-UPDATE source_adapter_versions
-SET parser_contract = 'digimon-en-raw-surfaces@1'
-WHERE adapter_version = 'digimon-en@1';
-
-UPDATE source_adapter_versions
-SET parser_contract = 'gundam-en-asia-raw-surfaces@1'
-WHERE adapter_version = 'gundam-en-asia@1';
-
-UPDATE source_adapter_versions
-SET parser_contract = 'gundam-en-us-raw-surfaces@1'
-WHERE adapter_version = 'gundam-en-us@1';
+CREATE TRIGGER source_adapter_version_is_immutable
+BEFORE UPDATE ON source_adapter_versions
+BEGIN
+  SELECT RAISE(ABORT, 'source_adapter_version_immutable');
+END;

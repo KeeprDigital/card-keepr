@@ -112,7 +112,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   const successful = await collectResumeAndShow(
     "cli_success_evidence_001",
     null,
-    "parsing",
+    "awaiting_approval",
     cliEnvironment,
     ingestion,
     directory,

@@ -22,11 +22,12 @@ test("Product detail documents invalid include requests", async () => {
   );
 });
 
-test("Printing machine schema v1 keeps typed projections additive", async () => {
-  const [api, exportSchema] = await Promise.all(
+test("export schema major 2 carries typed Product and Release projections", async () => {
+  const [api, exportSchema, exportManifest] = await Promise.all(
     [
       "api.schema.json",
       "catalogue-export-record.schema.json",
+      "catalogue-export-manifest.schema.json",
     ].map(async (name) =>
       JSON.parse(
         await readFile(
@@ -49,7 +50,8 @@ test("Printing machine schema v1 keeps typed projections additive", async () => 
     { type: "string", minLength: 1 },
     { type: "null" },
   ]);
-  assert.equal(api.$defs.Release.required.includes("status"), false);
+  assert.equal(api.$defs.Release.required.includes("event_key"), true);
+  assert.equal(api.$defs.Release.required.includes("status"), true);
   assert.equal(
     api.$defs.PrintingProductProjection.properties
       .source_observation_ids.minItems,
@@ -78,13 +80,20 @@ test("Printing machine schema v1 keeps typed projections additive", async () => 
     exportSchema.$defs.SupportedGameRecord.properties.name.minLength,
     1,
   );
+  assert.equal(exportSchema.$id.endsWith("catalogue-export-record@2"), true);
+  assert.equal(exportManifest.$id.endsWith("catalogue-export-manifest@2"), true);
+  assert.equal(exportManifest.properties.export_schema_major.const, 2);
   assert.equal(
     exportSchema.$defs.ReleaseRecord.required.includes("event_key"),
-    false,
+    true,
   );
   assert.equal(
     exportSchema.$defs.ReleaseRecord.required.includes("status"),
-    false,
+    true,
+  );
+  assert.ok(
+    exportManifest.$defs.ReleasesComponent.allOf[1].properties.record_schema
+      .const.includes("catalogue-export-record@2"),
   );
   for (const definition of [
     "PrintingProductProjection",
@@ -111,7 +120,9 @@ test("migration history is forward-only and registers the production adapter in 
     migration6,
     /INSERT INTO source_adapter_versions[\s\S]*'one-piece-en@1'/u,
   );
-  assert.match(migration6, /'one-piece-json-document@2'/u);
+  assert.doesNotMatch(migration6, /UPDATE source_adapter_versions/iu);
+  assert.match(migration6, /'fusion-world-en@2'/u);
+  assert.match(migration6, /source_adapter_version_is_immutable/u);
 });
 
 test("migration 0006 upgrades an applied 0001-0005 database and also applies fresh", async () => {
@@ -132,7 +143,15 @@ test("migration 0006 upgrades an applied 0001-0005 database and also applies fre
        WHERE adapter_version IN (
          'one-piece-json-document@1',
          'one-piece-json-document@2',
-         'one-piece-en@1'
+         'one-piece-en@1',
+         'fusion-world-en@1',
+         'fusion-world-en@2',
+         'digimon-en@1',
+         'digimon-en@2',
+         'gundam-en-asia@1',
+         'gundam-en-asia@2',
+         'gundam-en-us@1',
+         'gundam-en-us@2'
        )
        ORDER BY adapter_version`,
     ).all().map(({ adapter_version, adapter_origin }) => ({
@@ -141,18 +160,59 @@ test("migration 0006 upgrades an applied 0001-0005 database and also applies fre
     }));
     assert.deepEqual(versions, [
       {
+        adapter_version: "digimon-en@1",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "digimon-en@2",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "fusion-world-en@1",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "fusion-world-en@2",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "gundam-en-asia@1",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "gundam-en-asia@2",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "gundam-en-us@1",
+        adapter_origin: "production",
+      },
+      {
+        adapter_version: "gundam-en-us@2",
+        adapter_origin: "production",
+      },
+      {
         adapter_version: "one-piece-en@1",
         adapter_origin: "production",
       },
       {
         adapter_version: "one-piece-json-document@1",
-        adapter_origin: "synthetic_fixture",
+        adapter_origin: "production",
       },
       {
         adapter_version: "one-piece-json-document@2",
-        adapter_origin: "synthetic_fixture",
+        adapter_origin: "production",
       },
     ]);
+    assert.throws(
+      () =>
+        database.exec(
+          `UPDATE source_adapter_versions
+           SET parser_contract = 'mutated'
+           WHERE adapter_version = 'one-piece-en@1'`,
+        ),
+      /source_adapter_version_immutable/u,
+    );
     assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
     assert.equal(
       database.prepare("PRAGMA integrity_check").get().integrity_check,
@@ -178,4 +238,55 @@ test("migration 0006 upgrades an applied 0001-0005 database and also applies fre
   migrations.forEach((migration) => fresh.exec(migration));
   assertVersionSet(fresh);
   fresh.close();
+});
+
+test("dynamic request ordering is transactional and ancestry does not depend on a hash sort key", async () => {
+  const [repository, reconciliation] = await Promise.all([
+    readFile(
+      resolve(root, "src/catalogue/source-evidence-repository.ts"),
+      "utf8",
+    ),
+    readFile(
+      resolve(root, "src/catalogue/reconciliation-evidence.ts"),
+      "utf8",
+    ),
+  ]);
+  assert.match(
+    repository,
+    /COALESCE\s*\(\s*MAX\(sequence_number\)\s*,\s*-1\s*\)\s*\+\s*1/iu,
+  );
+  assert.doesNotMatch(
+    repository,
+    /Number\.parseInt\(digest\.slice\(0,\s*12\),\s*16\)/u,
+  );
+  assert.doesNotMatch(
+    reconciliation,
+    /parent\.sequence_number\s*>=\s*request\.sequence_number/u,
+  );
+});
+
+test("the parent Workflow owns the collection barrier and automatic reconciliation", async () => {
+  const workflow = await readFile(
+    resolve(root, "apps/ingestion/src/evidence-workflows.ts"),
+    "utf8",
+  );
+  const parent = workflow.slice(
+    workflow.indexOf("export class EvidenceIngestionWorkflow"),
+    workflow.indexOf("export class EvidenceHostWorkflow"),
+  );
+  const host = workflow.slice(
+    workflow.indexOf("export class EvidenceHostWorkflow"),
+  );
+  const barrier = parent.slice(
+    parent.indexOf("let barrierStage = 0"),
+    parent.indexOf("if (run.state === \"parsing\""),
+  );
+  assert.match(parent, /finalizeEvidenceRun/u);
+  assert.match(parent, /reconcileRetainedCardPrintingEvidence/u);
+  assert.match(barrier, /pendingEvidenceRequests\(\s*this\.env\.CATALOGUE_DB,\s*runId/u);
+  assert.match(barrier, /child\.restart\(\)/u);
+  assert.match(barrier, /child\.resume\(\)/u);
+  assert.match(parent, /run\.plan_origin === "production"/u);
+  assert.match(parent, /state === "collecting"/u);
+  assert.doesNotMatch(host, /finalizeEvidenceRun/u);
 });

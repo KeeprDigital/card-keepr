@@ -26,6 +26,7 @@ beforeEach(async () => {
     releases: [
       {
         id: "release_st15_oceania",
+        event_key: "oceania-announcement",
         region: "EN-OCEANIA",
         date: { precision: "month", value: "2026-09" },
         status: "announced",
@@ -236,6 +237,7 @@ test("authenticated Product reads preserve regional precision and announced stat
         official_code: "ST-15",
         releases: [
           {
+            event_key: "oceania-announcement",
             region: "EN-OCEANIA",
             date: { precision: "month", value: "2026-09" },
             status: "announced",
@@ -660,6 +662,7 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
       releases: [
         {
           id: "release_st15_oceania",
+          event_key: "oceania-unresolved",
           region: "EN-OCEANIA",
           date: { precision: "month", value: "2026-09" },
           status: null,
@@ -748,6 +751,7 @@ test("an explicitly unknown Release region is readable and schema-valid", async 
     releases: [
       {
         id: "release_unknown_region",
+        event_key: "unknown-announcement",
         region: "unknown",
         date: { precision: "unknown", value: null },
         status: "announced",

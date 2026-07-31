@@ -12,7 +12,7 @@ export.
 Each component contains exactly one JSON object per line, validated against the
 `record_schema` URI recorded in its manifest entry.
 
-The v1 component order is:
+The v2 component order is:
 
 1. `supported-games`
 2. `game-profiles`
@@ -25,6 +25,19 @@ The v1 component order is:
 9. `errata`
 10. `legality-rules`
 11. `relationships`
+
+## Export schema compatibility
+
+Export schema major 2 is intentionally incompatible with major 1. Product,
+Release, Distribution Context, and typed game-profile records added required
+properties that a major-1 consumer, whose schemas reject unknown properties,
+cannot safely interpret. Publishers therefore emit the
+`card-keepr-catalogue-export-manifest@2` format and `catalogue-export-record@2`
+component schema URIs. Consumers must select a decoder by
+`export_schema_major` and URI; they must not validate a major-2 component with a
+major-1 schema. A consumer migrating from major 1 must add the four new
+component decoders and accept required nullable Release `status` values before
+switching its current-manifest pointer.
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are

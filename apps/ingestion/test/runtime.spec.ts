@@ -56,7 +56,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "fixture-one-piece-json@1",
       idempotency_key: "source_collection_success_001",
       requests: [
         {
@@ -129,7 +129,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
         etag: '"cards-v1"',
       },
     },
-    adapter_version: "one-piece-json-document@1",
+    adapter_version: "fixture-one-piece-json@1",
     ingestion_run_id: planned.id,
   });
   expect(snapshot.content).toMatchObject({
@@ -149,7 +149,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }
   expect(observationSet).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "one-piece-json-document@1",
+    adapter_version: "fixture-one-piece-json@1",
     observation_count: 1,
   });
   expect(observationSet.content_digest).toMatch(
@@ -183,7 +183,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }>();
   expect(observationDocument).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "one-piece-json-document@1",
+    adapter_version: "fixture-one-piece-json@1",
   });
   expect(observationDocument.observations).toHaveLength(1);
 
@@ -194,6 +194,45 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   expect(shown.status).toBe(200);
   await expect(shown.json()).resolves.toEqual(completed);
 });
+
+test("the authenticated parent Workflow reconciles a complete production Evidence Plan after its collection barrier", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@2",
+      idempotency_key: "source_parent_auto_reconcile_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en"),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  const accepted = await resumed.json<{
+    workflow: { id: string };
+  }>();
+  await waitForWorkflowStatus(
+    accepted.workflow.id,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id))
+        .status(),
+    "complete",
+  );
+  const completed = await showCollection(run.id);
+  expect(completed).toMatchObject({
+    id: run.id,
+    state: "awaiting_approval",
+    failure_code: null,
+  });
+  expect(completed.snapshots.length).toBeGreaterThan(0);
+  expect(completed.observation_sets.length).toBeGreaterThan(0);
+}, 15_000);
 
 test("resuming collection restarts an existing errored hostname Workflow and its staged parse", async () => {
   const run = await createCollection(
@@ -242,7 +281,7 @@ test("a full parent restart preserves each pending hostname child identity", asy
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "fixture-one-piece-json@1",
       idempotency_key: "source_stable_hostname_mapping_001",
       requests: [
         {
@@ -294,7 +333,15 @@ test("a full parent restart preserves each pending hostname child identity", asy
   const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId);
   await parent.restart();
 
-  const completed = await waitForEvidenceRun(run.id, "parsing", 12_000);
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.state === "parsing" &&
+      current.workflow.child_ids.length === originalChildIds.length &&
+      current.snapshots.length === 2 &&
+      current.observation_sets.length === 2,
+    12_000,
+  );
   expect(completed.workflow.child_ids).toEqual(originalChildIds);
   expect(completed.snapshots).toHaveLength(2);
   expect(completed.observation_sets).toHaveLength(2);
@@ -419,7 +466,7 @@ test(
         {
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "one-piece-json-document@1",
+          adapter_version: "fixture-one-piece-json@1",
           idempotency_key: scenario.key,
           requests: [
             {
@@ -481,7 +528,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const firstRun = await createCollection(
     "source_collection_cache_first_001",
     "https://official-source.invalid/conditional",
-    "one-piece-json-document@1",
+    "fixture-one-piece-json@1",
     { "accept-language": "en" },
   );
   const first = await resumeCollection(firstRun.id);
@@ -492,7 +539,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const differentRepresentationRun = await createCollection(
     "source_collection_cache_language_changed_001",
     "https://official-source.invalid/conditional",
-    "one-piece-json-document@1",
+    "fixture-one-piece-json@1",
     { "accept-language": "fr" },
   );
   const differentRepresentation = await resumeCollection(
@@ -507,7 +554,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const revalidatedRun = await createCollection(
     "source_collection_cache_second_001",
     "https://official-source.invalid/conditional",
-    "one-piece-json-document@1",
+    "fixture-one-piece-json@1",
     { "accept-language": "en" },
   );
   const revalidated = await resumeCollection(revalidatedRun.id);
@@ -532,7 +579,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const changedAdapterRun = await createCollection(
     "source_collection_cache_adapter_changed_001",
     "https://official-source.invalid/conditional",
-    "fixture-one-piece-json@1",
+    "fixture-one-piece-json@2",
     { "accept-language": "en" },
   );
   const changedAdapter = await resumeCollection(changedAdapterRun.id);
@@ -676,6 +723,7 @@ test("all successful response bytes stream to immutable storage while parsing st
   const retainedRun = await createCollection(
     "source_large_parse_bound_001",
     "https://large-official-source.invalid/large-json",
+    "fixture-one-piece-json-capped@1",
   );
   const retained = await resumeCollection(retainedRun.id);
   expect(retained).toMatchObject({
@@ -692,6 +740,7 @@ test("all successful response bytes stream to immutable storage while parsing st
   const hugeRun = await createCollection(
     "source_huge_capture_001",
     "https://large-official-source.invalid/huge-json",
+    "fixture-one-piece-json-capped@1",
   );
   const huge = await resumeCollection(hugeRun.id);
   expect(huge).toMatchObject({
@@ -1020,7 +1069,7 @@ test("collection is sequential per hostname and different hostnames progress con
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "fixture-one-piece-json@1",
       idempotency_key: "source_collection_pacing_001",
       requests: [
         {
@@ -1126,7 +1175,7 @@ type CollectionDocument = {
 async function createCollection(
   idempotencyKey: string,
   url: string,
-  adapterVersion = "one-piece-json-document@1",
+  adapterVersion = "fixture-one-piece-json@1",
   headers: Record<string, string> = {},
 ): Promise<CollectionDocument> {
   const response = await fixtureEvidenceRequest(

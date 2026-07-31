@@ -466,8 +466,6 @@ export async function appendDiscoveredEvidenceRequests(
         }),
       ),
     );
-    const sequenceNumber =
-      1_000_000 + Number.parseInt(digest.slice(0, 12), 16);
     await database
       .prepare(
         `INSERT OR IGNORE INTO source_requests (
@@ -475,17 +473,23 @@ export async function appendDiscoveredEvidenceRequests(
           request_headers_json, representation_fingerprint, state,
           source_snapshot_id, failure_code, request_role,
           discovered_from_request_id
-        ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL, ?, ?)`,
+        )
+        SELECT
+          ?, ?,
+          COALESCE(MAX(sequence_number), -1) + 1,
+          'GET', ?, ?, ?, 'pending', NULL, NULL, ?, ?
+        FROM source_requests
+        WHERE ingestion_run_id = ?`,
       )
       .bind(
         run.id,
         requestId,
-        sequenceNumber,
         new URL(request.url).href,
         canonicalJson(request.headers),
         representationFingerprint,
         request.role,
         parent.request_id,
+        run.id,
       )
       .run();
     const retained = await database
