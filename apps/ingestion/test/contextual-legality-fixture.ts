@@ -14,10 +14,10 @@ export function contextualLegalitySourceDocument(
   const records =
     surface === "discovery"
       ? discoveredSurfaces(requestUrl)
-      : surface === "cards"
-        ? cards
+      : surface === "legality_card_details"
+        ? cards.map((card) => officialLegalityCardDetail(card, requestUrl))
         : surface === "legality_rules"
-          ? rules
+          ? rules.map((rule) => officialLegalityNotice(rule, requestUrl))
           : [
               {
                 source_id: `${surface}-representative`,
@@ -31,14 +31,9 @@ export function contextualLegalitySourceDocument(
 
 const requiredSurfaces = [
   "discovery",
-  "card_listings",
-  "card_details",
-  "cards",
-  "product_listings",
-  "product_details",
+  "legality_card_details",
   "legality_rules",
   "legality_history",
-  "errata",
 ];
 
 function discoveredSurfaces(requestUrl: string) {
@@ -49,8 +44,62 @@ function discoveredSurfaces(requestUrl: string) {
     .map((surface) => {
       const url = new URL(seed);
       url.searchParams.set("surface", surface);
-      return { surface, url: url.href };
+      return { request_id: surface, surface, url: url.href };
     });
+}
+
+function officialLegalityCardDetail(
+  observation: ReturnType<typeof gundamObservation>,
+  requestUrl: string,
+) {
+  const sourceUrl = new URL(requestUrl);
+  const imageUrl = new URL(
+    `images/${observation.card.official_identity.value}.png`,
+    `${sourceUrl.origin}${sourceUrl.pathname.startsWith("/asia-en/") ? "/asia-en/" : "/en/"}`,
+  );
+  return {
+    source_id: observation.card.official_identity.value,
+    source_url: requestUrl,
+    card_number: observation.card.official_identity.value,
+    title: observation.card.name,
+    rules_text: observation.card.effective_rules_text,
+    detail: observation.card.game_data.attributes,
+    printing: {
+      rarity_raw: observation.printing.rarity.raw,
+      rarity_normalized: observation.printing.rarity.normalized,
+      printed_text: observation.printing.printed_rules_text,
+      detail: observation.printing.game_data.attributes,
+      locator: observation.identity_evidence.locator,
+      variant_key: observation.identity_evidence.variant_key,
+      artwork_fingerprint: observation.identity_evidence.artwork_fingerprint,
+      printed_fields_digest:
+        observation.identity_evidence.printed_fields_digest,
+      treatment: observation.identity_evidence.treatment,
+      image_url: imageUrl.href,
+    },
+  };
+}
+
+function officialLegalityNotice(
+  rule: ReturnType<typeof legalityRules>[number],
+  requestUrl: string,
+) {
+  return {
+    source_id: rule.id,
+    source_url: requestUrl,
+    notice_id: rule.id,
+    official_text: rule.official_wording,
+    scope: {
+      region: rule.region,
+      format: rule.format,
+      event_tier: rule.event_tier,
+      effective_from: rule.effective_from,
+      effective_until: rule.effective_until,
+    },
+    affected_card_numbers: rule.card_numbers,
+    action: rule.effect,
+    representable: rule.representable,
+  };
 }
 
 function completeSurface(
@@ -232,7 +281,7 @@ function gundamObservation(cardNumber: string) {
       demonstrably_novel: true,
       novelty_basis: {
         kind: "official_printing_image",
-        source_url: `https://official-source.invalid/images/${cardNumber}.png`,
+        source_url: `https://www.gundam-gcg.com/asia-en/images/${cardNumber}.png`,
         artwork_fingerprint: artworkFingerprint,
       },
     },
@@ -240,7 +289,7 @@ function gundamObservation(cardNumber: string) {
       images: [
         {
           role: "front",
-          source_url: `https://official-source.invalid/images/${cardNumber}.png`,
+          source_url: `https://www.gundam-gcg.com/asia-en/images/${cardNumber}.png`,
           artwork_fingerprint: artworkFingerprint,
         },
       ],

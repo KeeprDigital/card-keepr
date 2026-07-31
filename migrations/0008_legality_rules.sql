@@ -13,7 +13,7 @@ INSERT INTO source_adapter_versions (
     'one-piece-en',
     'one-piece',
     'one-piece@1',
-    'one-piece-official-surfaces@3',
+    'one-piece-official-legality@4',
     'production'
   ),
   (
@@ -21,7 +21,7 @@ INSERT INTO source_adapter_versions (
     'fusion-world-en',
     'fusion-world',
     'fusion-world@1',
-    'fusion-world-official-surfaces@3',
+    'fusion-world-official-legality@4',
     'production'
   ),
   (
@@ -29,7 +29,7 @@ INSERT INTO source_adapter_versions (
     'digimon-en',
     'digimon',
     'digimon@1',
-    'digimon-official-surfaces@3',
+    'digimon-official-legality@4',
     'production'
   ),
   (
@@ -37,7 +37,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-asia',
     'gundam',
     'gundam@1',
-    'gundam-official-surfaces@3',
+    'gundam-official-legality@4',
     'production'
   ),
   (
@@ -45,9 +45,42 @@ INSERT INTO source_adapter_versions (
     'gundam-en-us',
     'gundam',
     'gundam@1',
-    'gundam-official-surfaces@3',
+    'gundam-official-legality@4',
     'production'
   );
+
+CREATE TABLE official_source_collection_plans (
+  ingestion_run_id TEXT PRIMARY KEY
+    REFERENCES ingestion_evidence_plans(ingestion_run_id),
+  discovery_observation_set_id TEXT NOT NULL
+    REFERENCES source_observation_sets(id),
+  contract TEXT NOT NULL
+    CHECK (contract = 'card-keepr-official-source-collection-plan@1'),
+  collection_plan_json TEXT NOT NULL CHECK (json_valid(collection_plan_json)),
+  content_digest TEXT NOT NULL
+    CHECK (length(content_digest) = 64 AND content_digest GLOB '[0-9a-f]*'),
+  created_at TEXT NOT NULL
+);
+
+CREATE TRIGGER official_source_collection_plans_immutable_update
+BEFORE UPDATE ON official_source_collection_plans
+BEGIN
+  SELECT RAISE(ABORT, 'official_source_collection_plan_immutable');
+END;
+
+CREATE TRIGGER ingestion_evidence_plan_request_set_immutable
+BEFORE UPDATE OF source_lineage, supported_game, game_profile_version,
+  adapter_version, request_plan_json, plan_origin
+ON ingestion_evidence_plans
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_evidence_plan_request_set_immutable');
+END;
+
+CREATE TRIGGER official_source_collection_plans_immutable_delete
+BEFORE DELETE ON official_source_collection_plans
+BEGIN
+  SELECT RAISE(ABORT, 'official_source_collection_plan_immutable');
+END;
 
 CREATE TABLE legality_rules (
   id TEXT PRIMARY KEY,

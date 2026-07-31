@@ -164,7 +164,10 @@
         "kind",
         "effect",
         "card_ids",
-        "official_wording"
+        "official_wording",
+        "source_lineage",
+        "source_observation_ids",
+        "lifecycle"
       ],
       "properties": {
         "type": { "const": "legality_rule" },
@@ -216,6 +219,21 @@
         "official_wording": {
           "type": "string",
           "minLength": 1
+        },
+        "source_lineage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
+          }
+        },
+        "lifecycle": {
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/RelationshipLifecycle"
         }
       }
     }

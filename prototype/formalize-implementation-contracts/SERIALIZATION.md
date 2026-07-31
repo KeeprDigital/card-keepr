@@ -9,11 +9,27 @@ export.
 
 New exports use manifest schema major 2. The `legality-rules` component uses
 record schema major 2 so `LegalityRuleRecord` retains both the Official Source
-identity and the exact normalized discriminated `effect` with every operand.
+identity, the exact normalized discriminated `effect` with every operand,
+source lineage and observation provenance, and rule lifecycle. The lifecycle is
+carried on the rule itself so rules without affected Card IDs remain auditable;
+card-scoped rules additionally retain their `legality-rule-card` relationships.
 Components whose record contracts did not change continue to advertise record
 schema major 1. Schema-major-1 manifests and components remain
 revision-addressed, immutable, and readable; they are never rewritten during
 the upgrade.
+
+Identifiers that are serialized as provenance are stable products of the
+public idempotent operation. Production Source Evidence run IDs are a
+domain-separated SHA-256 over length-prefixed field labels and the accepted
+idempotency key. Catalogue Revision IDs use a different domain and hash the
+length-prefixed run ID, candidate digest, and expected-current revision ID.
+Each frame is a four-byte unsigned big-endian UTF-8 byte length followed by
+those UTF-8 bytes; the versioned domain is the first frame and the listed
+label/value pairs follow in order.
+Only the digest is exposed; a caller's idempotency key is never embedded in an
+identifier. Replaying the same accepted operation therefore retains the same
+identities and bytes, while reuse of the key for a different request remains a
+conflict.
 
 ## Records and component order
 

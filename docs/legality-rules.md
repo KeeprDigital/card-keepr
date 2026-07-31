@@ -7,7 +7,7 @@ date, region, format, and optional event tier from the current
 
 ## Source adapter input
 
-The complete production adapters are:
+The production legality adapters are:
 
 - `one-piece-json-document@3`
 - `fusion-world-en@2`
@@ -16,26 +16,40 @@ The complete production adapters are:
 - `gundam-en-us@2`
 
 Each immutable Source Snapshot contains exactly one closed `surface` document.
-The adapter-owned discovery seed expands to separate planned requests for
-discovery, Card listing/detail, canonical Card, Product listing/detail, current
-Legality Rule, Legality history, and Errata surfaces.
-The One Piece adapter also requires block-policy, release-timing, and DON-rule
-surfaces. Planning rejects origins and locale paths outside the adapter's
-Official Source authority. Live discovery must enumerate the exact URL of
-every other planned request, and reconciliation verifies that graph against
-the separately retained snapshots. Each surface declares the adapter's exact
+An Ingestion Run begins with an immutable one-request Discovery Plan. The
+retained discovery observation creates, once, a separately named Official
+Source Collection Plan containing the exact bounded set of discovered
+requests. That collection plan is immutable, bound to the discovery
+observation by identity, and bound to its canonical JSON by SHA-256; retries
+must reproduce it byte-for-byte. The original Discovery Plan is never expanded
+or rewritten.
+
+The required legality scope is discovery, legality Card details, current
+Legality Rules, and Legality history. The One Piece adapter additionally
+requires block-policy, release-timing, and DON-rule surfaces. A surface may be
+split across multiple uniquely identified URLs. This contract does not claim
+complete Product, general Card catalogue, or Errata coverage. Planning rejects
+origins and locale paths outside the adapter's Official Source authority. Live
+discovery must enumerate the request identity, surface name, and exact URL of
+every collection request, and reconciliation verifies that graph against the
+separately retained snapshots. Each surface declares the adapter's exact
 regional partition, its total record count, and a complete ordered set of
 pages; every page declares
 its page number, total page count, record count, and records. A truly empty
-Legality Rule surface may be represented by a declared total of zero and no
-pages. Other required live surfaces must retain at least one structurally
-valid record. Non-Card surface records prove that a production capture covered
-the required Official Source areas; they remain immutable Source Observation
-evidence and are not interpreted as Product or Erratum catalogue records by
-this feature.
+Legality Rule or legality Card-detail surface may be represented by a declared
+total of zero and no pages. Other required live surfaces must retain at least
+one structurally valid record.
 The adapter derives completeness from this structure and rejects missing
 surfaces, incomplete page sets, mismatched counts, unexpected partitions, and
 unknown envelope fields.
+
+Legality Card details and notices are parsed by the game-specific adapter from
+raw Official Source fields. Card identity is established only from those
+details; nested Printing Image URLs must remain within the adapter's exact
+Official Source origin and locale path. Redirects or foreign image authorities
+cannot establish identity. Legality notice wording must express the declared
+normalized action; unknown or contradictory wording fails closed instead of
+being guessed into an effect.
 
 Each rule retains its Official Source identity as `official_id`, exact wording,
 game, region, format, nullable event tier, effective interval, affected Card
@@ -80,10 +94,12 @@ Every result includes the applicable Legality Rule IDs and an auditable
 derivation. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
 `relationships` component. Newly generated exports use schema major 2 and
-retain `official_id` and each rule's complete normalized `effect`, including
-every operand and unresolved reason. Relationship lifecycle states whether a
-rule is current and preserves its observation boundaries. Historical
-schema-major-1 artifacts remain immutable and readable.
+retain `official_id`, source lineage and observation IDs, lifecycle, and each
+rule's complete normalized `effect`, including every operand and unresolved
+reason. Lifecycle on the rule itself states whether it is current and
+preserves its observation boundaries, including for globally applicable rules
+whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
+Historical schema-major-1 artifacts remain immutable and readable.
 
 Migration `0008_legality_rules.sql` adds canonical provenance retention and
 the revision-scoped rule snapshot used by the API. Apply it before deploying

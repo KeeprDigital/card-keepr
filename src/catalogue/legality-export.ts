@@ -10,7 +10,10 @@ import {
   sha256Text,
 } from "./serialization";
 
-export function legalityRuleExportRecords(candidate: FixtureCandidate) {
+export function legalityRuleExportRecords(
+  candidate: FixtureCandidate,
+  revisionId: string,
+) {
   return (candidate.legality_rules ?? []).map((rule) => ({
     type: "legality_rule",
     id: rule.id,
@@ -25,6 +28,18 @@ export function legalityRuleExportRecords(candidate: FixtureCandidate) {
     effect: exportEffect(rule.effect),
     card_ids: legalityRuleCardIds(rule),
     official_wording: rule.official_wording,
+    source_lineage: rule.source_lineage,
+    source_observation_ids: [rule.source_observation_id],
+    lifecycle: {
+      first_revision_id: rule.first_revision_id ?? revisionId,
+      last_observed_revision_id:
+        rule.last_observed_revision_id ?? revisionId,
+      current: rule.current ?? true,
+      last_missing_revision_id:
+        rule.current === false
+          ? rule.last_missing_revision_id ?? revisionId
+          : rule.last_missing_revision_id ?? null,
+    },
   }));
 }
 

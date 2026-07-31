@@ -450,6 +450,40 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
     },
   );
+  const missingRulesResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${missingRevisionId}/components/legality-rules`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(missingRulesResponse.status, 200);
+  const missingRulesText = await new Response(
+    missingRulesResponse.body.pipeThrough(
+      new DecompressionStream("gzip"),
+    ),
+  ).text();
+  const missingExportedRules = missingRulesText
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const missingGlobalRule = missingExportedRules.find(
+    (rule) =>
+      rule.id === asiaRuleId("legality_rule_asia_eligible"),
+  );
+  await t.test(
+    "a global-scope exported rule carries provenance and non-current lifecycle",
+    () => {
+      assert.equal(missingGlobalRule.source_lineage, "gundam-en-asia");
+      assert.equal(missingGlobalRule.source_observation_ids.length, 1);
+      assert.match(
+        missingGlobalRule.source_observation_ids[0],
+        /^srcobs_/,
+      );
+      assert.equal(missingGlobalRule.lifecycle.current, false);
+      assert.equal(
+        missingGlobalRule.lifecycle.last_missing_revision_id,
+        missingRevisionId,
+      );
+    },
+  );
   await t.test(
     "a disappeared regional rule scope becomes indeterminate at the authenticated consumer boundary",
     () => {
@@ -505,6 +539,22 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     administrationEnvironment,
   );
   revisionId = reappearedPublication.resulting_revision_id;
+  const expectedAsiaRuleAudit = (officialId) => {
+    const observed = reappeared.legality_rules.find(
+      (rule) => rule.official_id === officialId,
+    );
+    assert.ok(observed, `missing reappeared rule ${officialId}`);
+    return {
+      source_lineage: "gundam-en-asia",
+      source_observation_ids: [observed.source_observation_id],
+      lifecycle: {
+        first_revision_id: asiaRevisionId,
+        last_observed_revision_id: revisionId,
+        current: true,
+        last_missing_revision_id: missingRevisionId,
+      },
+    };
+  };
   await t.test(
     "the same unchanged official identities reappear in a new revision",
     () => {
@@ -747,26 +797,21 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       new DecompressionStream("gzip"),
     ),
   ).text();
+  const decompressed = new Response(exportBytes).body.pipeThrough(
+    new DecompressionStream("gzip"),
+  );
+  const exportedRulesText = await new Response(decompressed).text();
   await t.test(
-    "authenticated export bytes match the pinned deterministic gzip goldens",
+    "authenticated randomized export bytes are revision-addressed and repeatable",
     () => {
       assert.equal(gzipGolden.profile, "card-keepr-ndjson-gzip@1");
       assert.equal(gzipGolden.compressor, "pako@2.1.0");
       assert.deepEqual(gzipGolden.cases.empty.coverage, ["empty"]);
       assert.equal(emptyComponentText, "");
-      assert.deepEqual(
-        gzipGolden.cases.contextual_legality.coverage,
-        ["ascii", "nfc_unicode", "null", "multiple_deflate_blocks"],
-      );
       assertGoldenComponent(
         emptyComponentBytes,
         emptyComponent,
         gzipGolden.cases.empty,
-      );
-      assertGoldenComponent(
-        exportBytes,
-        exportComponent,
-        gzipGolden.cases.contextual_legality,
       );
       assert.deepEqual(Array.from(exportBytes.subarray(0, 4)), [
         0x1f, 0x8b, 0x08, 0x00,
@@ -782,13 +827,13 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
         createHash("sha256").update(exportBytes).digest("hex"),
         exportComponent.compressed_sha256,
       );
+      assert.equal(
+        createHash("sha256").update(exportedRulesText).digest("hex"),
+        exportComponent.content_sha256,
+      );
       assert.deepEqual(repeatedExportBytes, exportBytes);
     },
   );
-  const decompressed = new Response(exportBytes).body.pipeThrough(
-    new DecompressionStream("gzip"),
-  );
-  const exportedRulesText = await new Response(decompressed).text();
   assert.match(exportedRulesText, /"event_tier":null/);
   const exportedRules = exportedRulesText
     .trim()
@@ -811,6 +856,14 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     false,
   );
   for (const exportedRule of exportedRules) {
+    assert.equal(typeof exportedRule.source_lineage, "string");
+    assert.equal(exportedRule.source_observation_ids.length, 1);
+    assert.equal(typeof exportedRule.lifecycle.current, "boolean");
+    assert.match(exportedRule.lifecycle.first_revision_id, /^catrev_/);
+    assert.match(
+      exportedRule.lifecycle.last_observed_revision_id,
+      /^catrev_/,
+    );
     assert.equal(
       validateLegalityRuleExport(exportedRule),
       true,
@@ -850,6 +903,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
         card_ids: [cards.get("GD30-002")],
         official_wording:
           "For Championship events, decks may contain no more than one copy of GD30-002.",
+        ...expectedAsiaRuleAudit("legality_rule_asia_copy_limit"),
       },
     );
   });
@@ -887,6 +941,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
         card_ids: [cards.get("GD30-001")],
         official_wording:
           "Cards with the Earth Federation trait are eligible for this event.",
+        ...expectedAsiaRuleAudit("legality_rule_asia_membership"),
       },
     );
   });
@@ -914,6 +969,9 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
         card_ids: [cards.get("GD30-001")],
         official_wording:
           "GD30-001 becomes legal for tournament play on 1 January 2026.",
+        ...expectedAsiaRuleAudit(
+          "legality_rule_asia_release_timing",
+        ),
       },
     );
   });
@@ -941,6 +999,9 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
         card_ids: [cards.get("GD30-004")],
         official_wording:
           "The official notice does not identify whether GD30-004 applies to Championship side events.",
+        ...expectedAsiaRuleAudit(
+          "legality_rule_asia_unresolved_scope",
+        ),
       },
     );
   });
@@ -990,6 +1051,194 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     asiaRelationship.lifecycle.last_missing_revision_id,
     missingRevisionId,
   );
+});
+
+test("authenticated deterministic publication pins contextual legality export bytes", async (t) => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "card-keepr-contextual-legality-golden-"),
+  );
+  const statePath = join(directory, "state");
+  const administrationKey = crypto.randomUUID();
+  const apiKey = crypto.randomUUID();
+  const sourceServiceName =
+    `card-keepr-contextual-legality-golden-source-${process.pid}`;
+  const sourceConfig = await localConfig(
+    "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
+    directory,
+    "golden-source",
+    { name: sourceServiceName },
+  );
+  const ingestionConfig = await localConfig(
+    "apps/ingestion/wrangler.jsonc",
+    directory,
+    "golden-ingestion",
+    {
+      services: [
+        {
+          binding: "OFFICIAL_SOURCE_TRANSPORT",
+          service: sourceServiceName,
+        },
+      ],
+    },
+  );
+  const apiConfig = await localConfig(
+    "apps/api/wrangler.jsonc",
+    directory,
+    "golden-api",
+  );
+  const ingestionEnv = join(directory, "ingestion.env");
+  const apiEnv = join(directory, "api.env");
+  await Promise.all([
+    writeFile(
+      ingestionEnv,
+      `ADMINISTRATION_KEY=${administrationKey}\n`,
+      { mode: 0o600 },
+    ),
+    writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
+  ]);
+
+  const goldenPortBase = portBase + 10;
+  const source = startWorker({
+    config: sourceConfig,
+    inspectorPort: portBase + 111,
+    port: goldenPortBase + 1,
+    statePath: join(directory, "source-state"),
+  });
+  const ingestion = startWorker({
+    config: ingestionConfig,
+    envFile: ingestionEnv,
+    inspectorPort: portBase + 112,
+    migrate: true,
+    port: goldenPortBase,
+    statePath,
+  });
+  let api = null;
+  t.after(async () => {
+    await Promise.all([
+      stopWorker(source),
+      stopWorker(ingestion),
+      api === null ? Promise.resolve() : stopWorker(api),
+    ]);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await Promise.all([
+    waitForResponse(
+      `http://127.0.0.1:${goldenPortBase + 1}/contextual-legality-asia`,
+      source,
+      "deterministic synthetic Official Source",
+    ),
+    waitForResponse(
+      `http://127.0.0.1:${goldenPortBase}/health`,
+      ingestion,
+      "deterministic ingestion Worker",
+      { authorization: `Bearer ${administrationKey}` },
+    ),
+  ]);
+  const administrationEnvironment = {
+    KEEPR_ADMINISTRATION_KEY: administrationKey,
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${goldenPortBase}`,
+  };
+  const reconciled = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    idempotencyKey: "acceptance-contextual-legality-golden",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-asia",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  assert.equal(
+    reconciled.run_id,
+    "run_f6614991e80764f7d9d7e27f3624ebba573757cbdc6becad131e48f4a94936cc",
+  );
+  const publication = await approve(
+    reconciled,
+    "approve-acceptance-contextual-legality-golden",
+    administrationEnvironment,
+  );
+  assert.equal(publication.state, "published");
+  const revisionId = publication.resulting_revision_id;
+  assert.equal(
+    revisionId,
+    "catrev_4dd29d96d2fc18f79dc7a84c5493b472832eaec2b7516f7fb7c34cf6045aa979",
+  );
+
+  await stopWorker(ingestion);
+  api = startWorker({
+    config: apiConfig,
+    envFile: apiEnv,
+    inspectorPort: portBase + 113,
+    port: goldenPortBase + 2,
+    statePath,
+  });
+  await waitForResponse(
+    `http://127.0.0.1:${goldenPortBase + 2}/health`,
+    api,
+    "deterministic API Worker",
+    { authorization: `Bearer ${apiKey}` },
+  );
+  const exportUrl = `http://127.0.0.1:${goldenPortBase + 2}`;
+  const authenticatedHeaders = { authorization: `Bearer ${apiKey}` };
+  const manifestResponse = await fetch(
+    `${exportUrl}/v1/catalogue-exports/${revisionId}`,
+    { headers: authenticatedHeaders },
+  );
+  assert.equal(manifestResponse.status, 200);
+  const manifest = await manifestResponse.json();
+  const component = manifest.data.components.find(
+    (candidate) => candidate.name === "legality-rules",
+  );
+  const componentResponse = await fetch(
+    `${exportUrl}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
+    { headers: authenticatedHeaders },
+  );
+  assert.equal(componentResponse.status, 200);
+  const bytes = new Uint8Array(await componentResponse.arrayBuffer());
+  const repeatedResponse = await fetch(
+    `${exportUrl}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
+    { headers: authenticatedHeaders },
+  );
+  assert.equal(repeatedResponse.status, 200);
+  const repeatedBytes = new Uint8Array(
+    await repeatedResponse.arrayBuffer(),
+  );
+  const text = await new Response(
+    new Response(bytes).body.pipeThrough(new DecompressionStream("gzip")),
+  ).text();
+  const rules = text.trim().split("\n").map((line) => JSON.parse(line));
+
+  assert.deepEqual(
+    gzipGolden.cases.contextual_legality.coverage,
+    ["ascii", "nfc_unicode", "null", "multiple_deflate_blocks"],
+  );
+  assertGoldenComponent(
+    bytes,
+    component,
+    gzipGolden.cases.contextual_legality,
+  );
+  assert.deepEqual(repeatedBytes, bytes);
+  assert.ok(fixedDeflateBlockCount(bytes) > 1);
+  assert.equal(rules.length, 15);
+  assert.ok(rules.every((rule) => rule.lifecycle.current === true));
+  assert.ok(
+    rules.every(
+      (rule) =>
+        rule.source_observation_ids.length === 1 &&
+        rule.source_observation_ids[0] ===
+          "srcobs_a3d1b378bcc09e2ab02dd0e7137f47b9c522ee68b2c9518e2946b0a09b96c978_2",
+    ),
+  );
+  assert.ok(
+    rules.every(
+      (rule) =>
+        rule.lifecycle.first_revision_id === revisionId &&
+        rule.lifecycle.last_observed_revision_id === revisionId &&
+        rule.lifecycle.last_missing_revision_id === null,
+    ),
+  );
+  assert.ok(
+    rules.some((rule) => rule.official_wording.startsWith("Café ")),
+  );
+  assert.ok(rules.some((rule) => rule.event_tier === null));
 });
 
 async function ingestAndReconcile({
@@ -1306,7 +1555,9 @@ async function waitForRunState(runId, expected, environment, worker) {
         throw new Error(`${shown.stdout}\n${worker.getOutput()}`);
       }
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    // Workflow collection is asynchronous. Poll below the production
+    // administration-rate budget instead of manufacturing a hot client.
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
   }
   throw new Error(
     `run ${runId} did not reach ${expected}\n${lastShown}\n${worker.getOutput()}`,

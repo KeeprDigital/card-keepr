@@ -5,11 +5,13 @@ import {
   parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,
-  type EvidencePlanRequest,
+  type OfficialSourceCollectionPlan,
+  type OfficialSourceCollectionRequest,
   type StartEvidenceRunRequest,
   validateEvidencePlans,
 } from "./source-evidence-model";
 import type { SourceAdapterRegistration } from "./source-adapters";
+import { evidenceRunIdentity } from "./idempotent-identities";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -135,7 +137,7 @@ export async function startEvidenceRun(
     return showEvidenceRun(database, replay.id);
   }
 
-  const runId = `run_${crypto.randomUUID()}`;
+  const runId = await evidenceRunIdentity(request.idempotency_key);
   const startedAt = new Date().toISOString();
   const catalogue = await database
     .prepare(
@@ -230,24 +232,7 @@ function sameEvidencePlanIntent(
   retainedJson: string,
   requestedJson: string,
 ): boolean {
-  if (retainedJson === requestedJson) return true;
-  const retained = parseEvidencePlan(retainedJson);
-  const requested = parseEvidencePlan(requestedJson);
-  if (
-    retained.adapter_version !== requested.adapter_version ||
-    retained.source_lineage !== requested.source_lineage ||
-    retained.supported_game !== requested.supported_game ||
-    retained.game_profile_version !== requested.game_profile_version ||
-    requested.requests.length !== 1 ||
-    requested.requests[0]!.id !== "discovery" ||
-    retained.requests.length < 1
-  ) {
-    return false;
-  }
-  return (
-    canonicalJson(retained.requests[0]) ===
-    canonicalJson(requested.requests[0])
-  );
+  return retainedJson === requestedJson;
 }
 
 export async function retryEvidenceRun(
@@ -284,7 +269,7 @@ export async function retryEvidenceRun(
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
   assertRecoveryHealthy(operation.recovery_health);
-  const runId = `run_${crypto.randomUUID()}`;
+  const runId = await evidenceRunIdentity(idempotencyKey);
   const startedAt = new Date().toISOString();
   try {
     await database.batch([
@@ -542,30 +527,51 @@ export async function appendDiscoveredEvidenceRequests(
   return inserted;
 }
 
-export async function appendDiscoveredEvidenceRequests(
+export async function persistOfficialSourceCollectionPlan(
   database: D1Database,
   runId: string,
-  discoveredRequests: readonly EvidencePlanRequest[],
+  discoveryObservationSetId: string,
+  discoveredRequests: readonly OfficialSourceCollectionRequest[],
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
-  const current = parseEvidencePlan(run.request_plan_json);
+  const discoveryPlan = parseEvidencePlan(run.request_plan_json);
   if (
-    current.requests.length === 0 ||
-    current.requests[0]!.id !== "discovery"
+    discoveryPlan.requests.length !== 1 ||
+    discoveryPlan.requests[0]!.id !== "discovery"
   ) {
     throw new Error(
       "Complete Official Source planning lost its discovery seed.",
     );
   }
-  const expanded: EvidencePlan = {
-    ...current,
-    requests: [current.requests[0]!, ...discoveredRequests],
+  const collectionPlan: OfficialSourceCollectionPlan = {
+    contract: "card-keepr-official-source-collection-plan@1",
+    supported_game: discoveryPlan.supported_game,
+    source_lineage: discoveryPlan.source_lineage,
+    game_profile_version: discoveryPlan.game_profile_version,
+    adapter_version: discoveryPlan.adapter_version,
+    discovery_observation_set_id: discoveryObservationSetId,
+    requests: [...discoveredRequests],
   };
-  const expandedJson = canonicalJson(expanded);
-  if (current.requests.length > 1) {
-    if (run.request_plan_json !== expandedJson) {
+  const collectionPlanJson = canonicalJson(collectionPlan);
+  const contentDigest = await sha256(utf8(collectionPlanJson));
+  const retained = await database
+    .prepare(
+      `SELECT collection_plan_json, content_digest
+       FROM official_source_collection_plans
+       WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<{
+      collection_plan_json: string;
+      content_digest: string;
+    }>();
+  if (retained !== null) {
+    if (
+      retained.collection_plan_json !== collectionPlanJson ||
+      retained.content_digest !== contentDigest
+    ) {
       throw new Error(
-        "Live Official Source discovery changed after plan expansion.",
+        "Live Official Source discovery changed after immutable collection planning.",
       );
     }
     return;
@@ -573,11 +579,18 @@ export async function appendDiscoveredEvidenceRequests(
   await database.batch([
     database
       .prepare(
-        `UPDATE ingestion_evidence_plans
-         SET request_plan_json = ?
-         WHERE ingestion_run_id = ? AND request_plan_json = ?`,
+        `INSERT INTO official_source_collection_plans (
+           ingestion_run_id, discovery_observation_set_id, contract,
+           collection_plan_json, content_digest, created_at
+         ) VALUES (?, ?, 'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
       )
-      .bind(expandedJson, runId, run.request_plan_json),
+      .bind(
+        runId,
+        discoveryObservationSetId,
+        collectionPlanJson,
+        contentDigest,
+        new Date().toISOString(),
+      ),
     ...discoveredRequests.map((request, index) =>
       database
         .prepare(

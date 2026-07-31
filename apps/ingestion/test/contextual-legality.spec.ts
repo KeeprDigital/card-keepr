@@ -37,14 +37,58 @@ test("the production repository ingests effective-dated regional Legality Rules 
     JSON.stringify(started.document),
   ).toBe(201);
   const runId = requiredString(started.document, "id");
+  expect(runId).toBe(
+    "run_95aa67966216ed3cf67871e214d1aa9862b692b42d6a9a537173ad099e260037",
+  );
   const resumed = await request(
     `/v1/ingestion-runs/${runId}/collection/resume`,
     {},
   );
   expect(resumed.response.status).toBe(202);
   const collected = await waitForState(runId, "parsing");
-  expect(collected.snapshots).toHaveLength(9);
-  expect(collected.observation_sets).toHaveLength(9);
+  expect(collected.snapshots).toHaveLength(4);
+  expect(collected.observation_sets).toHaveLength(4);
+  expect(collected).toMatchObject({
+    evidence_plan: {
+      requests: [expect.objectContaining({ id: "discovery" })],
+    },
+    official_source_collection_plan: {
+      contract: "card-keepr-official-source-collection-plan@1",
+      content_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      requests: expect.arrayContaining([
+        expect.objectContaining({ surface: "legality_card_details" }),
+        expect.objectContaining({ surface: "legality_rules" }),
+        expect.objectContaining({ surface: "legality_history" }),
+      ]),
+    },
+  });
+  const collectionPlan = collected.official_source_collection_plan as {
+    requests: { surface: string }[];
+  };
+  expect(
+    collectionPlan.requests.some(
+      ({ surface }) =>
+        surface === "product_details" || surface === "errata",
+    ),
+  ).toBe(false);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_evidence_plans
+       SET request_plan_json = '{}'
+       WHERE ingestion_run_id = ?`,
+    )
+      .bind(runId)
+      .run(),
+  ).rejects.toThrow(/ingestion_evidence_plan_request_set_immutable/);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE official_source_collection_plans
+       SET collection_plan_json = '{}'
+       WHERE ingestion_run_id = ?`,
+    )
+      .bind(runId)
+      .run(),
+  ).rejects.toThrow(/official_source_collection_plan_immutable/);
   expect(
     (collected.snapshots as {
       request: { url: string };
@@ -54,6 +98,51 @@ test("the production repository ingests effective-dated regional Legality Rules 
       ),
     ),
   ).toBe(true);
+
+  const replay = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "gundam",
+    source_lineage: "gundam-en-asia",
+    adapter_version: "gundam-en-asia@2",
+    idempotency_key: "contextual-legality-asia",
+    requests: [
+      {
+        id: "discovery",
+        method: "GET",
+        url:
+          "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-asia",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(replay.response.status).toBe(201);
+  expect(replay.document).toMatchObject({
+    id: runId,
+    evidence_plan: collected.evidence_plan,
+    official_source_collection_plan:
+      collected.official_source_collection_plan,
+  });
+  const conflictingReplay = await request(
+    "/v1/ingestion-runs/evidence",
+    {
+      supported_game: "gundam",
+      source_lineage: "gundam-en-asia",
+      adapter_version: "gundam-en-asia@2",
+      idempotency_key: "contextual-legality-asia",
+      requests: [
+        {
+          id: "discovery",
+          method: "GET",
+          url:
+            "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-asia?different=true",
+          headers: { accept: "application/json" },
+        },
+      ],
+    },
+  );
+  expect(conflictingReplay.response.status).toBe(409);
+  expect(conflictingReplay.document).toMatchObject({
+    code: "idempotency_key_reused",
+  });
 
   const reconciled = await request(
     `/v1/ingestion-runs/${runId}/reconciliation`,
@@ -127,8 +216,39 @@ test("the production repository ingests effective-dated regional Legality Rules 
   expect(approved.document).toMatchObject({
     state: "published",
     publication_outcome: "revision",
-    resulting_revision_id: expect.stringMatching(/^catrev_/),
+    resulting_revision_id: expect.stringMatching(
+      /^catrev_[a-f0-9]{64}$/,
+    ),
   });
+
+  const separated = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "gundam",
+    source_lineage: "gundam-en-asia",
+    adapter_version: "gundam-en-asia@2",
+    idempotency_key: "contextual-legality-asia-separated",
+    requests: [
+      {
+        id: "discovery",
+        method: "GET",
+        url:
+          "https://www.gundam-gcg.com/asia-en/reconciliation/contextual-legality-asia",
+        headers: { accept: "application/json" },
+      },
+    ],
+  });
+  expect(separated.response.status).toBe(201);
+  expect(requiredString(separated.document, "id")).toBe(
+    "run_929268c9a227c6a0032d6c24fbe2bd649954725e19275319b86d297475a65e32",
+  );
+  expect(requiredString(separated.document, "id")).not.toBe(runId);
+  const released = await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+  )
+    .bind(requiredString(separated.document, "id"))
+    .run();
+  expect(released.meta.changes).toBe(1);
 });
 
 test.each([
@@ -180,7 +300,9 @@ test.each([
       Array.isArray(parsing.observation_sets)
         ? parsing.observation_sets.length
         : 0,
-    ).toBeGreaterThanOrEqual(9);
+    ).toBeGreaterThanOrEqual(
+      adapter === "one-piece-json-document@3" ? 7 : 4,
+    );
     const reconciled = await request(
       `/v1/ingestion-runs/${runId}/reconciliation`,
       {},
@@ -188,25 +310,34 @@ test.each([
     expect(
       reconciled.response.status,
       JSON.stringify(reconciled.document),
-    ).toBe(409);
+    ).toBe(200);
     expect(reconciled.document).toMatchObject({
-      state: "failed",
-      diagnostics: [
-        expect.objectContaining({
-          code: "retained_evidence_invalid",
-        }),
-      ],
+      state: "awaiting_approval",
+      publishable: true,
+      cards: [],
+      legality_rules: [],
     });
+    // The parameterized cases share one test D1 instance. Release only the
+    // test runner's global lock after the public reconciliation assertion so
+    // each registered adapter can exercise the same boundary independently.
+    const released = await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL
+       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+    )
+      .bind(runId)
+      .run();
+    expect(released.meta.changes).toBe(1);
   },
 );
 
 test.each([
   ["contextual-legality-missing-rules"],
   ["contextual-legality-false-empty-rules"],
-  ["contextual-legality-missing-product-details"],
-  ["contextual-legality-empty-product-details"],
-  ["contextual-legality-malformed-product-details"],
   ["contextual-legality-incomplete-discovery"],
+  ["contextual-legality-unknown-rule-wording"],
+  ["contextual-legality-mismatched-rule-wording"],
+  ["contextual-legality-foreign-image-authority"],
 ])(
   "the production adapter fails closed for %s through HTTP",
   async (scenario) => {

@@ -674,7 +674,7 @@ async function exportRecordFactories(
     errata: () => (candidate.errata ?? [])
       .map(exportErratum)
       .sort((left, right) => compareUtf8(left.id, right.id)),
-    "legality-rules": () => legalityRuleExportRecords(candidate),
+    "legality-rules": () => legalityRuleExportRecords(candidate, revisionId),
     relationships: () => uniqueById([
       ...identifiedRelationships
       .map(({ printing, relationship, relationshipId, targetId }) => ({

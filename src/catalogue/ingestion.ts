@@ -41,6 +41,7 @@ import {
 } from "./catalogue-revision-retention";
 import { requiredSourceAdapter } from "./source-adapters";
 import { legalityPublicationStatements } from "./legality-publication";
+import { catalogueRevisionIdentity } from "./idempotent-identities";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -671,7 +672,12 @@ async function approveRunAttempt(
     );
   }
   assertPublicationAggregateBudget(candidate);
-  const revisionId = `catrev_${crypto.randomUUID()}`;
+  const revisionId = await catalogueRevisionIdentity({
+    runId: run.id,
+    candidateDigest: request.candidate_digest,
+    expectedCurrentRevisionId:
+      request.expected_current_revision_id,
+  });
   const writerToken = publicationWriterToken(revisionId);
   const reconciliation = await reconciliationPublication(
     database,

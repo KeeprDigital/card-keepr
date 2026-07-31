@@ -855,38 +855,6 @@ function reconciliationSourceDocument(
       "false-empty",
     );
   }
-  if (scenario === "contextual-legality-missing-product-details") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "complete",
-      "gundam",
-      "product_details",
-    );
-  }
-  if (scenario === "contextual-legality-empty-product-details") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "complete",
-      "gundam",
-      undefined,
-      "empty",
-    );
-  }
-  if (scenario === "contextual-legality-malformed-product-details") {
-    return emptyOfficialCatalogueDocument(
-      "EN-ASIA",
-      surface,
-      requestUrl,
-      "complete",
-      "gundam",
-      undefined,
-      "malformed",
-    );
-  }
   if (scenario === "contextual-legality-incomplete-discovery") {
     return emptyOfficialCatalogueDocument(
       "EN-ASIA",
@@ -895,9 +863,47 @@ function reconciliationSourceDocument(
       "complete",
       "gundam",
       undefined,
-      undefined,
       "missing",
     );
+  }
+  if (
+    scenario === "contextual-legality-unknown-rule-wording" ||
+    scenario === "contextual-legality-mismatched-rule-wording" ||
+    scenario === "contextual-legality-foreign-image-authority"
+  ) {
+    const document = contextualLegalitySourceDocument(
+      "EN-ASIA",
+      surface,
+      requestUrl,
+    ) as {
+      surface: {
+        pages: { records: Record<string, unknown>[] }[];
+      };
+    };
+    const first = document.surface.pages[0]?.records[0];
+    if (
+      first !== undefined &&
+      surface === "legality_rules" &&
+      scenario === "contextual-legality-unknown-rule-wording"
+    ) {
+      first.official_text = "Opaque publisher marker XQZ-30.";
+    }
+    if (
+      first !== undefined &&
+      surface === "legality_rules" &&
+      scenario === "contextual-legality-mismatched-rule-wording"
+    ) {
+      first.official_text = "This card is banned and may not be included.";
+    }
+    if (
+      first !== undefined &&
+      surface === "legality_card_details" &&
+      scenario === "contextual-legality-foreign-image-authority"
+    ) {
+      (first.printing as Record<string, unknown>).image_url =
+        "https://attacker.example/images/GD30-001.png";
+    }
+    return document;
   }
   if (scenario === "contextual-legality-asia") {
     return contextualLegalitySourceDocument(
@@ -3029,7 +3035,6 @@ function emptyOfficialCatalogueDocument(
   game: "one-piece" | "fusion-world" | "digimon" | "gundam" =
     "gundam",
   omittedSurface?: string,
-  productDetailsVariant?: "empty" | "malformed",
   discoveryVariant?: "missing",
 ) {
   if (
@@ -3053,21 +3058,15 @@ function emptyOfficialCatalogueDocument(
   }
   const requiredSurfaces = [
     "discovery",
-    "card_listings",
-    "card_details",
-    "cards",
-    "product_listings",
-    "product_details",
+    "legality_card_details",
     "legality_rules",
     "legality_history",
-    "errata",
     ...(game === "one-piece"
       ? ["block_policy", "release_timing", "don_rules"]
       : []),
   ];
   const records = officialSurfaceRecords({
     discoveryVariant,
-    productDetailsVariant,
     requestUrl,
     requiredSurfaces,
     surface,
@@ -3094,7 +3093,6 @@ function emptyOfficialCatalogueDocument(
 
 function officialSurfaceRecords(input: {
   discoveryVariant?: "missing";
-  productDetailsVariant?: "empty" | "malformed";
   requestUrl: string;
   requiredSurfaces: string[];
   surface: string;
@@ -3104,29 +3102,19 @@ function officialSurfaceRecords(input: {
       .filter((name) => name !== "discovery")
       .filter(
         (name) =>
-          input.discoveryVariant !== "missing" || name !== "errata",
+          input.discoveryVariant !== "missing" ||
+            name !== "legality_history",
       )
       .map((name) => ({
+        request_id: name,
         surface: name,
         url: officialSurfaceUrl(input.requestUrl, name),
       }));
   }
-  if (input.surface === "cards") {
-    return [{ retained_test_card: true }];
-  }
-  if (input.surface === "legality_rules") return [];
   if (
-    input.surface === "product_details" &&
-    input.productDetailsVariant === "empty"
-  ) {
-    return [];
-  }
-  if (
-    input.surface === "product_details" &&
-    input.productDetailsVariant === "malformed"
-  ) {
-    return [{ source_id: "malformed-product-detail" }];
-  }
+    input.surface === "legality_card_details" ||
+    input.surface === "legality_rules"
+  ) return [];
   return [
     {
       source_id: `${input.surface}-representative`,
