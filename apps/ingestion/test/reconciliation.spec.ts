@@ -3971,22 +3971,29 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
   }
 }, 30_000);
 
-test("missing, duplicate, and unplanned collection sets fail reconciliation with stable public diagnostics", async () => {
+test("unplanned requests fail at D1 while duplicate and unplanned observation sets fail reconciliation", async () => {
   const missing = await collectRequests(
     [{ id: "partition-a", scenario: "base" }],
     "multi-request-missing-coverage",
   );
-  await testEnv.CATALOGUE_DB.prepare(
-    `INSERT INTO source_requests (
-       ingestion_run_id, request_id, sequence_number, method, url,
-       request_headers_json, representation_fingerprint, state
-     ) VALUES (?, 'partition-missing', 1, 'GET',
-       'https://official-source.invalid/reconciliation/new-locator',
-       '{}', 'missing', 'pending')`,
-  )
-    .bind(missing.id)
-    .run();
-  await expectRetainedEvidenceInvalid(missing.id, "has no observed Source Snapshot");
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state
+       ) VALUES (?, 'partition-missing', 1, 'GET',
+         'https://official-source.invalid/reconciliation/new-locator',
+         '{}', 'missing', 'pending')`,
+    )
+      .bind(missing.id)
+      .run(),
+  ).rejects.toThrow(/source_request_not_in_immutable_plan/);
+  const exact = await reconcile(missing.id);
+  expect(exact.response.status).toBe(200);
+  await post(`/v1/ingestion-runs/${missing.id}/rejection`, {
+    candidate_digest: requiredString(exact.document, "candidate_digest"),
+    idempotency_key: "reject-exact-plan-after-unplanned-insert",
+  });
 
   const duplicate = await collectRequests(
     [{ id: "partition-a", scenario: "base" }],

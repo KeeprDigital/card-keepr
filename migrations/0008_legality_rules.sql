@@ -47,6 +47,44 @@ BEGIN
   SELECT RAISE(ABORT, 'source_request_plan_fields_immutable');
 END;
 
+CREATE TRIGGER source_requests_must_match_immutable_plan
+BEFORE INSERT ON source_requests
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM ingestion_evidence_plans AS plan,
+       json_each(plan.request_plan_json, '$.requests') AS planned
+  WHERE plan.ingestion_run_id = NEW.ingestion_run_id
+    AND json_extract(planned.value, '$.id') = NEW.request_id
+    AND CAST(planned.key AS INTEGER) = NEW.sequence_number
+    AND json_extract(planned.value, '$.method') = NEW.method
+    AND json_extract(planned.value, '$.url') = NEW.url
+    AND json_extract(planned.value, '$.headers') = NEW.request_headers_json
+    AND json_extract(planned.value, '$.representation_fingerprint') =
+      NEW.representation_fingerprint
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM ingestion_evidence_plans AS plan
+  JOIN official_source_collection_plans AS collection
+    ON collection.ingestion_run_id = plan.ingestion_run_id,
+       json_each(collection.collection_plan_json, '$.requests') AS planned
+  WHERE plan.ingestion_run_id = NEW.ingestion_run_id
+    AND json_extract(planned.value, '$.id') = NEW.request_id
+    AND json_array_length(
+      json_extract(plan.request_plan_json, '$.requests')
+    ) + CAST(planned.key AS INTEGER) = NEW.sequence_number
+    AND json_extract(planned.value, '$.method') = NEW.method
+    AND json_extract(planned.value, '$.url') = NEW.url
+    AND json_extract(planned.value, '$.headers') = NEW.request_headers_json
+    AND json_extract(planned.value, '$.representation_fingerprint') =
+      NEW.representation_fingerprint
+    AND json_type(planned.value, '$.surface') = 'text'
+    AND length(json_extract(planned.value, '$.surface')) > 0
+)
+BEGIN
+  SELECT RAISE(ABORT, 'source_request_not_in_immutable_plan');
+END;
+
 CREATE TRIGGER source_requests_immutable_delete
 BEFORE DELETE ON source_requests
 BEGIN

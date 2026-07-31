@@ -6,15 +6,15 @@ import {
   type SourceFreshness,
 } from "./export";
 import {
-  FixtureInputError,
   firstCatalogueFixture,
+  FixtureInputError,
   fixtureCandidate,
 } from "./fixture";
-import type {
-  CatalogueCandidate,
-  SupportedGame,
+import {
+  catalogueCandidateContract,
+  type CatalogueCandidate,
+  type SupportedGame,
 } from "./catalogue-candidate";
-import { catalogueCandidateContract } from "./catalogue-candidate";
 import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,

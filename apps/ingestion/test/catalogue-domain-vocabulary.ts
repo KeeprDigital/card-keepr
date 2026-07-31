@@ -12,3 +12,14 @@ export type CatalogueDomainContract = {
   card: CatalogueCard;
   printing: CataloguePrinting;
 };
+
+type Assert<T extends true> = T;
+
+export type CatalogueCandidateHasDomainContract = Assert<
+  CatalogueCandidate["contract"] extends
+    "card-keepr-catalogue-candidate@1" ? true : false
+>;
+
+export type CatalogueCandidateExcludesFixtureIdentity = Assert<
+  "fixture" extends keyof CatalogueCandidate ? false : true
+>;

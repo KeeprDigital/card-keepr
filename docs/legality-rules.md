@@ -7,7 +7,10 @@ date, region, format, and optional event tier from the current
 
 ## Source adapter input
 
-The production legality adapters are:
+No publisher-specific legality adapter is currently installed. The following
+adapter identities are intentionally unavailable until their publisher
+representations, image-byte capture, redirect policy, and structured notice
+operands are verified against retained first-party evidence:
 
 - `one-piece-json-document@3`
 - `fusion-world-en@2`
@@ -15,13 +18,19 @@ The production legality adapters are:
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Each immutable Source Snapshot contains exactly one closed publisher response.
-The adapters do not accept a shared normalized envelope: One Piece, Fusion
-World, Digimon, and Gundam each validate their own discovery, Card-detail, and
-notice response vocabulary before normalization. Raw inputs never supply a
-normalized rarity, identity digest, structured effect, or `representable`
-decision; the owning adapter derives those values from the publisher fields
-and fails closed when it cannot do so.
+Production planning fails closed with `adapter_not_supported` for all five
+identities. They are reserved documentation names, not installed adapter
+contracts and not permission to accept synthetic JSON as a publisher response.
+
+When a publisher-specific adapter is installed, each immutable Source Snapshot
+must contain exactly one demonstrated publisher response. Production adapters
+must not accept a shared normalized envelope or a test fixture representation.
+Raw inputs must not supply a normalized rarity, identity digest, structured
+effect, or `representable` decision; the owning adapter must derive those
+values from demonstrated publisher fields and fail closed when it cannot.
+The remaining source-adapter requirements in this section describe that future
+installation contract; they do not claim that a publisher representation is
+currently supported.
 An Ingestion Run begins with an immutable one-request Discovery Plan. The
 retained discovery observation creates, once, a separately named Official
 Source Collection Plan containing the exact bounded set of discovered

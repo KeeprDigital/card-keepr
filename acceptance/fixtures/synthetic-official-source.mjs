@@ -1,5 +1,5 @@
 import {
-  contextualLegalityDocument,
+  contextualLegalityDomainDocument,
 } from "./contextual-legality-source.mjs";
 
 let onePieceCardListRequests = 0;
@@ -165,34 +165,20 @@ export default {
         headers: { "retry-after": "0" },
       });
     }
-    if (pathname === "/contextual-legality-asia") {
+    if (
+      pathname === "/contextual-legality-domain-asia" ||
+      pathname === "/contextual-legality-domain-us"
+    ) {
+      const region = pathname.endsWith("-us") ? "EN-US" : "EN-ASIA";
       return Response.json(
-        contextualLegalityDocument(
-          "EN-ASIA",
+        contextualLegalityDomainDocument(
+          region,
           url.searchParams.get("representable") !== "false",
           url.searchParams.get("membership"),
           {
             copyLimit: url.searchParams.get("copy-limit"),
             rules: url.searchParams.get("rules"),
             semantics: url.searchParams.get("semantics"),
-            surface:
-              url.searchParams.get("surface") ?? "discovery",
-            requestUrl: url.href,
-          },
-        ),
-      );
-    }
-    if (pathname === "/contextual-legality-us") {
-      return Response.json(
-        contextualLegalityDocument(
-          "EN-US",
-          true,
-          null,
-          {
-            rules: url.searchParams.get("rules"),
-            surface:
-              url.searchParams.get("surface") ?? "discovery",
-            requestUrl: url.href,
           },
         ),
       );

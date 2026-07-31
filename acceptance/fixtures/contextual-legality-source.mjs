@@ -1,4 +1,4 @@
-export function contextualLegalityDocument(
+export function contextualLegalityDomainDocument(
   region,
   representable = true,
   membershipVariant = null,
@@ -6,9 +6,6 @@ export function contextualLegalityDocument(
     copyLimit = null,
     rules: rulesVariant = null,
     semantics = null,
-    surface = "discovery",
-    requestUrl =
-      "https://www.gundam-gcg.com/asia-en/contextual-legality",
   } = {},
 ) {
   const numbers =
@@ -82,125 +79,10 @@ export function contextualLegalityDocument(
       representable,
     });
   }
-  return officialSurfaceDocument(
-    region,
-    surface,
-    requestUrl,
+  return {
     cards,
-    legalityRules,
-  );
-}
-
-const requiredSurfaces = [
-  "discovery",
-  "legality_card_details",
-  "legality_rules",
-  "legality_history",
-];
-
-function officialSurfaceDocument(
-  region,
-  surface,
-  requestUrl,
-  cards,
-  legalityRules,
-) {
-  const records =
-    surface === "discovery"
-      ? discoveredSurfaces(requestUrl)
-      : surface === "legality_card_details"
-        ? cards.map((card) => rawGundamCard(card, requestUrl))
-        : surface === "legality_rules"
-          ? legalityRules
-              .filter((rule) => rule.effective_until === null)
-              .map((rule) => rawGundamNotice(rule, requestUrl))
-          : surface === "legality_history"
-            ? legalityRules
-                .filter((rule) => rule.effective_until !== null)
-                .map((rule) => rawGundamNotice(rule, requestUrl))
-            : [];
-  return {
-    gundam: {
-      endpoint: surface,
-      locale: region,
-      hits: records.length,
-      results: records,
-    },
-  };
-}
-
-function discoveredSurfaces(requestUrl) {
-  const seed = new URL(requestUrl);
-  seed.searchParams.delete("surface");
-  return requiredSurfaces
-    .filter((surface) => surface !== "discovery")
-    .map((surface) => {
-      const url = new URL(seed);
-      url.searchParams.set("surface", surface);
-      return { request_key: surface, endpoint: surface, href: url.href };
-    });
-}
-
-function rawGundamCard(observation, requestUrl) {
-  const sourceUrl = new URL(requestUrl);
-  const imageUrl = new URL(
-    `images/${observation.card.official_identity.value}.png`,
-    `${sourceUrl.origin}${sourceUrl.pathname.startsWith("/asia-en/") ? "/asia-en/" : "/en/"}`,
-  );
-  if (sourceUrl.searchParams.get("image-authority") === "foreign") {
-    imageUrl.hostname = "attacker.example";
-  }
-  const card = observation.card.game_data.attributes;
-  return {
-    detailSearch: observation.card.official_identity.value,
-    source_url: requestUrl,
-    card_number: observation.card.official_identity.value,
-    name: observation.card.name,
-    type: card.card_type,
-    Color: card.colours,
-    Level: card.level,
-    Cost: card.cost,
-    Block: card.block_icon,
-    Effect: card.effect_text,
-    Zone: card.zone,
-    Trait: card.traits,
-    Link: card.link_condition,
-    AP: card.ap,
-    HP: card.hp,
-    Title: card.series_titles,
-    Rarity: observation.printing.rarity.raw,
-    alternate_art: "no",
-    image_url: imageUrl.href,
-  };
-}
-
-function rawGundamNotice(rule, requestUrl) {
-  const effect = rule.effect;
-  return {
-    news_id: rule.id,
-    url: requestUrl,
-    text: rule.official_wording,
-    region: rule.region,
-    format: rule.format,
-    event_tier: rule.event_tier,
-    effective_date: rule.effective_from,
-    end_date: rule.effective_until,
-    card_numbers: rule.card_numbers,
-    ruling: !rule.representable
-      ? "publisher_code_not_supported"
-      : effect.type === "prohibited_combination"
-        ? "combination"
-        : effect.type === "release_timing"
-          ? "release"
-          : effect.type,
-    copy_limit: "maximum_copies" in effect ? effect.maximum_copies : null,
-    companion_cards:
-      "with_card_numbers" in effect ? effect.with_card_numbers : [],
-    attribute: "attribute" in effect ? effect.attribute : null,
-    values: "includes_any" in effect ? effect.includes_any : [],
-    legal_blocks: "eligible_blocks" in effect ? effect.eligible_blocks : [],
-    legal_from: "legal_from" in effect ? effect.legal_from : null,
-    reason: "reason" in effect ? effect.reason : null,
+    legality_rules: legalityRules,
+    legality_completeness: completeEvidence(),
   };
 }
 

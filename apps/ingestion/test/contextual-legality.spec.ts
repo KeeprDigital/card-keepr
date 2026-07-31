@@ -45,12 +45,21 @@ test("applied D1 request copies reject URL, headers, fingerprint, and deletion d
             method: "GET",
             url: "https://en.onepiece-cardgame.com/cardlist/",
             headers: { accept: "text/html" },
+            representation_fingerprint: "a".repeat(64),
           },
           {
             id: "delete-target",
             method: "GET",
             url: "https://en.onepiece-cardgame.com/rules/",
             headers: { accept: "text/html" },
+            representation_fingerprint: "b".repeat(64),
+          },
+          {
+            id: "insert-target",
+            method: "GET",
+            url: "https://en.onepiece-cardgame.com/products/",
+            headers: { accept: "text/html" },
+            representation_fingerprint: "e".repeat(64),
           },
         ],
       }),
@@ -88,10 +97,36 @@ test("applied D1 request copies reject URL, headers, fingerprint, and deletion d
        WHERE ingestion_run_id = ? AND request_id = 'delete-target'`,
     ).bind(runId).run(),
   );
+  const insertError = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state
+       ) VALUES (?, 'insert-target', 2, 'GET',
+         'https://attacker.example/wrong-plan-fields',
+         '{"accept":"application/json"}', ?, 'pending')`,
+    ).bind(runId, "f".repeat(64)).run(),
+  );
+  const unplannedInsertError = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state
+       ) VALUES (?, 'unplanned', 3, 'GET',
+         'https://attacker.example/unplanned', '{}', ?, 'pending')`,
+    ).bind(runId, "d".repeat(64)).run(),
+  );
 
-  expect([String(updateError), String(deleteError)]).toEqual([
+  expect([
+    String(updateError),
+    String(deleteError),
+    String(insertError),
+    String(unplannedInsertError),
+  ]).toEqual([
     expect.stringMatching(/source_request_plan_fields_immutable/),
     expect.stringMatching(/source_request_immutable/),
+    expect.stringMatching(/source_request_not_in_immutable_plan/),
+    expect.stringMatching(/source_request_not_in_immutable_plan/),
   ]);
 });
 

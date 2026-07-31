@@ -230,6 +230,23 @@ export async function retainedReconciliationObservation(
       );
     }
   }
+  const collectionRequests = await retainedCollectionRequests(collectionPlan);
+  if (collectionPlan !== null) {
+    const immutableRequestIds = new Set([
+      ...plannedRequests.map(({ id }) => id),
+      ...collectionRequests.map(({ id }) => id as string),
+    ]);
+    if (
+      immutableRequestIds.size !== requests.results.length ||
+      requests.results.some(({ request_id: requestId }) =>
+        !immutableRequestIds.has(requestId)
+      )
+    ) {
+      throw new Error(
+        "Official Source requests differ from the immutable Collection Plan.",
+      );
+    }
+  }
   const selectedSnapshots = new Map<string, PlannedRequestRow>();
   for (const request of requests.results) {
     if (request.state !== "observed" || request.source_snapshot_id === null) {
@@ -395,6 +412,15 @@ export async function retainedReconciliationObservation(
   ).sort((left, right) =>
     left.sourceObservationId.localeCompare(right.sourceObservationId)
   );
+  if (collectionPlan !== null) {
+    await validateOfficialSurfaceCoverage(
+      requiredSourceAdapter(first.adapter_version),
+      requests.results,
+      collectionPlan,
+      collectionRequests,
+      legalityRules,
+    );
+  }
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -416,6 +442,73 @@ export async function retainedReconciliationObservation(
     observations: merged,
     legalityRules,
   };
+}
+
+async function validateOfficialSurfaceCoverage(
+  adapter: ReturnType<typeof requiredSourceAdapter>,
+  requests: readonly PlannedRequestRow[],
+  retainedCollectionPlan: CollectionPlanRow,
+  collectionRequests: readonly Record<string, unknown>[],
+  legalityRules: readonly RetainedLegalityRule[],
+): Promise<void> {
+  if (
+    adapter.origin !== "production" ||
+    adapter.reconciliationCapability !== "catalogue"
+  ) {
+    throw new Error(
+      "The immutable Collection Plan does not match the adapter coverage contract.",
+    );
+  }
+  if (
+    retainedCollectionPlan.contract !==
+      "card-keepr-official-source-collection-plan@1" ||
+    (await sha256(new TextEncoder().encode(
+      retainedCollectionPlan.collection_plan_json,
+    ))) !== retainedCollectionPlan.content_digest
+  ) {
+    throw new Error(
+      "Official Source Collection Plan failed immutable artifact verification.",
+    );
+  }
+  const retainedRequests = new Map(
+    collectionRequests.map((value) => [value.id as string, value] as const),
+  );
+  if (
+    retainedRequests.size !== collectionRequests.length ||
+    collectionRequests.some((planned) => {
+      const request = requests.find(
+        ({ request_id: requestId }) => requestId === planned.id,
+      );
+      return !samePlannedRequest(
+        request,
+        planned,
+        request?.sequence_number ?? -1,
+      );
+    })
+  ) {
+    throw new Error(
+      "Official Source requests differ from the immutable Collection Plan.",
+    );
+  }
+  const requiredSurfaces = adapter.requiredSurfaces ?? [];
+  if (
+    requiredSurfaces.some((surface) =>
+      !requests.some(
+        (request) =>
+          request.request_role === "surface" &&
+          request.request_id === `${adapter.sourceLineage}:${surface}`,
+      )
+    )
+  ) {
+    throw new Error(
+      "Complete Official Source evidence omitted a required live surface.",
+    );
+  }
+  if (legalityRules.length === 0) {
+    throw new Error(
+      "The complete Official Source adapter did not retain its required Legality Rule stream.",
+    );
+  }
 }
 
 function sourceSurfaceForRequest(
@@ -861,6 +954,44 @@ function assertObservationAuthority(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
     );
   }
+}
+
+async function retainedCollectionRequests(
+  retained: CollectionPlanRow | null,
+): Promise<Record<string, unknown>[]> {
+  if (retained === null) return [];
+  if (
+    retained.contract !== "card-keepr-official-source-collection-plan@1" ||
+    (await sha256(new TextEncoder().encode(
+      retained.collection_plan_json,
+    ))) !== retained.content_digest
+  ) {
+    throw new Error(
+      "Official Source Collection Plan failed immutable artifact verification.",
+    );
+  }
+  const collection: unknown = JSON.parse(retained.collection_plan_json);
+  if (
+    !isRecord(collection) ||
+    collection.contract !== retained.contract ||
+    !Array.isArray(collection.requests)
+  ) {
+    throw new Error("Official Source Collection Plan is malformed.");
+  }
+  const identities = new Set<string>();
+  return collection.requests.map((value) => {
+    if (
+      !isRecord(value) ||
+      typeof value.id !== "string" ||
+      identities.has(value.id) ||
+      typeof value.surface !== "string" ||
+      value.surface.length === 0
+    ) {
+      throw new Error("Official Source Collection Plan request is malformed.");
+    }
+    identities.add(value.id);
+    return value;
+  });
 }
 
 function samePlannedRequest(
