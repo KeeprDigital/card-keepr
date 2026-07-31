@@ -31,7 +31,12 @@ export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
     if (pathname === "/errata-without-vegapunk") {
       return Response.json({ cards: [errataWithoutVegapunk()] });
     }
-    return Response.json({ cards: await seedObservations() });
+    if (pathname === "/card-list-refreshed") {
+      return Response.json({
+        cards: await seedObservations("Dr. Vegapunk"),
+      });
+    }
+    return Response.json({ cards: await seedObservations("Vegapunk") });
   }
 }
 
@@ -74,11 +79,11 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-async function seedObservations() {
+async function seedObservations(vegapunkName: string) {
   return Promise.all([
     seedObservation({
       identity: "OP07-097",
-      name: "Vegapunk",
+      name: vegapunkName,
       rules:
         "This Leader cannot attack.\n[Activate: Main] [Once Per Turn] You may rest 1 of your DON!! cards Select up to 1 {Egghead} typSelectup to 1 {Egghead} type card with a cost of 5 or less from your hand and play it or add it to the top of your Life cards face-up.",
       printedDigestCharacter: "b",

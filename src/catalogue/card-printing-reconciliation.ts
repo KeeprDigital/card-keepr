@@ -44,7 +44,10 @@ import {
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
-import { retainedPayload } from "./reconciliation-payload";
+import {
+  byteBoundedJsonArrays,
+  retainedPayload,
+} from "./reconciliation-payload";
 import {
   canonicalErratum,
   deriveEffectiveRulesText,
@@ -1167,7 +1170,7 @@ async function candidateAtRevision(
     .bind(revisionId)
     .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) return null;
-  return JSON.parse(
+  const candidate = JSON.parse(
     await retainedPayload(
       database,
       row.ingestion_run_id,
@@ -1175,6 +1178,46 @@ async function candidateAtRevision(
       row.candidate_json,
     ),
   ) as CatalogueCandidate;
+  const errata = candidate.errata ?? [];
+  if (errata.length === 0) return candidate;
+  const provenanceByErratum = new Map<
+    string,
+    CatalogueErratum["provenance"][number][]
+  >();
+  for (const idsJson of byteBoundedJsonArrays(errata.map(({ id }) => id))) {
+    const rows = await database
+      .prepare(
+        `SELECT erratum_id, source_lineage, source_observation_id
+         FROM erratum_provenance
+         WHERE erratum_id IN (SELECT value FROM json_each(?))
+         ORDER BY erratum_id, source_lineage, source_observation_id`,
+      )
+      .bind(idsJson)
+      .all<{
+        erratum_id: string;
+        source_lineage: string;
+        source_observation_id: string;
+      }>();
+    for (const provenance of rows.results) {
+      provenanceByErratum.set(provenance.erratum_id, [
+        ...(provenanceByErratum.get(provenance.erratum_id) ?? []),
+        {
+          source_lineage: provenance.source_lineage,
+          source_observation_id: provenance.source_observation_id,
+        },
+      ]);
+    }
+  }
+  return {
+    ...candidate,
+    errata: mergeCatalogueErrata(
+      errata,
+      errata.map((erratum) => ({
+        ...erratum,
+        provenance: provenanceByErratum.get(erratum.id) ?? [],
+      })),
+    ),
+  };
 }
 
 export async function showReconciledPrinting(

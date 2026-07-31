@@ -182,6 +182,17 @@ export function deriveEffectiveRulesText(
   errata: readonly CatalogueErratum[],
   observedAt: string,
 ): string | null {
+  const latest = applicableRulesTextErrata(card, errata, observedAt).at(-1);
+  return latest === undefined
+    ? card.effective_rules_text
+    : latest.corrected_value;
+}
+
+export function applicableRulesTextErrata(
+  card: CatalogueCard,
+  errata: readonly CatalogueErratum[],
+  observedAt: string,
+): CatalogueErratum[] {
   const applicable = errata
     .filter(
       (erratum) =>
@@ -197,7 +208,7 @@ export function deriveEffectiveRulesText(
       ),
     );
   const latest = applicable.at(-1);
-  if (latest === undefined) return card.effective_rules_text;
+  if (latest === undefined) return applicable;
   const competingValues = new Set(
     applicable
       .filter(
@@ -210,7 +221,7 @@ export function deriveEffectiveRulesText(
       "The Card has conflicting applicable Errata for Effective Rules Text at the same effective date.",
     );
   }
-  return latest.corrected_value;
+  return applicable;
 }
 
 export function exportErratum(erratum: CatalogueErratum) {

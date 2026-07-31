@@ -28,7 +28,10 @@ import {
   productReleaseLifecyclePlan,
   type ProductRelationshipLifecycle,
 } from "./product-release-publication";
-import { erratumTargetLifecycleKey } from "./errata-rules-text";
+import {
+  applicableRulesTextErrata,
+  erratumTargetLifecycleKey,
+} from "./errata-rules-text";
 import { requiredSourceAdapter } from "./source-adapters";
 
 export type NormalizedLifecycle = {
@@ -110,20 +113,27 @@ export async function reconciliationPublication(
   revisionOrder = revisionId,
 ): Promise<ReconciliationPublicationPlan | null> {
   const plans = await reconciliationCandidatePlans(database, runId);
-  const evidenceByObservation = await publicationEvidenceResources(
+  const currentEvidenceByObservation = await publicationEvidenceResources(
     database,
     plans,
   );
   const context = await database
     .prepare(
-      `SELECT context.source_lineage, plan.adapter_version
+      `SELECT context.source_lineage, plan.adapter_version,
+              run.candidate_created_at AS observed_at
        FROM reconciliation_contexts AS context
        JOIN ingestion_evidence_plans AS plan
          ON plan.ingestion_run_id = context.ingestion_run_id
+       JOIN ingestion_runs AS run
+         ON run.id = context.ingestion_run_id
        WHERE context.ingestion_run_id = ?`,
     )
     .bind(runId)
-    .first<{ source_lineage: string; adapter_version: string }>();
+    .first<{
+      source_lineage: string;
+      adapter_version: string;
+      observed_at: string;
+    }>();
   if (context === null) return null;
   const evidencePartitions = await database
     .prepare(
@@ -141,6 +151,22 @@ export async function reconciliationPublication(
   const candidate = JSON.parse(
     await requiredRunCandidate(database, runId),
   ) as CatalogueCandidate;
+  const erratumObservationIds = [
+    ...new Set(
+      (candidate.errata ?? []).flatMap((erratum) =>
+        erratum.provenance.map(
+          ({ source_observation_id }) => source_observation_id,
+        )
+      ),
+    ),
+  ].sort();
+  const evidenceByObservation = await publicationEvidenceResourcesByIds(
+    database,
+    erratumObservationIds,
+  );
+  for (const [id, evidence] of currentEvidenceByObservation) {
+    evidenceByObservation.set(id, evidence);
+  }
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
   const printings = new Map(
     candidate.printings.map((printing) => [printing.id, printing]),
@@ -151,10 +177,6 @@ export async function reconciliationPublication(
   );
   const cardEvidencePlans = groupedPlans(
     plans.filter((plan) => plan.observation_kind === "card_printing"),
-    (plan) => plan.card_id,
-  );
-  const cardEffectiveRulesEvidencePlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "official_erratum"),
     (plan) => plan.card_id,
   );
   const printingPlans = groupedPlans(
@@ -213,12 +235,36 @@ export async function reconciliationPublication(
       evidenceByObservation.get(plan.source_observation_id)!
     );
     result.cardEvidence[cardId] = evidence;
-    result.cardEffectiveRulesEvidence[cardId] = evidence;
   }
-  for (const [cardId, grouped] of cardEffectiveRulesEvidencePlans) {
-    result.cardEffectiveRulesEvidence[cardId] = grouped.map((plan) =>
-      evidenceByObservation.get(plan.source_observation_id)!
+  for (const card of candidate.cards) {
+    const applicableErrata = applicableRulesTextErrata(
+      card,
+      candidate.errata ?? [],
+      context.observed_at,
     );
+    if (applicableErrata.length === 0) {
+      const currentCardEvidence = result.cardEvidence[card.id];
+      if (currentCardEvidence !== undefined) {
+        result.cardEffectiveRulesEvidence[card.id] = currentCardEvidence;
+      }
+      continue;
+    }
+    const observationIds = [
+      ...new Set(
+        applicableErrata.flatMap((erratum) =>
+          erratum.provenance.map(
+            ({ source_observation_id }) => source_observation_id,
+          )
+        ),
+      ),
+    ].sort();
+    result.cardEffectiveRulesEvidence[card.id] = observationIds.map((id) => {
+      const evidence = evidenceByObservation.get(id);
+      if (evidence === undefined) {
+        throw new Error("Applicable Erratum publication evidence disappeared.");
+      }
+      return evidence;
+    });
   }
 
   for (const [cardId, grouped] of cardPlans) {
@@ -457,6 +503,54 @@ async function publicationEvidenceResources(
   for (const plan of plans) {
     if (!resources.has(plan.source_observation_id)) {
       throw new Error("Publication Source Observation evidence disappeared.");
+    }
+  }
+  return resources;
+}
+
+async function publicationEvidenceResourcesByIds(
+  database: D1Database,
+  observationIds: readonly string[],
+): Promise<Map<string, PublicationEvidenceResource>> {
+  const resources = new Map<string, PublicationEvidenceResource>();
+  for (
+    const idsJson of observationIds.length === 0
+      ? []
+      : byteBoundedJsonArrays(observationIds)
+  ) {
+    const rows = await database
+      .prepare(
+        `SELECT candidate.source_observation_id AS id,
+                candidate.source_lineage AS source,
+                snapshot.retrieved_at AS captured_at
+         FROM reconciliation_candidates AS candidate
+         JOIN source_snapshots AS snapshot
+           ON snapshot.id = candidate.source_snapshot_id
+         WHERE candidate.source_observation_id IN (
+           SELECT value FROM json_each(?)
+         )
+         ORDER BY candidate.source_observation_id`,
+      )
+      .bind(idsJson)
+      .all<PublicationEvidenceResource>();
+    for (const row of rows.results) {
+      const resource = {
+        ...row,
+        type: "source_observation" as const,
+      };
+      const existing = resources.get(row.id);
+      if (
+        existing !== undefined &&
+        canonicalJson(existing) !== canonicalJson(resource)
+      ) {
+        throw new Error("Immutable publication evidence changed.");
+      }
+      resources.set(row.id, resource);
+    }
+  }
+  for (const id of observationIds) {
+    if (!resources.has(id)) {
+      throw new Error("Applicable Erratum publication evidence disappeared.");
     }
   }
   return resources;

@@ -660,6 +660,120 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     /snapshot|raw_payload/i,
   );
 
+  const repeatedRun = await collectSource(
+    {
+      adapter: "one-piece-official-errata-html@1",
+      idempotencyKey: "errata-runtime-source-repeated",
+      requestId: "one-piece-en:errata",
+      url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    },
+    cliEnvironment,
+    runtime,
+  );
+  await resumeAndWait(repeatedRun.id, cliEnvironment, runtime);
+  const repeatedCandidate = await reconcileAndWait(
+    repeatedRun.id,
+    revisionId,
+    "reconcile-repeated-bandai-errata-html",
+    cliEnvironment,
+    runtime,
+  );
+  const repeatedErratum = repeatedCandidate.errata.find(
+    (candidate) => candidate.id === exportedErratum.id,
+  );
+  assert.notEqual(repeatedErratum, undefined);
+  const accumulatedErrataEvidenceIds = repeatedErratum.provenance.map(
+    ({ source_observation_id }) => source_observation_id,
+  ).sort();
+  assert.equal(accumulatedErrataEvidenceIds.length, 2);
+  assert.deepEqual(
+    accumulatedErrataEvidenceIds.filter((id) =>
+      effectiveRulesEvidenceIds.includes(id)
+    ),
+    effectiveRulesEvidenceIds,
+  );
+  const repeatedRevision = await approveCandidate(
+    repeatedRun.id,
+    "approve-repeated-bandai-errata-html",
+    cliEnvironment,
+    runtime,
+  );
+  assert.equal(repeatedRevision, revisionId);
+
+  const refreshRun = await collectFixtureSource(
+    {
+      adapter: "fixture-one-piece-json@1",
+      idempotencyKey: "catalogue-refresh-after-repeated-errata",
+      requestId: "published-card-list-refreshed",
+      url: "https://synthetic-fixture.invalid/card-list-refreshed",
+    },
+    cliEnvironment,
+  );
+  await resumeAndWait(refreshRun.id, cliEnvironment, runtime);
+  const refreshCandidate = await reconcileAndWait(
+    refreshRun.id,
+    repeatedRevision,
+    "reconcile-catalogue-refresh-after-repeated-errata",
+    cliEnvironment,
+    runtime,
+  );
+  const refreshedErratum = refreshCandidate.errata.find(
+    (candidate) => candidate.id === exportedErratum.id,
+  );
+  assert.notEqual(refreshedErratum, undefined);
+  assert.deepEqual(
+    refreshedErratum.provenance.map(
+      ({ source_observation_id }) => source_observation_id,
+    ).sort(),
+    accumulatedErrataEvidenceIds,
+  );
+  const refreshRevision = await approveCandidate(
+    refreshRun.id,
+    "approve-catalogue-refresh-after-repeated-errata",
+    cliEnvironment,
+    runtime,
+  );
+  assert.notEqual(refreshRevision, repeatedRevision);
+  const refreshedCardRead = await apiJson(
+    `/v1/cards/${card.id}?include=evidence`,
+    apiKey,
+  );
+  assert.match(
+    refreshedCardRead.data.effective_rules_text,
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+  );
+  assert.deepEqual(
+    refreshedCardRead.provenance["/data/effective_rules_text"],
+    accumulatedErrataEvidenceIds,
+  );
+  const refreshedCardsBytes = await exportComponent(
+    refreshRevision,
+    "cards",
+    apiKey,
+  );
+  const refreshedRelationshipsBytes = await exportComponent(
+    refreshRevision,
+    "relationships",
+    apiKey,
+  );
+  const refreshedExportedCard = refreshedCardsBytes.trim().split("\n").map(
+    (line) => JSON.parse(line),
+  ).find((candidate) => candidate.id === card.id);
+  const refreshedErratumRelationship = refreshedRelationshipsBytes.trim()
+    .split("\n").map((line) => JSON.parse(line)).find(
+      (candidate) =>
+        candidate.kind === "erratum-target" &&
+        candidate.from.id === exportedErratum.id,
+    );
+  assert.equal(
+    refreshedExportedCard.effective_rules_text,
+    exportedCard.effective_rules_text,
+  );
+  assert.deepEqual(
+    refreshedErratumRelationship.source_observation_ids,
+    accumulatedErrataEvidenceIds,
+  );
+
   const omissionRun = await collectFixtureSource(
     {
       adapter: "fixture-one-piece-official-errata-json@1",
@@ -672,7 +786,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   await resumeAndWait(omissionRun.id, cliEnvironment, runtime);
   const omissionCandidate = await reconcileAndWait(
     omissionRun.id,
-    revisionId,
+    refreshRevision,
     "reconcile-errata-without-vegapunk",
     cliEnvironment,
     runtime,
@@ -699,7 +813,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   assert.deepEqual(
     carriedCardRead.provenance["/data/effective_rules_text"],
-    effectiveRulesEvidenceIds,
+    accumulatedErrataEvidenceIds,
   );
   const carriedCardsBytes = await exportComponent(
     omissionRevision,
