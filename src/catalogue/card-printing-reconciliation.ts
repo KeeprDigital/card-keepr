@@ -981,6 +981,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       sourceObservationSetId: retained.observationSetId,
       observedCards,
       observedPrintings,
+      observedProducts: productCatalogue.observedProducts,
       diagnostics: stableDiagnostics,
       warnings,
     });
@@ -1024,6 +1025,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceObservationSetId: retained.observationSetId,
     observedCards,
     observedPrintings,
+    observedProducts: productCatalogue.observedProducts,
     diagnostics: [],
     warnings,
   });
@@ -1131,6 +1133,7 @@ function reconciliationDigestPayload(input: {
   sourceObservationSetId: string;
   observedCards: readonly FixtureCard[];
   observedPrintings: readonly FixturePrinting[];
+  observedProducts: readonly { id: string }[];
   diagnostics: readonly Record<string, unknown>[];
   warnings: readonly Record<string, unknown>[];
 }): string {
@@ -1144,6 +1147,7 @@ function reconciliationDigestPayload(input: {
       source_observation_set_id: input.sourceObservationSetId,
       observed_card_ids: input.observedCards.map(({ id }) => id),
       observed_printing_ids: input.observedPrintings.map(({ id }) => id),
+      observed_product_ids: input.observedProducts.map(({ id }) => id),
       diagnostics: input.diagnostics,
       warnings: input.warnings,
     },

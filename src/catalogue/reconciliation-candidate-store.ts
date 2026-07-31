@@ -546,6 +546,7 @@ export async function retainedReconciliationResult(
   );
   const cardIds = new Set(response.observed_card_ids);
   const printingIds = new Set(response.observed_printing_ids);
+  const productIds = new Set(response.observed_product_ids);
   return {
     contract: "card-keepr-card-printing-reconciliation@2",
     run_id: runId,
@@ -557,6 +558,9 @@ export async function retainedReconciliationResult(
     cards: candidate.cards.filter(({ id }) => cardIds.has(id)),
     printings: candidate.printings.filter(({ id }) =>
       printingIds.has(id)
+    ),
+    products: (candidate.products ?? []).filter(({ id }) =>
+      productIds.has(id)
     ),
     errata: candidate.errata ?? [],
     diagnostics: response.diagnostics,
@@ -575,6 +579,7 @@ function terminalFailureResult(
     publishable: false,
     cards: [],
     printings: [],
+    products: [],
     errata: [],
     diagnostics,
     warnings: [],
@@ -644,6 +649,7 @@ function reconciliationResponseMetadata(value: unknown): {
   source_observation_set_id: string;
   observed_card_ids: string[];
   observed_printing_ids: string[];
+  observed_product_ids: string[];
   diagnostics: Record<string, unknown>[];
   warnings: Record<string, unknown>[];
 } {
@@ -661,6 +667,7 @@ function reconciliationResponseMetadata(value: unknown): {
     typeof response.source_observation_set_id !== "string" ||
     !stringArray(response.observed_card_ids) ||
     !stringArray(response.observed_printing_ids) ||
+    !stringArray(response.observed_product_ids) ||
     !recordArray(response.diagnostics) ||
     !recordArray(response.warnings)
   ) {
