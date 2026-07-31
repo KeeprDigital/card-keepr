@@ -526,7 +526,7 @@ export async function requiredEvidenceRun(
               plans.request_plan_json, plans.plan_origin,
               plans.parent_workflow_id,
               plans.child_workflow_ids_json,
-              plans.collection_completed_at, plans.failure_code
+              plans.collection_completed_at
        FROM ingestion_runs AS runs
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id
@@ -555,7 +555,7 @@ async function evidenceRunByIdempotencyKey(
               plans.request_plan_json, plans.plan_origin,
               plans.parent_workflow_id,
               plans.child_workflow_ids_json,
-              plans.collection_completed_at, plans.failure_code
+              plans.collection_completed_at
        FROM ingestion_runs AS runs
        JOIN ingestion_evidence_plans AS plans
          ON plans.ingestion_run_id = runs.id

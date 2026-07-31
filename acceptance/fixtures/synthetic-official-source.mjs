@@ -923,8 +923,21 @@ export function officialDiscoveryDocument(input) {
           printing: input.printing,
           printed_rules: "Official printed rules",
           variant: "base",
-          artwork_fingerprint:
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          artwork_fingerprint: `official-artwork:${
+            JSON.stringify({
+              official_card_identity:
+                input.number.normalize("NFC").trim().toUpperCase(),
+              roles:
+                input.format === "fusion-world" &&
+                  input.attributes.card_type === "leader"
+                  ? ["back", "front"]
+                  : ["front"],
+              artwork_id:
+                `${input.game}-${input.number}-standard`
+                  .normalize("NFC")
+                  .toLocaleLowerCase(),
+            })
+          }`,
           printed_fields_digest:
             "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         }),

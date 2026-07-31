@@ -791,6 +791,35 @@ test("live Product indexes emit typed Products, classifications, and announced r
   );
 });
 
+test("a Product URL slug cannot become a canonical official code", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(`
+      <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+        <article class="booster">
+          <a href="/fw/en/products/booster/presentation-only-slug/">
+            Presentation-only Product
+          </a>
+        </article>
+      </html>
+    `),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("products"),
+      requestId: "fusion-world-en:products",
+    },
+  );
+  assert.deepEqual(
+    observations.flatMap(
+      ({ product_release_catalogue }) =>
+        product_release_catalogue?.products ?? [],
+    ),
+    [],
+  );
+});
+
 test("production coverage rejects keyword-only HTML without structural entries", () => {
   for (const adapter of officialRawAdapterContracts) {
     const surface = adapter.requiredSurfaces.find(

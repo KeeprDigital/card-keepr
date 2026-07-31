@@ -25,7 +25,12 @@ const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
-let digimonArtworkVariant: "base" | "alternate" = "base";
+let digimonArtworkVariant:
+  | "base"
+  | "base-reencoded"
+  | "no-artwork-id"
+  | "alternate"
+  | "alternate-two" = "base";
 const ambiguousD1Tables = new Map<string, string>();
 const unconfirmedD1Drops = new Set<string>();
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
@@ -328,9 +333,16 @@ export default defineConfig({
               url.pathname === "/cards/index.php" &&
               artworkMarker?.startsWith("card-keepr-artwork-digest-")
             ) {
-              digimonArtworkVariant = artworkMarker.endsWith("alternate")
-                ? "alternate"
-                : "base";
+              digimonArtworkVariant =
+                artworkMarker.endsWith("base-reencoded")
+                  ? "base-reencoded"
+                  : artworkMarker.endsWith("no-artwork-id")
+                    ? "no-artwork-id"
+                    : artworkMarker.endsWith("alternate-two")
+                      ? "alternate-two"
+                      : artworkMarker.endsWith("alternate")
+                        ? "alternate"
+                        : "base";
               return new Response(
                 `<html><title>BANDAI DIGIMON CARD publication</title>
                   <main><article>
@@ -351,11 +363,24 @@ export default defineConfig({
               url.pathname === "/cards/detail.php" &&
               url.searchParams.get("card") === "BT99-900"
             ) {
-              const locator = digimonArtworkVariant === "alternate"
-                ? "BT99-900_alt"
-                : "BT99-900";
+              const locator =
+                digimonArtworkVariant === "alternate"
+                  ? "BT99-900_alt"
+                  : digimonArtworkVariant === "alternate-two"
+                    ? "BT99-900_alt_two"
+                    : digimonArtworkVariant === "no-artwork-id"
+                      ? "BT99-900_locator"
+                      : "BT99-900";
+              const artworkId =
+                digimonArtworkVariant === "no-artwork-id"
+                  ? ""
+                  : digimonArtworkVariant === "alternate"
+                    ? ' data-artwork-id="digimon-bt99-900-alt-one"'
+                    : digimonArtworkVariant === "alternate-two"
+                      ? ' data-artwork-id="digimon-bt99-900-alt-two"'
+                      : ' data-artwork-id="digimon-bt99-900-standard"';
               return new Response(
-                `<html data-card-id="${locator}">
+                `<html data-card-id="${locator}"${artworkId}>
                   <h1>Digest Test Digimon</h1>
                   <dl><dt>Card Number</dt><dd>BT99-900</dd></dl>
                   <dl><dt>Card Type</dt><dd>Digimon</dd></dl>
@@ -365,7 +390,10 @@ export default defineConfig({
                   <dl><dt>DP</dt><dd>6,000</dd></dl>
                   <dl><dt>Effect</dt><dd>Digest test effect</dd></dl>
                   <dl><dt>Alternative Art</dt><dd>${
-                    digimonArtworkVariant === "alternate" ? "Yes" : "No"
+                    digimonArtworkVariant === "alternate" ||
+                      digimonArtworkVariant === "alternate-two"
+                      ? "Yes"
+                      : "No"
                   }</dd></dl>
                   <img class="card-image"
                     src="https://images.digimoncard.com/cards/BT99-900.png">
@@ -385,8 +413,17 @@ export default defineConfig({
               const bytes = new Uint8Array([
                 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
                 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                digimonArtworkVariant === "alternate" ? 0x02 : 0x01,
+                0x00, 0x00, 0x00,
+                digimonArtworkVariant === "base-reencoded" ? 0x02 : 0x01,
+                0x00, 0x00, 0x00,
+                digimonArtworkVariant === "base-reencoded" ? 0x02 : 0x01,
+                digimonArtworkVariant === "alternate"
+                  ? 0x02
+                  : digimonArtworkVariant === "alternate-two"
+                    ? 0x04
+                    : digimonArtworkVariant === "no-artwork-id"
+                      ? 0x03
+                      : 0x01,
               ]);
               return new Response(bytes, {
                 headers: {

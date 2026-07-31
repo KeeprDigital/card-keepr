@@ -302,6 +302,27 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(head.headers.get("content-length")).toBe("18");
   expect(await head.text()).toBe("");
 
+  const headRequestHeaders: Record<string, string>[] = [
+    {
+      "if-none-match":
+        "\"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773\"",
+    },
+    { range: "bytes=7-11" },
+    { range: "bytes=99-100" },
+  ];
+  for (const headers of headRequestHeaders) {
+    const metadata = await api(
+      "/v1/printing-images/printing_image_st15_front/content",
+      headers,
+      "HEAD",
+    );
+    expect(metadata.status).toBe(200);
+    expect(metadata.headers.get("content-type")).toBe("image/webp");
+    expect(metadata.headers.get("content-length")).toBe("18");
+    expect(metadata.headers.get("content-range")).toBeNull();
+    expect(await metadata.text()).toBe("");
+  }
+
   const partial = await api(
     "/v1/printing-images/printing_image_st15_front/content",
     { range: "bytes=7-11" },

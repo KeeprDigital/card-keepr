@@ -827,6 +827,7 @@ function parseOnePieceBandaiCardList(
     const artworkFingerprint = sourceArtworkFingerprint(
       cardNumber,
       ["front"],
+      null,
     );
     const printedFieldsDigest = `printed-material:${
       JSON.stringify(stableValue({
@@ -1125,9 +1126,28 @@ function parseBandaiCardDetail(
               hp: integerOrNull(field(["HP"])),
               series_titles: textValues(field(["Title", "Series"])),
             };
+  const alternateArtwork =
+    format === "digimon"
+      ? officialBoolean(
+          field(["Alternative Art"]),
+          "Digimon Alternative Art",
+        )
+      : format === "gundam"
+        ? officialBoolean(
+            field(["Alternate Art", "Alternative Art"]),
+            "Gundam Alternate Art",
+          )
+        : null;
+  const artworkId =
+    htmlAttribute(
+      html.match(/<[^>]*\bdata-artwork-id=["'][^"']+["'][^>]*>/iu)?.[0] ?? "",
+      "data-artwork-id",
+    ) ??
+    field(["Artwork ID", "Artwork Identifier", "Illustration ID"]);
   const artworkFingerprint = sourceArtworkFingerprint(
     cardNumber,
     imageEvidence.map(({ role }) => role),
+    artworkId,
   );
   const productLinks = productLinksFromHtml(html, requestUrl);
   const products = productLinks.products;
@@ -1163,22 +1183,22 @@ function parseBandaiCardDetail(
       attributes:
         format === "digimon"
           ? {
-              alternative_art: officialBoolean(
-                field(["Alternative Art"]),
-                "Digimon Alternative Art",
-              ),
+              alternative_art: alternateArtwork,
             }
           : format === "gundam"
             ? {
-                alternate_art: officialBoolean(
-                  field(["Alternate Art", "Alternative Art"]),
-                  "Gundam Alternate Art",
-                ),
+                alternate_art: alternateArtwork,
               }
             : format === "one-piece"
               ? { illustration_types: [] }
               : {},
     },
+    treatment:
+      alternateArtwork === null
+        ? "standard"
+        : alternateArtwork
+          ? "alternate"
+          : "standard",
     printed_rules: rules,
     variant: locator === cardNumber
       ? "base"
@@ -1260,6 +1280,9 @@ function parseBandaiCardDetail(
     "[Special Digivolution Condition]",
     "Alternative Art",
     "Alternate Art",
+    "Artwork ID",
+    "Artwork Identifier",
+    "Illustration ID",
     "Zone",
     "Trait",
     "Link",
@@ -1698,16 +1721,10 @@ function parseBandaiProductIndex(
     if (href === null || !/\/products?\//iu.test(href)) return [];
     const title = htmlText(link[2]!);
     const resolved = new URL(decodeHtmlText(href), requestUrl);
-    const pathCode = resolved.pathname.split("/").filter(Boolean).at(-1);
     const code =
       htmlAttribute(link[1]!, "data-product-code")?.normalize("NFC").trim() ??
-      title.match(/\[([A-Z0-9-]+)\]/u)?.[1] ??
-      pathCode?.normalize("NFC").trim().toLocaleUpperCase();
-    if (code === undefined || code.length === 0 || title.length === 0) {
-      throw new Error(
-        "Official Product index entry has no stable code or title.",
-      );
-    }
+      title.match(/\[([A-Z0-9-]+)\]/u)?.[1];
+    if (code === undefined || code.length === 0 || title.length === 0) return [];
     const classificationText = `${attributes} ${body} ${resolved.pathname}`;
     const classification =
       /(?:booster|starter|deck|card|set)/iu.test(classificationText)
@@ -1775,16 +1792,27 @@ function htmlText(value: string): string {
 function sourceArtworkFingerprint(
   officialCardIdentity: string,
   roles: readonly string[],
+  artworkId: string | null,
 ): string {
   const card = officialCardIdentity.normalize("NFC").trim().toUpperCase();
+  const normalizedArtworkId =
+    artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
   const stableRoles = [...new Set(
     roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()),
   )].sort();
-  if (card.length === 0 || stableRoles.some((role) => role.length === 0)) {
+  if (
+    card.length === 0 ||
+    stableRoles.length === 0 ||
+    stableRoles.some((role) => role.length === 0)
+  ) {
     throw new Error("Official Printing has no stable semantic artwork identity.");
   }
   return `official-artwork:${
-    JSON.stringify({ official_card_identity: card, roles: stableRoles })
+    JSON.stringify({
+      official_card_identity: card,
+      roles: stableRoles,
+      artwork_id: normalizedArtworkId === "" ? null : normalizedArtworkId,
+    })
   }`;
 }
 
@@ -3521,7 +3549,10 @@ function cardObservation(
               detail.printed_fields_digest,
               "Official printed fields digest",
             ),
-            treatment: "standard",
+            treatment:
+              typeof detail.treatment === "string"
+                ? detail.treatment
+                : "standard",
             // A Source Adapter can declare the image role and URL, but only
             // retained and digest-verified image bytes can prove novelty.
             demonstrably_novel: false,

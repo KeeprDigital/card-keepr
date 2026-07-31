@@ -1,4 +1,4 @@
-import { canonicalJson, sha256, sha256Text } from "./serialization";
+import { sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./fixture";
 import { requiredSourceAdapter } from "./source-adapters";
@@ -485,23 +485,21 @@ async function attachRetainedPrintingImages(
       },
     };
   }
-  const fingerprint = `official-artwork:${
-    await sha256Text(canonicalJson(
-      retainedImages
-        .map((item) => {
-          if (!isRecord(item)) {
-            throw new Error("Retained Printing Image evidence is invalid.");
-          }
-          return {
-            role: item.role,
-            content_sha256: item.content_sha256,
-          };
-        })
-        .sort((left, right) =>
-          String(left.role).localeCompare(String(right.role))
-        ),
-    ))
-  }`;
+  const fingerprint = value.identity_evidence.artwork_fingerprint;
+  if (typeof fingerprint !== "string" || fingerprint.length === 0) {
+    throw new Error(
+      "Retained Printing Image has no source-semantic artwork identity.",
+    );
+  }
+  if (!hasExplicitArtworkIdentity(fingerprint)) {
+    return {
+      ...value,
+      appearance_evidence: {
+        ...value.appearance_evidence,
+        images: retainedImages,
+      },
+    };
+  }
   const firstImage = retainedImages[0]!;
   if (!isRecord(firstImage) || typeof firstImage.source_url !== "string") {
     throw new Error("Retained Printing Image source URL is invalid.");
@@ -527,6 +525,21 @@ async function attachRetainedPrintingImages(
       ),
     },
   };
+}
+
+function hasExplicitArtworkIdentity(fingerprint: string): boolean {
+  const prefix = "official-artwork:";
+  if (!fingerprint.startsWith(prefix)) return false;
+  try {
+    const value: unknown = JSON.parse(fingerprint.slice(prefix.length));
+    return (
+      isRecord(value) &&
+      typeof value.artwork_id === "string" &&
+      value.artwork_id.length > 0
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function retainedPrintingImage(

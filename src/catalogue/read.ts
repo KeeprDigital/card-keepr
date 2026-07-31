@@ -218,13 +218,16 @@ export async function printingImageContentResponse(
     etag,
     "x-catalogue-revision": row.current_revision_id,
   });
-  if (ifNoneMatch(request, etag)) {
+  const isHead = request.method === "HEAD";
+  if (!isHead && ifNoneMatch(request, etag)) {
     return new Response(null, { status: 304, headers: baseHeaders });
   }
-  const range = parseRange(
-    request.headers.get("range"),
-    row.content_byte_length,
-  );
+  const range = isHead
+    ? null
+    : parseRange(
+        request.headers.get("range"),
+        row.content_byte_length,
+      );
   if (range === "unsatisfiable") {
     baseHeaders.set(
       "content-range",
@@ -234,7 +237,7 @@ export async function printingImageContentResponse(
     return new Response(null, { status: 416, headers: baseHeaders });
   }
   const object =
-    request.method === "HEAD"
+    isHead
       ? await bucket.head(row.object_key)
       : await bucket.get(
           row.object_key,
@@ -255,7 +258,7 @@ export async function printingImageContentResponse(
     );
   }
   return new Response(
-    request.method === "HEAD" ? null : (object as R2ObjectBody).body,
+    isHead ? null : (object as R2ObjectBody).body,
     {
       status: range === null ? 200 : 206,
       headers: baseHeaders,

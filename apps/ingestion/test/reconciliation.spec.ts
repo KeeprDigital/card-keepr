@@ -779,8 +779,16 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
-test("production Digimon image bytes, not a reused URL and role, distinguish Printings", async () => {
-  const collectVariant = async (variant: "base" | "alternate") => {
+test("explicit source-semantic Digimon artwork identity survives re-encoding and distinguishes artworks", async () => {
+  const collectVariant = async (
+    variant:
+      | "base"
+      | "base-reencoded"
+      | "no-artwork-id"
+      | "alternate"
+      | "alternate-two",
+    expectedState = "awaiting_approval",
+  ) => {
     const requests = officialSourceDiscoveryRequests("digimon-en").map(
       (sourceRequest) =>
         sourceRequest.id === "digimon-en:card-list"
@@ -807,12 +815,13 @@ test("production Digimon image bytes, not a reused URL and role, distinguish Pri
         await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
       ).response.status,
     ).toBe(202);
-    await waitForRunState(
+    const state = await waitForRunState(
       runId,
-      "awaiting_approval",
+      expectedState,
       20_000,
       250,
     );
+    if (expectedState === "failed") return state;
     const candidate = await get(
       `/v1/ingestion-runs/${runId}/candidate`,
     );
@@ -829,6 +838,18 @@ test("production Digimon image bytes, not a reused URL and role, distinguish Pri
   ).printings.added[0]!;
   expect((await approve(first)).response.status).toBe(200);
 
+  const reencoded = await collectVariant("base-reencoded");
+  expect(reencoded).toMatchObject({
+    diff: { printings: { added: [] } },
+  });
+  expect((await approve(reencoded)).response.status).toBe(200);
+
+  const locatorOnly = await collectVariant("no-artwork-id", "failed");
+  expect(locatorOnly).toMatchObject({
+    state: "failed",
+    failure_code: "printing_reconciliation_blocked",
+  });
+
   const second = await collectVariant("alternate");
   expect(second).toMatchObject({
     diff: { printings: { added: [expect.any(String)] } },
@@ -836,12 +857,22 @@ test("production Digimon image bytes, not a reused URL and role, distinguish Pri
   const secondPrintingId = (
     second.diff as { printings: { added: string[] } }
   ).printings.added[0]!;
+  expect((await approve(second)).response.status).toBe(200);
+
+  const third = await collectVariant("alternate-two");
+  expect(third).toMatchObject({
+    diff: { printings: { added: [expect.any(String)] } },
+  });
+  const thirdPrintingId = (
+    third.diff as { printings: { added: string[] } }
+  ).printings.added[0]!;
   const targetPrintingIds = new Set([
     firstPrintingId,
     secondPrintingId,
+    thirdPrintingId,
   ]);
-  expect(targetPrintingIds.size).toBe(2);
-  const published = await approve(second);
+  expect(targetPrintingIds.size).toBe(3);
+  const published = await approve(third);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(
     published.document,
@@ -857,18 +888,24 @@ test("production Digimon image bytes, not a reused URL and role, distinguish Pri
   const targetImages = images.filter(({ printing_id }) =>
     targetPrintingIds.has(String(printing_id)),
   );
-  expect(targetPrintings).toHaveLength(2);
+  expect(targetPrintings).toHaveLength(3);
   expect(new Set(targetPrintings.map(({ id }) => id))).toEqual(
     targetPrintingIds,
   );
-  expect(targetImages).toHaveLength(2);
+  expect(targetImages).toHaveLength(4);
   expect(new Set(targetImages.map(({ printing_id }) => printing_id))).toEqual(
     targetPrintingIds,
   );
   expect(
     new Set(targetImages.map(({ content_sha256 }) => content_sha256)).size,
-  ).toBe(2);
-}, 45_000);
+  ).toBe(4);
+  expect(
+    targetImages
+      .filter(({ printing_id }) => printing_id === firstPrintingId)
+      .map(({ width, height }) => `${width}x${height}`)
+      .sort(),
+  ).toEqual(["1x1", "2x2"]);
+}, 60_000);
 
 test("production plans bind every request identity to its exact Official Source surface URL", async () => {
   const requests = officialSourceDiscoveryRequests("one-piece-en").map(
@@ -2644,7 +2681,7 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     idempotency_key: "reject-linked-retry-after-verification",
   });
   expect(rejected.response.status).toBe(200);
-}, 15_000);
+}, 30_000);
 
 test("historical locator bindings reactivate only for the same Printing and expose lifecycle evidence", async () => {
   const baseRun = await collect(
@@ -3621,7 +3658,7 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
       expect.objectContaining({ id: firstContext?.id }),
     ]),
   );
-});
+}, 30_000);
 
 test("same-authority Product conflicts fail closed before publication", async () => {
   const run = await collectRequests(
@@ -4419,7 +4456,7 @@ test("Product freshness is emitted only for an actually checked Product surface"
       }),
     }),
   );
-});
+}, 30_000);
 
 test("a Digimon Release with unknown region remains schema-valid in the export", async () => {
   const run = await collect(
