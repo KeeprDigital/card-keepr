@@ -20,8 +20,28 @@ const apiSchema = JSON.parse(
     "utf8",
   ),
 );
+const exportManifestSchemaV1 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const exportManifestSchemaV2 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
+ajv.addSchema(exportManifestSchemaV1);
+ajv.addSchema(exportManifestSchemaV2);
 ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
 const validateCatalogue = ajv.getSchema(

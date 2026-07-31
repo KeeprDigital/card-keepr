@@ -13,7 +13,7 @@ INSERT INTO source_adapter_versions (
     'one-piece-en',
     'one-piece',
     'one-piece@1',
-    'one-piece-official-legality@4',
+    'one-piece-official-legality@5',
     'production'
   ),
   (
@@ -21,7 +21,7 @@ INSERT INTO source_adapter_versions (
     'fusion-world-en',
     'fusion-world',
     'fusion-world@1',
-    'fusion-world-official-legality@4',
+    'fusion-world-official-legality@5',
     'production'
   ),
   (
@@ -29,7 +29,7 @@ INSERT INTO source_adapter_versions (
     'digimon-en',
     'digimon',
     'digimon@1',
-    'digimon-official-legality@4',
+    'digimon-official-legality@5',
     'production'
   ),
   (
@@ -37,7 +37,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-asia',
     'gundam',
     'gundam@1',
-    'gundam-official-legality@4',
+    'gundam-official-legality@5',
     'production'
   ),
   (
@@ -45,7 +45,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-us',
     'gundam',
     'gundam@1',
-    'gundam-official-legality@4',
+    'gundam-official-legality@5',
     'production'
   );
 
@@ -74,6 +74,12 @@ BEFORE UPDATE OF source_lineage, supported_game, game_profile_version,
 ON ingestion_evidence_plans
 BEGIN
   SELECT RAISE(ABORT, 'ingestion_evidence_plan_request_set_immutable');
+END;
+
+CREATE TRIGGER ingestion_evidence_plans_immutable_delete
+BEFORE DELETE ON ingestion_evidence_plans
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_evidence_plan_immutable');
 END;
 
 CREATE TRIGGER official_source_collection_plans_immutable_delete

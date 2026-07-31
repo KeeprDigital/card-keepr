@@ -82,6 +82,14 @@ test("the production repository ingests effective-dated regional Legality Rules 
   ).rejects.toThrow(/ingestion_evidence_plan_request_set_immutable/);
   await expect(
     testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM ingestion_evidence_plans
+       WHERE ingestion_run_id = ?`,
+    )
+      .bind(runId)
+      .run(),
+  ).rejects.toThrow(/ingestion_evidence_plan_immutable/);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
       `UPDATE official_source_collection_plans
        SET collection_plan_json = '{}'
        WHERE ingestion_run_id = ?`,
@@ -192,6 +200,11 @@ test("the production repository ingests effective-dated regional Legality Rules 
         official_id: "legality_rule_asia_unresolved_scope",
         effect: expect.objectContaining({ type: "unresolved" }),
       }),
+      expect.objectContaining({
+        official_id: "legality_rule_asia_expired",
+        effective_until: "2025-06-01",
+        effect: { type: "ban" },
+      }),
     ]),
   });
 
@@ -249,6 +262,140 @@ test("the production repository ingests effective-dated regional Legality Rules 
     .bind(requiredString(separated.document, "id"))
     .run();
   expect(released.meta.changes).toBe(1);
+});
+
+test("One Piece history, block, release, and DON policy surfaces produce rules through HTTP", async () => {
+  const runId = await startAdapterCollection({
+    adapter: "one-piece-json-document@3",
+    game: "one-piece",
+    lineage: "one-piece-en",
+    scenario: "contextual-legality-one-piece-policy",
+  });
+  const parsing = await waitForState(runId, "parsing");
+  expect(parsing.observation_sets).toHaveLength(7);
+
+  const reconciled = await request(
+    `/v1/ingestion-runs/${runId}/reconciliation`,
+    {},
+  );
+  expect(
+    reconciled.response.status,
+    JSON.stringify(reconciled.document),
+  ).toBe(200);
+  expect(reconciled.document).toMatchObject({
+    publishable: true,
+    legality_rules: expect.arrayContaining([
+      expect.objectContaining({
+        official_id: "op_current_eligible",
+        effect: { type: "eligible" },
+      }),
+      expect.objectContaining({
+        official_id: "op_history_ban",
+        effective_until: "2025-06-01",
+        effect: { type: "ban" },
+      }),
+      expect.objectContaining({
+        official_id: "op_block_rotation",
+        effect: { type: "rotation", eligible_blocks: ["4"] },
+      }),
+      expect.objectContaining({
+        official_id: "op_release_timing",
+        effect: {
+          type: "release_timing",
+          legal_from: "2026-08-01",
+        },
+      }),
+      expect.objectContaining({
+        official_id: "op_don_membership",
+        effect: {
+          type: "membership",
+          attribute: "traits",
+          includes_any: ["Policy Test"],
+        },
+      }),
+    ]),
+  });
+
+  const released = await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+  )
+    .bind(runId)
+    .run();
+  expect(released.meta.changes).toBe(1);
+});
+
+test.each([
+  {
+    adapter: "fusion-world-en@2",
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+    officialId: "fw_representative_eligible",
+  },
+  {
+    adapter: "digimon-en@2",
+    game: "digimon",
+    lineage: "digimon-en",
+    officialId: "digimon_representative_eligible",
+  },
+])(
+  "$adapter parses representative publisher Card and notice fields through HTTP",
+  async ({ adapter, game, lineage, officialId }) => {
+    const runId = await startAdapterCollection({
+      adapter,
+      game,
+      lineage,
+      scenario: `contextual-legality-representative-${game}`,
+    });
+    await waitForState(runId, "parsing");
+    const reconciled = await request(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      {},
+    );
+    expect(
+      reconciled.response.status,
+      JSON.stringify(reconciled.document),
+    ).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      publishable: true,
+      cards: [expect.objectContaining({ game })],
+      legality_rules: expect.arrayContaining([
+        expect.objectContaining({
+          official_id: officialId,
+          game,
+          effect: { type: "eligible" },
+        }),
+        expect.objectContaining({
+          official_id: `${game}_legality_history_representative`,
+          effect: { type: "ban" },
+        }),
+      ]),
+    });
+
+    const released = await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL
+       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+    )
+      .bind(runId)
+      .run();
+    expect(released.meta.changes).toBe(1);
+  },
+);
+
+test("a production adapter rejects another game's raw envelope through HTTP", async () => {
+  const runId = await startAdapterCollection({
+    adapter: "fusion-world-en@2",
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+    scenario: "contextual-legality-cross-game-envelope",
+  });
+  const failed = await waitForState(runId, "failed");
+  expect(failed).toMatchObject({
+    state: "failed",
+    failure_code: "source_parse_failed",
+  });
 });
 
 test.each([
@@ -315,7 +462,25 @@ test.each([
       state: "awaiting_approval",
       publishable: true,
       cards: [],
-      legality_rules: [],
+      legality_rules: expect.arrayContaining(
+        adapter === "one-piece-json-document@3"
+          ? [
+              "legality_history",
+              "block_policy",
+              "release_timing",
+              "don_rules",
+            ].map((surface) =>
+              expect.objectContaining({
+                official_id: `one-piece_${surface}_representative`,
+              })
+            )
+          : [
+              expect.objectContaining({
+                official_id: `${game}_legality_history_representative`,
+                effect: { type: "ban" },
+              }),
+            ],
+      ),
     });
     // The parameterized cases share one test D1 instance. Release only the
     // test runner's global lock after the public reconciliation assertion so
@@ -336,6 +501,8 @@ test.each([
   ["contextual-legality-false-empty-rules"],
   ["contextual-legality-incomplete-discovery"],
   ["contextual-legality-unknown-rule-wording"],
+  ["contextual-legality-ordering-fixture-wording"],
+  ["contextual-legality-serialization-golden-wording"],
   ["contextual-legality-mismatched-rule-wording"],
   ["contextual-legality-foreign-image-authority"],
 ])(

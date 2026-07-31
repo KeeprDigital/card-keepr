@@ -20,7 +20,10 @@ import {
   credentialConsumerProofRequestHeader,
   type CredentialConsumerProofRequestClaims,
 } from "../../src/credentials/consumer-proof";
-import { contextualLegalitySourceDocument } from "./test/contextual-legality-fixture";
+import {
+  contextualLegalitySourceDocument,
+  onePiecePolicySourceDocument,
+} from "./test/contextual-legality-fixture";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
@@ -817,6 +820,19 @@ function reconciliationSourceDocument(
   surface: string,
   requestUrl: string,
 ) {
+  if (scenario === "contextual-legality-one-piece-policy") {
+    return onePiecePolicySourceDocument(surface, requestUrl);
+  }
+  if (scenario === "contextual-legality-cross-game-envelope") {
+    return contextualLegalitySourceDocument("EN-ASIA", surface, requestUrl);
+  }
+  if (scenario.startsWith("contextual-legality-representative-")) {
+    return representativeRawSourceDocument(
+      officialGame(requestUrl),
+      surface,
+      requestUrl,
+    );
+  }
   if (scenario === "contextual-legality-empty-oceania") {
     return emptyOfficialCatalogueDocument(
       "EN-OCEANIA",
@@ -868,6 +884,8 @@ function reconciliationSourceDocument(
   }
   if (
     scenario === "contextual-legality-unknown-rule-wording" ||
+    scenario === "contextual-legality-ordering-fixture-wording" ||
+    scenario === "contextual-legality-serialization-golden-wording" ||
     scenario === "contextual-legality-mismatched-rule-wording" ||
     scenario === "contextual-legality-foreign-image-authority"
   ) {
@@ -876,32 +894,45 @@ function reconciliationSourceDocument(
       surface,
       requestUrl,
     ) as {
-      surface: {
-        pages: { records: Record<string, unknown>[] }[];
+      gundam: {
+        results: Record<string, unknown>[];
       };
     };
-    const first = document.surface.pages[0]?.records[0];
+    const first = document.gundam.results[0];
     if (
       first !== undefined &&
       surface === "legality_rules" &&
       scenario === "contextual-legality-unknown-rule-wording"
     ) {
-      first.official_text = "Opaque publisher marker XQZ-30.";
+      first.text = "Opaque publisher marker XQZ-30.";
+    }
+    if (
+      first !== undefined &&
+      surface === "legality_rules" &&
+      scenario === "contextual-legality-ordering-fixture-wording"
+    ) {
+      first.text = "This is an ordering fixture.";
+    }
+    if (
+      first !== undefined &&
+      surface === "legality_rules" &&
+      scenario === "contextual-legality-serialization-golden-wording"
+    ) {
+      first.text = "Café serialization golden.";
     }
     if (
       first !== undefined &&
       surface === "legality_rules" &&
       scenario === "contextual-legality-mismatched-rule-wording"
     ) {
-      first.official_text = "This card is banned and may not be included.";
+      first.text = "This card is banned and may not be included.";
     }
     if (
       first !== undefined &&
       surface === "legality_card_details" &&
       scenario === "contextual-legality-foreign-image-authority"
     ) {
-      (first.printing as Record<string, unknown>).image_url =
-        "https://attacker.example/images/GD30-001.png";
+      first.image_url = "https://attacker.example/images/GD30-001.png";
     }
     return document;
   }
@@ -3033,7 +3064,7 @@ function emptyOfficialCatalogueDocument(
   legalityVariant: "complete" | "missing" | "false-empty" =
     "complete",
   game: "one-piece" | "fusion-world" | "digimon" | "gundam" =
-    "gundam",
+    officialGame(requestUrl),
   omittedSurface?: string,
   discoveryVariant?: "missing",
 ) {
@@ -3041,20 +3072,18 @@ function emptyOfficialCatalogueDocument(
     (legalityVariant === "missing" && surface === "legality_rules") ||
     surface === omittedSurface
   ) {
-    return { surface: { name: "not-a-required-surface" } };
+    return rawOfficialEnvelope(
+      game,
+      partition,
+      "not-a-required-surface",
+      [],
+    );
   }
   if (
     legalityVariant === "false-empty" &&
     surface === "legality_rules"
   ) {
-    return {
-      surface: {
-        name: surface,
-        partition,
-        declared_record_count: 1,
-        pages: [],
-      },
-    };
+    return rawOfficialEnvelope(game, partition, surface, [], 1);
   }
   const requiredSurfaces = [
     "discovery",
@@ -3067,32 +3096,17 @@ function emptyOfficialCatalogueDocument(
   ];
   const records = officialSurfaceRecords({
     discoveryVariant,
+    game,
     requestUrl,
     requiredSurfaces,
     surface,
   });
-  return {
-    surface: {
-      name: surface,
-      partition,
-      declared_record_count: records.length,
-      pages:
-        records.length === 0
-          ? []
-          : [
-              {
-                number: 1,
-                total_pages: 1,
-                declared_record_count: records.length,
-                records,
-              },
-            ],
-    },
-  };
+  return rawOfficialEnvelope(game, partition, surface, records);
 }
 
 function officialSurfaceRecords(input: {
   discoveryVariant?: "missing";
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
   requestUrl: string;
   requiredSurfaces: string[];
   surface: string;
@@ -3105,22 +3119,305 @@ function officialSurfaceRecords(input: {
           input.discoveryVariant !== "missing" ||
             name !== "legality_history",
       )
-      .map((name) => ({
-        request_id: name,
-        surface: name,
-        url: officialSurfaceUrl(input.requestUrl, name),
-      }));
+      .map((name) => rawDiscoveryRecord(
+        input.game,
+        name,
+        officialSurfaceUrl(input.requestUrl, name),
+      ));
   }
-  if (
-    input.surface === "legality_card_details" ||
-    input.surface === "legality_rules"
-  ) return [];
-  return [
-    {
-      source_id: `${input.surface}-representative`,
-      source_url: input.requestUrl,
-    },
+  if (input.surface !== "legality_card_details" && input.surface !== "legality_rules") {
+    return [emptyPartitionRawRule(input.game, input.surface, input.requestUrl)];
+  }
+  return [];
+}
+
+function officialGame(
+  requestUrl: string,
+): "one-piece" | "fusion-world" | "digimon" | "gundam" {
+  const hostname = new URL(requestUrl).hostname;
+  if (hostname === "en.onepiece-cardgame.com") return "one-piece";
+  if (hostname === "www.dbs-cardgame.com") return "fusion-world";
+  if (hostname === "world.digimoncard.com") return "digimon";
+  return "gundam";
+}
+
+function rawDiscoveryRecord(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  surface: string,
+  url: string,
+): Record<string, unknown> {
+  if (game === "one-piece") return { key: surface, area: surface, href: url };
+  if (game === "fusion-world") {
+    return { request: surface, section: surface, url };
+  }
+  if (game === "digimon") return { request_id: surface, feed: surface, link: url };
+  return { request_key: surface, endpoint: surface, href: url };
+}
+
+function rawOfficialEnvelope(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+  surface: string,
+  records: readonly unknown[],
+  count = records.length,
+): Record<string, unknown> {
+  if (game === "one-piece") {
+    return { one_piece: { area: surface, locale: partition, total: count, entries: records } };
+  }
+  if (game === "fusion-world") {
+    return { fusion_world: { section: surface, territory: partition, result_count: count, items: records } };
+  }
+  if (game === "digimon") {
+    return { digimon: { feed: surface, language: partition, count, rows: records } };
+  }
+  return { gundam: { endpoint: surface, locale: partition, hits: count, results: records } };
+}
+
+function representativeRawSourceDocument(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  surface: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const partition = game === "gundam" ? "EN-ASIA" : "EN-OCEANIA";
+  const requiredSurfaces = [
+    "discovery",
+    "legality_card_details",
+    "legality_rules",
+    "legality_history",
   ];
+  const records = surface === "discovery"
+    ? requiredSurfaces
+        .filter((name) => name !== "discovery")
+        .map((name) => rawDiscoveryRecord(
+          game,
+          name,
+          officialSurfaceUrl(requestUrl, name),
+        ))
+    : surface === "legality_card_details"
+      ? [representativeRawCard(game, requestUrl)]
+      : surface === "legality_rules"
+        ? [representativeRawNotice(game, requestUrl)]
+        : [emptyPartitionRawRule(game, surface, requestUrl)];
+  return rawOfficialEnvelope(game, partition, surface, records);
+}
+
+function representativeRawCard(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  requestUrl: string,
+): Record<string, unknown> {
+  const base = new URL(requestUrl);
+  if (game === "fusion-world") {
+    return {
+      source_url: requestUrl,
+      card_number: "FB30-001",
+      name: "Representative Fusion Card",
+      "Card Type": "Battle",
+      Color: ["Red"],
+      Cost: "1",
+      "Specified Cost": ["red:1"],
+      Power: "5000",
+      "Combo Power": "10000",
+      "Special Traits": ["Saiyan"],
+      Skills: "Official Fusion World skill.",
+      Rarity: "R",
+      variant_suffix: null,
+      image_urls: [`${base.origin}/fw/en/images/FB30-001.png`],
+    };
+  }
+  if (game === "digimon") {
+    return {
+      popup_id: "BT30-001-base",
+      source_url: requestUrl,
+      card_number: "BT30-001",
+      name: "Representative Digimon",
+      cardcategory: "Digimon",
+      Color: ["Red"],
+      Lv: "3",
+      "Play Cost": "3",
+      "Use Cost": null,
+      DP: "2000",
+      Form: "Rookie",
+      Attribute: "Vaccine",
+      Type: ["Reptile"],
+      "Digivolution Cost": "2",
+      Effect: "Official Digimon effect.",
+      "Inherited Effect": null,
+      "Security Effect": null,
+      "DUAL Color": [],
+      "DUAL Cost": null,
+      "Link DP": null,
+      Rarity: "C",
+      "Alternative Art": "no",
+      image_url: `${base.origin}/images/BT30-001.png`,
+    };
+  }
+  throw new Error(`No representative raw Card fixture for ${game}.`);
+}
+
+function representativeRawNotice(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  requestUrl: string,
+): Record<string, unknown> {
+  if (game === "fusion-world") {
+    return {
+      rule_ref: "fw_representative_eligible",
+      canonical_url: requestUrl,
+      notice: "FB30-001 is eligible for Standard tournament play.",
+      market: "EN-OCEANIA",
+      play_format: "standard",
+      tier: null,
+      active_on: "2026-01-01",
+      expires_on: null,
+      cards: ["FB30-001"],
+      directive: "eligible",
+      cap: null,
+      paired_cards: [],
+      filter_field: null,
+      filter_values: [],
+      blocks: [],
+      tournament_legal_date: null,
+      ambiguity: null,
+    };
+  }
+  if (game === "digimon") {
+    return {
+      restriction_id: "digimon_representative_eligible",
+      link: requestUrl,
+      body: "BT30-001 is eligible for Standard tournament play.",
+      language_scope: "EN-OCEANIA",
+      ruleset: "standard",
+      tournament_level: null,
+      applies_from: "2026-01-01",
+      applies_until: null,
+      card_ids: ["BT30-001"],
+      status_code: "eligible",
+      deck_limit: null,
+      prohibited_with: [],
+      membership_field: null,
+      membership_terms: [],
+      permitted_blocks: [],
+      sale_eligible_on: null,
+      clarification: null,
+    };
+  }
+  throw new Error(`No representative raw notice fixture for ${game}.`);
+}
+
+function emptyPartitionRawRule(
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam",
+  surface: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const id = `${game}_${surface}_representative`;
+  const effect = surface === "block_policy"
+    ? {
+        code: "rotation",
+        wording: "Only cards bearing Block 4 are eligible after rotation.",
+        blocks: ["4"],
+      }
+    : surface === "release_timing"
+      ? {
+          code: "release",
+          wording: "Cards become legal for tournament play on 1 August 2026.",
+          legalFrom: "2026-08-01",
+        }
+      : surface === "don_rules"
+        ? {
+            code: "membership",
+            wording: "Cards with the DON!! trait are eligible under this membership rule.",
+            membershipAttribute: "traits",
+            membershipValues: ["DON!!"],
+          }
+        : {
+            code: "ban",
+            wording: "The historical notice states these cards were banned from play.",
+            effectiveUntil: "2025-06-01",
+          };
+  if (game === "one-piece") {
+    return {
+      notice_no: id,
+      source_url: requestUrl,
+      published_text: effect.wording,
+      territory: "EN-OCEANIA",
+      format_name: "standard",
+      event_class: null,
+      start_date: "2025-01-01",
+      end_date: effect.effectiveUntil ?? null,
+      card_numbers: [],
+      restriction_code: effect.code,
+      maximum_copies: null,
+      related_cards: [],
+      membership_attribute: effect.membershipAttribute ?? null,
+      membership_values: effect.membershipValues ?? [],
+      eligible_blocks: effect.blocks ?? [],
+      legal_from: effect.legalFrom ?? null,
+      unresolved_reason: null,
+    };
+  }
+  if (game === "fusion-world") {
+    return {
+      rule_ref: id,
+      canonical_url: requestUrl,
+      notice: effect.wording,
+      market: "EN-OCEANIA",
+      play_format: "standard",
+      tier: null,
+      active_on: "2025-01-01",
+      expires_on: effect.effectiveUntil ?? null,
+      cards: [],
+      directive: effect.code,
+      cap: null,
+      paired_cards: [],
+      filter_field: effect.membershipAttribute ?? null,
+      filter_values: effect.membershipValues ?? [],
+      blocks: effect.blocks ?? [],
+      tournament_legal_date: effect.legalFrom ?? null,
+      ambiguity: null,
+    };
+  }
+  if (game === "digimon") {
+    return {
+      restriction_id: id,
+      link: requestUrl,
+      body: effect.wording,
+      language_scope: "EN-OCEANIA",
+      ruleset: "standard",
+      tournament_level: null,
+      applies_from: "2025-01-01",
+      applies_until: effect.effectiveUntil ?? null,
+      card_ids: [],
+      status_code: effect.code,
+      deck_limit: null,
+      prohibited_with: [],
+      membership_field: effect.membershipAttribute ?? null,
+      membership_terms: effect.membershipValues ?? [],
+      permitted_blocks: effect.blocks ?? [],
+      sale_eligible_on: effect.legalFrom ?? null,
+      clarification: null,
+    };
+  }
+  const region = new URL(requestUrl).pathname.startsWith("/en/")
+    ? "EN-US"
+    : "EN-ASIA";
+  return {
+    news_id: id,
+    url: requestUrl,
+    text: effect.wording,
+    region,
+    format: "standard",
+    event_tier: null,
+    effective_date: "2025-01-01",
+    end_date: effect.effectiveUntil ?? null,
+    card_numbers: [],
+    ruling: effect.code,
+    copy_limit: null,
+    companion_cards: [],
+    attribute: effect.membershipAttribute ?? null,
+    values: effect.membershipValues ?? [],
+    legal_blocks: effect.blocks ?? [],
+    legal_from: effect.legalFrom ?? null,
+    reason: null,
+  };
 }
 
 function officialSurfaceUrl(requestUrl: string, surface: string): string {

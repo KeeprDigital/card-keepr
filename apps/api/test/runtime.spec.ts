@@ -14,6 +14,8 @@ import {
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
+import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
+import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -252,6 +254,8 @@ test("the public Printing response validates full Distribution Context objects",
   const body = await response.json();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
+  ajv.addSchema(exportManifestSchemaV1);
+  ajv.addSchema(exportManifestSchemaV2);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/PrintingDocument`,
@@ -892,6 +896,8 @@ test("Card cursors continue on an available pinned revision and conflict only af
 test("the normative Printing schema excludes SourceBucket from canonical relationship evidence", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
+  ajv.addSchema(exportManifestSchemaV1);
+  ajv.addSchema(exportManifestSchemaV2);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/RelationshipEvidence`,

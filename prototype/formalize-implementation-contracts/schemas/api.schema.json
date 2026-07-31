@@ -780,7 +780,14 @@
       "required": ["data", "meta", "links"],
       "properties": {
         "data": {
-          "$ref": "./catalogue-export-manifest.schema.json"
+          "oneOf": [
+            {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1"
+            },
+            {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@2"
+            }
+          ]
         },
         "meta": { "$ref": "#/$defs/Meta" },
         "links": { "$ref": "#/$defs/SelfLink" }

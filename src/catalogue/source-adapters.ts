@@ -3,6 +3,15 @@ import {
   officialRawAdapterContracts,
 } from "./official-raw-adapter-contracts.mjs";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.mjs";
+import { sha256Text } from "./serialization";
+
+export type OfficialSourceContract = Readonly<{
+  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
+  origin: string;
+  pathnamePrefix: string;
+  requiredSurfaces: readonly string[];
+}>;
 
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
@@ -34,6 +43,7 @@ export type SourceAdapterRegistration = Readonly<{
   }[];
   requiredSurfaces?: readonly string[];
   requestUrlForSurface?: (surface: string) => string;
+  officialSourceContract?: OfficialSourceContract;
 }>;
 
 const parseSourceDocument = (document: unknown): readonly unknown[] => {
@@ -89,62 +99,80 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
   return [document];
 };
 
-function officialLegalityParser(
+async function onePieceOfficialLegalityParser(
+  document: unknown,
+): Promise<readonly unknown[]> {
+  const envelope = requiredRecord(document, "One Piece Official Source response");
+  assertOnlyFields(envelope, ["one_piece"]);
+  const payload = requiredRecord(envelope.one_piece, "One Piece response payload");
+  return officialLegalityObservations(
+    onePieceOfficialSource,
+    parseRawSurface(payload, {
+      count: "total",
+      locale: "locale",
+      records: "entries",
+      surface: "area",
+    }),
+    normalizeOnePieceRecord,
+  );
+}
+
+async function fusionWorldOfficialLegalityParser(
+  document: unknown,
+): Promise<readonly unknown[]> {
+  const envelope = requiredRecord(document, "Fusion World Official Source response");
+  assertOnlyFields(envelope, ["fusion_world"]);
+  const payload = requiredRecord(
+    envelope.fusion_world,
+    "Fusion World response payload",
+  );
+  return officialLegalityObservations(
+    fusionWorldOfficialSource,
+    parseRawSurface(payload, {
+      count: "result_count",
+      locale: "territory",
+      records: "items",
+      surface: "section",
+    }),
+    normalizeFusionWorldRecord,
+  );
+}
+
+async function digimonOfficialLegalityParser(
+  document: unknown,
+): Promise<readonly unknown[]> {
+  const envelope = requiredRecord(document, "Digimon Official Source response");
+  assertOnlyFields(envelope, ["digimon"]);
+  const payload = requiredRecord(envelope.digimon, "Digimon response payload");
+  return officialLegalityObservations(
+    digimonOfficialSource,
+    parseRawSurface(payload, {
+      count: "count",
+      locale: "language",
+      records: "rows",
+      surface: "feed",
+    }),
+    normalizeDigimonRecord,
+  );
+}
+
+function gundamOfficialLegalityParser(
   contract: OfficialSourceContract,
-): (document: unknown) => readonly unknown[] {
-  return (document) => {
-    const envelope = requiredRecord(
-      document,
-      "Official Source surface document",
-    );
-    assertOnlyFields(envelope, ["surface"]);
-    const surface = requiredRecord(
-      envelope.surface,
-      "Official Source surface",
-    );
-    if (
-      typeof surface.name !== "string" ||
-      !contract.requiredSurfaces.includes(surface.name)
-    ) {
-      throw new Error(
-        "The Official Source response does not identify one required surface.",
-      );
-    }
-    const name = surface.name;
-    const records = parseOfficialSurface(
-      surface,
-      officialSurfaceLabel(name),
+): (document: unknown) => Promise<readonly unknown[]> {
+  return async (document) => {
+    const envelope = requiredRecord(document, "Gundam Official Source response");
+    assertOnlyFields(envelope, ["gundam"]);
+    const payload = requiredRecord(envelope.gundam, "Gundam response payload");
+    return officialLegalityObservations(
       contract,
-      name === "legality_rules" || name === "legality_card_details",
+      parseRawSurface(payload, {
+        count: "hits",
+        locale: "locale",
+        records: "results",
+        surface: "endpoint",
+      }),
+      normalizeGundamRecord,
     );
-    validateOfficialSurfaceRecords(name, records, contract);
-    const retainedSurfaceEvidence = {
-      observation_type: "official_surface_evidence",
-      surface: name,
-      records,
-      completeness: completeObservationEvidence(),
-    };
-    if (name === "legality_card_details") {
-      return [
-        retainedSurfaceEvidence,
-        ...records.map((card) =>
-          parseOfficialLegalityCardDetail(card, contract)
-        ),
-      ];
-    }
-    if (name !== "legality_rules") {
-      return [retainedSurfaceEvidence];
-    }
-    return [
-      retainedSurfaceEvidence,
-      {
-        observation_type: "legality_rules",
-        legality_rules: records.map((rule) =>
-          parseOfficialLegalityNotice(rule, contract)
-        ),
-        completeness: completeObservationEvidence(),
-      },
-    ];
   };
 }
 
@@ -216,6 +244,659 @@ const gundamUsOfficialSource = officialSourceContract(
   "/en/",
 );
 
+type RawSurface = {
+  name: string;
+  locale: string;
+  records: unknown[];
+};
+
+type RawSurfaceFields = {
+  count: string;
+  locale: string;
+  records: string;
+  surface: string;
+};
+
+type RawRecordNormalizer = (
+  value: unknown,
+  surface: string,
+  contract: OfficialSourceContract,
+) => Promise<Record<string, unknown>>;
+
+const ruleBearingSurfaces = new Set([
+  "legality_rules",
+  "legality_history",
+  "block_policy",
+  "release_timing",
+  "don_rules",
+]);
+
+function parseRawSurface(
+  payload: Record<string, unknown>,
+  fields: RawSurfaceFields,
+): RawSurface {
+  assertOnlyFields(payload, [
+    fields.surface,
+    fields.locale,
+    fields.count,
+    fields.records,
+  ]);
+  const name = payload[fields.surface];
+  const locale = payload[fields.locale];
+  const declaredCount = requiredCount(
+    payload[fields.count],
+    `Official ${String(name)} result count`,
+  );
+  const records = payload[fields.records];
+  if (
+    typeof name !== "string" ||
+    typeof locale !== "string" ||
+    !Array.isArray(records) ||
+    records.length !== declaredCount
+  ) {
+    throw new Error(
+      "The raw Official Source response has an invalid surface, locale, or record count.",
+    );
+  }
+  return { name, locale, records };
+}
+
+async function officialLegalityObservations(
+  contract: OfficialSourceContract,
+  surface: RawSurface,
+  normalizeRecord: RawRecordNormalizer,
+): Promise<readonly unknown[]> {
+  if (
+    !contract.requiredSurfaces.includes(surface.name) ||
+    surface.locale !== contract.partition
+  ) {
+    throw new Error(
+      "The raw Official Source response does not identify the required lineage surface.",
+    );
+  }
+  if (surface.name === "discovery" && surface.records.length === 0) {
+    throw new Error("Official Source discovery retained no live records.");
+  }
+  const records = await Promise.all(
+    surface.records.map((record) =>
+      normalizeRecord(record, surface.name, contract)
+    ),
+  );
+  validateOfficialSurfaceRecords(surface.name, records, contract);
+  const retainedSurfaceEvidence = {
+    observation_type: "official_surface_evidence",
+    surface: surface.name,
+    records,
+    completeness: completeObservationEvidence(),
+  };
+  if (surface.name === "legality_card_details") {
+    return [
+      retainedSurfaceEvidence,
+      ...records.map((card) =>
+        parseOfficialLegalityCardDetail(card, contract)
+      ),
+    ];
+  }
+  if (!ruleBearingSurfaces.has(surface.name)) {
+    return [retainedSurfaceEvidence];
+  }
+  return [
+    retainedSurfaceEvidence,
+    {
+      observation_type: "legality_rules",
+      legality_rules: records.map((rule) =>
+        parseOfficialLegalityNotice(rule, contract)
+      ),
+      completeness: completeObservationEvidence(),
+    },
+  ];
+}
+
+async function normalizeOnePieceRecord(
+  value: unknown,
+  surface: string,
+  contract: OfficialSourceContract,
+): Promise<Record<string, unknown>> {
+  if (surface === "discovery") {
+    const record = exactRawRecord(value, ["key", "area", "href"]);
+    return discoveryRecord(record.key, record.area, record.href);
+  }
+  if (surface === "legality_card_details") {
+    const record = exactRawRecord(value, [
+      "source_record_id", "source_url", "card_number", "name", "Category",
+      "Color", "Cost", "Life", "Attribute", "Power", "Counter", "Type",
+      "Block icon", "Effect", "Trigger", "Rarity", "Illustration",
+      "image_url",
+    ]);
+    return normalizedRawCard(contract, {
+      sourceId: rawString(record.source_record_id, "source_record_id"),
+      sourceUrl: rawString(record.source_url, "source_url"),
+      cardNumber: rawString(record.card_number, "card_number"),
+      name: rawString(record.name, "name"),
+      rulesText: nullableRawText(record.Effect) ?? "",
+      imageUrl: rawString(record.image_url, "image_url"),
+      rarity: nullableRawText(record.Rarity),
+      variantKey: rawString(record.source_record_id, "source_record_id"),
+      printingAttributes: {
+        illustration_types: rawList(record.Illustration).map((item) =>
+          item.toLowerCase()
+        ),
+      },
+      cardAttributes: {
+        card_type: rawString(record.Category, "Category").toLowerCase(),
+        colours: rawColours(record.Color),
+        cost: rawInteger(record.Cost),
+        life: rawInteger(record.Life),
+        battle_attributes: rawList(record.Attribute),
+        power: rawInteger(record.Power),
+        counter: rawInteger(record.Counter),
+        traits: rawList(record.Type),
+        block_icons: rawList(record["Block icon"]),
+        effect_text: nullableRawText(record.Effect),
+        trigger_text: nullableRawText(record.Trigger),
+      },
+    });
+  }
+  return normalizeOnePieceNotice(value, contract);
+}
+
+async function normalizeFusionWorldRecord(
+  value: unknown,
+  surface: string,
+  contract: OfficialSourceContract,
+): Promise<Record<string, unknown>> {
+  if (surface === "discovery") {
+    const record = exactRawRecord(value, ["request", "section", "url"]);
+    return discoveryRecord(record.request, record.section, record.url);
+  }
+  if (surface === "legality_card_details") {
+    const record = exactRawRecord(value, [
+      "source_url", "card_number", "name", "Card Type",
+      "Color", "Cost", "Specified Cost", "Power", "Combo Power",
+      "Special Traits", "Skills", "Rarity", "variant_suffix", "image_urls",
+    ]);
+    const cardNumber = rawString(record.card_number, "card_number");
+    const variantKey = nullableRawText(record.variant_suffix);
+    return normalizedRawCard(contract, {
+      sourceId: `${cardNumber}:${variantKey ?? "base"}`,
+      sourceUrl: rawString(record.source_url, "source_url"),
+      cardNumber,
+      name: rawString(record.name, "name"),
+      rulesText: nullableRawText(record.Skills) ?? "",
+      imageUrl: rawFirstString(record.image_urls, "image_urls"),
+      rarity: nullableRawText(record.Rarity),
+      variantKey,
+      printingAttributes: {},
+      cardAttributes: {
+        card_type: rawString(record["Card Type"], "Card Type").toLowerCase(),
+        colours: rawColours(record.Color),
+        cost: rawInteger(record.Cost),
+        specified_cost: rawSpecifiedCost(record["Specified Cost"]),
+        power: rawInteger(record.Power),
+        combo_power: rawInteger(record["Combo Power"]),
+        traits: rawList(record["Special Traits"]),
+        skills: rawTextSections(record.Skills),
+      },
+    });
+  }
+  return normalizeFusionWorldNotice(value, contract);
+}
+
+async function normalizeDigimonRecord(
+  value: unknown,
+  surface: string,
+  contract: OfficialSourceContract,
+): Promise<Record<string, unknown>> {
+  if (surface === "discovery") {
+    const record = exactRawRecord(value, ["request_id", "feed", "link"]);
+    return discoveryRecord(record.request_id, record.feed, record.link);
+  }
+  if (surface === "legality_card_details") {
+    const record = exactRawRecord(value, [
+      "popup_id", "source_url", "card_number", "name", "cardcategory",
+      "Color", "Lv", "Play Cost", "Use Cost", "DP", "Form", "Attribute",
+      "Type", "Digivolution Cost", "Effect", "Inherited Effect",
+      "Security Effect", "DUAL Color", "DUAL Cost", "Link DP", "Rarity",
+      "Alternative Art", "image_url",
+    ]);
+    return normalizedRawCard(contract, {
+      sourceId: rawString(record.popup_id, "popup_id"),
+      sourceUrl: rawString(record.source_url, "source_url"),
+      cardNumber: rawString(record.card_number, "card_number"),
+      name: rawString(record.name, "name"),
+      rulesText: nullableRawText(record.Effect) ?? "",
+      imageUrl: rawString(record.image_url, "image_url"),
+      rarity: nullableRawText(record.Rarity),
+      variantKey: rawString(record.popup_id, "popup_id"),
+      printingAttributes: {
+        alternative_art:
+          rawString(record["Alternative Art"], "Alternative Art") === "yes",
+      },
+      cardAttributes: {
+        card_type: rawString(record.cardcategory, "cardcategory").toLowerCase(),
+        colours: rawColours(record.Color),
+        level: rawInteger(record.Lv),
+        play_cost: rawInteger(record["Play Cost"]),
+        use_cost: rawInteger(record["Use Cost"]),
+        dp: rawInteger(record.DP),
+        form: nullableRawText(record.Form),
+        attribute: nullableRawText(record.Attribute),
+        traits: rawList(record.Type),
+        digivolution_requirements: rawDigivolutionRequirements(
+          record["Digivolution Cost"],
+        ),
+        text_sections: [
+          ...rawTextSections(record.Effect, "effect"),
+          ...rawTextSections(record["Inherited Effect"], "inherited_effect"),
+          ...rawTextSections(record["Security Effect"], "security_effect"),
+        ],
+        dual_colours: rawColours(record["DUAL Color"]),
+        dual_cost: rawInteger(record["DUAL Cost"]),
+        link_dp: rawInteger(record["Link DP"]),
+      },
+    });
+  }
+  return normalizeDigimonNotice(value, contract);
+}
+
+async function normalizeGundamRecord(
+  value: unknown,
+  surface: string,
+  contract: OfficialSourceContract,
+): Promise<Record<string, unknown>> {
+  if (surface === "discovery") {
+    const record = exactRawRecord(value, ["request_key", "endpoint", "href"]);
+    return discoveryRecord(record.request_key, record.endpoint, record.href);
+  }
+  if (surface === "legality_card_details") {
+    const record = exactRawRecord(value, [
+      "detailSearch", "source_url", "card_number", "name", "type", "Color",
+      "Level", "Cost", "Block", "Effect", "Zone", "Trait", "Link", "AP",
+      "HP", "Title", "Rarity", "alternate_art", "image_url",
+    ]);
+    return normalizedRawCard(contract, {
+      sourceId: rawString(record.detailSearch, "detailSearch"),
+      sourceUrl: rawString(record.source_url, "source_url"),
+      cardNumber: rawString(record.card_number, "card_number"),
+      name: rawString(record.name, "name"),
+      rulesText: nullableRawText(record.Effect) ?? "",
+      imageUrl: rawString(record.image_url, "image_url"),
+      rarity: nullableRawText(record.Rarity),
+      variantKey: rawString(record.detailSearch, "detailSearch"),
+      printingAttributes: {
+        alternate_art:
+          rawString(record.alternate_art, "alternate_art") === "yes",
+      },
+      cardAttributes: {
+        card_type: rawString(record.type, "type").toLowerCase(),
+        colours: rawColours(record.Color),
+        level: rawInteger(record.Level),
+        cost: rawInteger(record.Cost),
+        block_icon: nullableRawText(record.Block),
+        effect_text: nullableRawText(record.Effect),
+        zone: nullableRawText(record.Zone),
+        traits: rawList(record.Trait),
+        link_condition: nullableRawText(record.Link),
+        ap: rawInteger(record.AP),
+        hp: rawInteger(record.HP),
+        series_titles: rawList(record.Title),
+      },
+    });
+  }
+  return normalizeGundamNotice(value, contract);
+}
+
+function exactRawRecord(
+  value: unknown,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const record = requiredRecord(value, "Official Source raw record");
+  assertOnlyFields(record, fields);
+  return record;
+}
+
+function rawString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Official Source raw field ${name} must be a non-empty string.`);
+  }
+  return value.trim();
+}
+
+function nullableRawText(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  return rawString(value, "text");
+}
+
+function rawExactText(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Official Source raw field ${name} must be non-empty text.`);
+  }
+  return value;
+}
+
+function rawInteger(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("Official Source numeric field must be a non-negative integer.");
+  }
+  return parsed;
+}
+
+function rawList(value: unknown): string[] {
+  const values = Array.isArray(value)
+    ? value
+    : value === null || value === undefined || value === ""
+      ? []
+      : typeof value === "string"
+        ? value.split(/[,/]/)
+        : [value];
+  return values.map((item) => rawString(item, "list item"));
+}
+
+function rawFirstString(value: unknown, name: string): string {
+  const values = rawList(value);
+  if (values.length === 0) {
+    throw new Error(`Official Source raw field ${name} must not be empty.`);
+  }
+  return values[0]!;
+}
+
+function rawColours(value: unknown): string[] {
+  return rawList(value).map((colour) => colour.toLowerCase());
+}
+
+function rawSpecifiedCost(value: unknown): { colour: string; count: number }[] {
+  return rawList(value).map((entry) => {
+    const match = /^(red|blue|green|yellow|black)\s*[:x]\s*(\d+)$/i.exec(entry);
+    if (match === null) {
+      throw new Error("Official Source Specified Cost is not representable.");
+    }
+    return { colour: match[1]!.toLowerCase(), count: Number(match[2]) };
+  });
+}
+
+function rawDigivolutionRequirements(
+  value: unknown,
+): { cost: number }[] {
+  const cost = rawInteger(value);
+  return cost === null ? [] : [{ cost }];
+}
+
+function rawTextSections(
+  value: unknown,
+  kind = "ordinary",
+): { kind: string; text: string }[] {
+  const text = nullableRawText(value);
+  return text === null ? [] : [{ kind, text }];
+}
+
+function discoveryRecord(
+  requestId: unknown,
+  surface: unknown,
+  url: unknown,
+): Record<string, unknown> {
+  return {
+    request_id: rawString(requestId, "discovery request"),
+    surface: rawString(surface, "discovery surface"),
+    url: rawString(url, "discovery URL"),
+  };
+}
+
+function normalizedRarity(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.normalize("NFC").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    c: "common",
+    common: "common",
+    r: "rare",
+    rare: "rare",
+    sr: "super_rare",
+    "super rare": "super_rare",
+    ur: "ultra_rare",
+    "ultra rare": "ultra_rare",
+  };
+  return aliases[normalized] ?? normalized.replaceAll(/[^a-z0-9]+/g, "_");
+}
+
+async function normalizedRawCard(
+  contract: OfficialSourceContract,
+  input: {
+    sourceId: string;
+    sourceUrl: string;
+    cardNumber: string;
+    name: string;
+    rulesText: string;
+    imageUrl: string;
+    rarity: string | null;
+    variantKey: string | null;
+    printingAttributes: Record<string, unknown>;
+    cardAttributes: Record<string, unknown>;
+  },
+): Promise<Record<string, unknown>> {
+  assertOfficialSourceUrl(input.sourceUrl, contract);
+  assertOfficialSourceUrl(input.imageUrl, contract);
+  const artworkFingerprint = `sha256:${await sha256Text(`image\0${input.imageUrl}`)}`;
+  const printedFieldsDigest = `sha256:${await sha256Text(
+    `printing\0${input.cardNumber}\0${input.rulesText}\0${JSON.stringify(input.printingAttributes)}`,
+  )}`;
+  return {
+    source_id: input.sourceId,
+    source_url: input.sourceUrl,
+    card_number: input.cardNumber,
+    title: input.name,
+    rules_text: input.rulesText,
+    detail: input.cardAttributes,
+    printing: {
+      rarity_raw: input.rarity,
+      rarity_normalized: normalizedRarity(input.rarity),
+      printed_text: input.rulesText,
+      detail: input.printingAttributes,
+      locator: `${contract.supportedGame}:${input.sourceId}`,
+      variant_key: input.variantKey,
+      artwork_fingerprint: artworkFingerprint,
+      printed_fields_digest: printedFieldsDigest,
+      treatment: null,
+      image_url: input.imageUrl,
+    },
+  };
+}
+
+type RawNotice = {
+  sourceId: unknown;
+  sourceUrl: unknown;
+  noticeId: unknown;
+  wording: unknown;
+  region: unknown;
+  format: unknown;
+  eventTier: unknown;
+  effectiveFrom: unknown;
+  effectiveUntil: unknown;
+  cardNumbers: unknown;
+  actionCode: unknown;
+  maximumCopies: unknown;
+  relatedCards: unknown;
+  membershipAttribute: unknown;
+  membershipValues: unknown;
+  eligibleBlocks: unknown;
+  legalFrom: unknown;
+  unresolvedReason: unknown;
+};
+
+function normalizedRawNotice(
+  input: RawNotice,
+  contract: OfficialSourceContract,
+): Record<string, unknown> {
+  const sourceUrl = rawString(input.sourceUrl, "notice source URL");
+  assertOfficialSourceUrl(sourceUrl, contract);
+  const actionCode = rawString(input.actionCode, "notice action code")
+    .toLowerCase();
+  let action: Record<string, unknown>;
+  switch (actionCode) {
+    case "eligible":
+      action = { type: "eligible" };
+      break;
+    case "ban":
+    case "banned":
+      action = { type: "ban" };
+      break;
+    case "copy_limit": {
+      const maximumCopies = rawInteger(input.maximumCopies);
+      if (maximumCopies === null || maximumCopies < 1) {
+        throw new Error("Official Source copy limit is not representable.");
+      }
+      action = { type: "copy_limit", maximum_copies: maximumCopies };
+      break;
+    }
+    case "combination":
+      action = {
+        type: "prohibited_combination",
+        with_card_numbers: rawList(input.relatedCards),
+      };
+      break;
+    case "membership":
+      action = {
+        type: "membership",
+        attribute: rawString(input.membershipAttribute, "membership attribute"),
+        includes_any: rawList(input.membershipValues),
+      };
+      break;
+    case "rotation":
+      action = { type: "rotation", eligible_blocks: rawList(input.eligibleBlocks) };
+      break;
+    case "release":
+      action = {
+        type: "release_timing",
+        legal_from: rawString(input.legalFrom, "release legal date"),
+      };
+      break;
+    case "unresolved":
+      action = {
+        type: "unresolved",
+        reason: rawString(input.unresolvedReason, "unresolved reason"),
+      };
+      break;
+    default:
+      throw new Error(
+        `Official Source action code ${actionCode} is not representable.`,
+      );
+  }
+  const wording = rawExactText(input.wording, "notice wording");
+  validateNoticeWording(wording, action);
+  return {
+    source_id: rawString(input.sourceId, "notice source identity"),
+    source_url: sourceUrl,
+    notice_id: rawString(input.noticeId, "notice identity"),
+    official_text: wording,
+    scope: {
+      region: rawString(input.region, "notice region"),
+      format: rawString(input.format, "notice format"),
+      event_tier: nullableRawText(input.eventTier),
+      effective_from: rawString(input.effectiveFrom, "notice effective date"),
+      effective_until: nullableRawText(input.effectiveUntil),
+    },
+    affected_card_numbers: rawList(input.cardNumbers),
+    action,
+    representable: true,
+  };
+}
+
+function normalizeOnePieceNotice(
+  value: unknown,
+  contract: OfficialSourceContract,
+): Record<string, unknown> {
+  const record = exactRawRecord(value, [
+    "notice_no", "source_url", "published_text", "territory", "format_name",
+    "event_class", "start_date", "end_date", "card_numbers",
+    "restriction_code", "maximum_copies", "related_cards",
+    "membership_attribute", "membership_values", "eligible_blocks",
+    "legal_from", "unresolved_reason",
+  ]);
+  return normalizedRawNotice({
+    sourceId: record.notice_no, sourceUrl: record.source_url,
+    noticeId: record.notice_no, wording: record.published_text,
+    region: record.territory, format: record.format_name,
+    eventTier: record.event_class, effectiveFrom: record.start_date,
+    effectiveUntil: record.end_date, cardNumbers: record.card_numbers,
+    actionCode: record.restriction_code, maximumCopies: record.maximum_copies,
+    relatedCards: record.related_cards,
+    membershipAttribute: record.membership_attribute,
+    membershipValues: record.membership_values,
+    eligibleBlocks: record.eligible_blocks, legalFrom: record.legal_from,
+    unresolvedReason: record.unresolved_reason,
+  }, contract);
+}
+
+function normalizeFusionWorldNotice(
+  value: unknown,
+  contract: OfficialSourceContract,
+): Record<string, unknown> {
+  const record = exactRawRecord(value, [
+    "rule_ref", "canonical_url", "notice", "market", "play_format", "tier",
+    "active_on", "expires_on", "cards", "directive", "cap", "paired_cards",
+    "filter_field", "filter_values", "blocks", "tournament_legal_date",
+    "ambiguity",
+  ]);
+  return normalizedRawNotice({
+    sourceId: record.rule_ref, sourceUrl: record.canonical_url,
+    noticeId: record.rule_ref, wording: record.notice, region: record.market,
+    format: record.play_format, eventTier: record.tier,
+    effectiveFrom: record.active_on, effectiveUntil: record.expires_on,
+    cardNumbers: record.cards, actionCode: record.directive,
+    maximumCopies: record.cap, relatedCards: record.paired_cards,
+    membershipAttribute: record.filter_field,
+    membershipValues: record.filter_values, eligibleBlocks: record.blocks,
+    legalFrom: record.tournament_legal_date, unresolvedReason: record.ambiguity,
+  }, contract);
+}
+
+function normalizeDigimonNotice(
+  value: unknown,
+  contract: OfficialSourceContract,
+): Record<string, unknown> {
+  const record = exactRawRecord(value, [
+    "restriction_id", "link", "body", "language_scope", "ruleset",
+    "tournament_level", "applies_from", "applies_until", "card_ids",
+    "status_code", "deck_limit", "prohibited_with", "membership_field",
+    "membership_terms", "permitted_blocks", "sale_eligible_on", "clarification",
+  ]);
+  return normalizedRawNotice({
+    sourceId: record.restriction_id, sourceUrl: record.link,
+    noticeId: record.restriction_id, wording: record.body,
+    region: record.language_scope, format: record.ruleset,
+    eventTier: record.tournament_level, effectiveFrom: record.applies_from,
+    effectiveUntil: record.applies_until, cardNumbers: record.card_ids,
+    actionCode: record.status_code, maximumCopies: record.deck_limit,
+    relatedCards: record.prohibited_with,
+    membershipAttribute: record.membership_field,
+    membershipValues: record.membership_terms,
+    eligibleBlocks: record.permitted_blocks, legalFrom: record.sale_eligible_on,
+    unresolvedReason: record.clarification,
+  }, contract);
+}
+
+function normalizeGundamNotice(
+  value: unknown,
+  contract: OfficialSourceContract,
+): Record<string, unknown> {
+  const record = exactRawRecord(value, [
+    "news_id", "url", "text", "region", "format", "event_tier",
+    "effective_date", "end_date", "card_numbers", "ruling", "copy_limit",
+    "companion_cards", "attribute", "values", "legal_blocks", "legal_from",
+    "reason",
+  ]);
+  return normalizedRawNotice({
+    sourceId: record.news_id, sourceUrl: record.url, noticeId: record.news_id,
+    wording: record.text, region: record.region, format: record.format,
+    eventTier: record.event_tier, effectiveFrom: record.effective_date,
+    effectiveUntil: record.end_date, cardNumbers: record.card_numbers,
+    actionCode: record.ruling, maximumCopies: record.copy_limit,
+    relatedCards: record.companion_cards, membershipAttribute: record.attribute,
+    membershipValues: record.values, eligibleBlocks: record.legal_blocks,
+    legalFrom: record.legal_from, unresolvedReason: record.reason,
+  }, contract);
+}
+
 export function requiredOfficialSourceContract(
   adapter: SourceAdapterRegistration,
 ): OfficialSourceContract {
@@ -235,81 +916,6 @@ function officialSurfaceLabel(name: string): string {
     .split("_")
     .map((part) => part[0]!.toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function parseOfficialSurface(
-  value: unknown,
-  name: string,
-  contract: OfficialSourceContract,
-  allowEmpty: boolean,
-): unknown[] {
-  const surface = requiredRecord(value, `${name} surface`);
-  assertOnlyFields(surface, [
-    "name",
-    "partition",
-    "declared_record_count",
-    "pages",
-  ]);
-  if (surface.partition !== contract.partition) {
-    throw new Error(
-      `${name} surface partition does not match its Source Lineage.`,
-    );
-  }
-  const declaredRecordCount = requiredCount(
-    surface.declared_record_count,
-    `${name} surface declared record count`,
-  );
-  if (!Array.isArray(surface.pages)) {
-    throw new Error(`${name} surface pages must be an array.`);
-  }
-  if (declaredRecordCount > 0 && surface.pages.length === 0) {
-    throw new Error(
-      `${name} surface declared records but retained no pages.`,
-    );
-  }
-  const records: unknown[] = [];
-  const totalPages = surface.pages.length;
-  for (const [index, valuePage] of surface.pages.entries()) {
-    const page = requiredRecord(valuePage, `${name} surface page`);
-    assertOnlyFields(page, [
-      "number",
-      "total_pages",
-      "declared_record_count",
-      "records",
-    ]);
-    if (
-      page.number !== index + 1 ||
-      page.total_pages !== totalPages
-    ) {
-      throw new Error(
-        `${name} surface pages do not prove an exact complete partition.`,
-      );
-    }
-    if (!Array.isArray(page.records)) {
-      throw new Error(`${name} surface page records must be an array.`);
-    }
-    const pageDeclaredCount = requiredCount(
-      page.declared_record_count,
-      `${name} surface page declared record count`,
-    );
-    if (pageDeclaredCount !== page.records.length) {
-      throw new Error(
-        `${name} surface declared and parsed record counts differ.`,
-      );
-    }
-    records.push(...page.records);
-  }
-  if (records.length !== declaredRecordCount) {
-    throw new Error(
-      `${name} surface declared and parsed record counts differ.`,
-    );
-  }
-  if (!allowEmpty && records.length === 0) {
-    throw new Error(
-      `${name} surface cannot prove live Official Source coverage with no records.`,
-    );
-  }
-  return records;
 }
 
 function parseOfficialLegalityCardDetail(
@@ -521,15 +1127,13 @@ function validateNoticeWording(
   } else if (/trait|colour|link condition|membership/.test(normalized)) {
     detected = "membership";
   } else if (/block|rotation/.test(normalized)) detected = "rotation";
-  else if (/becomes legal|release|available from/.test(normalized)) {
+  else if (/becomes? legal|release|available from/.test(normalized)) {
     detected = "release_timing";
   } else if (/does not identify|unresolved|clarification/.test(normalized)) {
     detected = "unresolved";
   } else if (/not legal|banned|may not be included|prohibited/.test(normalized)) {
     detected = "ban";
-  } else if (
-    /eligib(?:le|ility)|ordering fixture|serialization golden/.test(normalized)
-  ) {
+  } else if (/eligib(?:le|ility)/.test(normalized)) {
     detected = "eligible";
   }
   if (detected === null || action.type !== detected) {
@@ -767,24 +1371,24 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         sourceLineage: "gundam-en-asia",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
-        parserContract: "gundam-official-legality@4",
+        parserContract: "gundam-official-legality@5",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_legality" as const,
         officialSourceContract: gundamAsiaOfficialSource,
-        parse: officialLegalityParser(gundamAsiaOfficialSource),
+        parse: gundamOfficialLegalityParser(gundamAsiaOfficialSource),
       },
       {
         adapterVersion: "gundam-en-us@2",
         sourceLineage: "gundam-en-us",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
-        parserContract: "gundam-official-legality@4",
+        parserContract: "gundam-official-legality@5",
         maximumJsonBytes: 1024 * 1024,
         origin: "production" as const,
         reconciliationCoverage: "official_legality" as const,
         officialSourceContract: gundamUsOfficialSource,
-        parse: officialLegalityParser(gundamUsOfficialSource),
+        parse: gundamOfficialLegalityParser(gundamUsOfficialSource),
       },
       ...[
         {

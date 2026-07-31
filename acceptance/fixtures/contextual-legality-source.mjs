@@ -61,7 +61,10 @@ export function contextualLegalityDocument(
     };
   }
   if (rulesVariant === "empty") {
-    legalityRules.length = 0;
+    const retainedHistory = legalityRules.filter(
+      (rule) => rule.effective_until !== null,
+    );
+    legalityRules.splice(0, legalityRules.length, ...retainedHistory);
   }
   if (rulesVariant === "expanded" && region === "EN-US") {
     legalityRules.push({
@@ -106,19 +109,23 @@ function officialSurfaceDocument(
     surface === "discovery"
       ? discoveredSurfaces(requestUrl)
       : surface === "legality_card_details"
-        ? cards.map((card) => officialLegalityCardDetail(card, requestUrl))
+        ? cards.map((card) => rawGundamCard(card, requestUrl))
         : surface === "legality_rules"
-          ? legalityRules.map((rule) => officialLegalityNotice(rule, requestUrl))
-          : [
-              {
-                source_id: `${surface}-representative`,
-                source_url: requestUrl,
-                retained_label:
-                  `Representative live ${surface.replaceAll("_", " ")} record`,
-              },
-            ];
+          ? legalityRules
+              .filter((rule) => rule.effective_until === null)
+              .map((rule) => rawGundamNotice(rule, requestUrl))
+          : surface === "legality_history"
+            ? legalityRules
+                .filter((rule) => rule.effective_until !== null)
+                .map((rule) => rawGundamNotice(rule, requestUrl))
+            : [];
   return {
-    surface: completeSurface(region, surface, records),
+    gundam: {
+      endpoint: surface,
+      locale: region,
+      hits: records.length,
+      results: records,
+    },
   };
 }
 
@@ -130,11 +137,11 @@ function discoveredSurfaces(requestUrl) {
     .map((surface) => {
       const url = new URL(seed);
       url.searchParams.set("surface", surface);
-      return { request_id: surface, surface, url: url.href };
+      return { request_key: surface, endpoint: surface, href: url.href };
     });
 }
 
-function officialLegalityCardDetail(observation, requestUrl) {
+function rawGundamCard(observation, requestUrl) {
   const sourceUrl = new URL(requestUrl);
   const imageUrl = new URL(
     `images/${observation.card.official_identity.value}.png`,
@@ -143,64 +150,57 @@ function officialLegalityCardDetail(observation, requestUrl) {
   if (sourceUrl.searchParams.get("image-authority") === "foreign") {
     imageUrl.hostname = "attacker.example";
   }
+  const card = observation.card.game_data.attributes;
   return {
-    source_id: observation.card.official_identity.value,
+    detailSearch: observation.card.official_identity.value,
     source_url: requestUrl,
     card_number: observation.card.official_identity.value,
-    title: observation.card.name,
-    rules_text: observation.card.effective_rules_text,
-    detail: observation.card.game_data.attributes,
-    printing: {
-      rarity_raw: observation.printing.rarity.raw,
-      rarity_normalized: observation.printing.rarity.normalized,
-      printed_text: observation.printing.printed_rules_text,
-      detail: observation.printing.game_data.attributes,
-      locator: observation.identity_evidence.locator,
-      variant_key: observation.identity_evidence.variant_key,
-      artwork_fingerprint: observation.identity_evidence.artwork_fingerprint,
-      printed_fields_digest:
-        observation.identity_evidence.printed_fields_digest,
-      treatment: observation.identity_evidence.treatment,
-      image_url: imageUrl.href,
-    },
+    name: observation.card.name,
+    type: card.card_type,
+    Color: card.colours,
+    Level: card.level,
+    Cost: card.cost,
+    Block: card.block_icon,
+    Effect: card.effect_text,
+    Zone: card.zone,
+    Trait: card.traits,
+    Link: card.link_condition,
+    AP: card.ap,
+    HP: card.hp,
+    Title: card.series_titles,
+    Rarity: observation.printing.rarity.raw,
+    alternate_art: "no",
+    image_url: imageUrl.href,
   };
 }
 
-function officialLegalityNotice(rule, requestUrl) {
+function rawGundamNotice(rule, requestUrl) {
+  const effect = rule.effect;
   return {
-    source_id: rule.id,
-    source_url: requestUrl,
-    notice_id: rule.id,
-    official_text: rule.official_wording,
-    scope: {
-      region: rule.region,
-      format: rule.format,
-      event_tier: rule.event_tier,
-      effective_from: rule.effective_from,
-      effective_until: rule.effective_until,
-    },
-    affected_card_numbers: rule.card_numbers,
-    action: rule.effect,
-    representable: rule.representable,
-  };
-}
-
-function completeSurface(partition, name, records) {
-  return {
-    name,
-    partition,
-    declared_record_count: records.length,
-    pages:
-      records.length === 0
-        ? []
-        : [
-            {
-              number: 1,
-              total_pages: 1,
-              declared_record_count: records.length,
-              records,
-            },
-          ],
+    news_id: rule.id,
+    url: requestUrl,
+    text: rule.official_wording,
+    region: rule.region,
+    format: rule.format,
+    event_tier: rule.event_tier,
+    effective_date: rule.effective_from,
+    end_date: rule.effective_until,
+    card_numbers: rule.card_numbers,
+    ruling: !rule.representable
+      ? "publisher_code_not_supported"
+      : effect.type === "prohibited_combination"
+        ? "combination"
+        : effect.type === "release_timing"
+          ? "release"
+          : effect.type,
+    copy_limit: "maximum_copies" in effect ? effect.maximum_copies : null,
+    companion_cards:
+      "with_card_numbers" in effect ? effect.with_card_numbers : [],
+    attribute: "attribute" in effect ? effect.attribute : null,
+    values: "includes_any" in effect ? effect.includes_any : [],
+    legal_blocks: "eligible_blocks" in effect ? effect.eligible_blocks : [],
+    legal_from: "legal_from" in effect ? effect.legal_from : null,
+    reason: "reason" in effect ? effect.reason : null,
   };
 }
 
@@ -223,6 +223,16 @@ function rules(region) {
           "GD30-001 is eligible for Standard events in the EN-US region.",
         effect: { type: "eligible" },
       },
+      {
+        ...base,
+        id: "legality_rule_us_history",
+        effective_from: "2025-01-01",
+        effective_until: "2025-06-01",
+        card_numbers: ["GD30-001"],
+        official_wording:
+          "GD30-001 was banned and may not be included before 1 June 2025.",
+        effect: { type: "ban" },
+      },
     ];
   }
   return [
@@ -231,7 +241,7 @@ function rules(region) {
       id: "legality_rule_asia_eligible",
       card_numbers: [],
       official_wording:
-        `Cafe\u0301 serialization golden ${serializationNoise(24_000)}`,
+        `Cafe\u0301 cards satisfying the published Standard eligibility rules are eligible for play. ${serializationNoise(24_000)}`,
       effect: { type: "eligible" },
     },
     {
@@ -332,7 +342,8 @@ function rules(region) {
       ...base,
       id,
       card_numbers: ["GD30-005"],
-      official_wording: `${id} is an ordering fixture rule.`,
+      official_wording:
+        `${id} is eligible under the published ordering rule.`,
       effect: { type: "eligible" },
     })),
   ];

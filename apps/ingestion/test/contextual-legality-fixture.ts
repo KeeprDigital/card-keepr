@@ -15,17 +15,23 @@ export function contextualLegalitySourceDocument(
     surface === "discovery"
       ? discoveredSurfaces(requestUrl)
       : surface === "legality_card_details"
-        ? cards.map((card) => officialLegalityCardDetail(card, requestUrl))
+        ? cards.map((card) => rawGundamCard(card, requestUrl))
         : surface === "legality_rules"
-          ? rules.map((rule) => officialLegalityNotice(rule, requestUrl))
-          : [
-              {
-                source_id: `${surface}-representative`,
-                source_url: requestUrl,
-              },
-            ];
+          ? rules
+              .filter((rule) => rule.effective_until === null)
+              .map((rule) => rawGundamNotice(rule, requestUrl))
+          : surface === "legality_history"
+            ? rules
+                .filter((rule) => rule.effective_until !== null)
+                .map((rule) => rawGundamNotice(rule, requestUrl))
+            : [];
   return {
-    surface: completeSurface(region, surface, records),
+    gundam: {
+      endpoint: surface,
+      locale: region,
+      hits: records.length,
+      results: records,
+    },
   };
 }
 
@@ -36,6 +42,136 @@ const requiredSurfaces = [
   "legality_history",
 ];
 
+export function onePiecePolicySourceDocument(
+  surface: string,
+  requestUrl: string,
+) {
+  const surfaces = [
+    "discovery",
+    "legality_card_details",
+    "legality_rules",
+    "legality_history",
+    "block_policy",
+    "release_timing",
+    "don_rules",
+  ];
+  const records = surface === "discovery"
+    ? surfaces
+        .filter((name) => name !== "discovery")
+        .map((name) => ({
+          key: name,
+          area: name,
+          href: officialSurfaceUrl(requestUrl, name),
+        }))
+    : surface === "legality_card_details"
+      ? [rawOnePieceCard(requestUrl)]
+      : [rawOnePiecePolicyNotice(surface, requestUrl)];
+  return {
+    one_piece: {
+      area: surface,
+      locale: "EN-OCEANIA",
+      total: records.length,
+      entries: records,
+    },
+  };
+}
+
+function rawOnePieceCard(requestUrl: string) {
+  return {
+    source_record_id: "OP30-001-base",
+    source_url: requestUrl,
+    card_number: "OP30-001",
+    name: "Policy Boundary Card",
+    Category: "Character",
+    Color: ["Red"],
+    Cost: "3",
+    Life: null,
+    Attribute: ["Strike"],
+    Power: "5000",
+    Counter: "1000",
+    Type: ["Policy Test"],
+    "Block icon": ["4"],
+    Effect: "Official card effect.",
+    Trigger: null,
+    Rarity: "R",
+    Illustration: ["Original"],
+    image_url: `${new URL(requestUrl).origin}/images/OP30-001.png`,
+  };
+}
+
+function rawOnePiecePolicyNotice(surface: string, requestUrl: string) {
+  const policy: Record<string, {
+    code: string;
+    id: string;
+    wording: string;
+    effectiveUntil?: string;
+    eligibleBlocks?: string[];
+    legalFrom?: string;
+    membershipAttribute?: string;
+    membershipValues?: string[];
+  }> = {
+    legality_rules: {
+      code: "eligible",
+      id: "op_current_eligible",
+      wording: "OP30-001 is eligible for Standard play.",
+    },
+    legality_history: {
+      code: "ban",
+      id: "op_history_ban",
+      wording: "OP30-001 was banned and may not be included in a deck.",
+      effectiveUntil: "2025-06-01",
+    },
+    block_policy: {
+      code: "rotation",
+      id: "op_block_rotation",
+      wording: "Only cards bearing Block 4 are eligible after rotation.",
+      eligibleBlocks: ["4"],
+    },
+    release_timing: {
+      code: "release",
+      id: "op_release_timing",
+      wording: "OP30-001 becomes legal for tournament play on 1 August 2026.",
+      legalFrom: "2026-08-01",
+    },
+    don_rules: {
+      code: "membership",
+      id: "op_don_membership",
+      wording: "Cards with the Policy Test trait are eligible under the DON!! membership rule.",
+      membershipAttribute: "traits",
+      membershipValues: ["Policy Test"],
+    },
+  };
+  const selected = policy[surface];
+  if (selected === undefined) {
+    throw new Error(`No One Piece policy fixture exists for ${surface}.`);
+  }
+  return {
+    notice_no: selected.id,
+    source_url: requestUrl,
+    published_text: selected.wording,
+    territory: "EN-OCEANIA",
+    format_name: "standard",
+    event_class: null,
+    start_date: "2025-01-01",
+    end_date: selected.effectiveUntil ?? null,
+    card_numbers: ["OP30-001"],
+    restriction_code: selected.code,
+    maximum_copies: null,
+    related_cards: [],
+    membership_attribute: selected.membershipAttribute ?? null,
+    membership_values: selected.membershipValues ?? [],
+    eligible_blocks: selected.eligibleBlocks ?? [],
+    legal_from: selected.legalFrom ?? null,
+    unresolved_reason: null,
+  };
+}
+
+function officialSurfaceUrl(requestUrl: string, surface: string): string {
+  const url = new URL(requestUrl);
+  url.searchParams.set("surface", surface);
+  return url.href;
+}
+
 function discoveredSurfaces(requestUrl: string) {
   const seed = new URL(requestUrl);
   seed.searchParams.delete("surface");
@@ -44,11 +180,11 @@ function discoveredSurfaces(requestUrl: string) {
     .map((surface) => {
       const url = new URL(seed);
       url.searchParams.set("surface", surface);
-      return { request_id: surface, surface, url: url.href };
+      return { request_key: surface, endpoint: surface, href: url.href };
     });
 }
 
-function officialLegalityCardDetail(
+function rawGundamCard(
   observation: ReturnType<typeof gundamObservation>,
   requestUrl: string,
 ) {
@@ -57,71 +193,59 @@ function officialLegalityCardDetail(
     `images/${observation.card.official_identity.value}.png`,
     `${sourceUrl.origin}${sourceUrl.pathname.startsWith("/asia-en/") ? "/asia-en/" : "/en/"}`,
   );
+  const card = observation.card.game_data.attributes;
   return {
-    source_id: observation.card.official_identity.value,
+    detailSearch: observation.card.official_identity.value,
     source_url: requestUrl,
     card_number: observation.card.official_identity.value,
-    title: observation.card.name,
-    rules_text: observation.card.effective_rules_text,
-    detail: observation.card.game_data.attributes,
-    printing: {
-      rarity_raw: observation.printing.rarity.raw,
-      rarity_normalized: observation.printing.rarity.normalized,
-      printed_text: observation.printing.printed_rules_text,
-      detail: observation.printing.game_data.attributes,
-      locator: observation.identity_evidence.locator,
-      variant_key: observation.identity_evidence.variant_key,
-      artwork_fingerprint: observation.identity_evidence.artwork_fingerprint,
-      printed_fields_digest:
-        observation.identity_evidence.printed_fields_digest,
-      treatment: observation.identity_evidence.treatment,
-      image_url: imageUrl.href,
-    },
+    name: observation.card.name,
+    type: card.card_type,
+    Color: card.colours,
+    Level: card.level,
+    Cost: card.cost,
+    Block: card.block_icon,
+    Effect: card.effect_text,
+    Zone: card.zone,
+    Trait: card.traits,
+    Link: card.link_condition,
+    AP: card.ap,
+    HP: card.hp,
+    Title: card.series_titles,
+    Rarity: observation.printing.rarity.raw,
+    alternate_art: "no",
+    image_url: imageUrl.href,
   };
 }
 
-function officialLegalityNotice(
+function rawGundamNotice(
   rule: ReturnType<typeof legalityRules>[number],
   requestUrl: string,
 ) {
+  const effect = rule.effect;
   return {
-    source_id: rule.id,
-    source_url: requestUrl,
-    notice_id: rule.id,
-    official_text: rule.official_wording,
-    scope: {
-      region: rule.region,
-      format: rule.format,
-      event_tier: rule.event_tier,
-      effective_from: rule.effective_from,
-      effective_until: rule.effective_until,
-    },
-    affected_card_numbers: rule.card_numbers,
-    action: rule.effect,
-    representable: rule.representable,
-  };
-}
-
-function completeSurface(
-  partition: Region,
-  name: string,
-  records: readonly unknown[],
-) {
-  return {
-    name,
-    partition,
-    declared_record_count: records.length,
-    pages:
-      records.length === 0
-        ? []
-        : [
-            {
-              number: 1,
-              total_pages: 1,
-              declared_record_count: records.length,
-              records,
-            },
-          ],
+    news_id: rule.id,
+    url: requestUrl,
+    text: rule.official_wording,
+    region: rule.region,
+    format: rule.format,
+    event_tier: rule.event_tier,
+    effective_date: rule.effective_from,
+    end_date: rule.effective_until,
+    card_numbers: rule.card_numbers,
+    ruling:
+      effect.type === "prohibited_combination"
+        ? "combination"
+        : effect.type === "release_timing"
+          ? "release"
+          : effect.type,
+    copy_limit: "maximum_copies" in effect ? effect.maximum_copies : null,
+    companion_cards:
+      "with_card_numbers" in effect ? effect.with_card_numbers : [],
+    attribute: "attribute" in effect ? effect.attribute : null,
+    values: "includes_any" in effect ? effect.includes_any : [],
+    legal_blocks: "eligible_blocks" in effect ? effect.eligible_blocks : [],
+    legal_from: "legal_from" in effect ? effect.legal_from : null,
+    reason: "reason" in effect ? effect.reason : null,
   };
 }
 

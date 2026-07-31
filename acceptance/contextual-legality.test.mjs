@@ -41,6 +41,24 @@ const exportRecordSchemaV2 = JSON.parse(
     "utf8",
   ),
 );
+const exportManifestSchemaV1 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const exportManifestSchemaV2 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const gzipGolden = JSON.parse(
   readFileSync(
     resolve(
@@ -52,6 +70,8 @@ const gzipGolden = JSON.parse(
 );
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
+ajv.addSchema(exportManifestSchemaV1);
+ajv.addSchema(exportManifestSchemaV2);
 ajv.addSchema(apiSchema);
 ajv.addSchema(exportRecordSchemaV1);
 ajv.addSchema(exportRecordSchemaV2);
@@ -60,6 +80,9 @@ const validateLegalityStatus = ajv.getSchema(
 );
 const validateLegalityRuleExport = ajv.getSchema(
   `${exportRecordSchemaV2.$id}#/$defs/LegalityRuleRecord`,
+);
+const validateCatalogueExportDocument = ajv.getSchema(
+  `${apiSchema.$id}#/$defs/CatalogueExportDocument`,
 );
 
 test("Official Legality Rules flow from repository ingestion to contextual consumer results", async (t) => {
@@ -370,7 +393,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
 
   const invalidCopyLimit = await ingestAndReconcile({
     adapter: "gundam-en-asia@2",
-    expectedStatus: null,
+    expectedRunState: "failed",
     idempotencyKey:
       "acceptance-contextual-legality-invalid-copy-limit",
     lineage: "gundam-en-asia",
@@ -382,13 +405,8 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   await t.test(
     "an invalid copy-limit operand blocks before approval",
     () => {
-      assert.equal(invalidCopyLimit.http_status, 409);
-      assert.equal(invalidCopyLimit.publishable, false);
       assert.equal(invalidCopyLimit.state, "failed");
-      assert.match(
-        invalidCopyLimit.diagnostics[0].detail,
-        /copy-limit rule requires a positive integer/i,
-      );
+      assert.equal(invalidCopyLimit.failure_code, "source_parse_failed");
     },
   );
   if (invalidCopyLimit.state === "awaiting_approval") {
@@ -607,18 +625,15 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   const blocked = await ingestAndReconcile({
     adapter: "gundam-en-asia@2",
     expectedStatus: 409,
+    expectedRunState: "failed",
     idempotencyKey: "acceptance-contextual-legality-unrepresentable",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-asia?representable=false",
     environment: administrationEnvironment,
     ingestion,
   });
-  assert.equal(blocked.publishable, false);
   assert.equal(blocked.state, "failed");
-  assert.match(
-    blocked.diagnostics[0].detail,
-    /cannot be represented without invented precision/,
-  );
+  assert.equal(blocked.failure_code, "source_parse_failed");
 
   await stopWorker(ingestion);
   api = startWorker({
@@ -763,6 +778,24 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   );
   assert.equal(manifestResponse.status, 200);
   const manifestDocument = await manifestResponse.json();
+  assert.equal(
+    validateCatalogueExportDocument(manifestDocument),
+    true,
+    JSON.stringify(validateCatalogueExportDocument.errors),
+  );
+  const immutableV1Document = structuredClone(manifestDocument);
+  immutableV1Document.data.format =
+    "card-keepr-catalogue-export-manifest@1";
+  immutableV1Document.data.export_schema_major = 1;
+  immutableV1Document.data.components.find(
+    (component) => component.name === "legality-rules",
+  ).record_schema =
+    "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/LegalityRuleRecord";
+  assert.equal(
+    validateCatalogueExportDocument(immutableV1Document),
+    true,
+    JSON.stringify(validateCatalogueExportDocument.errors),
+  );
 
   const exportResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
@@ -839,18 +872,18 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(exportedRules.length, 17);
+  assert.equal(exportedRules.length, 18);
   assert.ok(
     exportedRules.some((rule) =>
       rule.official_wording.startsWith(
-        "Café serialization golden ",
+        "Café cards satisfying the published Standard eligibility rules are eligible for play. ",
       ),
     ),
   );
   assert.equal(
-    exportedRules.some((rule) =>
-      rule.official_wording.startsWith(
-        "Cafe\u0301 serialization golden ",
+      exportedRules.some((rule) =>
+        rule.official_wording.startsWith(
+          "Cafe\u0301 cards satisfying the published Standard eligibility rules are eligible for play. ",
       ),
     ),
     false,
@@ -1159,7 +1192,7 @@ test("authenticated deterministic publication pins contextual legality export by
   const revisionId = publication.resulting_revision_id;
   assert.equal(
     revisionId,
-    "catrev_4dd29d96d2fc18f79dc7a84c5493b472832eaec2b7516f7fb7c34cf6045aa979",
+    "catrev_f5acc56079e9b0ea01dbddca522aeb0e93b316e13a304bf7cc70e7e76b4d8779",
   );
 
   await stopWorker(ingestion);
@@ -1221,11 +1254,20 @@ test("authenticated deterministic publication pins contextual legality export by
   assert.ok(rules.every((rule) => rule.lifecycle.current === true));
   assert.ok(
     rules.every(
-      (rule) =>
-        rule.source_observation_ids.length === 1 &&
-        rule.source_observation_ids[0] ===
-          "srcobs_a3d1b378bcc09e2ab02dd0e7137f47b9c522ee68b2c9518e2946b0a09b96c978_2",
+      (rule) => rule.source_observation_ids.length === 1,
     ),
+  );
+  assert.deepEqual(
+    [...new Set(rules.flatMap((rule) => rule.source_observation_ids))].sort(),
+    [
+      "srcobs_a3d1b378bcc09e2ab02dd0e7137f47b9c522ee68b2c9518e2946b0a09b96c978_2",
+      "srcobs_c2d37b93ddd99971ccfedbcf9805e3628e21d7fe1cc770d009207276630abf18_2",
+    ],
+  );
+  assert.equal(
+    rules.find((rule) => rule.effective_until !== null)
+      ?.source_observation_ids[0],
+    "srcobs_c2d37b93ddd99971ccfedbcf9805e3628e21d7fe1cc770d009207276630abf18_2",
   );
   assert.ok(
     rules.every(
@@ -1236,7 +1278,11 @@ test("authenticated deterministic publication pins contextual legality export by
     ),
   );
   assert.ok(
-    rules.some((rule) => rule.official_wording.startsWith("Café ")),
+    rules.some((rule) =>
+      rule.official_wording.startsWith(
+        "Café cards satisfying the published Standard eligibility rules are eligible for play. ",
+      ),
+    ),
   );
   assert.ok(rules.some((rule) => rule.event_tier === null));
 });
@@ -1244,6 +1290,7 @@ test("authenticated deterministic publication pins contextual legality export by
 async function ingestAndReconcile({
   adapter,
   environment,
+  expectedRunState = "parsing",
   expectedStatus = 200,
   idempotencyKey,
   ingestion,
@@ -1295,7 +1342,13 @@ async function ingestAndReconcile({
       );
     }
   }
-  await waitForRunState(run.id, "parsing", environment, ingestion);
+  const reached = await waitForRunState(
+    run.id,
+    expectedRunState,
+    environment,
+    ingestion,
+  );
+  if (expectedRunState === "failed") return reached;
   const response = await fetch(
     `${environment.KEEPR_INGESTION_URL}/v1/ingestion-runs/${run.id}/reconciliation`,
     {
@@ -1550,7 +1603,7 @@ async function waitForRunState(runId, expected, environment, worker) {
     if (shown.code === 0) {
       lastShown = shown.stdout;
       const document = JSON.parse(shown.stdout);
-      if (document.state === expected) return;
+      if (document.state === expected) return document;
       if (document.state === "failed") {
         throw new Error(`${shown.stdout}\n${worker.getOutput()}`);
       }

@@ -15,7 +15,13 @@ The production legality adapters are:
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Each immutable Source Snapshot contains exactly one closed `surface` document.
+Each immutable Source Snapshot contains exactly one closed publisher response.
+The adapters do not accept a shared normalized envelope: One Piece, Fusion
+World, Digimon, and Gundam each validate their own discovery, Card-detail, and
+notice response vocabulary before normalization. Raw inputs never supply a
+normalized rarity, identity digest, structured effect, or `representable`
+decision; the owning adapter derives those values from the publisher fields
+and fails closed when it cannot do so.
 An Ingestion Run begins with an immutable one-request Discovery Plan. The
 retained discovery observation creates, once, a separately named Official
 Source Collection Plan containing the exact bounded set of discovered
@@ -33,15 +39,16 @@ origins and locale paths outside the adapter's Official Source authority. Live
 discovery must enumerate the request identity, surface name, and exact URL of
 every collection request, and reconciliation verifies that graph against the
 separately retained snapshots. Each surface declares the adapter's exact
-regional partition, its total record count, and a complete ordered set of
-pages; every page declares
-its page number, total page count, record count, and records. A truly empty
-Legality Rule or legality Card-detail surface may be represented by a declared
-total of zero and no pages. Other required live surfaces must retain at least
-one structurally valid record.
+regional partition and total record count alongside the source-specific raw
+record collection. A truly empty Legality Rule or legality Card-detail surface
+may be represented by a declared total of zero and an empty collection.
+Discovery, history, and the One Piece policy surfaces must each retain at
+least one structurally valid record.
 The adapter derives completeness from this structure and rejects missing
-surfaces, incomplete page sets, mismatched counts, unexpected partitions, and
-unknown envelope fields.
+surfaces, mismatched counts, unexpected partitions, cross-game envelopes, and
+unknown publisher fields. Current rules, historical notices, and every One
+Piece policy stream are all rule-bearing: their wording must normalize into a
+Legality Rule or the run fails.
 
 Legality Card details and notices are parsed by the game-specific adapter from
 raw Official Source fields. Card identity is established only from those
@@ -62,7 +69,8 @@ Supported effects are `eligible`, `ban`, `copy_limit`,
 `prohibited_combination`, `membership`, `rotation`, `release_timing`, and
 `unresolved`. Unknown fields or effects, invalid intervals, conflicting
 regions, missing Cards, duplicate rule identities, and
-`representable: false` block the selected Ingestion Run before approval.
+unrepresentable raw publisher action codes block the selected Ingestion Run
+before approval.
 A complete observation replaces only its own source lineage. Rules missing
 from that observation remain in catalogue history as non-current, with their
 first-observed, last-observed, and last-missing revisions. Reappearance of the
