@@ -637,11 +637,15 @@ async function administrationRequest(
   } else {
     process.stdout.write(`${formatAdministrationResult(document)}\n`);
   }
-  return document.contract ===
+  const incomplete =
+    (document.contract ===
       "card-keepr-reconciliation-workflow@1" &&
       document.status !== "complete"
-    ? 10
-    : 0;
+    ) ||
+    (document.contract ===
+      "card-keepr-card-search-repair@1" &&
+      document.complete !== true);
+  return incomplete ? 10 : 0;
 }
 
 async function fetchAdministrationDocument(

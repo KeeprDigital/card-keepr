@@ -297,7 +297,15 @@ function parseFilters(
       "q must contain at least one character.",
     );
   }
-  const game = normalizedFilter(url.searchParams.get("game"));
+  const rawGame = url.searchParams.get("game");
+  const game = normalizedFilter(rawGame);
+  if (rawGame !== null && game === null) {
+    return invalidParameter(
+      requestId,
+      "game",
+      "game must contain at least one character.",
+    );
+  }
   if (
     game !== null &&
     game !== "one-piece" &&
@@ -311,10 +319,19 @@ function parseFilters(
       "game is not a Supported Game.",
     );
   }
+  const rawCardNumber = url.searchParams.get("card_number");
+  const cardNumber = normalizedFilter(rawCardNumber);
+  if (rawCardNumber !== null && cardNumber === null) {
+    return invalidParameter(
+      requestId,
+      "card_number",
+      "card_number must contain at least one character.",
+    );
+  }
   return {
     q,
     game,
-    cardNumber: normalizedFilter(url.searchParams.get("card_number")),
+    cardNumber,
     limit,
   };
 }

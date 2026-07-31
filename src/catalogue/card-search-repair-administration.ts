@@ -44,7 +44,8 @@ export async function runGuardedCardSearchRepair(
   if (replay !== null) {
     assertExactRepairReplay(replay, requestJson);
     if (replay.result_json !== null) {
-      return parseRepairResult(replay.result_json);
+      const result = parseRepairResult(replay.result_json);
+      if (result.complete) return result;
     }
     await assertRepairSourceBound(
       database,
@@ -111,7 +112,8 @@ export async function runGuardedCardSearchRepair(
     }
     assertExactRepairReplay(stored, requestJson);
     if (stored.result_json !== null) {
-      return parseRepairResult(stored.result_json);
+      const result = parseRepairResult(stored.result_json);
+      if (result.complete) return result;
     }
   }
 
@@ -123,7 +125,11 @@ export async function runGuardedCardSearchRepair(
     .prepare(
       `UPDATE catalogue_search_repair_requests
        SET claim_token = ?, claim_expires_at = ?
-       WHERE idempotency_key = ? AND result_json IS NULL
+       WHERE idempotency_key = ?
+         AND (
+           result_json IS NULL
+           OR json_extract(result_json, '$.complete') = 0
+         )
          AND (
            claim_token IS NULL
            OR claim_expires_at <= ?
@@ -149,7 +155,8 @@ export async function runGuardedCardSearchRepair(
       input.idempotency_key,
     );
     if (observed?.result_json !== null && observed !== null) {
-      return parseRepairResult(observed.result_json);
+      const result = parseRepairResult(observed.result_json);
+      if (result.complete) return result;
     }
     const current = await database
       .prepare(
@@ -185,7 +192,10 @@ export async function runGuardedCardSearchRepair(
         `UPDATE catalogue_search_repair_requests
          SET claim_token = NULL, claim_expires_at = NULL
          WHERE idempotency_key = ? AND claim_token = ?
-           AND result_json IS NULL`,
+           AND (
+             result_json IS NULL
+             OR json_extract(result_json, '$.complete') = 0
+           )`,
       )
       .bind(input.idempotency_key, claimToken)
       .run();
@@ -196,8 +206,11 @@ export async function runGuardedCardSearchRepair(
     .prepare(
       `UPDATE catalogue_search_repair_requests
        SET result_json = ?, claim_token = NULL, claim_expires_at = NULL
-       WHERE idempotency_key = ? AND result_json IS NULL
-         AND claim_token = ?`,
+       WHERE idempotency_key = ? AND claim_token = ?
+         AND (
+           result_json IS NULL
+           OR json_extract(result_json, '$.complete') = 0
+         )`,
     )
     .bind(resultJson, input.idempotency_key, claimToken)
     .run();
@@ -274,7 +287,9 @@ function parseRepairResult(json: string): CardSearchRepairResult {
     typeof value !== "object" ||
     Array.isArray(value) ||
     !("contract" in value) ||
-    value.contract !== "card-keepr-card-search-repair@1"
+    value.contract !== "card-keepr-card-search-repair@1" ||
+    !("complete" in value) ||
+    typeof value.complete !== "boolean"
   ) {
     throw new Error("The retained Card search repair result is invalid.");
   }

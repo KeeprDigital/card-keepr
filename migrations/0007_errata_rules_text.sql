@@ -101,7 +101,10 @@ END;
 
 CREATE TRIGGER catalogue_search_repair_result_is_immutable
 BEFORE UPDATE OF result_json ON catalogue_search_repair_requests
-WHEN OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
+WHEN (
+  OLD.result_json IS NOT NULL
+  AND json_extract(OLD.result_json, '$.complete') = 1
+) OR NEW.result_json IS NULL
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_search_repair_result_immutable');
 END;

@@ -158,6 +158,72 @@ test("CLI search repair requires explicit production selection and confirmation"
   });
 });
 
+test("CLI search repair exits 10 while the retained repair remains incomplete", async (t) => {
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: {
+          current_revision_id: "catrev_cli_demo",
+        },
+        repairable_catalogue_revision_ids: ["catrev_cli_demo"],
+      }));
+      return;
+    }
+    response.end(JSON.stringify({
+      contract: "card-keepr-card-search-repair@1",
+      complete: false,
+      processed_cards: 25,
+      revisions_available: 0,
+      maximum_bound_parameter_bytes: 65_536,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+
+  const result = await runCli(
+    [
+      "catalogue",
+      "search",
+      "repair",
+      "--target-revision",
+      "catrev_cli_demo",
+      "--expected-current-revision",
+      "catrev_cli_demo",
+      "--idempotency-key",
+      "repair-cli-incomplete",
+      "--environment",
+      "production",
+      "--confirm",
+      productionConfirmation,
+      "--yes",
+      "--json",
+    ],
+    {
+      KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+    },
+  );
+
+  assert.equal(result.code, 10, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    contract: "card-keepr-card-search-repair@1",
+    complete: false,
+    processed_cards: 25,
+    revisions_available: 0,
+    maximum_bound_parameter_bytes: 65_536,
+  });
+});
+
 test("CLI production mutation requires exact resolved Cloudflare target confirmation before POST", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {

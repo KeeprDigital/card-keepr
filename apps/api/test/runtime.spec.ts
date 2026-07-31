@@ -548,6 +548,44 @@ test("Card collection filtering and keyset pagination remain bounded in D1", asy
   });
 });
 
+test("authenticated Card collection rejects present empty game and card_number filters", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_empty_filters",
+    runId: "run_empty_filters",
+    cards: [
+      apiCard({
+        id: "card_empty_filters",
+        cardNumber: "OP29-400",
+        name: "Must not be returned unfiltered",
+      }),
+    ],
+  });
+  let sequence = 70;
+  for (const [name, value] of [
+    ["game", ""],
+    ["game", " \t "],
+    ["card_number", ""],
+    ["card_number", " \t "],
+  ] as const) {
+    const response = await exports.default.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/cards?${name}=${
+          encodeURIComponent(value)
+        }`,
+        { headers: apiHeaders(`203.0.113.${sequence++}`) },
+      ),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+      invalid_params: [{
+        name,
+        reason: `${name} must contain at least one character.`,
+      }],
+    });
+  }
+});
+
 test("Card search is canonically Unicode case-insensitive", async () => {
   await seedApiRevision({
     revisionId: "catrev_unicode_search",

@@ -6113,13 +6113,20 @@ test("Card search repair permits only retained revisions and revalidates unfinis
     `INSERT INTO catalogue_search_repair_requests (
        idempotency_key, target_revision_id,
        expected_current_revision_id, request_json, result_json
-     ) VALUES (?, ?, ?, ?, NULL)`,
+     ) VALUES (?, ?, ?, ?, ?)`,
   )
     .bind(
       unfinishedRequest.idempotency_key,
       unfinishedRequest.target_revision_id,
       unfinishedRequest.expected_current_revision_id,
       canonicalJson(unfinishedRequest),
+      canonicalJson({
+        contract: "card-keepr-card-search-repair@1",
+        complete: false,
+        processed_cards: 25,
+        revisions_available: 1,
+        maximum_bound_parameter_bytes: 65_536,
+      }),
     )
     .run();
   await publishScenario(5);
@@ -6190,7 +6197,7 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("one Card search repair invocation completes up to 25 Cards within its durable bounds", async () => {
+test("one Card search repair idempotency key resumes bounded steps and replays only its completed result", async () => {
   const run = await collect(
     "/reconciliation/complete-empty-lineage",
     "bounded-25-card-search-repair",
@@ -6238,13 +6245,13 @@ test("one Card search repair invocation completes up to 25 Cards within its dura
     ).bind(revisionId),
   ]);
 
-  const repair = (idempotencyKey: string) =>
+  const repair = () =>
     post("/v1/catalogue-search-materialization/repair", {
       target_revision_id: revisionId,
       expected_current_revision_id: revisionId,
-      idempotency_key: idempotencyKey,
+      idempotency_key: "bounded-25-card-search-repair",
     });
-  const first = await repair("bounded-25-card-search-repair-first");
+  const first = await repair();
   expect(first.response.status).toBe(200);
   expect(first.document).toMatchObject({
     contract: "card-keepr-card-search-repair@1",
@@ -6268,7 +6275,7 @@ test("one Card search repair invocation completes up to 25 Cards within its dura
     current.document.complete !== true && call <= maximumRepairCalls;
     call += 1
   ) {
-    current = await repair(`bounded-25-card-search-repair-${call}`);
+    current = await repair();
     expect(current.response.status).toBe(200);
     expect(current.document).toMatchObject({
       contract: "card-keepr-card-search-repair@1",
@@ -6279,6 +6286,9 @@ test("one Card search repair invocation completes up to 25 Cards within its dura
     ).toBeLessThanOrEqual(65_536);
   }
   expect(current.document.complete).toBe(true);
+  const replay = await repair();
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(current.document);
 }, 60_000);
 
 test("Card search repair rejects an oversized legacy Card before materializing it", async () => {

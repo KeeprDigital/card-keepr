@@ -90,6 +90,8 @@ limited to that revision plus its two immediate predecessors. Every unfinished
 replay atomically rechecks the retained expected-current guard before claiming
 another step. An exact completed replay returns the persisted result; a stale
 expected revision or conflicting idempotency request fails closed.
+The CLI exits `10` while the repair result reports `complete: false` and exits
+`0` only for a completed repair result.
 Before retaining or claiming an unfinished request, every source
 `revision_cards.document_json` is checked against a durable 65,536-byte UTF-8
 bound. An oversized legacy Card fails with HTTP `422` before any search
