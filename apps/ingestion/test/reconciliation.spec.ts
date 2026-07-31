@@ -30,6 +30,7 @@ import {
 } from "../../../src/catalogue/catalogue-candidate";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
 import {
   injectFixtureEvidencePlan,
   injectFixturePublication,
@@ -1202,7 +1203,11 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   const candidate = JSON.parse(
     persisted?.candidate_json ?? "{}",
   ) as CatalogueCandidate;
-  const revisionId = "catrev_reconciliation_interrupted";
+  const revisionId = await catalogueRevisionIdentity({
+    runId: run.id,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
   const approvedAt = "2026-07-29T02:00:00.000Z";
   const reconcileAfter = "2026-07-29T02:05:00.000Z";
   const approvalKey = "approve-reconciliation-interrupted";
@@ -1324,6 +1329,142 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
     state: "published",
     resulting_revision_id: revisionId,
     export_manifest_digest: catalogueExport.manifest.manifest_sha256,
+  });
+});
+
+test("reserved recovery never adopts or cleans an existing published export prefix", async () => {
+  const firstRun = await collect(
+    "/reconciliation/new-locator",
+    "reservation-owner-existing-export",
+  );
+  const firstReconciled = await reconcile(firstRun.id);
+  const firstPublished = await approve(firstReconciled.document);
+  expect(firstPublished.response.status).toBe(200);
+  const existingRevision = requiredString(
+    firstPublished.document,
+    "resulting_revision_id",
+  );
+  const existingManifest = requiredString(
+    firstPublished.document,
+    "export_manifest_digest",
+  );
+
+  const run = await collect(
+    "/reconciliation/base",
+    "reservation-owner-tampered-run",
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  const digest = requiredString(reconciled.document, "candidate_digest");
+  const expectedRevision = requiredString(
+    reconciled.document,
+    "expected_current_revision_id",
+  );
+  const approvalKey = "approve-reservation-owner-tampered-run";
+  const approval = {
+    action: "approved",
+    approved_at: "2026-07-29T02:00:00.000Z",
+    candidate_digest: digest,
+    expected_current_revision_id: expectedRevision,
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+     SET state = 'publishing',
+         approval_json = ?,
+         approval_idempotency_key = ?,
+         approval_history_json = ?,
+         progress_json = ?,
+         publication_revision_id = ?,
+         publication_started_at = ?,
+         publication_reconcile_after = ?,
+         publication_manifest_digest = ?,
+         publication_writer_token = ?
+     WHERE id = ? AND state = 'awaiting_approval'`,
+  )
+    .bind(
+      JSON.stringify(approval),
+      approvalKey,
+      JSON.stringify([approval]),
+      JSON.stringify({
+        completed_stages: [
+          "planning",
+          "collecting",
+          "parsing",
+          "reconciling",
+          "awaiting_approval",
+        ],
+        current_stage: "publishing",
+      }),
+      existingRevision,
+      approval.approved_at,
+      "2026-07-29T02:05:00.000Z",
+      existingManifest,
+      `writer:${existingRevision}`,
+      run.id,
+    )
+    .run();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list())
+    .objects.map((object) => object.key).sort();
+  const exportBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT * FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind(existingRevision).first();
+
+  const blocked = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    {
+      candidate_digest: digest,
+      expected_current_revision_id: expectedRevision,
+      idempotency_key: approvalKey,
+    },
+  );
+  expect(blocked.response.status).toBe(500);
+  expect(blocked.document).toMatchObject({ code: "publication_abandoned" });
+  const ownership = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM ingestion_publication_cleanup
+        WHERE ingestion_run_id = ?) AS cleanups,
+       (SELECT COUNT(*) FROM administration_idempotency_claims
+        WHERE idempotency_key = ?) AS claims,
+       (SELECT active_ingestion_run_id FROM operation_state
+        WHERE singleton = 1) AS active_ingestion_run_id,
+       (SELECT current_revision_id FROM catalogue_state
+        WHERE singleton = 1) AS current_revision_id`,
+  )
+    .bind(run.id, approvalKey)
+    .first<{
+      cleanups: number;
+      claims: number;
+      active_ingestion_run_id: string | null;
+      current_revision_id: string;
+    }>();
+  expect(ownership).toEqual({
+    cleanups: 0,
+    claims: 0,
+    active_ingestion_run_id: null,
+    current_revision_id: existingRevision,
+  });
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map((object) => object.key).sort()).toEqual(objectsBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT * FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind(existingRevision).first()).toEqual(exportBefore);
+
+  const replay = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    {
+      candidate_digest: digest,
+      expected_current_revision_id: expectedRevision,
+      idempotency_key: approvalKey,
+    },
+  );
+  expect(replay.response.status).toBe(500);
+  expect(replay.document).toMatchObject({
+    code: blocked.document.code,
+    detail: blocked.document.detail,
+    status: blocked.document.status,
+    type: blocked.document.type,
   });
 });
 
@@ -6560,7 +6701,11 @@ test("reserved oversized legality relationship recovery preserves the typed term
     "expected_current_revision_id",
   );
   const approvalKey = "approve-reserved-legality-relationship-over-budget";
-  const revisionId = "catrev_reserved_legality_relationship_over_budget";
+  const revisionId = await catalogueRevisionIdentity({
+    runId: run.id,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
   const approvalRequest = {
     candidate_digest: digest,
     expected_current_revision_id: expectedRevision,

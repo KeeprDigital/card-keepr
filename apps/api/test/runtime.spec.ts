@@ -1918,12 +1918,12 @@ function canonicalLegalityRuleStatements(
       `INSERT INTO legality_rules (
         id, official_id, supported_game, region, format, event_tier,
         effective_from, effective_until, official_wording,
-        effect_json, card_ids_json, source_lineage,
+        effect_json, card_ids_json, direct_card_ids_json, source_lineage,
         source_snapshot_id, source_observation_set_id,
         source_observation_id, source_observation_pointer,
         source_field_pointers_json, first_revision_id,
         last_observed_revision_id, current, last_missing_revision_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, 1, NULL)`,
     ).bind(
       rule.id,
@@ -1937,6 +1937,7 @@ function canonicalLegalityRuleStatements(
       rule.official_wording,
       JSON.stringify(rule.effect),
       JSON.stringify(cardIds),
+      JSON.stringify(rule.card_ids),
       rule.source_lineage,
       rule.source_snapshot_id,
       rule.source_observation_set_id,

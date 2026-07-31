@@ -2460,10 +2460,24 @@ async function reconcileAbandonedPublication(
         AND publication_reconcile_after <= ?
       ORDER BY publication_reconcile_after, id
       LIMIT 1`,
-    )
+  )
     .bind(observedAt)
     .first<RunRow>();
   if (run === null) return;
+  if (!(await reservedPublicationOwnsUnpublishedPrefix(database, run))) {
+    await failReservedPublication(
+      database,
+      run,
+      null,
+      observedAt,
+      new AdministrationProblem(
+        500,
+        "publication_abandoned",
+        "The reserved publication could not be safely reconciled.",
+      ),
+    );
+    return;
+  }
   try {
     await reconcileReservedPublication(
       database,
@@ -2500,6 +2514,51 @@ async function reconcileAbandonedPublication(
               ),
     );
   }
+}
+
+async function reservedPublicationOwnsUnpublishedPrefix(
+  database: D1Database,
+  run: RunRow,
+): Promise<boolean> {
+  if (
+    run.candidate_digest === null ||
+    !isSha256Digest(run.candidate_digest) ||
+    run.publication_revision_id === null
+  ) {
+    return false;
+  }
+  const expectedRevisionId = await catalogueRevisionIdentity({
+    runId: run.id,
+    candidateDigest: run.candidate_digest,
+    expectedCurrentRevisionId: run.expected_current_revision_id,
+  });
+  if (run.publication_revision_id !== expectedRevisionId) return false;
+  const registered = await database.prepare(
+    `SELECT
+       EXISTS(
+         SELECT 1 FROM catalogue_revisions WHERE id = ?
+       ) AS revision_registered,
+       EXISTS(
+         SELECT 1 FROM catalogue_exports
+         WHERE catalogue_revision_id = ?
+       ) AS export_registered,
+       EXISTS(
+         SELECT 1 FROM ingestion_runs
+         WHERE id <> ? AND publication_revision_id = ?
+       ) AS other_run_reserved`,
+  ).bind(
+    expectedRevisionId,
+    expectedRevisionId,
+    run.id,
+    expectedRevisionId,
+  ).first<{
+    revision_registered: number;
+    export_registered: number;
+    other_run_reserved: number;
+  }>();
+  return registered?.revision_registered === 0 &&
+    registered.export_registered === 0 &&
+    registered.other_run_reserved === 0;
 }
 
 async function reconcileReservedPublication(
@@ -2845,7 +2904,7 @@ async function failUnreservedPublication(
 async function failReservedPublication(
   database: D1Database,
   run: RunRow,
-  objectKeys: readonly string[],
+  objectKeys: readonly string[] | null,
   terminalAt: string,
   problem: AdministrationProblem,
 ): Promise<void> {
@@ -2873,7 +2932,7 @@ async function failReservedPublication(
     "approve_ingestion_run",
     requestJson,
   );
-  await database.batch([
+  const failureStatements = [
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -2929,28 +2988,33 @@ async function failReservedPublication(
       operation: "approve_ingestion_run",
       requestJson,
     }, claimOwner),
-    database
-      .prepare(
-        `INSERT INTO ingestion_publication_cleanup (
-          ingestion_run_id,
-          state,
-          object_keys_json,
-          attempts,
-          failure_code,
-          last_attempt_at,
-          completed_at,
-          not_before,
-          idempotency_key,
-          request_json
-        ) VALUES (?, 'pending', ?, 0, NULL, NULL, NULL, ?, NULL, NULL)
-        ON CONFLICT (ingestion_run_id) DO NOTHING`,
-      )
-      .bind(
-        run.id,
-        canonicalJson([...new Set(objectKeys)].sort()),
-        publicationCleanupNotBefore(run, terminalAt),
-      ),
-  ]);
+  ];
+  if (objectKeys !== null) {
+    failureStatements.push(
+      database
+        .prepare(
+          `INSERT INTO ingestion_publication_cleanup (
+            ingestion_run_id,
+            state,
+            object_keys_json,
+            attempts,
+            failure_code,
+            last_attempt_at,
+            completed_at,
+            not_before,
+            idempotency_key,
+            request_json
+          ) VALUES (?, 'pending', ?, 0, NULL, NULL, NULL, ?, NULL, NULL)
+          ON CONFLICT (ingestion_run_id) DO NOTHING`,
+        )
+        .bind(
+          run.id,
+          canonicalJson([...new Set(objectKeys)].sort()),
+          publicationCleanupNotBefore(run, terminalAt),
+        ),
+    );
+  }
+  await database.batch(failureStatements);
 }
 
 async function attemptPublicationCleanup(

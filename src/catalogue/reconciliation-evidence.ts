@@ -350,6 +350,16 @@ export async function retainedReconciliationObservation(
   const observationIds = new Set<string>();
   const legalityRules: RetainedLegalityRule[] = [];
   let completeLegalityScopes = 0;
+  const officialSurfaces = new Map<
+    string,
+    {
+      surface: string;
+      requestId: string;
+      requestUrl: string;
+      observationSetId: string;
+      records: unknown[];
+    }
+  >();
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
@@ -370,11 +380,37 @@ export async function retainedReconciliationObservation(
         observationIds.add(wrapped.id);
         if (
           isRecord(wrapped.value) &&
-          Array.isArray(wrapped.value.legality_rules)
+          wrapped.value.observation_type ===
+            "official_surface_evidence"
         ) {
-          if (completeLegalityScope(wrapped.value)) {
-            completeLegalityScopes += 1;
+          if (
+            typeof wrapped.value.surface !== "string" ||
+            !Array.isArray(wrapped.value.records) ||
+            officialSurfaces.has(request.request_id)
+          ) {
+            throw new Error(
+              "Retained Official Source surface evidence is invalid or duplicated.",
+            );
           }
+          officialSurfaces.set(request.request_id, {
+            surface: wrapped.value.surface,
+            requestId: request.request_id,
+            requestUrl: request.url,
+            observationSetId: row.observation_set_id,
+            records: wrapped.value.records,
+          });
+          return null;
+        }
+        if (
+          isRecord(wrapped.value) &&
+          wrapped.value.observation_type === "legality_rules"
+        ) {
+          if (!completeLegalityScope(wrapped.value)) {
+            throw new Error(
+              "The observed Legality Rule stream lacks explicit structurally complete coverage.",
+            );
+          }
+          completeLegalityScopes += 1;
         }
         legalityRules.push(
           ...parseRetainedLegalityRules(wrapped.value, {

@@ -7,6 +7,7 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
+import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
 import {
   canonicalJson,
   sha256Text,
@@ -1049,7 +1050,11 @@ test("an interrupted publication fails atomically and leaves cleanup independent
     started.document,
     "expected_current_revision_id",
   );
-  const revisionId = "catrev_interrupted";
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
   const approvalKey = "approve-interrupted";
   const approval = {
     action: "approved",
@@ -1275,7 +1280,11 @@ test("an interrupted publication finalizes only its exact verified export", asyn
     started.document,
     "expected_current_revision_id",
   );
-  const revisionId = "catrev_complete_interruption";
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
   const approvalKey = "approve-complete-interruption";
   const approval = {
     action: "approved",
@@ -1784,7 +1793,11 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
     started.document,
     "expected_current_revision_id",
   );
-  const revisionId = "catrev_unexpected_recovery_key";
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
   const approvalKey = "approve-unexpected-recovery-key";
   const approval = {
     action: "approved",

@@ -149,6 +149,10 @@ CREATE TABLE legality_rules (
   card_ids_json TEXT NOT NULL CHECK (
     json_valid(card_ids_json) AND json_type(card_ids_json) = 'array'
   ),
+  direct_card_ids_json TEXT NOT NULL CHECK (
+    json_valid(direct_card_ids_json)
+    AND json_type(direct_card_ids_json) = 'array'
+  ),
   source_lineage TEXT NOT NULL,
   source_snapshot_id TEXT NOT NULL REFERENCES source_snapshots(id),
   source_observation_set_id TEXT NOT NULL
@@ -239,6 +243,7 @@ WHEN OLD.id <> NEW.id
   OR OLD.official_wording <> NEW.official_wording
   OR OLD.effect_json <> NEW.effect_json
   OR OLD.card_ids_json <> NEW.card_ids_json
+  OR OLD.direct_card_ids_json <> NEW.direct_card_ids_json
   OR OLD.source_lineage <> NEW.source_lineage
 BEGIN
   SELECT RAISE(ABORT, 'legality_rule_identity_conflict');
@@ -310,28 +315,47 @@ WHEN NOT EXISTS (
       canonical.effective_from
     AND json_extract(NEW.document_json, '$.effective_until') IS
       canonical.effective_until
-    AND NOT EXISTS (
-      SELECT value FROM json_each(canonical.card_ids_json)
-      EXCEPT
-      SELECT value FROM (
-        SELECT value FROM json_each(NEW.document_json, '$.card_ids')
-        UNION
-        SELECT value
-        FROM json_each(NEW.document_json, '$.effect.with_card_ids')
-      )
-    )
-    AND NOT EXISTS (
-      SELECT value FROM json_each(NEW.document_json, '$.card_ids')
-      UNION
-      SELECT value
-      FROM json_each(NEW.document_json, '$.effect.with_card_ids')
-      EXCEPT
-      SELECT value FROM json_each(canonical.card_ids_json)
-    )
+    AND json_type(NEW.document_json, '$.card_ids') = 'array'
+    AND json_extract(NEW.document_json, '$.card_ids') =
+      canonical.direct_card_ids_json
+    AND json_array_length(
+      json_extract(NEW.document_json, '$.card_ids')
+    ) = json_array_length(canonical.direct_card_ids_json)
     AND json_extract(NEW.document_json, '$.official_wording') =
       canonical.official_wording
+    AND json_type(NEW.document_json, '$.effect') = 'object'
     AND json_extract(NEW.document_json, '$.effect') =
       canonical.effect_json
+    AND (
+      (
+        json_extract(canonical.effect_json, '$.type') =
+          'prohibited_combination'
+        AND json_type(
+          NEW.document_json,
+          '$.effect.with_card_ids'
+        ) = 'array'
+        AND json_extract(
+          NEW.document_json,
+          '$.effect.with_card_ids'
+        ) = json_extract(canonical.effect_json, '$.with_card_ids')
+        AND json_array_length(
+          json_extract(
+            NEW.document_json,
+            '$.effect.with_card_ids'
+          )
+        ) = json_array_length(
+          json_extract(canonical.effect_json, '$.with_card_ids')
+        )
+      )
+      OR (
+        json_extract(canonical.effect_json, '$.type') <>
+          'prohibited_combination'
+        AND json_type(
+          NEW.document_json,
+          '$.effect.with_card_ids'
+        ) IS NULL
+      )
+    )
     AND json_extract(NEW.document_json, '$.source_lineage') =
       canonical.source_lineage
     AND json_extract(NEW.document_json, '$.source_snapshot_id') =

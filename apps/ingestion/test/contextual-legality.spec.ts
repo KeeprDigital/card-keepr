@@ -392,7 +392,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     effective_until: null,
     card_ids: ["card_upgraded_guard"],
     official_wording: "The upgraded guard remains authoritative.",
-    effect: { type: "ban" },
+    effect: {
+      type: "prohibited_combination",
+      with_card_ids: ["card_upgraded_companion"],
+    },
     source_lineage: "one-piece-en",
     source_snapshot_id: "srcsnap_upgraded_legality_guard",
     source_observation_set_id: "srcobsset_upgraded_legality_guard",
@@ -511,12 +514,12 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, source_lineage, source_snapshot_id,
+         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
          source_observation_set_id, source_observation_id,
          source_observation_pointer, source_field_pointers_json,
          first_revision_id, last_observed_revision_id, current,
          last_missing_revision_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
          1, NULL)`,
     ).bind(
       upgradedRule.id,
@@ -529,6 +532,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       upgradedRule.effective_until,
       upgradedRule.official_wording,
       JSON.stringify(upgradedRule.effect),
+      JSON.stringify([
+        ...upgradedRule.card_ids,
+        ...upgradedRule.effect.with_card_ids,
+      ]),
       JSON.stringify(upgradedRule.card_ids),
       upgradedRule.source_lineage,
       upgradedRule.source_snapshot_id,
@@ -553,7 +560,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       upgradedRule.event_tier,
       upgradedRule.effective_from,
       upgradedRule.effective_until,
-      JSON.stringify(upgradedRule.card_ids),
+      JSON.stringify([
+        ...upgradedRule.card_ids,
+        ...upgradedRule.effect.with_card_ids,
+      ]),
       JSON.stringify(upgradedRule),
     ),
   ]);
@@ -569,14 +579,14 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, source_lineage, source_snapshot_id,
+         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
          source_observation_set_id, source_observation_id,
          source_observation_pointer, source_field_pointers_json,
          first_revision_id, last_observed_revision_id, current,
          last_missing_revision_id
        ) VALUES ('legality_rule_upgraded_cross_owner', 'cross-owner',
          'one-piece', 'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL,
-         'Cross-owner rule.', '{"type":"ban"}', '[]', 'one-piece-en',
+         'Cross-owner rule.', '{"type":"ban"}', '[]', '[]', 'one-piece-en',
          'srcsnap_attacker', 'srcobsset_upgraded_legality_guard',
          'srcobs_attacker', '/observations/0/value/legality_rules/1', '{}',
          'catrev_upgraded_legality_guard',
@@ -668,6 +678,46 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       ),
     ).run(),
   );
+  const upgradedNestedDocuments = [
+    { ...upgradedRule, card_ids: upgradedRule.card_ids[0] },
+    {
+      ...upgradedRule,
+      card_ids: [upgradedRule.card_ids[0], upgradedRule.card_ids[0]],
+    },
+    {
+      ...upgradedRule,
+      card_ids: [
+        ...upgradedRule.card_ids,
+        ...upgradedRule.effect.with_card_ids,
+      ],
+    },
+  ];
+  const upgradedNestedCardIds = await Promise.all(
+    upgradedNestedDocuments.map((document) =>
+      rejectedError(
+        legacyDatabase.prepare(
+          `INSERT INTO revision_legality_rules (
+             catalogue_revision_id, legality_rule_id, supported_game,
+             region, format, event_tier, effective_from, effective_until,
+             card_ids_json, document_json
+           ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          upgradedRule.id,
+          upgradedRule.game,
+          upgradedRule.region,
+          upgradedRule.format,
+          upgradedRule.event_tier,
+          upgradedRule.effective_from,
+          upgradedRule.effective_until,
+          JSON.stringify([
+            ...upgradedRule.card_ids,
+            ...upgradedRule.effect.with_card_ids,
+          ]),
+          JSON.stringify(document),
+        ).run(),
+      )
+    ),
+  );
   expect([
     String(upgradedProvenanceMutation),
     String(upgradedCrossOwner),
@@ -676,11 +726,15 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     String(upgradedMissingNullableKey),
     String(upgradedArbitraryKeySubstitution),
     String(upgradedDuplicateRequiredKey),
+    ...upgradedNestedCardIds.map(String),
   ]).toEqual([
     expect.stringMatching(/legality_rule_provenance_immutable/),
     expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
@@ -1141,6 +1195,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
      JOIN revision_legality_rules AS revision
        ON revision.legality_rule_id = canonical.id
      WHERE revision.catalogue_revision_id = ?
+       AND json_extract(canonical.effect_json, '$.type') =
+       'prohibited_combination'
      ORDER BY canonical.id
      LIMIT 1`,
   ).bind(
@@ -1284,6 +1340,54 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       ),
     ).run(),
   );
+  const canonicalCombinationDocument = JSON.parse(
+    String(canonicalSnapshot.document_json),
+  ) as Record<string, unknown>;
+  const canonicalDirectCardIds = canonicalCombinationDocument.card_ids as string[];
+  const canonicalEffect = canonicalCombinationDocument.effect as {
+    type: string;
+    with_card_ids: string[];
+  };
+  const nestedCardIdDocuments = [
+    {
+      ...canonicalCombinationDocument,
+      card_ids: canonicalDirectCardIds[0],
+    },
+    {
+      ...canonicalCombinationDocument,
+      card_ids: [canonicalDirectCardIds[0], canonicalDirectCardIds[0]],
+    },
+    {
+      ...canonicalCombinationDocument,
+      card_ids: [
+        ...canonicalDirectCardIds,
+        ...canonicalEffect.with_card_ids,
+      ],
+    },
+  ];
+  const nestedCardIdMutations = await Promise.all(
+    nestedCardIdDocuments.map((document) =>
+      rejectedError(
+        testEnv.CATALOGUE_DB.prepare(
+          `INSERT INTO revision_legality_rules (
+             catalogue_revision_id, legality_rule_id, supported_game,
+             region, format, event_tier, effective_from, effective_until,
+             card_ids_json, document_json
+           ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          canonicalSnapshot.id,
+          canonicalSnapshot.supported_game,
+          canonicalSnapshot.region,
+          canonicalSnapshot.format,
+          canonicalSnapshot.event_tier,
+          canonicalSnapshot.effective_from,
+          canonicalSnapshot.effective_until,
+          canonicalSnapshot.card_ids_json,
+          JSON.stringify(document),
+        ).run(),
+      )
+    ),
+  );
   const provenanceOwners = await testEnv.CATALOGUE_DB.prepare(
     `SELECT id, source_snapshot_id
      FROM source_observation_sets
@@ -1306,13 +1410,13 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, official_wording, effect_json,
-         card_ids_json, source_lineage, source_snapshot_id,
+         card_ids_json, direct_card_ids_json, source_lineage, source_snapshot_id,
          source_observation_set_id, source_observation_id,
          source_observation_pointer, source_field_pointers_json,
          first_revision_id, last_observed_revision_id, current,
          last_missing_revision_id
        ) VALUES ('legality_rule_cross_owned', 'cross-owned', ?, ?, ?, ?, ?, ?,
-         ?, ?, ?, ?, ?, ?, 'srcobs_cross_owned',
+         ?, ?, ?, ?, ?, ?, ?, 'srcobs_cross_owned',
          '/observations/0/value/legality_rules/0', ?, ?, ?, 1, NULL)`,
     ).bind(
       canonicalSnapshot.supported_game,
@@ -1324,6 +1428,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       canonicalSnapshot.official_wording,
       canonicalSnapshot.effect_json,
       canonicalSnapshot.card_ids_json,
+      canonicalSnapshot.direct_card_ids_json,
       canonicalSnapshot.source_lineage,
       firstOwner.source_snapshot_id,
       differentOwner.id,
@@ -1344,6 +1449,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     String(missingNullableDocumentKey),
     String(arbitraryDocumentKeySubstitution),
     String(duplicateRequiredDocumentKey),
+    ...nestedCardIdMutations.map(String),
     String(provenanceUpdate),
     String(crossOwnedProvenance),
   ]).toEqual([
@@ -1353,6 +1459,9 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
@@ -1456,6 +1565,159 @@ test.each(["event-tier", "effective-until"])(
   },
 );
 
+test.each(["missing", "false"])(
+  "an observed fixture legality wrapper with %s completeness cannot carry prior rules across an unrelated card change",
+  async (variant) => {
+    const initial = await collectFixtureLegality(
+      "https://official-source.invalid/reconciliation/contextual-legality-domain",
+      `incomplete-legality-${variant}-initial`,
+    );
+    const published = await approve(
+      initial.reconciled,
+      `incomplete-legality-${variant}-publish-initial`,
+    );
+    expect(published.response.status).toBe(200);
+    const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+    ).first();
+    const freshnessBefore = (await testEnv.CATALOGUE_DB.prepare(
+      `SELECT * FROM source_freshness ORDER BY game, area`,
+    ).all()).results;
+    const initialEvidence = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT observations.content_object_key
+       FROM source_observation_sets AS observations
+       JOIN source_snapshots AS snapshots
+         ON snapshots.id = observations.source_snapshot_id
+       WHERE snapshots.ingestion_run_id = ?`,
+    ).bind(initial.runId).first<{ content_object_key: string }>();
+    const initialObject = await testEnv.EVIDENCE_OBJECTS.get(
+      initialEvidence?.content_object_key ?? "",
+    );
+    if (initialObject === null) throw new Error("Initial evidence is absent");
+    const initialDocument = await initialObject.json<{
+      observations: Array<{ value: Record<string, unknown> }>;
+    }>();
+    const retainedWrapper = initialDocument.observations.find(
+      (observation) =>
+        observation.value.observation_type === "legality_rules",
+    )?.value;
+    if (retainedWrapper === undefined) {
+      throw new Error("Initial legality wrapper is absent");
+    }
+
+    const runId = await collectFixtureLegalityEvidence(
+      "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=omitted",
+      `incomplete-legality-${variant}-changed`,
+    );
+    const retained = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT observations.id, observations.parse_operation_id,
+              observations.content_object_key
+       FROM source_observation_sets AS observations
+       JOIN source_snapshots AS snapshots
+         ON snapshots.id = observations.source_snapshot_id
+       WHERE snapshots.ingestion_run_id = ?`,
+    ).bind(runId).first<{
+      id: string;
+      parse_operation_id: string;
+      content_object_key: string;
+    }>();
+    if (retained === null) throw new Error("Changed evidence is absent");
+    const changedObject = await testEnv.EVIDENCE_OBJECTS.get(
+      retained.content_object_key,
+    );
+    if (changedObject === null) throw new Error("Changed bytes are absent");
+    const changedDocument = await changedObject.json<{
+      evidence_summary: Record<string, unknown>;
+      observations: Array<{
+        id: string;
+        ordinal: number;
+        value: Record<string, unknown>;
+      }>;
+    }>();
+    const firstCard = changedDocument.observations[0]!.value.card as
+      Record<string, unknown>;
+    firstCard.name = `Unrelated changed card ${variant}`;
+    const incompleteWrapper = structuredClone(retainedWrapper);
+    if (variant === "missing") {
+      delete incompleteWrapper.completeness;
+    } else {
+      incompleteWrapper.completeness = {
+        ...(incompleteWrapper.completeness as Record<string, unknown>),
+        structurally_complete: false,
+      };
+    }
+    changedDocument.observations.push({
+      id: `srcobs_${retained.id.slice(10)}_${changedDocument.observations.length + 1}`,
+      ordinal: changedDocument.observations.length + 1,
+      value: incompleteWrapper,
+    });
+    changedDocument.evidence_summary = {
+      observation_count: changedDocument.observations.length,
+      declared_record_count: changedDocument.observations.length,
+      parsed_record_count: changedDocument.observations.length,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      structurally_complete: true,
+    };
+    const bytes = utf8(canonicalJson(changedDocument));
+    const digest = await sha256(bytes);
+    await testEnv.EVIDENCE_OBJECTS.put(retained.content_object_key, bytes);
+    await testEnv.CATALOGUE_DB.prepare(
+      `DROP TRIGGER IF EXISTS source_observation_sets_are_immutable_on_update`,
+    ).run();
+    await testEnv.CATALOGUE_DB.batch([
+      testEnv.CATALOGUE_DB.prepare(
+        `UPDATE source_observation_sets
+         SET content_digest = ?, content_byte_length = ?,
+             observation_count = ?
+         WHERE id = ?`,
+      ).bind(digest, bytes.byteLength, changedDocument.observations.length, retained.id),
+      testEnv.CATALOGUE_DB.prepare(
+        `UPDATE source_parse_operations
+         SET content_digest = ?, content_byte_length = ?,
+             observation_count = ?
+         WHERE id = ?`,
+      ).bind(
+        digest,
+        bytes.byteLength,
+        changedDocument.observations.length,
+        retained.parse_operation_id,
+      ),
+    ]);
+    await testEnv.CATALOGUE_DB.prepare(
+      `CREATE TRIGGER source_observation_sets_are_immutable_on_update
+       BEFORE UPDATE ON source_observation_sets
+       BEGIN
+         SELECT RAISE(ABORT, 'immutable_source_observation_set');
+       END`,
+    ).run();
+
+    const blocked = await request(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      {},
+    );
+    expect(blocked.response.status).toBe(409);
+    expect(blocked.document).toMatchObject({
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            "Legality Rule stream lacks explicit structurally complete coverage",
+          ),
+        }),
+      ],
+    });
+    expect(await testEnv.CATALOGUE_DB.prepare(
+      `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+    ).first()).toEqual(currentBefore);
+    expect((await testEnv.CATALOGUE_DB.prepare(
+      `SELECT * FROM source_freshness ORDER BY game, area`,
+    ).all()).results).toEqual(freshnessBefore);
+  },
+);
+
 async function collectFixtureLegality(
   url: string,
   idempotencyKey: string,
@@ -1464,6 +1726,19 @@ async function collectFixtureLegality(
   runId: string;
   reconciled: Record<string, unknown>;
 }> {
+  const runId = await collectFixtureLegalityEvidence(url, idempotencyKey);
+  const reconciled = await request(
+    `/v1/ingestion-runs/${runId}/reconciliation`,
+    {},
+  );
+  expect(reconciled.response.status).toBe(expectedStatus);
+  return { runId, reconciled: reconciled.document };
+}
+
+async function collectFixtureLegalityEvidence(
+  url: string,
+  idempotencyKey: string,
+): Promise<string> {
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
@@ -1483,12 +1758,7 @@ async function collectFixtureLegality(
   );
   expect(resumed.response.status).toBe(202);
   await waitForState(runId, "parsing");
-  const reconciled = await request(
-    `/v1/ingestion-runs/${runId}/reconciliation`,
-    {},
-  );
-  expect(reconciled.response.status).toBe(expectedStatus);
-  return { runId, reconciled: reconciled.document };
+  return runId;
 }
 
 function approve(
