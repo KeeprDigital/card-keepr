@@ -662,10 +662,10 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
   revisionId = reappearedPublication.resulting_revision_id;
   const expectedAsiaRuleAudit = (officialId) => {
-    const observed = reappeared.legality_rules.find(
+    const observed = asia.legality_rules.find(
       (rule) => rule.official_id === officialId,
     );
-    assert.ok(observed, `missing reappeared rule ${officialId}`);
+    assert.ok(observed, `missing canonical rule ${officialId}`);
     return {
       source_lineage: "gundam-en-asia",
       source_observation_ids: [observed.source_observation_id],

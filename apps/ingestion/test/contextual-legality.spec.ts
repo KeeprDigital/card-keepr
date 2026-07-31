@@ -6,7 +6,11 @@ import {
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
-import { sha256, utf8 } from "../../../src/catalogue/serialization";
+import {
+  canonicalJson,
+  sha256,
+  utf8,
+} from "../../../src/catalogue/serialization";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
 const testEnv = env as Env & {
@@ -593,16 +597,69 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          AND legality_rule_id = ?`,
     ).bind(upgradedRule.id).run(),
   );
+  const {
+    event_tier: _missingUpgradedEventTier,
+    ...upgradedWithoutNullableKey
+  } = upgradedRule;
+  const {
+    effective_until: _replacedUpgradedEffectiveUntil,
+    ...upgradedWithReplacementKey
+  } = upgradedRule;
+  const upgradedMissingNullableKey = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      upgradedRule.id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      JSON.stringify(upgradedRule.card_ids),
+      JSON.stringify(upgradedWithoutNullableKey),
+    ).run(),
+  );
+  const upgradedArbitraryKeySubstitution = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_upgraded_legality_guard', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      upgradedRule.id,
+      upgradedRule.game,
+      upgradedRule.region,
+      upgradedRule.format,
+      upgradedRule.event_tier,
+      upgradedRule.effective_from,
+      upgradedRule.effective_until,
+      JSON.stringify(upgradedRule.card_ids),
+      JSON.stringify({
+        ...upgradedWithReplacementKey,
+        attacker_replacement: null,
+      }),
+    ).run(),
+  );
   expect([
     String(upgradedProvenanceMutation),
     String(upgradedCrossOwner),
     String(upgradedRevisionMutation),
     String(upgradedRevisionDelete),
+    String(upgradedMissingNullableKey),
+    String(upgradedArbitraryKeySubstitution),
   ]).toEqual([
     expect.stringMatching(/legality_rule_provenance_immutable/),
     expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
   ]);
 });
 
@@ -1129,6 +1186,58 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       inconsistentDocument,
     ).run(),
   );
+  const canonicalDocument = JSON.parse(
+    String(canonicalSnapshot.document_json),
+  ) as Record<string, unknown>;
+  const {
+    event_tier: _missingEventTier,
+    ...documentWithoutNullableKey
+  } = canonicalDocument;
+  const {
+    effective_until: _replacedEffectiveUntil,
+    ...documentWithReplacementKey
+  } = canonicalDocument;
+  const missingNullableDocumentKey = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      canonicalSnapshot.id,
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.format,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.card_ids_json,
+      JSON.stringify(documentWithoutNullableKey),
+    ).run(),
+  );
+  const arbitraryDocumentKeySubstitution = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES ('catrev_spine_000', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      canonicalSnapshot.id,
+      canonicalSnapshot.supported_game,
+      canonicalSnapshot.region,
+      canonicalSnapshot.format,
+      canonicalSnapshot.event_tier,
+      canonicalSnapshot.effective_from,
+      canonicalSnapshot.effective_until,
+      canonicalSnapshot.card_ids_json,
+      JSON.stringify({
+        ...documentWithReplacementKey,
+        attacker_replacement: null,
+      }),
+    ).run(),
+  );
   const provenanceOwners = await testEnv.CATALOGUE_DB.prepare(
     `SELECT id, source_snapshot_id
      FROM source_observation_sets
@@ -1186,6 +1295,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     String(revisionDelete),
     String(inconsistentRevisionContext),
     String(inconsistentRevisionDocument),
+    String(missingNullableDocumentKey),
+    String(arbitraryDocumentKeySubstitution),
     String(provenanceUpdate),
     String(crossOwnedProvenance),
   ]).toEqual([
@@ -1195,6 +1306,8 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_immutable/),
     expect.stringMatching(/revision_legality_rule_immutable/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
+    expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/revision_legality_rule_canonical_mismatch/),
     expect.stringMatching(/legality_rule_provenance_immutable/),
@@ -1208,6 +1321,68 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(immutableResponse.status).toBe(200);
   expect(await immutableResponse.json()).toEqual(status);
+
+  const reappeared = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=current",
+    "contextual-legality-domain-reappeared-provenance",
+  );
+  const reappearedCandidateRule = (
+    reappeared.reconciled.legality_rules as Array<Record<string, unknown>>
+  ).find((rule) => rule.official_id === "legality_rule_asia_eligible");
+  if (reappearedCandidateRule === undefined) {
+    throw new Error("Reappeared Legality Rule is absent");
+  }
+  const reappearedPublished = await approve(
+    reappeared.reconciled,
+    "publish-reappeared-provenance",
+  );
+  const reappearedRevisionId = requiredString(
+    reappearedPublished.document,
+    "resulting_revision_id",
+  );
+  const revisionRule = await revisionLegalityRule(
+    reappearedRevisionId,
+    "legality_rule_asia_eligible",
+  );
+  if (revisionRule === undefined) {
+    throw new Error("Revision Legality Rule is absent");
+  }
+  const exportRule = await exportedLegalityRule(
+    reappearedRevisionId,
+    "legality_rule_asia_eligible",
+  );
+  const reappearedApiResponse = await contextualLegalityStatusResponse(
+    new Request(
+      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    ),
+    testEnv.CATALOGUE_DB,
+  );
+  const reappearedStatus = await reappearedApiResponse.json() as {
+    data: Array<{ rule_ids: string[] }>;
+  };
+  const canonicalProvenance = {
+    source_lineage: revisionRule.source_lineage,
+    source_observation_id: revisionRule.source_observation_id,
+    source_observation_pointer: revisionRule.source_observation_pointer,
+    source_field_pointers: revisionRule.source_field_pointers,
+  };
+  const exportedProvenance = {
+    source_lineage: exportRule.source_lineage,
+    source_observation_id:
+      (exportRule.source_observation_ids as unknown[])[0],
+    source_observation_pointer: exportRule.source_observation_pointer,
+    source_field_pointers: exportRule.source_field_pointers,
+  };
+  expect(reappearedCandidateRule.source_observation_id).not.toBe(
+    revisionRule.source_observation_id,
+  );
+  expect(canonicalJson(exportedProvenance)).toBe(
+    canonicalJson(canonicalProvenance),
+  );
+  expect(reappearedApiResponse.status).toBe(200);
+  expect(reappearedStatus.data[0]!.rule_ids).toContain(
+    requiredString(revisionRule, "id"),
+  );
 });
 
 test.each(["event-tier", "effective-until"])(
@@ -1364,6 +1539,42 @@ async function revisionLegalityRule(
   return retained === null
     ? undefined
     : JSON.parse(retained.document_json) as Record<string, unknown>;
+}
+
+async function exportedLegalityRule(
+  revisionId: string,
+  officialId: string,
+): Promise<Record<string, unknown>> {
+  const exportRow = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key FROM catalogue_exports
+     WHERE catalogue_revision_id = ?`,
+  ).bind(revisionId).first<{ manifest_key: string }>();
+  if (exportRow === null) throw new Error("Catalogue Export is absent");
+  const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(
+    exportRow.manifest_key,
+  );
+  if (manifestObject === null) throw new Error("Export manifest is absent");
+  const manifest = await manifestObject.json<{
+    components: Array<{ name: string; compressed_sha256: string }>;
+  }>();
+  const component = manifest.components.find(
+    (candidate) => candidate.name === "legality-rules",
+  );
+  if (component === undefined) {
+    throw new Error("Legality Rule export component is absent");
+  }
+  const object = await testEnv.CATALOGUE_EXPORTS.get(
+    `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`,
+  );
+  if (object === null) throw new Error("Legality Rule export is absent");
+  const text = await new Response(
+    object.body.pipeThrough(new DecompressionStream("gzip")),
+  ).text();
+  const rule = text.trim().split("\n").map((line) =>
+    JSON.parse(line) as Record<string, unknown>
+  ).find((candidate) => candidate.official_id === officialId);
+  if (rule === undefined) throw new Error("Exported Legality Rule is absent");
+  return rule;
 }
 
 function resolveJsonPointer(document: unknown, pointer: string): unknown {

@@ -29,6 +29,13 @@ import {
   legalityRuleExportRecords,
   legalityRuleRelationshipRecords,
 } from "./legality-export";
+import {
+  CatalogueExportLimitError,
+  maximumCatalogueExportBytes,
+  maximumCatalogueExportObjectBytes,
+  maximumExportComponentBytes,
+  maximumExportRecordBytes,
+} from "./export-limits";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 1],
@@ -43,12 +50,8 @@ const componentDefinitions = [
   ["legality-rules", "LegalityRuleRecord", "id:utf8", 2],
   ["relationships", "RelationshipRecord", "id:utf8", 1],
 ] as const;
-const maximumExportRecordBytes = 524_288;
 const zFixed = 4;
 const zOk = 0;
-const maximumExportComponentBytes = 12 * 1024 * 1024;
-const maximumCatalogueExportBytes = 24 * 1024 * 1024;
-const maximumCatalogueExportObjectBytes = 25 * 1024 * 1024;
 
 export type ExportObject = {
   key: string;
@@ -160,19 +163,19 @@ export async function buildCatalogueExport(
     const records = orderedExportRecords(recordFactories[name], order);
     const analysis = await analyseComponent(records);
     if (analysis.uncompressedBytes > maximumExportComponentBytes) {
-      throw new Error(
+      throw new CatalogueExportLimitError(
         "One Catalogue Export component exceeds the 12 MiB byte budget.",
       );
     }
     totalUncompressedBytes += analysis.uncompressedBytes;
     if (totalUncompressedBytes > maximumCatalogueExportBytes) {
-      throw new Error(
+      throw new CatalogueExportLimitError(
         "Catalogue Export exceeds the 24 MiB total byte budget.",
       );
     }
     totalObjectBytes += analysis.compressedBytes;
     if (totalObjectBytes > maximumCatalogueExportObjectBytes) {
-      throw new Error(
+      throw new CatalogueExportLimitError(
         "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
       );
     }
@@ -251,7 +254,7 @@ export async function buildCatalogueExport(
     totalObjectBytes + manifestBytes.byteLength >
       maximumCatalogueExportObjectBytes
   ) {
-    throw new Error(
+    throw new CatalogueExportLimitError(
       "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
     );
   }
@@ -398,7 +401,9 @@ function catalogueRecordStream(
       const bytes = utf8(`${canonicalJson(next.value)}\n`);
       if (bytes.byteLength > maximumExportRecordBytes) {
         controller.error(
-          new Error("One Catalogue Export record exceeds 512 KiB."),
+          new CatalogueExportLimitError(
+            "One Catalogue Export record exceeds 512 KiB.",
+          ),
         );
         return;
       }

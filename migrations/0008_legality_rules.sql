@@ -351,7 +351,36 @@ WHEN NOT EXISTS (
     AND json_extract(NEW.document_json, '$.current') = canonical.current
     AND json_extract(NEW.document_json, '$.last_missing_revision_id') IS
       canonical.last_missing_revision_id
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 21
+    AND NOT EXISTS (
+      SELECT value
+      FROM json_each(
+        '["card_ids","current","effect","effective_from",'
+        || '"effective_until","event_tier","first_revision_id",'
+        || '"format","game","id","last_missing_revision_id",'
+        || '"last_observed_revision_id","official_id",'
+        || '"official_wording","region","source_field_pointers",'
+        || '"source_lineage","source_observation_id",'
+        || '"source_observation_pointer",'
+        || '"source_observation_set_id","source_snapshot_id"]'
+      )
+      EXCEPT
+      SELECT key FROM json_each(NEW.document_json)
+    )
+    AND NOT EXISTS (
+      SELECT key FROM json_each(NEW.document_json)
+      EXCEPT
+      SELECT value
+      FROM json_each(
+        '["card_ids","current","effect","effective_from",'
+        || '"effective_until","event_tier","first_revision_id",'
+        || '"format","game","id","last_missing_revision_id",'
+        || '"last_observed_revision_id","official_id",'
+        || '"official_wording","region","source_field_pointers",'
+        || '"source_lineage","source_observation_id",'
+        || '"source_observation_pointer",'
+        || '"source_observation_set_id","source_snapshot_id"]'
+      )
+    )
 )
 BEGIN
   SELECT RAISE(ABORT, 'revision_legality_rule_canonical_mismatch');

@@ -5,6 +5,7 @@ import {
   type ExportObject,
   type SourceFreshness,
 } from "./export";
+import { CatalogueExportLimitError } from "./export-limits";
 import {
   firstCatalogueFixture,
   FixtureInputError,
@@ -697,28 +698,47 @@ async function approveRunAttempt(
     ),
     now,
   );
-  const catalogueExport = await buildCatalogueExport(
+  const exportCandidate = await candidateWithCanonicalLegalityProvenance(
+    database,
     candidate,
-    requiredCandidateCatalogueDigest(run),
-    revisionId,
-    now,
-    reconciliation === null
-      ? undefined
-      : {
-          cards: reconciliation.cardLifecycles,
-          printings: reconciliation.printingLifecycles,
-          products: reconciliation.productLifecycles,
-          productRelationships:
-            reconciliation.productRelationshipLifecycles,
-          erratumTargets: reconciliation.erratumTargetLifecycles,
-          relationships: reconciliation.relationshipEvidence,
-          locators: reconciliation.locatorEvidence,
-          cardEvidence: reconciliation.cardEvidence,
-          printingEvidence: reconciliation.printingEvidence,
-        },
-    sourceFreshness,
   );
-  assertBuiltPublicationBudget(catalogueExport);
+  let catalogueExport: BuiltCatalogueExport;
+  try {
+    catalogueExport = await buildCatalogueExport(
+      exportCandidate,
+      requiredCandidateCatalogueDigest(run),
+      revisionId,
+      now,
+      reconciliation === null
+        ? undefined
+        : {
+            cards: reconciliation.cardLifecycles,
+            printings: reconciliation.printingLifecycles,
+            products: reconciliation.productLifecycles,
+            productRelationships:
+              reconciliation.productRelationshipLifecycles,
+            erratumTargets: reconciliation.erratumTargetLifecycles,
+            relationships: reconciliation.relationshipEvidence,
+            locators: reconciliation.locatorEvidence,
+            cardEvidence: reconciliation.cardEvidence,
+            printingEvidence: reconciliation.printingEvidence,
+          },
+      sourceFreshness,
+    );
+    assertBuiltPublicationBudget(catalogueExport);
+  } catch (error) {
+    const problem = publicationFailureProblem(error);
+    await failUnreservedPublication(
+      database,
+      run,
+      request,
+      requestJson,
+      now,
+      claimOwner,
+      problem,
+    );
+    throw problem;
+  }
   try {
     await reservePublication(
       database,
@@ -833,6 +853,53 @@ function assertErrataClockFresh(
       "An Erratum became applicable after reconciliation; reconcile a fresh candidate before approval.",
     );
   }
+}
+
+type CanonicalLegalityProvenance = {
+  id: string;
+  source_lineage: string;
+  source_snapshot_id: string;
+  source_observation_set_id: string;
+  source_observation_id: string;
+  source_observation_pointer: string;
+  source_field_pointers_json: string;
+};
+
+async function candidateWithCanonicalLegalityProvenance(
+  database: D1Database,
+  candidate: CatalogueCandidate,
+): Promise<CatalogueCandidate> {
+  const rules = candidate.legality_rules ?? [];
+  if (rules.length === 0) return candidate;
+  const canonical = new Map<string, CanonicalLegalityProvenance>();
+  for (const chunk of byteBoundedJsonArrays(rules.map((rule) => rule.id))) {
+    const rows = await database.prepare(
+      `SELECT id, source_lineage, source_snapshot_id,
+              source_observation_set_id, source_observation_id,
+              source_observation_pointer, source_field_pointers_json
+       FROM legality_rules
+       WHERE id IN (SELECT value FROM json_each(?))`,
+    ).bind(chunk).all<CanonicalLegalityProvenance>();
+    for (const row of rows.results) canonical.set(row.id, row);
+  }
+  return {
+    ...candidate,
+    legality_rules: rules.map((rule) => {
+      const retained = canonical.get(rule.id);
+      if (retained === undefined) return rule;
+      return {
+        ...rule,
+        source_lineage: retained.source_lineage,
+        source_snapshot_id: retained.source_snapshot_id,
+        source_observation_set_id: retained.source_observation_set_id,
+        source_observation_id: retained.source_observation_id,
+        source_observation_pointer: retained.source_observation_pointer,
+        source_field_pointers: JSON.parse(
+          retained.source_field_pointers_json,
+        ) as typeof rule.source_field_pointers,
+      };
+    }),
+  };
 }
 
 export async function rejectRun(
@@ -2510,8 +2577,12 @@ async function reconcileReservedPublication(
     ),
     publishedAt,
   );
-  const catalogueExport = await buildCatalogueExport(
+  const exportCandidate = await candidateWithCanonicalLegalityProvenance(
+    database,
     candidate,
+  );
+  const catalogueExport = await buildCatalogueExport(
+    exportCandidate,
     requiredCandidateCatalogueDigest(run),
     revisionId,
     publishedAt,
@@ -2674,6 +2745,13 @@ function digestHex(digest: ArrayBuffer): string {
 }
 
 function publicationFailureProblem(error: unknown): AdministrationProblem {
+  if (error instanceof CatalogueExportLimitError) {
+    return new AdministrationProblem(
+      422,
+      "catalogue_export_too_large",
+      "The candidate exceeds the bounded Catalogue Export relationship or byte budget, so no revision was published.",
+    );
+  }
   if (errorMessage(error).includes("publication_guard_failed")) {
     return new AdministrationProblem(
       409,
@@ -2692,6 +2770,74 @@ function publicationFailureProblem(error: unknown): AdministrationProblem {
     "export_verification_failed",
     "The Catalogue Export could not be verified, so no revision was published.",
   );
+}
+
+async function failUnreservedPublication(
+  database: D1Database,
+  run: RunRow,
+  request: ApproveRunRequest,
+  requestJson: string,
+  terminalAt: string,
+  claimOwner: IdempotencyClaimOwner,
+  problem: AdministrationProblem,
+): Promise<void> {
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+        SET state = 'failed',
+            terminal_at = ?,
+            failure_code = ?,
+            progress_json = json_set(
+              progress_json,
+              '$.current_stage',
+              'failed'
+            )
+        WHERE id = ? AND state = 'awaiting_approval'`,
+      )
+      .bind(terminalAt, problem.code, run.id),
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans
+        SET failure_code = ?
+        WHERE ingestion_run_id = ?`,
+      )
+      .bind(problem.code, run.id),
+    releaseRunLockStatement(database, run.id),
+    database
+      .prepare(
+        `INSERT INTO administration_idempotency (
+          idempotency_key,
+          operation,
+          request_json,
+          response_json,
+          http_status,
+          outcome,
+          created_at,
+          claim_owner_token,
+          claim_version
+        ) VALUES (
+          ?, 'approve_ingestion_run', ?, ?, ?, 'problem', ?, ?, ?
+        )`,
+      )
+      .bind(
+        request.idempotency_key,
+        requestJson,
+        canonicalJson({
+          code: problem.code,
+          detail: problem.message,
+        }),
+        problem.status,
+        terminalAt,
+        claimOwner.ownerToken,
+        claimOwner.version,
+      ),
+    administrationClaimDeleteStatement(database, {
+      key: request.idempotency_key,
+      operation: "approve_ingestion_run",
+      requestJson,
+    }, claimOwner),
+  ]);
 }
 
 async function failReservedPublication(
@@ -2740,6 +2886,13 @@ async function failReservedPublication(
         WHERE id = ? AND state = 'publishing'`,
       )
       .bind(terminalAt, problem.code, run.id),
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans
+        SET failure_code = ?
+        WHERE ingestion_run_id = ?`,
+      )
+      .bind(problem.code, run.id),
     releaseRunLockStatement(database, run.id),
     database
       .prepare(

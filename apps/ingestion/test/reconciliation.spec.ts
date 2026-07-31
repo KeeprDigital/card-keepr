@@ -6431,9 +6431,116 @@ test("publication rejects an over-budget export component before writing any imm
     `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
   ).first<{ current_revision_id: string }>();
 
-  expect(blocked.response.status).toBe(500);
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "catalogue_export_too_large",
+  });
   expect(objectsAfter).toEqual(objectsBefore);
   expect(currentAfter).toEqual(currentBefore);
+});
+
+test("an oversized legality relationship export fails terminally before reservation and replays the problem", async () => {
+  const run = await collect(
+    "/reconciliation/legality-relationship-over-budget",
+    "reconcile-legality-relationship-over-budget",
+    undefined,
+    30_000,
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  expect(reconciled.document).toMatchObject({
+    state: "awaiting_approval",
+    publishable: true,
+  });
+  const approvalKey = "approve-legality-relationship-over-budget";
+  const approvalRequest = {
+    candidate_digest: requiredString(
+      reconciled.document,
+      "candidate_digest",
+    ),
+    expected_current_revision_id: requiredString(
+      reconciled.document,
+      "expected_current_revision_id",
+    ),
+    idempotency_key: approvalKey,
+  };
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first<{ current_revision_id: string }>();
+  const revisionsBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first<{ count: number }>();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list())
+    .objects.map((object) => object.key).sort();
+
+  const blocked = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    approvalRequest,
+  );
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({
+    code: "catalogue_export_too_large",
+  });
+
+  const storedFailure = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, failure_code FROM ingestion_runs WHERE id = ?`,
+  )
+    .bind(run.id)
+    .first<{ state: string; failure_code: string | null }>();
+  expect(storedFailure).toEqual({
+    state: "failed",
+    failure_code: "catalogue_export_too_large",
+  });
+  const shown = await get(`/v1/ingestion-runs/${run.id}`);
+  expect(shown.response.status).toBe(200);
+  expect(shown.document).toMatchObject({
+    state: "failed",
+    failure_code: "catalogue_export_too_large",
+  });
+  const lifecycle = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM administration_idempotency_claims
+        WHERE idempotency_key = ?) AS claims,
+       (SELECT COUNT(*) FROM administration_idempotency
+        WHERE idempotency_key = ?
+          AND operation = 'approve_ingestion_run'
+          AND outcome = 'problem') AS outcomes,
+       (SELECT active_ingestion_run_id FROM operation_state
+        WHERE singleton = 1) AS active_ingestion_run_id`,
+  )
+    .bind(approvalKey, approvalKey)
+    .first<{
+      claims: number;
+      outcomes: number;
+      active_ingestion_run_id: string | null;
+    }>();
+  expect(lifecycle).toEqual({
+    claims: 0,
+    outcomes: 1,
+    active_ingestion_run_id: null,
+  });
+
+  const replay = await post(
+    `/v1/ingestion-runs/${run.id}/approval`,
+    approvalRequest,
+  );
+  expect(replay.response.status).toBe(blocked.response.status);
+  expect(replay.document).toMatchObject({
+    code: blocked.document.code,
+    detail: blocked.document.detail,
+    status: blocked.document.status,
+    type: blocked.document.type,
+  });
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map((object) => object.key).sort()).toEqual(objectsBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first()).toEqual(currentBefore);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM catalogue_revisions`,
+  ).first()).toEqual(revisionsBefore);
 });
 
 async function collect(

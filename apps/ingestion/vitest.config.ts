@@ -1394,6 +1394,49 @@ function reconciliationSourceDocument(
       })),
     };
   }
+  if (scenario === "legality-relationship-over-budget") {
+    const cardNumbers = Array.from(
+      { length: 1_001 },
+      (_, index) => `OP31-${String(index + 1).padStart(4, "0")}`,
+    );
+    return {
+      cards: cardNumbers.map((cardNumber, index) => ({
+        card: {
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: cardNumber,
+          },
+          name: `Relationship scale ${index + 1}`,
+          effective_rules_text: null,
+          game_data: {
+            profile: "one-piece@1",
+            attributes: onePieceLeaderAttributes(),
+          },
+        },
+        completeness: completeEvidence(),
+        memberships: {
+          products: [],
+          distribution_contexts: [],
+          source_buckets: [],
+        },
+      })),
+      legality_completeness: completeEvidence(),
+      legality_rules: Array.from({ length: 17 }, (_, index) => ({
+        id: `relationship-scale-${String(index + 1).padStart(2, "0")}`,
+        game: "one-piece",
+        region: "EN-OCEANIA",
+        format: "standard",
+        event_tier: null,
+        effective_from: "2026-01-01",
+        effective_until: null,
+        card_numbers: cardNumbers,
+        official_wording: `Relationship scale rule ${index + 1}.`,
+        effect: { type: "ban" },
+        representable: true,
+      })),
+    };
+  }
   if (scenario === "export-component-over-budget") {
     return {
       cards: Array.from({ length: 26 }, (_, index) =>
