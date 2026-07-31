@@ -724,21 +724,6 @@ async function retainedObservationDocument(
   const document: unknown = JSON.parse(new TextDecoder().decode(bytes));
   const adapter = requiredSourceAdapter(row.adapter_version);
   if (
-    adapter.reconciliationCoverage === "unavailable" &&
-    isRecord(document) &&
-    Array.isArray(document.observations) &&
-    document.observations.some((wrapped) => {
-      if (!isRecord(wrapped) || !isRecord(wrapped.value)) return false;
-      return wrapped.value.kind === "official_erratum" ||
-        (Array.isArray(wrapped.value.errata) &&
-          wrapped.value.errata.length > 0);
-    })
-  ) {
-    throw new Error(
-      "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
-    );
-  }
-  if (
     !isRecord(document) ||
     document.contract !== "card-keepr-source-observations@1" ||
     document.id !== row.observation_set_id ||
