@@ -623,6 +623,19 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       .lifecycle.last_observed_revision_id,
     revisionId,
   );
+  const establishedOnePiece = products.find(
+    ({ official_code }) => official_code === "OP-RAW-01",
+  );
+  const establishedOnePieceResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/products/${establishedOnePiece.id}?include=evidence`,
+    { headers },
+  );
+  assert.equal(establishedOnePieceResponse.status, 200);
+  const establishedOnePieceDocument =
+    await establishedOnePieceResponse.json();
+  const establishedCodeProvenance =
+    establishedOnePieceDocument.provenance["/data/official_code"];
+  assert.ok(establishedCodeProvenance.length > 0);
   assert.equal(products.length, 5);
   assert.equal(releases.length, 5);
   assert.equal(contexts.length, 5);
@@ -729,7 +742,131 @@ test("the CLI publishes separated Product catalogue data consumed through authen
         kind === "product-card" &&
         from.id === cardBearing.id &&
         cards.some(({ id }) => id === to.id),
-    ),
+      ),
+  );
+
+  await stopWorker(api);
+  const provenanceIngestion = startWorker({
+    config: ingestionConfig,
+    envFile: ingestionEnv,
+    inspectorPort: 23_230,
+    port: ingestionPort,
+    statePath,
+  });
+  t.after(() => stopWorker(provenanceIngestion));
+  await waitForHealth(
+    `http://127.0.0.1:${ingestionPort}/health`,
+    administrationKey,
+    provenanceIngestion,
+  );
+  const provenanceCollected = await runCli(
+    [
+      "source",
+      "collect",
+      "--plan-file",
+      carryPlanPath,
+      "--idempotency-key",
+      "acceptance-product-code-less-provenance-collect",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(provenanceCollected.code, 0, provenanceCollected.stderr);
+  const provenanceRun = JSON.parse(provenanceCollected.stdout);
+  assert.equal(
+    (
+      await runCli(
+        ["source", "resume", "--run-id", provenanceRun.id, "--json"],
+        cliEnvironment,
+      )
+    ).code,
+    0,
+  );
+  await waitForRunState(
+    provenanceRun.id,
+    "awaiting_approval",
+    cliEnvironment,
+    provenanceIngestion,
+  );
+  const provenanceInspectionResult = await runCli(
+    ["candidate", "inspect", "--run-id", provenanceRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(
+    provenanceInspectionResult.code,
+    0,
+    provenanceInspectionResult.stderr,
+  );
+  const provenanceInspection = JSON.parse(provenanceInspectionResult.stdout);
+  const provenanceApproved = await runCli(
+    [
+      "run",
+      "approve",
+      "--run-id",
+      provenanceRun.id,
+      "--candidate-digest",
+      provenanceInspection.candidate_digest,
+      "--expected-current-revision",
+      revisionId,
+      "--idempotency-key",
+      "acceptance-product-code-less-provenance-approve",
+      "--yes",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(
+    provenanceApproved.code,
+    0,
+    `${provenanceApproved.stdout}\n${provenanceApproved.stderr}\n` +
+      provenanceIngestion.getOutput(),
+  );
+  const codeLessRevisionId =
+    JSON.parse(provenanceApproved.stdout).resulting_revision_id;
+  await stopWorker(provenanceIngestion);
+
+  const provenanceApi = startWorker({
+    config: "apps/api/wrangler.jsonc",
+    envFile: apiEnv,
+    inspectorPort: 23_231,
+    port: apiPort,
+    statePath,
+  });
+  t.after(() => stopWorker(provenanceApi));
+  await waitForHealth(
+    `http://127.0.0.1:${apiPort}/health`,
+    apiKey,
+    provenanceApi,
+  );
+  const codeLessProducts = await exportRecords(
+    apiPort,
+    apiKey,
+    codeLessRevisionId,
+    "products",
+  );
+  const codeLessOnePiece = codeLessProducts.find(
+    ({ official_code }) => official_code === "OP-RAW-01",
+  );
+  assert.equal(
+    codeLessOnePiece.id,
+    establishedOnePiece.id,
+    "the R2 export keeps the established Product identity across a code-less refresh",
+  );
+  const codeLessOnePieceResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/products/${codeLessOnePiece.id}?include=evidence`,
+    { headers },
+  );
+  assert.equal(codeLessOnePieceResponse.status, 200);
+  const codeLessOnePieceDocument = await codeLessOnePieceResponse.json();
+  assert.deepEqual(
+    codeLessOnePieceDocument.provenance["/data/official_code"],
+    establishedCodeProvenance,
+    "D1 publication must retain the observation that actually supplied the established code",
+  );
+  assert.notDeepEqual(
+    codeLessOnePieceDocument.provenance["/data/name"],
+    establishedCodeProvenance,
+    "the current code-less observation must not be credited with the carried code",
   );
 });
 

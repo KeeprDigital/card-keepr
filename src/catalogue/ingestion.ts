@@ -23,6 +23,7 @@ import {
   guardedAtomicBatch,
   retainedPayload,
 } from "./reconciliation-payload";
+import { AdministrationProblem } from "./administration-problem.mjs";
 import { productReleasePublicationStatements } from "./product-release-publication";
 import { typedPrintingProjections } from "./product-release-projection";
 
@@ -889,16 +890,7 @@ async function rejectRunAttempt(
   return resultingRun;
 }
 
-export class AdministrationProblem extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly persistOutcome = true,
-  ) {
-    super(message);
-  }
-}
+export { AdministrationProblem } from "./administration-problem.mjs";
 
 async function startPreparedRun(
   database: D1Database,

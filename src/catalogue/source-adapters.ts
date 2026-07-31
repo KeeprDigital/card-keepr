@@ -1,7 +1,7 @@
-import { AdministrationProblem } from "./ingestion";
+import { AdministrationProblem } from "./administration-problem.mjs";
 import {
   officialRawAdapterContracts,
-} from "./product-release-source-adapters";
+} from "./official-raw-adapter-contracts.mjs";
 
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;

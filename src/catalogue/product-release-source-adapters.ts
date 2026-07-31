@@ -2715,6 +2715,14 @@ function canonicalDetail(
       raw.product_codes,
       "Official Product codes",
     ),
+    ...(raw.product_names === undefined
+      ? {}
+      : {
+          product_names: requiredTextArray(
+            raw.product_names,
+            "Official Product names",
+          ),
+        }),
     distribution: requiredRecord(
       raw.distribution,
       "Official Distribution",
@@ -2888,11 +2896,16 @@ function canonicalReleaseEntry(
   release: (value: Record<string, unknown>) => Record<string, unknown>,
 ): Record<string, unknown> {
   const entry = requiredRecord(value, "Official Release entry");
+  const normalizedProduct = product(entry.product);
+  const normalizedRelease = release(
+    requiredRecord(entry.release, "Official Release facts"),
+  );
   return {
-    product: product(entry.product),
-    release: release(
-      requiredRecord(entry.release, "Official Release facts"),
-    ),
+    product: normalizedProduct,
+    release: {
+      ...normalizedRelease,
+      product_title: normalizedProduct.title,
+    },
   };
 }
 
@@ -2906,6 +2919,18 @@ function canonicalRelease(
       "Official Release Product code",
     ),
     event_key: requiredText(release[fields.event], "Official Release identity"),
+    ...(release.productName === undefined &&
+        release.product_name === undefined &&
+        release.productTitle === undefined
+      ? {}
+      : {
+          product_title: requiredText(
+            release.productName ??
+              release.product_name ??
+              release.productTitle,
+            "Official Release Product name",
+          ),
+        }),
     region: release.region,
     precision: release.precision,
     date: release.date,
@@ -3381,40 +3406,65 @@ function parseOfficialDiscovery(
       "Official listing/detail discovery surfaces are incomplete or overlap.",
     );
   }
-  const productsByCode = new Map(
+  const productsByReference = new Map(
     products.map((product) => [
-      requiredText(product.code, "Official Product code"),
+      productMapKey(product),
       product,
     ]),
   );
-  if (productsByCode.size !== products.length) {
+  if (productsByReference.size !== products.length) {
     throw new Error("Official Product partitions overlap.");
   }
-  const releasesByCode = new Map<string, Record<string, unknown>[]>();
+  const releasesByReference = new Map<string, Record<string, unknown>[]>();
   for (const release of releases) {
-    const code = requiredText(release.code, "Official Release Product code");
-    if (!productsByCode.has(code)) {
+    const code = nullableText(release.code, "Official Release Product code");
+    const title = release.product_title === undefined
+      ? null
+      : nullableText(
+          release.product_title,
+          "Official Release Product name",
+        );
+    const key = code === null
+      ? title === null
+        ? null
+        : productMapKey({ code: null, title })
+      : code;
+    if (key === null || !productsByReference.has(key)) {
       throw new Error("Official Release references an undiscovered Product.");
     }
-    releasesByCode.set(code, [...(releasesByCode.get(code) ?? []), release]);
+    releasesByReference.set(key, [
+      ...(releasesByReference.get(key) ?? []),
+      release,
+    ]);
   }
 
-  const observedProductCodes = new Set<string>();
+  const observedProductReferences = new Set<string>();
   const observations = details.map((detail) => {
     const productCodes = requiredTextArray(
       detail.product_codes,
       "Official Card Product codes",
     );
-    productCodes.forEach((code) => {
-      if (!productsByCode.has(code)) {
+    const productReferences = [
+      ...productCodes,
+      ...(detail.product_names === undefined
+        ? []
+        : requiredTextArray(
+            detail.product_names,
+            "Official Card Product names",
+          ).map((title) => productMapKey({ code: null, title }))),
+    ];
+    productReferences.forEach((reference) => {
+      if (!productsByReference.has(reference)) {
         throw new Error("Official Card detail references an undiscovered Product.");
       }
-      observedProductCodes.add(code);
+      observedProductReferences.add(reference);
     });
     return cardObservation(
       detail,
-      productCodes.map((code) => productsByCode.get(code)!),
-      releasesByCode,
+      productReferences.map((reference) =>
+        productsByReference.get(reference)!
+      ),
+      releasesByReference,
       legality,
       errata,
       game,
@@ -3423,10 +3473,10 @@ function parseOfficialDiscovery(
   observations.push(
     ...products
       .filter((product) =>
-        !observedProductCodes.has(requiredText(product.code, "Product code"))
+        !observedProductReferences.has(productMapKey(product))
       )
       .map((product) =>
-        productOnlyObservation(product, releasesByCode, legality, errata)
+        productOnlyObservation(product, releasesByReference, legality, errata)
       ),
   );
   return observations;
@@ -3626,7 +3676,7 @@ function cardObservation(
         }),
     memberships: {
       products: products.map((product) =>
-        requiredText(product.code, "Official Product code")
+        productReference(product).value
       ),
       distribution_contexts: sourceBucket ? [] : [distributionCode],
       source_buckets: sourceBucket ? [distributionCode] : [],

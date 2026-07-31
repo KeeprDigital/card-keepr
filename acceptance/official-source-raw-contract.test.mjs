@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  officialRawAdapterContracts,
   officialSourceDiscoveryRequests,
 } from "../src/catalogue/product-release-source-adapters.ts";
+import {
+  assertAdapterBinding,
+  requiredSourceAdapter,
+  sourceAdapterRegistrations,
+} from "../src/catalogue/source-adapters.ts";
 import {
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
@@ -52,13 +56,41 @@ const expectedSurfaces = {
   ],
 };
 
+const productionAdapterVersions = sourceAdapterRegistrations
+  .filter(({ origin, reconciliationCoverage, parseBytes }) =>
+    origin === "production" &&
+    reconciliationCoverage === "official_source" &&
+    typeof parseBytes === "function"
+  )
+  .map(({ adapterVersion }) => adapterVersion);
+
+function registeredProductionAdapters() {
+  return productionAdapterVersions.map((adapterVersion) =>
+    requiredSourceAdapter(adapterVersion)
+  );
+}
+
 test("every production lineage owns an exact raw decoder and discovery plan", () => {
-  const production = officialRawAdapterContracts;
+  const production = registeredProductionAdapters();
   assert.deepEqual(
     production.map(({ sourceLineage }) => sourceLineage).sort(),
     Object.keys(expectedSurfaces).sort(),
   );
   for (const adapter of production) {
+    assert.doesNotThrow(() =>
+      assertAdapterBinding(adapter, {
+        sourceLineage: adapter.sourceLineage,
+        supportedGame: adapter.supportedGame,
+        gameProfileVersion: adapter.gameProfileVersion,
+      })
+    );
+    assert.equal(adapter.origin, "production");
+    assert.equal(adapter.reconciliationCoverage, "official_source");
+    assert.equal(
+      adapter.gameProfileVersion,
+      `${adapter.supportedGame}@1`,
+    );
+    assert.match(adapter.parserContract, /-raw-surfaces@1$/u);
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
       adapter.requiredSurfaces,
@@ -90,7 +122,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
 });
 
 test("production decoders accept real Bandai-shaped HTML without a Keepr payload wrapper", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const html = `
@@ -257,7 +289,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
 });
 
 test("One Piece aggregate JSON-LD retains an explicit first Printing identity", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const payload = officialRawSurfacePayload("/one-piece-en/card-list");
@@ -297,7 +329,7 @@ test("One Piece aggregate JSON-LD retains an explicit first Printing identity", 
 
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
   const byLineage = (lineage) =>
-    officialRawAdapterContracts.find(
+    registeredProductionAdapters().find(
       ({ sourceLineage }) => sourceLineage === lineage,
     );
   const encode = (value) => new TextEncoder().encode(value);
@@ -425,7 +457,7 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
 });
 
 test("Fusion leaders require explicit role-owned faces and images", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const html = `
@@ -499,7 +531,7 @@ test("Fusion leaders require explicit role-owned faces and images", () => {
 });
 
 test("live Product detail normalizes stable release identity and raw vocabulary", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   const observation = adapter.parseBytes(
@@ -535,7 +567,7 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
 });
 
 test("live Product detail maps official display dates and fails closed on new status vocabulary", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   const base = `
@@ -573,7 +605,7 @@ test("live Product detail maps official display dates and fails closed on new st
 });
 
 test("nested raw unknown leaves remain warnings when their container is mapped", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const document = rawSurfacePayload("one-piece-en", "card-list");
@@ -595,7 +627,7 @@ test("nested raw unknown leaves remain warnings when their container is mapped",
 });
 
 test("explicit Product links produce typed memberships and relationships", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "digimon-en",
   );
   const observation = adapter.parseBytes(
@@ -666,7 +698,7 @@ test("explicit Product links produce typed memberships and relationships", () =>
 
 test("real Digimon and Gundam details close every known profile field and reject malformed numerics", () => {
   const byLineage = (lineage) =>
-    officialRawAdapterContracts.find(
+    registeredProductionAdapters().find(
       ({ sourceLineage }) => sourceLineage === lineage,
     );
   const digimon = byLineage("digimon-en");
@@ -786,7 +818,7 @@ test("real Digimon and Gundam details close every known profile field and reject
 });
 
 test("every production lineage parses its exact real HTML policy surfaces", () => {
-  for (const adapter of officialRawAdapterContracts) {
+  for (const adapter of registeredProductionAdapters()) {
     const surface = adapter.requiredSurfaces.find(
       (candidate) => candidate !== "card-list",
     );
@@ -816,7 +848,7 @@ test("every production lineage parses its exact real HTML policy surfaces", () =
 });
 
 test("live Product indexes emit typed Products, classifications, and announced releases", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const observations = adapter.parseBytes(
@@ -887,7 +919,7 @@ test("live Product indexes emit typed Products, classifications, and announced r
 });
 
 test("a Product URL slug cannot become a canonical official code but its authoritative name is retained", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const observations = adapter.parseBytes(
@@ -919,7 +951,7 @@ test("a Product URL slug cannot become a canonical official code but its authori
 });
 
 test("Product detail ignores unrelated code-shaped prose without losing name authority", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   const observation = adapter.parseBytes(
@@ -945,7 +977,7 @@ test("Product detail ignores unrelated code-shaped prose without losing name aut
 });
 
 test("accessory detail traversal retains non-card evidence without publishing a Product", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const index = `
@@ -994,7 +1026,7 @@ test("accessory detail traversal retains non-card evidence without publishing a 
 });
 
 test("structured accessory Products remain Distribution Context evidence on every Product-bearing surface", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const accessory = {
@@ -1051,7 +1083,7 @@ test("structured accessory Products remain Distribution Context evidence on ever
 });
 
 test("code-less structured Products and Releases retain name identity with valid event keys", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const product = {
@@ -1123,8 +1155,57 @@ test("code-less structured Products and Releases retain name identity with valid
   }
 });
 
+test("code-less named Products and Releases survive registered discovery surfaces", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@2");
+  const payload = structuredClone(
+    officialRawSurfacePayload("/fusion-world-en/card-search"),
+  );
+  payload.products.push({
+    productCode: null,
+    productName: "Discovery Product Without Code",
+  });
+  payload.releases.push({
+    productCode: null,
+    productName: "Discovery Product Without Code",
+    releaseId: "discovery-product-without-code",
+    region: "EN-US",
+    precision: "unknown",
+    date: null,
+    status: "announced",
+  });
+  payload.detail_pages[0].product_names = [
+    "Discovery Product Without Code",
+  ];
+
+  const observations = parseRegisteredSurface(
+    adapter,
+    "card-search",
+    payload,
+  );
+  const product = observations
+    .flatMap(({ product_release_catalogue }) =>
+      product_release_catalogue.products
+    )
+    .find(({ name }) => name === "Discovery Product Without Code");
+
+  assert.deepEqual(product, {
+    reference: {
+      kind: "name",
+      value: "Discovery Product Without Code",
+    },
+    official_code: null,
+    name: "Discovery Product Without Code",
+    releases: [{
+      event_key: "discovery-product-without-code",
+      region: "EN-US",
+      date: { precision: "unknown", value: null },
+      status: "announced",
+    }],
+  });
+});
+
 test("code-less HTML Product announcements derive stable opaque event identities", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   const parse = () =>
@@ -1155,7 +1236,7 @@ test("code-less HTML Product announcements derive stable opaque event identities
 });
 
 test("unavailable Product release vocabulary normalizes to reviewable unknown values", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   for (const dateToken of ["-", "TBA", ""]) {
@@ -1196,7 +1277,7 @@ test("unavailable Product release vocabulary normalizes to reviewable unknown va
 });
 
 test("production coverage rejects keyword-only HTML without structural entries", () => {
-  for (const adapter of officialRawAdapterContracts) {
+  for (const adapter of registeredProductionAdapters()) {
     const surface = adapter.requiredSurfaces.find(
       (candidate) =>
         candidate !== "card-list" &&
@@ -1222,7 +1303,7 @@ test("production coverage rejects keyword-only HTML without structural entries",
 });
 
 test("production adapters discover staged detail, page, product, and image requests", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   assert.ok(adapter);
@@ -1257,13 +1338,13 @@ test("production adapters discover staged detail, page, product, and image reque
 
 test("the aggregate JSON adapter is fixture-only and cannot claim official coverage", () => {
   assert.equal(
-    officialRawAdapterContracts.some(
+    registeredProductionAdapters().some(
       ({ adapterVersion }) =>
         adapterVersion === "one-piece-json-document@1",
     ),
     false,
   );
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const surface = "products";
@@ -1325,7 +1406,7 @@ const discoveryKeys = {
 };
 
 test("all five raw decoders accept only their exact retained surface bytes", () => {
-  for (const contract of officialRawAdapterContracts) {
+  for (const contract of registeredProductionAdapters()) {
     for (const surface of contract.requiredSurfaces) {
       const payload = rawSurfacePayload(contract.sourceLineage, surface);
       assert.equal(
@@ -1372,7 +1453,7 @@ test("all five raw decoders accept only their exact retained surface bytes", () 
 });
 
 test("the raw discovery decoder fails closed on caps, unfinished pages, and surface mismatch", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const capped = rawSurfacePayload("one-piece-en", "card-list");
@@ -1406,7 +1487,7 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
 });
 
 test("discovered Fusion facets require disjoint exact split-order leaves", () => {
-  const adapter = officialRawAdapterContracts.find(
+  const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const incomplete = rawSurfacePayload("fusion-world-en", "card-search");

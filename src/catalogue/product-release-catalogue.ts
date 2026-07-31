@@ -148,6 +148,10 @@ export type ProductSourceObservation = {
   }[];
   withdrawal: ProductWithdrawal | null;
   evidence: ProductEvidenceResource;
+  carriedOfficialCode?: {
+    value: string;
+    evidence: ProductEvidenceResource[];
+  };
 };
 
 type ObservedProduct = ProductSourceObservation;
@@ -334,7 +338,7 @@ async function preservePublishedProductIdentity(
     {
       id: string;
       reference: ProductReference;
-      officialCode: string | null;
+      carriedOfficialCode?: ProductSourceObservation["carriedOfficialCode"];
     }
   >();
   const warnings: Record<string, unknown>[] = [];
@@ -373,14 +377,20 @@ async function preservePublishedProductIdentity(
         product.officialCode === null &&
         candidate.official_code !== null &&
         sameLineageNameCandidates.some(({ id }) => id === candidate.id);
+      const carriedOfficialCode = preservesEstablishedCode
+        ? establishedOfficialCode(candidate)
+        : undefined;
+      if (preservesEstablishedCode && carriedOfficialCode === undefined) {
+        throw new Error(
+          "The established Product code has no retained authoritative provenance.",
+        );
+      }
       replacements.set(product.id, {
         id: candidate.id,
-        reference: preservesEstablishedCode
-          ? { kind: "official_code", value: candidate.official_code! }
-          : product.reference,
-        officialCode: preservesEstablishedCode
-          ? candidate.official_code
-          : product.officialCode,
+        reference: product.reference,
+        ...(carriedOfficialCode === undefined
+          ? {}
+          : { carriedOfficialCode }),
       });
     } else if (candidateIds.length > 1) {
       throw new Error(
@@ -403,7 +413,9 @@ async function preservePublishedProductIdentity(
           ...product,
           id: replacement.id,
           reference: replacement.reference,
-          officialCode: replacement.officialCode,
+          ...(replacement.carriedOfficialCode === undefined
+            ? {}
+            : { carriedOfficialCode: replacement.carriedOfficialCode }),
         };
   });
   const distributionContexts = observation.distributionContexts.map(
@@ -660,6 +672,22 @@ async function parseProductReleaseObservation(
   };
 }
 
+function establishedOfficialCode(
+  product: CatalogueProduct,
+): ProductSourceObservation["carriedOfficialCode"] | undefined {
+  if (product.official_code === null) return undefined;
+  const provenanceIds = new Set(
+    product.provenance["/data/official_code"] ?? [],
+  );
+  const evidence = product.included.filter(
+    (resource) => provenanceIds.has(resource.id),
+  );
+  if (evidence.length > 0 && evidence.length === provenanceIds.size) {
+    return { value: product.official_code, evidence };
+  }
+  return undefined;
+}
+
 function resolveObservedProducts(
   observations: readonly ObservedProduct[],
   game: SupportedGame,
@@ -682,12 +710,27 @@ function resolveProduct(
 ): CatalogueProduct {
   const first = observations[0]!;
   const included = uniqueById(
-    observations.map(({ evidence }) => evidence),
+    observations.flatMap(({ evidence, carriedOfficialCode }) => [
+      evidence,
+      ...(carriedOfficialCode === undefined
+        ? []
+        : carriedOfficialCode.evidence),
+    ]),
   );
   const provenance: Record<string, string[]> = {};
   const disagreements: ProductDisagreement[] = [];
+  const officialCodeFacts = observations.flatMap((observation) =>
+    observation.officialCode === null &&
+      observation.carriedOfficialCode !== undefined
+      ? observation.carriedOfficialCode.evidence.map((evidence) => ({
+          ...observation,
+          officialCode: observation.carriedOfficialCode!.value,
+          evidence,
+        }))
+      : [observation]
+  );
   const officialCode = resolveFact(
-    observations,
+    officialCodeFacts,
     ({ officialCode }) => officialCode,
     "/data/official_code",
     provenance,
@@ -781,7 +824,9 @@ function resolveProduct(
     )
     .at(-1)?.withdrawal ?? null;
   return {
-    reference: first.reference,
+    reference: officialCode === null
+      ? first.reference
+      : { kind: "official_code", value: officialCode },
     id: first.id,
     game,
     official_code: officialCode,

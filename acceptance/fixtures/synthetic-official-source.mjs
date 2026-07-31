@@ -1,3 +1,5 @@
+let onePieceCardListRequests = 0;
+
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -47,6 +49,13 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
+      if (
+        officialLineage === "one-piece-en" &&
+        url.pathname === "/cardlist/" &&
+        url.search === ""
+      ) {
+        onePieceCardListRequests += 1;
+      }
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -56,7 +65,12 @@ export default {
         });
       }
       return new Response(
-        officialBandaiDataset(officialLineage, transportOutcome),
+        officialBandaiDataset(
+          officialLineage,
+          transportOutcome,
+          officialLineage === "one-piece-en" &&
+            onePieceCardListRequests > 2,
+        ),
         {
         headers: {
           "content-type": "text/html; charset=utf-8",
@@ -203,13 +217,19 @@ function officialLineageForUrl(url) {
   return null;
 }
 
-function officialBandaiDataset(lineage, parserSignal) {
+function officialBandaiDataset(lineage, parserSignal, codeLessProduct = false) {
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
     publisher: { "@type": "Organization", name: "Bandai" },
     hasPart: officialLineageSurfaces[lineage].map((surface) => {
       const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+      if (
+        lineage === "one-piece-en" &&
+        codeLessProduct
+      ) {
+        makeOnePieceProductCodeLess(surface, payload);
+      }
       if (surface === "card-list") {
         if (parserSignal?.endsWith("/cap")) {
           payload.page_info.cap_signal = "Too many search results";
@@ -229,6 +249,54 @@ function officialBandaiDataset(lineage, parserSignal) {
   return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title><script type="application/ld+json">${
     JSON.stringify(publication).replaceAll("<", "\\u003c")
   }</script></html>`;
+}
+
+function makeOnePieceProductCodeLess(surface, payload) {
+  if (surface === "card-list") {
+    payload.card_pages.forEach((detail) => {
+      detail.product_codes = [];
+      detail.product_names = [payload.products[0].product_name];
+      detail.distribution.product_reference = {
+        kind: "name",
+        value: payload.products[0].product_name,
+      };
+    });
+    payload.products.forEach((product) => {
+      makeOnePieceProductCodeLessRecord(product);
+    });
+    payload.release_schedule.forEach((release) => {
+      release.product_code = null;
+      release.product_name = payload.products[0].product_name;
+    });
+    return;
+  }
+  if (surface === "products") {
+    payload.result.partitions.forEach((partition) => {
+      partition.entries.forEach((product) => {
+        makeOnePieceProductCodeLessRecord(product);
+      });
+    });
+    return;
+  }
+  if (surface === "releases") {
+    payload.events.partitions.forEach((partition) => {
+      partition.entries.forEach(({ product, release }) => {
+        makeOnePieceProductCodeLessRecord(product);
+        release.product_code = null;
+      });
+    });
+  }
+}
+
+function makeOnePieceProductCodeLessRecord(product) {
+  const productName = product.product_name;
+  product.product_code = null;
+  product.distribution = {
+    code: "OP-RAW-01-distribution",
+    kind: "product",
+    label: `${productName} distribution`,
+    product_reference: { kind: "name", value: productName },
+  };
 }
 
 function onePieceBandaiCardList(declaredCount) {
@@ -724,6 +792,9 @@ function upstreamDetail(lineage, detail) {
   const shared = {
     profile: detail.profile,
     product_codes: detail.product_codes,
+    ...(detail.product_names === undefined
+      ? {}
+      : { product_names: detail.product_names }),
     distribution: detail.distribution,
     ...(detail.printing === undefined
       ? {}
