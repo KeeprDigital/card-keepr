@@ -33,6 +33,8 @@ export type OnePieceOfficialErratumObservation = Readonly<{
 type SectionDraft = {
   sourceId: string | null;
   publishedOnParts: string[];
+  publishedOnHeadingCount: number;
+  recognizedEntryCount: number;
 };
 
 type PairDraft = {
@@ -80,6 +82,8 @@ export async function parseOnePieceOfficialErrataHtml(
   let activeNotice: string[] | null = null;
   let matchedEntryCount = 0;
   let inventoriedHeadingCount = 0;
+  let introductoryContentCount = 0;
+  let datedSectionCount = 0;
   const inventoriedModalTargets: string[] = [];
   const recognizedModalFragments: string[] = [];
 
@@ -103,6 +107,8 @@ export async function parseOnePieceOfficialErrataHtml(
         const section: SectionDraft = {
           sourceId: element.getAttribute("id"),
           publishedOnParts: [],
+          publishedOnHeadingCount: 0,
+          recognizedEntryCount: 0,
         };
         sections.push(section);
         element.onEndTag(() => {
@@ -111,13 +117,35 @@ export async function parseOnePieceOfficialErrataHtml(
               "The Official Errata section nesting is invalid.",
             );
           }
+          if (
+            section.publishedOnHeadingCount !== 1 ||
+            section.recognizedEntryCount === 0
+          ) {
+            return parseFailure(
+              "The Official Errata entry enumeration is incomplete.",
+            );
+          }
           sections.pop();
         });
       },
     })
     .on("section.contentsLCol h4.mediumTit", {
+      element() {
+        const section = sections.at(-1);
+        if (section === undefined) {
+          return parseFailure(
+            "The Official Errata published date is unavailable.",
+          );
+        }
+        section.publishedOnHeadingCount += 1;
+      },
       text(text) {
         sections.at(-1)?.publishedOnParts.push(text.text);
+      },
+    })
+    .on("section.contentsLCol h4.mediumTit > *", {
+      element() {
+        return unsupportedSemanticContent();
       },
     })
     .on(".contentsWrap h5.smallTitRed", {
@@ -152,13 +180,157 @@ export async function parseOnePieceOfficialErrataHtml(
         }
         recognizedModalFragments.push(`#${id}`);
       },
-    });
+    })
+    .on(".contentsWrap > *", {
+      element(element) {
+        if (element.tagName === "p") {
+          assertExactAttributes(element, [["class", "mtS"]]);
+          introductoryContentCount += 1;
+          return;
+        }
+        if (element.tagName === "section") {
+          assertOptionalIdAttributes(element, "contentsLCol");
+          datedSectionCount += 1;
+          return;
+        }
+        return unsupportedSemanticContent();
+      },
+    })
+    .on(".contentsWrap > section.contentsLCol > *", {
+      element(element) {
+        if (element.tagName === "section") {
+          const className = element.getAttribute("class");
+          if (className === "contentsMCol mtM") {
+            assertExactAttributes(element, [
+              ["class", "contentsMCol mtM"],
+            ]);
+            return;
+          }
+          if (className === "cardPackCol mtM") {
+            assertExactAttributes(element, [
+              ["class", "cardPackCol mtM"],
+            ]);
+            return;
+          }
+        }
+        if (
+          element.tagName === "div" &&
+          element.getAttribute("class") === "detailCol mtS"
+        ) {
+          assertOptionalIdAttributes(element, "detailCol mtS");
+          return;
+        }
+        return unsupportedSemanticContent();
+      },
+    })
+    .on(
+      ".contentsWrap > section.contentsLCol > section.contentsMCol > *",
+      {
+        element(element) {
+          if (element.tagName !== "h4") {
+            return unsupportedSemanticContent();
+          }
+          assertExactAttributes(element, [["class", "mediumTit"]]);
+        },
+      },
+    )
+    .on(
+      ".contentsWrap > section.contentsLCol > section.cardPackCol > *",
+      {
+        element(element) {
+          if (element.tagName !== "ul") {
+            return unsupportedSemanticContent();
+          }
+          assertExactAttributes(element, [
+            ["class", "cardFlexWrap errataPopupCol"],
+          ]);
+        },
+      },
+    )
+    .on(
+      ".contentsWrap > section.contentsLCol > section.cardPackCol > ul.cardFlexWrap > *",
+      {
+        element(element) {
+          if (element.tagName !== "li") {
+            return unsupportedSemanticContent();
+          }
+          assertExactAttributes(element, []);
+        },
+      },
+    )
+    .on(
+      ".contentsWrap > section.contentsLCol > section.cardPackCol > ul.cardFlexWrap > li > *",
+      {
+        element(element) {
+          if (element.tagName === "a") {
+            const target = element.getAttribute("data-src");
+            if (
+              target === null ||
+              !/^#[A-Za-z][A-Za-z0-9_-]+$/.test(target)
+            ) {
+              return unsupportedSemanticContent();
+            }
+            assertExactAttributes(element, [
+              ["class", "modalOpen"],
+              ["data-src", target],
+            ]);
+            return;
+          }
+          if (element.tagName === "div") {
+            const id = element.getAttribute("id");
+            if (
+              id === null ||
+              !/^[A-Za-z][A-Za-z0-9_-]+$/.test(id)
+            ) {
+              return unsupportedSemanticContent();
+            }
+            assertExactAttributes(element, [
+              ["class", "errataModal"],
+              ["id", id],
+            ]);
+            return;
+          }
+          return unsupportedSemanticContent();
+        },
+      },
+    )
+    .on(
+      ".contentsWrap > section.contentsLCol > section.cardPackCol a.modalOpen > *",
+      {
+        element(element) {
+          if (element.tagName !== "img") {
+            return unsupportedSemanticContent();
+          }
+          assertImageAttributes(element);
+        },
+      },
+    );
   const entryHandler: HTMLRewriterElementContentHandlers = {
     element(element) {
       if (activeEntry !== null) {
         return parseFailure("Official Errata entries must not be nested.");
       }
       const section = sections.at(-1);
+      if (section === undefined) {
+        return parseFailure(
+          "An Official Erratum is outside a dated section.",
+        );
+      }
+      if (element.getAttribute("class") === "detailCol mtS") {
+        assertOptionalIdAttributes(element, "detailCol mtS");
+      } else {
+        const id = element.getAttribute("id");
+        if (
+          id === null ||
+          !/^[A-Za-z][A-Za-z0-9_-]+$/.test(id)
+        ) {
+          return unsupportedSemanticContent();
+        }
+        assertExactAttributes(element, [
+          ["class", "errataModal"],
+          ["id", id],
+        ]);
+      }
       const entry: EntryDraft = {
         sourceId: element.getAttribute("id"),
         sectionSourceId: section?.sourceId ?? null,
@@ -175,6 +347,7 @@ export async function parseOnePieceOfficialErrataHtml(
         residualTextParts: [],
       };
       matchedEntryCount += 1;
+      section.recognizedEntryCount += 1;
       activeEntry = entry;
       element.onEndTag(() => {
         if (activeEntry !== entry) {
@@ -346,21 +519,127 @@ export async function parseOnePieceOfficialErrataHtml(
       );
     },
   };
+  const entryChildHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (element.tagName === "h5") {
+        assertExactAttributes(element, [["class", "smallTitRed"]]);
+        return;
+      }
+      if (element.tagName === "div") {
+        const className = element.getAttribute("class");
+        if (
+          className !== "typographicalWrap mtS" &&
+          className !== "typographicalWrap mtM"
+        ) {
+          return unsupportedSemanticContent();
+        }
+        assertExactAttributes(element, [["class", className]]);
+        return;
+      }
+      if (element.tagName === "ul") {
+        assertExactAttributes(element, [
+          ["class", "commonNoticeList isHalf"],
+        ]);
+        return;
+      }
+      if (element.tagName === "dl") {
+        assertExactAttributes(element, []);
+        return;
+      }
+      return unsupportedSemanticContent();
+    },
+  };
+  const typographicalWrapChildHandler:
+    HTMLRewriterElementContentHandlers = {
+      element(element) {
+        if (element.tagName !== "div") {
+          return unsupportedSemanticContent();
+        }
+        assertExactAttributes(element, [
+          ["class", "typographicalImg spWidthM centering"],
+        ]);
+      },
+    };
+  const typographicalImageChildHandler:
+    HTMLRewriterElementContentHandlers = {
+      element(element) {
+        if (element.tagName !== "img") {
+          return unsupportedSemanticContent();
+        }
+        assertImageAttributes(element);
+      },
+    };
+  const headingChildHandler: HTMLRewriterElementContentHandlers = {
+    element(element) {
+      if (element.tagName !== "br") {
+        return unsupportedSemanticContent();
+      }
+      assertExactAttributes(element, []);
+    },
+  };
+  const definitionListChildHandler:
+    HTMLRewriterElementContentHandlers = {
+      element(element) {
+        if (element.tagName === "dt") {
+          assertExactAttributes(element, [["class", "txtBlack mtS"]]);
+          return;
+        }
+        if (element.tagName === "dd") {
+          assertExactAttributes(element, []);
+          return;
+        }
+        return unsupportedSemanticContent();
+      },
+    };
+  const textOnlyChildHandler: HTMLRewriterElementContentHandlers = {
+    element() {
+      return unsupportedSemanticContent();
+    },
+  };
+  const noticeListChildHandler:
+    HTMLRewriterElementContentHandlers = {
+      element(element) {
+        if (element.tagName !== "li") {
+          return unsupportedSemanticContent();
+        }
+        assertExactAttributes(element, []);
+      },
+    };
   for (const entrySelector of entrySelectors) {
     rewriter
       .on(entrySelector, entryHandler)
+      .on(`${entrySelector} > *`, entryChildHandler)
       .on(`${entrySelector} h5.smallTitRed`, headingHandler)
       .on(`${entrySelector} h5.smallTitRed br`, headingBreakHandler)
+      .on(`${entrySelector} h5.smallTitRed > *`, headingChildHandler)
       .on(`${entrySelector} .typographicalImg img`, imageHandler)
+      .on(
+        `${entrySelector} > div.typographicalWrap > *`,
+        typographicalWrapChildHandler,
+      )
+      .on(
+        `${entrySelector} > div.typographicalWrap > div.typographicalImg > *`,
+        typographicalImageChildHandler,
+      )
       .on(`${entrySelector} dl`, definitionListHandler)
+      .on(`${entrySelector} > dl > *`, definitionListChildHandler)
       .on(`${entrySelector} dl > dt`, labelHandler)
+      .on(`${entrySelector} dl > dt > *`, textOnlyChildHandler)
       .on(`${entrySelector} dl > dd`, valueHandler)
       .on(`${entrySelector} dl > dd br`, valueBreakHandler)
       .on(`${entrySelector} dl > dd *`, valueChildHandler)
       .on(`${entrySelector} ul`, noticeListHandler)
       .on(
+        `${entrySelector} > ul.commonNoticeList > *`,
+        noticeListChildHandler,
+      )
+      .on(
         `${entrySelector} ul.commonNoticeList > li`,
         noticeHandler,
+      )
+      .on(
+        `${entrySelector} ul.commonNoticeList > li > *`,
+        textOnlyChildHandler,
       )
       .on(`${entrySelector} p`, unsupportedSemanticHandler)
       .on(`${entrySelector} ol`, unsupportedSemanticHandler);
@@ -400,6 +679,8 @@ export async function parseOnePieceOfficialErrataHtml(
       uniqueModalFragments.has(target)
     );
   if (
+    introductoryContentCount !== 1 ||
+    datedSectionCount === 0 ||
     inventoriedHeadingCount === 0 ||
     matchedEntryCount !== inventoriedHeadingCount ||
     observations.length !== inventoriedHeadingCount ||
@@ -582,6 +863,37 @@ function normalizedText(parts: readonly string[]): string {
   return normalizedLines(parts).join(" ");
 }
 
+function assertOptionalIdAttributes(
+  element: Element,
+  className: string,
+): void {
+  const id = element.getAttribute("id");
+  if (
+    id !== null &&
+    !/^[A-Za-z][A-Za-z0-9_-]+$/.test(id)
+  ) {
+    return unsupportedSemanticContent();
+  }
+  assertExactAttributes(
+    element,
+    id === null
+      ? [["class", className]]
+      : [["class", className], ["id", id]],
+  );
+}
+
+function assertImageAttributes(element: Element): void {
+  const source = element.getAttribute("src");
+  const alternative = element.getAttribute("alt");
+  if (source === null || alternative === null) {
+    return unsupportedSemanticContent();
+  }
+  assertExactAttributes(element, [
+    ["alt", alternative],
+    ["src", source],
+  ]);
+}
+
 function assertExactAttributes(
   element: Element,
   expected: readonly (readonly [string, string])[],
@@ -612,6 +924,12 @@ function assertExactAttributes(
       "An Official Erratum contains unsupported semantic content.",
     );
   }
+}
+
+function unsupportedSemanticContent(): never {
+  return parseFailure(
+    "An Official Erratum contains unsupported semantic content.",
+  );
 }
 
 function parseFailure(detail: string): never {

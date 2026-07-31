@@ -86,6 +86,74 @@ describe("Errata rules-text lifecycle", () => {
     }
   });
 
+  test("the Official Errata parser rejects an empty unknown direct entry child", async () => {
+    const malformed = onePieceOfficialErrataHtml.replace(
+      '<h5 class="smallTitRed">OP07-097 Vegapunk</h5>',
+      '<h5 class="smallTitRed">OP07-097 Vegapunk</h5>' +
+        "<aside></aside>",
+    );
+
+    await expect(
+      parseOnePieceOfficialErrataHtml(malformed),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "source_parse_failed",
+      message:
+        "An Official Erratum contains unsupported semantic content.",
+    });
+  });
+
+  test("the Official Errata parser rejects an unknown wrapper around a recognized list", async () => {
+    const malformed = onePieceOfficialErrataHtml
+      .replace(
+        '<ul class="commonNoticeList isHalf">',
+        '<aside><ul class="commonNoticeList isHalf">',
+      )
+      .replace(
+        "</ul>\n                <dl>",
+        "</ul></aside>\n                <dl>",
+      );
+
+    await expect(
+      parseOnePieceOfficialErrataHtml(malformed),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "source_parse_failed",
+      message:
+        "An Official Erratum contains unsupported semantic content.",
+    });
+  });
+
+  test("the Official Errata parser rejects a new dated entry outside recognized containers and headings", async () => {
+    const malformed = onePieceOfficialErrataHtml.replace(
+      "          </div>\n        </section>",
+      `            <section class="contentsLCol" id="errata_new_shape">
+              <section class="contentsMCol mtM">
+                <h4 class="mediumTit">July 31, 2026</h4>
+              </section>
+              <article class="newErrataEntry">
+                <h6 class="newCardHeading">OP99-999 New Erratum</h6>
+                <img src="/images/rules/cards/20260731/OP99-999.png" alt="OP99-999">
+                <dl>
+                  <dt class="txtBlack mtS">Before:</dt>
+                  <dd>Old wording.</dd>
+                  <dt class="txtBlack mtS">After:</dt>
+                  <dd>New wording.</dd>
+                </dl>
+              </article>
+            </section>
+          </div>
+        </section>`,
+    );
+
+    await expect(
+      parseOnePieceOfficialErrataHtml(malformed),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "source_parse_failed",
+    });
+  });
+
   test("the Official Errata parser rejects multiple value containers for one field label", async () => {
     const malformed = onePieceOfficialErrataHtml.replace(
       "<dd>This correction applies in every game format.</dd>",

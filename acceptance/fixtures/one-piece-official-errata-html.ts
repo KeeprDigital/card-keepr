@@ -110,6 +110,22 @@ export const onePieceOfficialErrataHtml = `<!doctype html>
 
 export const onePieceOfficialErrataShapeDriftHtml =
   onePieceOfficialErrataHtml.replace(
-    '<div class="detailCol mtS">',
-    '<div class="errataEntry mtS">',
+    "          </div>\n        </section>",
+    `            <section class="contentsLCol" id="errata_new_shape">
+              <section class="contentsMCol mtM">
+                <h4 class="mediumTit">July 31, 2026</h4>
+              </section>
+              <article class="newErrataEntry">
+                <h6 class="newCardHeading">OP99-999 New Erratum</h6>
+                <img src="/images/rules/cards/20260731/OP99-999.png" alt="OP99-999">
+                <dl>
+                  <dt class="txtBlack mtS">Before:</dt>
+                  <dd>Old wording.</dd>
+                  <dt class="txtBlack mtS">After:</dt>
+                  <dd>New wording.</dd>
+                </dl>
+              </article>
+            </section>
+          </div>
+        </section>`,
   );
