@@ -2,6 +2,7 @@ import { AdministrationProblem } from "./ingestion";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertIdentifier,
+  parseEvidencePlan,
   parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,

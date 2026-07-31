@@ -1,54 +1,5 @@
 PRAGMA foreign_keys = ON;
 
-INSERT INTO source_adapter_versions (
-  adapter_version,
-  source_lineage,
-  supported_game,
-  game_profile_version,
-  parser_contract,
-  adapter_origin
-) VALUES
-  (
-    'one-piece-json-document@3',
-    'one-piece-en',
-    'one-piece',
-    'one-piece@1',
-    'one-piece-official-legality@5',
-    'production'
-  ),
-  (
-    'fusion-world-en@2',
-    'fusion-world-en',
-    'fusion-world',
-    'fusion-world@1',
-    'fusion-world-official-legality@5',
-    'production'
-  ),
-  (
-    'digimon-en@2',
-    'digimon-en',
-    'digimon',
-    'digimon@1',
-    'digimon-official-legality@5',
-    'production'
-  ),
-  (
-    'gundam-en-asia@2',
-    'gundam-en-asia',
-    'gundam',
-    'gundam@1',
-    'gundam-official-legality@5',
-    'production'
-  ),
-  (
-    'gundam-en-us@2',
-    'gundam-en-us',
-    'gundam',
-    'gundam@1',
-    'gundam-official-legality@5',
-    'production'
-  );
-
 CREATE TABLE official_source_collection_plans (
   ingestion_run_id TEXT PRIMARY KEY
     REFERENCES ingestion_evidence_plans(ingestion_run_id),
@@ -86,6 +37,20 @@ CREATE TRIGGER official_source_collection_plans_immutable_delete
 BEFORE DELETE ON official_source_collection_plans
 BEGIN
   SELECT RAISE(ABORT, 'official_source_collection_plan_immutable');
+END;
+
+CREATE TRIGGER source_requests_plan_fields_immutable
+BEFORE UPDATE OF request_id, sequence_number, method, url,
+  request_headers_json, representation_fingerprint
+ON source_requests
+BEGIN
+  SELECT RAISE(ABORT, 'source_request_plan_fields_immutable');
+END;
+
+CREATE TRIGGER source_requests_immutable_delete
+BEFORE DELETE ON source_requests
+BEGIN
+  SELECT RAISE(ABORT, 'source_request_immutable');
 END;
 
 CREATE TABLE legality_rules (

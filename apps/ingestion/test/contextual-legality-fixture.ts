@@ -35,6 +35,25 @@ export function contextualLegalitySourceDocument(
   };
 }
 
+export function contextualLegalityFixtureDocument(
+  region: Region,
+  rulesVariant: "current" | "missing" = "current",
+) {
+  const cardNumbers =
+    region === "EN-ASIA"
+      ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
+      : ["GD30-001"];
+  const retainedRules = legalityRules(region).filter(
+    (rule) =>
+      rulesVariant === "current" || rule.effective_until !== null,
+  );
+  return {
+    cards: cardNumbers.map(gundamObservation),
+    legality_rules: retainedRules,
+    legality_completeness: completeEvidence(),
+  };
+}
+
 const requiredSurfaces = [
   "discovery",
   "legality_card_details",

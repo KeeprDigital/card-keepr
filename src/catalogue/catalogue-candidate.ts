@@ -4,6 +4,7 @@ import type {
   ProductRelationship,
 } from "./product-release-catalogue";
 import type { CatalogueErratum } from "./errata-rules-text";
+import type { LegalityRule } from "./legality-rule";
 
 export const catalogueCandidateContract =
   "card-keepr-catalogue-candidate@1" as const;
@@ -32,6 +33,7 @@ export type CatalogueCandidate = {
     checked_at: string;
   }[];
   errata?: readonly CatalogueErratum[];
+  legality_rules?: readonly LegalityRule[];
 };
 
 export type CatalogueCard = {

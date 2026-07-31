@@ -1,4 +1,4 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import {
   legalityExportKind,
   legalityRuleCardIds,
@@ -11,7 +11,7 @@ import {
 } from "./serialization";
 
 export function legalityRuleExportRecords(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
 ) {
   return (candidate.legality_rules ?? []).map((rule) => ({
@@ -52,7 +52,7 @@ function exportEffect(effect: LegalityRuleEffect): LegalityRuleEffect {
 }
 
 export async function legalityRuleRelationshipRecords(
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
 ) {
   return Promise.all(

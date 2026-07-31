@@ -1,8 +1,8 @@
 import type {
-  FixtureCandidate,
-  FixtureCard,
+  CatalogueCandidate,
+  CatalogueCard,
   SupportedGame,
-} from "./fixture";
+} from "./catalogue-candidate";
 import { validateMembershipPredicate } from "./reconciliation-profile";
 import {
   canonicalJson,
@@ -82,7 +82,7 @@ export function parseRetainedLegalityRules(
 
 export async function resolveLegalityRuleCards(
   rules: readonly RetainedLegalityRule[],
-  cards: readonly FixtureCard[],
+  cards: readonly CatalogueCard[],
 ): Promise<LegalityRule[]> {
   const cardsByNumber = new Map(
     cards.flatMap((card) =>
@@ -133,7 +133,7 @@ export async function resolveLegalityRuleCards(
 }
 
 export function legalityRulesForCandidate(
-  prior: FixtureCandidate | null,
+  prior: CatalogueCandidate | null,
   sourceLineage: string,
   incoming: readonly LegalityRule[],
 ): LegalityRule[] {

@@ -21,6 +21,7 @@ import {
   type CredentialConsumerProofRequestClaims,
 } from "../../src/credentials/consumer-proof";
 import {
+  contextualLegalityFixtureDocument,
   contextualLegalitySourceDocument,
   onePiecePolicySourceDocument,
 } from "./test/contextual-legality-fixture";
@@ -941,6 +942,14 @@ function reconciliationSourceDocument(
       "EN-ASIA",
       surface,
       requestUrl,
+    );
+  }
+  if (scenario === "contextual-legality-domain") {
+    return contextualLegalityFixtureDocument(
+      "EN-ASIA",
+      new URL(requestUrl).searchParams.get("rules") === "missing"
+        ? "missing"
+        : "current",
     );
   }
   if (scenario === "contextual-legality-us") {

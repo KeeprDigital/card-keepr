@@ -22,6 +22,20 @@ export type EvidencePlanRequest = {
   representation_fingerprint: string;
 };
 
+export type OfficialSourceCollectionRequest = EvidencePlanRequest & {
+  surface: string;
+};
+
+export type OfficialSourceCollectionPlan = {
+  contract: "card-keepr-official-source-collection-plan@1";
+  supported_game: string;
+  source_lineage: string;
+  game_profile_version: string;
+  adapter_version: string;
+  discovery_observation_set_id: string;
+  requests: OfficialSourceCollectionRequest[];
+};
+
 export type EvidencePlan = {
   supported_game: string;
   source_lineage: string;

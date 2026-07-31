@@ -1,11 +1,11 @@
-import type { FixtureCandidate } from "./fixture";
+import type { CatalogueCandidate } from "./catalogue-candidate";
 import { byteBoundedJsonArrays } from "./reconciliation-payload";
 import { canonicalJson } from "./serialization";
 import { legalityRuleCardIds } from "./legality-rule";
 
 export function legalityPublicationStatements(
   database: D1Database,
-  candidate: FixtureCandidate,
+  candidate: CatalogueCandidate,
   revisionId: string,
 ): D1PreparedStatement[] {
   const rows = (candidate.legality_rules ?? []).map((rule) => {

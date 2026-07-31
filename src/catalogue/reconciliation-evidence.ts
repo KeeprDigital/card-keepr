@@ -1,8 +1,12 @@
-import { sha256 } from "./serialization";
+import { canonicalJson, sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./catalogue-candidate";
 import { requiredSourceAdapter } from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
+import {
+  parseEvidencePlans,
+  type EvidencePlanRequest,
+} from "./source-evidence-model";
 import {
   parsedOfficialArtworkIdentity,
 } from "./official-artwork-identity.mjs";
@@ -14,7 +18,10 @@ import {
 type PlannedRequestRow = {
   request_id: string;
   sequence_number: number;
+  method: string;
   url: string;
+  request_headers_json: string;
+  representation_fingerprint: string;
   request_role: "surface" | "listing" | "detail" | "product_detail" | "image";
   discovered_from_request_id: string | null;
   state: string;
@@ -36,6 +43,10 @@ type EvidenceRow = {
   observation_count: number;
   request_plan_json: string;
   plan_origin: string;
+  snapshot_request_method: string;
+  snapshot_request_url: string;
+  snapshot_request_headers_json: string;
+  snapshot_representation_fingerprint: string;
 };
 
 type PrintingImageSnapshotRow = {
@@ -46,6 +57,17 @@ type PrintingImageSnapshotRow = {
   content_object_key: string;
 };
 
+type CollectionPlanRow = {
+  discovery_observation_set_id: string;
+  contract: string;
+  collection_plan_json: string;
+  content_digest: string;
+};
+
+type EvidencePlanRow = {
+  request_plan_json: string;
+};
+
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
 export async function retainedReconciliationObservation(
@@ -53,20 +75,28 @@ export async function retainedReconciliationObservation(
   evidenceObjects: R2Bucket,
   runId: string,
 ) {
-  const [requests, observations, printingImageSnapshots] = await Promise.all([
+  const [
+    requests,
+    observations,
+    printingImageSnapshots,
+    collectionPlan,
+    evidencePlanRow,
+  ] = await Promise.all([
     database
       .prepare(
-        `SELECT request_id, sequence_number, url, request_role,
+        `SELECT request_id, sequence_number, method, url,
+                request_headers_json, representation_fingerprint,
+                request_role,
                 discovered_from_request_id, state, source_snapshot_id
          FROM source_requests
          WHERE ingestion_run_id = ?
          ORDER BY sequence_number, request_id`,
-      )
-      .bind(runId)
-      .all<PlannedRequestRow>(),
-    database
-      .prepare(
-        `SELECT
+        )
+        .bind(runId)
+        .all<PlannedRequestRow>(),
+      database
+        .prepare(
+          `SELECT
           snapshots.request_id,
           observations.id AS observation_set_id,
           observations.source_snapshot_id,
@@ -80,7 +110,15 @@ export async function retainedReconciliationObservation(
           observations.content_object_key,
           observations.observation_count,
           plan.request_plan_json,
-          plan.plan_origin
+          plan.source_lineage AS plan_source_lineage,
+          plan.supported_game AS plan_supported_game,
+          plan.game_profile_version AS plan_game_profile_version,
+          plan.adapter_version AS plan_adapter_version,
+          plan.plan_origin,
+          snapshots.request_method AS snapshot_request_method,
+          snapshots.request_url AS snapshot_request_url,
+          snapshots.request_headers_json AS snapshot_request_headers_json,
+          snapshots.representation_fingerprint AS snapshot_representation_fingerprint
          FROM source_observation_sets AS observations
          JOIN source_parse_operations AS parse
            ON parse.id = observations.parse_operation_id
@@ -113,11 +151,84 @@ export async function retainedReconciliationObservation(
       )
       .bind(runId)
       .all<PrintingImageSnapshotRow>(),
+    database
+      .prepare(
+        `SELECT discovery_observation_set_id, contract,
+                collection_plan_json, content_digest
+         FROM official_source_collection_plans
+         WHERE ingestion_run_id = ?`,
+        )
+        .bind(runId)
+        .first<CollectionPlanRow>(),
+      database
+        .prepare(
+          `SELECT request_plan_json
+         FROM ingestion_evidence_plans
+         WHERE ingestion_run_id = ?`,
+        )
+        .bind(runId)
+        .first<EvidencePlanRow>(),
   ]);
-  if (requests.results.length === 0) {
+  if (requests.results.length === 0 || evidencePlanRow === null) {
     throw new Error(
       "Reconciliation requires complete coverage of every planned Source Request.",
     );
+  }
+  const plannedRequests = parseEvidencePlans(
+    evidencePlanRow.request_plan_json,
+  ).flatMap((plan) => plan.requests);
+  if (
+    plannedRequests.length === 0 ||
+    plannedRequests.length > requests.results.length ||
+    plannedRequests.some((planned) => {
+      const request = requests.results.find(
+        ({ request_id: requestId }) => requestId === planned.id,
+      );
+      return !samePlannedRequest(
+        request,
+        planned,
+        request?.sequence_number ?? -1,
+      );
+    })
+  ) {
+    throw new Error(
+      "Operational Source Requests differ from the immutable Evidence Plan.",
+    );
+  }
+  if (collectionPlan !== null) {
+    if (
+      collectionPlan.contract !==
+        "card-keepr-official-source-collection-plan@1" ||
+      (await sha256(new TextEncoder().encode(
+        collectionPlan.collection_plan_json,
+      ))) !== collectionPlan.content_digest
+    ) {
+      throw new Error(
+        "Official Source Collection Plan failed immutable artifact verification.",
+      );
+    }
+    const retainedCollection: unknown = JSON.parse(
+      collectionPlan.collection_plan_json,
+    );
+    if (
+      !isRecord(retainedCollection) ||
+      !Array.isArray(retainedCollection.requests) ||
+      retainedCollection.requests.some((planned) => {
+        if (!isRecord(planned) || typeof planned.id !== "string") return true;
+        const request = requests.results.find(
+          ({ request_id: requestId }) => requestId === planned.id,
+        );
+        return !samePlannedRequest(
+          request,
+          planned,
+          request?.sequence_number ?? -1,
+        );
+      })
+    ) {
+      throw new Error(
+        "Official Source requests differ from the immutable Collection Plan.",
+      );
+    }
   }
   const selectedSnapshots = new Map<string, PlannedRequestRow>();
   for (const request of requests.results) {
@@ -157,12 +268,29 @@ export async function retainedReconciliationObservation(
     return rows[0]!;
   });
   const first = orderedRows[0]!;
-  for (const row of orderedRows) {
+  for (const [index, row] of orderedRows.entries()) {
+    const request = requests.results[index]!;
     const plan = evidencePlanForRequest(
       { request_plan_json: row.request_plan_json },
       row.request_id,
     );
     if (
+      row.request_id !== request.request_id ||
+      row.snapshot_request_method !== request.method ||
+      row.snapshot_request_url !== request.url ||
+      row.snapshot_request_headers_json !== request.request_headers_json ||
+      row.snapshot_representation_fingerprint !==
+        request.representation_fingerprint
+    ) {
+      throw new Error(
+        "Retained Source Snapshot provenance differs from its immutable Source Request.",
+      );
+    }
+    if (
+      row.source_lineage !== first.source_lineage ||
+      row.supported_game !== first.supported_game ||
+      row.game_profile_version !== first.game_profile_version ||
+      row.adapter_version !== first.adapter_version ||
       row.source_lineage !== plan.source_lineage ||
       row.supported_game !== plan.supported_game ||
       row.game_profile_version !== plan.game_profile_version ||
@@ -173,6 +301,11 @@ export async function retainedReconciliationObservation(
       );
     }
   }
+  const documents = await Promise.all(
+    orderedRows.map((row) =>
+      retainedObservationDocument(evidenceObjects, row),
+    ),
+  );
   const aggregateBytes = orderedRows.reduce(
     (total, row) => total + row.content_byte_length,
     0,
@@ -728,6 +861,24 @@ function assertObservationAuthority(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
     );
   }
+}
+
+function samePlannedRequest(
+  request: PlannedRequestRow | undefined,
+  planned: EvidencePlanRequest | Record<string, unknown> | undefined,
+  sequenceNumber: number,
+): boolean {
+  if (request === undefined || planned === undefined) return false;
+  return (
+    request.sequence_number === sequenceNumber &&
+    planned.id === request.request_id &&
+    planned.method === request.method &&
+    planned.url === request.url &&
+    isRecord(planned.headers) &&
+    canonicalJson(planned.headers) === request.request_headers_json &&
+    planned.representation_fingerprint ===
+      request.representation_fingerprint
+  );
 }
 
 async function retainedObservationDocument(

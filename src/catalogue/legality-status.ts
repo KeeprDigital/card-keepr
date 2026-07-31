@@ -96,7 +96,7 @@ export async function contextualLegalityStatusResponse(
     .all<RuleRow>();
   const rules = rows.results.map(
     (row) => JSON.parse(row.document_json) as LegalityRule,
-  ).filter((rule) => rule.current !== false);
+  );
   const regions =
     query.region === null
       ? supportedRegions
