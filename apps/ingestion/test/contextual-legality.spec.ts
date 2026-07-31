@@ -6,6 +6,7 @@ import {
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
+import { sha256, utf8 } from "../../../src/catalogue/serialization";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
@@ -18,8 +19,9 @@ beforeEach(async () => {
   );
 });
 
-test("applied D1 request copies reject URL, headers, fingerprint, and deletion drift from immutable Evidence Plans", async () => {
+test("applied D1 request copies and owning run identities are immutable", async () => {
   const runId = "run_operational_plan_immutability";
+  const ownerTargetRunId = "run_operational_plan_owner_target";
   await testEnv.CATALOGUE_DB.batch([
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (
@@ -29,6 +31,14 @@ test("applied D1 request copies reject URL, headers, fingerprint, and deletion d
        ) VALUES (?, 'collecting', '["one-piece"]',
          '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
     ).bind(runId, "operational-plan-immutability"),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_json
+       ) VALUES (?, 'collecting', '["one-piece"]',
+         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
+    ).bind(ownerTargetRunId, "operational-plan-owner-target"),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_evidence_plans (
          ingestion_run_id, source_lineage, supported_game,
@@ -116,18 +126,150 @@ test("applied D1 request copies reject URL, headers, fingerprint, and deletion d
          'https://attacker.example/unplanned', '{}', ?, 'pending')`,
     ).bind(runId, "d".repeat(64)).run(),
   );
+  const requestOwnerError = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE source_requests SET ingestion_run_id = ?
+       WHERE ingestion_run_id = ? AND request_id = 'update-target'`,
+    ).bind(ownerTargetRunId, runId).run(),
+  );
+  const planOwnerError = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_evidence_plans SET ingestion_run_id = ?
+       WHERE ingestion_run_id = ?`,
+    ).bind(ownerTargetRunId, runId).run(),
+  );
 
   expect([
     String(updateError),
     String(deleteError),
     String(insertError),
     String(unplannedInsertError),
+    String(requestOwnerError),
+    String(planOwnerError),
   ]).toEqual([
     expect.stringMatching(/source_request_plan_fields_immutable/),
     expect.stringMatching(/source_request_immutable/),
     expect.stringMatching(/source_request_not_in_immutable_plan/),
     expect.stringMatching(/source_request_not_in_immutable_plan/),
+    expect.stringMatching(/source_request_plan_fields_immutable/),
+    expect.stringMatching(/ingestion_evidence_plan_request_set_immutable/),
   ]);
+});
+
+test("an Official Source Collection Plan cannot freeze another run's discovery evidence", async () => {
+  const sourceRunId = "run_collection_plan_discovery_source";
+  const targetRunId = "run_collection_plan_discovery_target";
+  const plan = JSON.stringify({
+    requests: [
+      {
+        id: "discovery",
+        method: "GET",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+        headers: {},
+        representation_fingerprint: "1".repeat(64),
+      },
+    ],
+  });
+  await testEnv.CATALOGUE_DB.batch([
+    ...[sourceRunId, targetRunId].map((runId, index) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO ingestion_runs (
+           id, state, selected_games_json, started_at,
+           expected_current_revision_id, linked_run_id, idempotency_key,
+           candidate_json
+         ) VALUES (?, 'collecting', '["one-piece"]',
+           '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
+      ).bind(runId, `collection-plan-owner-${index}`),
+    ),
+    ...[sourceRunId, targetRunId].map((runId) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO ingestion_evidence_plans (
+           ingestion_run_id, source_lineage, supported_game,
+           game_profile_version, adapter_version, request_plan_json,
+           plan_origin
+         ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
+           'one-piece-json-document@1', ?, 'production')`,
+      ).bind(runId, plan),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state
+       ) VALUES (?, 'discovery', 0, 'GET',
+         'https://en.onepiece-cardgame.com/cardlist/', '{}', ?, 'observed')`,
+    ).bind(sourceRunId, "1".repeat(64)),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_fetch_attempts (
+         id, ingestion_run_id, request_id, attempt_number,
+         requested_at, completed_at, outcome, http_status,
+         response_headers_json, retry_after_ms, diagnostic
+       ) VALUES ('srcfetch_collection_owner', ?, 'discovery', 1,
+         '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
+         'success', 200, '{}', NULL, NULL)`,
+    ).bind(sourceRunId),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_snapshots (
+         id, ingestion_run_id, request_id, fetch_attempt_id,
+         request_method, request_url, request_headers_json,
+         representation_fingerprint, response_vary_json, retrieved_at,
+         http_status, response_headers_json, media_type, content_digest,
+         content_byte_length, content_object_key, source_lineage,
+         supported_game, game_profile_version, adapter_version,
+         reused_source_snapshot_id
+       ) VALUES ('srcsnap_collection_owner', ?, 'discovery',
+         'srcfetch_collection_owner', 'GET',
+         'https://en.onepiece-cardgame.com/cardlist/', '{}', ?, '[]',
+         '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?,
+         2, 'source-snapshots/collection-owner.bin', 'one-piece-en',
+         'one-piece', 'one-piece@1', 'one-piece-json-document@1', NULL)`,
+    ).bind(sourceRunId, "1".repeat(64), "2".repeat(64)),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_parse_operations (
+         id, source_snapshot_id, adapter_version, intent,
+         idempotency_key, observation_set_id, content_object_key,
+         parsed_at, state, content_digest, content_byte_length,
+         observation_count
+       ) VALUES ('srcparse_collection_owner', 'srcsnap_collection_owner',
+         'one-piece-json-document@1', 'collection',
+         'collection-owner-parse', 'srcobsset_collection_owner',
+         'source-observations/collection-owner.json',
+         '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
+    ).bind("3".repeat(64)),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_observation_sets (
+         id, parse_operation_id, source_snapshot_id, source_lineage,
+         supported_game, game_profile_version, adapter_version, parsed_at,
+         content_digest, content_byte_length, content_object_key,
+         observation_count
+       ) VALUES ('srcobsset_collection_owner',
+         'srcparse_collection_owner', 'srcsnap_collection_owner',
+         'one-piece-en', 'one-piece', 'one-piece@1',
+         'one-piece-json-document@1', '2026-08-01T00:00:02.000Z', ?, 2,
+         'source-observations/collection-owner.json', 1)`,
+    ).bind("3".repeat(64)),
+  ]);
+
+  const collectionPlan = JSON.stringify({
+    contract: "card-keepr-official-source-collection-plan@1",
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    game_profile_version: "one-piece@1",
+    adapter_version: "one-piece-json-document@1",
+    discovery_observation_set_id: "srcobsset_collection_owner",
+    requests: [],
+  });
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO official_source_collection_plans (
+         ingestion_run_id, discovery_observation_set_id, contract,
+         collection_plan_json, content_digest, created_at
+       ) VALUES (?, 'srcobsset_collection_owner',
+         'card-keepr-official-source-collection-plan@1', ?, ?,
+         '2026-08-01T00:00:03.000Z')`,
+    ).bind(targetRunId, collectionPlan, "4".repeat(64)).run(),
+  ).rejects.toThrow(
+    /official_source_collection_plan_discovery_owner_mismatch/,
+  );
 });
 
 test.each([
@@ -159,6 +301,152 @@ test.each([
     });
   },
 );
+
+test.each([
+  ["one-piece-json-document@1", "one-piece", "one-piece-en"],
+  ["one-piece-json-document@2", "one-piece", "one-piece-en"],
+  ["fusion-world-en@1", "fusion-world", "fusion-world-en"],
+  ["digimon-en@1", "digimon", "digimon-en"],
+  ["gundam-en-asia@1", "gundam", "gundam-en-asia"],
+  ["gundam-en-us@1", "gundam", "gundam-en-us"],
+])(
+  "production planning rejects unavailable adapter identity %s before capture",
+  async (adapter, game, lineage) => {
+    const idempotencyKey = `reject-unavailable-${adapter}`;
+    const blocked = await request("/v1/ingestion-runs/evidence", {
+      supported_game: game,
+      source_lineage: lineage,
+      adapter_version: adapter,
+      idempotency_key: idempotencyKey,
+      requests: [
+        {
+          id: "discovery",
+          method: "GET",
+          url: "https://official-source.invalid/normalized-envelope",
+          headers: { accept: "application/json" },
+        },
+      ],
+    });
+    expect(blocked.response.status).toBe(422);
+    expect(blocked.document).toMatchObject({
+      code: "adapter_not_supported",
+    });
+    const retained = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_runs
+       WHERE idempotency_key = ?`,
+    ).bind(idempotencyKey).first<{ count: number }>();
+    expect(retained?.count).toBe(0);
+  },
+);
+
+test("authenticated reparse rejects a normalized fixture envelope through an unavailable production adapter", async () => {
+  const runId = "run_unavailable_adapter_raw_boundary";
+  const snapshotId = "srcsnap_unavailable_adapter_raw_boundary";
+  const objectKey = `source-snapshots/${snapshotId}.bin`;
+  const bytes = utf8(JSON.stringify({
+    cards: [
+      {
+        card: {
+          game: "one-piece",
+          official_identity: { kind: "card_number", value: "OP99-999" },
+        },
+      },
+    ],
+    legality_rules: [
+      {
+        id: "normalized-effect-that-production-must-not-accept",
+        effect: { type: "ban" },
+      },
+    ],
+  }));
+  const digest = await sha256(bytes);
+  const plan = JSON.stringify({
+    requests: [
+      {
+        id: "raw-boundary",
+        method: "GET",
+        url: "https://official-source.invalid/normalized-envelope",
+        headers: {},
+        representation_fingerprint: "5".repeat(64),
+      },
+    ],
+  });
+  await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_json
+       ) VALUES (?, 'parsing', '["one-piece"]',
+         '2026-08-01T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
+    ).bind(runId, "unavailable-adapter-raw-boundary"),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_evidence_plans (
+         ingestion_run_id, source_lineage, supported_game,
+         game_profile_version, adapter_version, request_plan_json,
+         plan_origin
+       ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
+         'fixture-one-piece-json@1', ?, 'synthetic_fixture')`,
+    ).bind(runId, plan),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state,
+         source_snapshot_id
+       ) VALUES (?, 'raw-boundary', 0, 'GET',
+         'https://official-source.invalid/normalized-envelope', '{}', ?,
+         'observed', ?)`,
+    ).bind(runId, "5".repeat(64), snapshotId),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_fetch_attempts (
+         id, ingestion_run_id, request_id, attempt_number,
+         requested_at, completed_at, outcome, http_status,
+         response_headers_json, retry_after_ms, diagnostic
+       ) VALUES ('srcfetch_unavailable_adapter_raw_boundary', ?,
+         'raw-boundary', 1, '2026-08-01T00:00:00.000Z',
+         '2026-08-01T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
+    ).bind(runId),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_snapshots (
+         id, ingestion_run_id, request_id, fetch_attempt_id,
+         request_method, request_url, request_headers_json,
+         representation_fingerprint, response_vary_json, retrieved_at,
+         http_status, response_headers_json, media_type, content_digest,
+         content_byte_length, content_object_key, source_lineage,
+         supported_game, game_profile_version, adapter_version,
+         reused_source_snapshot_id
+       ) VALUES (?, ?, 'raw-boundary',
+         'srcfetch_unavailable_adapter_raw_boundary', 'GET',
+         'https://official-source.invalid/normalized-envelope', '{}', ?, '[]',
+         '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?, ?, ?,
+         'one-piece-en', 'one-piece', 'one-piece@1',
+         'fixture-one-piece-json@1', NULL)`,
+    ).bind(
+      snapshotId,
+      runId,
+      "5".repeat(64),
+      digest,
+      bytes.byteLength,
+      objectKey,
+    ),
+  ]);
+
+  const blocked = await request(
+    `/v1/source-snapshots/${snapshotId}/observations`,
+    {
+      adapter_version: "one-piece-json-document@1",
+      idempotency_key: "unavailable-adapter-raw-boundary-reparse",
+    },
+  );
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_parse_operations
+     WHERE source_snapshot_id = ?`,
+  ).bind(snapshotId).first<{ count: number }>();
+  expect(retained?.count).toBe(0);
+});
 
 test("an unfetched nested image URL cannot enter the official pipeline as byte-proven Printing identity", async () => {
   const blocked = await request("/v1/ingestion-runs/evidence", {

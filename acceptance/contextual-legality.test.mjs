@@ -855,19 +855,6 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     true,
     JSON.stringify(validateCatalogueExportDocument.errors),
   );
-  const immutableV1Document = structuredClone(manifestDocument);
-  immutableV1Document.data.format =
-    "card-keepr-catalogue-export-manifest@1";
-  immutableV1Document.data.export_schema_major = 1;
-  immutableV1Document.data.components.find(
-    (component) => component.name === "legality-rules",
-  ).record_schema =
-    "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/LegalityRuleRecord";
-  assert.equal(
-    validateCatalogueExportDocument(immutableV1Document),
-    true,
-    JSON.stringify(validateCatalogueExportDocument.errors),
-  );
 
   const exportResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,

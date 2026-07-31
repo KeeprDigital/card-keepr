@@ -4297,7 +4297,7 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   ).toBeGreaterThan(1_048_576);
 }, 180_000);
 
-test("recovery health gates evidence start and reconciliation before mutation", async () => {
+test("recovery health gates fixture evidence injection and reconciliation before mutation", async () => {
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
   ).run();

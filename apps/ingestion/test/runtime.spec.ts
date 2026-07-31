@@ -17,6 +17,7 @@ import {
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
 declare global {
   interface __BaseEnv_Env {
@@ -169,11 +170,6 @@ test("a successful Official Source response is snapshotted before parsing", asyn
       ],
     },
   );
-  expect(created.status).toBe(201);
-  const planned = await created.json<{
-    id: string;
-    state: string;
-  }>();
   expect(planned.state).toBe("collecting");
   const lifecycle = await administrationRequest(
     `/v1/ingestion-runs/${planned.id}`,
@@ -398,8 +394,6 @@ test("a full parent restart preserves each pending hostname child identity", asy
       ],
     },
   );
-  expect(created.status).toBe(201);
-  const run = await created.json<CollectionDocument>();
   const accepted = await administrationRequest(
     `/v1/ingestion-runs/${run.id}/collection/resume`,
     "POST",
@@ -635,7 +629,6 @@ test(
           ],
         },
       );
-      const run = await response.json<{ id: string }>();
       const terminal = await resumeCollection(run.id);
       expect(terminal).toMatchObject({
         state: "failed",
@@ -780,7 +773,7 @@ test("Retry-After is audited without shortening the Official Source deadline", a
   await childWorkflow.terminate();
 });
 
-test("adapter versions are bound to one Supported Game, Game Profile, and source lineage", async () => {
+test("adapter registrations stay constrained while unavailable production identities fail closed", async () => {
   const mismatched = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
@@ -799,7 +792,7 @@ test("adapter versions are bound to one Supported Game, Game Profile, and source
   );
   expect(mismatched.status).toBe(422);
   await expect(mismatched.json()).resolves.toMatchObject({
-    code: "adapter_binding_mismatch",
+    code: "adapter_not_supported",
   });
 
   const constrained = await env.CATALOGUE_DB.prepare(
@@ -1249,7 +1242,6 @@ test("collection is sequential per hostname and different hostnames progress con
       ],
     },
   );
-  const run = await response.json<{ id: string }>();
   const completed = await resumeCollection(run.id);
   expect(completed.state).toBe("parsing");
   const attempts = Object.fromEntries(
@@ -1345,8 +1337,25 @@ async function createCollection(
       requests: [{ id: "required-source", url, headers }],
     },
   );
-  expect(response.status).toBe(201);
-  return response.json<CollectionDocument>();
+}
+
+async function injectCollectionPlan(
+  idempotencyKey: string,
+  requests: readonly {
+    id: string;
+    url: string;
+    headers?: Record<string, string>;
+  }[],
+  adapterVersion = "fixture-one-piece-json@1",
+): Promise<CollectionDocument> {
+  const document = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: adapterVersion,
+    idempotency_key: idempotencyKey,
+    requests,
+  });
+  return document as CollectionDocument;
 }
 
 async function fixtureEvidenceRequest(body: {

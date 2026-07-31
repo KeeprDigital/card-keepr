@@ -27,7 +27,10 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     ),
   );
   delete config.$schema;
-  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.main = resolve(
+    root,
+    "acceptance/fixtures/contextual-legality-ingestion-harness.ts",
+  );
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [

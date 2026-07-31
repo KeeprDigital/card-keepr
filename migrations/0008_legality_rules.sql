@@ -1,5 +1,21 @@
 PRAGMA foreign_keys = ON;
 
+INSERT INTO source_adapter_versions (
+  adapter_version,
+  source_lineage,
+  supported_game,
+  game_profile_version,
+  parser_contract,
+  adapter_origin
+) VALUES (
+  'fixture-one-piece-json@2',
+  'one-piece-en',
+  'one-piece',
+  'one-piece@1',
+  'synthetic-fixture-card-document@1',
+  'synthetic_fixture'
+);
+
 CREATE TABLE official_source_collection_plans (
   ingestion_run_id TEXT PRIMARY KEY
     REFERENCES ingestion_evidence_plans(ingestion_run_id),
@@ -13,6 +29,23 @@ CREATE TABLE official_source_collection_plans (
   created_at TEXT NOT NULL
 );
 
+CREATE TRIGGER official_source_collection_plan_discovery_owner
+BEFORE INSERT ON official_source_collection_plans
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM source_observation_sets AS observation_set
+  JOIN source_snapshots AS snapshot
+    ON snapshot.id = observation_set.source_snapshot_id
+  WHERE observation_set.id = NEW.discovery_observation_set_id
+    AND snapshot.ingestion_run_id = NEW.ingestion_run_id
+)
+BEGIN
+  SELECT RAISE(
+    ABORT,
+    'official_source_collection_plan_discovery_owner_mismatch'
+  );
+END;
+
 CREATE TRIGGER official_source_collection_plans_immutable_update
 BEFORE UPDATE ON official_source_collection_plans
 BEGIN
@@ -20,8 +53,8 @@ BEGIN
 END;
 
 CREATE TRIGGER ingestion_evidence_plan_request_set_immutable
-BEFORE UPDATE OF source_lineage, supported_game, game_profile_version,
-  adapter_version, request_plan_json, plan_origin
+BEFORE UPDATE OF ingestion_run_id, source_lineage, supported_game,
+  game_profile_version, adapter_version, request_plan_json, plan_origin
 ON ingestion_evidence_plans
 BEGIN
   SELECT RAISE(ABORT, 'ingestion_evidence_plan_request_set_immutable');
@@ -40,8 +73,8 @@ BEGIN
 END;
 
 CREATE TRIGGER source_requests_plan_fields_immutable
-BEFORE UPDATE OF request_id, sequence_number, method, url,
-  request_headers_json, representation_fingerprint
+BEFORE UPDATE OF ingestion_run_id, request_id, sequence_number, method,
+  url, request_headers_json, representation_fingerprint
 ON source_requests
 BEGIN
   SELECT RAISE(ABORT, 'source_request_plan_fields_immutable');

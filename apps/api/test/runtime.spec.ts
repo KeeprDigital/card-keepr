@@ -16,6 +16,14 @@ import {
 } from "../../../src/catalogue/card-search";
 import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
 import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
+import exportRecordSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
+import { deterministicGzip } from "../../../src/catalogue/export-compression";
+import {
+  canonicalJson,
+  sha256,
+  sha256Text,
+  utf8,
+} from "../../../src/catalogue/serialization";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -26,6 +34,10 @@ beforeEach(async () => {
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_ingestion_run_id = NULL
+     WHERE singleton = 1`,
+  ).run();
 });
 
 test("the API authentication boundary runs in the Workers runtime", async () => {
@@ -93,6 +105,232 @@ test("every Card collection shape returns the normative 503 while the current pr
       code: "catalogue_query_unavailable",
     });
   }
+});
+
+test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifact", async () => {
+  const revisionId = "catrev_historical_v1";
+  const publishedAt = "2025-01-01T00:00:00.000Z";
+  const candidateDigest = "a".repeat(64);
+  const legalityRule = {
+    type: "legality_rule",
+    id: "legality_rule_historical_v1",
+    game: "gundam",
+    region: "EN-ASIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2025-01-01",
+    effective_until: null,
+    kind: "restricted",
+    card_ids: ["card_historical_v1"],
+    official_wording: "Historical v1 decks may contain one copy.",
+  };
+  const legalityBytes = utf8(`${canonicalJson(legalityRule)}\n`);
+  const compressedLegalityBytes = deterministicGzip(legalityBytes);
+  const emptyBytes = new Uint8Array();
+  const compressedEmptyBytes = deterministicGzip(emptyBytes);
+  const [
+    legalityDigest,
+    compressedLegalityDigest,
+    emptyDigest,
+    compressedEmptyDigest,
+  ] = await Promise.all([
+    sha256(legalityBytes),
+    sha256(compressedLegalityBytes),
+    sha256(emptyBytes),
+    sha256(compressedEmptyBytes),
+  ]);
+  const componentDefinitions = [
+    ["supported-games", "SupportedGameRecord", "id:utf8"],
+    ["game-profiles", "GameProfileRecord", "profile:utf8"],
+    ["cards", "CardRecord", "id:utf8"],
+    ["printings", "PrintingRecord", "id:utf8"],
+    ["printing-images", "PrintingImageRecord", "id:utf8"],
+    ["products", "ProductRecord", "id:utf8"],
+    ["releases", "ReleaseRecord", "id:utf8"],
+    ["distribution-contexts", "DistributionContextRecord", "id:utf8"],
+    ["errata", "ErratumRecord", "id:utf8"],
+    ["legality-rules", "LegalityRuleRecord", "id:utf8"],
+    ["relationships", "RelationshipRecord", "id:utf8"],
+  ] as const;
+  const components = componentDefinitions.map(
+    ([name, schemaDefinition, order]) => {
+      const containsLegality = name === "legality-rules";
+      return {
+        name,
+        media_type: "application/x-ndjson",
+        compression: "gzip",
+        record_schema:
+          "https://card-keepr.invalid/schemas/" +
+          `catalogue-export-record@1#/$defs/${schemaDefinition}`,
+        order,
+        records: containsLegality ? 1 : 0,
+        uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
+        content_sha256: containsLegality ? legalityDigest : emptyDigest,
+        compressed_bytes: containsLegality
+          ? compressedLegalityBytes.byteLength
+          : compressedEmptyBytes.byteLength,
+        compressed_sha256: containsLegality
+          ? compressedLegalityDigest
+          : compressedEmptyDigest,
+        content_url:
+          `/v1/catalogue-exports/${revisionId}/components/${name}`,
+      };
+    },
+  );
+  const manifestWithPlaceholder = {
+    format: "card-keepr-catalogue-export-manifest@1",
+    serialization_profile: "card-keepr-ndjson-gzip@1",
+    export_schema_major: 1,
+    catalogue_revision: {
+      id: revisionId,
+      content_sha256: candidateDigest,
+    },
+    published_at: publishedAt,
+    export_created_at: publishedAt,
+    supported_games: ["gundam"],
+    source_freshness: [
+      {
+        game: "gundam",
+        area: "legality-rules",
+        checked_at: publishedAt,
+      },
+    ],
+    components,
+    manifest_sha256: "0".repeat(64),
+  };
+  const manifestDigest = await sha256Text(
+    `${canonicalJson(manifestWithPlaceholder)}\n`,
+  );
+  const manifest = {
+    ...manifestWithPlaceholder,
+    manifest_sha256: manifestDigest,
+  };
+  const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
+  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+  const componentKey =
+    `catalogue-exports/${revisionId}/components/` +
+    `${compressedLegalityDigest}.ndjson.gz`;
+
+  await testEnv.CATALOGUE_EXPORTS.put(manifestKey, manifestBytes, {
+    httpMetadata: { contentType: "application/json" },
+  });
+  await testEnv.CATALOGUE_EXPORTS.put(
+    componentKey,
+    compressedLegalityBytes,
+    {
+      httpMetadata: {
+        contentType: "application/x-ndjson",
+        contentEncoding: "gzip",
+      },
+    },
+  );
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (
+        'run_historical_v1', 'publishing', '["gundam"]', ?,
+        'catrev_spine_000', NULL, 'historical-v1-seed', ?, ?,
+        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+      )`,
+    ).bind(
+      publishedAt,
+      candidateDigest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: candidateDigest,
+        expected_current_revision_id: "catrev_spine_000",
+        approved_at: publishedAt,
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = 'run_historical_v1'
+       WHERE singleton = 1`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, 'run_historical_v1', ?, ?, 'catrev_spine_000', ?)`,
+    ).bind(revisionId, publishedAt, candidateDigest, candidateDigest),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_exports (
+        catalogue_revision_id, manifest_key, manifest_digest, verified
+      ) VALUES (?, ?, ?, 1)`,
+    ).bind(revisionId, manifestKey, manifestDigest),
+  ]);
+
+  const authenticatedRequest = (path: string) =>
+    new Request(`https://card-keepr.invalid${path}`, {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "cf-connecting-ip": "203.0.113.31",
+      },
+    });
+  const manifestPath = `/v1/catalogue-exports/${revisionId}`;
+  const firstManifestResponse = await exports.default.fetch(
+    authenticatedRequest(manifestPath),
+  );
+  const secondManifestResponse = await exports.default.fetch(
+    authenticatedRequest(manifestPath),
+  );
+  expect(firstManifestResponse.status).toBe(200);
+  expect(secondManifestResponse.status).toBe(200);
+  const firstManifestDocument = await firstManifestResponse.json<{
+    data: unknown;
+  }>();
+  const secondManifestDocument = await secondManifestResponse.json<{
+    data: unknown;
+  }>();
+  expect(firstManifestDocument.data).toEqual(manifest);
+  expect(secondManifestDocument.data).toEqual(manifest);
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  const validateManifest = ajv.compile(exportManifestSchemaV1);
+  expect(
+    validateManifest(firstManifestDocument.data),
+    JSON.stringify(validateManifest.errors),
+  ).toBe(true);
+  ajv.addSchema(exportRecordSchemaV1);
+  const validateLegalityRule = ajv.getSchema(
+    `${exportRecordSchemaV1.$id}#/$defs/LegalityRuleRecord`,
+  );
+  expect(validateLegalityRule).toBeDefined();
+  expect(
+    validateLegalityRule!(legalityRule),
+    JSON.stringify(validateLegalityRule!.errors),
+  ).toBe(true);
+
+  const componentPath = `${manifestPath}/components/legality-rules`;
+  const firstComponentResponse = await exports.default.fetch(
+    authenticatedRequest(componentPath),
+  );
+  const secondComponentResponse = await exports.default.fetch(
+    authenticatedRequest(componentPath),
+  );
+  expect(firstComponentResponse.status).toBe(200);
+  expect(secondComponentResponse.status).toBe(200);
+  const firstComponentBytes = new Uint8Array(
+    await firstComponentResponse.arrayBuffer(),
+  );
+  const secondComponentBytes = new Uint8Array(
+    await secondComponentResponse.arrayBuffer(),
+  );
+  expect(firstComponentBytes).toEqual(compressedLegalityBytes);
+  expect(secondComponentBytes).toEqual(compressedLegalityBytes);
+  const decompressed = new Response(firstComponentBytes).body!.pipeThrough(
+    new DecompressionStream("gzip"),
+  );
+  await expect(new Response(decompressed).text()).resolves.toBe(
+    `${canonicalJson(legalityRule)}\n`,
+  );
 });
 
 test("Legality Status rejects a malformed Card identity before lookup", async () => {

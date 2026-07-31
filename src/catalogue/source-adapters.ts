@@ -54,6 +54,8 @@ const parseSourceDocument = (document: unknown): readonly unknown[] => {
     const record = document as {
       cards?: unknown;
       product_surfaces?: unknown;
+      legality_rules?: unknown;
+      legality_completeness?: unknown;
     };
     if (
       Array.isArray(record.cards) ||
@@ -64,6 +66,13 @@ const parseSourceDocument = (document: unknown): readonly unknown[] => {
         ...(Array.isArray(record.product_surfaces)
           ? record.product_surfaces
           : []),
+        ...(record.legality_rules === undefined
+          ? []
+          : [{
+              observation_type: "legality_rules",
+              legality_rules: record.legality_rules,
+              completeness: record.legality_completeness,
+            }]),
       ];
     }
   }
