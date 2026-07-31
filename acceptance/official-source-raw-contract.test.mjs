@@ -163,6 +163,11 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     observations[0].identity_evidence.artwork_fingerprint,
     /https?:|OP99-001\.png|#OP99-001/u,
   );
+  assert.equal(
+    observations[0].identity_evidence.demonstrably_novel,
+    false,
+    "raw parser output cannot prove an appearance is novel before its image bytes are retained and verified",
+  );
   assert.match(
     observations[0].identity_evidence.printed_fields_digest,
     /Official effect\\nSecond section/u,
@@ -583,6 +588,127 @@ test("explicit Product links produce typed memberships and relationships", () =>
         },
       ),
     /requested Card identity does not match/iu,
+  );
+});
+
+test("real Digimon and Gundam details close every known profile field and reject malformed numerics", () => {
+  const byLineage = (lineage) =>
+    officialRawAdapterContracts.find(
+      ({ sourceLineage }) => sourceLineage === lineage,
+    );
+  const digimon = byLineage("digimon-en");
+  const digimonHtml = `
+    <h1>Linked Test Digimon</h1>
+    <dl><dt>Card Number</dt><dd>BT99-002</dd></dl>
+    <dl><dt>Card Type</dt><dd>Digimon</dd></dl>
+    <dl><dt>Color</dt><dd>Red/Blue</dd></dl>
+    <dl><dt>Level</dt><dd>6</dd></dl>
+    <dl><dt>Play Cost</dt><dd>1,000</dd></dl>
+    <dl><dt>Use Cost</dt><dd>-</dd></dl>
+    <dl><dt>DP</dt><dd>12,000</dd></dl>
+    <dl><dt>Form</dt><dd>Mega</dd></dl>
+    <dl><dt>Attribute</dt><dd>Vaccine</dd></dl>
+    <dl><dt>Type</dt><dd>Test Type</dd></dl>
+    <dl><dt>Digivolution Cost</dt><dd>Blue Lv.5: 4</dd></dl>
+    <dl><dt>Effect</dt><dd>Main effect</dd></dl>
+    <dl><dt>Inherited Effect</dt><dd>Inherited effect</dd></dl>
+    <dl><dt>Security Effect</dt><dd>Security effect</dd></dl>
+    <dl><dt>DUAL Color</dt><dd>Red/Blue</dd></dl>
+    <dl><dt>DUAL Cost</dt><dd>7</dd></dl>
+    <dl><dt>[DUAL Effect]</dt><dd>Dual effect</dd></dl>
+    <dl><dt>[DUAL Rule]</dt><dd>Dual rule</dd></dl>
+    <dl><dt>[Link Condition]</dt><dd>Link condition</dd></dl>
+    <dl><dt>[Link DP]</dt><dd>3,000</dd></dl>
+    <dl><dt>[Link Effect]</dt><dd>Link effect</dd></dl>
+    <dl><dt>[Special Digivolution Condition]</dt><dd>Special condition</dd></dl>
+    <dl><dt>Alternative Art</dt><dd>Yes</dd></dl>
+    <img class="card-image" src="/images/cards/BT99-002.png">
+  `;
+  const digimonContext = {
+    mediaType: "text/html",
+    url: "https://world.digimoncard.com/cards/detail.php?card=BT99-002",
+    requestId: `digimon-en:detail:${"e".repeat(64)}`,
+  };
+  const digimonObservation = digimon.parseBytes(
+    new TextEncoder().encode(digimonHtml),
+    digimonContext,
+  )[0];
+  assert.deepEqual(digimonObservation.card.game_data.attributes, {
+    card_type: "digimon",
+    colours: ["red", "blue"],
+    level: 6,
+    play_cost: 1000,
+    use_cost: null,
+    dp: 12000,
+    form: "Mega",
+    attribute: "Vaccine",
+    traits: ["Test Type"],
+    digivolution_requirements: [{
+      index: 1,
+      from_level: 5,
+      colours: ["blue"],
+      cost: 4,
+      raw_condition: "Blue Lv.5: 4",
+    }],
+    text_sections: [
+      { kind: "effect", text: "Main effect" },
+      { kind: "inherited_effect", text: "Inherited effect" },
+      { kind: "security_effect", text: "Security effect" },
+      { kind: "dual_effect", text: "Dual effect" },
+      { kind: "dual_rule", text: "Dual rule" },
+      { kind: "link_condition", text: "Link condition" },
+      { kind: "link_effect", text: "Link effect" },
+      {
+        kind: "special_digivolution_condition",
+        text: "Special condition",
+      },
+    ],
+    dual_colours: ["red", "blue"],
+    dual_cost: 7,
+    link_dp: 3000,
+  });
+  assert.deepEqual(
+    digimonObservation.printing.game_data.attributes,
+    { alternative_art: true },
+  );
+  assert.throws(
+    () =>
+      digimon.parseBytes(
+        new TextEncoder().encode(
+          digimonHtml.replace("<dd>12,000</dd>", "<dd>12,00</dd>"),
+        ),
+        digimonContext,
+      ),
+    /numeric token/iu,
+  );
+
+  const gundam = byLineage("gundam-en-asia");
+  const gundamObservation = gundam.parseBytes(
+    new TextEncoder().encode(`
+      <h1>Test Gundam Unit</h1>
+      <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
+      <dl><dt>Type</dt><dd>Unit</dd></dl>
+      <dl><dt>Color</dt><dd>Blue</dd></dl>
+      <dl><dt>Level</dt><dd>5</dd></dl>
+      <dl><dt>Cost</dt><dd>1,000</dd></dl>
+      <dl><dt>Effect</dt><dd>Unit effect</dd></dl>
+      <dl><dt>AP</dt><dd>4,000</dd></dl>
+      <dl><dt>HP</dt><dd>5,000</dd></dl>
+      <dl><dt>Alternate Art</dt><dd>Yes</dd></dl>
+      <img class="card-image" src="/asia-en/images/cards/GD99-001.png">
+    `),
+    {
+      mediaType: "text/html",
+      url: "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001",
+      requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
+    },
+  )[0];
+  assert.equal(gundamObservation.card.game_data.attributes.cost, 1000);
+  assert.equal(gundamObservation.card.game_data.attributes.ap, 4000);
+  assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
+  assert.deepEqual(
+    gundamObservation.printing.game_data.attributes,
+    { alternate_art: true },
   );
 });
 

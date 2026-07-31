@@ -25,6 +25,7 @@ const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
+let digimonArtworkVariant: "base" | "alternate" = "base";
 const ambiguousD1Tables = new Map<string, string>();
 const unconfirmedD1Drops = new Set<string>();
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
@@ -321,6 +322,79 @@ export default defineConfig({
             url.hostname.endsWith("digimoncard.com") ||
             url.hostname.endsWith("gundam-gcg.com")
           ) {
+            const artworkMarker = request.headers.get("user-agent");
+            if (
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/cards/index.php" &&
+              artworkMarker?.startsWith("card-keepr-artwork-digest-")
+            ) {
+              digimonArtworkVariant = artworkMarker.endsWith("alternate")
+                ? "alternate"
+                : "base";
+              return new Response(
+                `<html><title>BANDAI DIGIMON CARD publication</title>
+                  <main><article>
+                    <a href="/cards/detail.php?card=BT99-900">
+                      Test Digimon detail
+                    </a>
+                  </article></main></html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"digimon-artwork-list-${digimonArtworkVariant}"`,
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/cards/detail.php" &&
+              url.searchParams.get("card") === "BT99-900"
+            ) {
+              const locator = digimonArtworkVariant === "alternate"
+                ? "BT99-900_alt"
+                : "BT99-900";
+              return new Response(
+                `<html data-card-id="${locator}">
+                  <h1>Digest Test Digimon</h1>
+                  <dl><dt>Card Number</dt><dd>BT99-900</dd></dl>
+                  <dl><dt>Card Type</dt><dd>Digimon</dd></dl>
+                  <dl><dt>Color</dt><dd>Blue</dd></dl>
+                  <dl><dt>Level</dt><dd>4</dd></dl>
+                  <dl><dt>Play Cost</dt><dd>5</dd></dl>
+                  <dl><dt>DP</dt><dd>6,000</dd></dl>
+                  <dl><dt>Effect</dt><dd>Digest test effect</dd></dl>
+                  <dl><dt>Alternative Art</dt><dd>${
+                    digimonArtworkVariant === "alternate" ? "Yes" : "No"
+                  }</dd></dl>
+                  <img class="card-image"
+                    src="https://images.digimoncard.com/cards/BT99-900.png">
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"digimon-artwork-detail-${digimonArtworkVariant}"`,
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "images.digimoncard.com" &&
+              url.pathname === "/cards/BT99-900.png"
+            ) {
+              const bytes = new Uint8Array([
+                0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+                0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                digimonArtworkVariant === "alternate" ? 0x02 : 0x01,
+              ]);
+              return new Response(bytes, {
+                headers: {
+                  "content-type": "image/png",
+                  etag: `"digimon-artwork-image-${digimonArtworkVariant}"`,
+                },
+              });
+            }
             return new Response(
               "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main><article>Complete official structural policy entry.</article></main></html>",
               {

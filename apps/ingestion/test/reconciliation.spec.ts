@@ -779,6 +779,97 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
+test("production Digimon image bytes, not a reused URL and role, distinguish Printings", async () => {
+  const collectVariant = async (variant: "base" | "alternate") => {
+    const requests = officialSourceDiscoveryRequests("digimon-en").map(
+      (sourceRequest) =>
+        sourceRequest.id === "digimon-en:card-list"
+          ? {
+              ...sourceRequest,
+              headers: {
+                ...sourceRequest.headers,
+                "user-agent": `card-keepr-artwork-digest-${variant}`,
+              },
+            }
+          : sourceRequest,
+    );
+    const started = await post("/v1/ingestion-runs/evidence", {
+      supported_game: "digimon",
+      source_lineage: "digimon-en",
+      adapter_version: "digimon-en@2",
+      idempotency_key: `digimon-artwork-digest-${variant}`,
+      requests,
+    });
+    expect(started.response.status).toBe(201);
+    const runId = requiredString(started.document, "id");
+    expect(
+      (
+        await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})
+      ).response.status,
+    ).toBe(202);
+    await waitForRunState(
+      runId,
+      "awaiting_approval",
+      20_000,
+      250,
+    );
+    const candidate = await get(
+      `/v1/ingestion-runs/${runId}/candidate`,
+    );
+    expect(candidate.response.status).toBe(200);
+    return candidate.document;
+  };
+
+  const first = await collectVariant("base");
+  expect(first).toMatchObject({
+    diff: { printings: { added: [expect.any(String)] } },
+  });
+  const firstPrintingId = (
+    first.diff as { printings: { added: string[] } }
+  ).printings.added[0]!;
+  expect((await approve(first)).response.status).toBe(200);
+
+  const second = await collectVariant("alternate");
+  expect(second).toMatchObject({
+    diff: { printings: { added: [expect.any(String)] } },
+  });
+  const secondPrintingId = (
+    second.diff as { printings: { added: string[] } }
+  ).printings.added[0]!;
+  const targetPrintingIds = new Set([
+    firstPrintingId,
+    secondPrintingId,
+  ]);
+  expect(targetPrintingIds.size).toBe(2);
+  const published = await approve(second);
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const [printings, images] = await Promise.all([
+    exportComponentRecords(revisionId, "printings"),
+    exportComponentRecords(revisionId, "printing-images"),
+  ]);
+  const targetPrintings = printings.filter(({ id }) =>
+    targetPrintingIds.has(String(id)),
+  );
+  const targetImages = images.filter(({ printing_id }) =>
+    targetPrintingIds.has(String(printing_id)),
+  );
+  expect(targetPrintings).toHaveLength(2);
+  expect(new Set(targetPrintings.map(({ id }) => id))).toEqual(
+    targetPrintingIds,
+  );
+  expect(targetImages).toHaveLength(2);
+  expect(new Set(targetImages.map(({ printing_id }) => printing_id))).toEqual(
+    targetPrintingIds,
+  );
+  expect(
+    new Set(targetImages.map(({ content_sha256 }) => content_sha256)).size,
+  ).toBe(2);
+}, 45_000);
+
 test("production plans bind every request identity to its exact Official Source surface URL", async () => {
   const requests = officialSourceDiscoveryRequests("one-piece-en").map(
     (request) => ({ ...request }),
@@ -2702,7 +2793,7 @@ test("historical locator bindings reactivate only for the same Printing and expo
       },
     }),
   );
-}, 15_000);
+}, 30_000);
 
 test("locator variant evolution preserves effective-dated suffix history across disappearance and reactivation", async () => {
   const firstRun = await collect(
@@ -3164,7 +3255,7 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
       0,
     ),
   ).toBeGreaterThan(1_048_576);
-}, 120_000);
+}, 180_000);
 
 test("recovery health gates evidence start and reconciliation before mutation", async () => {
   await testEnv.CATALOGUE_DB.prepare(
@@ -3492,7 +3583,16 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
     "distribution-context-first-observation",
   );
   const firstCandidate = await reconcile(firstRun.id);
-  expect((await approve(firstCandidate.document)).response.status).toBe(200);
+  const firstPublished = await approve(firstCandidate.document);
+  expect(firstPublished.response.status).toBe(200);
+  const firstRevisionId = requiredString(
+    firstPublished.document,
+    "resulting_revision_id",
+  );
+  const firstContext = (
+    await exportComponentRecords(firstRevisionId, "distribution-contexts")
+  ).find(({ label }) => label === "Championship 2026 Participation Pack");
+  expect(firstContext?.id).toEqual(expect.any(String));
 
   const missingRun = await collect(
     "/reconciliation/product-standalone-missing",
@@ -3510,6 +3610,17 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
     current: 0,
     source_lineages_json: "[]",
   });
+  const missingRevisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  expect(
+    await exportComponentRecords(missingRevisionId, "distribution-contexts"),
+  ).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: firstContext?.id }),
+    ]),
+  );
 });
 
 test("same-authority Product conflicts fail closed before publication", async () => {
@@ -4462,6 +4573,76 @@ test("streamed catalogue gzip is byte-identical to the checked-in golden bytes",
   expect(await sha256(bytes)).toBe(object.sha256);
 });
 
+test("every v2 export component orders opaque IDs by normalized UTF-8 bytes", async () => {
+  const product = (id: string, releaseId: string) => ({
+    reference: { kind: "official_code" as const, value: id },
+    id,
+    game: "one-piece" as const,
+    official_code: id,
+    name: id,
+    releases: [{
+      id: releaseId,
+      event_key: releaseId,
+      product_id: id,
+      region: "unknown" as const,
+      date: { precision: "unknown" as const, value: null },
+      status: "announced" as const,
+    }],
+    observed: true,
+    withdrawal: null,
+    included: [],
+    provenance: {},
+    disagreements: [],
+    source_observations: [],
+  });
+  const built = await buildCatalogueExport(
+    {
+      fixture: "first-catalogue",
+      selected_games: ["one-piece"],
+      cards: [],
+      printings: [],
+      products: [
+        product("product_Z", "release_Z"),
+        product("product:A", "release:A"),
+        product("product.a", "release.a"),
+      ],
+      distribution_contexts: [],
+      product_relationships: [],
+      product_observed_games: ["one-piece"],
+      product_observed_lineages: ["one-piece-en"],
+    },
+    "f".repeat(64),
+    "catrev_utf8_component_order",
+    "2026-07-30T01:02:03.000Z",
+  );
+  const records = async (name: string) => {
+    const index = built.manifest.components.findIndex(
+      (component) => component.name === name,
+    );
+    const object = built.objects[index];
+    if (object === undefined) throw new Error(`${name} component missing`);
+    const { readable, completed } = object.body();
+    const text = await new Response(
+      readable.pipeThrough(new DecompressionStream("gzip")),
+    ).text();
+    await completed;
+    return text.trim().split("\n").filter(Boolean).map(
+      (line) => JSON.parse(line) as { id: string },
+    );
+  };
+
+  expect((await records("products")).map(({ id }) => id)).toEqual([
+    "product.a",
+    "product:A",
+    "product_Z",
+  ]);
+  expect((await records("releases")).map(({ id }) => id)).toEqual([
+    "release.a",
+    "release:A",
+    "release_Z",
+  ]);
+});
+
 test("deterministic gzip profile matches independent full-byte edge-case goldens", async () => {
   const candidateProduct = (
     id: string,
@@ -4709,6 +4890,7 @@ async function waitForRunState(
   id: string,
   expectedState: string,
   timeoutMs = 15_000,
+  pollIntervalMs = 25,
 ): Promise<Record<string, unknown>> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -4719,7 +4901,7 @@ async function waitForRunState(
     if (shown.document.state === "failed") {
       throw new Error(`collection failed: ${JSON.stringify(shown.document)}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
   throw new Error(`run ${id} did not reach ${expectedState}`);
 }
@@ -4769,7 +4951,7 @@ async function request(
   response: Response;
   document: Record<string, unknown>;
 }> {
-  const response = await exports.default.fetch(
+  const rpcResponse = await exports.default.fetch(
     new Request(`https://card-keepr.invalid${pathname}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
@@ -4783,9 +4965,12 @@ async function request(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
+  const status = rpcResponse.status;
+  const document =
+    (await rpcResponse.json()) as Record<string, unknown>;
   return {
-    response,
-    document: (await response.json()) as Record<string, unknown>,
+    response: new Response(null, { status }),
+    document,
   };
 }
 

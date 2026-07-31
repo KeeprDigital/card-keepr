@@ -499,21 +499,33 @@ test("Printing Image requests use their independent per-IP limit", async (t) => 
     api,
   );
 
-  const request = () =>
+  const request = (clientIp) =>
     fetch(
       `http://127.0.0.1:${apiPort}/v1/printing-images/image_test/content`,
       {
         headers: {
           authorization: `Bearer ${apiKey}`,
-          "cf-connecting-ip": "192.0.2.20",
+          "cf-connecting-ip": clientIp,
         },
       },
     );
-  for (let requestNumber = 1; requestNumber <= 1_200; requestNumber += 1) {
-    const response = await request();
-    assert.equal(response.status, 404, `request ${requestNumber}`);
+  let response;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const clientIp = `192.0.2.${20 + attempt}`;
+    const startingEpoch = Math.floor(Date.now() / 60_000);
+    for (let requestNumber = 1; requestNumber <= 1_200; requestNumber += 1) {
+      response = await request(clientIp);
+      assert.equal(response.status, 404, `request ${requestNumber}`);
+    }
+    response = await request(clientIp);
+    if (response.status === 429) break;
+    assert.notEqual(
+      Math.floor(Date.now() / 60_000),
+      startingEpoch,
+      "the Printing Image limit was not enforced within one rate-limit epoch",
+    );
   }
-  const response = await request();
+  assert.ok(response);
   const problem = await response.json();
 
   assert.equal(response.status, 429);

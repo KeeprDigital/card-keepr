@@ -1039,7 +1039,7 @@ function parseBandaiCardDetail(
     ? format === "fusion-world" || format === "gundam"
       ? ["colourless"]
       : []
-    : colour.split(/[\/,]/u).map((value) => value.trim().toLowerCase());
+    : colourValues(colour);
   const attributes =
     format === "one-piece"
       ? {
@@ -1089,7 +1089,7 @@ function parseBandaiCardDetail(
           ? {
               card_type: normalizedType,
               colours,
-              level: integerOrNull(field(["Level"])),
+              level: integerOrNull(field(["Level", "Lv", "Lv."])),
               play_cost: integerOrNull(field(["Play Cost"])),
               use_cost: integerOrNull(field(["Use Cost"])),
               dp: integerOrNull(field(["DP"])),
@@ -1102,11 +1102,14 @@ function parseBandaiCardDetail(
                   ["Digivolve", "Digivolution Cost", "Evolution Cost"],
                 ),
               ),
-              text_sections: [
-                ...(rules === null
-                  ? []
-                  : [{ kind: "effect", text: rules }]),
-              ],
+              text_sections: digimonTextSections(pairs),
+              dual_colours: colourValues(
+                field(["DUAL Color", "Dual Color"]),
+              ),
+              dual_cost: integerOrNull(
+                field(["DUAL Cost", "Dual Cost"]),
+              ),
+              link_dp: integerOrNull(field(["[Link DP]", "Link DP"])),
             }
           : {
               card_type: normalizedType,
@@ -1159,9 +1162,19 @@ function parseBandaiCardDetail(
       normalizedRarity: field(["Rarity"])?.toLowerCase() ?? null,
       attributes:
         format === "digimon"
-          ? { alternative_art: false }
+          ? {
+              alternative_art: officialBoolean(
+                field(["Alternative Art"]),
+                "Digimon Alternative Art",
+              ),
+            }
           : format === "gundam"
-            ? { alternate_art: false }
+            ? {
+                alternate_art: officialBoolean(
+                  field(["Alternate Art", "Alternative Art"]),
+                  "Gundam Alternate Art",
+                ),
+              }
             : format === "one-piece"
               ? { illustration_types: [] }
               : {},
@@ -1232,6 +1245,21 @@ function parseBandaiCardDetail(
     "Digivolve",
     "Digivolution Cost",
     "Evolution Cost",
+    "Inherited Effect",
+    "Security Effect",
+    "DUAL Color",
+    "Dual Color",
+    "DUAL Cost",
+    "Dual Cost",
+    "[DUAL Effect]",
+    "[DUAL Rule]",
+    "[Link Condition]",
+    "[Link DP]",
+    "Link DP",
+    "[Link Effect]",
+    "[Special Digivolution Condition]",
+    "Alternative Art",
+    "Alternate Art",
     "Zone",
     "Trait",
     "Link",
@@ -1775,13 +1803,68 @@ function decodeHtmlText(value: string): string {
 
 function integerOrNull(value: string | null): number | null {
   if (value === null || value === "-" || value === "") return null;
-  return /^\d+$/u.test(value) ? Number.parseInt(value, 10) : null;
+  const normalized = value.normalize("NFC").trim();
+  if (
+    !/^\d+$/u.test(normalized) &&
+    !/^\d{1,3}(?:,\d{3})+$/u.test(normalized)
+  ) {
+    throw new Error(`Unrecognized official numeric token: ${value}`);
+  }
+  return Number.parseInt(normalized.replaceAll(",", ""), 10);
 }
 
 function textValues(value: string | null): string[] {
   return value === null || value === "-"
     ? []
     : [...new Set(value.split("/").map((item) => item.trim()).filter(Boolean))];
+}
+
+function colourValues(value: string | null): string[] {
+  if (value === null || value === "-") return [];
+  return [...new Set(
+    value
+      .split(/[\/,]/u)
+      .map((item) => item.normalize("NFC").trim().toLocaleLowerCase())
+      .filter(Boolean),
+  )];
+}
+
+function digimonTextSections(
+  pairs: readonly { label: string; value: string }[],
+): { kind: string; text: string }[] {
+  const kinds = new Map([
+    ["effect", "effect"],
+    ["inherited effect", "inherited_effect"],
+    ["security effect", "security_effect"],
+    ["rule", "rule"],
+    ["[dual effect]", "dual_effect"],
+    ["[dual rule]", "dual_rule"],
+    ["[link condition]", "link_condition"],
+    ["[link effect]", "link_effect"],
+    [
+      "[special digivolution condition]",
+      "special_digivolution_condition",
+    ],
+  ]);
+  return pairs.flatMap(({ label, value }) => {
+    const kind = kinds.get(label.normalize("NFC").trim().toLocaleLowerCase());
+    const text = value.normalize("NFC").trim();
+    return kind === undefined || text.length === 0 || text === "-"
+      ? []
+      : [{ kind, text }];
+  });
+}
+
+function officialBoolean(value: string | null, field: string): boolean {
+  if (value === null) return false;
+  const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
+  if (["yes", "true", "alternative art", "alternate art"].includes(normalized)) {
+    return true;
+  }
+  if (["no", "false", "standard", "base", "-"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`Unrecognized official ${field} value: ${value}`);
 }
 
 function specifiedCosts(
@@ -3439,7 +3522,9 @@ function cardObservation(
               "Official printed fields digest",
             ),
             treatment: "standard",
-            demonstrably_novel: true,
+            // A Source Adapter can declare the image role and URL, but only
+            // retained and digest-verified image bytes can prove novelty.
+            demonstrably_novel: false,
             novelty_basis: {
               kind: "official_printing_image",
               source_url: requiredText(detail.image, "Official image URL"),

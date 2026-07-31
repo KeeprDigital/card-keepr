@@ -1,4 +1,4 @@
-import { sha256 } from "./serialization";
+import { canonicalJson, sha256, sha256Text } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./fixture";
 import { requiredSourceAdapter } from "./source-adapters";
@@ -182,11 +182,12 @@ export async function retainedReconciliationObservation(
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
-  const merged = documents.flatMap((document, index) => {
-    const row = orderedRows[index]!;
-    const request = requests.results[index]!;
-    return document.observations
-      .map((wrapped) => {
+  const merged = (
+    await Promise.all(documents.map(async (document, index) => {
+      const row = orderedRows[index]!;
+      const request = requests.results[index]!;
+      return Promise.all(
+        document.observations.map(async (wrapped) => {
         if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
           throw new Error("Retained Source Observation identity is invalid.");
         }
@@ -199,9 +200,10 @@ export async function retainedReconciliationObservation(
         return {
           ...parseReconciliationObservation(
             wrapped.id,
-            attachRetainedPrintingImages(
+            await attachRetainedPrintingImages(
               wrapped.value,
               retainedImages,
+              row.plan_origin === "production",
             ),
           ),
           sourceObservationSetId: row.observation_set_id,
@@ -217,11 +219,12 @@ export async function retainedReconciliationObservation(
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
         };
-      })
-      .sort((left, right) =>
-        left.sourceObservationId.localeCompare(right.sourceObservationId),
+        }),
       );
-  });
+    }))
+  ).flat().sort((left, right) =>
+    left.sourceObservationId.localeCompare(right.sourceObservationId)
+  );
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -439,7 +442,7 @@ function assertClosedRequestGraph(
   }
 }
 
-function attachRetainedPrintingImages(
+async function attachRetainedPrintingImages(
   value: unknown,
   images: ReadonlyMap<
     string,
@@ -451,7 +454,8 @@ function attachRetainedPrintingImages(
       content_base64: string;
     }
   >,
-): unknown {
+  allowVerifiedNovelty: boolean,
+): Promise<unknown> {
   if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
   const declared = value.appearance_evidence.images;
   if (!Array.isArray(declared)) return value;
@@ -460,11 +464,67 @@ function attachRetainedPrintingImages(
     const retained = images.get(item.source_url);
     return retained === undefined ? item : { ...item, ...retained };
   });
+  const complete =
+    retainedImages.length > 0 &&
+    retainedImages.every((item) =>
+      isRecord(item) &&
+      typeof item.role === "string" &&
+      typeof item.content_sha256 === "string" &&
+      /^[a-f0-9]{64}$/u.test(item.content_sha256)
+    );
+  if (
+    !complete ||
+    !allowVerifiedNovelty ||
+    !isRecord(value.identity_evidence)
+  ) {
+    return {
+      ...value,
+      appearance_evidence: {
+        ...value.appearance_evidence,
+        images: retainedImages,
+      },
+    };
+  }
+  const fingerprint = `official-artwork:${
+    await sha256Text(canonicalJson(
+      retainedImages
+        .map((item) => {
+          if (!isRecord(item)) {
+            throw new Error("Retained Printing Image evidence is invalid.");
+          }
+          return {
+            role: item.role,
+            content_sha256: item.content_sha256,
+          };
+        })
+        .sort((left, right) =>
+          String(left.role).localeCompare(String(right.role))
+        ),
+    ))
+  }`;
+  const firstImage = retainedImages[0]!;
+  if (!isRecord(firstImage) || typeof firstImage.source_url !== "string") {
+    throw new Error("Retained Printing Image source URL is invalid.");
+  }
   return {
     ...value,
+    identity_evidence: {
+      ...value.identity_evidence,
+      artwork_fingerprint: fingerprint,
+      demonstrably_novel: true,
+      novelty_basis: {
+        kind: "official_printing_image",
+        source_url: firstImage.source_url,
+        artwork_fingerprint: fingerprint,
+      },
+    },
     appearance_evidence: {
       ...value.appearance_evidence,
-      images: retainedImages,
+      images: retainedImages.map((item) =>
+        isRecord(item)
+          ? { ...item, artwork_fingerprint: fingerprint }
+          : item
+      ),
     },
   };
 }

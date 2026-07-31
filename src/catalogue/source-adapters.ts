@@ -57,6 +57,18 @@ const parseSourceDocument = (document: unknown): readonly unknown[] => {
   return [document];
 };
 
+const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    !Array.isArray(document) &&
+    Array.isArray((document as { cards?: unknown }).cards)
+  ) {
+    return (document as { cards: unknown[] }).cards;
+  }
+  return [document];
+};
+
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
@@ -82,6 +94,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           gameProfileVersion: "one-piece@1",
           parserContract: "one-piece-card-document@1",
           maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
         {
           adapterVersion: "one-piece-json-document@2",
@@ -89,7 +102,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "one-piece",
           gameProfileVersion: "one-piece@1",
           parserContract: "one-piece-card-document@1",
-          maximumSnapshotBytes: 16 * 1024 * 1024,
+          maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
         {
           adapterVersion: "fusion-world-en@1",
@@ -97,7 +111,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "fusion-world",
           gameProfileVersion: "fusion-world@1",
           parserContract: "fusion-world-card-document@1",
-          maximumSnapshotBytes: 16 * 1024 * 1024,
+          maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
         {
           adapterVersion: "digimon-en@1",
@@ -105,7 +120,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "digimon",
           gameProfileVersion: "digimon@1",
           parserContract: "digimon-card-document@1",
-          maximumSnapshotBytes: 16 * 1024 * 1024,
+          maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
         {
           adapterVersion: "gundam-en-asia@1",
@@ -113,7 +129,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "gundam-card-document@1",
-          maximumSnapshotBytes: 16 * 1024 * 1024,
+          maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
         {
           adapterVersion: "gundam-en-us@1",
@@ -121,7 +138,8 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "gundam-card-document@1",
-          maximumSnapshotBytes: 16 * 1024 * 1024,
+          maximumSnapshotBytes: 1024 * 1024,
+          parse: parsePinnedCardDocument,
         },
       ].map((adapter) => ({
         ...adapter,

@@ -93,9 +93,9 @@ export function utf8(value: string): Uint8Array {
   return encoder.encode(value);
 }
 
-function compareUtf8(left: string, right: string): number {
-  const leftBytes = encoder.encode(left);
-  const rightBytes = encoder.encode(right);
+export function compareUtf8(left: string, right: string): number {
+  const leftBytes = encoder.encode(left.normalize("NFC"));
+  const rightBytes = encoder.encode(right.normalize("NFC"));
   const sharedLength = Math.min(leftBytes.length, rightBytes.length);
   for (let index = 0; index < sharedLength; index += 1) {
     const difference = leftBytes[index]! - rightBytes[index]!;

@@ -12,6 +12,7 @@ import {
 } from "./export-validation";
 import {
   canonicalJson,
+  compareUtf8,
   sha256,
   sha256Text,
   utf8,
@@ -134,7 +135,7 @@ export async function buildCatalogueExport(
   const objects: ExportObject[] = [];
 
   for (const [name, schemaDefinition, order] of componentDefinitions) {
-    const records = recordFactories[name];
+    const records = orderedExportRecords(recordFactories[name], order);
     const analysis = await analyseComponent(records);
     const key = `catalogue-exports/${catalogueRevisionId}/components/${analysis.compressedSha256}.ndjson.gz`;
     components.push({
@@ -228,6 +229,29 @@ export async function buildCatalogueExport(
 }
 
 type ExportRecordFactory = () => Iterable<unknown>;
+
+function orderedExportRecords(
+  records: ExportRecordFactory,
+  order: "id:utf8" | "profile:utf8",
+): ExportRecordFactory {
+  const field = order === "id:utf8" ? "id" : "profile";
+  return () =>
+    [...records()].sort((left, right) =>
+      compareUtf8(exportOrderValue(left, field), exportOrderValue(right, field))
+    );
+}
+
+function exportOrderValue(value: unknown, field: "id" | "profile"): string {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    typeof (value as Record<string, unknown>)[field] !== "string"
+  ) {
+    throw new Error(`Catalogue Export record has no ${field} ordering key.`);
+  }
+  return (value as Record<string, string>)[field]!;
+}
 
 async function analyseComponent(
   records: ExportRecordFactory,
@@ -499,7 +523,8 @@ async function exportRecordFactories(
     identifiedRelationships
       .filter(
         ({ relationship }) =>
-          relationship.relationship_kind === "distribution_context",
+          relationship.relationship_kind === "distribution_context" &&
+          relationship.current,
       )
       .map(({ card, relationship, targetId }) => ({
         type: "distribution_context",
@@ -511,14 +536,16 @@ async function exportRecordFactories(
       }));
   const distributionContexts = uniqueById([
     ...inferredDistributionContexts,
-    ...(candidate.distribution_contexts ?? []).map((context) => ({
-      type: "distribution_context" as const,
-      id: context.id,
-      game: context.game,
-      kind: context.kind,
-      label: context.label,
-      product_id: context.product_id,
-    })),
+    ...(candidate.distribution_contexts ?? [])
+      .filter((context) => context.observed)
+      .map((context) => ({
+        type: "distribution_context" as const,
+        id: context.id,
+        game: context.game,
+        kind: context.kind,
+        label: context.label,
+        product_id: context.product_id,
+      })),
   ]);
   return {
     "supported-games": () => candidate.selected_games.map((game) => ({
@@ -590,7 +617,7 @@ async function exportRecordFactories(
           ...release,
         })),
       )
-      .sort((left, right) => left.id.localeCompare(right.id)),
+      .sort((left, right) => compareUtf8(left.id, right.id)),
     "distribution-contexts": () => distributionContexts,
     errata: () => [],
     "legality-rules": () => [],
@@ -668,7 +695,7 @@ function inferredProductLifecycleKey(
 
 function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
   return [...new Map(values.map((value) => [value.id, value])).values()].sort(
-    (left, right) => left.id.localeCompare(right.id),
+    (left, right) => compareUtf8(left.id, right.id),
   );
 }
 

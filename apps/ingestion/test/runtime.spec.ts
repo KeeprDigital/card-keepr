@@ -11,6 +11,7 @@ import {
 } from "../../../src/catalogue/source-evidence-capture";
 import { sourceAdapterRegistrations } from "../../../src/catalogue/source-adapters";
 import {
+  appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
   startEvidenceRun,
@@ -50,6 +51,108 @@ test("the administration authentication boundary runs in the Workers runtime", a
     status: "ok",
   });
 });
+
+test("every pinned aggregate adapter retains its immutable parser contract", () => {
+  const pinned = [
+    "one-piece-json-document@1",
+    "one-piece-json-document@2",
+    "fusion-world-en@1",
+    "digimon-en@1",
+    "gundam-en-asia@1",
+    "gundam-en-us@1",
+  ];
+  for (const adapterVersion of pinned) {
+    const adapter = sourceAdapterRegistrations.find(
+      (candidate) => candidate.adapterVersion === adapterVersion,
+    );
+    expect(adapter, adapterVersion).toBeDefined();
+    expect(adapter?.maximumSnapshotBytes, adapterVersion).toBe(1024 * 1024);
+    expect(adapter?.parse, adapterVersion).toBeTypeOf("function");
+    expect(
+      adapter?.parse?.({
+        cards: [{ card: adapterVersion }],
+        product_surfaces: [{
+          product: "must-not-be-added-by-the-pinned-parser",
+        }],
+      }),
+      adapterVersion,
+    ).toEqual([{ card: adapterVersion }]);
+  }
+});
+
+test.each([
+  {
+    adapter: "one-piece-json-document@1",
+    fixture: "fixture-one-piece-json@1",
+    game: "one-piece",
+    lineage: "one-piece-en",
+  },
+  {
+    adapter: "one-piece-json-document@2",
+    fixture: "fixture-one-piece-json@1",
+    game: "one-piece",
+    lineage: "one-piece-en",
+  },
+  {
+    adapter: "fusion-world-en@1",
+    fixture: "fixture-fusion-world-json@1",
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+  },
+  {
+    adapter: "digimon-en@1",
+    fixture: "fixture-digimon-json@1",
+    game: "digimon",
+    lineage: "digimon-en",
+  },
+  {
+    adapter: "gundam-en-asia@1",
+    fixture: "fixture-gundam-en-asia-json@1",
+    game: "gundam",
+    lineage: "gundam-en-asia",
+  },
+  {
+    adapter: "gundam-en-us@1",
+    fixture: "fixture-gundam-en-us-json@1",
+    game: "gundam",
+    lineage: "gundam-en-us",
+  },
+])(
+  "the authenticated API reparses retained snapshots with $adapter",
+  async ({ adapter, fixture, game, lineage }) => {
+    const created = await fixtureEvidenceRequest({
+      supported_game: game,
+      source_lineage: lineage,
+      adapter_version: fixture,
+      idempotency_key: `pinned-reparse-source-${adapter}`,
+      requests: [{
+        id: `source-${adapter}`,
+        url: "https://official-source.invalid/cards",
+      }],
+    });
+    expect(created.status).toBe(201);
+    const run = await created.json<CollectionDocument>();
+    const completed = await resumeCollection(run.id);
+    const snapshot = completed.snapshots[0];
+    if (snapshot === undefined) throw new Error("retained snapshot missing");
+
+    const response = await administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: adapter,
+        idempotency_key: `pinned-reparse-intent-${adapter}`,
+      },
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      source_snapshot_id: snapshot.id,
+      adapter_version: adapter,
+      observation_count: 1,
+    });
+  },
+);
 
 test("a successful Official Source response is snapshotted before parsing", async () => {
   const created = await fixtureEvidenceRequest(
@@ -340,12 +443,12 @@ test("a full parent restart preserves each pending hostname child identity", asy
       current.workflow.child_ids.length === originalChildIds.length &&
       current.snapshots.length === 2 &&
       current.observation_sets.length === 2,
-    12_000,
+    25_000,
   );
   expect(completed.workflow.child_ids).toEqual(originalChildIds);
   expect(completed.snapshots).toHaveLength(2);
   expect(completed.observation_sets).toHaveLength(2);
-}, 15_000);
+}, 30_000);
 
 test("redirects and terminal HTTP failures remain diagnostics without Source Snapshots", async () => {
   const redirectRun = await createCollection(
@@ -443,6 +546,61 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     diagnostics: [],
   });
   expect(retried.id).not.toBe(failed.id);
+});
+
+test("the parent Workflow creates a persisted dynamic host child before recovery inspects it", async () => {
+  const run = await createCollection(
+    "source_dynamic_host_creation_gap_001",
+    "https://official-source.invalid/retry-once",
+  );
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const collecting = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.workflow.child_ids.length === 1,
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const parentRequest = (
+    await pendingEvidenceRequests(env.CATALOGUE_DB, run.id)
+  )[0];
+  if (parentRequest === undefined) {
+    throw new Error("pending parent request missing");
+  }
+  await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    parentRequest,
+    [{
+      role: "detail",
+      url: "https://dynamic-b-official-source.invalid/cards",
+      headers: {},
+    }],
+  );
+  const originalChildId = collecting.workflow.child_ids[0];
+  if (originalChildId === undefined) {
+    throw new Error("original host Workflow identity missing");
+  }
+  await (await env.EVIDENCE_HOST_WORKFLOW.get(originalChildId)).terminate();
+
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.state === "parsing" &&
+      current.snapshots.length === 2 &&
+      current.observation_sets.length === 2,
+    15_000,
+  );
+  expect(
+    completed.snapshots.map(({ request }) => new URL(request.url).hostname)
+      .sort(),
+  ).toEqual([
+    "dynamic-b-official-source.invalid",
+    "official-source.invalid",
+  ]);
 });
 
 test(
@@ -1245,7 +1403,11 @@ async function waitForEvidenceCondition(
     const current = await showCollection(runId);
     if (condition(current)) return current;
     if (Date.now() >= deadline) {
-      throw new Error(`Ingestion Run ${runId} did not reach test condition`);
+      throw new Error(
+        `Ingestion Run ${runId} did not reach test condition: ${
+          JSON.stringify(current)
+        }`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }

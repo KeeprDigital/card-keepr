@@ -159,6 +159,18 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
           `recover pending hostname workflows stage ${barrierStage}`,
           deterministicDatabaseStep,
           async () => {
+            // createBatch is idempotent for deterministic IDs. A request can
+            // be committed before the child creation RPC succeeds, so every
+            // recovery pass closes that creation gap before reading status.
+            await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
+              pendingChildren.map((child) => ({
+                id: child.id,
+                params: {
+                  ingestion_run_id: runId,
+                  hostname: child.hostname,
+                },
+              })),
+            );
             const children = await Promise.all(
               pendingChildren.map((child) =>
                 this.env.EVIDENCE_HOST_WORKFLOW.get(child.id),
