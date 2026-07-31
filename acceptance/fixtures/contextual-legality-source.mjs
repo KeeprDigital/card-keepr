@@ -2,6 +2,11 @@ export function contextualLegalityDocument(
   region,
   representable = true,
   membershipVariant = null,
+  {
+    copyLimit = null,
+    rules: rulesVariant = null,
+    semantics = null,
+  } = {},
 ) {
   const numbers =
     region === "EN-ASIA"
@@ -34,6 +39,26 @@ export function contextualLegalityDocument(
             attribute: "colours",
             includes_any: ["bluue"],
           };
+  }
+  if (semantics === "changed") {
+    const eligible = legalityRules.find(
+      (rule) => rule.id === "legality_rule_asia_eligible",
+    );
+    eligible.official_wording =
+      "Cards satisfying the changed Standard policy are not legal.";
+    eligible.effect = { type: "ban" };
+  }
+  if (copyLimit === "zero") {
+    const copyLimitRule = legalityRules.find(
+      (rule) => rule.id === "legality_rule_asia_copy_limit",
+    );
+    copyLimitRule.effect = {
+      type: "copy_limit",
+      maximum_copies: 0,
+    };
+  }
+  if (rulesVariant === "empty") {
+    legalityRules.length = 0;
   }
   return officialSurfaceDocument(region, cards, legalityRules);
 }

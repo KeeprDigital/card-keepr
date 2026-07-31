@@ -23,11 +23,34 @@ const apiSchema = JSON.parse(
     "utf8",
   ),
 );
+const exportRecordSchemaV1 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const exportRecordSchemaV2 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v2.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(apiSchema);
+ajv.addSchema(exportRecordSchemaV1);
+ajv.addSchema(exportRecordSchemaV2);
 const validateLegalityStatus = ajv.getSchema(
   `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
+);
+const validateLegalityRuleExport = ajv.getSchema(
+  `${exportRecordSchemaV2.$id}#/$defs/LegalityRuleRecord`,
 );
 
 test("Official Legality Rules flow from repository ingestion to contextual consumer results", async (t) => {
@@ -173,8 +196,9 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     "approve-acceptance-contextual-legality-us",
     administrationEnvironment,
   );
-  const revisionId = usPublication.resulting_revision_id;
-  assert.match(revisionId, /^catrev_/);
+  const usRevisionId = usPublication.resulting_revision_id;
+  assert.match(usRevisionId, /^catrev_/);
+  let revisionId = usRevisionId;
   await restartIngestion();
 
   const asiaRefresh = await ingestAndReconcile({
@@ -212,7 +236,7 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       );
       assert.equal(
         asiaRefreshPublication.resulting_revision_id,
-        revisionId,
+        usRevisionId,
       );
       assert.equal(
         usRefreshPublication.publication_outcome,
@@ -220,8 +244,154 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
       );
       assert.equal(
         usRefreshPublication.resulting_revision_id,
-        revisionId,
+        usRevisionId,
       );
+    },
+  );
+  await restartIngestion();
+
+  const changedIdentity = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    expectedStatus: null,
+    idempotencyKey:
+      "acceptance-contextual-legality-changed-official-identity",
+    lineage: "gundam-en-asia",
+    sourcePath:
+      "/contextual-legality-asia?semantics=changed",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  await t.test(
+    "changed semantics under one official rule identity block before approval",
+    () => {
+      assert.equal(changedIdentity.http_status, 409);
+      assert.equal(changedIdentity.publishable, false);
+      assert.equal(changedIdentity.state, "failed");
+      assert.match(
+        changedIdentity.diagnostics[0].detail,
+        /official identity.*changed semantics|new official identity/i,
+      );
+    },
+  );
+  if (changedIdentity.state === "awaiting_approval") {
+    await reject(
+      changedIdentity,
+      "reject-acceptance-contextual-legality-changed-official-identity",
+      administrationEnvironment,
+    );
+  }
+  await restartIngestion();
+
+  const invalidCopyLimit = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    expectedStatus: null,
+    idempotencyKey:
+      "acceptance-contextual-legality-invalid-copy-limit",
+    lineage: "gundam-en-asia",
+    sourcePath:
+      "/contextual-legality-asia?copy-limit=zero",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  await t.test(
+    "an invalid copy-limit operand blocks before approval",
+    () => {
+      assert.equal(invalidCopyLimit.http_status, 409);
+      assert.equal(invalidCopyLimit.publishable, false);
+      assert.equal(invalidCopyLimit.state, "failed");
+      assert.match(
+        invalidCopyLimit.diagnostics[0].detail,
+        /copy-limit rule requires a positive integer/i,
+      );
+    },
+  );
+  if (invalidCopyLimit.state === "awaiting_approval") {
+    await reject(
+      invalidCopyLimit,
+      "reject-acceptance-contextual-legality-invalid-copy-limit",
+      administrationEnvironment,
+    );
+  }
+  await restartIngestion();
+
+  const missing = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    idempotencyKey: "acceptance-contextual-legality-missing",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-asia?rules=empty",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const missingPublication = await approve(
+    missing,
+    "approve-acceptance-contextual-legality-missing",
+    administrationEnvironment,
+  );
+  const missingRevisionId = missingPublication.resulting_revision_id;
+  await t.test(
+    "a complete missing rule observation publishes a new lifecycle revision",
+    () => {
+      assert.equal(missingPublication.publication_outcome, "revision");
+      assert.match(missingRevisionId, /^catrev_/);
+      assert.notEqual(missingRevisionId, usRevisionId);
+    },
+  );
+
+  await stopWorker(ingestion);
+  api = startWorker({
+    config: apiConfig,
+    envFile: apiEnv,
+    inspectorPort: portBase + 103,
+    port: apiPort,
+    statePath,
+  });
+  await waitForResponse(
+    `http://127.0.0.1:${apiPort}/health`,
+    api,
+    "API Worker at missing-rule revision",
+    { authorization: `Bearer ${apiKey}` },
+  );
+  const missingRuleResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${cards.get("GD30-001")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  const missingRuleDocument = await missingRuleResponse.json();
+  await t.test(
+    "a disappeared regional rule scope becomes indeterminate at the authenticated consumer boundary",
+    () => {
+      assert.equal(missingRuleResponse.status, 200);
+      assert.equal(missingRuleDocument.data[0].status, "indeterminate");
+      assert.deepEqual(missingRuleDocument.data[0].rule_ids, []);
+      assert.match(
+        missingRuleDocument.data[0].derivation,
+        /no effective published Legality Rule/i,
+      );
+    },
+  );
+  await stopWorker(api);
+  api = null;
+  await restartIngestion();
+
+  const reappeared = await ingestAndReconcile({
+    adapter: "gundam-en-asia@2",
+    idempotencyKey: "acceptance-contextual-legality-reappeared",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-asia?rules=current",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const reappearedPublication = await approve(
+    reappeared,
+    "approve-acceptance-contextual-legality-reappeared",
+    administrationEnvironment,
+  );
+  revisionId = reappearedPublication.resulting_revision_id;
+  await t.test(
+    "the same unchanged official identities reappear in a new revision",
+    () => {
+      assert.equal(reappearedPublication.publication_outcome, "revision");
+      assert.match(revisionId, /^catrev_/);
+      assert.notEqual(revisionId, missingRevisionId);
     },
   );
   await restartIngestion();
@@ -438,6 +608,13 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
     .split("\n")
     .map((line) => JSON.parse(line));
   assert.equal(exportedRules.length, 16);
+  for (const exportedRule of exportedRules) {
+    assert.equal(
+      validateLegalityRuleExport(exportedRule),
+      true,
+      JSON.stringify(validateLegalityRuleExport.errors),
+    );
+  }
   await t.test(
     "Legality Rule exports use schema v2 and retain exact effects",
     () => {
@@ -598,10 +775,19 @@ test("Official Legality Rules flow from repository ingestion to contextual consu
   );
   assert.equal(
     usRelationship.lifecycle.first_revision_id,
-    revisionId,
+    usRevisionId,
   );
   assert.equal(asiaRelationship.source_lineage, "gundam-en-asia");
   assert.equal(usRelationship.source_lineage, "gundam-en-us");
+  assert.equal(asiaRelationship.lifecycle.current, true);
+  assert.equal(
+    asiaRelationship.lifecycle.last_observed_revision_id,
+    revisionId,
+  );
+  assert.equal(
+    asiaRelationship.lifecycle.last_missing_revision_id,
+    missingRevisionId,
+  );
 });
 
 async function ingestAndReconcile({

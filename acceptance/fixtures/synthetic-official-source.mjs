@@ -169,6 +169,11 @@ export default {
           "EN-ASIA",
           url.searchParams.get("representable") !== "false",
           url.searchParams.get("membership"),
+          {
+            copyLimit: url.searchParams.get("copy-limit"),
+            rules: url.searchParams.get("rules"),
+            semantics: url.searchParams.get("semantics"),
+          },
         ),
       );
     }

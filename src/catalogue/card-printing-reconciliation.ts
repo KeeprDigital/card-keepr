@@ -782,10 +782,17 @@ export async function reconcileRetainedCardPrintingEvidence(
   let resolvedLegalityRules: Awaited<ReturnType<
     typeof resolveLegalityRuleCards
   >> = [];
+  let candidateLegalityRules =
+    priorCandidate?.legality_rules ?? [];
   try {
     resolvedLegalityRules = await resolveLegalityRuleCards(
       retained.legalityRules,
       [...cards.values()],
+    );
+    candidateLegalityRules = legalityRulesForCandidate(
+      priorCandidate,
+      retained.sourceLineage,
+      resolvedLegalityRules,
     );
   } catch (error) {
     diagnostics.push({
@@ -889,11 +896,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       ),
     ],
     errata,
-    legality_rules: legalityRulesForCandidate(
-      priorCandidate,
-      retained.sourceLineage,
-      resolvedLegalityRules,
-    ),
+    legality_rules: candidateLegalityRules,
   };
   const cardPrintingPlans = plans.filter(
     (plan) => plan.observationKind === "card_printing",

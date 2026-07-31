@@ -803,6 +803,21 @@ export default defineConfig({
 });
 
 function reconciliationSourceDocument(scenario: string) {
+  if (scenario === "contextual-legality-empty-oceania") {
+    return emptyOfficialCatalogueDocument("EN-OCEANIA");
+  }
+  if (scenario === "contextual-legality-empty-asia") {
+    return emptyOfficialCatalogueDocument("EN-ASIA");
+  }
+  if (scenario === "contextual-legality-empty-us") {
+    return emptyOfficialCatalogueDocument("EN-US");
+  }
+  if (scenario === "contextual-legality-missing-rules") {
+    return emptyOfficialCatalogueDocument("EN-ASIA", "missing");
+  }
+  if (scenario === "contextual-legality-false-empty-rules") {
+    return emptyOfficialCatalogueDocument("EN-ASIA", "false-empty");
+  }
   if (scenario === "contextual-legality-asia") {
     return contextualLegalitySourceDocument("EN-ASIA");
   }
@@ -2914,6 +2929,35 @@ function productReleaseCatalogueForScenario(
     };
   }
   return undefined;
+}
+
+function emptyOfficialCatalogueDocument(
+  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US",
+  legalityVariant: "complete" | "missing" | "false-empty" =
+    "complete",
+) {
+  const emptySurface = {
+    partition,
+    declared_record_count: 0,
+    pages: [],
+  };
+  return {
+    surfaces: {
+      cards: emptySurface,
+      ...(legalityVariant === "missing"
+        ? {}
+        : {
+            legality_rules:
+              legalityVariant === "false-empty"
+                ? {
+                    partition,
+                    declared_record_count: 1,
+                    pages: [],
+                  }
+                : emptySurface,
+          }),
+    },
+  };
 }
 
 function printingObservation(input: {

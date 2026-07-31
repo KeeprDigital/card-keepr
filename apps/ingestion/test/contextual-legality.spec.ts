@@ -117,11 +117,133 @@ test("the production repository ingests effective-dated regional Legality Rules 
   });
 });
 
+test.each([
+  {
+    adapter: "one-piece-json-document@3",
+    game: "one-piece",
+    lineage: "one-piece-en",
+    scenario: "contextual-legality-empty-oceania",
+  },
+  {
+    adapter: "fusion-world-en@2",
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+    scenario: "contextual-legality-empty-oceania",
+  },
+  {
+    adapter: "digimon-en@2",
+    game: "digimon",
+    lineage: "digimon-en",
+    scenario: "contextual-legality-empty-oceania",
+  },
+  {
+    adapter: "gundam-en-asia@2",
+    game: "gundam",
+    lineage: "gundam-en-asia",
+    scenario: "contextual-legality-empty-asia",
+  },
+  {
+    adapter: "gundam-en-us@2",
+    game: "gundam",
+    lineage: "gundam-en-us",
+    scenario: "contextual-legality-empty-us",
+  },
+])(
+  "$adapter accepts an explicitly complete empty legality partition through HTTP",
+  async ({ adapter, game, lineage, scenario }) => {
+    const runId = await startAdapterCollection({
+      adapter,
+      game,
+      lineage,
+      scenario,
+      terminalAfterAccepted: true,
+    });
+    const terminal = await waitForState(runId, "failed");
+    expect(terminal).toMatchObject({
+      id: runId,
+      state: "failed",
+      failure_code: "source_parse_failed",
+    });
+    expect(terminal.observation_sets).toHaveLength(1);
+  },
+);
+
+test.each([
+  ["contextual-legality-missing-rules"],
+  ["contextual-legality-false-empty-rules"],
+])(
+  "the production adapter fails closed for %s through HTTP",
+  async (scenario) => {
+    const runId = await startAdapterCollection({
+      adapter: "gundam-en-asia@2",
+      game: "gundam",
+      lineage: "gundam-en-asia",
+      scenario,
+    });
+    const failed = await waitForState(runId, "failed");
+    expect(failed).toMatchObject({
+      id: runId,
+      state: "failed",
+      failure_code: "source_parse_failed",
+    });
+  },
+);
+
+async function startAdapterCollection({
+  adapter,
+  game,
+  lineage,
+  scenario,
+  terminalAfterAccepted = false,
+}: {
+  adapter: string;
+  game: string;
+  lineage: string;
+  scenario: string;
+  terminalAfterAccepted?: boolean;
+}): Promise<string> {
+  const idempotencyKey =
+    `contextual-legality-adapter-${adapter}-${scenario}`;
+  const started = await request("/v1/ingestion-runs/evidence", {
+    supported_game: game,
+    source_lineage: lineage,
+    adapter_version: adapter,
+    idempotency_key: idempotencyKey,
+    requests: [
+      {
+        id: "cards-and-legality",
+        method: "GET",
+        url:
+          `https://official-source.invalid/reconciliation/${scenario}`,
+        headers: { accept: "application/json" },
+      },
+      ...(terminalAfterAccepted
+        ? [
+            {
+              id: "terminal-invalid-document",
+              method: "GET",
+              url: "https://official-source.invalid/invalid-json",
+              headers: { accept: "application/json" },
+            },
+          ]
+        : []),
+    ],
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  const resumed = await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  );
+  expect(resumed.response.status).toBe(202);
+  return runId;
+}
+
 async function waitForState(runId: string, expected: string) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const shown = await request(`/v1/ingestion-runs/${runId}`);
-    if (shown.document.state === expected) return;
+    if (shown.document.state === expected) return shown.document;
     if (shown.document.state === "failed") {
       throw new Error(JSON.stringify(shown.document));
     }
