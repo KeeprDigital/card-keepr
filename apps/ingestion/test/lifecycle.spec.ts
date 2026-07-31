@@ -1772,6 +1772,293 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
   }
 });
 
+test("normal approval never adopts a prefix that becomes a registered export", async () => {
+  const startedAt = "2026-07-29T02:40:00.000Z";
+  testObservedAt = startedAt;
+  const priorCurrentRevision = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT revision.id, revision.content_digest
+     FROM catalogue_state AS state
+     JOIN catalogue_revisions AS revision
+       ON revision.id = state.current_revision_id
+     WHERE state.singleton = 1`,
+  ).first<{ id: string; content_digest: string }>();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions SET content_digest = ? WHERE id = ?`,
+    ).bind("0".repeat(64), priorCurrentRevision.id).run();
+  }
+  const started = await startRun("start-normal-prefix-registration-race");
+  const runId = requiredDocumentString(started.document, "id");
+  const candidateDigest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
+  const registeredManifestKey =
+    `catalogue-exports/${revisionId}/registered-manifest.json`;
+  const registeredBytes = new TextEncoder().encode("registered-export");
+  await testEnv.CATALOGUE_EXPORTS.put(
+    registeredManifestKey,
+    registeredBytes,
+  );
+  let registered = false;
+  const racingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async get(...arguments_) {
+      if (!registered) {
+        registered = true;
+        const run = await testEnv.CATALOGUE_DB.prepare(
+          `SELECT candidate_catalogue_digest
+           FROM ingestion_runs WHERE id = ?`,
+        )
+          .bind(runId)
+          .first<{ candidate_catalogue_digest: string }>();
+        await testEnv.CATALOGUE_DB.batch([
+          testEnv.CATALOGUE_DB.prepare(
+            `INSERT INTO catalogue_revisions (
+              id, ingestion_run_id, published_at, content_digest,
+              expected_previous_revision_id, approved_candidate_digest
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            revisionId,
+            runId,
+            startedAt,
+            run?.candidate_catalogue_digest ?? candidateDigest,
+            expectedRevision,
+            candidateDigest,
+          ),
+          testEnv.CATALOGUE_DB.prepare(
+            `INSERT INTO catalogue_exports (
+              catalogue_revision_id, manifest_key,
+              manifest_digest, verified
+            ) VALUES (?, ?, ?, 1)`,
+          ).bind(
+            revisionId,
+            registeredManifestKey,
+            "a".repeat(64),
+          ),
+        ]);
+      }
+      return testEnv.CATALOGUE_EXPORTS.get(...arguments_);
+    },
+  });
+
+  await expect(
+    approveRunDirect(
+      testEnv.CATALOGUE_DB,
+      racingBucket,
+      runId,
+      {
+        candidate_digest: candidateDigest,
+        expected_current_revision_id: expectedRevision,
+        idempotency_key: "approve-normal-prefix-registration-race",
+      },
+      startedAt,
+    ),
+  ).rejects.toMatchObject({ code: "publication_abandoned" });
+
+  const stored = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       run.state,
+       (SELECT COUNT(*) FROM ingestion_publication_cleanup
+        WHERE ingestion_run_id = run.id) AS cleanup_count,
+       (SELECT current_revision_id FROM catalogue_state
+        WHERE singleton = 1) AS current_revision_id
+     FROM ingestion_runs AS run WHERE run.id = ?`,
+  )
+    .bind(runId)
+    .first<{
+      state: string;
+      cleanup_count: number;
+      current_revision_id: string;
+    }>();
+  expect(stored).toEqual({
+    state: "failed",
+    cleanup_count: 0,
+    current_revision_id: expectedRevision,
+  });
+  expect(await showRunDirect(
+    testEnv.CATALOGUE_DB,
+    testEnv.CATALOGUE_EXPORTS,
+    runId,
+    startedAt,
+  )).toMatchObject({
+    state: "failed",
+    failure_code: "publication_abandoned",
+    publication_cleanup: null,
+  });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT catalogue_revision_id, manifest_key, manifest_digest, verified
+     FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind(revisionId).first()).toEqual({
+    catalogue_revision_id: revisionId,
+    manifest_key: registeredManifestKey,
+    manifest_digest: "a".repeat(64),
+    verified: 1,
+  });
+  expect(new Uint8Array(
+    await (await testEnv.CATALOGUE_EXPORTS.get(
+      registeredManifestKey,
+    ))!.arrayBuffer(),
+  )).toEqual(registeredBytes);
+  expect((await testEnv.CATALOGUE_EXPORTS.list({
+    prefix: `catalogue-exports/${revisionId}/`,
+  })).objects.map((object) => object.key)).toEqual([
+    registeredManifestKey,
+  ]);
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions SET content_digest = ? WHERE id = ?`,
+    ).bind(
+      priorCurrentRevision.content_digest,
+      priorCurrentRevision.id,
+    ).run();
+  }
+});
+
+test("cleanup deletes nothing when its failed prefix becomes registered", async () => {
+  const startedAt = "2026-07-29T02:50:00.000Z";
+  testObservedAt = startedAt;
+  const priorCurrentRevision = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT revision.id, revision.content_digest
+     FROM catalogue_state AS state
+     JOIN catalogue_revisions AS revision
+       ON revision.id = state.current_revision_id
+     WHERE state.singleton = 1`,
+  ).first<{ id: string; content_digest: string }>();
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions SET content_digest = ? WHERE id = ?`,
+    ).bind("0".repeat(64), priorCurrentRevision.id).run();
+  }
+  const started = await startRun("start-cleanup-prefix-registration-race");
+  const runId = requiredDocumentString(started.document, "id");
+  const candidateDigest = requiredDocumentString(
+    started.document,
+    "candidate_digest",
+  );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
+  const revisionId = await catalogueRevisionIdentity({
+    runId,
+    candidateDigest,
+    expectedCurrentRevisionId: expectedRevision,
+  });
+  const failedObjectKey =
+    `catalogue-exports/${revisionId}/partial-publication.bin`;
+  const failedObjectBytes = new TextEncoder().encode("partial-publication");
+  let failedAfterWrite = false;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async put(...arguments_) {
+      if (!failedAfterWrite) {
+        failedAfterWrite = true;
+        await testEnv.CATALOGUE_EXPORTS.put(
+          failedObjectKey,
+          failedObjectBytes,
+        );
+        throw new Error("synthetic publication write failure");
+      }
+      return testEnv.CATALOGUE_EXPORTS.put(...arguments_);
+    },
+  });
+  await expect(
+    approveRunDirect(
+      testEnv.CATALOGUE_DB,
+      failingBucket,
+      runId,
+      {
+        candidate_digest: candidateDigest,
+        expected_current_revision_id: expectedRevision,
+        idempotency_key: "approve-cleanup-prefix-registration-race",
+      },
+      startedAt,
+    ),
+  ).rejects.toMatchObject({ code: "export_verification_failed" });
+  const cleanup = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT not_before FROM ingestion_publication_cleanup
+     WHERE ingestion_run_id = ?`,
+  ).bind(runId).first<{ not_before: string }>();
+  const guard = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT sql FROM sqlite_master
+     WHERE type = 'trigger' AND name = 'guard_catalogue_publication'`,
+  ).first<{ sql: string }>();
+  if (guard?.sql === undefined) {
+    throw new Error("publication guard definition missing");
+  }
+  await testEnv.CATALOGUE_DB.prepare(
+    "DROP TRIGGER guard_catalogue_publication",
+  ).run();
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      revisionId,
+      runId,
+      startedAt,
+      candidateDigest,
+      expectedRevision,
+      candidateDigest,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_exports (
+        catalogue_revision_id, manifest_key, manifest_digest, verified
+      ) VALUES (?, ?, ?, 1)`,
+    ).bind(
+      revisionId,
+      failedObjectKey,
+      "b".repeat(64),
+    ),
+  ]);
+  await testEnv.CATALOGUE_DB.prepare(guard.sql).run();
+
+  await expect(
+    retryPublicationCleanupDirect(
+      testEnv.CATALOGUE_DB,
+      testEnv.CATALOGUE_EXPORTS,
+      runId,
+      { idempotency_key: "cleanup-prefix-registration-race" },
+      cleanup?.not_before ?? "2026-07-29T03:00:00.000Z",
+    ),
+  ).rejects.toMatchObject({ code: "publication_cleanup_failed" });
+  expect(new Uint8Array(
+    await (await testEnv.CATALOGUE_EXPORTS.get(
+      failedObjectKey,
+    ))!.arrayBuffer(),
+  )).toEqual(failedObjectBytes);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT catalogue_revision_id, manifest_key, manifest_digest, verified
+     FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind(revisionId).first()).toEqual({
+    catalogue_revision_id: revisionId,
+    manifest_key: failedObjectKey,
+    manifest_digest: "b".repeat(64),
+    verified: 1,
+  });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first()).toEqual({ current_revision_id: expectedRevision });
+  if (priorCurrentRevision !== null) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_revisions SET content_digest = ? WHERE id = ?`,
+    ).bind(
+      priorCurrentRevision.content_digest,
+      priorCurrentRevision.id,
+    ).run();
+  }
+});
+
 test("unexpected recovery keys fail publication and are all removed by cleanup", async () => {
   testObservedAt = "2026-07-29T03:00:00.000Z";
   const before = await administrationRequest("/v1/status");
@@ -2200,6 +2487,9 @@ function deferred<T>(): {
 function proxyR2Bucket(
   bucket: R2Bucket,
   overrides: {
+    get?: (
+      ...arguments_: Parameters<R2Bucket["get"]>
+    ) => ReturnType<R2Bucket["get"]>;
     put?: (
       ...arguments_: Parameters<R2Bucket["put"]>
     ) => ReturnType<R2Bucket["put"]>;
@@ -2214,7 +2504,9 @@ function proxyR2Bucket(
   return new Proxy(bucket, {
     get(target, property) {
       const override =
-        property === "put"
+        property === "get"
+          ? overrides.get
+          : property === "put"
           ? overrides.put
           : property === "delete"
             ? overrides.delete

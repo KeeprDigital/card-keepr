@@ -172,6 +172,145 @@ CREATE TABLE legality_rules (
   UNIQUE (source_lineage, official_id)
 );
 
+CREATE TRIGGER legality_rule_card_ids_canonical_insert
+BEFORE INSERT ON legality_rules
+WHEN NOT (
+  json_valid(NEW.card_ids_json)
+  AND json_type(NEW.card_ids_json) = 'array'
+  AND json_valid(NEW.direct_card_ids_json)
+  AND json_type(NEW.direct_card_ids_json) = 'array'
+  AND json_valid(NEW.effect_json)
+  AND json_type(NEW.effect_json) = 'object'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM json_each(NEW.direct_card_ids_json) AS item
+    WHERE item.type <> 'text'
+      OR length(item.value) NOT BETWEEN 1 AND 200
+      OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
+      OR item.value GLOB '*[^A-Za-z0-9._:-]*'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM json_each(NEW.direct_card_ids_json) AS item
+    JOIN json_each(NEW.direct_card_ids_json) AS prior
+      ON prior.key = item.key - 1
+    WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
+  )
+  AND (
+    (
+      json_extract(NEW.effect_json, '$.type') =
+        'prohibited_combination'
+      AND json_type(
+        NEW.effect_json,
+        '$.with_card_ids'
+      ) = 'array'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM json_each(
+          json_extract(NEW.effect_json, '$.with_card_ids')
+        ) AS item
+        WHERE item.type <> 'text'
+          OR length(item.value) NOT BETWEEN 1 AND 200
+          OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
+          OR item.value GLOB '*[^A-Za-z0-9._:-]*'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM json_each(
+          json_extract(NEW.effect_json, '$.with_card_ids')
+        ) AS item
+        JOIN json_each(
+          json_extract(NEW.effect_json, '$.with_card_ids')
+        ) AS prior ON prior.key = item.key - 1
+        WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
+      )
+    )
+    OR (
+      COALESCE(json_extract(NEW.effect_json, '$.type'), '') <>
+        'prohibited_combination'
+      AND json_type(
+        NEW.effect_json,
+        '$.with_card_ids'
+      ) IS NULL
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM json_each(NEW.card_ids_json) AS item
+    WHERE item.type <> 'text'
+      OR length(item.value) NOT BETWEEN 1 AND 200
+      OR substr(item.value, 1, 1) NOT GLOB '[A-Za-z0-9]'
+      OR item.value GLOB '*[^A-Za-z0-9._:-]*'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM json_each(NEW.card_ids_json) AS item
+    JOIN json_each(NEW.card_ids_json) AS prior
+      ON prior.key = item.key - 1
+    WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
+  )
+  AND NOT EXISTS (
+    SELECT value FROM json_each(NEW.card_ids_json)
+    EXCEPT
+    SELECT value FROM (
+      SELECT value FROM json_each(NEW.direct_card_ids_json)
+      UNION
+      SELECT value
+      FROM json_each(
+        CASE
+          WHEN json_type(
+            NEW.effect_json,
+            '$.with_card_ids'
+          ) = 'array'
+          THEN json_extract(NEW.effect_json, '$.with_card_ids')
+          ELSE '[]'
+        END
+      )
+    )
+  )
+  AND NOT EXISTS (
+    SELECT value FROM (
+      SELECT value FROM json_each(NEW.direct_card_ids_json)
+      UNION
+      SELECT value
+      FROM json_each(
+        CASE
+          WHEN json_type(
+            NEW.effect_json,
+            '$.with_card_ids'
+          ) = 'array'
+          THEN json_extract(NEW.effect_json, '$.with_card_ids')
+          ELSE '[]'
+        END
+      )
+    )
+    EXCEPT
+    SELECT value FROM json_each(NEW.card_ids_json)
+  )
+  AND json_array_length(NEW.card_ids_json) =
+    json_array_length(NEW.direct_card_ids_json) +
+    json_array_length(
+      CASE
+        WHEN json_type(
+          NEW.effect_json,
+          '$.with_card_ids'
+        ) = 'array'
+        THEN json_extract(NEW.effect_json, '$.with_card_ids')
+        ELSE '[]'
+      END
+    )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_card_ids_not_canonical');
+END;
+
+CREATE TRIGGER legality_rule_card_ids_canonical_update
+BEFORE UPDATE OF effect_json, card_ids_json, direct_card_ids_json
+ON legality_rules
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_card_ids_not_canonical');
+END;
+
 CREATE INDEX legality_rules_context
   ON legality_rules (
     supported_game,

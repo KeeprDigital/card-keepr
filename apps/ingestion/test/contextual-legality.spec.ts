@@ -348,6 +348,8 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     `SELECT name FROM sqlite_master
      WHERE type = 'trigger' AND name IN (
        'guard_legality_rule_identity',
+       'legality_rule_card_ids_canonical_insert',
+       'legality_rule_card_ids_canonical_update',
        'legality_rule_provenance_owner_insert',
        'legality_rule_provenance_owner_update',
        'legality_rule_provenance_immutable',
@@ -359,6 +361,8 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   ).all<{ name: string }>();
   expect(guards.results.map((row) => row.name)).toEqual([
     "guard_legality_rule_identity",
+    "legality_rule_card_ids_canonical_insert",
+    "legality_rule_card_ids_canonical_update",
     "legality_rule_provenance_immutable",
     "legality_rule_provenance_owner_insert",
     "legality_rule_provenance_owner_update",
@@ -535,7 +539,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       JSON.stringify([
         ...upgradedRule.card_ids,
         ...upgradedRule.effect.with_card_ids,
-      ]),
+      ].sort()),
       JSON.stringify(upgradedRule.card_ids),
       upgradedRule.source_lineage,
       upgradedRule.source_snapshot_id,
@@ -563,10 +567,25 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       JSON.stringify([
         ...upgradedRule.card_ids,
         ...upgradedRule.effect.with_card_ids,
-      ]),
+      ].sort()),
       JSON.stringify(upgradedRule),
     ),
   ]);
+  const upgradedCanonicalCardIdErrors =
+    await canonicalLegalityCardIdInvariantErrors(
+      legacyDatabase,
+      {
+        ...upgradedRule,
+        effect_json: JSON.stringify(upgradedRule.effect),
+        source_field_pointers_json: sourceFieldPointers,
+      },
+      "upgraded",
+    );
+  expect(upgradedCanonicalCardIdErrors.map(String)).toEqual(
+    upgradedCanonicalCardIdErrors.map(() =>
+      expect.stringMatching(/legality_rule_card_ids_not_canonical/),
+    ),
+  );
   const upgradedProvenanceMutation = await rejectedError(
     legacyDatabase.prepare(
       `UPDATE legality_rules
@@ -1205,6 +1224,17 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   if (canonicalSnapshot === null) {
     throw new Error("Published canonical Legality Rule is absent");
   }
+  const freshCanonicalCardIdErrors =
+    await canonicalLegalityCardIdInvariantErrors(
+      testEnv.CATALOGUE_DB,
+      canonicalSnapshot,
+      "fresh",
+    );
+  expect(freshCanonicalCardIdErrors.map(String)).toEqual(
+    freshCanonicalCardIdErrors.map(() =>
+      expect.stringMatching(/legality_rule_card_ids_not_canonical/),
+    ),
+  );
   const revisionUpdate = await rejectedError(
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE revision_legality_rules
@@ -1903,6 +1933,119 @@ function resolveJsonPointer(document: unknown, pointer: string): unknown {
     const key = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
     return (value as Record<string, unknown>)[key];
   }, document);
+}
+
+async function canonicalLegalityCardIdInvariantErrors(
+  database: D1Database,
+  canonical: Record<string, unknown>,
+  prefix: string,
+): Promise<unknown[]> {
+  const direct = ["card_invariant_a"];
+  const withCards = ["card_invariant_b"];
+  const union = [...direct, ...withCards];
+  const effect = {
+    type: "prohibited_combination",
+    with_card_ids: withCards,
+  };
+  const malformed = [
+    { direct: direct[0], effect, union },
+    { direct: [7], effect, union },
+    { direct: [direct[0], direct[0]], effect, union },
+    {
+      direct: ["card_invariant_z", "card_invariant_a"],
+      effect,
+      union: [
+        "card_invariant_a",
+        "card_invariant_b",
+        "card_invariant_z",
+      ],
+    },
+    {
+      direct,
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: withCards[0],
+      },
+      union,
+    },
+    {
+      direct,
+      effect: { type: "prohibited_combination", with_card_ids: [7] },
+      union,
+    },
+    {
+      direct,
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: [withCards[0], withCards[0]],
+      },
+      union,
+    },
+    {
+      direct,
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: ["card_invariant_z", "card_invariant_b"],
+      },
+      union: [
+        "card_invariant_a",
+        "card_invariant_b",
+        "card_invariant_z",
+      ],
+    },
+    { direct, effect, union: direct },
+    {
+      direct,
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: direct,
+      },
+      union: direct,
+    },
+    { direct, effect, union: [...union].reverse() },
+    { direct: [" card_invalid"], effect, union },
+    { direct: [`card_${"x".repeat(200)}`], effect, union },
+  ];
+  return Promise.all(
+    malformed.map((variant, index) =>
+      rejectedError(
+        database.prepare(
+          `INSERT INTO legality_rules (
+             id, official_id, supported_game, region, format, event_tier,
+             effective_from, effective_until, official_wording, effect_json,
+             card_ids_json, direct_card_ids_json, source_lineage,
+             source_snapshot_id, source_observation_set_id,
+             source_observation_id, source_observation_pointer,
+             source_field_pointers_json, first_revision_id,
+             last_observed_revision_id, current, last_missing_revision_id
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, 1, NULL)`,
+        ).bind(
+          `legality_rule_${prefix}_malformed_${index}`,
+          `${prefix}-malformed-${index}`,
+          canonical.supported_game ?? canonical.game,
+          canonical.region,
+          canonical.format,
+          canonical.event_tier,
+          canonical.effective_from,
+          canonical.effective_until,
+          canonical.official_wording,
+          JSON.stringify(variant.effect),
+          JSON.stringify(variant.union),
+          JSON.stringify(variant.direct),
+          canonical.source_lineage,
+          canonical.source_snapshot_id,
+          canonical.source_observation_set_id,
+          `srcobs_${prefix}_malformed_${index}`,
+          `/observations/0/value/legality_rules/${index + 20}`,
+          canonical.source_field_pointers_json ??
+            JSON.stringify(canonical.source_field_pointers),
+          canonical.first_revision_id,
+          canonical.last_observed_revision_id,
+        ).run(),
+      )
+    ),
+  );
 }
 
 async function rejectedError(promise: Promise<unknown>): Promise<unknown> {

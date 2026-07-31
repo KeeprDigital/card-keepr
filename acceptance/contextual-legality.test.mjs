@@ -330,6 +330,59 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     environment: administrationEnvironment,
     ingestion,
   });
+  const addedUsRuleIds = usExpanded.legality_rules
+    .filter(
+      (rule) => !us.legality_rules.some((prior) => prior.id === rule.id),
+    )
+    .map((rule) => rule.id)
+    .sort();
+  const inspectedUsExpandedResult = await runCli(
+    [
+      "candidate",
+      "inspect",
+      "--run-id",
+      usExpanded.run_id,
+      "--json",
+    ],
+    administrationEnvironment,
+  );
+  assert.equal(
+    inspectedUsExpandedResult.code,
+    0,
+    `${inspectedUsExpandedResult.stdout}\n${inspectedUsExpandedResult.stderr}`,
+  );
+  const inspectedUsExpanded = JSON.parse(inspectedUsExpandedResult.stdout);
+  await t.test(
+    "a legality-only candidate reports its rule additions before approval",
+    () => {
+      assert.ok(addedUsRuleIds.length > 0);
+      assert.deepEqual(inspectedUsExpanded.diff.cards.added, []);
+      assert.deepEqual(inspectedUsExpanded.diff.cards.changed, []);
+      assert.deepEqual(inspectedUsExpanded.diff.printings.added, []);
+      assert.deepEqual(inspectedUsExpanded.diff.printings.changed, []);
+      assert.deepEqual(
+        inspectedUsExpanded.diff.legality_rules.added,
+        addedUsRuleIds,
+      );
+      assert.deepEqual(inspectedUsExpanded.diff.legality_rules.changed, []);
+      assert.deepEqual(
+        inspectedUsExpanded.diff.legality_rules.lifecycle.current,
+        usExpanded.legality_rules.map((rule) => rule.id).sort(),
+      );
+      assert.deepEqual(
+        inspectedUsExpanded.diff.legality_rules.lifecycle.non_current,
+        [],
+      );
+      assert.equal(
+        inspectedUsExpanded.diff.summary.legality_rules_added,
+        addedUsRuleIds.length,
+      );
+      assert.equal(
+        inspectedUsExpanded.diff.summary.legality_rules_changed,
+        0,
+      );
+    },
+  );
   const usExpandedPublication = await approve(
     usExpanded,
     "approve-acceptance-contextual-legality-us-expanded",

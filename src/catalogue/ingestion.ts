@@ -762,6 +762,10 @@ async function approveRunAttempt(
     await throwApprovalFailure(database, run, error, now);
   }
   try {
+    await assertReservedPublicationOwnsUnpublishedPrefix(
+      database,
+      run.id,
+    );
     await storeAndVerifyExport(
       database,
       catalogueExports,
@@ -770,7 +774,15 @@ async function approveRunAttempt(
       writerToken,
       catalogueExport.objects,
     );
+    await assertReservedPublicationOwnsUnpublishedPrefix(
+      database,
+      run.id,
+    );
     await storeAndVerifyPrintingImages(candidate, printingImages);
+    await assertReservedPublicationOwnsUnpublishedPrefix(
+      database,
+      run.id,
+    );
     if (
       !(await isExactVerifiedExport(
         catalogueExports,
@@ -800,14 +812,30 @@ async function approveRunAttempt(
       error,
     );
     if (concurrentReplay !== null) return concurrentReplay;
-    const problem = publicationFailureProblem(error);
-    const cleanupKeys = await listCatalogueExportPrefix(
-      catalogueExports,
-      revisionId,
-    );
+    const reserved = await requiredRun(database, run.id);
+    const ownershipLost =
+      error instanceof PublicationPrefixOwnershipError ||
+      (reserved.state === "publishing" &&
+        !(await reservedPublicationOwnsUnpublishedPrefix(
+          database,
+          reserved,
+        )));
+    const problem = ownershipLost
+      ? new AdministrationProblem(
+          500,
+          "publication_abandoned",
+          "The reserved publication could not be safely reconciled.",
+        )
+      : publicationFailureProblem(error);
+    const cleanupKeys = ownershipLost
+      ? null
+      : await listCatalogueExportPrefix(
+          catalogueExports,
+          revisionId,
+        );
     await failReservedPublication(
       database,
-      await requiredRun(database, run.id),
+      reserved,
       cleanupKeys,
       now,
       problem,
@@ -1037,6 +1065,8 @@ async function rejectRunAttempt(
 }
 
 export { AdministrationProblem } from "./administration-problem.mjs";
+
+class PublicationPrefixOwnershipError extends Error {}
 
 async function startPreparedRun(
   database: D1Database,
@@ -1692,6 +1722,10 @@ async function storeAndVerifyExport(
   objects: readonly ExportObject[],
 ): Promise<void> {
   for (const object of objects) {
+    await assertReservedPublicationOwnsUnpublishedPrefix(
+      database,
+      runId,
+    );
     await assertPublicationWriterActive(
       database,
       runId,
@@ -1699,6 +1733,10 @@ async function storeAndVerifyExport(
       writerToken,
     );
     const existing = await bucket.head(object.key);
+    await assertReservedPublicationOwnsUnpublishedPrefix(
+      database,
+      runId,
+    );
     if (existing !== null) {
       if (!(await storedExportObjectMatches(bucket, object))) {
         throw new Error("Immutable Catalogue Export object changed");
@@ -2487,11 +2525,17 @@ async function reconcileAbandonedPublication(
     );
   } catch (error) {
     const revisionId = run.publication_revision_id;
+    const ownershipLost =
+      error instanceof PublicationPrefixOwnershipError ||
+      !(await reservedPublicationOwnsUnpublishedPrefix(database, run));
     const objectKeys =
+      !ownershipLost &&
       revisionId !== null &&
       isOpaqueIdentity(revisionId)
         ? await listCatalogueExportPrefix(bucket, revisionId)
-        : [];
+        : ownershipLost
+          ? null
+          : [];
     await failReservedPublication(
       database,
       run,
@@ -2523,7 +2567,8 @@ async function reservedPublicationOwnsUnpublishedPrefix(
   if (
     run.candidate_digest === null ||
     !isSha256Digest(run.candidate_digest) ||
-    run.publication_revision_id === null
+    run.publication_revision_id === null ||
+    (run.state !== "publishing" && run.state !== "failed")
   ) {
     return false;
   }
@@ -2559,6 +2604,18 @@ async function reservedPublicationOwnsUnpublishedPrefix(
   return registered?.revision_registered === 0 &&
     registered.export_registered === 0 &&
     registered.other_run_reserved === 0;
+}
+
+async function assertReservedPublicationOwnsUnpublishedPrefix(
+  database: D1Database,
+  runId: string,
+): Promise<void> {
+  const run = await requiredRun(database, runId);
+  if (!(await reservedPublicationOwnsUnpublishedPrefix(database, run))) {
+    throw new PublicationPrefixOwnershipError(
+      "The publication prefix is not exclusively owned by this unpublished run.",
+    );
+  }
 }
 
 async function reconcileReservedPublication(
@@ -2663,9 +2720,17 @@ async function reconcileReservedPublication(
         },
     sourceFreshness,
   );
+  await assertReservedPublicationOwnsUnpublishedPrefix(
+    database,
+    run.id,
+  );
   const exactExport =
     catalogueExport.manifest.manifest_sha256 === manifestDigest &&
     (await isExactVerifiedExport(bucket, revisionId, catalogueExport));
+  await assertReservedPublicationOwnsUnpublishedPrefix(
+    database,
+    run.id,
+  );
   const [catalogue, operation] = await Promise.all([
     currentCatalogueState(database),
     currentOperationState(database),
@@ -3107,6 +3172,13 @@ async function attemptPublicationCleanup(
     run.publication_revision_id,
     "revision ID",
   );
+  if (!(await reservedPublicationOwnsUnpublishedPrefix(database, run))) {
+    throw new AdministrationProblem(
+      500,
+      "publication_cleanup_failed",
+      "The abandoned Catalogue Export prefix is no longer exclusively owned by the failed Ingestion Run.",
+    );
+  }
   const observedKeys = await listCatalogueExportPrefix(
     bucket,
     revisionId,
@@ -3179,6 +3251,17 @@ async function attemptPublicationCleanup(
     );
   }
   try {
+    const claimedRun = await requiredRun(database, runId);
+    if (
+      !(await reservedPublicationOwnsUnpublishedPrefix(
+        database,
+        claimedRun,
+      ))
+    ) {
+      throw new PublicationPrefixOwnershipError(
+        "The publication prefix ownership changed before cleanup.",
+      );
+    }
     await deleteR2KeysInBatches(bucket, keys);
     if (
       (await listCatalogueExportPrefix(bucket, revisionId)).length > 0
@@ -5499,7 +5582,8 @@ function assertPublicRunCrossFieldInvariants(
           publicationLeaseMilliseconds)) ||
     (state === "failed" &&
       decoded.reservation !== null &&
-      decoded.cleanup === null) ||
+      decoded.cleanup === null &&
+      value.failure_code !== "publication_abandoned") ||
     (state === "failed" &&
       (decoded.approval === null) !==
         (decoded.reservation === null)) ||
