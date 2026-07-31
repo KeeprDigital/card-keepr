@@ -1164,6 +1164,216 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     asiaRelationship.lifecycle.last_missing_revision_id,
     missingRevisionId,
   );
+
+  await stopWorker(api);
+  api = null;
+  await restartIngestion();
+  const missingAgain = await ingestAndReconcile({
+    adapter: "fixture-gundam-en-asia-json@1",
+    idempotencyKey: "acceptance-contextual-legality-missing-again",
+    lineage: "gundam-en-asia",
+    sourcePath: "/contextual-legality-domain-asia?rules=empty",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const missingAgainPublication = await approve(
+    missingAgain,
+    "approve-acceptance-contextual-legality-missing-again",
+    administrationEnvironment,
+  );
+  const latestMissingRevisionId =
+    missingAgainPublication.resulting_revision_id;
+  await stopWorker(ingestion);
+  api = startWorker({
+    config: apiConfig,
+    envFile: apiEnv,
+    inspectorPort: portBase + 103,
+    port: apiPort,
+    statePath,
+  });
+  await waitForResponse(
+    `http://127.0.0.1:${apiPort}/health`,
+    api,
+    "API Worker at repeated-missing revision",
+    { authorization: `Bearer ${apiKey}` },
+  );
+  const latestRulesResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${latestMissingRevisionId}/components/legality-rules`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(latestRulesResponse.status, 200);
+  const latestRulesText = await new Response(
+    latestRulesResponse.body.pipeThrough(
+      new DecompressionStream("gzip"),
+    ),
+  ).text();
+  const latestGlobalRule = latestRulesText
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .find(
+      (rule) =>
+        rule.id === asiaRuleId("legality_rule_asia_eligible"),
+    );
+  await t.test(
+    "a repeated disappearance records the latest missing revision",
+    () => {
+      assert.equal(
+        missingAgainPublication.publication_outcome,
+        "revision",
+      );
+      assert.notEqual(latestMissingRevisionId, missingRevisionId);
+      assert.equal(latestGlobalRule.lifecycle.current, false);
+      assert.equal(
+        latestGlobalRule.lifecycle.last_missing_revision_id,
+        latestMissingRevisionId,
+      );
+    },
+  );
+});
+
+test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary", async (t) => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "card-keepr-don-legality-"),
+  );
+  const statePath = join(directory, "state");
+  const administrationKey = crypto.randomUUID();
+  const apiKey = crypto.randomUUID();
+  const sourceServiceName = `card-keepr-don-source-${process.pid}`;
+  const sourceConfig = await localConfig(
+    "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
+    directory,
+    "don-source",
+    { name: sourceServiceName },
+  );
+  const ingestionConfig = await localConfig(
+    "apps/ingestion/wrangler.jsonc",
+    directory,
+    "don-ingestion",
+    {
+      main: resolve(
+        root,
+        "acceptance/fixtures/contextual-legality-ingestion-harness.ts",
+      ),
+      services: [
+        {
+          binding: "OFFICIAL_SOURCE_TRANSPORT",
+          service: sourceServiceName,
+        },
+      ],
+    },
+  );
+  const apiConfig = await localConfig(
+    "apps/api/wrangler.jsonc",
+    directory,
+    "don-api",
+  );
+  const ingestionEnv = join(directory, "don-ingestion.env");
+  const apiEnv = join(directory, "don-api.env");
+  await Promise.all([
+    writeFile(
+      ingestionEnv,
+      `ADMINISTRATION_KEY=${administrationKey}\n`,
+      { mode: 0o600 },
+    ),
+    writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
+  ]);
+  const source = startWorker({
+    config: sourceConfig,
+    inspectorPort: portBase + 131,
+    port: sourcePort,
+    statePath: join(directory, "source-state"),
+  });
+  const ingestion = startWorker({
+    config: ingestionConfig,
+    envFile: ingestionEnv,
+    inspectorPort: portBase + 132,
+    migrate: true,
+    port: ingestionPort,
+    statePath,
+  });
+  let api = null;
+  t.after(async () => {
+    await Promise.all([
+      stopWorker(source),
+      stopWorker(ingestion),
+      api === null ? Promise.resolve() : stopWorker(api),
+    ]);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await Promise.all([
+    waitForResponse(
+      `http://127.0.0.1:${sourcePort}/don-legality`,
+      source,
+      "test-owned DON source",
+    ),
+    waitForResponse(
+      `http://127.0.0.1:${ingestionPort}/health`,
+      ingestion,
+      "DON ingestion Worker",
+      { authorization: `Bearer ${administrationKey}` },
+    ),
+  ]);
+  const administrationEnvironment = {
+    KEEPR_ADMINISTRATION_KEY: administrationKey,
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+  };
+  const reconciled = await ingestAndReconcile({
+    adapter: "fixture-one-piece-json@2",
+    game: "one-piece",
+    idempotencyKey: "acceptance-don-legality",
+    lineage: "one-piece-en",
+    sourcePath: "/don-legality",
+    environment: administrationEnvironment,
+    ingestion,
+  });
+  const don = reconciled.cards.find(
+    (card) =>
+      card.official_identity.kind === "functional_designation" &&
+      card.official_identity.value === "DON!!",
+  );
+  assert.ok(don, "fixture ingestion omitted the functional DON!! Card");
+  const publication = await approve(
+    reconciled,
+    "approve-acceptance-don-legality",
+    administrationEnvironment,
+  );
+  assert.equal(publication.publication_outcome, "revision");
+
+  await stopWorker(ingestion);
+  api = startWorker({
+    config: apiConfig,
+    envFile: apiEnv,
+    inspectorPort: portBase + 133,
+    port: apiPort,
+    statePath,
+  });
+  await waitForResponse(
+    `http://127.0.0.1:${apiPort}/health`,
+    api,
+    "DON API Worker",
+    { authorization: `Bearer ${apiKey}` },
+  );
+  const response = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${don.id}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  const document = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(document.data[0].card_id, don.id);
+  assert.equal(document.data[0].status, "not_legal");
+  assert.equal(document.data[0].rule_ids.length, 4);
+  const unresolvedRuleId = canonicalRuleId(
+    "one-piece-en",
+    "don-unresolved",
+  );
+  assert.ok(document.data[0].rule_ids.includes(unresolvedRuleId));
+  assert.match(
+    document.data[0].derivation,
+    new RegExp(
+      `${unresolvedRuleId} \\(unresolved\\) evaluated indeterminate`,
+    ),
+  );
 });
 
 test("authenticated deterministic publication pins contextual legality export bytes", async (t) => {
@@ -1389,6 +1599,7 @@ async function ingestAndReconcile({
   environment,
   expectedRunState = "parsing",
   expectedStatus = 200,
+  game = "gundam",
   idempotencyKey,
   ingestion,
   lineage,
@@ -1399,7 +1610,7 @@ async function ingestAndReconcile({
       "source",
       "collect",
       "--game",
-      "gundam",
+      game,
       "--lineage",
       lineage,
       "--adapter",

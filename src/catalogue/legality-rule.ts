@@ -191,8 +191,7 @@ export function legalityRulesForCandidate(
         {
           ...rule,
           current: false,
-          last_missing_revision_id:
-            rule.last_missing_revision_id ?? null,
+          last_missing_revision_id: null,
         },
       ];
     }),

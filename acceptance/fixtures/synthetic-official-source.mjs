@@ -1,5 +1,6 @@
 import {
   contextualLegalityDomainDocument,
+  donLegalityDomainDocument,
 } from "./contextual-legality-source.mjs";
 
 let onePieceCardListRequests = 0;
@@ -182,6 +183,9 @@ export default {
           },
         ),
       );
+    }
+    if (pathname === "/don-legality") {
+      return Response.json(donLegalityDomainDocument());
     }
     return new Response("not found", { status: 404 });
   },

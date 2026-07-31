@@ -86,6 +86,124 @@ export function contextualLegalityDomainDocument(
   };
 }
 
+export function donLegalityDomainDocument() {
+  const completeness = completeEvidence();
+  const baseRule = {
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    card_numbers: ["DON!!"],
+    representable: true,
+  };
+  return {
+    legality_completeness: completeness,
+    cards: [
+      {
+        card: {
+          game: "one-piece",
+          official_identity: {
+            kind: "functional_designation",
+            value: "DON!!",
+          },
+          name: "DON!!",
+          effective_rules_text: "Your turn +1000 power.",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: {
+              card_type: "don",
+              colours: [],
+              cost: null,
+              life: null,
+              battle_attributes: [],
+              power: null,
+              counter: null,
+              traits: [],
+              block_icons: [],
+              effect_text: "Your turn +1000 power.",
+              trigger_text: null,
+            },
+          },
+        },
+        completeness,
+        memberships: {
+          products: [],
+          distribution_contexts: [],
+          source_buckets: ["don-rules"],
+        },
+      },
+      {
+        card: {
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: "OP30-001",
+          },
+          name: "DON!! combination companion",
+          effective_rules_text: "Official effective rules.",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: {
+              card_type: "leader",
+              colours: ["red"],
+              cost: null,
+              life: 5,
+              battle_attributes: ["strike"],
+              power: 5_000,
+              counter: null,
+              traits: ["DON!! Companion"],
+              block_icons: ["1"],
+              effect_text: "Official effective rules.",
+              trigger_text: null,
+            },
+          },
+        },
+        completeness,
+        memberships: {
+          products: [],
+          distribution_contexts: [],
+          source_buckets: ["card-list"],
+        },
+      },
+    ],
+    legality_rules: [
+      {
+        ...baseRule,
+        id: "don-ban",
+        official_wording: "DON!! may not be included in a deck.",
+        effect: { type: "ban" },
+      },
+      {
+        ...baseRule,
+        id: "don-copy-limit",
+        official_wording: "Decks may contain one copy of DON!!.",
+        effect: { type: "copy_limit", maximum_copies: 1 },
+      },
+      {
+        ...baseRule,
+        id: "don-combination",
+        official_wording:
+          "DON!! and OP30-001 may not be included in the same deck.",
+        effect: {
+          type: "prohibited_combination",
+          with_card_numbers: ["OP30-001"],
+        },
+      },
+      {
+        ...baseRule,
+        id: "don-unresolved",
+        official_wording: "The secondary DON!! scope is unresolved.",
+        effect: {
+          type: "unresolved",
+          reason: "The notice omits the secondary event scope.",
+        },
+      },
+    ],
+  };
+}
+
 function rules(region) {
   const base = {
     game: "gundam",
