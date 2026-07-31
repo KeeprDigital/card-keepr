@@ -301,8 +301,17 @@ function parseRule(
     record.effective_from,
     "legality rule effective_from",
   );
+  if (!("effective_until" in record)) {
+    throw new Error(
+      "Legality Rule effective_until must be explicitly retained as a date or null.",
+    );
+  }
+  if (!("event_tier" in record)) {
+    throw new Error(
+      "Legality Rule event_tier must be explicitly retained as a value or null.",
+    );
+  }
   const effectiveUntil =
-    record.effective_until === undefined ||
     record.effective_until === null
       ? null
       : requiredDate(
@@ -325,7 +334,7 @@ function parseRule(
     region,
     format: requiredString(record.format, "legality rule format"),
     event_tier:
-      record.event_tier === undefined || record.event_tier === null
+      record.event_tier === null
         ? null
         : requiredString(record.event_tier, "legality rule event tier"),
     effective_from: effectiveFrom,

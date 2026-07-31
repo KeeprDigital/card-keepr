@@ -945,10 +945,13 @@ function reconciliationSourceDocument(
     );
   }
   if (scenario === "contextual-legality-domain") {
+    const rules = new URL(requestUrl).searchParams.get("rules");
     return contextualLegalityFixtureDocument(
       "EN-ASIA",
-      new URL(requestUrl).searchParams.get("rules") === "missing"
-        ? "missing"
+      rules === "omitted" || rules === "empty" ||
+          rules === "omit-event-tier" ||
+          rules === "omit-effective-until"
+        ? rules
         : "current",
     );
   }
@@ -1389,6 +1392,28 @@ function reconciliationSourceDocument(
           source_buckets: [],
         },
       })),
+    };
+  }
+  if (scenario === "export-component-over-budget") {
+    return {
+      cards: Array.from({ length: 26 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP30-${String(index + 100).padStart(3, "0")}`,
+          name: `Export budget card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `export-budget-${index}`,
+          lineageMarker: `export-budget-${index}`,
+          printedRulesText: deterministicNoise(index + 1, 490_000),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["export-budget"],
+          },
+        })
+      ),
     };
   }
   if (scenario === "scale-1001-products") {

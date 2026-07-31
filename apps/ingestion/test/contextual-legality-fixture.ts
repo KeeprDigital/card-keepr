@@ -37,18 +37,38 @@ export function contextualLegalitySourceDocument(
 
 export function contextualLegalityFixtureDocument(
   region: Region,
-  rulesVariant: "current" | "missing" = "current",
+  rulesVariant:
+    | "current"
+    | "omitted"
+    | "empty"
+    | "omit-event-tier"
+    | "omit-effective-until" = "current",
 ) {
   const cardNumbers =
     region === "EN-ASIA"
       ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
       : ["GD30-001"];
-  const retainedRules = legalityRules(region).filter(
-    (rule) =>
-      rulesVariant === "current" || rule.effective_until !== null,
-  );
+  const cards = cardNumbers.map(gundamObservation);
+  if (rulesVariant === "omitted") return { cards };
+  const retainedRules = rulesVariant === "empty"
+    ? []
+    : legalityRules(region).map((rule, index) => {
+        if (index !== 0) return rule;
+        if (rulesVariant === "omit-event-tier") {
+          const { event_tier: _eventTier, ...withoutEventTier } = rule;
+          return withoutEventTier;
+        }
+        if (rulesVariant === "omit-effective-until") {
+          const {
+            effective_until: _effectiveUntil,
+            ...withoutEffectiveUntil
+          } = rule;
+          return withoutEffectiveUntil;
+        }
+        return rule;
+      });
   return {
-    cards: cardNumbers.map(gundamObservation),
+    cards,
     legality_rules: retainedRules,
     legality_completeness: completeEvidence(),
   };

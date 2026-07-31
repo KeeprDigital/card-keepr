@@ -472,12 +472,23 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       `UPDATE operation_state SET active_ingestion_run_id = ?
        WHERE singleton = 1`,
     ).bind(runId),
+    ...legalitySourceStatements({
+      runId,
+      key: "api_precedence",
+      game: "gundam",
+      profile: "gundam@1",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@1",
+      snapshotId: "srcsnap_api_precedence",
+      observationSetId: "srcset_api_precedence",
+    }),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_revisions (
         id, ingestion_run_id, published_at, content_digest,
         expected_previous_revision_id, approved_candidate_digest
       ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
     ).bind(revisionId, runId, publishedAt, digest, digest),
+    ...canonicalLegalityRuleStatements(revisionId, rules),
     ...cards.map((card) =>
       testEnv.CATALOGUE_DB.prepare(
         `INSERT INTO revision_cards (
@@ -543,6 +554,191 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     expect(body.data[0]!.derivation).toContain("evaluated not_legal");
     expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
   }
+});
+
+test("authenticated Legality Status targets the functional DON!! Card and audits unresolved rules", async () => {
+  const revisionId = "catrev_api_don_legality";
+  const runId = "run_api_don_legality";
+  const publishedAt = "2026-07-30T00:00:00.000Z";
+  const digest = "d".repeat(64);
+  const donId = "card_api_functional_don";
+  const companionId = "card_api_don_companion";
+  const cards = [
+    {
+      id: donId,
+      game: "one-piece",
+      official_identity: {
+        kind: "functional_designation",
+        value: "DON!!",
+      },
+      game_data: {
+        profile: "one-piece@1",
+        attributes: { card_type: "don", traits: [] },
+      },
+    },
+    {
+      id: companionId,
+      game: "one-piece",
+      official_identity: { kind: "card_number", value: "OP30-001" },
+      game_data: {
+        profile: "one-piece@1",
+        attributes: { card_type: "leader", traits: [] },
+      },
+    },
+  ];
+  const baseRule = {
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    card_ids: [donId],
+    source_lineage: "one-piece-en",
+    source_snapshot_id: "srcsnap_api_don",
+    source_observation_set_id: "srcobsset_api_don",
+    source_observation_id: "srcobs_api_don",
+  };
+  const rules = [
+    {
+      ...baseRule,
+      id: "legality_rule_api_don_ban",
+      official_id: "api-don-ban",
+      official_wording: "DON!! may not be included in this deck.",
+      effect: { type: "ban" },
+    },
+    {
+      ...baseRule,
+      id: "legality_rule_api_don_copy",
+      official_id: "api-don-copy",
+      official_wording: "Decks may contain one copy of DON!!.",
+      effect: { type: "copy_limit", maximum_copies: 1 },
+    },
+    {
+      ...baseRule,
+      id: "legality_rule_api_don_combination",
+      official_id: "api-don-combination",
+      official_wording: "DON!! and OP30-001 may not be combined.",
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: [companionId],
+      },
+    },
+    {
+      ...baseRule,
+      id: "legality_rule_api_don_unresolved",
+      official_id: "api-don-unresolved",
+      official_wording: "The side-event scope is not stated.",
+      effect: {
+        type: "unresolved",
+        reason: "The Official Source omitted the side-event scope.",
+      },
+    },
+  ];
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (?, 'publishing', '["one-piece"]', ?,
+        'catrev_spine_000', NULL, 'api-don-seed', ?, ?,
+        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL)`,
+    ).bind(
+      runId,
+      publishedAt,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: "catrev_spine_000",
+        approved_at: publishedAt,
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(runId),
+    ...legalitySourceStatements({
+      runId,
+      key: "api_don",
+      game: "one-piece",
+      profile: "one-piece@1",
+      lineage: "one-piece-en",
+      adapter: "fixture-one-piece-json@2",
+      snapshotId: "srcsnap_api_don",
+      observationSetId: "srcobsset_api_don",
+    }),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
+    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ...canonicalLegalityRuleStatements(revisionId, rules),
+    ...cards.map((card) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_cards (
+          catalogue_revision_id, card_id, document_json
+        ) VALUES (?, ?, ?)`,
+      ).bind(revisionId, card.id, JSON.stringify(card))
+    ),
+    ...rules.map((rule) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_legality_rules (
+          catalogue_revision_id, legality_rule_id, supported_game,
+          region, format, event_tier, effective_from, effective_until,
+          card_ids_json, document_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        revisionId,
+        rule.id,
+        rule.game,
+        rule.region,
+        rule.format,
+        rule.event_tier,
+        rule.effective_from,
+        rule.effective_until,
+        JSON.stringify(rule.card_ids),
+        JSON.stringify(rule),
+      )
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+  ]);
+
+  const response = await exports.default.fetch(
+    new Request(
+      `https://card-keepr.invalid/v1/legality-status?card_id=${donId}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
+      {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": "203.0.113.60",
+        },
+      },
+    ),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json<{
+    data: Array<{ status: string; rule_ids: string[]; derivation: string }>;
+  }>();
+  expect(body.data[0]).toMatchObject({
+    status: "not_legal",
+    rule_ids: [
+      "legality_rule_api_don_ban",
+      "legality_rule_api_don_combination",
+      "legality_rule_api_don_copy",
+      "legality_rule_api_don_unresolved",
+    ],
+  });
+  expect(body.data[0]!.derivation).toContain(
+    "legality_rule_api_don_unresolved (unresolved) evaluated indeterminate",
+  );
 });
 
 test("the public Printing response validates full Distribution Context objects", async () => {
@@ -1583,6 +1779,131 @@ function cardSearchStatements(
   ];
 }
 
+function legalitySourceStatements(input: {
+  runId: string;
+  key: string;
+  game: string;
+  profile: string;
+  lineage: string;
+  adapter: string;
+  snapshotId: string;
+  observationSetId: string;
+}): D1PreparedStatement[] {
+  const requestId = `request_${input.key}`;
+  const fetchId = `fetch_${input.key}`;
+  const parseId = `parse_${input.key}`;
+  const fingerprint = "1".repeat(64);
+  const requestUrl = `https://official-source.invalid/${input.key}`;
+  const requestPlan = JSON.stringify({
+    requests: [{
+      id: requestId,
+      method: "GET",
+      url: requestUrl,
+      headers: {},
+      representation_fingerprint: fingerprint,
+    }],
+  });
+  return [
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_evidence_plans (
+        ingestion_run_id, source_lineage, supported_game,
+        game_profile_version, adapter_version, request_plan_json,
+        plan_origin
+      ) VALUES (?, ?, ?, ?, ?, ?, 'synthetic_fixture')`,
+    ).bind(
+      input.runId,
+      input.lineage,
+      input.game,
+      input.profile,
+      input.adapter,
+      requestPlan,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+        ingestion_run_id, request_id, sequence_number, method, url,
+        request_headers_json, representation_fingerprint, state,
+        source_snapshot_id
+      ) VALUES (?, ?, 0, 'GET', ?, '{}', ?, 'observed', ?)`,
+    ).bind(
+      input.runId,
+      requestId,
+      requestUrl,
+      fingerprint,
+      input.snapshotId,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_fetch_attempts (
+        id, ingestion_run_id, request_id, attempt_number,
+        requested_at, completed_at, outcome, http_status,
+        response_headers_json, retry_after_ms, diagnostic
+      ) VALUES (?, ?, ?, 1, '2026-07-30T00:00:00.000Z',
+        '2026-07-30T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
+    ).bind(fetchId, input.runId, requestId),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_snapshots (
+        id, ingestion_run_id, request_id, fetch_attempt_id,
+        request_method, request_url, request_headers_json,
+        representation_fingerprint, response_vary_json, retrieved_at,
+        http_status, response_headers_json, media_type, content_digest,
+        content_byte_length, content_object_key, source_lineage,
+        supported_game, game_profile_version, adapter_version,
+        reused_source_snapshot_id
+      ) VALUES (?, ?, ?, ?, 'GET', ?, '{}', ?, '[]',
+        '2026-07-30T00:00:01.000Z', 200, '{}', 'application/json', ?, 2,
+        ?, ?, ?, ?, ?, NULL)`,
+    ).bind(
+      input.snapshotId,
+      input.runId,
+      requestId,
+      fetchId,
+      requestUrl,
+      fingerprint,
+      "2".repeat(64),
+      `source-snapshots/${input.key}.json`,
+      input.lineage,
+      input.game,
+      input.profile,
+      input.adapter,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_parse_operations (
+        id, source_snapshot_id, adapter_version, intent,
+        idempotency_key, observation_set_id, content_object_key,
+        parsed_at, state, content_digest, content_byte_length,
+        observation_count
+      ) VALUES (?, ?, ?, 'collection', ?, ?, ?,
+        '2026-07-30T00:00:02.000Z', 'finalized', ?, 2, 1)`,
+    ).bind(
+      parseId,
+      input.snapshotId,
+      input.adapter,
+      `parse-${input.key}`,
+      input.observationSetId,
+      `source-observations/${input.key}.json`,
+      "3".repeat(64),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO source_observation_sets (
+        id, parse_operation_id, source_snapshot_id, source_lineage,
+        supported_game, game_profile_version, adapter_version, parsed_at,
+        content_digest, content_byte_length, content_object_key,
+        observation_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, '2026-07-30T00:00:02.000Z',
+        ?, 2, ?, 1)`,
+    ).bind(
+      input.observationSetId,
+      parseId,
+      input.snapshotId,
+      input.lineage,
+      input.game,
+      input.profile,
+      input.adapter,
+      "3".repeat(64),
+      `source-observations/${input.key}.json`,
+    ),
+  ];
+}
+
 function apiCardSummary(card: ApiCardFixture) {
   return {
     type: card.type,
@@ -1605,5 +1926,62 @@ function apiCardSearchText(card: ApiCardFixture): string {
       card.effective_rules_text === null
         ? card.effective_rules_text
         : null,
+  });
+}
+
+function canonicalLegalityRuleStatements(
+  revisionId: string,
+  rules: readonly {
+    id: string;
+    official_id: string;
+    game: string;
+    region: string;
+    format: string;
+    event_tier: string | null;
+    effective_from: string;
+    effective_until: string | null;
+    card_ids: readonly string[];
+    official_wording: string;
+    effect: unknown;
+    source_lineage: string;
+    source_snapshot_id: string;
+    source_observation_set_id: string;
+    source_observation_id: string;
+  }[],
+): D1PreparedStatement[] {
+  return rules.map((rule, index) => {
+    const pointer = `/observations/0/value/legality_rules/${index}`;
+    return testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO legality_rules (
+        id, official_id, supported_game, region, format, event_tier,
+        effective_from, effective_until, official_wording,
+        effect_json, card_ids_json, source_lineage,
+        source_snapshot_id, source_observation_set_id,
+        source_observation_id, source_observation_pointer,
+        source_field_pointers_json, first_revision_id,
+        last_observed_revision_id, current, last_missing_revision_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, 1, NULL)`,
+    ).bind(
+      rule.id,
+      rule.official_id,
+      rule.game,
+      rule.region,
+      rule.format,
+      rule.event_tier,
+      rule.effective_from,
+      rule.effective_until,
+      rule.official_wording,
+      JSON.stringify(rule.effect),
+      JSON.stringify(rule.card_ids),
+      rule.source_lineage,
+      rule.source_snapshot_id,
+      rule.source_observation_set_id,
+      rule.source_observation_id,
+      pointer,
+      JSON.stringify({ official_wording: `${pointer}/official_wording` }),
+      revisionId,
+      revisionId,
+    );
   });
 }

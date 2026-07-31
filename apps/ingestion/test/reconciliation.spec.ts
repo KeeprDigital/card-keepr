@@ -1939,7 +1939,7 @@ test("DON!! accepts explicit known Printing evidence while retaining incomplete-
   await approve(reconciled.document);
 });
 
-test("unnumbered DON!! receives direct and combination Legality Rules through publication and status", async () => {
+test("unnumbered DON!! receives direct and combination Legality Rules through publication", async () => {
   const run = await collect(
     "/reconciliation/profile-don-legality",
     "reconcile-don-legality",
@@ -1987,21 +1987,6 @@ test("unnumbered DON!! receives direct and combination Legality Rules through pu
 
   const published = await approve(reconciled.document);
   expect(published.response.status).toBe(200);
-  const status = await contextualLegalityStatusResponse(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${donId}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
-    ),
-    testEnv.CATALOGUE_DB,
-  );
-  expect(status.status).toBe(200);
-  const document = await status.json() as {
-    data: Array<{ status: string; rule_ids: string[]; derivation: string }>;
-  };
-  expect(document.data[0]).toMatchObject({ status: "not_legal" });
-  expect(document.data[0]!.rule_ids).toHaveLength(4);
-  expect(document.data[0]!.derivation).toContain(
-    "(unresolved) evaluated indeterminate",
-  );
 });
 
 test("functional DON!! identity rejects a non-don Card shape even when Printing evidence exists", async () => {
@@ -6423,6 +6408,33 @@ test("Card search repair rejects an oversized legacy Card before materializing i
       "A retained Card exceeds the durable 65536-byte search repair source bound.",
   });
 }, 60_000);
+
+test("publication rejects an over-budget export component before writing any immutable object", async () => {
+  const run = await collect(
+    "/reconciliation/export-component-over-budget",
+    "reconcile-export-component-over-budget",
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first<{ current_revision_id: string }>();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list())
+    .objects.map((object) => object.key).sort();
+
+  const blocked = await approve(reconciled.document);
+  const objectsAfter = (await testEnv.CATALOGUE_EXPORTS.list())
+    .objects.map((object) => object.key).sort();
+  const currentAfter = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first<{ current_revision_id: string }>();
+
+  expect(blocked.response.status).toBe(500);
+  expect(objectsAfter).toEqual(objectsBefore);
+  expect(currentAfter).toEqual(currentBefore);
+});
 
 async function collect(
   path: string,

@@ -46,6 +46,9 @@ const componentDefinitions = [
 const maximumExportRecordBytes = 524_288;
 const zFixed = 4;
 const zOk = 0;
+const maximumExportComponentBytes = 12 * 1024 * 1024;
+const maximumCatalogueExportBytes = 24 * 1024 * 1024;
+const maximumCatalogueExportObjectBytes = 25 * 1024 * 1024;
 
 export type ExportObject = {
   key: string;
@@ -145,6 +148,8 @@ export async function buildCatalogueExport(
   );
   const components: ExportComponent[] = [];
   const objects: ExportObject[] = [];
+  let totalUncompressedBytes = 0;
+  let totalObjectBytes = 0;
 
   for (const [
     name,
@@ -154,6 +159,23 @@ export async function buildCatalogueExport(
   ] of componentDefinitions) {
     const records = orderedExportRecords(recordFactories[name], order);
     const analysis = await analyseComponent(records);
+    if (analysis.uncompressedBytes > maximumExportComponentBytes) {
+      throw new Error(
+        "One Catalogue Export component exceeds the 12 MiB byte budget.",
+      );
+    }
+    totalUncompressedBytes += analysis.uncompressedBytes;
+    if (totalUncompressedBytes > maximumCatalogueExportBytes) {
+      throw new Error(
+        "Catalogue Export exceeds the 24 MiB total byte budget.",
+      );
+    }
+    totalObjectBytes += analysis.compressedBytes;
+    if (totalObjectBytes > maximumCatalogueExportObjectBytes) {
+      throw new Error(
+        "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
+      );
+    }
     const key = `catalogue-exports/${catalogueRevisionId}/components/${analysis.compressedSha256}.ndjson.gz`;
     components.push({
       name,
@@ -225,6 +247,14 @@ export async function buildCatalogueExport(
   };
   verifyExportManifest(manifest);
   const manifestBytes = utf8(`${canonicalJson(manifest)}\n`);
+  if (
+    totalObjectBytes + manifestBytes.byteLength >
+      maximumCatalogueExportObjectBytes
+  ) {
+    throw new Error(
+      "Catalogue Export exceeds the 25 MiB retained-object byte budget.",
+    );
+  }
   const manifestKey = `catalogue-exports/${catalogueRevisionId}/manifest.json`;
   const manifestObjectDigest = await sha256(manifestBytes);
   const manifestObject = {

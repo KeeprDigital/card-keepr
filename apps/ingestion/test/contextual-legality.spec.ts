@@ -9,7 +9,10 @@ import { contextualLegalityStatusResponse } from "../../../src/catalogue/legalit
 import { sha256, utf8 } from "../../../src/catalogue/serialization";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
-const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
+const testEnv = env as Env & {
+  TEST_MIGRATIONS: D1Migration[];
+  LEGACY_DB: D1Database;
+};
 let requestSequence = 0;
 
 beforeEach(async () => {
@@ -266,10 +269,88 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
        ) VALUES (?, 'srcobsset_collection_owner',
          'card-keepr-official-source-collection-plan@1', ?, ?,
          '2026-08-01T00:00:03.000Z')`,
+    ).bind(
+      sourceRunId,
+      collectionPlan,
+      `a${"Z".repeat(63)}`,
+    ).run(),
+  ).rejects.toThrow(/CHECK constraint failed/);
+  await expect(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO official_source_collection_plans (
+         ingestion_run_id, discovery_observation_set_id, contract,
+         collection_plan_json, content_digest, created_at
+       ) VALUES (?, 'srcobsset_collection_owner',
+         'card-keepr-official-source-collection-plan@1', ?, ?,
+         '2026-08-01T00:00:03.000Z')`,
     ).bind(targetRunId, collectionPlan, "4".repeat(64)).run(),
   ).rejects.toThrow(
     /official_source_collection_plan_discovery_owner_mismatch/,
   );
+});
+
+test("an upgraded D1 enforces full lowercase digests and canonical revision rule identity", async () => {
+  const legacyDatabase = testEnv.LEGACY_DB;
+  const legalityMigration = testEnv.TEST_MIGRATIONS.at(-1);
+  if (legalityMigration === undefined) {
+    throw new Error("Legality migration is absent");
+  }
+  await applyD1Migrations(
+    legacyDatabase,
+    testEnv.TEST_MIGRATIONS.slice(0, -1),
+  );
+  await applyD1Migrations(legacyDatabase, [legalityMigration]);
+  await legacyDatabase.prepare(
+    `DROP TRIGGER official_source_collection_plan_discovery_owner`,
+  ).run();
+
+  const malformedDigest = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO official_source_collection_plans (
+        ingestion_run_id, discovery_observation_set_id, contract,
+        collection_plan_json, content_digest, created_at
+      ) VALUES ('run_missing', 'srcobsset_missing',
+        'card-keepr-official-source-collection-plan@1', '{}', ?,
+        '2026-08-01T00:00:00.000Z')`,
+    ).bind(`a${"Z".repeat(63)}`).run(),
+  );
+  const validDigestMissingOwner = await rejectedError(
+    legacyDatabase.prepare(
+      `INSERT INTO official_source_collection_plans (
+        ingestion_run_id, discovery_observation_set_id, contract,
+        collection_plan_json, content_digest, created_at
+      ) VALUES ('run_missing', 'srcobsset_missing',
+        'card-keepr-official-source-collection-plan@1', '{}', ?,
+        '2026-08-01T00:00:00.000Z')`,
+    ).bind("a".repeat(64)).run(),
+  );
+  expect(String(malformedDigest)).toMatch(/CHECK constraint failed/);
+  expect(String(validDigestMissingOwner)).toMatch(
+    /official_source_collection_plan_discovery_owner_mismatch|FOREIGN KEY constraint failed/,
+  );
+
+  const foreignKeys = await legacyDatabase.prepare(
+    `PRAGMA foreign_key_list(revision_legality_rules)`,
+  ).all<{ table: string; from: string }>();
+  expect(foreignKeys.results).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        table: "legality_rules",
+        from: "legality_rule_id",
+      }),
+    ]),
+  );
+  const guards = await legacyDatabase.prepare(
+    `SELECT name FROM sqlite_master
+     WHERE type = 'trigger' AND name IN (
+       'guard_legality_rule_identity',
+       'legality_rules_immutable_delete'
+     ) ORDER BY name`,
+  ).all<{ name: string }>();
+  expect(guards.results.map((row) => row.name)).toEqual([
+    "guard_legality_rule_identity",
+    "legality_rules_immutable_delete",
+  ]);
 });
 
 test.each([
@@ -570,6 +651,10 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const retainedPointers = retainedRules.map((rule) =>
     requiredString(rule, "source_observation_pointer")
   );
+  const retainedDocument = await request(
+    `/v1/source-observation-sets/${requiredString(retainedRules[0]!, "source_observation_set_id")}/content`,
+  );
+  expect(retainedDocument.response.status).toBe(200);
   expect(new Set(retainedPointers).size).toBe(retainedRules.length);
   for (const rule of retainedRules) {
     const pointer = requiredString(rule, "source_observation_pointer");
@@ -586,6 +671,21 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       card_numbers: `${pointer}/card_numbers`,
       effect: `${pointer}/effect`,
     });
+    for (const [field, fieldPointer] of Object.entries(
+      rule.source_field_pointers as Record<string, string>,
+    )) {
+      const sourceValue = resolveJsonPointer(
+        retainedDocument.document,
+        fieldPointer,
+      );
+      expect(sourceValue).not.toBeUndefined();
+      if (
+        field !== "card_numbers" &&
+        field !== "effect"
+      ) {
+        expect(sourceValue).toEqual(rule[field]);
+      }
+    }
   }
   const copyLimit = retainedRules.find(
     (rule) => rule.official_id === "legality_rule_asia_copy_limit",
@@ -604,35 +704,48 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const published = await approve(first.reconciled, "publish-current-rules");
   expect(published.response.status).toBe(200);
 
-  const missing = await collectFixtureLegality(
-    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=missing",
-    "contextual-legality-domain-missing",
+  const omitted = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=omitted",
+    "contextual-legality-domain-omitted",
   );
-  const missingPublished = await approve(
-    missing.reconciled,
-    "publish-missing-rules",
+  expect(omitted.reconciled.legality_rules).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        official_id: "legality_rule_asia_eligible",
+        current: true,
+      }),
+    ]),
   );
-  expect(missingPublished.response.status).toBe(200);
-  const card = (missing.reconciled.cards as Array<Record<string, unknown>>)
+  const omittedPublished = await approve(
+    omitted.reconciled,
+    "publish-omitted-rules",
+  );
+  expect(omittedPublished.response.status).toBe(200);
+  const omittedRule = await revisionLegalityRule(
+    requiredString(omittedPublished.document, "resulting_revision_id"),
+    "legality_rule_asia_eligible",
+  );
+  expect(omittedRule).toMatchObject({ current: true });
+
+  const empty = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=empty",
+    "contextual-legality-domain-empty",
+  );
+  const emptyPublished = await approve(
+    empty.reconciled,
+    "publish-empty-rules",
+  );
+  expect(emptyPublished.response.status).toBe(200);
+  const card = (empty.reconciled.cards as Array<Record<string, unknown>>)
     .find((candidate) =>
       (candidate.official_identity as Record<string, unknown>).value ===
         "GD30-001"
     );
   if (card === undefined) throw new Error("GD30-001 is absent");
-  const retainedEligible = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json
-     FROM revision_legality_rules
-     WHERE catalogue_revision_id = ?
-       AND json_extract(document_json, '$.official_id') = ?`,
-  )
-    .bind(
-      requiredString(missingPublished.document, "resulting_revision_id"),
-      "legality_rule_asia_eligible",
-    )
-    .first<{ document_json: string }>();
-  const eligible = retainedEligible === null
-    ? undefined
-    : JSON.parse(retainedEligible.document_json) as Record<string, unknown>;
+  const eligible = await revisionLegalityRule(
+    requiredString(emptyPublished.document, "resulting_revision_id"),
+    "legality_rule_asia_eligible",
+  );
   expect(eligible).toMatchObject({ current: false });
 
   const response = await contextualLegalityStatusResponse(
@@ -647,11 +760,87 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   };
   expect(status.data[0]).toMatchObject({ status: "legal" });
   expect(status.data[0]!.rule_ids).toContain(requiredString(eligible!, "id"));
+
+  const canonicalRules = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT id FROM legality_rules ORDER BY id LIMIT 3`,
+  ).all<{ id: string }>();
+  expect(canonicalRules.results).toHaveLength(3);
+  const [idMutable, firstRevisionMutable, deleteMutable] =
+    canonicalRules.results;
+  const identityUpdate = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE legality_rules SET id = ? WHERE id = ?`,
+    ).bind(`${idMutable!.id}_changed`, idMutable!.id).run(),
+  );
+  const firstRevisionUpdate = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE legality_rules SET first_revision_id = ? WHERE id = ?`,
+    ).bind(
+      requiredString(emptyPublished.document, "resulting_revision_id"),
+      firstRevisionMutable!.id,
+    ).run(),
+  );
+  const canonicalDelete = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `DELETE FROM legality_rules WHERE id = ?`,
+    ).bind(deleteMutable!.id).run(),
+  );
+  const orphanRevisionRule = await rejectedError(
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_legality_rules (
+         catalogue_revision_id, legality_rule_id, supported_game,
+         region, format, event_tier, effective_from, effective_until,
+         card_ids_json, document_json
+       ) VALUES (?, 'legality_rule_missing_canonical', 'gundam',
+         'EN-ASIA', 'standard', NULL, '2026-01-01', NULL, '[]', ?)`,
+    ).bind(
+      requiredString(emptyPublished.document, "resulting_revision_id"),
+      JSON.stringify({
+        id: "legality_rule_missing_canonical",
+        official_id: "missing-canonical",
+      }),
+    ).run(),
+  );
+  expect([
+    String(identityUpdate),
+    String(firstRevisionUpdate),
+    String(canonicalDelete),
+    String(orphanRevisionRule),
+  ]).toEqual([
+    expect.stringMatching(/legality_rule_identity_conflict/),
+    expect.stringMatching(/legality_rule_identity_conflict/),
+    expect.stringMatching(/legality_rule_immutable/),
+    expect.stringMatching(/FOREIGN KEY constraint failed/),
+  ]);
 });
+
+test.each(["event-tier", "effective-until"])(
+  "nullable legality field %s must be explicitly retained for exact provenance",
+  async (field) => {
+    const collected = await collectFixtureLegality(
+      `https://official-source.invalid/reconciliation/contextual-legality-domain?rules=omit-${field}`,
+      `contextual-legality-domain-omit-${field}`,
+      409,
+    );
+    expect(collected.reconciled).toMatchObject({
+      state: "failed",
+      publishable: false,
+      diagnostics: [
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            field === "event-tier" ? "event_tier" : "effective_until",
+          ),
+        }),
+      ],
+    });
+  },
+);
 
 async function collectFixtureLegality(
   url: string,
   idempotencyKey: string,
+  expectedStatus = 200,
 ): Promise<{
   runId: string;
   reconciled: Record<string, unknown>;
@@ -679,7 +868,7 @@ async function collectFixtureLegality(
     `/v1/ingestion-runs/${runId}/reconciliation`,
     {},
   );
-  expect(reconciled.response.status).toBe(200);
+  expect(reconciled.response.status).toBe(expectedStatus);
   return { runId, reconciled: reconciled.document };
 }
 
@@ -762,6 +951,33 @@ function requiredString(
   const value = document[field];
   if (typeof value !== "string") throw new Error(`${field} is not a string`);
   return value;
+}
+
+async function revisionLegalityRule(
+  revisionId: string,
+  officialId: string,
+): Promise<Record<string, unknown> | undefined> {
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json
+     FROM revision_legality_rules
+     WHERE catalogue_revision_id = ?
+       AND json_extract(document_json, '$.official_id') = ?`,
+  )
+    .bind(revisionId, officialId)
+    .first<{ document_json: string }>();
+  return retained === null
+    ? undefined
+    : JSON.parse(retained.document_json) as Record<string, unknown>;
+}
+
+function resolveJsonPointer(document: unknown, pointer: string): unknown {
+  return pointer.split("/").slice(1).reduce<unknown>((value, encoded) => {
+    if (value === null || typeof value !== "object") {
+      throw new Error(`JSON Pointer ${pointer} does not resolve`);
+    }
+    const key = encoded.replace(/~1/g, "/").replace(/~0/g, "~");
+    return (value as Record<string, unknown>)[key];
+  }, document);
 }
 
 async function rejectedError(promise: Promise<unknown>): Promise<unknown> {

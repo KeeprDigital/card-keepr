@@ -31,12 +31,13 @@ values from demonstrated publisher fields and fail closed when it cannot.
 The remaining source-adapter requirements in this section describe that future
 installation contract; they do not claim that a publisher representation is
 currently supported.
-An Ingestion Run begins with an immutable one-request Discovery Plan. The
-retained discovery observation creates, once, a separately named Official
+An Ingestion Run begins with an immutable one-request Evidence Plan containing
+its discovery request. The retained discovery observation creates, once, a
+separately named Official
 Source Collection Plan containing the exact bounded set of discovered
 requests. That collection plan is immutable, bound to the discovery
 observation by identity, and bound to its canonical JSON by SHA-256; retries
-must reproduce it byte-for-byte. The original Discovery Plan is never expanded
+must reproduce it byte-for-byte. The original Evidence Plan is never expanded
 or rewritten.
 
 The required legality scope is discovery, legality Card details, current

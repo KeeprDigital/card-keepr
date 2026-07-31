@@ -319,9 +319,15 @@ export async function retainedReconciliationObservation(
     }
   }
   const documents = await Promise.all(
-    orderedRows.map((row) =>
-      retainedObservationDocument(evidenceObjects, row),
-    ),
+    orderedRows.map((row) => {
+      const adapter = requiredSourceAdapter(row.adapter_version);
+      if (row.content_byte_length > adapter.maximumSnapshotBytes) {
+        throw new Error(
+          `Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`,
+        );
+      }
+      return retainedObservationDocument(evidenceObjects, row);
+    }),
   );
   const aggregateBytes = orderedRows.reduce(
     (total, row) => total + row.content_byte_length,
@@ -343,6 +349,7 @@ export async function retainedReconciliationObservation(
   );
   const observationIds = new Set<string>();
   const legalityRules: RetainedLegalityRule[] = [];
+  let completeLegalityScopes = 0;
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
@@ -361,6 +368,14 @@ export async function retainedReconciliationObservation(
           );
         }
         observationIds.add(wrapped.id);
+        if (
+          isRecord(wrapped.value) &&
+          Array.isArray(wrapped.value.legality_rules)
+        ) {
+          if (completeLegalityScope(wrapped.value)) {
+            completeLegalityScopes += 1;
+          }
+        }
         legalityRules.push(
           ...parseRetainedLegalityRules(wrapped.value, {
             game: supportedGame(row.supported_game),
@@ -421,6 +436,11 @@ export async function retainedReconciliationObservation(
       collectionRequests,
       legalityRules,
     );
+    if (completeLegalityScopes === 0) {
+      throw new Error(
+        "The complete Official Source adapter did not retain its required Legality Rule stream.",
+      );
+    }
   }
   return {
     observationSetId: first.observation_set_id,
@@ -442,7 +462,23 @@ export async function retainedReconciliationObservation(
     })),
     observations: merged,
     legalityRules,
+    legalityScopeObserved: completeLegalityScopes > 0,
   };
+}
+
+function completeLegalityScope(value: Record<string, unknown>): boolean {
+  if (
+    value.observation_type !== "legality_rules" ||
+    !Array.isArray(value.legality_rules) ||
+    !isRecord(value.completeness)
+  ) {
+    return false;
+  }
+  return value.completeness.structurally_complete === true &&
+    value.completeness.required_surfaces_complete === true &&
+    value.completeness.partitions_complete === true &&
+    value.completeness.declared_record_count === 1 &&
+    value.completeness.parsed_record_count === 1;
 }
 
 async function validateOfficialSurfaceCoverage(

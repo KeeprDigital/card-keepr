@@ -784,27 +784,29 @@ export async function reconcileRetainedCardPrintingEvidence(
   >> = [];
   let candidateLegalityRules =
     priorCandidate?.legality_rules ?? [];
-  try {
-    resolvedLegalityRules = await resolveLegalityRuleCards(
-      retained.legalityRules,
-      [...cards.values()],
-    );
-    candidateLegalityRules = legalityRulesForCandidate(
-      priorCandidate,
-      retained.sourceLineage,
-      resolvedLegalityRules,
-    );
-  } catch (error) {
-    diagnostics.push({
-      code: "retained_evidence_invalid",
-      source_observation_id: null,
-      locator: null,
-      candidate_printing_ids: [],
-      detail:
-        error instanceof Error
-          ? error.message
-          : "Retained Legality Rule evidence is invalid.",
-    });
+  if (retained.legalityScopeObserved) {
+    try {
+      resolvedLegalityRules = await resolveLegalityRuleCards(
+        retained.legalityRules,
+        [...cards.values()],
+      );
+      candidateLegalityRules = legalityRulesForCandidate(
+        priorCandidate,
+        retained.sourceLineage,
+        resolvedLegalityRules,
+      );
+    } catch (error) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: null,
+        locator: null,
+        candidate_printing_ids: [],
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Retained Legality Rule evidence is invalid.",
+      });
+    }
   }
   const cardSurfaceObservations = cardPrintingObservations.filter(
     (observation) =>
@@ -1091,7 +1093,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings: observedPrintings,
     products: productCatalogue.observedProducts,
     errata,
-    legality_rules: resolvedLegalityRules,
+    legality_rules: candidateLegalityRules,
     diagnostics: [],
     warnings,
   };

@@ -25,7 +25,10 @@ CREATE TABLE official_source_collection_plans (
     CHECK (contract = 'card-keepr-official-source-collection-plan@1'),
   collection_plan_json TEXT NOT NULL CHECK (json_valid(collection_plan_json)),
   content_digest TEXT NOT NULL
-    CHECK (length(content_digest) = 64 AND content_digest GLOB '[0-9a-f]*'),
+    CHECK (
+      length(content_digest) = 64
+      AND content_digest NOT GLOB '*[^0-9a-f]*'
+    ),
   created_at TEXT NOT NULL
 );
 
@@ -177,7 +180,9 @@ CREATE INDEX legality_rules_context
 
 CREATE TRIGGER guard_legality_rule_identity
 BEFORE UPDATE ON legality_rules
-WHEN OLD.supported_game <> NEW.supported_game
+WHEN OLD.id <> NEW.id
+  OR OLD.first_revision_id <> NEW.first_revision_id
+  OR OLD.supported_game <> NEW.supported_game
   OR OLD.official_id <> NEW.official_id
   OR OLD.region <> NEW.region
   OR OLD.format <> NEW.format
@@ -192,9 +197,15 @@ BEGIN
   SELECT RAISE(ABORT, 'legality_rule_identity_conflict');
 END;
 
+CREATE TRIGGER legality_rules_immutable_delete
+BEFORE DELETE ON legality_rules
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_immutable');
+END;
+
 CREATE TABLE revision_legality_rules (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
-  legality_rule_id TEXT NOT NULL,
+  legality_rule_id TEXT NOT NULL REFERENCES legality_rules(id),
   supported_game TEXT NOT NULL CHECK (
     supported_game IN ('one-piece', 'fusion-world', 'digimon', 'gundam')
   ),

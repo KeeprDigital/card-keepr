@@ -69,8 +69,12 @@ The immutable result of applying one Source Adapter Version to one Source Snapsh
 _Avoid_: Source Snapshot, Catalogue Data, mutable parse result
 
 **Evidence Plan**:
-The persisted, immutable set of Official Source requests selected for the collection phase of one Ingestion Run, including its Source Lineage and Source Adapter Version.
+The persisted, immutable initial request plan for one Ingestion Run, including its Source Lineage and Source Adapter Version. For a complete Official Source adapter it contains the single discovery request and is never expanded after discovery.
 _Avoid_: Ingestion Run, automatic crawl, mutable request queue
+
+**Official Source Collection Plan**:
+The separately immutable set of bounded follow-up requests derived from retained discovery evidence for a complete Official Source adapter. It extends an Ingestion Run's collection coverage without modifying the original Evidence Plan.
+_Avoid_: Evidence Plan, mutable request queue, automatic crawl
 
 **Ingestion Run**:
 One owner-initiated attempt to capture Source Snapshots and reconcile them into current Catalogue Data. Its outcome remains auditable even though the ordinary API exposes the current catalogue.
