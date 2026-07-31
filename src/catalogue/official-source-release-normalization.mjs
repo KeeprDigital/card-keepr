@@ -15,6 +15,9 @@ const monthNumbers = new Map([
 
 export function normalizedOfficialReleaseDate(value) {
   const normalized = value.normalize("NFC").trim();
+  if (officialReleaseDateNeedsSchemaReview(normalized)) {
+    return { precision: "unknown", value: null };
+  }
   if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
     assertCalendarDay(normalized);
     return { precision: "day", value: normalized };
@@ -67,7 +70,10 @@ export function normalizedOfficialReleaseDate(value) {
 
 export function normalizedOfficialReleaseStatus(value) {
   const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
-  if (normalized === "" || normalized === "-") return null;
+  if (normalized === "") return null;
+  if (officialReleaseStatusNeedsSchemaReview(normalized)) {
+    return "announced";
+  }
   if (
     /^(?:released|on sale|available|available now|now available|sales? start(?:ed)?)$/u
       .test(normalized)
@@ -81,6 +87,20 @@ export function normalizedOfficialReleaseStatus(value) {
     return "announced";
   }
   throw new Error(`Unrecognized official Release status: ${value}.`);
+}
+
+export function officialReleaseDateNeedsSchemaReview(value) {
+  return unavailableOfficialReleaseVocabulary(value);
+}
+
+export function officialReleaseStatusNeedsSchemaReview(value) {
+  return unavailableOfficialReleaseVocabulary(value);
+}
+
+function unavailableOfficialReleaseVocabulary(value) {
+  return value !== null &&
+    /^(?:|-|tba|tbd|to be announced|to be determined|unknown|not announced)$/iu
+      .test(value.normalize("NFC").trim());
 }
 
 function assertCalendarDay(value) {

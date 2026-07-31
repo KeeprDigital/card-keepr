@@ -271,6 +271,7 @@ export const officialDiscoveryDefinitions = {
     productCode: "OP-RAW-01",
     productName: "One Piece Raw Product",
     region: "EN-OCEANIA",
+    artworkId: null,
     printing: {
       rarity: "L",
       normalizedRarity: "leader",
@@ -938,9 +939,11 @@ export function officialDiscoveryDocument(input) {
                   ? ["back", "front"]
                   : ["front"],
               artwork_id:
-                `${input.game}-${input.number}-standard`
-                  .normalize("NFC")
-                  .toLocaleLowerCase(),
+                input.artworkId === undefined
+                  ? `${input.game}-${input.number}-standard`
+                    .normalize("NFC")
+                    .toLocaleLowerCase()
+                  : input.artworkId,
             })
           }`,
           printed_fields_digest:

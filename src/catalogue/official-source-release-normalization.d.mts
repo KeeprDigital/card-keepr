@@ -10,3 +10,11 @@ export function normalizedOfficialReleaseDate(
 export function normalizedOfficialReleaseStatus(
   value: string | null,
 ): "announced" | "released" | null;
+
+export function officialReleaseDateNeedsSchemaReview(
+  value: string | null,
+): boolean;
+
+export function officialReleaseStatusNeedsSchemaReview(
+  value: string | null,
+): boolean;

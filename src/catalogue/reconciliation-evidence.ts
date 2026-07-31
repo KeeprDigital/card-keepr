@@ -3,6 +3,9 @@ import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./fixture";
 import { requiredSourceAdapter } from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
+import {
+  parsedOfficialArtworkIdentity,
+} from "./official-artwork-identity.mjs";
 
 type PlannedRequestRow = {
   request_id: string;
@@ -491,7 +494,7 @@ async function attachRetainedPrintingImages(
       "Retained Printing Image has no source-semantic artwork identity.",
     );
   }
-  if (!hasExplicitArtworkIdentity(fingerprint)) {
+  if (parsedOfficialArtworkIdentity(fingerprint) === null) {
     return {
       ...value,
       appearance_evidence: {
@@ -525,21 +528,6 @@ async function attachRetainedPrintingImages(
       ),
     },
   };
-}
-
-function hasExplicitArtworkIdentity(fingerprint: string): boolean {
-  const prefix = "official-artwork:";
-  if (!fingerprint.startsWith(prefix)) return false;
-  try {
-    const value: unknown = JSON.parse(fingerprint.slice(prefix.length));
-    return (
-      isRecord(value) &&
-      typeof value.artwork_id === "string" &&
-      value.artwork_id.length > 0
-    );
-  } catch {
-    return false;
-  }
 }
 
 async function retainedPrintingImage(

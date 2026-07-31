@@ -1,10 +1,15 @@
 import {
+  officialReleaseDateNeedsSchemaReview,
+  officialReleaseStatusNeedsSchemaReview,
   normalizedOfficialReleaseDate,
   normalizedOfficialReleaseStatus,
 } from "./official-source-release-normalization.mjs";
 import {
   partitionMappedOfficialLeaves,
 } from "./official-source-field-coverage.mjs";
+import {
+  officialArtworkFingerprint,
+} from "./official-artwork-identity.mjs";
 
 type ProductSourceGame =
   | "one-piece"
@@ -489,6 +494,7 @@ function discoveredHtmlRole(
     initialSurface === "releases" ||
     /\/products?\//iu.test(target)
   ) {
+    if (nonCardProductClassification(target) !== null) return null;
     return /(?:detail|products?\/[^/?]+|products?\.php\?.*\bid=)/iu.test(
         target,
       )
@@ -517,6 +523,12 @@ function discoveredHtmlRole(
     return "listing";
   }
   return null;
+}
+
+function nonCardProductClassification(value: string): "accessory" | null {
+  return /(?:accessor|sleeve|storage|binder|playmat)/iu.test(value)
+    ? "accessory"
+    : null;
 }
 
 function officialHostname(sourceLineage: string, hostname: string): boolean {
@@ -783,6 +795,11 @@ function parseOnePieceBandaiCardList(
     );
   }
   const base = new URL(requestUrl);
+  const schemaReviewValues: {
+    locator: string;
+    field: string;
+    value: string;
+  }[] = [];
   const observations = modalMatches.map((match) => {
     const locator = decodeHtmlText(match[1]!);
     const body = match[2]!;
@@ -828,12 +845,18 @@ function parseOnePieceBandaiCardList(
     const artworkId =
       htmlAttribute(modalTag, "data-artwork-id") ??
       field("Artwork ID", "Artwork Identifier", "Illustration ID");
-    const treatment = officialArtworkTreatment(
+    const rawTreatment =
       htmlAttribute(modalTag, "data-artwork-treatment") ??
-        field("Artwork Treatment", "Treatment"),
-      "One Piece artwork treatment",
-    );
-    const artworkFingerprint = sourceArtworkFingerprint(
+      field("Artwork Treatment", "Treatment");
+    const treatment = officialArtworkTreatment(rawTreatment);
+    if (rawTreatment !== null && treatment === null) {
+      schemaReviewValues.push({
+        locator,
+        field: "One Piece artwork treatment",
+        value: rawTreatment,
+      });
+    }
+    const artworkFingerprint = officialArtworkFingerprint(
       cardNumber,
       ["front"],
       artworkId,
@@ -920,6 +943,9 @@ function parseOnePieceBandaiCardList(
       recording_options: recordings,
       declared_record_count: declaredCount,
       parsed_locators: modalMatches.map((match) => decodeHtmlText(match[1]!)),
+      ...(schemaReviewValues.length === 0
+        ? {}
+        : { schema_review_values: schemaReviewValues }),
     },
     consumedFields: [
       "page",
@@ -1160,7 +1186,7 @@ function parseBandaiCardDetail(
       "data-artwork-id",
     ) ??
     field(["Artwork ID", "Artwork Identifier", "Illustration ID"]);
-  const artworkFingerprint = sourceArtworkFingerprint(
+  const artworkFingerprint = officialArtworkFingerprint(
     cardNumber,
     imageEvidence.map(({ role }) => role),
     artworkId,
@@ -1431,7 +1457,7 @@ function productLinksFromHtml(
 function parseBandaiProductDetail(
   html: string,
   sourceLineage: string,
-  _requestUrl: string,
+  requestUrl: string,
 ): Record<string, unknown> {
   const pairs = htmlLabelPairs(html);
   const field = (...names: string[]): string | null =>
@@ -1453,8 +1479,40 @@ function parseBandaiProductDetail(
       `${sourceLineage} Product detail is missing its official title.`,
     );
   }
+  const nonCardClassification = nonCardProductClassification(
+    `${requestUrl} ${title}`,
+  );
+  if (nonCardClassification !== null) {
+    const rawDocument = Object.fromEntries(
+      pairs.map(({ label, value }) => [label, value]),
+    );
+    return attachRawSurfaceEvidence(
+      {
+        completeness: completeObservation(),
+        product_release_catalogue: {
+          products: [],
+          distribution_contexts: [{
+            key:
+              `non-card:${nonCardClassification}:${
+                (code ?? title).normalize("NFC").trim().toLocaleLowerCase()
+              }`,
+            kind: "other",
+            label: nonCardClassification,
+            evidence_category: "explicit",
+          }],
+          relationships: [],
+        },
+      },
+      sourceLineage,
+      "product-detail",
+      rawDocument,
+      true,
+      ["Product Code"],
+    );
+  }
   const product = { code, title };
   const releaseDate = field("Release Date", "Available Date", "On Sale");
+  const releaseStatus = field("Status");
   const releases = new Map<string, Record<string, unknown>[]>();
   if (releaseDate !== null) {
     const date = normalizedOfficialReleaseDate(releaseDate);
@@ -1468,7 +1526,7 @@ function parseBandaiProductDetail(
       ),
       precision: date.precision,
       date: date.value,
-      status: normalizedOfficialReleaseStatus(field("Status")),
+      status: normalizedOfficialReleaseStatus(releaseStatus),
     }]);
   }
   const observation = productOnlyObservation(
@@ -1485,16 +1543,18 @@ function parseBandaiProductDetail(
     true,
     [
       "Product Code",
-      "Release Date",
-      "Available Date",
-      "On Sale",
+      ...(officialReleaseDateNeedsSchemaReview(releaseDate)
+        ? []
+        : ["Release Date", "Available Date", "On Sale"]),
       "Release Event ID",
       "Release ID",
       "Event ID",
       "Region",
       "Market",
       "Territory",
-      "Status",
+      ...(officialReleaseStatusNeedsSchemaReview(releaseStatus)
+        ? []
+        : ["Status"]),
     ],
   );
 }
@@ -1767,12 +1827,13 @@ function parseBandaiProductIndex(
       firstLabelValue(htmlLabelPairs(body), ["Product Code"]);
     if (title.length === 0) return [];
     const classificationText = `${attributes} ${body} ${resolved.pathname}`;
-    const nonCard =
-      /(?:accessor|sleeve|storage|binder|playmat)/iu.test(classificationText);
+    const nonCardClassification =
+      nonCardProductClassification(classificationText);
+    const nonCard = nonCardClassification !== null;
     const cardBearing =
       /(?:booster|starter|deck|card|set)/iu.test(classificationText);
     const classification = nonCard
-      ? { kind: "other", label: "accessory" }
+      ? { kind: "other", label: nonCardClassification }
       : cardBearing
         ? { kind: "product", label: "booster" }
         : { kind: "other", label: "other" };
@@ -1865,33 +1926,6 @@ function htmlText(value: string): string {
     .join("\n");
 }
 
-function sourceArtworkFingerprint(
-  officialCardIdentity: string,
-  roles: readonly string[],
-  artworkId: string | null,
-): string {
-  const card = officialCardIdentity.normalize("NFC").trim().toUpperCase();
-  const normalizedArtworkId =
-    artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
-  const stableRoles = [...new Set(
-    roles.map((role) => role.normalize("NFC").trim().toLocaleLowerCase()),
-  )].sort();
-  if (
-    card.length === 0 ||
-    stableRoles.length === 0 ||
-    stableRoles.some((role) => role.length === 0)
-  ) {
-    throw new Error("Official Printing has no stable semantic artwork identity.");
-  }
-  return `official-artwork:${
-    JSON.stringify({
-      official_card_identity: card,
-      roles: stableRoles,
-      artwork_id: normalizedArtworkId === "" ? null : normalizedArtworkId,
-    })
-  }`;
-}
-
 function decodeHtmlText(value: string): string {
   return value
     .replaceAll("&amp;", "&")
@@ -1973,7 +2007,6 @@ function officialBoolean(value: string | null, field: string): boolean {
 
 function officialArtworkTreatment(
   value: string | null,
-  field: string,
 ): "standard" | "alternate" | null {
   if (value === null) return null;
   const normalized = value.normalize("NFC").trim().toLocaleLowerCase();
@@ -1983,7 +2016,7 @@ function officialArtworkTreatment(
   )) {
     return "alternate";
   }
-  throw new Error(`Unrecognized official ${field} value: ${value}`);
+  return null;
 }
 
 function specifiedCosts(

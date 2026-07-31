@@ -262,6 +262,21 @@ export async function reconcileRetainedCardPrintingEvidence(
             "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
         });
         printingId = locatedId;
+      } else if (
+        !observation.artworkIdentityExplicit &&
+        located === null &&
+        localLocated === undefined &&
+        matchIds.size > 0
+      ) {
+        printingId = [...matchIds].sort()[0]!;
+        diagnostics.push({
+          code: "printing_match_insufficient_evidence",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids: [...matchIds].sort(),
+          detail:
+            "A new Printing locator without an explicit Official Source artwork identity cannot be matched to an existing compatible Printing.",
+        });
       } else if (matchIds.size > 1) {
         diagnostics.push({
           code: "printing_match_ambiguous",

@@ -12,6 +12,9 @@ import {
   sourceFieldWarning,
   type ProfileWarning,
 } from "./reconciliation-profile";
+import {
+  parsedOfficialArtworkIdentity,
+} from "./official-artwork-identity.mjs";
 
 export type PrintingCompatibility = Readonly<{
   card_id: string;
@@ -48,6 +51,7 @@ export type ParsedReconciliationObservation = Readonly<{
   locator: string | null;
   variantKey: string | null;
   artworkFingerprint: string | null;
+  artworkIdentityExplicit: boolean;
   printedFieldsDigest: string | null;
   treatment: string | null;
   demonstrablyNovel: boolean;
@@ -175,6 +179,7 @@ export function parseReconciliationObservation(
       locator: null,
       variantKey: null,
       artworkFingerprint: null,
+      artworkIdentityExplicit: false,
       printedFieldsDigest: null,
       treatment: null,
       demonstrablyNovel: false,
@@ -290,6 +295,7 @@ export function parseReconciliationObservation(
       locator: null,
       variantKey: null,
       artworkFingerprint: null,
+      artworkIdentityExplicit: false,
       printedFieldsDigest: null,
       treatment: null,
       demonstrablyNovel: false,
@@ -382,6 +388,8 @@ export function parseReconciliationObservation(
     identityEvidence.artwork_fingerprint,
     "identity_evidence.artwork_fingerprint",
   );
+  const artworkIdentity =
+    parsedOfficialArtworkIdentity(artworkFingerprint);
   const appearance = appearanceEvidence(
     record.appearance_evidence,
     artworkFingerprint,
@@ -397,6 +405,9 @@ export function parseReconciliationObservation(
     ),
     variantKey,
     artworkFingerprint,
+    artworkIdentityExplicit:
+      !artworkFingerprint.startsWith("official-artwork:") ||
+      typeof artworkIdentity?.artwork_id === "string",
     printedFieldsDigest: requiredString(
       identityEvidence.printed_fields_digest,
       "identity_evidence.printed_fields_digest",

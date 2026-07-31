@@ -163,7 +163,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
   assert.doesNotMatch(
     observations[0].identity_evidence.artwork_fingerprint,
-    /https?:|OP99-001\.png|#OP99-001/u,
+    /https?:|OP99-001\.png|#OP99-001|content_sha|sha256|image\//u,
   );
   assert.equal(
     observations[0].identity_evidence.artwork_fingerprint,
@@ -226,6 +226,25 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     unidentified[0].identity_evidence.artwork_fingerprint,
     'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":null}',
   );
+  const unfamiliarTreatment = adapter.parseBytes(
+    new TextEncoder().encode(
+      html.replace(
+        '<div class="getInfo"><h3>Card Set(s)</h3>',
+        '<div class="treatment"><h3>Treatment</h3>Textured Foil</div>' +
+          '<div class="getInfo"><h3>Card Set(s)</h3>',
+      ),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  )[0];
+  assert.equal(unfamiliarTreatment.identity_evidence.treatment, null);
+  assert.ok(
+    unfamiliarTreatment.source_sidecar.unmapped_optional_fields.some(
+      ({ value }) => value === "Textured Foil",
+    ),
+  );
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -271,7 +290,7 @@ test("One Piece aggregate JSON-LD retains an explicit first Printing identity", 
   assert.ok(observation?.printing);
   assert.equal(
     observation.identity_evidence.artwork_fingerprint,
-    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":"one-piece-op99-001-standard"}',
+    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":null}',
   );
   assert.equal(observation.identity_evidence.locator, "/cards/OP99-001");
   assert.equal(observation.identity_evidence.treatment, null);
@@ -928,6 +947,96 @@ test("Product detail ignores unrelated code-shaped prose without losing name aut
       releases: [],
     }],
   );
+});
+
+test("accessory detail traversal retains non-card evidence without publishing a Product", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
+  );
+  const index = `
+    <html><title>BANDAI DRAGON BALL CARD PRODUCTS</title>
+      <article class="booster">
+        <a href="/fw/en/products/booster/fb-booster-01/">Booster 01</a>
+      </article>
+      <article class="accessory">
+        <a href="/fw/en/products/accessory/fb-box-01/">Storage Box</a>
+      </article>
+    </html>
+  `;
+  const discovered = adapter.discoverRequests(
+    new TextEncoder().encode(index),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("products"),
+      requestId: "fusion-world-en:products",
+    },
+  );
+  assert.ok(
+    discovered.some(({ url }) => url.includes("/booster/fb-booster-01/")),
+  );
+  assert.equal(
+    discovered.some(({ url }) => url.includes("/accessory/fb-box-01/")),
+    false,
+  );
+  const observation = adapter.parseBytes(
+    new TextEncoder().encode(`
+      <h1>Storage Box</h1>
+      <dl><dt>Product Code</dt><dd>FB-BOX-01</dd></dl>
+    `),
+    {
+      mediaType: "text/html",
+      url:
+        "https://www.dbs-cardgame.com/fw/en/products/accessory/fb-box-01/",
+      requestId: `fusion-world-en:product_detail:${"a".repeat(64)}`,
+    },
+  )[0];
+  assert.deepEqual(observation.product_release_catalogue.products, []);
+  assert.ok(
+    observation.product_release_catalogue.distribution_contexts.some(
+      ({ kind, label }) => kind === "other" && label === "accessory",
+    ),
+  );
+});
+
+test("unavailable Product release vocabulary normalizes to reviewable unknown values", () => {
+  const adapter = officialRawAdapterContracts.find(
+    ({ sourceLineage }) => sourceLineage === "gundam-en-us",
+  );
+  for (const dateToken of ["-", "TBA", ""]) {
+    const observation = adapter.parseBytes(
+      new TextEncoder().encode(`
+        <h1>Future Booster</h1>
+        <dl><dt>Product Code</dt><dd>GD-FUTURE</dd></dl>
+        <dl><dt>Release Date</dt><dd>${dateToken}</dd></dl>
+        <dl><dt>Status</dt><dd>TBA</dd></dl>
+      `),
+      {
+        mediaType: "text/html",
+        url: "https://www.gundam-gcg.com/en/products/future-booster/",
+        requestId: `gundam-en-us:product_detail:${"b".repeat(64)}`,
+      },
+    )[0];
+    assert.deepEqual(
+      observation.product_release_catalogue.products[0].releases,
+      [{
+        event_key: "product-release:GD-FUTURE",
+        region: "EN-US",
+        date: { precision: "unknown", value: null },
+        status: "announced",
+      }],
+    );
+    assert.ok(
+      observation.source_sidecar.unmapped_optional_fields.some(
+        ({ path, value }) =>
+          path.endsWith(".Release Date") && value === dateToken,
+      ),
+    );
+    assert.ok(
+      observation.source_sidecar.unmapped_optional_fields.some(
+        ({ path, value }) => path.endsWith(".Status") && value === "TBA",
+      ),
+    );
+  }
 });
 
 test("production coverage rejects keyword-only HTML without structural entries", () => {

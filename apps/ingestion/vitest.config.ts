@@ -372,13 +372,11 @@ export default defineConfig({
                       ? "BT99-900_locator"
                       : "BT99-900";
               const artworkId =
-                digimonArtworkVariant === "no-artwork-id"
-                  ? ""
-                  : digimonArtworkVariant === "alternate"
+                digimonArtworkVariant === "alternate"
                     ? ' data-artwork-id="digimon-bt99-900-alt-one"'
                     : digimonArtworkVariant === "alternate-two"
                       ? ' data-artwork-id="digimon-bt99-900-alt-two"'
-                      : ' data-artwork-id="digimon-bt99-900-standard"';
+                      : "";
               return new Response(
                 `<html data-card-id="${locator}"${artworkId}>
                   <h1>Digest Test Digimon</h1>

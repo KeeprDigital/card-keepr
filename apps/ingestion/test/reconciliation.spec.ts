@@ -779,7 +779,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
-test("explicit source-semantic Digimon artwork identity survives re-encoding and distinguishes artworks", async () => {
+test("complete image evidence publishes an unidentified artwork once without collapsing a new locator", async () => {
   const collectVariant = async (
     variant:
       | "base"
