@@ -38,6 +38,12 @@ beforeEach(async () => {
     `UPDATE operation_state SET active_ingestion_run_id = NULL
      WHERE singleton = 1`,
   ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state
+     SET current_revision_id = 'catrev_spine_000',
+         published_at = '1970-01-01T00:00:00.000Z'
+     WHERE singleton = 1`,
+  ).run();
 });
 
 test("the API authentication boundary runs in the Workers runtime", async () => {
@@ -353,6 +359,189 @@ test("Legality Status rejects a malformed Card identity before lookup", async ()
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
     });
+  }
+});
+
+test("authenticated Legality Status gives definitive exclusions precedence while auditing unresolved rules", async () => {
+  const revisionId = "catrev_api_legality_precedence";
+  const runId = "run_api_legality_precedence";
+  const publishedAt = "2026-07-30T00:00:00.000Z";
+  const digest = "c".repeat(64);
+  const cases = [
+    {
+      cardId: "card_precedence_ban",
+      attributes: {},
+      effect: { type: "ban" },
+    },
+    {
+      cardId: "card_precedence_membership",
+      attributes: { traits: ["Principality of Zeon"] },
+      effect: {
+        type: "membership",
+        attribute: "traits",
+        includes_any: ["Earth Federation"],
+      },
+    },
+    {
+      cardId: "card_precedence_rotation",
+      attributes: { block_icons: ["2"] },
+      effect: { type: "rotation", eligible_blocks: ["1"] },
+    },
+    {
+      cardId: "card_precedence_release",
+      attributes: {},
+      effect: {
+        type: "release_timing",
+        legal_from: "2026-08-01",
+      },
+    },
+  ] as const;
+  const cards = cases.map((testCase) => ({
+    id: testCase.cardId,
+    game: "gundam",
+    game_data: {
+      profile: "gundam@1",
+      attributes: testCase.attributes,
+    },
+  }));
+  const rules = cases.flatMap((testCase, index) => [
+    {
+      id: `legality_rule_precedence_${index}_definitive`,
+      official_id: `precedence-${index}-definitive`,
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-01-01",
+      effective_until: null,
+      card_ids: [testCase.cardId],
+      official_wording: `Definitive exclusion ${index}.`,
+      effect: testCase.effect,
+      source_lineage: "gundam-en-asia",
+      source_snapshot_id: "srcsnap_api_precedence",
+      source_observation_set_id: "srcset_api_precedence",
+      source_observation_id: "srcobs_api_precedence",
+    },
+    {
+      id: `legality_rule_precedence_${index}_unresolved`,
+      official_id: `precedence-${index}-unresolved`,
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-01-01",
+      effective_until: null,
+      card_ids: [testCase.cardId],
+      official_wording: `Unresolved qualifier ${index}.`,
+      effect: {
+        type: "unresolved",
+        reason: "A separate qualifier is not machine-readable.",
+      },
+      source_lineage: "gundam-en-asia",
+      source_snapshot_id: "srcsnap_api_precedence",
+      source_observation_set_id: "srcset_api_precedence",
+      source_observation_id: "srcobs_api_precedence",
+    },
+  ]);
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (
+        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
+        'api-legality-precedence-seed', ?, ?,
+        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+      )`,
+    ).bind(
+      runId,
+      publishedAt,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: "catrev_spine_000",
+        approved_at: publishedAt,
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(runId),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
+    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ...cards.map((card) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_cards (
+          catalogue_revision_id, card_id, document_json
+        ) VALUES (?, ?, ?)`,
+      ).bind(revisionId, card.id, JSON.stringify(card))
+    ),
+    ...rules.map((rule) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_legality_rules (
+          catalogue_revision_id, legality_rule_id, supported_game,
+          region, format, event_tier, effective_from, effective_until,
+          card_ids_json, document_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        revisionId,
+        rule.id,
+        rule.game,
+        rule.region,
+        rule.format,
+        rule.event_tier,
+        rule.effective_from,
+        rule.effective_until,
+        JSON.stringify(rule.card_ids),
+        JSON.stringify(rule),
+      )
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+  ]);
+
+  for (const [index, testCase] of cases.entries()) {
+    const response = await exports.default.fetch(
+      new Request(
+        "https://card-keepr.invalid/v1/legality-status" +
+          `?card_id=${testCase.cardId}` +
+          "&on=2026-07-30&format=standard&region=EN-ASIA",
+        {
+          headers: {
+            authorization: "Bearer vitest-api-key",
+            "cf-connecting-ip": `203.0.113.${40 + index}`,
+          },
+        },
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json<{
+      data: Array<{
+        status: string;
+        rule_ids: string[];
+        derivation: string;
+      }>;
+    }>();
+    expect(body.data[0]).toMatchObject({
+      status: "not_legal",
+      rule_ids: [
+        `legality_rule_precedence_${index}_definitive`,
+        `legality_rule_precedence_${index}_unresolved`,
+      ],
+    });
+    expect(body.data[0]!.derivation).toContain("evaluated not_legal");
+    expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
   }
 });
 

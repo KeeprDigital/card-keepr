@@ -26,6 +26,17 @@ export type LegalityRuleEffect =
   | { type: "release_timing"; legal_from: string }
   | { type: "unresolved"; reason: string };
 
+export type LegalityRuleSourceFieldPointers = {
+  official_wording: string;
+  effective_from: string;
+  effective_until: string;
+  region: string;
+  format: string;
+  event_tier: string;
+  card_numbers: string;
+  effect: string;
+};
+
 export type LegalityRule = {
   id: string;
   official_id: string;
@@ -42,6 +53,8 @@ export type LegalityRule = {
   source_snapshot_id: string;
   source_observation_set_id: string;
   source_observation_id: string;
+  source_observation_pointer: string;
+  source_field_pointers: LegalityRuleSourceFieldPointers;
   first_revision_id?: string;
   last_observed_revision_id?: string;
   current?: boolean;
@@ -69,6 +82,7 @@ export function parseRetainedLegalityRules(
     sourceSnapshotId: string;
     sourceObservationSetId: string;
     sourceObservationId: string;
+    sourceValuePointer: string;
   },
 ): RetainedLegalityRule[] {
   if (!isRecord(value) || value.legality_rules === undefined) return [];
@@ -84,11 +98,9 @@ export async function resolveLegalityRuleCards(
   rules: readonly RetainedLegalityRule[],
   cards: readonly CatalogueCard[],
 ): Promise<LegalityRule[]> {
-  const cardsByNumber = new Map(
-    cards.flatMap((card) =>
-      card.official_identity.kind === "card_number"
-        ? [[`${card.game}:${card.official_identity.value}`, card.id] as const]
-        : [],
+  const cardsByOfficialIdentity = new Map(
+    cards.map((card) =>
+      [`${card.game}:${card.official_identity.value}`, card.id] as const
     ),
   );
   const identities = new Set<string>();
@@ -110,14 +122,14 @@ export async function resolveLegalityRuleCards(
       );
     }
     const cardIds = rule.card_numbers.map((number) =>
-      requiredCardId(cardsByNumber, rule.game, number),
+      requiredCardId(cardsByOfficialIdentity, rule.game, number),
     );
     const effect =
       rule.effect.type === "prohibited_combination"
         ? {
             type: "prohibited_combination" as const,
             with_card_ids: rule.effect.with_card_numbers.map((number) =>
-              requiredCardId(cardsByNumber, rule.game, number),
+              requiredCardId(cardsByOfficialIdentity, rule.game, number),
             ),
           }
         : rule.effect;
@@ -250,6 +262,7 @@ function parseRule(
     sourceSnapshotId: string;
     sourceObservationSetId: string;
     sourceObservationId: string;
+    sourceValuePointer: string;
   },
   index: number,
 ): RetainedLegalityRule {
@@ -301,6 +314,8 @@ function parseRule(
       "A Legality Rule effective interval must end after it starts.",
     );
   }
+  const sourceObservationPointer =
+    `${provenance.sourceValuePointer}/legality_rules/${index}`;
   return {
     official_id: requiredOpaqueId(
       record.id,
@@ -329,6 +344,17 @@ function parseRule(
     source_snapshot_id: provenance.sourceSnapshotId,
     source_observation_set_id: provenance.sourceObservationSetId,
     source_observation_id: provenance.sourceObservationId,
+    source_observation_pointer: sourceObservationPointer,
+    source_field_pointers: {
+      official_wording: `${sourceObservationPointer}/official_wording`,
+      effective_from: `${sourceObservationPointer}/effective_from`,
+      effective_until: `${sourceObservationPointer}/effective_until`,
+      region: `${sourceObservationPointer}/region`,
+      format: `${sourceObservationPointer}/format`,
+      event_tier: `${sourceObservationPointer}/event_tier`,
+      card_numbers: `${sourceObservationPointer}/card_numbers`,
+      effect: `${sourceObservationPointer}/effect`,
+    },
   };
 }
 

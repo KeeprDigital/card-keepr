@@ -39,6 +39,58 @@
     "LegalityRegion": {
       "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
     },
+    "LegalityRuleSourcePointer": {
+      "type": "string",
+      "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+$"
+    },
+    "LegalityRuleSourceFieldPointers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "official_wording",
+        "effective_from",
+        "effective_until",
+        "region",
+        "format",
+        "event_tier",
+        "card_numbers",
+        "effect"
+      ],
+      "properties": {
+        "official_wording": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/official_wording$"
+        },
+        "effective_from": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effective_from$"
+        },
+        "effective_until": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effective_until$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/region$"
+        },
+        "format": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/format$"
+        },
+        "event_tier": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/event_tier$"
+        },
+        "card_numbers": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/card_numbers$"
+        },
+        "effect": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effect$"
+        }
+      }
+    },
     "LegalityRuleEffect": {
       "oneOf": [
         {
@@ -167,6 +219,8 @@
         "official_wording",
         "source_lineage",
         "source_observation_ids",
+        "source_observation_pointer",
+        "source_field_pointers",
         "lifecycle"
       ],
       "properties": {
@@ -231,6 +285,12 @@
           "items": {
             "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/OpaqueId"
           }
+        },
+        "source_observation_pointer": {
+          "$ref": "#/$defs/LegalityRuleSourcePointer"
+        },
+        "source_field_pointers": {
+          "$ref": "#/$defs/LegalityRuleSourceFieldPointers"
         },
         "lifecycle": {
           "$ref": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/RelationshipLifecycle"

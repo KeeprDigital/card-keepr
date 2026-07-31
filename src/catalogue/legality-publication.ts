@@ -32,6 +32,10 @@ export function legalityPublicationStatements(
       source_snapshot_id: rule.source_snapshot_id,
       source_observation_set_id: rule.source_observation_set_id,
       source_observation_id: rule.source_observation_id,
+      source_observation_pointer: rule.source_observation_pointer,
+      source_field_pointers_json: canonicalJson(
+        rule.source_field_pointers,
+      ),
       first_revision_id: firstRevisionId,
       last_observed_revision_id: lastObservedRevisionId,
       current: current ? 1 : 0,
@@ -55,7 +59,8 @@ export function legalityPublicationStatements(
              effective_from, effective_until, official_wording,
              effect_json, card_ids_json, source_lineage,
              source_snapshot_id, source_observation_set_id,
-             source_observation_id, first_revision_id,
+             source_observation_id, source_observation_pointer,
+             source_field_pointers_json, first_revision_id,
              last_observed_revision_id, current,
              last_missing_revision_id
            )
@@ -74,6 +79,8 @@ export function legalityPublicationStatements(
                   json_extract(value, '$.source_snapshot_id'),
                   json_extract(value, '$.source_observation_set_id'),
                   json_extract(value, '$.source_observation_id'),
+                  json_extract(value, '$.source_observation_pointer'),
+                  json_extract(value, '$.source_field_pointers_json'),
                   json_extract(value, '$.first_revision_id'),
                   json_extract(value, '$.last_observed_revision_id'),
                   json_extract(value, '$.current'),
@@ -84,6 +91,10 @@ export function legalityPublicationStatements(
              source_observation_set_id =
                excluded.source_observation_set_id,
              source_observation_id = excluded.source_observation_id,
+             source_observation_pointer =
+               excluded.source_observation_pointer,
+             source_field_pointers_json =
+               excluded.source_field_pointers_json,
              last_observed_revision_id =
                excluded.last_observed_revision_id,
              current = excluded.current,

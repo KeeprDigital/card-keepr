@@ -564,6 +564,43 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       }),
     ]),
   });
+  const retainedRules = first.reconciled.legality_rules as Array<
+    Record<string, unknown>
+  >;
+  const retainedPointers = retainedRules.map((rule) =>
+    requiredString(rule, "source_observation_pointer")
+  );
+  expect(new Set(retainedPointers).size).toBe(retainedRules.length);
+  for (const rule of retainedRules) {
+    const pointer = requiredString(rule, "source_observation_pointer");
+    expect(pointer).toMatch(
+      /^\/observations\/\d+\/value\/legality_rules\/\d+$/,
+    );
+    expect(rule.source_field_pointers).toEqual({
+      official_wording: `${pointer}/official_wording`,
+      effective_from: `${pointer}/effective_from`,
+      effective_until: `${pointer}/effective_until`,
+      region: `${pointer}/region`,
+      format: `${pointer}/format`,
+      event_tier: `${pointer}/event_tier`,
+      card_numbers: `${pointer}/card_numbers`,
+      effect: `${pointer}/effect`,
+    });
+  }
+  const copyLimit = retainedRules.find(
+    (rule) => rule.official_id === "legality_rule_asia_copy_limit",
+  );
+  const combination = retainedRules.find(
+    (rule) => rule.official_id === "legality_rule_asia_combination",
+  );
+  expect(copyLimit).toBeDefined();
+  expect(combination).toBeDefined();
+  expect(copyLimit!.source_observation_id).toBe(
+    combination!.source_observation_id,
+  );
+  expect(copyLimit!.source_observation_pointer).not.toBe(
+    combination!.source_observation_pointer,
+  );
   const published = await approve(first.reconciled, "publish-current-rules");
   expect(published.response.status).toBe(200);
 

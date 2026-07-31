@@ -351,7 +351,7 @@ export async function retainedReconciliationObservation(
       const row = orderedRows[index]!;
       const request = requests.results[index]!;
       return Promise.all(
-        document.observations.map(async (wrapped) => {
+        document.observations.map(async (wrapped, wrappedIndex) => {
         if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
           throw new Error("Retained Source Observation identity is invalid.");
         }
@@ -368,6 +368,7 @@ export async function retainedReconciliationObservation(
             sourceSnapshotId: row.source_snapshot_id,
             sourceObservationSetId: row.observation_set_id,
             sourceObservationId: wrapped.id,
+            sourceValuePointer: `/observations/${wrappedIndex}/value`,
           }),
         );
         if (

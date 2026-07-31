@@ -30,6 +30,8 @@ export function legalityRuleExportRecords(
     official_wording: rule.official_wording,
     source_lineage: rule.source_lineage,
     source_observation_ids: [rule.source_observation_id],
+    source_observation_pointer: rule.source_observation_pointer,
+    source_field_pointers: rule.source_field_pointers,
     lifecycle: {
       first_revision_id: rule.first_revision_id ?? revisionId,
       last_observed_revision_id:

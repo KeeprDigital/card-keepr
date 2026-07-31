@@ -151,6 +151,13 @@ CREATE TABLE legality_rules (
   source_observation_set_id TEXT NOT NULL
     REFERENCES source_observation_sets(id),
   source_observation_id TEXT NOT NULL,
+  source_observation_pointer TEXT NOT NULL CHECK (
+    source_observation_pointer LIKE '/observations/%'
+  ),
+  source_field_pointers_json TEXT NOT NULL CHECK (
+    json_valid(source_field_pointers_json)
+    AND json_type(source_field_pointers_json) = 'object'
+  ),
   first_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),

@@ -155,10 +155,10 @@ function deriveRegionStatus(
     outcome: evaluate(rule.effect, card, query.on),
   }));
   const status =
-    evaluations.some(({ outcome }) => outcome === "indeterminate")
-      ? "indeterminate"
-      : evaluations.some(({ outcome }) => outcome === "not_legal")
-        ? "not_legal"
+    evaluations.some(({ outcome }) => outcome === "not_legal")
+      ? "not_legal"
+      : evaluations.some(({ outcome }) => outcome === "indeterminate")
+        ? "indeterminate"
         : evaluations.some(({ outcome }) => outcome === "restricted")
           ? "restricted"
           : evaluations.some(({ outcome }) => outcome === "legal")

@@ -1959,6 +1959,128 @@ function reconciliationSourceDocument(
       ],
     };
   }
+  if (scenario === "profile-don-legality") {
+    return {
+      legality_completeness: completeEvidence(),
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "functional_designation",
+              value: "DON!!",
+            },
+            name: "DON!!",
+            effective_rules_text: "Your turn +1000 power.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: {
+                card_type: "don",
+                colours: [],
+                cost: null,
+                life: null,
+                battle_attributes: [],
+                power: null,
+                counter: null,
+                traits: [],
+                block_icons: [],
+                effect_text: "Your turn +1000 power.",
+                trigger_text: null,
+              },
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["don-rules"],
+          },
+        },
+        {
+          card: {
+            game: "one-piece",
+            official_identity: {
+              kind: "card_number",
+              value: "OP30-001",
+            },
+            name: "DON!! combination companion",
+            effective_rules_text: "Official effective rules.",
+            game_data: {
+              profile: "one-piece@1",
+              attributes: onePieceLeaderAttributes(),
+            },
+          },
+          completeness: completeEvidence(),
+          memberships: {
+            products: [],
+            distribution_contexts: [],
+            source_buckets: ["card-list"],
+          },
+        },
+      ],
+      legality_rules: [
+        {
+          id: "don-ban",
+          game: "one-piece",
+          region: "EN-OCEANIA",
+          format: "standard",
+          event_tier: null,
+          effective_from: "2026-01-01",
+          effective_until: null,
+          card_numbers: ["DON!!"],
+          official_wording: "DON!! may not be included in a deck.",
+          effect: { type: "ban" },
+          representable: true,
+        },
+        {
+          id: "don-copy-limit",
+          game: "one-piece",
+          region: "EN-OCEANIA",
+          format: "standard",
+          event_tier: null,
+          effective_from: "2026-01-01",
+          effective_until: null,
+          card_numbers: ["DON!!"],
+          official_wording: "Decks may contain one copy of DON!!.",
+          effect: { type: "copy_limit", maximum_copies: 1 },
+          representable: true,
+        },
+        {
+          id: "don-combination",
+          game: "one-piece",
+          region: "EN-OCEANIA",
+          format: "standard",
+          event_tier: null,
+          effective_from: "2026-01-01",
+          effective_until: null,
+          card_numbers: ["DON!!"],
+          official_wording:
+            "DON!! and OP30-001 may not be included in the same deck.",
+          effect: {
+            type: "prohibited_combination",
+            with_card_numbers: ["OP30-001"],
+          },
+          representable: true,
+        },
+        {
+          id: "don-unresolved",
+          game: "one-piece",
+          region: "EN-OCEANIA",
+          format: "standard",
+          event_tier: null,
+          effective_from: "2026-01-01",
+          effective_until: null,
+          card_numbers: ["DON!!"],
+          official_wording: "The secondary DON!! scope is unresolved.",
+          effect: {
+            type: "unresolved",
+            reason: "The notice omits the secondary event scope.",
+          },
+          representable: true,
+        },
+      ],
+    };
+  }
   if (scenario === "profile-don-printing") {
     const observation = printingObservation({
       game: "one-piece",

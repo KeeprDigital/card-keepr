@@ -4374,6 +4374,25 @@ function parseCandidate(row: RunRow): CatalogueCandidate {
       printings: [],
     };
   }
+  if (
+    isRecord(parsed) &&
+    hasOnlyKeys(parsed, [
+      "fixture",
+      "selected_games",
+      "cards",
+      "printings",
+    ]) &&
+    parsed.fixture === "first-catalogue"
+  ) {
+    const upgraded = {
+      contract: catalogueCandidateContract,
+      selected_games: parsed.selected_games,
+      cards: parsed.cards,
+      printings: parsed.printings,
+      legality_rules: [],
+    };
+    if (isCatalogueCandidate(upgraded)) return upgraded;
+  }
   if (!isCatalogueCandidate(parsed)) {
     throw new Error("The persisted Catalogue Candidate is invalid.");
   }

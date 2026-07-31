@@ -8,6 +8,10 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import {
+  canonicalJson,
+  sha256Text,
+} from "../../../src/catalogue/serialization";
+import {
   AdministrationProblem,
   administrationStatus as administrationStatusDirect,
   approveRun as approveRunDirect,
@@ -260,6 +264,109 @@ test("a legacy published run upgrades to the strict lifecycle representation wit
       },
     ],
   });
+});
+
+test("the public run boundary reads and retries an immutable fixed-point legacy candidate", async () => {
+  const runId = "run_historical_fixed_point_candidate";
+  const historicalCandidate = {
+    fixture: "first-catalogue",
+    selected_games: ["one-piece"],
+    cards: [{
+      id: "card_01k_first_catalogue_0001",
+      game: "one-piece",
+      official_identity: {
+        kind: "card_number",
+        value: "OP01-001",
+      },
+      name: "Monkey.D.Luffy",
+      effective_rules_text:
+        "[DON!! x1] This Leader gains +1000 power during your turn.",
+      game_data: {
+        profile: "one-piece@1",
+        attributes: {
+          card_type: "leader",
+          colours: ["red"],
+          cost: null,
+          life: 5,
+          battle_attributes: ["strike"],
+          power: 5000,
+          counter: null,
+          traits: ["Straw Hat Crew"],
+          block_icons: ["1"],
+          effect_text:
+            "[DON!! x1] This Leader gains +1000 power during your turn.",
+          trigger_text: null,
+        },
+      },
+    }],
+    printings: [{
+      id: "printing_01k_first_catalogue_0001",
+      card_id: "card_01k_first_catalogue_0001",
+      rarity: { normalized: "leader", raw: "L" },
+      printed_rules_text:
+        "[DON!! x1] This Leader gains +1000 power during your turn.",
+      game_data: {
+        profile: "one-piece@1",
+        attributes: { illustration_types: [] },
+      },
+    }],
+  } as const;
+  const immutableCandidateJson = canonicalJson(historicalCandidate);
+  const historicalDigest = await sha256Text(immutableCandidateJson);
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+      id, state, selected_games_json, started_at,
+      expected_current_revision_id, linked_run_id, idempotency_key,
+      candidate_digest, candidate_created_at, approval_deadline,
+      approval_json, published_revision_id, export_manifest_digest,
+      terminal_at, candidate_json, approval_idempotency_key,
+      failure_code, progress_json
+    ) VALUES (
+      ?, 'failed', '["one-piece"]', '2026-07-29T01:00:00.000Z',
+      'catrev_spine_000', NULL, 'historical-fixed-point-seed',
+      ?, '2026-07-29T01:00:00.000Z',
+      '2026-08-05T01:00:00.000Z', NULL, NULL, NULL,
+      '2026-07-29T01:02:00.000Z', ?, NULL,
+      'legacy_ingestion_failure',
+      '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
+    )`,
+  ).bind(runId, historicalDigest, immutableCandidateJson).run();
+
+  const shown = await showRun(runId);
+  expect(shown.response.status).toBe(200);
+  expect(shown.document).toMatchObject({
+    id: runId,
+    state: "failed",
+    candidate_digest: historicalDigest,
+  });
+
+  const retried = await administrationRequest(
+    `/v1/ingestion-runs/${runId}/retry`,
+    { idempotency_key: "retry-historical-fixed-point" },
+  );
+  expect(retried.response.status).toBe(201);
+  expect(retried.document).toMatchObject({
+    state: "awaiting_approval",
+    linked_run_id: runId,
+  });
+
+  const persisted = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT id, candidate_json FROM ingestion_runs
+     WHERE id IN (?, ?)
+     ORDER BY id`,
+  ).bind(runId, requiredDocumentString(retried.document, "id"))
+    .all<{ id: string; candidate_json: string }>();
+  const original = persisted.results.find((row) => row.id === runId);
+  const replacement = persisted.results.find((row) => row.id !== runId);
+  expect(original?.candidate_json).toBe(immutableCandidateJson);
+  expect(JSON.parse(original!.candidate_json)).toHaveProperty(
+    "fixture",
+    "first-catalogue",
+  );
+  expect(JSON.parse(replacement!.candidate_json)).toHaveProperty(
+    "contract",
+    "card-keepr-catalogue-candidate@1",
+  );
 });
 
 test("a lengthless administration body is rejected while streaming beyond 16 KiB", async () => {

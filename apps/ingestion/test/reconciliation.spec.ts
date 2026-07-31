@@ -17,6 +17,7 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
   startOrObserveReconciliationWorkflow,
@@ -1936,6 +1937,71 @@ test("DON!! accepts explicit known Printing evidence while retaining incomplete-
     ]),
   );
   await approve(reconciled.document);
+});
+
+test("unnumbered DON!! receives direct and combination Legality Rules through publication and status", async () => {
+  const run = await collect(
+    "/reconciliation/profile-don-legality",
+    "reconcile-don-legality",
+  );
+  const reconciled = await reconcile(run.id);
+  if (reconciled.response.status !== 200) {
+    throw new Error(JSON.stringify(reconciled.document));
+  }
+  const cards = reconciled.document.cards as Array<Record<string, unknown>>;
+  const don = cards.find(
+    (card) =>
+      (card.official_identity as Record<string, unknown>).kind ===
+      "functional_designation",
+  );
+  const companion = cards.find(
+    (card) =>
+      (card.official_identity as Record<string, unknown>).value ===
+      "OP30-001",
+  );
+  if (don === undefined || companion === undefined) {
+    throw new Error("DON!! legality fixture cards are absent");
+  }
+  const donId = requiredString(don, "id");
+  const companionId = requiredString(companion, "id");
+  const rules = reconciled.document.legality_rules as Array<
+    Record<string, unknown>
+  >;
+  for (const officialId of [
+    "don-ban",
+    "don-copy-limit",
+    "don-combination",
+  ]) {
+    expect(
+      rules.find((rule) => rule.official_id === officialId),
+    ).toMatchObject({ card_ids: [donId] });
+  }
+  expect(
+    rules.find((rule) => rule.official_id === "don-combination"),
+  ).toMatchObject({
+    effect: {
+      type: "prohibited_combination",
+      with_card_ids: [companionId],
+    },
+  });
+
+  const published = await approve(reconciled.document);
+  expect(published.response.status).toBe(200);
+  const status = await contextualLegalityStatusResponse(
+    new Request(
+      `https://card-keepr.invalid/v1/legality-status?card_id=${donId}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
+    ),
+    testEnv.CATALOGUE_DB,
+  );
+  expect(status.status).toBe(200);
+  const document = await status.json() as {
+    data: Array<{ status: string; rule_ids: string[]; derivation: string }>;
+  };
+  expect(document.data[0]).toMatchObject({ status: "not_legal" });
+  expect(document.data[0]!.rule_ids).toHaveLength(4);
+  expect(document.data[0]!.derivation).toContain(
+    "(unresolved) evaluated indeterminate",
+  );
 });
 
 test("functional DON!! identity rejects a non-don Card shape even when Printing evidence exists", async () => {

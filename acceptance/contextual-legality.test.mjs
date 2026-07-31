@@ -634,6 +634,8 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     return {
       source_lineage: "gundam-en-asia",
       source_observation_ids: [observed.source_observation_id],
+      source_observation_pointer: observed.source_observation_pointer,
+      source_field_pointers: observed.source_field_pointers,
       lifecycle: {
         first_revision_id: asiaRevisionId,
         last_observed_revision_id: revisionId,
@@ -950,6 +952,25 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   for (const exportedRule of exportedRules) {
     assert.equal(typeof exportedRule.source_lineage, "string");
     assert.equal(exportedRule.source_observation_ids.length, 1);
+    assert.match(
+      exportedRule.source_observation_pointer,
+      /^\/observations\/\d+\/value\/legality_rules\/\d+$/,
+    );
+    for (const field of [
+      "official_wording",
+      "effective_from",
+      "effective_until",
+      "region",
+      "format",
+      "event_tier",
+      "card_numbers",
+      "effect",
+    ]) {
+      assert.equal(
+        exportedRule.source_field_pointers[field],
+        `${exportedRule.source_observation_pointer}/${field}`,
+      );
+    }
     assert.equal(typeof exportedRule.lifecycle.current, "boolean");
     assert.match(exportedRule.lifecycle.first_revision_id, /^catrev_/);
     assert.match(
@@ -1255,7 +1276,7 @@ test("authenticated deterministic publication pins contextual legality export by
   const revisionId = publication.resulting_revision_id;
   assert.equal(
     revisionId,
-    "catrev_bc9a22591d069500668c3a6ba65122bfb354d3828ff40569f35afeff61bb28a7",
+    "catrev_0ef9ef3b0b619540ea107d7a4a40e0988e14be4486ee85253704d7327a67f7bc",
   );
 
   await stopWorker(ingestion);
@@ -1320,6 +1341,20 @@ test("authenticated deterministic publication pins contextual legality export by
       (rule) => rule.source_observation_ids.length === 1,
     ),
   );
+  assert.equal(
+    new Set(rules.map((rule) => rule.source_observation_pointer)).size,
+    rules.length,
+  );
+  for (const rule of rules) {
+    assert.equal(
+      rule.source_field_pointers.official_wording,
+      `${rule.source_observation_pointer}/official_wording`,
+    );
+    assert.equal(
+      rule.source_field_pointers.effect,
+      `${rule.source_observation_pointer}/effect`,
+    );
+  }
   assert.deepEqual(
     [...new Set(rules.flatMap((rule) => rule.source_observation_ids))].sort(),
     [
