@@ -58,6 +58,7 @@ import {
 } from "./errata-rules-text";
 import {
   legalityRulesForCandidate,
+  normalizedLegalityRuleLifecycle,
   resolveLegalityRuleCards,
 } from "./legality-rule";
 
@@ -1285,14 +1286,7 @@ async function candidateAtRevision(
     ),
     legality_rules: (candidate.legality_rules ?? []).map((rule) => ({
       ...rule,
-      first_revision_id: rule.first_revision_id ?? revisionId,
-      last_observed_revision_id:
-        rule.last_observed_revision_id ?? revisionId,
-      current: rule.current ?? true,
-      last_missing_revision_id:
-        rule.current === false
-          ? rule.last_missing_revision_id ?? revisionId
-          : rule.last_missing_revision_id ?? null,
+      ...normalizedLegalityRuleLifecycle(rule, revisionId),
     })),
   };
 }

@@ -11,11 +11,11 @@ The following production Catalogue adapters are installed for bounded,
 credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
-- `one-piece-en@1`
-- `fusion-world-en@2`
-- `digimon-en@2`
-- `gundam-en-asia@2`
-- `gundam-en-us@2`
+- `one-piece-en@2`
+- `fusion-world-en@3`
+- `digimon-en@3`
+- `gundam-en-asia@3`
+- `gundam-en-us@3`
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
@@ -25,13 +25,22 @@ must not accept a shared normalized envelope or a test fixture representation.
 Raw inputs must not supply a normalized rarity, identity digest, structured
 effect, or `representable` decision; the owning adapter must derive those
 values from demonstrated publisher fields and fail closed when it cannot.
-The installed raw adapters do not yet normalize arbitrary non-empty publisher
-legality notices into exact structured Legality Rules. Reconciliation rejects
-a non-empty rule-bearing surface unless its same retained request also emits
-an explicitly complete `legality_rules` observation. A structurally proven
-empty legality surface may establish complete empty coverage. This keeps
-Product, Release, Card, and image capture available without silently carrying
-stale Legality behavior.
+The legality-aware versions normalize only source-specific publisher fields
+whose action and wording can be represented exactly. Reconciliation rejects a
+non-empty rule-bearing surface unless its same retained request also emits an
+explicitly complete `legality_rules` observation. Unknown action codes,
+contradictory wording, and free-form notices without the exact versioned field
+contract fail closed. A structurally proven empty legality surface may
+establish complete empty coverage.
+
+The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
+`digimon-en@2`, and both Gundam `@2` versions) remain registered with their
+original parser contracts. Reprocessing retained bytes through one of those
+identities cannot gain Legality Rule observations; a non-empty legality
+sidecar still fails closed. Synthetic fixture adapters follow the same
+append-only rule: One Piece `@3` and the other games' `@2` versions are the
+legality-aware identities, while prior fixture versions retain their original
+behavior.
 
 An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
 separate plan for every selected Source Lineage. Static root requests and every

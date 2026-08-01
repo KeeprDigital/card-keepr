@@ -10,6 +10,9 @@ import {
 import {
   officialArtworkFingerprint,
 } from "./official-artwork-identity.mjs";
+import {
+  officialLegalityRulesObservation,
+} from "./official-legality-source-adapters.mjs";
 
 type ProductSourceGame =
   | "one-piece"
@@ -25,6 +28,7 @@ type DiscoveryFormat =
 
 export type OfficialRawAdapterContract = {
   adapterVersion: string;
+  parserContract: string;
   sourceLineage: string;
   supportedGame: ProductSourceGame;
   format: DiscoveryFormat;
@@ -163,33 +167,60 @@ const rawContractDefinitions = [
   },
 ] as const;
 
+const legalityAwareAdapterVersions: Readonly<
+  Record<(typeof rawContractDefinitions)[number]["sourceLineage"], string>
+> = {
+  "one-piece-en": "one-piece-en@2",
+  "fusion-world-en": "fusion-world-en@3",
+  "digimon-en": "digimon-en@3",
+  "gundam-en-asia": "gundam-en-asia@3",
+  "gundam-en-us": "gundam-en-us@3",
+};
+
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
-    rawContractDefinitions.map((definition) =>
-      Object.freeze({
-        ...definition,
-        requiredSurfaces: Object.freeze([...definition.requiredSurfaces]),
-        requestUrlForSurface: (surface: string) =>
-          exactSurfaceUrl(
-            definition.sourceLineage,
-            definition.requiredSurfaces,
-            definition.urls,
-            surface,
+    rawContractDefinitions.flatMap((definition) =>
+      [
+        {
+          ...definition,
+          parserContract: `${definition.sourceLineage}-raw-surfaces@1`,
+          legalityAware: false,
+        },
+        {
+          ...definition,
+          adapterVersion:
+            legalityAwareAdapterVersions[definition.sourceLineage],
+          parserContract:
+            `${definition.sourceLineage}-raw-surfaces-with-legality@2`,
+          legalityAware: true,
+        },
+      ].map((version) =>
+        Object.freeze({
+          ...version,
+          requiredSurfaces: Object.freeze([...version.requiredSurfaces]),
+          requestUrlForSurface: (surface: string) =>
+            exactSurfaceUrl(
+              version.sourceLineage,
+              version.requiredSurfaces,
+              version.urls,
+              surface,
+            ),
+          parseBytes: bandaiSnapshotDecoder(
+            version.format,
+            version.supportedGame,
+            version.sourceLineage,
+            version.requiredSurfaces,
+            version.urls,
+            version.legalityAware,
           ),
-        parseBytes: bandaiSnapshotDecoder(
-          definition.format,
-          definition.supportedGame,
-          definition.sourceLineage,
-          definition.requiredSurfaces,
-          definition.urls,
-        ),
-        discoverRequests: bandaiRequestDiscovery(
-          definition.format,
-          definition.sourceLineage,
-          definition.requiredSurfaces,
-          definition.urls,
-        ),
-      }),
+          discoverRequests: bandaiRequestDiscovery(
+            version.format,
+            version.sourceLineage,
+            version.requiredSurfaces,
+            version.urls,
+          ),
+        })
+      )
     ),
   );
 
@@ -201,9 +232,9 @@ export function officialSourceDiscoveryRequests(
   url: string;
   headers: Record<string, string>;
 }[] {
-  const contract = officialRawAdapterContracts.find(
+  const contract = officialRawAdapterContracts.filter(
     (candidate) => candidate.sourceLineage === sourceLineage,
-  );
+  ).at(-1);
   if (contract === undefined) {
     throw new Error("Official Source lineage has no discovery contract.");
   }
@@ -552,6 +583,7 @@ function bandaiSnapshotDecoder(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  legalityAware: boolean,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
     const dynamicRole = dynamicRequestRole(context.requestId);
@@ -599,6 +631,7 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         surface,
         structuredPayload,
+        legalityAware,
       );
     }
     if (dynamicRole === "detail") {
@@ -2072,6 +2105,7 @@ function normalizedSurfaceObservations(
   sourceLineage: string,
   surface: string,
   rawDocument: Record<string, unknown>,
+  legalityAware: boolean,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
@@ -2088,7 +2122,18 @@ function normalizedSurfaceObservations(
   } else if (surface === "releases") {
     observations = parseRawReleasesSurface(document);
   } else {
-    observations = [rawCoverageObservation(document, surface)];
+    observations = [
+      rawCoverageObservation(document, surface),
+      ...(legalityAware && isLegalityPolicySurface(surface)
+        ? [
+            officialLegalityRulesObservation(
+              game,
+              sourceLineage,
+              document,
+            ),
+          ]
+        : []),
+    ];
   }
   return observations.map((observation, index) =>
     attachRawSurfaceEvidence(
@@ -2100,6 +2145,10 @@ function normalizedSurfaceObservations(
       normalized.consumedFields,
     )
   );
+}
+
+function isLegalityPolicySurface(surface: string): boolean {
+  return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
 }
 
 function normalizeLineageSurface(

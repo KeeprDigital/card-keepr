@@ -1,7 +1,10 @@
 import type { CatalogueCandidate } from "./catalogue-candidate";
 import { byteBoundedJsonArrays } from "./reconciliation-payload";
 import { canonicalJson } from "./serialization";
-import { legalityRuleCardIds } from "./legality-rule";
+import {
+  legalityRuleCardIds,
+  normalizedLegalityRuleLifecycle,
+} from "./legality-rule";
 
 export function legalityPublicationStatements(
   database: D1Database,
@@ -9,13 +12,7 @@ export function legalityPublicationStatements(
   revisionId: string,
 ): D1PreparedStatement[] {
   const rows = (candidate.legality_rules ?? []).map((rule) => {
-    const current = rule.current ?? true;
-    const firstRevisionId = rule.first_revision_id ?? revisionId;
-    const lastObservedRevisionId =
-      rule.last_observed_revision_id ?? revisionId;
-    const lastMissingRevisionId = current
-      ? rule.last_missing_revision_id ?? null
-      : rule.last_missing_revision_id ?? revisionId;
+    const lifecycle = normalizedLegalityRuleLifecycle(rule, revisionId);
     return {
       id: rule.id,
       official_id: rule.official_id,
@@ -37,16 +34,13 @@ export function legalityPublicationStatements(
       source_field_pointers_json: canonicalJson(
         rule.source_field_pointers,
       ),
-      first_revision_id: firstRevisionId,
-      last_observed_revision_id: lastObservedRevisionId,
-      current: current ? 1 : 0,
-      last_missing_revision_id: lastMissingRevisionId,
+      first_revision_id: lifecycle.first_revision_id,
+      last_observed_revision_id: lifecycle.last_observed_revision_id,
+      current: lifecycle.current ? 1 : 0,
+      last_missing_revision_id: lifecycle.last_missing_revision_id,
       document_json: canonicalJson({
         ...rule,
-        first_revision_id: firstRevisionId,
-        last_observed_revision_id: lastObservedRevisionId,
-        current,
-        last_missing_revision_id: lastMissingRevisionId,
+        ...lifecycle,
       }),
     };
   });

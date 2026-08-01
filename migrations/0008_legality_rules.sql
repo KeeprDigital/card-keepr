@@ -635,3 +635,55 @@ BEFORE DELETE ON revision_legality_rules
 BEGIN
   SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
 END;
+
+-- Legality-aware adapters are new immutable parser contracts. Earlier adapter
+-- identities remain bound to their original Card/Product/Release behavior.
+INSERT INTO source_adapter_versions (
+  adapter_version,
+  source_lineage,
+  supported_game,
+  game_profile_version,
+  parser_contract,
+  adapter_origin
+) VALUES
+  (
+    'one-piece-en@2', 'one-piece-en', 'one-piece', 'one-piece@1',
+    'one-piece-en-raw-surfaces-with-legality@2', 'production'
+  ),
+  (
+    'fusion-world-en@3', 'fusion-world-en', 'fusion-world', 'fusion-world@1',
+    'fusion-world-en-raw-surfaces-with-legality@2', 'production'
+  ),
+  (
+    'digimon-en@3', 'digimon-en', 'digimon', 'digimon@1',
+    'digimon-en-raw-surfaces-with-legality@2', 'production'
+  ),
+  (
+    'gundam-en-asia@3', 'gundam-en-asia', 'gundam', 'gundam@1',
+    'gundam-en-asia-raw-surfaces-with-legality@2', 'production'
+  ),
+  (
+    'gundam-en-us@3', 'gundam-en-us', 'gundam', 'gundam@1',
+    'gundam-en-us-raw-surfaces-with-legality@2', 'production'
+  ),
+  (
+    'fixture-one-piece-json@3', 'one-piece-en', 'one-piece', 'one-piece@1',
+    'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture'
+  ),
+  (
+    'fixture-fusion-world-json@2', 'fusion-world-en', 'fusion-world',
+    'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2',
+    'synthetic_fixture'
+  ),
+  (
+    'fixture-digimon-json@2', 'digimon-en', 'digimon', 'digimon@1',
+    'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture'
+  ),
+  (
+    'fixture-gundam-en-asia-json@2', 'gundam-en-asia', 'gundam', 'gundam@1',
+    'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture'
+  ),
+  (
+    'fixture-gundam-en-us-json@2', 'gundam-en-us', 'gundam', 'gundam@1',
+    'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture'
+  );

@@ -234,7 +234,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   };
 
   const asia = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-asia",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia",
@@ -262,7 +262,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   assert.match(asiaRevisionId, /^catrev_/);
 
   const reorderedAsia = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-asia-reordered",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia?order=reversed",
@@ -297,7 +297,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
 
   const us = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-us-json@1",
+    adapter: "fixture-gundam-en-us-json@2",
     idempotencyKey: "acceptance-contextual-legality-us",
     lineage: "gundam-en-us",
     sourcePath: "/contextual-legality-domain-us",
@@ -313,7 +313,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   const usRevisionId = usPublication.resulting_revision_id;
   assert.match(usRevisionId, /^catrev_/);
   const usExpanded = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-us-json@1",
+    adapter: "fixture-gundam-en-us-json@2",
     idempotencyKey: "acceptance-contextual-legality-us-expanded",
     lineage: "gundam-en-us",
     sourcePath: "/contextual-legality-domain-us?rules=expanded",
@@ -445,7 +445,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const asiaRefresh = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-asia-refresh",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia?refresh=asia",
@@ -458,7 +458,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     administrationEnvironment,
   );
   const usRefresh = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-us-json@1",
+    adapter: "fixture-gundam-en-us-json@2",
     idempotencyKey: "acceptance-contextual-legality-us-refresh",
     lineage: "gundam-en-us",
     sourcePath:
@@ -495,7 +495,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const changedIdentity = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     expectedStatus: null,
     idempotencyKey:
       "acceptance-contextual-legality-changed-official-identity",
@@ -527,7 +527,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const invalidCopyLimit = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     expectedStatus: 409,
     idempotencyKey:
       "acceptance-contextual-legality-invalid-copy-limit",
@@ -558,7 +558,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const missing = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-missing",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia?rules=empty",
@@ -691,7 +691,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const reappeared = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-reappeared",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia?rules=current",
@@ -737,7 +737,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     "unknown-enum-value",
   ]) {
     const invalidMembership = await ingestAndReconcile({
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
       expectedStatus: null,
       idempotencyKey:
         `acceptance-contextual-legality-${membershipVariant}`,
@@ -772,7 +772,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await restartIngestion();
 
   const blocked = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     expectedStatus: 409,
     idempotencyKey: "acceptance-contextual-legality-unrepresentable",
     lineage: "gundam-en-asia",
@@ -1251,7 +1251,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   api = null;
   await restartIngestion();
   const missingAgain = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-missing-again",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia?rules=empty",
@@ -1401,7 +1401,7 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
     KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
   };
   const reconciled = await ingestAndReconcile({
-    adapter: "fixture-one-piece-json@2",
+    adapter: "fixture-one-piece-json@3",
     game: "one-piece",
     idempotencyKey: "acceptance-don-legality",
     lineage: "one-piece-en",
@@ -1548,7 +1548,7 @@ test("authenticated publication serves repeatable contextual legality export byt
     KEEPR_INGESTION_URL: `http://127.0.0.1:${goldenPortBase}`,
   };
   const reconciled = await ingestAndReconcile({
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     idempotencyKey: "acceptance-contextual-legality-golden",
     lineage: "gundam-en-asia",
     sourcePath: "/contextual-legality-domain-asia",
@@ -1647,13 +1647,13 @@ test("authenticated publication serves repeatable contextual legality export byt
   assert.deepEqual(
     [...new Set(rules.flatMap((rule) => rule.source_observation_ids))].sort(),
     [
-      "srcobs_0f7e9d5b8ee8584fe016f7b26d7c174d8f801f70a90e144beba19d51322dd0b8_6",
+      "srcobs_43dde4d5a225defce9b4b3aeb4df709381fca63d5d8259d2804a4cfa9a771920_6",
     ],
   );
   assert.equal(
     rules.find((rule) => rule.effective_until !== null)
       ?.source_observation_ids[0],
-    "srcobs_0f7e9d5b8ee8584fe016f7b26d7c174d8f801f70a90e144beba19d51322dd0b8_6",
+    "srcobs_43dde4d5a225defce9b4b3aeb4df709381fca63d5d8259d2804a4cfa9a771920_6",
   );
   assert.ok(
     rules.every(

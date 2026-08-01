@@ -61,6 +61,35 @@ export type LegalityRule = {
   last_missing_revision_id?: string | null;
 };
 
+export type LegalityRuleLifecycle = {
+  first_revision_id: string;
+  last_observed_revision_id: string;
+  current: boolean;
+  last_missing_revision_id: string | null;
+};
+
+export function normalizedLegalityRuleLifecycle(
+  rule: Pick<
+    LegalityRule,
+    | "first_revision_id"
+    | "last_observed_revision_id"
+    | "current"
+    | "last_missing_revision_id"
+  >,
+  revisionId: string,
+): LegalityRuleLifecycle {
+  const current = rule.current ?? true;
+  return {
+    first_revision_id: rule.first_revision_id ?? revisionId,
+    last_observed_revision_id:
+      rule.last_observed_revision_id ?? revisionId,
+    current,
+    last_missing_revision_id: current
+      ? rule.last_missing_revision_id ?? null
+      : rule.last_missing_revision_id ?? revisionId,
+  };
+}
+
 export type RetainedLegalityRule = Omit<
   LegalityRule,
   "id" | "card_ids" | "effect"

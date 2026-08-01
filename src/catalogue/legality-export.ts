@@ -2,6 +2,7 @@ import type { CatalogueCandidate } from "./catalogue-candidate";
 import {
   legalityExportKind,
   legalityRuleCardIds,
+  normalizedLegalityRuleLifecycle,
   type LegalityRuleEffect,
 } from "./legality-rule";
 import {
@@ -38,16 +39,7 @@ export function legalityRuleExportRecords(
     source_observation_ids: [rule.source_observation_id],
     source_observation_pointer: rule.source_observation_pointer,
     source_field_pointers: rule.source_field_pointers,
-    lifecycle: {
-      first_revision_id: rule.first_revision_id ?? revisionId,
-      last_observed_revision_id:
-        rule.last_observed_revision_id ?? revisionId,
-      current: rule.current ?? true,
-      last_missing_revision_id:
-        rule.current === false
-          ? rule.last_missing_revision_id ?? revisionId
-          : rule.last_missing_revision_id ?? null,
-    },
+    lifecycle: normalizedLegalityRuleLifecycle(rule, revisionId),
   }));
 }
 
@@ -127,15 +119,6 @@ function legalityRuleRelationshipRecord(
     source_lineage: rule.source_lineage,
     source_observation_ids: [rule.source_observation_id],
     relationship_value: rule.id,
-    lifecycle: {
-      first_revision_id: rule.first_revision_id ?? revisionId,
-      last_observed_revision_id:
-        rule.last_observed_revision_id ?? revisionId,
-      current: rule.current ?? true,
-      last_missing_revision_id:
-        rule.current === false
-          ? rule.last_missing_revision_id ?? revisionId
-          : rule.last_missing_revision_id ?? null,
-    },
+    lifecycle: normalizedLegalityRuleLifecycle(rule, revisionId),
   };
 }

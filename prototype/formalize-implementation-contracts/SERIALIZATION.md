@@ -99,7 +99,7 @@ Each component is one gzip member over the canonical NDJSON, with:
 - MTIME `0`;
 - XFL `2`;
 - OS `255`;
-- raw DEFLATE produced by the lockfile-pinned `pako@2.1.0` export compressor
+- raw DEFLATE produced by the lockfile-pinned `pako@3.0.1` export compressor
   with level `9`, window bits `15`, memory level `8`, and fixed-Huffman
   strategy;
 - CRC32 and ISIZE derived from the canonical NDJSON.

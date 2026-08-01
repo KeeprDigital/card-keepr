@@ -352,6 +352,56 @@ export default defineConfig({
               );
             }
             if (
+              (artworkMarker === "card-keepr-representable-legality-v3" ||
+                artworkMarker === "card-keepr-unrepresentable-legality-v3") &&
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/rules/banned-limited-cards/"
+            ) {
+              const officialWording = artworkMarker ===
+                  "card-keepr-representable-legality-v3"
+                ? "FB01-001 is eligible for Standard tournament play."
+                : "FB01-001 appears on opaque publication XQZ-17.";
+              return new Response(
+                `<html><script type="application/ld+json">${JSON.stringify({
+                  "@context": "https://schema.org",
+                  "@type": "Dataset",
+                  publisher: { name: "Bandai" },
+                  hasPart: [{
+                    identifier: "fusion-world-en:legality-current",
+                    payload: {
+                      publication: "fusion-world-legality-current",
+                      revision: "2026-08-01",
+                      entries: [{
+                        rule_ref: "fw_production_eligible",
+                        canonical_url: url.href,
+                        notice: officialWording,
+                        market: "EN-OCEANIA",
+                        play_format: "standard",
+                        tier: null,
+                        active_on: "2026-01-01",
+                        expires_on: null,
+                        cards: ["FB01-001"],
+                        directive: "eligible",
+                        cap: null,
+                        paired_cards: [],
+                        filter_field: null,
+                        filter_values: [],
+                        blocks: [],
+                        tournament_legal_date: null,
+                        ambiguity: null,
+                      }],
+                    },
+                  }],
+                })}</script></html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"${artworkMarker}"`,
+                  },
+                },
+              );
+            }
+            if (
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/products/" &&
               artworkMarker === "card-keepr-product-authority"

@@ -54,6 +54,31 @@ const parseSourceDocument = (document: unknown): readonly unknown[] => {
     const record = document as {
       cards?: unknown;
       product_surfaces?: unknown;
+    };
+    if (
+      Array.isArray(record.cards) ||
+      Array.isArray(record.product_surfaces)
+    ) {
+      return [
+        ...(Array.isArray(record.cards) ? record.cards : []),
+        ...(Array.isArray(record.product_surfaces)
+          ? record.product_surfaces
+          : []),
+      ];
+    }
+  }
+  return [document];
+};
+
+const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    !Array.isArray(document)
+  ) {
+    const record = document as {
+      cards?: unknown;
+      product_surfaces?: unknown;
       legality_rules?: unknown;
       legality_completeness?: unknown;
     };
@@ -86,23 +111,7 @@ const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
     !Array.isArray(document) &&
     Array.isArray((document as { cards?: unknown }).cards)
   ) {
-    const source = document as {
-      cards: unknown[];
-      legality_rules?: unknown;
-      legality_completeness?: unknown;
-    };
-    return [
-      ...source.cards,
-      ...(source.legality_rules === undefined
-        ? []
-        : [
-            {
-              observation_type: "legality_rules",
-              legality_rules: source.legality_rules,
-              completeness: source.legality_completeness,
-            },
-          ]),
-    ];
+    return (document as { cards: unknown[] }).cards;
   }
   return [document];
 };
@@ -176,7 +185,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
         sourceLineage: adapter.sourceLineage,
         supportedGame: adapter.supportedGame,
         gameProfileVersion: `${adapter.supportedGame}@1`,
-        parserContract: `${adapter.sourceLineage}-raw-surfaces@1`,
+        parserContract: adapter.parserContract,
         maximumSnapshotBytes: 16 * 1024 * 1024,
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
@@ -266,6 +275,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "one-piece",
           gameProfileVersion: "one-piece@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
         },
         {
           adapterVersion: "fixture-one-piece-json@2",
@@ -273,6 +283,15 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "one-piece",
           gameProfileVersion: "one-piece@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
+        },
+        {
+          adapterVersion: "fixture-one-piece-json@3",
+          sourceLineage: "one-piece-en",
+          supportedGame: "one-piece",
+          gameProfileVersion: "one-piece@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
+          legalityAware: true,
         },
         {
           adapterVersion: "fixture-one-piece-json-capped@1",
@@ -281,6 +300,7 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           gameProfileVersion: "one-piece@1",
           parserContract: "synthetic-fixture-card-document@1",
           maximumSnapshotBytes: 1024 * 1024,
+          legalityAware: false,
         },
         {
           adapterVersion: "fixture-fusion-world-json@1",
@@ -288,6 +308,15 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "fusion-world",
           gameProfileVersion: "fusion-world@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
+        },
+        {
+          adapterVersion: "fixture-fusion-world-json@2",
+          sourceLineage: "fusion-world-en",
+          supportedGame: "fusion-world",
+          gameProfileVersion: "fusion-world@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
+          legalityAware: true,
         },
         {
           adapterVersion: "fixture-digimon-json@1",
@@ -295,6 +324,15 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "digimon",
           gameProfileVersion: "digimon@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
+        },
+        {
+          adapterVersion: "fixture-digimon-json@2",
+          sourceLineage: "digimon-en",
+          supportedGame: "digimon",
+          gameProfileVersion: "digimon@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
+          legalityAware: true,
         },
         {
           adapterVersion: "fixture-gundam-en-asia-json@1",
@@ -302,6 +340,15 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
+        },
+        {
+          adapterVersion: "fixture-gundam-en-asia-json@2",
+          sourceLineage: "gundam-en-asia",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
+          legalityAware: true,
         },
         {
           adapterVersion: "fixture-gundam-en-us-json@1",
@@ -309,15 +356,26 @@ export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
         },
-      ].map((adapter) => ({
+        {
+          adapterVersion: "fixture-gundam-en-us-json@2",
+          sourceLineage: "gundam-en-us",
+          supportedGame: "gundam",
+          gameProfileVersion: "gundam@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
+          legalityAware: true,
+        },
+      ].map(({ legalityAware, ...adapter }) => ({
         ...adapter,
         maximumSnapshotBytes:
           adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         requestSurface: { kind: "synthetic-fixture" as const },
         reconciliationCapability: "catalogue" as const,
-        parse: parseSourceDocument,
+        parse: legalityAware
+          ? parseLegalitySourceDocument
+          : parseSourceDocument,
       })),
     ].map((adapter) => Object.freeze(adapter)),
   );

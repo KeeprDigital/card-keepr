@@ -6,6 +6,7 @@ import {
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import {
   canonicalJson,
   sha256,
@@ -805,7 +806,7 @@ test("one multi-lineage refresh retires only the complete omitted Legality scope
         {
           supported_game: "gundam",
           source_lineage: "gundam-en-asia",
-          adapter_version: "fixture-gundam-en-asia-json@1",
+          adapter_version: "fixture-gundam-en-asia-json@2",
           requests: [{
             id: `${key}-asia`,
             method: "GET",
@@ -818,7 +819,7 @@ test("one multi-lineage refresh retires only the complete omitted Legality scope
         {
           supported_game: "gundam",
           source_lineage: "gundam-en-us",
-          adapter_version: "fixture-gundam-en-us-json@1",
+          adapter_version: "fixture-gundam-en-us-json@2",
           requests: [{
             id: `${key}-us`,
             method: "GET",
@@ -916,11 +917,141 @@ test("one multi-lineage refresh retires only the complete omitted Legality scope
     revisionId,
     "legality_rule_asia_eligible",
   )).toMatchObject({ current: false, source_lineage: "gundam-en-asia" });
+  const retiredAsiaRule = rules.find(
+    ({ official_id }) => official_id === "legality_rule_asia_copy_limit",
+  );
+  if (retiredAsiaRule === undefined) {
+    throw new Error("Retired EN-ASIA Legality Rule is absent");
+  }
+  const retiredLifecycle = {
+    current: false,
+    last_missing_revision_id: revisionId,
+  };
+  expect(await exportedLegalityRule(
+    revisionId,
+    "legality_rule_asia_copy_limit",
+  )).toMatchObject({ lifecycle: retiredLifecycle });
+  expect(
+    (await exportedComponentRecords(revisionId, "relationships")).find(
+      (relationship) =>
+        relationship.kind === "legality-rule-card" &&
+        relationship.relationship_value === retiredAsiaRule.id,
+    ),
+  ).toMatchObject({ lifecycle: retiredLifecycle });
   expect(await testEnv.CATALOGUE_DB.prepare(
     `SELECT checked_at, ingestion_run_id
      FROM source_freshness
      WHERE game = 'gundam' AND area = 'legality-rules'`,
   ).first()).toMatchObject({ ingestion_run_id: refreshed.runId });
+}, 90_000);
+
+test("a versioned production adapter derives and exports an exact representable Legality Rule", async () => {
+  const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fixture-fusion-world-json@1",
+    idempotency_key: "seed-production-legality-card",
+    requests: [{
+      id: "seed-card",
+      method: "GET",
+      url: "https://official-source.invalid/reconciliation/profile-fusion-world",
+      headers: { accept: "application/json" },
+    }],
+  });
+  const seededRunId = requiredString(seeded, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${seededRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(seededRunId, "parsing");
+  const seededCandidate = await reconcile(seededRunId);
+  expect(seededCandidate.response.status).toBe(200);
+  const card = (
+    seededCandidate.document.cards as Array<Record<string, unknown>>
+  ).find((item) =>
+    (item.official_identity as Record<string, unknown>).value === "FB01-001"
+  );
+  if (card === undefined) throw new Error("FB01-001 is absent");
+  expect((await approve(
+    seededCandidate.document,
+    "publish-production-legality-card",
+  )).response.status).toBe(200);
+
+  const started = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@3",
+    idempotency_key: "production-representable-legality-v3",
+    requests: productionFusionLegalityRequests(
+      "card-keepr-representable-legality-v3",
+    ),
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "awaiting_approval");
+  const candidate = await request(`/v1/ingestion-runs/${runId}/candidate`);
+  expect(candidate.response.status).toBe(200);
+  const published = await approve(
+    candidate.document,
+    "publish-production-representable-legality-v3",
+  );
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+
+  const statusResponse = await contextualLegalityStatusResponse(
+    new Request(
+      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-08-01&format=standard&region=EN-OCEANIA`,
+    ),
+    testEnv.CATALOGUE_DB,
+  );
+  expect(statusResponse.status).toBe(200);
+  const status = await statusResponse.json() as {
+    data: Array<{ status: string; rule_ids: string[] }>;
+  };
+  expect(status.data[0]).toMatchObject({ status: "legal" });
+  expect(status.data[0]!.rule_ids).toHaveLength(1);
+  expect(await exportedLegalityRule(
+    revisionId,
+    "fw_production_eligible",
+  )).toMatchObject({
+    official_wording: "FB01-001 is eligible for Standard tournament play.",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    effect: { type: "eligible" },
+  });
+}, 90_000);
+
+test("a versioned production adapter blocks official wording it cannot represent exactly", async () => {
+  const started = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@3",
+    idempotency_key: "production-unrepresentable-legality-v3",
+    requests: productionFusionLegalityRequests(
+      "card-keepr-unrepresentable-legality-v3",
+    ),
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  expect(await waitForState(runId, "failed")).toMatchObject({
+    state: "failed",
+  });
+  expect((await request(`/v1/ingestion-runs/${runId}/candidate`)).response.status)
+    .toBe(409);
 }, 90_000);
 
 test.each([
@@ -2123,7 +2254,7 @@ async function collectFixtureLegalityEvidence(
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
-    adapter_version: "fixture-gundam-en-asia-json@1",
+    adapter_version: "fixture-gundam-en-asia-json@2",
     idempotency_key: idempotencyKey,
     requests: [{
       id: "cards-and-rules",
@@ -2231,6 +2362,19 @@ async function waitForState(runId: string, expected: string) {
   throw new Error(`run ${runId} did not reach ${expected}`);
 }
 
+function productionFusionLegalityRequests(
+  marker: string,
+): ReturnType<typeof officialSourceDiscoveryRequests> {
+  return officialSourceDiscoveryRequests("fusion-world-en").map((request) =>
+    request.id === "fusion-world-en:legality-current"
+      ? {
+          ...request,
+          headers: { ...request.headers, "user-agent": marker },
+        }
+      : request
+  );
+}
+
 async function request(
   pathname: string,
   body?: Record<string, unknown>,
@@ -2291,6 +2435,18 @@ async function exportedLegalityRule(
   revisionId: string,
   officialId: string,
 ): Promise<Record<string, unknown>> {
+  const rule = (await exportedComponentRecords(
+    revisionId,
+    "legality-rules",
+  )).find((candidate) => candidate.official_id === officialId);
+  if (rule === undefined) throw new Error("Exported Legality Rule is absent");
+  return rule;
+}
+
+async function exportedComponentRecords(
+  revisionId: string,
+  componentName: string,
+): Promise<Record<string, unknown>[]> {
   const exportRow = await testEnv.CATALOGUE_DB.prepare(
     `SELECT manifest_key FROM catalogue_exports
      WHERE catalogue_revision_id = ?`,
@@ -2304,23 +2460,23 @@ async function exportedLegalityRule(
     components: Array<{ name: string; compressed_sha256: string }>;
   }>();
   const component = manifest.components.find(
-    (candidate) => candidate.name === "legality-rules",
+    (candidate) => candidate.name === componentName,
   );
   if (component === undefined) {
-    throw new Error("Legality Rule export component is absent");
+    throw new Error(`Catalogue Export ${componentName} component is absent`);
   }
   const object = await testEnv.CATALOGUE_EXPORTS.get(
     `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`,
   );
-  if (object === null) throw new Error("Legality Rule export is absent");
+  if (object === null) throw new Error("Catalogue Export component is absent");
   const text = await new Response(
     object.body.pipeThrough(new DecompressionStream("gzip")),
   ).text();
-  const rule = text.trim().split("\n").map((line) =>
-    JSON.parse(line) as Record<string, unknown>
-  ).find((candidate) => candidate.official_id === officialId);
-  if (rule === undefined) throw new Error("Exported Legality Rule is absent");
-  return rule;
+  return text.length === 0
+    ? []
+    : text.trim().split("\n").map((line) =>
+        JSON.parse(line) as Record<string, unknown>
+      );
 }
 
 function resolveJsonPointer(document: unknown, pointer: string): unknown {
