@@ -362,37 +362,25 @@ export default defineConfig({
                 ? "FB01-001 is eligible for Standard tournament play."
                 : "FB01-001 appears on opaque publication XQZ-17.";
               return new Response(
-                `<html><script type="application/ld+json">${JSON.stringify({
-                  "@context": "https://schema.org",
-                  "@type": "Dataset",
-                  publisher: { name: "Bandai" },
-                  hasPart: [{
-                    identifier: "fusion-world-en:legality-current",
-                    payload: {
-                      publication: "fusion-world-legality-current",
-                      revision: "2026-08-01",
-                      entries: [{
-                        rule_ref: "fw_production_eligible",
-                        canonical_url: url.href,
-                        notice: officialWording,
-                        market: "EN-OCEANIA",
-                        play_format: "standard",
-                        tier: null,
-                        active_on: "2026-01-01",
-                        expires_on: null,
-                        cards: ["FB01-001"],
-                        directive: "eligible",
-                        cap: null,
-                        paired_cards: [],
-                        filter_field: null,
-                        filter_values: [],
-                        blocks: [],
-                        tournament_legal_date: null,
-                        ambiguity: null,
-                      }],
-                    },
-                  }],
-                })}</script></html>`,
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                  <main>
+                    <p>1 record</p>
+                    <article class="restriction-card">
+                      <dl>
+                        <dt>Rule Ref</dt><dd>fw_production_eligible</dd>
+                        <dt>Notice</dt><dd>${officialWording}</dd>
+                        <dt>Market</dt><dd>EN-OCEANIA</dd>
+                        <dt>Play Format</dt><dd>standard</dd>
+                        <dt>Tier</dt><dd>-</dd>
+                        <dt>Active On</dt><dd>2026-01-01</dd>
+                        <dt>Expires On</dt><dd>-</dd>
+                        <dt>Cards</dt><dd>FB01-001</dd>
+                        <dt>Directive</dt><dd>eligible</dd>
+                      </dl>
+                    </article>
+                  </main>
+                </html>`,
                 {
                   headers: {
                     "content-type": "text/html; charset=utf-8",
@@ -674,7 +662,11 @@ export default defineConfig({
               });
             }
             return new Response(
-              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main><article data-publication-empty=\"true\">No published entries.</article></main></html>",
+              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>${
+                url.pathname === "/fw/en/rules/banned-limited-cards/"
+                  ? "<p>0 records</p>"
+                  : ""
+              }<article data-publication-empty="true">No published entries.</article></main></html>`,
               {
                 headers: {
                   "content-type": "text/html; charset=utf-8",
