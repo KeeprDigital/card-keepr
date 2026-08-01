@@ -1,8 +1,9 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE official_source_collection_plans (
-  ingestion_run_id TEXT PRIMARY KEY
+  ingestion_run_id TEXT NOT NULL
     REFERENCES ingestion_evidence_plans(ingestion_run_id),
+  source_lineage TEXT NOT NULL,
   discovery_observation_set_id TEXT NOT NULL
     REFERENCES source_observation_sets(id),
   contract TEXT NOT NULL
@@ -13,7 +14,9 @@ CREATE TABLE official_source_collection_plans (
       length(content_digest) = 64
       AND content_digest NOT GLOB '*[^0-9a-f]*'
     ),
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (ingestion_run_id, source_lineage),
+  UNIQUE (discovery_observation_set_id)
 );
 
 CREATE TRIGGER official_source_collection_plan_discovery_owner
@@ -25,6 +28,7 @@ WHEN NOT EXISTS (
     ON snapshot.id = observation_set.source_snapshot_id
   WHERE observation_set.id = NEW.discovery_observation_set_id
     AND snapshot.ingestion_run_id = NEW.ingestion_run_id
+    AND snapshot.source_lineage = NEW.source_lineage
 )
 BEGIN
   SELECT RAISE(
@@ -145,8 +149,26 @@ AND NOT EXISTS (
        json_each(collection.collection_plan_json, '$.requests') AS planned
   WHERE plan.ingestion_run_id = NEW.ingestion_run_id
     AND json_extract(planned.value, '$.id') = NEW.request_id
-    AND json_array_length(
-      json_extract(plan.request_plan_json, '$.requests')
+    AND (
+      SELECT SUM(json_array_length(json_extract(value, '$.requests')))
+      FROM json_each(
+        CASE
+          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
+            THEN json_extract(plan.request_plan_json, '$.plans')
+          ELSE json_array(json(plan.request_plan_json))
+        END
+      )
+    ) + 10000 * (
+      SELECT CAST(key AS INTEGER)
+      FROM json_each(
+        CASE
+          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
+            THEN json_extract(plan.request_plan_json, '$.plans')
+          ELSE json_array(json(plan.request_plan_json))
+        END
+      )
+      WHERE json_extract(value, '$.source_lineage') =
+        collection.source_lineage
     ) + CAST(planned.key AS INTEGER) = NEW.sequence_number
     AND json_extract(planned.value, '$.method') = NEW.method
     AND json_extract(planned.value, '$.url') = NEW.url

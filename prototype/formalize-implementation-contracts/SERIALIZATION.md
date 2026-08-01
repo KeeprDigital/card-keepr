@@ -7,16 +7,16 @@ component for every component declared by that schema version. Empty components
 are present with zero records. A successful no-change Ingestion Run produces no
 export.
 
-New exports use manifest schema major 2. The `legality-rules` component uses
-record schema major 2 so `LegalityRuleRecord` retains both the Official Source
+New exports use manifest schema major 2 and every component advertises its
+canonical record schema major 2 URI. The `legality-rules` component's
+`LegalityRuleRecord` retains both the Official Source
 identity, the exact normalized discriminated `effect` with every operand,
 source lineage and observation provenance, and rule lifecycle. The lifecycle is
 carried on the rule itself so rules without affected Card IDs remain auditable;
 card-scoped rules additionally retain their `legality-rule-card` relationships.
-Components whose record contracts did not change continue to advertise record
-schema major 1. Schema-major-1 manifests and components remain
-revision-addressed, immutable, and readable; they are never rewritten during
-the upgrade.
+Separately named schema-major-1 manifests and record schemas remain available
+for revision-addressed historical artifacts; they are never referenced by a
+new v2 manifest or rewritten during the upgrade.
 
 Identifiers that are serialized as provenance are stable products of the
 public idempotent operation. Production Source Evidence run IDs are a

@@ -2,7 +2,6 @@ import { AdministrationProblem } from "./ingestion";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertIdentifier,
-  parseEvidencePlan,
   parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,
@@ -548,7 +547,29 @@ export async function persistOfficialSourceCollectionPlan(
   discoveredRequests: readonly OfficialSourceCollectionRequest[],
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
-  const discoveryPlan = parseEvidencePlan(run.request_plan_json);
+  const owner = await database.prepare(
+    `SELECT snapshot.source_lineage
+     FROM source_observation_sets AS observation_set
+     JOIN source_snapshots AS snapshot
+       ON snapshot.id = observation_set.source_snapshot_id
+     WHERE observation_set.id = ? AND snapshot.ingestion_run_id = ?`,
+  ).bind(discoveryObservationSetId, runId)
+    .first<{ source_lineage: string }>();
+  if (owner === null) {
+    throw new Error(
+      "The discovery observation is not owned by this Ingestion Run.",
+    );
+  }
+  const plans = parseEvidencePlans(run.request_plan_json);
+  const planIndex = plans.findIndex(
+    (plan) => plan.source_lineage === owner.source_lineage,
+  );
+  const discoveryPlan = plans[planIndex];
+  if (discoveryPlan === undefined) {
+    throw new Error(
+      "The discovery observation has no owning immutable Evidence Plan.",
+    );
+  }
   if (
     discoveryPlan.requests.length !== 1 ||
     discoveryPlan.requests[0]!.id !== "discovery"
@@ -572,9 +593,9 @@ export async function persistOfficialSourceCollectionPlan(
     .prepare(
       `SELECT collection_plan_json, content_digest
        FROM official_source_collection_plans
-       WHERE ingestion_run_id = ?`,
+       WHERE ingestion_run_id = ? AND source_lineage = ?`,
     )
-    .bind(runId)
+    .bind(runId, discoveryPlan.source_lineage)
     .first<{
       collection_plan_json: string;
       content_digest: string;
@@ -594,12 +615,15 @@ export async function persistOfficialSourceCollectionPlan(
     database
       .prepare(
         `INSERT INTO official_source_collection_plans (
-           ingestion_run_id, discovery_observation_set_id, contract,
+           ingestion_run_id, source_lineage,
+           discovery_observation_set_id, contract,
            collection_plan_json, content_digest, created_at
-         ) VALUES (?, ?, 'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
+         ) VALUES (?, ?, ?,
+           'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
       )
       .bind(
         runId,
+        discoveryPlan.source_lineage,
         discoveryObservationSetId,
         collectionPlanJson,
         contentDigest,
@@ -617,7 +641,8 @@ export async function persistOfficialSourceCollectionPlan(
         .bind(
           runId,
           request.id,
-          index + 1,
+          plans.flatMap((plan) => plan.requests).length +
+            planIndex * 10000 + index,
           request.url,
           canonicalJson(request.headers),
           request.representation_fingerprint,

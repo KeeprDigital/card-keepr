@@ -1683,15 +1683,24 @@ function parseBandaiSurfaceCoverage(
       label: htmlText(match[2]!),
     }))
     .filter(({ value, label }) => value.length > 0 || label.length > 0);
-  const publicationEntries = [...html.matchAll(
-    /<(?:article|li|tr)\b[^>]*>([\s\S]*?)<\/(?:article|li|tr)>/giu,
-  )]
-    .map((match) => htmlText(match[1]!))
+  const publicationEntryMatches = [...html.matchAll(
+    /<(?:article|li|tr)\b([^>]*)>([\s\S]*?)<\/(?:article|li|tr)>/giu,
+  )];
+  const explicitlyEmpty = publicationEntryMatches.some(
+    (match) => htmlAttribute(match[1]!, "data-publication-empty") === "true",
+  );
+  const publicationEntries = publicationEntryMatches
+    .filter(
+      (match) =>
+        htmlAttribute(match[1]!, "data-publication-empty") !== "true",
+    )
+    .map((match) => htmlText(match[2]!))
     .filter((entry) => entry.length > 0);
   if (
     publicationLinks.length === 0 &&
     discoveredOptions.length === 0 &&
-    publicationEntries.length === 0
+    publicationEntries.length === 0 &&
+    !explicitlyEmpty
   ) {
     throw new Error(
       `Official Source ${surface} has no structural publication entries.`,

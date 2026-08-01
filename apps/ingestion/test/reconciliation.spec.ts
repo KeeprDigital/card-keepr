@@ -1223,10 +1223,15 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   const priorFreshness = await testEnv.CATALOGUE_DB.prepare(
     `SELECT game, area, checked_at
      FROM source_freshness
-     WHERE area IN ('cards-and-printings', 'products-and-releases')`,
+     WHERE area IN (
+       'cards-and-printings', 'products-and-releases', 'legality-rules'
+     )`,
   ).all<{
     game: SupportedGame;
-    area: "cards-and-printings" | "products-and-releases";
+    area:
+      | "cards-and-printings"
+      | "products-and-releases"
+      | "legality-rules";
     checked_at: string;
   }>();
   const exactFreshness = new Map(
@@ -1730,6 +1735,71 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   });
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
+
+test("a production raw legality sidecar fails closed without an exact rule parser", async () => {
+  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first();
+  const exportObjectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map(({ key }) => key)
+    .sort();
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@2",
+    idempotency_key: "reject-nonempty-raw-legality-sidecar",
+    requests: officialSourceDiscoveryRequests("fusion-world-en").map(
+      (request) =>
+        request.id === "fusion-world-en:legality-current"
+          ? {
+              ...request,
+              headers: {
+                ...request.headers,
+                "user-agent": "card-keepr-nonempty-legality-sidecar",
+              },
+            }
+          : request,
+    ),
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect((await post(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+
+  let terminal: Record<string, unknown> | null = null;
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const shown = await get(`/v1/ingestion-runs/${runId}`);
+    if (shown.document.state === "failed" ||
+      shown.document.state === "awaiting_approval") {
+      terminal = shown.document;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  expect(terminal).toMatchObject({
+    state: "failed",
+  });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT candidate_digest, approval_json, published_revision_id,
+            publication_outcome, resulting_revision_id
+     FROM ingestion_runs WHERE id = ?`,
+  ).bind(runId).first()).toEqual({
+    candidate_digest: null,
+    approval_json: null,
+    published_revision_id: null,
+    publication_outcome: null,
+    resulting_revision_id: null,
+  });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
+  ).first()).toEqual(currentBefore);
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
+    .map(({ key }) => key)
+    .sort()).toEqual(exportObjectsBefore);
+}, 30_000);
 
 test("complete image evidence publishes an unidentified artwork once without collapsing a new locator", async () => {
   const collectVariant = async (
@@ -4097,6 +4167,62 @@ test("every planned request contributes exactly one provenance-bound observation
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-multi-request-complete-coverage",
   });
+});
+
+test("aggregate reconciliation size is rejected before any retained object is read", async () => {
+  const run = await collectRequests(
+    [
+      { id: "aggregate-a", scenario: "base" },
+      { id: "aggregate-b", scenario: "new-locator" },
+      { id: "aggregate-c", scenario: "base" },
+    ],
+    "aggregate-budget-before-object-read",
+  );
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT observations.content_object_key
+     FROM source_observation_sets AS observations
+     JOIN source_snapshots AS snapshots
+       ON snapshots.id = observations.source_snapshot_id
+     WHERE snapshots.ingestion_run_id = ?
+     ORDER BY snapshots.request_id`,
+  ).bind(run.id).all<{ content_object_key: string }>();
+  expect(retained.results).toHaveLength(3);
+  await testEnv.CATALOGUE_DB.prepare(
+    `DROP TRIGGER source_observation_sets_are_immutable_on_update`,
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE source_observation_sets
+     SET content_byte_length = 12582912
+     WHERE source_snapshot_id IN (
+       SELECT id FROM source_snapshots WHERE ingestion_run_id = ?
+     )`,
+  ).bind(run.id).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER source_observation_sets_are_immutable_on_update
+     BEFORE UPDATE ON source_observation_sets
+     BEGIN
+       SELECT RAISE(ABORT, 'immutable_source_observation_set');
+     END`,
+  ).run();
+  await testEnv.EVIDENCE_OBJECTS.delete(
+    retained.results[0]!.content_object_key,
+  );
+
+  const blocked = await reconcile(run.id);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [expect.objectContaining({
+      code: "retained_evidence_invalid",
+      detail: expect.stringContaining(
+        "aggregate reconciliation byte budget",
+      ),
+    })],
+  });
+  expect(JSON.stringify(blocked.document)).not.toContain(
+    "bytes are unavailable",
+  );
 });
 
 test("empty first, middle, and last partitions remain durable and digest-bound", async () => {

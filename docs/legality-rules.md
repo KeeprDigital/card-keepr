@@ -7,38 +7,38 @@ date, region, format, and optional event tier from the current
 
 ## Source adapter input
 
-No publisher-specific legality adapter is currently installed. The following
-adapter identities are intentionally unavailable until their publisher
-representations, image-byte capture, redirect policy, and structured notice
-operands are verified against retained first-party evidence:
+The following production Catalogue adapters are installed for bounded,
+credential-free capture of their exact Official Source surfaces and dynamic
+request graphs:
 
-- `one-piece-json-document@3`
+- `one-piece-en@1`
 - `fusion-world-en@2`
 - `digimon-en@2`
 - `gundam-en-asia@2`
 - `gundam-en-us@2`
 
-Production planning fails closed with `adapter_not_supported` for all five
-identities. They are reserved documentation names, not installed adapter
-contracts and not permission to accept synthetic JSON as a publisher response.
-
-When a publisher-specific adapter is installed, each immutable Source Snapshot
-must contain exactly one demonstrated publisher response. Production adapters
+These registrations establish request, byte, parser, graph, and surface
+coverage contracts; they do not authorize a shared normalized JSON envelope.
+Each immutable Source Snapshot must contain exactly one demonstrated publisher
+response. Production adapters
 must not accept a shared normalized envelope or a test fixture representation.
 Raw inputs must not supply a normalized rarity, identity digest, structured
 effect, or `representable` decision; the owning adapter must derive those
 values from demonstrated publisher fields and fail closed when it cannot.
-The remaining source-adapter requirements in this section describe that future
-installation contract; they do not claim that a publisher representation is
-currently supported.
-An Ingestion Run begins with an immutable one-request Evidence Plan containing
-its discovery request. The retained discovery observation creates, once, a
-separately named Official
-Source Collection Plan containing the exact bounded set of discovered
-requests. That collection plan is immutable, bound to the discovery
-observation by identity, and bound to its canonical JSON by SHA-256; retries
-must reproduce it byte-for-byte. The original Evidence Plan is never expanded
-or rewritten.
+The installed raw adapters do not yet normalize arbitrary non-empty publisher
+legality notices into exact structured Legality Rules. Reconciliation rejects
+a non-empty rule-bearing surface unless its same retained request also emits
+an explicitly complete `legality_rules` observation. A structurally proven
+empty legality surface may establish complete empty coverage. This keeps
+Product, Release, Card, and image capture available without silently carrying
+stale Legality behavior.
+
+An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
+separate plan for every selected Source Lineage. Static root requests and every
+dynamically discovered child request are immutable and provenance-bound to
+their owning plan and parent request. Reconciliation validates completeness,
+lifecycle, and freshness independently for each lineage; it never assigns a
+combined run to the first plan's lineage.
 
 The required legality scope is discovery, legality Card details, current
 Legality Rules, and Legality history. The One Piece adapter additionally
@@ -52,9 +52,10 @@ separately retained snapshots. Each surface declares the adapter's exact
 regional partition and total record count alongside the source-specific raw
 record collection. A truly empty Legality Rule or legality Card-detail surface
 may be represented by a declared total of zero and an empty collection.
-Discovery, history, and the One Piece policy surfaces must each retain at
-least one structurally valid record.
-The adapter derives completeness from this structure and rejects missing
+Every non-empty rule-bearing surface must retain at least one structurally
+valid, exactly parsed rule; a retained raw sidecar alone is not a rule parser.
+The adapter and reconciliation boundary derive completeness from this
+structure and reject missing
 surfaces, mismatched counts, unexpected partitions, cross-game envelopes, and
 unknown publisher fields. Current rules, historical notices, and every One
 Piece policy stream are all rule-bearing: their wording must normalize into a

@@ -636,7 +636,7 @@ async function approveRunAttempt(
       run.candidate_json,
     ),
   ) as CatalogueCandidate;
-  assertErrataClockFresh(
+  assertRulesClockFresh(
     candidate,
     parseSelectedGames(run.selected_games_json),
     run.candidate_created_at,
@@ -871,7 +871,7 @@ async function approveRunAttempt(
   }
 }
 
-function assertErrataClockFresh(
+function assertRulesClockFresh(
   candidate: CatalogueCandidate,
   selectedGames: readonly SupportedGame[],
   candidateCreatedAt: string | null,
@@ -895,6 +895,25 @@ function assertErrataClockFresh(
       409,
       "candidate_errata_stale",
       "An Erratum became applicable after reconciliation; reconcile a fresh candidate before approval.",
+    );
+  }
+  const crossedLegalityBoundary = (candidate.legality_rules ?? []).some(
+    (rule) =>
+      selected.has(rule.game) &&
+      rule.current !== false &&
+      (
+        (rule.effective_from > reconciledDate &&
+          rule.effective_from <= approvalDate) ||
+        (rule.effective_until !== null &&
+          rule.effective_until > reconciledDate &&
+          rule.effective_until <= approvalDate)
+      ),
+  );
+  if (crossedLegalityBoundary) {
+    throw new AdministrationProblem(
+      409,
+      "candidate_legality_stale",
+      "A Legality Rule applicability boundary passed after reconciliation; reconcile a fresh candidate before approval.",
     );
   }
 }
@@ -4523,6 +4542,15 @@ function checkedFreshnessAreas(
             checked_at:
               capturedChecks.get(`${supported}:products-and-releases`) ??
               checkedAt,
+          }]
+        : []),
+      ...(capturedChecks.has(`${supported}:legality-rules`)
+        ? [{
+            game: supported,
+            area: "legality-rules" as const,
+            checked_at: capturedChecks.get(
+              `${supported}:legality-rules`,
+            )!,
           }]
         : []),
     ];

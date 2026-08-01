@@ -268,9 +268,10 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
   await expect(
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO official_source_collection_plans (
-         ingestion_run_id, discovery_observation_set_id, contract,
+         ingestion_run_id, source_lineage,
+         discovery_observation_set_id, contract,
          collection_plan_json, content_digest, created_at
-       ) VALUES (?, 'srcobsset_collection_owner',
+       ) VALUES (?, 'one-piece-en', 'srcobsset_collection_owner',
          'card-keepr-official-source-collection-plan@1', ?, ?,
          '2026-08-01T00:00:03.000Z')`,
     ).bind(
@@ -282,9 +283,10 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
   await expect(
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO official_source_collection_plans (
-         ingestion_run_id, discovery_observation_set_id, contract,
+         ingestion_run_id, source_lineage,
+         discovery_observation_set_id, contract,
          collection_plan_json, content_digest, created_at
-       ) VALUES (?, 'srcobsset_collection_owner',
+       ) VALUES (?, 'one-piece-en', 'srcobsset_collection_owner',
          'card-keepr-official-source-collection-plan@1', ?, ?,
          '2026-08-01T00:00:03.000Z')`,
     ).bind(targetRunId, collectionPlan, "4".repeat(64)).run(),
@@ -311,9 +313,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   const malformedDigest = await rejectedError(
     legacyDatabase.prepare(
       `INSERT INTO official_source_collection_plans (
-        ingestion_run_id, discovery_observation_set_id, contract,
+        ingestion_run_id, source_lineage,
+        discovery_observation_set_id, contract,
         collection_plan_json, content_digest, created_at
-      ) VALUES ('run_missing', 'srcobsset_missing',
+      ) VALUES ('run_missing', 'missing-lineage', 'srcobsset_missing',
         'card-keepr-official-source-collection-plan@1', '{}', ?,
         '2026-08-01T00:00:00.000Z')`,
     ).bind(`a${"Z".repeat(63)}`).run(),
@@ -321,9 +324,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   const validDigestMissingOwner = await rejectedError(
     legacyDatabase.prepare(
       `INSERT INTO official_source_collection_plans (
-        ingestion_run_id, discovery_observation_set_id, contract,
+        ingestion_run_id, source_lineage,
+        discovery_observation_set_id, contract,
         collection_plan_json, content_digest, created_at
-      ) VALUES ('run_missing', 'srcobsset_missing',
+      ) VALUES ('run_missing', 'missing-lineage', 'srcobsset_missing',
         'card-keepr-official-source-collection-plan@1', '{}', ?,
         '2026-08-01T00:00:00.000Z')`,
     ).bind("a".repeat(64)).run(),
@@ -790,6 +794,135 @@ test.each([
   },
 );
 
+test("one multi-lineage refresh retires only the complete omitted Legality scope", async () => {
+  const start = async (
+    key: string,
+    asiaRules: "current" | "empty",
+  ) => {
+    const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+      idempotency_key: key,
+      plans: [
+        {
+          supported_game: "gundam",
+          source_lineage: "gundam-en-asia",
+          adapter_version: "fixture-gundam-en-asia-json@1",
+          requests: [{
+            id: `${key}-asia`,
+            method: "GET",
+            url:
+              "https://official-source.invalid/reconciliation/" +
+              `contextual-legality-domain?rules=${asiaRules}`,
+            headers: { accept: "application/json" },
+          }],
+        },
+        {
+          supported_game: "gundam",
+          source_lineage: "gundam-en-us",
+          adapter_version: "fixture-gundam-en-us-json@1",
+          requests: [{
+            id: `${key}-us`,
+            method: "GET",
+            url:
+              "https://official-source.invalid/reconciliation/" +
+              "contextual-legality-domain-us",
+            headers: { accept: "application/json" },
+          }],
+        },
+      ],
+    });
+    const runId = requiredString(started, "id");
+    expect((await request(
+      `/v1/ingestion-runs/${runId}/collection/resume`,
+      {},
+    )).response.status).toBe(202);
+    await waitForState(runId, "parsing");
+    return { runId, reconciled: (await reconcile(runId)).document };
+  };
+
+  const initial = await start("multi-legality-initial", "current");
+  expect(initial.reconciled.legality_rules).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        official_id: "legality_rule_asia_eligible",
+        source_lineage: "gundam-en-asia",
+        region: "EN-ASIA",
+        current: true,
+      }),
+      expect.objectContaining({
+        official_id: "legality_rule_us_eligible",
+        source_lineage: "gundam-en-us",
+        region: "EN-US",
+        current: true,
+      }),
+    ]),
+  );
+  expect((await approve(
+    initial.reconciled,
+    "publish-multi-legality-initial",
+  )).response.status).toBe(200);
+  const firstFreshness = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT checked_at, ingestion_run_id
+     FROM source_freshness
+     WHERE game = 'gundam' AND area = 'legality-rules'`,
+  ).first<{ checked_at: string; ingestion_run_id: string }>();
+  expect(firstFreshness).toMatchObject({
+    ingestion_run_id: initial.runId,
+    checked_at: expect.any(String),
+  });
+
+  const refreshed = await start("multi-legality-refresh", "empty");
+  const rules = refreshed.reconciled.legality_rules as Array<
+    Record<string, unknown>
+  >;
+  expect(rules.filter(({ official_id }) =>
+    official_id === "legality_rule_us_eligible"
+  )).toEqual([
+    expect.objectContaining({
+      source_lineage: "gundam-en-us",
+      region: "EN-US",
+      current: true,
+    }),
+  ]);
+  expect(
+    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia"),
+  ).not.toHaveLength(0);
+  expect(
+    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia"),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ current: false }),
+    ]),
+  );
+  expect(
+    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia")
+      .every(({ current }) => current === false),
+  ).toBe(true);
+  expect(new Set(rules.map(({ id }) => id)).size).toBe(rules.length);
+
+  const published = await approve(
+    refreshed.reconciled,
+    "publish-multi-legality-refresh",
+  );
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  expect(await revisionLegalityRule(
+    revisionId,
+    "legality_rule_us_eligible",
+  )).toMatchObject({ current: true, source_lineage: "gundam-en-us" });
+  expect(await revisionLegalityRule(
+    revisionId,
+    "legality_rule_asia_eligible",
+  )).toMatchObject({ current: false, source_lineage: "gundam-en-asia" });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT checked_at, ingestion_run_id
+     FROM source_freshness
+     WHERE game = 'gundam' AND area = 'legality-rules'`,
+  ).first()).toMatchObject({ ingestion_run_id: refreshed.runId });
+}, 90_000);
+
 test.each([
   ["one-piece-normalized-envelope@1", "one-piece", "one-piece-en"],
   ["one-piece-normalized-envelope@2", "one-piece", "one-piece-en"],
@@ -1055,15 +1188,26 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   const retainedRules = first.reconciled.legality_rules as Array<
     Record<string, unknown>
   >;
-  const retainedPointers = retainedRules.map((rule) =>
-    requiredString(rule, "source_observation_pointer")
+  const retainedLocations = retainedRules.map((rule) =>
+    requiredString(rule, "source_observation_set_id") + ":" +
+      requiredString(rule, "source_observation_pointer")
   );
-  const retainedDocument = await request(
-    `/v1/source-observation-sets/${requiredString(retainedRules[0]!, "source_observation_set_id")}/content`,
-  );
-  expect(retainedDocument.response.status).toBe(200);
-  expect(new Set(retainedPointers).size).toBe(retainedRules.length);
+  expect(new Set(retainedLocations).size).toBe(retainedRules.length);
+  const retainedDocuments = new Map<string, Record<string, unknown>>();
   for (const rule of retainedRules) {
+    const observationSetId = requiredString(
+      rule,
+      "source_observation_set_id",
+    );
+    let retainedDocument = retainedDocuments.get(observationSetId);
+    if (retainedDocument === undefined) {
+      const retained = await request(
+        `/v1/source-observation-sets/${observationSetId}/content`,
+      );
+      expect(retained.response.status).toBe(200);
+      retainedDocument = retained.document;
+      retainedDocuments.set(observationSetId, retainedDocument);
+    }
     const pointer = requiredString(rule, "source_observation_pointer");
     expect(pointer).toMatch(
       /^\/observations\/\d+\/value\/legality_rules\/\d+$/,
@@ -1082,7 +1226,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       rule.source_field_pointers as Record<string, string>,
     )) {
       const sourceValue = resolveJsonPointer(
-        retainedDocument.document,
+        retainedDocument,
         fieldPointer,
       );
       expect(sourceValue).not.toBeUndefined();
@@ -1572,6 +1716,76 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
 });
 
+test.each([
+  {
+    boundary: "effective_from",
+    reconciledAt: "2025-12-31T23:59:00.000Z",
+    approvedAt: "2026-01-01T00:01:00.000Z",
+  },
+  {
+    boundary: "effective_until",
+    reconciledAt: "2025-05-31T23:59:00.000Z",
+    approvedAt: "2025-06-01T00:01:00.000Z",
+  },
+])(
+  "approval rejects a candidate after a Legality Rule $boundary boundary passes",
+  async ({ boundary, reconciledAt, approvedAt }) => {
+    const runId = await collectFixtureLegalityEvidence(
+      "https://official-source.invalid/reconciliation/contextual-legality-domain",
+      `legality-clock-${boundary}`,
+    );
+    const reconciled = await reconcile(runId, reconciledAt);
+    expect(reconciled.response.status).toBe(200);
+    const beforeApproval = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT state, candidate_digest, expected_current_revision_id,
+              approval_json, approval_idempotency_key,
+              published_revision_id, publication_outcome,
+              resulting_revision_id
+       FROM ingestion_runs WHERE id = ?`,
+    ).bind(runId).first();
+    const blocked = await approve(
+      reconciled.document,
+      `approve-legality-clock-${boundary}`,
+      approvedAt,
+    );
+    expect(blocked.response.status).toBe(409);
+    expect(blocked.document).toMatchObject({
+      code: "candidate_legality_stale",
+    });
+    expect(await testEnv.CATALOGUE_DB.prepare(
+      `SELECT state, candidate_digest, expected_current_revision_id,
+              approval_json, approval_idempotency_key,
+              published_revision_id, publication_outcome,
+              resulting_revision_id
+       FROM ingestion_runs WHERE id = ?`,
+    ).bind(runId).first()).toEqual(beforeApproval);
+    const retained = await request(
+      `/v1/ingestion-runs/${runId}`,
+      undefined,
+      approvedAt,
+    );
+    expect(retained.document).toMatchObject({
+      state: "awaiting_approval",
+      expected_current_revision_id: requiredString(
+        reconciled.document,
+        "expected_current_revision_id",
+      ),
+    });
+    const rejected = await request(
+      `/v1/ingestion-runs/${runId}/rejection`,
+      {
+        candidate_digest: requiredString(
+          reconciled.document,
+          "candidate_digest",
+        ),
+        idempotency_key: `reject-legality-clock-${boundary}`,
+      },
+      approvedAt,
+    );
+    expect(rejected.response.status).toBe(200);
+  },
+);
+
 test.each(["event-tier", "effective-until"])(
   "nullable legality field %s must be explicitly retained for exact provenance",
   async (field) => {
@@ -1928,7 +2142,7 @@ async function collectFixtureLegalityEvidence(
   return runId;
 }
 
-async function reconcile(runId: string) {
+async function reconcile(runId: string, observedAt?: string) {
   const shown = await request(`/v1/ingestion-runs/${runId}`);
   const body = {
     expected_current_revision_id: requiredString(
@@ -1942,6 +2156,7 @@ async function reconcile(runId: string) {
     const observed = await request(
       `/v1/ingestion-runs/${runId}/reconciliation`,
       body,
+      observedAt,
     );
     if (
       observed.response.status !== 200 &&
@@ -1971,6 +2186,7 @@ async function reconcile(runId: string) {
 function approve(
   reconciled: Record<string, unknown>,
   idempotencyKey: string,
+  observedAt?: string,
 ) {
   return request(
     `/v1/ingestion-runs/${requiredString(reconciled, "run_id")}/approval`,
@@ -1982,6 +2198,7 @@ function approve(
       ),
       idempotency_key: idempotencyKey,
     },
+    observedAt,
   );
 }
 
@@ -2017,6 +2234,7 @@ async function waitForState(runId: string, expected: string) {
 async function request(
   pathname: string,
   body?: Record<string, unknown>,
+  observedAt?: string,
 ): Promise<{
   response: Response;
   document: Record<string, unknown>;
@@ -2030,6 +2248,9 @@ async function request(
         ...(body === undefined
           ? {}
           : { "content-type": "application/json" }),
+        ...(observedAt === undefined
+          ? {}
+          : { "x-keepr-test-now": observedAt }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),

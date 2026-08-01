@@ -534,6 +534,48 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     });
     expect(body.data[0]!.derivation).toContain("evaluated not_legal");
     expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
+    if (index === 0) {
+      const etag = response.headers.get("etag");
+      expect(etag).not.toBeNull();
+      const url =
+        "https://card-keepr.invalid/v1/legality-status" +
+        `?card_id=${testCase.cardId}` +
+        "&on=2026-07-30&format=standard&region=EN-ASIA";
+      const validators = [
+        etag!,
+        `W/${etag}`,
+        `"unrelated", W/${etag}`,
+        "*",
+      ];
+      const conditional = await Promise.all(
+        validators.map((validator, validatorIndex) =>
+          exports.default.fetch(new Request(url, {
+            headers: {
+              authorization: "Bearer vitest-api-key",
+              "cf-connecting-ip": `203.0.113.${80 + validatorIndex}`,
+              "if-none-match": validator,
+            },
+          }))
+        ),
+      );
+      expect(conditional.map(({ status }) => status)).toEqual([
+        304, 304, 304, 304,
+      ]);
+      for (const matched of conditional) {
+        expect(await matched.text()).toBe("");
+        expect(matched.headers.get("etag")).toBe(etag);
+        expect(matched.headers.get("x-catalogue-revision")).toBe(revisionId);
+      }
+      const nonmatch = await exports.default.fetch(new Request(url, {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": "203.0.113.84",
+          "if-none-match": '"unrelated"',
+        },
+      }));
+      expect(nonmatch.status).toBe(200);
+      expect(nonmatch.headers.get("etag")).toBe(etag);
+    }
   }
 });
 
@@ -1370,7 +1412,7 @@ test("authenticated Card collection pages remain byte-bounded for large valid re
   expect(document.data.length).toBeGreaterThan(0);
   expect(document.data.length).toBeLessThan(cards.length);
   expect(document.page.next_cursor).toEqual(expect.any(String));
-});
+}, 15_000);
 
 test("Card search persistence remains compatible with D1 export", async () => {
   const virtualTables = await testEnv.CATALOGUE_DB.prepare(

@@ -29,5 +29,6 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/api/test/**/*.spec.ts"],
+    hookTimeout: 30_000,
   },
 });

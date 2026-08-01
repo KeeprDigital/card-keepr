@@ -784,17 +784,32 @@ export async function reconcileRetainedCardPrintingEvidence(
   >> = [];
   let candidateLegalityRules =
     priorCandidate?.legality_rules ?? [];
-  if (retained.legalityScopeObserved) {
+  if (retained.legalityScopes.length > 0) {
     try {
       resolvedLegalityRules = await resolveLegalityRuleCards(
         retained.legalityRules,
         [...cards.values()],
       );
-      candidateLegalityRules = legalityRulesForCandidate(
-        priorCandidate,
-        retained.sourceLineage,
-        resolvedLegalityRules,
-      );
+      for (const scope of retained.legalityScopes) {
+        candidateLegalityRules = legalityRulesForCandidate(
+          priorCandidate === null
+            ? {
+                contract: catalogueCandidateContract,
+                selected_games: [],
+                cards: [],
+                printings: [],
+                legality_rules: candidateLegalityRules,
+              }
+            : {
+                ...priorCandidate,
+                legality_rules: candidateLegalityRules,
+              },
+          scope.sourceLineage,
+          resolvedLegalityRules.filter(
+            (rule) => rule.source_lineage === scope.sourceLineage,
+          ),
+        );
+      }
     } catch (error) {
       diagnostics.push({
         code: "retained_evidence_invalid",
@@ -819,9 +834,20 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.errata ?? [],
     observedErrata,
   );
+  const legalityChecks = new Map<SupportedGame, string>();
+  for (const scope of retained.legalityScopes) {
+    const prior = legalityChecks.get(scope.supportedGame);
+    if (prior === undefined || prior < scope.checkedAt) {
+      legalityChecks.set(scope.supportedGame, scope.checkedAt);
+    }
+  }
   const candidateCards = [...cards.values()]
     .map((card) => {
-      if (card.game !== retained.supportedGame) return card;
+      if (
+        !retained.partitions.some(
+          ({ supportedGame }) => supportedGame === card.game,
+        )
+      ) return card;
       try {
         return {
           ...card,
@@ -896,6 +922,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           checked_at: latestCapture(observations),
         }),
       ),
+      ...[...legalityChecks].map(([game, checkedAt]) => ({
+        game,
+        area: "legality-rules" as const,
+        checked_at: checkedAt,
+      })),
     ],
     errata,
     legality_rules: candidateLegalityRules,

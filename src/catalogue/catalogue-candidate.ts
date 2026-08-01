@@ -29,7 +29,10 @@ export type CatalogueCandidate = {
   product_observed_lineages?: readonly string[];
   source_checks?: readonly {
     game: SupportedGame;
-    area: "cards-and-printings" | "products-and-releases";
+    area:
+      | "cards-and-printings"
+      | "products-and-releases"
+      | "legality-rules";
     checked_at: string;
   }[];
   errata?: readonly CatalogueErratum[];

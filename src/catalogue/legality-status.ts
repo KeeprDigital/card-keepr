@@ -5,6 +5,7 @@ import type {
 } from "./legality-rule";
 import { legalityRuleCardIds } from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
+import { ifNoneMatchMatches } from "../http/conditional-request";
 
 type CatalogueCard = {
   id: string;
@@ -116,7 +117,7 @@ export async function contextualLegalityStatusResponse(
     links: { self },
   };
   const etag = `"${await sha256Text(canonicalJson(document))}"`;
-  if (request.headers.get("if-none-match") === etag) {
+  if (ifNoneMatchMatches(request, etag)) {
     return new Response(null, {
       status: 304,
       headers: {

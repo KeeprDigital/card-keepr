@@ -334,6 +334,24 @@ export default defineConfig({
           ) {
             const artworkMarker = request.headers.get("user-agent");
             if (
+              artworkMarker === "card-keepr-nonempty-legality-sidecar" &&
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/rules/banned-limited-cards/"
+            ) {
+              return new Response(
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                  <article>FB30-001 is eligible for Standard play.</article>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"nonempty-legality-sidecar"',
+                  },
+                },
+              );
+            }
+            if (
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/products/" &&
               artworkMarker === "card-keepr-product-authority"
@@ -606,7 +624,7 @@ export default defineConfig({
               });
             }
             return new Response(
-              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main><article>Complete official structural policy entry.</article></main></html>",
+              "<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main><article data-publication-empty=\"true\">No published entries.</article></main></html>",
               {
                 headers: {
                   "content-type": "text/html; charset=utf-8",
@@ -812,6 +830,7 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/ingestion/test/**/*.spec.ts"],
+    hookTimeout: 30_000,
     testTimeout: 30_000,
   },
 });
@@ -955,6 +974,13 @@ function reconciliationSourceDocument(
           rules === "operand-overlap"
         ? rules
         : "current",
+    );
+  }
+  if (scenario === "contextual-legality-domain-us") {
+    const rules = new URL(requestUrl).searchParams.get("rules");
+    return contextualLegalityFixtureDocument(
+      "EN-US",
+      rules === "omitted" || rules === "empty" ? rules : "current",
     );
   }
   if (scenario === "contextual-legality-us") {

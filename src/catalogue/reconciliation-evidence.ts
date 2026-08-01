@@ -58,6 +58,7 @@ type PrintingImageSnapshotRow = {
 };
 
 type CollectionPlanRow = {
+  source_lineage: string;
   discovery_observation_set_id: string;
   contract: string;
   collection_plan_json: string;
@@ -66,6 +67,12 @@ type CollectionPlanRow = {
 
 type EvidencePlanRow = {
   request_plan_json: string;
+};
+
+export type RetainedLegalityScope = {
+  sourceLineage: string;
+  supportedGame: SupportedGame;
+  checkedAt: string;
 };
 
 type DiscoveryRequestPlanRow = {
@@ -91,7 +98,7 @@ export async function retainedReconciliationObservation(
     requests,
     observations,
     printingImageSnapshots,
-    collectionPlan,
+    collectionPlans,
     evidencePlanRow,
     discoveryRequestPlans,
   ] = await Promise.all([
@@ -166,13 +173,14 @@ export async function retainedReconciliationObservation(
       .all<PrintingImageSnapshotRow>(),
     database
       .prepare(
-        `SELECT discovery_observation_set_id, contract,
+        `SELECT source_lineage, discovery_observation_set_id, contract,
                 collection_plan_json, content_digest
          FROM official_source_collection_plans
-         WHERE ingestion_run_id = ?`,
+         WHERE ingestion_run_id = ?
+         ORDER BY source_lineage`,
         )
         .bind(runId)
-        .first<CollectionPlanRow>(),
+        .all<CollectionPlanRow>(),
       database
         .prepare(
           `SELECT request_plan_json
@@ -198,9 +206,10 @@ export async function retainedReconciliationObservation(
       "Reconciliation requires complete coverage of every planned Source Request.",
     );
   }
-  const plannedRequests = parseEvidencePlans(
+  const evidencePlans = parseEvidencePlans(
     evidencePlanRow.request_plan_json,
-  ).flatMap((plan) => plan.requests);
+  );
+  const plannedRequests = evidencePlans.flatMap((plan) => plan.requests);
   if (
     plannedRequests.length === 0 ||
     plannedRequests.length > requests.results.length ||
@@ -219,42 +228,11 @@ export async function retainedReconciliationObservation(
       "Operational Source Requests differ from the immutable Evidence Plan.",
     );
   }
-  if (collectionPlan !== null) {
-    if (
-      collectionPlan.contract !==
-        "card-keepr-official-source-collection-plan@1" ||
-      (await sha256(new TextEncoder().encode(
-        collectionPlan.collection_plan_json,
-      ))) !== collectionPlan.content_digest
-    ) {
-      throw new Error(
-        "Official Source Collection Plan failed immutable artifact verification.",
-      );
-    }
-    const retainedCollection: unknown = JSON.parse(
-      collectionPlan.collection_plan_json,
-    );
-    if (
-      !isRecord(retainedCollection) ||
-      !Array.isArray(retainedCollection.requests) ||
-      retainedCollection.requests.some((planned) => {
-        if (!isRecord(planned) || typeof planned.id !== "string") return true;
-        const request = requests.results.find(
-          ({ request_id: requestId }) => requestId === planned.id,
-        );
-        return !samePlannedRequest(
-          request,
-          planned,
-          request?.sequence_number ?? -1,
-        );
-      })
-    ) {
-      throw new Error(
-        "Official Source requests differ from the immutable Collection Plan.",
-      );
-    }
-  }
-  const collectionRequests = await retainedCollectionRequests(collectionPlan);
+  const collectionRequests = (
+    await Promise.all(
+      collectionPlans.results.map(retainedCollectionRequests),
+    )
+  ).flat();
   const immutableRequestIds = new Set([
     ...plannedRequests.map(({ id }) => id),
     ...collectionRequests.map(({ id }) => id as string),
@@ -350,17 +328,6 @@ export async function retainedReconciliationObservation(
       );
     }
   }
-  const documents = await Promise.all(
-    orderedRows.map((row) => {
-      const adapter = requiredSourceAdapter(row.adapter_version);
-      if (row.content_byte_length > adapter.maximumSnapshotBytes) {
-        throw new Error(
-          `Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`,
-        );
-      }
-      return retainedObservationDocument(evidenceObjects, row);
-    }),
-  );
   const aggregateBytes = orderedRows.reduce(
     (total, row) => total + row.content_byte_length,
     0,
@@ -369,6 +336,16 @@ export async function retainedReconciliationObservation(
     throw new Error(
       "Retained Source Observation Sets exceed the aggregate reconciliation byte budget.",
     );
+  }
+  const documents: Awaited<ReturnType<typeof retainedObservationDocument>>[] = [];
+  for (const row of orderedRows) {
+    const adapter = requiredSourceAdapter(row.adapter_version);
+    if (row.content_byte_length > adapter.maximumSnapshotBytes) {
+      throw new Error(
+        `Retained Source Observation Set ${row.observation_set_id} exceeds its adapter byte limit.`,
+      );
+    }
+    documents.push(await retainedObservationDocument(evidenceObjects, row));
   }
   assertClosedRequestGraph(requests.results, orderedRows, documents);
   const retainedImages = new Map(
@@ -381,7 +358,8 @@ export async function retainedReconciliationObservation(
   );
   const observationIds = new Set<string>();
   const legalityRules: RetainedLegalityRule[] = [];
-  let completeLegalityScopes = 0;
+  const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
+  const completeLegalityRequestIds = new Set<string>();
   const officialSurfaces = new Map<
     string,
     {
@@ -395,12 +373,11 @@ export async function retainedReconciliationObservation(
   const requestsById = new Map(
     requests.results.map((request) => [request.request_id, request]),
   );
-  const merged = (
-    await Promise.all(documents.map(async (document, index) => {
-      const row = orderedRows[index]!;
-      const request = requests.results[index]!;
-      return Promise.all(
-        document.observations.map(async (wrapped, wrappedIndex) => {
+  const merged = [];
+  for (const [index, document] of documents.entries()) {
+    const row = orderedRows[index]!;
+    const request = requests.results[index]!;
+    for (const [wrappedIndex, wrapped] of document.observations.entries()) {
         if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
           throw new Error("Retained Source Observation identity is invalid.");
         }
@@ -431,7 +408,7 @@ export async function retainedReconciliationObservation(
             observationSetId: row.observation_set_id,
             records: wrapped.value.records,
           });
-          return null;
+          continue;
         }
         if (
           isRecord(wrapped.value) &&
@@ -442,7 +419,16 @@ export async function retainedReconciliationObservation(
               "The observed Legality Rule stream lacks explicit structurally complete coverage.",
             );
           }
-          completeLegalityScopes += 1;
+          completeLegalityRequestIds.add(request.request_id);
+          const scope: RetainedLegalityScope = {
+            sourceLineage: row.source_lineage,
+            supportedGame: supportedGame(row.supported_game),
+            checkedAt: row.retrieved_at,
+          };
+          const prior = completeLegalityScopes.get(row.source_lineage);
+          if (prior === undefined || prior.checkedAt < scope.checkedAt) {
+            completeLegalityScopes.set(row.source_lineage, scope);
+          }
         }
         legalityRules.push(
           ...parseRetainedLegalityRules(wrapped.value, {
@@ -458,7 +444,7 @@ export async function retainedReconciliationObservation(
           isRecord(wrapped.value) &&
           wrapped.value.observation_type === "legality_rules"
         ) {
-          return null;
+          continue;
         }
         const parsed = parseReconciliationObservation(
           wrapped.id,
@@ -473,7 +459,7 @@ export async function retainedReconciliationObservation(
           requiredSourceAdapter(row.adapter_version)
             .reconciliationCapability,
         );
-        return {
+        merged.push({
           ...parsed,
           sourceObservationSetId: row.observation_set_id,
           sourceSnapshotId: row.source_snapshot_id,
@@ -487,28 +473,29 @@ export async function retainedReconciliationObservation(
           ),
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
-        };
-        }),
-      );
-    }))
-  ).flat().flatMap((observation) =>
-    observation === null ? [] : [observation]
-  ).sort((left, right) =>
+        });
+    }
+  }
+  merged.sort((left, right) =>
     left.sourceObservationId.localeCompare(right.sourceObservationId)
   );
-  if (collectionPlan !== null) {
-    await validateOfficialSurfaceCoverage(
-      requiredSourceAdapter(first.adapter_version),
-      requests.results,
+  for (const plan of evidencePlans) {
+    await validateOfficialSurfaceCoverage({
+      adapter: requiredSourceAdapter(plan.adapter_version),
+      plan,
+      requests: requests.results,
+      documents,
+      rows: orderedRows,
+      completeLegalityRequestIds,
+      officialSurfaces,
+    });
+  }
+  for (const collectionPlan of collectionPlans.results) {
+    await validateLegacyCollectionPlan(
       collectionPlan,
-      collectionRequests,
-      legalityRules,
+      await retainedCollectionRequests(collectionPlan),
+      requests.results,
     );
-    if (completeLegalityScopes === 0) {
-      throw new Error(
-        "The complete Official Source adapter did not retain its required Legality Rule stream.",
-      );
-    }
   }
   return {
     observationSetId: first.observation_set_id,
@@ -530,7 +517,9 @@ export async function retainedReconciliationObservation(
     })),
     observations: merged,
     legalityRules,
-    legalityScopeObserved: completeLegalityScopes > 0,
+    legalityScopes: [...completeLegalityScopes.values()].sort((left, right) =>
+      left.sourceLineage.localeCompare(right.sourceLineage)
+    ),
   };
 }
 
@@ -549,21 +538,67 @@ function completeLegalityScope(value: Record<string, unknown>): boolean {
     value.completeness.parsed_record_count === 1;
 }
 
-async function validateOfficialSurfaceCoverage(
-  adapter: ReturnType<typeof requiredSourceAdapter>,
-  requests: readonly PlannedRequestRow[],
-  retainedCollectionPlan: CollectionPlanRow,
-  collectionRequests: readonly Record<string, unknown>[],
-  legalityRules: readonly RetainedLegalityRule[],
-): Promise<void> {
+async function validateOfficialSurfaceCoverage(input: {
+  adapter: ReturnType<typeof requiredSourceAdapter>;
+  plan: ReturnType<typeof parseEvidencePlans>[number];
+  requests: readonly PlannedRequestRow[];
+  documents: readonly Awaited<ReturnType<typeof retainedObservationDocument>>[];
+  rows: readonly EvidenceRow[];
+  completeLegalityRequestIds: ReadonlySet<string>;
+  officialSurfaces: ReadonlyMap<string, { records: unknown[] }>;
+}): Promise<void> {
+  const { adapter, plan, requests } = input;
   if (
     adapter.origin !== "production" ||
     adapter.reconciliationCapability !== "catalogue"
   ) {
+    return;
+  }
+  const requiredSurfaces = adapter.requiredSurfaces ?? [];
+  if (
+    requiredSurfaces.some((surface) =>
+      !plan.requests.some(
+        (request) =>
+          request.id === `${adapter.sourceLineage}:${surface}`,
+      )
+    )
+  ) {
     throw new Error(
-      "The immutable Collection Plan does not match the adapter coverage contract.",
+      "Complete Official Source evidence omitted a required live surface.",
     );
   }
+  for (const surface of requiredSurfaces.filter(isLegalitySurface)) {
+    const requestId = `${adapter.sourceLineage}:${surface}`;
+    const requestIndex = requests.findIndex(
+      (request) => request.request_id === requestId,
+    );
+    if (requestIndex < 0) {
+      throw new Error(
+        "Complete Official Source evidence omitted a required live surface.",
+      );
+    }
+    const rawRecords = input.officialSurfaces.get(requestId)?.records ??
+      rawOfficialSurfaceRecords(
+        input.documents[requestIndex]!,
+        surface,
+        input.rows[requestIndex]!.source_lineage,
+      );
+    if (
+      rawRecords.length > 0 &&
+      !input.completeLegalityRequestIds.has(requestId)
+    ) {
+      throw new Error(
+        `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
+      );
+    }
+  }
+}
+
+async function validateLegacyCollectionPlan(
+  retainedCollectionPlan: CollectionPlanRow,
+  collectionRequests: readonly Record<string, unknown>[],
+  requests: readonly PlannedRequestRow[],
+): Promise<void> {
   if (
     retainedCollectionPlan.contract !==
       "card-keepr-official-source-collection-plan@1" ||
@@ -573,6 +608,17 @@ async function validateOfficialSurfaceCoverage(
   ) {
     throw new Error(
       "Official Source Collection Plan failed immutable artifact verification.",
+    );
+  }
+  const document: unknown = JSON.parse(
+    retainedCollectionPlan.collection_plan_json,
+  );
+  if (
+    !isRecord(document) ||
+    document.source_lineage !== retainedCollectionPlan.source_lineage
+  ) {
+    throw new Error(
+      "Official Source Collection Plan lineage ownership is invalid.",
     );
   }
   const retainedRequests = new Map(
@@ -595,25 +641,46 @@ async function validateOfficialSurfaceCoverage(
       "Official Source requests differ from the immutable Collection Plan.",
     );
   }
-  const requiredSurfaces = adapter.requiredSurfaces ?? [];
-  if (
-    requiredSurfaces.some((surface) =>
-      !requests.some(
-        (request) =>
-          request.request_role === "surface" &&
-          request.request_id === `${adapter.sourceLineage}:${surface}`,
-      )
-    )
-  ) {
-    throw new Error(
-      "Complete Official Source evidence omitted a required live surface.",
-    );
+}
+
+function isLegalitySurface(surface: string): boolean {
+  return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
+}
+
+function rawOfficialSurfaceRecords(
+  document: Awaited<ReturnType<typeof retainedObservationDocument>>,
+  surface: string,
+  sourceLineage: string,
+): unknown[] {
+  for (const wrapped of document.observations) {
+    if (!isRecord(wrapped) || !isRecord(wrapped.value)) continue;
+    const sidecar = wrapped.value.source_sidecar;
+    if (!isRecord(sidecar) || !isRecord(sidecar.raw)) continue;
+    const surfaces = sidecar.raw.official_surfaces;
+    if (!Array.isArray(surfaces)) continue;
+    for (const retained of surfaces) {
+      if (
+        !isRecord(retained) ||
+        retained.source_lineage !== sourceLineage ||
+        retained.surface !== surface ||
+        !isRecord(retained.document)
+      ) {
+        continue;
+      }
+      for (const field of [
+        "entries",
+        "records",
+        "items",
+        "rows",
+        "results",
+        "publication_entries",
+      ]) {
+        const records = retained.document[field];
+        if (Array.isArray(records)) return records;
+      }
+    }
   }
-  if (legalityRules.length === 0) {
-    throw new Error(
-      "The complete Official Source adapter did not retain its required Legality Rule stream.",
-    );
-  }
+  return [];
 }
 
 function sourceSurfaceForRequest(
@@ -1062,9 +1129,8 @@ function assertObservationAuthority(
 }
 
 async function retainedCollectionRequests(
-  retained: CollectionPlanRow | null,
+  retained: CollectionPlanRow,
 ): Promise<Record<string, unknown>[]> {
-  if (retained === null) return [];
   if (
     retained.contract !== "card-keepr-official-source-collection-plan@1" ||
     (await sha256(new TextEncoder().encode(
