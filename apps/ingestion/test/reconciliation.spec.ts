@@ -2154,6 +2154,11 @@ test("unnumbered DON!! receives direct and combination Legality Rules through pu
   const run = await collect(
     "/reconciliation/profile-don-legality",
     "reconcile-don-legality",
+    {
+      game: "one-piece",
+      lineage: "one-piece-en",
+      adapter: "fixture-one-piece-json@3",
+    },
   );
   const reconciled = await reconcile(run.id);
   if (reconciled.response.status !== 200) {
