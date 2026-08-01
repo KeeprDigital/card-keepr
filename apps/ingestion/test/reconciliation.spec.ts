@@ -1705,7 +1705,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@2",
+    adapter_version: "fusion-world-en@3",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1826,7 +1826,7 @@ test("complete image evidence publishes an unidentified artwork once without col
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@2",
+      adapter_version: "digimon-en@3",
       idempotency_key: `digimon-artwork-digest-${variant}`,
       requests,
     });

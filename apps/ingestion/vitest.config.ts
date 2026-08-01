@@ -1499,7 +1499,7 @@ function reconciliationSourceDocument(
           source_buckets: [],
         },
       })),
-      legality_completeness: completeEvidence(),
+      legality_completeness: completeEvidence(17),
       legality_rules: Array.from({ length: 17 }, (_, index) => ({
         id: `relationship-scale-${String(index + 1).padStart(2, "0")}`,
         game: "one-piece",
@@ -2107,7 +2107,7 @@ function reconciliationSourceDocument(
   }
   if (scenario === "profile-don-legality") {
     return {
-      legality_completeness: completeEvidence(),
+      legality_completeness: completeEvidence(4),
       cards: [
         {
           card: {
@@ -3815,13 +3815,13 @@ function fixturePrintingImage(
   };
 }
 
-function completeEvidence() {
+function completeEvidence(recordCount = 1) {
   return {
     structurally_complete: true,
     required_surfaces_complete: true,
     partitions_complete: true,
-    declared_record_count: 1,
-    parsed_record_count: 1,
+    declared_record_count: recordCount,
+    parsed_record_count: recordCount,
   };
 }
 
