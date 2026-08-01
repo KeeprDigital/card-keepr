@@ -84,7 +84,7 @@ export function contextualLegalityDomainDocument(
   return {
     cards,
     legality_rules: legalityRules,
-    legality_completeness: completeEvidence(),
+    legality_completeness: completeEvidence(legalityRules.length),
   };
 }
 
@@ -101,7 +101,7 @@ export function donLegalityDomainDocument() {
     representable: true,
   };
   return {
-    legality_completeness: completeness,
+    legality_completeness: completeEvidence(4),
     cards: [
       {
         card: {
@@ -435,12 +435,12 @@ function gundamObservation(cardNumber) {
   };
 }
 
-function completeEvidence() {
+function completeEvidence(recordCount = 1) {
   return {
     structurally_complete: true,
     required_surfaces_complete: true,
     partitions_complete: true,
-    declared_record_count: 1,
-    parsed_record_count: 1,
+    declared_record_count: recordCount,
+    parsed_record_count: recordCount,
   };
 }

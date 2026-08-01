@@ -1,4 +1,3 @@
-import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
 import type {
   CatalogueCandidate,
   SupportedGame,
@@ -36,6 +35,7 @@ import {
   maximumExportComponentBytes,
   maximumExportRecordBytes,
 } from "./export-limits";
+import { deterministicGzipStream } from "./export-compression";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 2],
@@ -50,8 +50,6 @@ const componentDefinitions = [
   ["legality-rules", "LegalityRuleRecord", "id:utf8", 2],
   ["relationships", "RelationshipRecord", "id:utf8", 2],
 ] as const;
-const zFixed = 4;
-const zOk = 0;
 
 export type ExportObject = {
   key: string;
@@ -334,55 +332,6 @@ async function analyseComponent(
     compressedBytes: Number(compressedDigest.bytesWritten),
     compressedSha256: digestHex(compressedSha256),
   };
-}
-
-function deterministicGzipStream(
-  source: ReadableStream<Uint8Array>,
-): ReadableStream<Uint8Array> {
-  const compressor = new Deflate({
-    gzip: true,
-    level: 9,
-    windowBits: 15,
-    memLevel: 8,
-    strategy: zFixed,
-  });
-  compressor.onStart = (stream) => {
-    const header = new GZheader();
-    header.time = 0;
-    header.os = 0xff;
-    if (zlibDeflateSetHeader(stream, header) !== zOk) {
-      throw new Error("The deterministic gzip header was rejected.");
-    }
-  };
-  return source.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      start(controller) {
-        compressor.onData = (chunk) => {
-          controller.enqueue(chunk.slice());
-        };
-      },
-      transform(chunk) {
-        if (
-          !compressor.push(chunk, false) ||
-          compressor.err !== zOk
-        ) {
-          throw new Error(
-            compressor.msg || "The deterministic gzip compressor failed.",
-          );
-        }
-      },
-      flush() {
-        if (
-          !compressor.push(new Uint8Array(), true) ||
-          compressor.err !== zOk
-        ) {
-          throw new Error(
-            compressor.msg || "The deterministic gzip compressor failed.",
-          );
-        }
-      },
-    }),
-  );
 }
 
 function catalogueRecordStream(

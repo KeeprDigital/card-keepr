@@ -11,6 +11,7 @@ import {
   officialArtworkFingerprint,
 } from "./official-artwork-identity.mjs";
 import {
+  officialLegalityRulesHtmlObservation,
   officialLegalityRulesObservation,
 } from "./official-legality-source-adapters.mjs";
 
@@ -205,14 +206,21 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.urls,
               surface,
             ),
-          parseBytes: bandaiSnapshotDecoder(
-            version.format,
-            version.supportedGame,
-            version.sourceLineage,
-            version.requiredSurfaces,
-            version.urls,
-            version.legalityAware,
-          ),
+          parseBytes: version.legalityAware
+            ? legalityAwareBandaiSnapshotDecoder(
+                version.format,
+                version.supportedGame,
+                version.sourceLineage,
+                version.requiredSurfaces,
+                version.urls,
+              )
+            : historicalBandaiSnapshotDecoder(
+                version.format,
+                version.supportedGame,
+                version.sourceLineage,
+                version.requiredSurfaces,
+                version.urls,
+              ),
           discoverRequests: bandaiRequestDiscovery(
             version.format,
             version.sourceLineage,
@@ -577,13 +585,42 @@ function exactSurfaceUrl(
   return new URL(url).href;
 }
 
+function historicalBandaiSnapshotDecoder(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): OfficialRawAdapterContract["parseBytes"] {
+  return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
+    parseLegality: false,
+    acceptExplicitEmptyPublication: false,
+  });
+}
+
+function legalityAwareBandaiSnapshotDecoder(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): OfficialRawAdapterContract["parseBytes"] {
+  return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
+    parseLegality: true,
+    acceptExplicitEmptyPublication: true,
+  });
+}
+
 function bandaiSnapshotDecoder(
   format: DiscoveryFormat,
   game: ProductSourceGame,
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
-  legalityAware: boolean,
+  profile: Readonly<{
+    parseLegality: boolean;
+    acceptExplicitEmptyPublication: boolean;
+  }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
     const dynamicRole = dynamicRequestRole(context.requestId);
@@ -631,7 +668,7 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         surface,
         structuredPayload,
-        legalityAware,
+        profile.parseLegality,
       );
     }
     if (dynamicRole === "detail") {
@@ -662,8 +699,21 @@ function bandaiSnapshotDecoder(
             sourceLineage,
             surface,
             context.url,
+            profile.acceptExplicitEmptyPublication,
           );
-    return parsed.observations.map((observation, index) =>
+    const legalityObservation = profile.parseLegality &&
+        isLegalityPolicySurface(surface)
+      ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ??
+        (parsed.explicitlyEmptyPublication
+          ? officialLegalityRulesObservation(game, sourceLineage, {
+              entries: [],
+            })
+          : null)
+      : null;
+    const observations = legalityObservation === null
+      ? parsed.observations
+      : [...parsed.observations, legalityObservation];
+    return observations.map((observation, index) =>
       attachRawSurfaceEvidence(
         observation,
         sourceLineage,
@@ -770,6 +820,7 @@ type ParsedBandaiSurface = {
   observations: readonly Record<string, unknown>[];
   retainedDocument: Record<string, unknown>;
   consumedFields: readonly string[];
+  explicitlyEmptyPublication?: boolean;
 };
 
 function parseOnePieceBandaiCardList(
@@ -1671,6 +1722,7 @@ function parseBandaiSurfaceCoverage(
   sourceLineage: string,
   surface: string,
   url: string,
+  acceptExplicitEmptyPublication: boolean,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
   if (
@@ -1725,6 +1777,7 @@ function parseBandaiSurfaceCoverage(
   const publicationEntries = publicationEntryMatches
     .filter(
       (match) =>
+        !acceptExplicitEmptyPublication ||
         htmlAttribute(match[1]!, "data-publication-empty") !== "true",
     )
     .map((match) => htmlText(match[2]!))
@@ -1733,7 +1786,7 @@ function parseBandaiSurfaceCoverage(
     publicationLinks.length === 0 &&
     discoveredOptions.length === 0 &&
     publicationEntries.length === 0 &&
-    !explicitlyEmpty
+    !(acceptExplicitEmptyPublication && explicitlyEmpty)
   ) {
     throw new Error(
       `Official Source ${surface} has no structural publication entries.`,
@@ -1797,6 +1850,8 @@ function parseBandaiSurfaceCoverage(
       "discovered_options",
       "publication_entries",
     ],
+    explicitlyEmptyPublication:
+      acceptExplicitEmptyPublication && explicitlyEmpty,
   };
 }
 

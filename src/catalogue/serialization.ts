@@ -1,7 +1,5 @@
-import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
 const encoder = new TextEncoder();
-const zFixed = 4;
-const zOk = 0;
+export { deterministicGzip } from "./export-compression";
 
 export function canonicalJson(value: unknown): string {
   return canonicalJsonAt(value, "$");
@@ -53,29 +51,6 @@ export function canonicalNdjson(records: readonly unknown[]): Uint8Array {
   return encoder.encode(records.map((record) => canonicalJson(record)).join("\n") + (records.length > 0 ? "\n" : ""));
 }
 
-export function deterministicGzip(value: Uint8Array): Uint8Array {
-  const compressor = new Deflate({
-    gzip: true,
-    level: 9,
-    windowBits: 15,
-    memLevel: 8,
-    strategy: zFixed,
-  });
-  compressor.onStart = (stream) => {
-    const header = new GZheader();
-    header.time = 0;
-    header.os = 0xff;
-    if (zlibDeflateSetHeader(stream, header) !== zOk) {
-      throw new Error("The deterministic gzip header was rejected.");
-    }
-  };
-  if (!compressor.push(value, true) || compressor.err !== zOk) {
-    throw new Error(
-      compressor.msg || "The deterministic gzip compressor failed.",
-    );
-  }
-  return Uint8Array.from(compressor.result);
-}
 export async function sha256(value: BufferSource): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", value);
   return Array.from(new Uint8Array(digest), (byte) =>

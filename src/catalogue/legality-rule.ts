@@ -95,13 +95,195 @@ export type RetainedLegalityRule = Omit<
   "id" | "card_ids" | "effect"
 > & {
   card_numbers: readonly string[];
-  effect:
-    | Exclude<LegalityRuleEffect, { type: "prohibited_combination" }>
-    | {
-        type: "prohibited_combination";
-        with_card_numbers: readonly string[];
-      };
+  effect: RetainedLegalityRuleEffect;
 };
+
+type RetainedLegalityRuleEffect =
+  | Exclude<LegalityRuleEffect, { type: "prohibited_combination" }>
+  | {
+      type: "prohibited_combination";
+      with_card_numbers: readonly string[];
+    };
+
+export type LegalityEvaluation =
+  | "legal"
+  | "restricted"
+  | "not_legal"
+  | "indeterminate";
+
+type LegalityExportKind =
+  | "eligible"
+  | "restricted"
+  | "not_legal"
+  | "combination"
+  | "conditional"
+  | "rotation"
+  | "release"
+  | "indeterminate";
+
+type LegalityEffectStrategy = Readonly<{
+  exportKind: LegalityExportKind;
+  parse: (record: Record<string, unknown>) => RetainedLegalityRuleEffect;
+  evaluate: (
+    effect: LegalityRuleEffect,
+    attributes: Readonly<Record<string, unknown>>,
+    on: string,
+  ) => LegalityEvaluation;
+}>;
+
+const legalityEffectStrategies = {
+  eligible: {
+    exportKind: "eligible",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type"]);
+      return { type: "eligible" };
+    },
+    evaluate: (effect) => {
+      if (effect.type !== "eligible") throw mismatchedEffectStrategy();
+      return "legal";
+    },
+  },
+  ban: {
+    exportKind: "not_legal",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type"]);
+      return { type: "ban" };
+    },
+    evaluate: (effect) => {
+      if (effect.type !== "ban") throw mismatchedEffectStrategy();
+      return "not_legal";
+    },
+  },
+  copy_limit: {
+    exportKind: "restricted",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "maximum_copies"]);
+      const maximum = effect.maximum_copies;
+      if (!Number.isInteger(maximum) || Number(maximum) < 1) {
+        throw new Error("A copy-limit rule requires a positive integer.");
+      }
+      return { type: "copy_limit", maximum_copies: Number(maximum) };
+    },
+    evaluate: (effect) => {
+      if (effect.type !== "copy_limit") throw mismatchedEffectStrategy();
+      return "restricted";
+    },
+  },
+  prohibited_combination: {
+    exportKind: "combination",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "with_card_numbers"]);
+      return {
+        type: "prohibited_combination",
+        with_card_numbers: requiredCardNumbers(
+          effect.with_card_numbers,
+          "prohibited combination card numbers",
+          false,
+        ),
+      };
+    },
+    evaluate: (effect) => {
+      if (effect.type !== "prohibited_combination") {
+        throw mismatchedEffectStrategy();
+      }
+      return "restricted";
+    },
+  },
+  membership: {
+    exportKind: "conditional",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "attribute", "includes_any"]);
+      return {
+        type: "membership",
+        attribute: requiredString(effect.attribute, "membership attribute"),
+        includes_any: requiredStrings(
+          effect.includes_any,
+          "membership values",
+          false,
+        ),
+      };
+    },
+    evaluate: (effect, attributes) => {
+      if (effect.type !== "membership") throw mismatchedEffectStrategy();
+      const value = attributes[effect.attribute];
+      if (value === null || value === undefined) return "indeterminate";
+      const values = Array.isArray(value) ? value : [value];
+      return values.some((candidate) =>
+          typeof candidate === "string" &&
+          effect.includes_any.some((member) =>
+            member.toUpperCase() === candidate.toUpperCase()
+          )
+        )
+        ? "legal"
+        : "not_legal";
+    },
+  },
+  rotation: {
+    exportKind: "rotation",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "eligible_blocks"]);
+      return {
+        type: "rotation",
+        eligible_blocks: requiredStrings(
+          effect.eligible_blocks,
+          "rotation blocks",
+          false,
+        ),
+      };
+    },
+    evaluate: (effect, attributes) => {
+      if (effect.type !== "rotation") throw mismatchedEffectStrategy();
+      const rawBlocks = attributes.block_icons !== undefined
+        ? attributes.block_icons
+        : attributes.block_icon;
+      if (rawBlocks === null || rawBlocks === undefined) return "indeterminate";
+      const blocks = Array.isArray(rawBlocks) ? rawBlocks : [rawBlocks];
+      return blocks.some((block) =>
+          typeof block === "string" &&
+          effect.eligible_blocks.some((eligible) =>
+            eligible.toUpperCase() === block.toUpperCase()
+          )
+        )
+        ? "legal"
+        : "not_legal";
+    },
+  },
+  release_timing: {
+    exportKind: "release",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "legal_from"]);
+      return {
+        type: "release_timing",
+        legal_from: requiredDate(
+          effect.legal_from,
+          "release timing legal_from",
+        ),
+      };
+    },
+    evaluate: (effect, _attributes, on) => {
+      if (effect.type !== "release_timing") throw mismatchedEffectStrategy();
+      return on >= effect.legal_from ? "legal" : "not_legal";
+    },
+  },
+  unresolved: {
+    exportKind: "indeterminate",
+    parse: (effect) => {
+      assertOnlyFields(effect, ["type", "reason"]);
+      return {
+        type: "unresolved",
+        reason: requiredString(effect.reason, "unresolved scope reason"),
+      };
+    },
+    evaluate: (effect) => {
+      if (effect.type !== "unresolved") throw mismatchedEffectStrategy();
+      return "indeterminate";
+    },
+  },
+} satisfies Record<LegalityRuleEffect["type"], LegalityEffectStrategy>;
+
+function mismatchedEffectStrategy(): Error {
+  return new Error("A Legality effect was dispatched to the wrong strategy.");
+}
 
 export function parseRetainedLegalityRules(
   value: unknown,
@@ -271,33 +453,20 @@ export async function canonicalLegalityRuleId(
 
 export function legalityExportKind(
   effect: LegalityRuleEffect,
-):
-  | "eligible"
-  | "restricted"
-  | "not_legal"
-  | "combination"
-  | "conditional"
-  | "rotation"
-  | "release"
-  | "indeterminate" {
-  switch (effect.type) {
-    case "eligible":
-      return "eligible";
-    case "membership":
-      return "conditional";
-    case "release_timing":
-      return "release";
-    case "unresolved":
-      return "indeterminate";
-    case "copy_limit":
-      return "restricted";
-    case "ban":
-      return "not_legal";
-    case "prohibited_combination":
-      return "combination";
-    case "rotation":
-      return "rotation";
-  }
+): LegalityExportKind {
+  return legalityEffectStrategies[effect.type].exportKind;
+}
+
+export function evaluateLegalityRuleEffect(
+  effect: LegalityRuleEffect,
+  attributes: Readonly<Record<string, unknown>>,
+  on: string,
+): LegalityEvaluation {
+  return legalityEffectStrategies[effect.type].evaluate(
+    effect,
+    attributes,
+    on,
+  );
 }
 
 export function legalityRuleCardIds(rule: LegalityRule): string[] {
@@ -452,73 +621,18 @@ function assertUniqueRuleIds(rules: readonly LegalityRule[]): void {
 
 function parseEffect(value: unknown): RetainedLegalityRule["effect"] {
   const effect = requiredRecord(value, "legality rule effect");
-  switch (effect.type) {
-    case "eligible":
-    case "ban":
-      assertOnlyFields(effect, ["type"]);
-      return { type: effect.type };
-    case "copy_limit": {
-      assertOnlyFields(effect, ["type", "maximum_copies"]);
-      const maximum = effect.maximum_copies;
-      if (!Number.isInteger(maximum) || Number(maximum) < 1) {
-        throw new Error("A copy-limit rule requires a positive integer.");
-      }
-      return { type: "copy_limit", maximum_copies: Number(maximum) };
-    }
-    case "prohibited_combination":
-      assertOnlyFields(effect, ["type", "with_card_numbers"]);
-      return {
-        type: "prohibited_combination",
-        with_card_numbers: requiredCardNumbers(
-          effect.with_card_numbers,
-          "prohibited combination card numbers",
-          false,
-        ),
-      };
-    case "membership":
-      assertOnlyFields(effect, ["type", "attribute", "includes_any"]);
-      return {
-        type: "membership",
-        attribute: requiredString(
-          effect.attribute,
-          "membership attribute",
-        ),
-        includes_any: requiredStrings(
-          effect.includes_any,
-          "membership values",
-          false,
-        ),
-      };
-    case "rotation":
-      assertOnlyFields(effect, ["type", "eligible_blocks"]);
-      return {
-        type: "rotation",
-        eligible_blocks: requiredStrings(
-          effect.eligible_blocks,
-          "rotation blocks",
-          false,
-        ),
-      };
-    case "release_timing":
-      assertOnlyFields(effect, ["type", "legal_from"]);
-      return {
-        type: "release_timing",
-        legal_from: requiredDate(
-          effect.legal_from,
-          "release timing legal_from",
-        ),
-      };
-    case "unresolved":
-      assertOnlyFields(effect, ["type", "reason"]);
-      return {
-        type: "unresolved",
-        reason: requiredString(effect.reason, "unresolved scope reason"),
-      };
-    default:
-      throw new Error(
-        "Legality Rule wording uses an effect the installed adapter cannot represent.",
-      );
+  if (!isLegalityEffectType(effect.type)) {
+    throw new Error(
+      "Legality Rule wording uses an effect the installed adapter cannot represent.",
+    );
   }
+  return legalityEffectStrategies[effect.type].parse(effect);
+}
+
+function isLegalityEffectType(
+  value: unknown,
+): value is LegalityRuleEffect["type"] {
+  return typeof value === "string" && value in legalityEffectStrategies;
 }
 
 function requiredCardId(

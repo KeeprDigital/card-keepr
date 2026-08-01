@@ -97,7 +97,7 @@ export function contextualLegalityFixtureDocument(
   return {
     cards,
     legality_rules: retainedRules,
-    legality_completeness: completeEvidence(),
+    legality_completeness: completeEvidence(retainedRules.length),
   };
 }
 
@@ -499,12 +499,12 @@ function gundamObservation(cardNumber: string) {
   };
 }
 
-function completeEvidence() {
+function completeEvidence(recordCount = 1) {
   return {
     structurally_complete: true,
     required_surfaces_complete: true,
     partitions_complete: true,
-    declared_record_count: 1,
-    parsed_record_count: 1,
+    declared_record_count: recordCount,
+    parsed_record_count: recordCount,
   };
 }

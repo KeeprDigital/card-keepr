@@ -531,11 +531,14 @@ function completeLegalityScope(value: Record<string, unknown>): boolean {
   ) {
     return false;
   }
+  const declared = value.completeness.declared_record_count;
+  const parsed = value.completeness.parsed_record_count;
   return value.completeness.structurally_complete === true &&
     value.completeness.required_surfaces_complete === true &&
     value.completeness.partitions_complete === true &&
-    value.completeness.declared_record_count === 1 &&
-    value.completeness.parsed_record_count === 1;
+    Number.isSafeInteger(declared) && Number(declared) >= 0 &&
+    Number.isSafeInteger(parsed) && Number(parsed) >= 0 &&
+    declared === parsed && parsed === value.legality_rules.length;
 }
 
 async function validateOfficialSurfaceCoverage(input: {

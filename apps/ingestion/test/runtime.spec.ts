@@ -305,7 +305,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@2",
+      adapter_version: "fusion-world-en@3",
       idempotency_key: "source_parent_auto_reconcile_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },

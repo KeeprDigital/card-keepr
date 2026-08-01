@@ -1,58 +1,60 @@
-import { deflateRaw } from "pako";
+import { Deflate, GZheader, zlibDeflateSetHeader } from "pako";
 
 const zFixed = 4;
+const zOk = 0;
 
-const crc32Table = Uint32Array.from(
-  { length: 256 },
-  (_, byte) => {
-    let value = byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
-    }
-    return value >>> 0;
-  },
-);
-
-export function deterministicGzip(value: Uint8Array): Uint8Array {
-  const deflated = deflateRaw(value, {
+function deterministicCompressor(): Deflate {
+  const compressor = new Deflate({
+    gzip: true,
     level: 9,
     windowBits: 15,
     memLevel: 8,
     strategy: zFixed,
   });
-  const result = new Uint8Array(10 + deflated.byteLength + 8);
-  result.set(
-    [
-      0x1f, 0x8b, 0x08, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-      0x02, 0xff,
-    ],
-  );
-  result.set(deflated, 10);
-  writeUint32LittleEndian(result, 10 + deflated.byteLength, crc32(value));
-  writeUint32LittleEndian(
-    result,
-    14 + deflated.byteLength,
-    value.byteLength >>> 0,
-  );
-  return result;
+  compressor.onStart = (stream) => {
+    const header = new GZheader();
+    header.time = 0;
+    header.os = 0xff;
+    if (zlibDeflateSetHeader(stream, header) !== zOk) {
+      throw new Error("The deterministic gzip header was rejected.");
+    }
+  };
+  return compressor;
 }
 
-function crc32(value: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (const byte of value) {
-    crc = crc32Table[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function writeUint32LittleEndian(
-  target: Uint8Array,
-  offset: number,
-  value: number,
+function push(
+  compressor: Deflate,
+  chunk: Uint8Array,
+  final: boolean,
 ): void {
-  target[offset] = value & 0xff;
-  target[offset + 1] = (value >>> 8) & 0xff;
-  target[offset + 2] = (value >>> 16) & 0xff;
-  target[offset + 3] = (value >>> 24) & 0xff;
+  if (!compressor.push(chunk, final) || compressor.err !== zOk) {
+    throw new Error(
+      compressor.msg || "The deterministic gzip compressor failed.",
+    );
+  }
+}
+
+export function deterministicGzip(value: Uint8Array): Uint8Array {
+  const compressor = deterministicCompressor();
+  push(compressor, value, true);
+  return Uint8Array.from(compressor.result);
+}
+
+export function deterministicGzipStream(
+  source: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const compressor = deterministicCompressor();
+  return source.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      start(controller) {
+        compressor.onData = (chunk) => controller.enqueue(chunk.slice());
+      },
+      transform(chunk) {
+        push(compressor, chunk, false);
+      },
+      flush() {
+        push(compressor, new Uint8Array(), true);
+      },
+    }),
+  );
 }

@@ -153,6 +153,154 @@ test("historical production adapter identities remain exact lookup-only contract
   }
 });
 
+function fusionLegalityContext(adapter) {
+  return {
+    mediaType: "text/html; charset=utf-8",
+    url: adapter.requestUrlForSurface("legality-current"),
+    requestId: "fusion-world-en:legality-current",
+  };
+}
+
+const exactFusionLegalityHtml = `
+  <!doctype html><html><head><title>Bandai Dragon Ball Super Card Game Fusion World Restriction Rules</title></head>
+  <body><h1>Restriction Rules</h1><p>2 records</p>
+    <article class="restriction-card"><dl>
+      <dt>Rule Ref</dt><dd>FW-2026-001</dd>
+      <dt>Notice</dt><dd>FB01-001 is banned from standard tournament decks.</dd>
+      <dt>Market</dt><dd>EN-OCEANIA</dd>
+      <dt>Play Format</dt><dd>standard</dd>
+      <dt>Tier</dt><dd>championship</dd>
+      <dt>Active On</dt><dd>2026-07-01</dd>
+      <dt>Expires On</dt><dd>-</dd>
+      <dt>Cards</dt><dd>FB01-001</dd>
+      <dt>Directive</dt><dd>ban</dd>
+    </dl></article>
+    <article class="restriction-card"><dl>
+      <dt>Rule Ref</dt><dd>FW-2026-002</dd>
+      <dt>Notice</dt><dd>FB01-002 is limited to 1 copy in standard decks.</dd>
+      <dt>Market</dt><dd>EN-OCEANIA</dd>
+      <dt>Play Format</dt><dd>standard</dd>
+      <dt>Tier</dt><dd>-</dd>
+      <dt>Active On</dt><dd>2026-07-01</dd>
+      <dt>Expires On</dt><dd>2026-12-01</dd>
+      <dt>Cards</dt><dd>FB01-002</dd>
+      <dt>Directive</dt><dd>copy_limit</dd>
+      <dt>Cap</dt><dd>1</dd>
+    </dl></article>
+  </body></html>`;
+
+test("current production legality parser retains exact ordinary HTML rules and truthful multi-record completeness", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const observations = current.parseBytes(
+    new TextEncoder().encode(exactFusionLegalityHtml),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.deepEqual(legality.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 2,
+    parsed_record_count: 2,
+  });
+  assert.equal(legality.legality_rules.length, 2);
+  assert.equal(
+    legality.legality_rules[0].official_wording,
+    "FB01-001 is banned from standard tournament decks.",
+  );
+  assert.deepEqual(legality.legality_rules[1].effect, {
+    type: "copy_limit",
+    maximum_copies: 1,
+  });
+});
+
+test("current production legality parser retains a truthful empty publication", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const observations = current.parseBytes(
+    new TextEncoder().encode(`
+      <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
+      <body><h1>Restriction Rules</h1><p>0 records</p>
+        <article data-publication-empty="true">No restrictions are currently published.</article>
+      </body></html>`),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.deepEqual(legality.legality_rules, []);
+  assert.equal(legality.completeness.declared_record_count, 0);
+  assert.equal(legality.completeness.parsed_record_count, 0);
+});
+
+test("historical and current production registrations keep byte-identical legality decoder behavior isolated", () => {
+  const historical = requiredSourceAdapter("fusion-world-en@2");
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const bytes = new TextEncoder().encode(exactFusionLegalityHtml);
+  const oldObservations = historical.parseBytes(
+    bytes,
+    fusionLegalityContext(historical),
+  );
+  const newObservations = current.parseBytes(
+    bytes,
+    fusionLegalityContext(current),
+  );
+  assert.equal(
+    oldObservations.some(({ observation_type }) =>
+      observation_type === "legality_rules"
+    ),
+    false,
+  );
+  assert.equal(
+    newObservations.some(({ observation_type }) =>
+      observation_type === "legality_rules"
+    ),
+    true,
+  );
+  const emptyBytes = new TextEncoder().encode(`
+    <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
+    <body><h1>Restriction Rules</h1>
+      <article data-publication-empty="true">No restrictions are currently published.</article>
+    </body></html>`);
+  const oldEmpty = historical.parseBytes(
+    emptyBytes,
+    fusionLegalityContext(historical),
+  );
+  const newEmpty = current.parseBytes(
+    emptyBytes,
+    fusionLegalityContext(current),
+  );
+  assert.equal(oldEmpty.length, 1);
+  assert.deepEqual(
+    oldEmpty[0].source_sidecar.raw.official_surfaces[0].document
+      .publication_entries,
+    [
+    "No restrictions are currently published.",
+    ],
+  );
+  assert.equal(newEmpty.length, 2);
+  assert.deepEqual(newEmpty[1].legality_rules, []);
+});
+
+test("current production legality parser fails closed for loose unknown rule markup", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const observations = current.parseBytes(
+    new TextEncoder().encode(`
+      <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
+      <body><h1>Restriction Rules</h1>
+        <article class="unversioned-rule">FB01-001 might be restricted someday.</article>
+      </body></html>`),
+    fusionLegalityContext(current),
+  );
+  assert.equal(
+    observations.some(({ observation_type }) =>
+      observation_type === "legality_rules"
+    ),
+    false,
+  );
+});
+
 test("production decoders accept real Bandai-shaped HTML without a Keepr payload wrapper", () => {
   const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",

@@ -362,6 +362,30 @@ test("Legality Status rejects a malformed Card identity before lookup", async ()
   }
 });
 
+test("Legality Status rejects unknown, repeated, and duplicated evidence includes", async () => {
+  for (const query of [
+    "include=unknown",
+    "include=evidence,evidence",
+    "include=evidence&include=evidence",
+  ]) {
+    const response = await exports.default.fetch(
+      new Request(
+        `https://card-keepr.invalid/v1/legality-status?${query}&card_id=card_any&on=2026-07-30&format=standard&region=EN-ASIA`,
+        {
+          headers: {
+            authorization: "Bearer vitest-api-key",
+            "cf-connecting-ip": "203.0.113.21",
+          },
+        },
+      ),
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+    });
+  }
+});
+
 test("authenticated Legality Status gives definitive exclusions precedence while auditing unresolved rules", async () => {
   const revisionId = "catrev_api_legality_precedence";
   const runId = "run_api_legality_precedence";
@@ -524,7 +548,11 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         rule_ids: string[];
         derivation: string;
       }>;
+      included?: unknown[];
+      provenance?: Record<string, string[]>;
     }>();
+    expect(body).not.toHaveProperty("included");
+    expect(body).not.toHaveProperty("provenance");
     expect(body.data[0]).toMatchObject({
       status: "not_legal",
       rule_ids: [
@@ -535,6 +563,47 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     expect(body.data[0]!.derivation).toContain("evaluated not_legal");
     expect(body.data[0]!.derivation).toContain("evaluated indeterminate");
     if (index === 0) {
+      const evidenceResponse = await exports.default.fetch(
+        new Request(
+          "https://card-keepr.invalid/v1/legality-status" +
+            `?card_id=${testCase.cardId}` +
+            "&on=2026-07-30&format=standard&region=EN-ASIA&include=evidence",
+          {
+            headers: {
+              authorization: "Bearer vitest-api-key",
+              "cf-connecting-ip": "203.0.113.79",
+            },
+          },
+        ),
+      );
+      expect(evidenceResponse.status).toBe(200);
+      await expect(evidenceResponse.json()).resolves.toMatchObject({
+        included: [
+          {
+            type: "legality_rule",
+            id: "legality_rule_precedence_0_definitive",
+            official_wording: "Definitive exclusion 0.",
+            source_observation_id: "srcobs_api_precedence",
+            source_observation_pointer:
+              "/observations/0/value/legality_rules/0",
+          },
+          {
+            type: "legality_rule",
+            id: "legality_rule_precedence_0_unresolved",
+            official_wording: "Unresolved qualifier 0.",
+            source_observation_id: "srcobs_api_precedence",
+            source_observation_pointer:
+              "/observations/0/value/legality_rules/1",
+          },
+        ],
+        provenance: {
+          "/data/0/status": ["srcobs_api_precedence"],
+          "/data/0/rule_ids/0": ["srcobs_api_precedence"],
+          "/data/0/rule_ids/1": ["srcobs_api_precedence"],
+          "/included/0/official_wording": ["srcobs_api_precedence"],
+          "/included/1/official_wording": ["srcobs_api_precedence"],
+        },
+      });
       const etag = response.headers.get("etag");
       expect(etag).not.toBeNull();
       const url =

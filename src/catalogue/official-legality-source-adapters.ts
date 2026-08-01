@@ -98,6 +98,46 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
   },
 };
 
+const htmlLabelsByGame: Readonly<
+  Record<OfficialLegalityGame, Readonly<Record<string, keyof FieldMap>>>
+> = {
+  "one-piece": {
+    "Notice No": "id", "Published Text": "wording", Territory: "region",
+    "Format Name": "format", "Event Class": "tier", "Start Date": "effectiveFrom",
+    "End Date": "effectiveUntil", "Card Numbers": "cards",
+    "Restriction Code": "directive", "Maximum Copies": "maximumCopies",
+    "Related Cards": "companionCards", "Membership Attribute": "membershipAttribute",
+    "Membership Values": "membershipValues", "Eligible Blocks": "eligibleBlocks",
+    "Legal From": "legalFrom", "Unresolved Reason": "unresolvedReason",
+  },
+  "fusion-world": {
+    "Rule Ref": "id", Notice: "wording", Market: "region",
+    "Play Format": "format", Tier: "tier", "Active On": "effectiveFrom",
+    "Expires On": "effectiveUntil", Cards: "cards", Directive: "directive",
+    Cap: "maximumCopies", "Paired Cards": "companionCards",
+    "Filter Field": "membershipAttribute", "Filter Values": "membershipValues",
+    Blocks: "eligibleBlocks", "Tournament Legal Date": "legalFrom",
+    Ambiguity: "unresolvedReason",
+  },
+  digimon: {
+    "Restriction ID": "id", Body: "wording", "Language Scope": "region",
+    Ruleset: "format", "Tournament Level": "tier", "Applies From": "effectiveFrom",
+    "Applies Until": "effectiveUntil", "Card IDs": "cards", "Status Code": "directive",
+    "Deck Limit": "maximumCopies", "Prohibited With": "companionCards",
+    "Membership Field": "membershipAttribute", "Membership Terms": "membershipValues",
+    "Permitted Blocks": "eligibleBlocks", "Sale Eligible On": "legalFrom",
+    Clarification: "unresolvedReason",
+  },
+  gundam: {
+    "News ID": "id", Text: "wording", Region: "region", Format: "format",
+    "Event Tier": "tier", "Effective Date": "effectiveFrom", "End Date": "effectiveUntil",
+    "Card Numbers": "cards", Ruling: "directive", "Copy Limit": "maximumCopies",
+    "Companion Cards": "companionCards", Attribute: "membershipAttribute",
+    Values: "membershipValues", "Legal Blocks": "eligibleBlocks",
+    "Legal From": "legalFrom", Reason: "unresolvedReason",
+  },
+};
+
 export function officialLegalityRulesObservation(
   game: OfficialLegalityGame,
   sourceLineage: string,
@@ -121,10 +161,84 @@ export function officialLegalityRulesObservation(
       structurally_complete: true,
       required_surfaces_complete: true,
       partitions_complete: true,
-      declared_record_count: 1,
-      parsed_record_count: 1,
+      declared_record_count: entries.length,
+      parsed_record_count: entries.length,
     },
   };
+}
+
+/** Parses only the semantic HTML contract owned by the current adapter version. */
+export function officialLegalityRulesHtmlObservation(
+  game: OfficialLegalityGame,
+  sourceLineage: string,
+  html: string,
+): Record<string, unknown> | null {
+  const articles = [...html.matchAll(
+    /<article\b([^>]*)>([\s\S]*?)<\/article>/giu,
+  )].filter((match) =>
+    /(?:^|\s)restriction-card(?:\s|$)/u.test(
+      htmlAttribute(match[1]!, "class") ?? "",
+    )
+  );
+  if (articles.length === 0) return null;
+
+  const fields = fieldsByGame[game];
+  const labels = htmlLabelsByGame[game];
+  const entries = articles.map((article, articleIndex) => {
+    const pairs = [...article[2]!.matchAll(
+      /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/giu,
+    )];
+    if (pairs.length === 0) {
+      throw new Error(
+        `Official Legality HTML entry ${articleIndex} has no exact label/value fields.`,
+      );
+    }
+    const entry: Record<string, unknown> = {};
+    for (const pair of pairs) {
+      const label = htmlText(pair[1]!);
+      const field = labels[label];
+      if (field === undefined) {
+        throw new Error(
+          `Official Legality HTML label ${label} is not recognized by this Source Adapter Version.`,
+        );
+      }
+      const rawField = fields[field];
+      if (rawField in entry) {
+        throw new Error(`Official Legality HTML label ${label} is duplicated.`);
+      }
+      const value = htmlText(pair[2]!);
+      entry[rawField] = field === "cards" ||
+          field === "companionCards" || field === "membershipValues" ||
+          field === "eligibleBlocks"
+        ? value === "-" ? [] : value.split(",").map((item) => item.trim())
+        : field === "maximumCopies"
+          ? Number(value)
+          : field === "tier" || field === "effectiveUntil"
+            ? value === "-" ? null : value
+            : value;
+    }
+    return entry;
+  });
+  return officialLegalityRulesObservation(game, sourceLineage, { entries });
+}
+
+function htmlAttribute(attributes: string, name: string): string | null {
+  return attributes.match(
+    new RegExp(`\\b${name}=["']([^"']*)["']`, "iu"),
+  )?.[1] ?? null;
+}
+
+function htmlText(value: string): string {
+  return value
+    .replace(/<br\s*\/?\s*>/giu, "\n")
+    .replace(/<[^>]+>/gu, "")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;|&apos;/giu, "'")
+    .trim();
 }
 
 function exactLegalityRule(

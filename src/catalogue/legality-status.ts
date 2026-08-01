@@ -1,9 +1,11 @@
 import type {
   LegalityRegion,
   LegalityRule,
-  LegalityRuleEffect,
 } from "./legality-rule";
-import { legalityRuleCardIds } from "./legality-rule";
+import {
+  evaluateLegalityRuleEffect,
+  legalityRuleCardIds,
+} from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 
@@ -110,6 +112,9 @@ export async function contextualLegalityStatusResponse(
   const self = `${url.pathname}${url.search}`;
   const document = {
     data,
+    ...(query.includeEvidence
+      ? legalityEvidenceSidecar(card, rules, query, regions)
+      : {}),
     meta: {
       catalogue_revision_id: context.current_revision_id,
       published_at: context.published_at,
@@ -161,16 +166,85 @@ function deriveRegionStatus(
   },
   region: LegalityRegion,
 ) {
-  const applicable = rules.filter(
+  const applicable = applicableRules(card, rules, query, region);
+  const evaluations = applicable.map((rule) => ({
+    rule,
+    outcome: evaluateLegalityRuleEffect(
+      rule.effect,
+      card.game_data.attributes,
+      query.on,
+    ),
+  }));
+  const status = deriveStatus(evaluations);
+  return {
+    card_id: query.cardId,
+    on: query.on,
+    format: query.format,
+    event_tier: query.eventTier,
+    region,
+    status,
+    rule_ids: applicable.map((rule) => rule.id),
+    derivation: derivation(status, evaluations),
+  };
+}
+
+function applicableRules(
+  _card: CatalogueCard,
+  rules: readonly LegalityRule[],
+  query: { cardId: string },
+  region: LegalityRegion,
+): LegalityRule[] {
+  return rules.filter(
     (rule) =>
       rule.region === region &&
       (legalityRuleCardIds(rule).length === 0 ||
         legalityRuleCardIds(rule).includes(query.cardId)),
+  ).sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function legalityEvidenceSidecar(
+  card: CatalogueCard,
+  rules: readonly LegalityRule[],
+  query: { cardId: string },
+  regions: readonly LegalityRegion[],
+): {
+  included: unknown[];
+  provenance: Record<string, string[]>;
+} {
+  const applicableByRegion = regions.map((region) =>
+    applicableRules(card, rules, query, region)
   );
-  const evaluations = applicable.map((rule) => ({
-    rule,
-    outcome: evaluate(rule.effect, card, query.on),
-  }));
+  const uniqueRules = [...new Map(
+    applicableByRegion.flat().map((rule) => [rule.id, rule]),
+  ).values()].sort((left, right) => left.id.localeCompare(right.id));
+  const provenance: Record<string, string[]> = {};
+  for (const [dataIndex, applicable] of applicableByRegion.entries()) {
+    const observationIds = [...new Set(
+      applicable.map((rule) => rule.source_observation_id),
+    )].sort();
+    provenance[`/data/${dataIndex}/status`] = observationIds;
+    provenance[`/data/${dataIndex}/derivation`] = observationIds;
+    for (const [ruleIndex, rule] of applicable.entries()) {
+      provenance[`/data/${dataIndex}/rule_ids/${ruleIndex}`] = [
+        rule.source_observation_id,
+      ];
+    }
+  }
+  const included = uniqueRules.map((rule, index) => {
+    provenance[`/included/${index}/official_wording`] = [
+      rule.source_observation_id,
+    ];
+    provenance[`/included/${index}/effect`] = [rule.source_observation_id];
+    return { type: "legality_rule", ...rule };
+  });
+  return { included, provenance };
+}
+
+function deriveStatus(
+  evaluations: readonly {
+    outcome: "legal" | "restricted" | "not_legal" | "indeterminate";
+  }[],
+) {
   const status =
     evaluations.some(({ outcome }) => outcome === "not_legal")
       ? "not_legal"
@@ -181,75 +255,7 @@ function deriveRegionStatus(
           : evaluations.some(({ outcome }) => outcome === "legal")
             ? "legal"
             : "indeterminate";
-  const ruleIds = applicable.map((rule) => rule.id).sort();
-  return {
-    card_id: query.cardId,
-    on: query.on,
-    format: query.format,
-    event_tier: query.eventTier,
-    region,
-    status,
-    rule_ids: ruleIds,
-    derivation: derivation(status, evaluations),
-  };
-}
-
-function evaluate(
-  effect: LegalityRuleEffect,
-  card: CatalogueCard,
-  on: string,
-): "legal" | "restricted" | "not_legal" | "indeterminate" {
-  switch (effect.type) {
-    case "eligible":
-      return "legal";
-    case "ban":
-      return "not_legal";
-    case "copy_limit":
-    case "prohibited_combination":
-      return "restricted";
-    case "release_timing":
-      return on >= effect.legal_from ? "legal" : "not_legal";
-    case "unresolved":
-      return "indeterminate";
-    case "membership": {
-      const value = card.game_data.attributes[effect.attribute];
-      if (value === null || value === undefined) {
-        return "indeterminate";
-      }
-      const values = Array.isArray(value) ? value : [value];
-      return values.some(
-        (candidate) =>
-          typeof candidate === "string" &&
-          effect.includes_any.some(
-            (member) =>
-              member.toUpperCase() === candidate.toUpperCase(),
-          ),
-      )
-        ? "legal"
-        : "not_legal";
-    }
-    case "rotation": {
-      const attributes = card.game_data.attributes;
-      const rawBlocks =
-        attributes.block_icons !== undefined
-          ? attributes.block_icons
-          : attributes.block_icon;
-      if (rawBlocks === null || rawBlocks === undefined) {
-        return "indeterminate";
-      }
-      const blocks = Array.isArray(rawBlocks) ? rawBlocks : [rawBlocks];
-      return blocks.some(
-        (block) =>
-          typeof block === "string" &&
-          effect.eligible_blocks.some(
-            (eligible) =>
-              eligible.toUpperCase() === block.toUpperCase(),
-          ),
-      )
-        ? "legal"
-        : "not_legal";
-    }
-  }
+  return status;
 }
 
 function derivation(
@@ -277,6 +283,7 @@ function parseQuery(url: URL): {
   format: string;
   eventTier: string | null;
   region: LegalityRegion | null;
+  includeEvidence: boolean;
 } {
   const allowed = new Set([
     "card_id",
@@ -284,6 +291,7 @@ function parseQuery(url: URL): {
     "format",
     "event_tier",
     "region",
+    "include",
   ]);
   for (const key of url.searchParams.keys()) {
     if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1) {
@@ -315,6 +323,14 @@ function parseQuery(url: URL): {
     );
   }
   const eventTier = optionalParameter(url, "event_tier");
+  const include = optionalParameter(url, "include");
+  if (include !== null && include !== "evidence") {
+    throw new LegalityStatusProblem(
+      400,
+      "invalid_parameter",
+      "include must be exactly evidence when supplied.",
+    );
+  }
   const rawRegion = optionalParameter(url, "region");
   if (
     rawRegion !== null &&
@@ -334,6 +350,7 @@ function parseQuery(url: URL): {
     format,
     eventTier,
     region: rawRegion,
+    includeEvidence: include === "evidence",
   };
 }
 
