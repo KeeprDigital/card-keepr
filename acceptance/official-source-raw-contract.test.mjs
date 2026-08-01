@@ -64,6 +64,14 @@ const productionAdapterVersions = sourceAdapterRegistrations
   )
   .map(({ adapterVersion }) => adapterVersion);
 
+const expectedProductionAdapterVersions = [
+  "digimon-en@3",
+  "fusion-world-en@3",
+  "gundam-en-asia@3",
+  "gundam-en-us@3",
+  "one-piece-en@2",
+];
+
 function registeredProductionAdapters() {
   return productionAdapterVersions.map((adapterVersion) =>
     requiredSourceAdapter(adapterVersion)
@@ -75,6 +83,10 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
   assert.deepEqual(
     production.map(({ sourceLineage }) => sourceLineage).sort(),
     Object.keys(expectedSurfaces).sort(),
+  );
+  assert.deepEqual(
+    production.map(({ adapterVersion }) => adapterVersion).sort(),
+    expectedProductionAdapterVersions,
   );
   for (const adapter of production) {
     assert.doesNotThrow(() =>
@@ -90,7 +102,10 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
-    assert.match(adapter.parserContract, /-raw-surfaces@1$/u);
+    assert.match(
+      adapter.parserContract,
+      /-raw-surfaces-with-legality@2$/u,
+    );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
       adapter.requiredSurfaces,
@@ -118,6 +133,23 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       ),
       `${adapter.sourceLineage} must use upstream paths, not Keepr paths`,
     );
+  }
+});
+
+test("historical production adapter identities remain exact lookup-only contracts", () => {
+  const historical = [
+    ["one-piece-en@1", "one-piece-en"],
+    ["fusion-world-en@2", "fusion-world-en"],
+    ["digimon-en@2", "digimon-en"],
+    ["gundam-en-asia@2", "gundam-en-asia"],
+    ["gundam-en-us@2", "gundam-en-us"],
+  ];
+  for (const [adapterVersion, sourceLineage] of historical) {
+    const adapter = requiredSourceAdapter(adapterVersion);
+    assert.equal(adapter.sourceLineage, sourceLineage);
+    assert.match(adapter.parserContract, /-raw-surfaces@1$/u);
+    assert.equal(typeof adapter.parseBytes, "function");
+    assert.ok(!productionAdapterVersions.includes(adapterVersion));
   }
 });
 

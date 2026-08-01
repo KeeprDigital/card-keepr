@@ -9,7 +9,11 @@ import {
   capturePreparedAttempt,
   prepareCaptureAttempt,
 } from "../../../src/catalogue/source-evidence-capture";
-import { sourceAdapterRegistrations } from "../../../src/catalogue/source-adapters";
+import {
+  installedSourceAdapterRegistrations,
+  requiredSourceAdapter,
+  sourceAdapterRegistrations,
+} from "../../../src/catalogue/source-adapters";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
@@ -63,9 +67,7 @@ test("every pinned aggregate adapter retains its immutable parser contract", () 
     "gundam-en-us@1",
   ];
   for (const adapterVersion of pinned) {
-    const adapter = sourceAdapterRegistrations.find(
-      (candidate) => candidate.adapterVersion === adapterVersion,
-    );
+    const adapter = requiredSourceAdapter(adapterVersion);
     expect(adapter, adapterVersion).toBeDefined();
     expect(adapter?.maximumSnapshotBytes, adapterVersion).toBe(1024 * 1024);
     expect(adapter?.parse, adapterVersion).toBeTypeOf("function");
@@ -814,7 +816,7 @@ test("adapter registrations stay constrained while mismatched production identit
     adapter_origin: string;
   }>();
   expect(constrained.results).toEqual(
-    sourceAdapterRegistrations
+    installedSourceAdapterRegistrations
       .map((adapter) => ({
         adapter_version: adapter.adapterVersion,
         source_lineage: adapter.sourceLineage,
