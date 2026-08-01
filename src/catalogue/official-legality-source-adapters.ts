@@ -1,3 +1,5 @@
+import { isIsoCalendarDate } from "./calendar-date.mjs";
+
 type OfficialLegalityGame =
   | "one-piece"
   | "fusion-world"
@@ -173,6 +175,7 @@ export function officialLegalityRulesHtmlObservation(
   sourceLineage: string,
   html: string,
 ): Record<string, unknown> | null {
+  const declaredRecordCount = publisherDeclaredRecordCount(html);
   const articles = [...html.matchAll(
     /<article\b([^>]*)>([\s\S]*?)<\/article>/giu,
   )].filter((match) =>
@@ -180,7 +183,16 @@ export function officialLegalityRulesHtmlObservation(
       htmlAttribute(match[1]!, "class") ?? "",
     )
   );
-  if (articles.length === 0) return null;
+  if (articles.length === 0) {
+    return declaredRecordCount === 0
+      ? officialLegalityRulesObservation(game, sourceLineage, { entries: [] })
+      : null;
+  }
+  if (declaredRecordCount === null) {
+    throw new Error(
+      "Official Legality HTML has no exact publisher-declared record total.",
+    );
+  }
 
   const fields = fieldsByGame[game];
   const labels = htmlLabelsByGame[game];
@@ -219,7 +231,25 @@ export function officialLegalityRulesHtmlObservation(
     }
     return entry;
   });
+  if (declaredRecordCount !== entries.length) {
+    throw new Error(
+      `Official Legality HTML declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
+    );
+  }
   return officialLegalityRulesObservation(game, sourceLineage, { entries });
+}
+
+function publisherDeclaredRecordCount(html: string): number | null {
+  const declarations = [...html.matchAll(
+    />\s*(\d+)\s+(?:records?|results?|items?)\s*</giu,
+  )].map((match) => Number.parseInt(match[1]!, 10));
+  if (declarations.length === 0) return null;
+  if (declarations.length !== 1 || !Number.isSafeInteger(declarations[0])) {
+    throw new Error(
+      "Official Legality HTML must contain one exact publisher-declared record total.",
+    );
+  }
+  return declarations[0]!;
 }
 
 function htmlAttribute(attributes: string, name: string): string | null {
@@ -247,6 +277,15 @@ function exactLegalityRule(
   fields: FieldMap,
   entry: Record<string, unknown>,
 ): Record<string, unknown> {
+  const allowedFields = new Set(Object.values(fields));
+  const unknownField = Object.keys(entry).find((field) =>
+    !allowedFields.has(field)
+  );
+  if (unknownField !== undefined) {
+    throw new Error(
+      `Official Legality entry contains unknown field ${unknownField}.`,
+    );
+  }
   const wording = requiredText(
     entry[fields.wording],
     "Official Legality wording",
@@ -484,10 +523,7 @@ function requiredPositiveInteger(value: unknown, name: string): number {
 
 function requiredDate(value: unknown, name: string): string {
   const date = requiredText(value, name);
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date) ||
-    Number.isNaN(parsed.valueOf()) ||
-    !parsed.toISOString().startsWith(date)) {
+  if (!isIsoCalendarDate(date)) {
     throw new Error(`${name} must be an exact ISO date.`);
   }
   return date;

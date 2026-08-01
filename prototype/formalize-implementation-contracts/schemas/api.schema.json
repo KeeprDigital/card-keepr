@@ -730,12 +730,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["data", "meta", "links"],
+      "dependentRequired": {
+        "included": ["provenance"],
+        "provenance": ["included"]
+      },
       "properties": {
         "data": {
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/LegalityStatus" }
         },
+        "included": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EvidenceResource" }
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" },
         "meta": { "$ref": "#/$defs/Meta" },
         "links": { "$ref": "#/$defs/SelfLink" }
       }

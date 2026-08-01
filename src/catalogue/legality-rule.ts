@@ -9,6 +9,7 @@ import {
   compareUtf8,
   sha256Text,
 } from "./serialization";
+import { isIsoCalendarDate } from "./calendar-date.mjs";
 
 export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
 
@@ -671,12 +672,7 @@ function regionForLineage(lineage: string): LegalityRegion {
 
 function requiredDate(value: unknown, name: string): string {
   const text = requiredString(value, name);
-  const date = new Date(`${text}T00:00:00.000Z`);
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
-    Number.isNaN(date.valueOf()) ||
-    !date.toISOString().startsWith(text)
-  ) {
+  if (!isIsoCalendarDate(text)) {
     throw new Error(`${name} must be an ISO date.`);
   }
   return text;

@@ -8,6 +8,7 @@ import {
 } from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
+import { isIsoCalendarDate } from "./calendar-date.mjs";
 
 type CatalogueCard = {
   id: string;
@@ -23,6 +24,11 @@ type ContextRow = {
 
 type RuleRow = {
   document_json: string;
+};
+
+type SnapshotEvidenceRow = {
+  id: string;
+  retrieved_at: string;
 };
 
 export class LegalityStatusProblem extends Error {
@@ -113,7 +119,7 @@ export async function contextualLegalityStatusResponse(
   const document = {
     data,
     ...(query.includeEvidence
-      ? legalityEvidenceSidecar(card, rules, query, regions)
+      ? await legalityEvidenceSidecar(database, rules, query, regions)
       : {}),
     meta: {
       catalogue_revision_id: context.current_revision_id,
@@ -166,7 +172,7 @@ function deriveRegionStatus(
   },
   region: LegalityRegion,
 ) {
-  const applicable = applicableRules(card, rules, query, region);
+  const applicable = applicableRules(rules, query, region);
   const evaluations = applicable.map((rule) => ({
     rule,
     outcome: evaluateLegalityRuleEffect(
@@ -189,7 +195,6 @@ function deriveRegionStatus(
 }
 
 function applicableRules(
-  _card: CatalogueCard,
   rules: readonly LegalityRule[],
   query: { cardId: string },
   region: LegalityRegion,
@@ -202,41 +207,74 @@ function applicableRules(
   ).sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function legalityEvidenceSidecar(
-  card: CatalogueCard,
+async function legalityEvidenceSidecar(
+  database: D1Database,
   rules: readonly LegalityRule[],
   query: { cardId: string },
   regions: readonly LegalityRegion[],
-): {
-  included: unknown[];
+): Promise<{
+  included: Array<{
+    type: "source_observation";
+    id: string;
+    captured_at: string;
+    source: string;
+  }>;
   provenance: Record<string, string[]>;
-} {
+}> {
   const applicableByRegion = regions.map((region) =>
-    applicableRules(card, rules, query, region)
+    applicableRules(rules, query, region)
   );
-  const uniqueRules = [...new Map(
-    applicableByRegion.flat().map((rule) => [rule.id, rule]),
-  ).values()].sort((left, right) => left.id.localeCompare(right.id));
+  const applicable = applicableByRegion.flat();
+  const snapshotIds = [...new Set(
+    applicable.map((rule) => rule.source_snapshot_id),
+  )].sort();
+  const snapshots = snapshotIds.length === 0
+    ? []
+    : (await database.prepare(
+      `SELECT id, retrieved_at
+       FROM source_snapshots
+       WHERE id IN (SELECT value FROM json_each(?))
+       ORDER BY id`,
+    ).bind(JSON.stringify(snapshotIds)).all<SnapshotEvidenceRow>()).results;
+  const capturedAtBySnapshot = new Map(
+    snapshots.map((snapshot) => [snapshot.id, snapshot.retrieved_at]),
+  );
+  const evidenceById = new Map<string, {
+    type: "source_observation";
+    id: string;
+    captured_at: string;
+    source: string;
+  }>();
+  for (const rule of applicable) {
+    const capturedAt = capturedAtBySnapshot.get(rule.source_snapshot_id);
+    if (capturedAt === undefined) {
+      throw new Error("Legality Status Source Observation evidence disappeared.");
+    }
+    evidenceById.set(rule.source_observation_id, {
+      type: "source_observation",
+      id: rule.source_observation_id,
+      captured_at: capturedAt,
+      source: rule.source_lineage,
+    });
+  }
   const provenance: Record<string, string[]> = {};
   for (const [dataIndex, applicable] of applicableByRegion.entries()) {
     const observationIds = [...new Set(
       applicable.map((rule) => rule.source_observation_id),
     )].sort();
-    provenance[`/data/${dataIndex}/status`] = observationIds;
-    provenance[`/data/${dataIndex}/derivation`] = observationIds;
+    if (observationIds.length > 0) {
+      provenance[`/data/${dataIndex}/status`] = observationIds;
+      provenance[`/data/${dataIndex}/derivation`] = observationIds;
+    }
     for (const [ruleIndex, rule] of applicable.entries()) {
       provenance[`/data/${dataIndex}/rule_ids/${ruleIndex}`] = [
         rule.source_observation_id,
       ];
     }
   }
-  const included = uniqueRules.map((rule, index) => {
-    provenance[`/included/${index}/official_wording`] = [
-      rule.source_observation_id,
-    ];
-    provenance[`/included/${index}/effect`] = [rule.source_observation_id];
-    return { type: "legality_rule", ...rule };
-  });
+  const included = [...evidenceById.values()].sort((left, right) =>
+    left.id.localeCompare(right.id)
+  );
   return { included, provenance };
 }
 
@@ -315,7 +353,7 @@ function parseQuery(url: URL): {
   }
   const on = requiredParameter(url, "on");
   const format = requiredParameter(url, "format");
-  if (!validDate(on)) {
+  if (!isIsoCalendarDate(on)) {
     throw new LegalityStatusProblem(
       400,
       "invalid_parameter",
@@ -377,12 +415,6 @@ function optionalParameter(url: URL, name: string): string | null {
     );
   }
   return value;
-}
-
-function validDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.valueOf()) && date.toISOString().startsWith(value);
 }
 
 function regionsFor(game: CatalogueCard["game"]): readonly LegalityRegion[] {

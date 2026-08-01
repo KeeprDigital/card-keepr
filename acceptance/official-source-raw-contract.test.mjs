@@ -4,6 +4,9 @@ import {
   officialSourceDiscoveryRequests,
 } from "../src/catalogue/product-release-source-adapters.ts";
 import {
+  officialLegalityRulesObservation,
+} from "../src/catalogue/official-legality-source-adapters.ts";
+import {
   assertAdapterBinding,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
@@ -234,6 +237,59 @@ test("current production legality parser retains a truthful empty publication", 
   assert.equal(legality.completeness.parsed_record_count, 0);
 });
 
+test("current production legality parser accepts an ordinary publisher-declared zero without a Keepr marker", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const observations = current.parseBytes(
+    new TextEncoder().encode(`
+      <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
+      <body><h1>Restriction Rules</h1><p>0 records</p></body></html>`),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.deepEqual(legality.legality_rules, []);
+  assert.equal(legality.completeness.declared_record_count, 0);
+  assert.equal(legality.completeness.parsed_record_count, 0);
+});
+
+test("current production legality parser blocks a publisher total that disagrees with exact articles", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(
+        exactFusionLegalityHtml.replace("2 records", "3 records"),
+      ),
+      fusionLegalityContext(current),
+    ),
+    /declares 3 records but exactly 2 were parsed/u,
+  );
+});
+
+test("official legality entries reject unknown publisher fields", () => {
+  assert.throws(
+    () => officialLegalityRulesObservation(
+      "fusion-world",
+      "fusion-world-en",
+      {
+        entries: [{
+          rule_ref: "FW-2026-003",
+          notice: "FB01-003 is banned from standard tournament decks.",
+          market: "EN-OCEANIA",
+          play_format: "standard",
+          tier: null,
+          active_on: "2026-07-01",
+          expires_on: null,
+          cards: ["FB01-003"],
+          directive: "ban",
+          publisher_note: "This new field is not owned by the adapter.",
+        }],
+      },
+    ),
+    /unknown field publisher_note/u,
+  );
+});
+
 test("historical and current production registrations keep byte-identical legality decoder behavior isolated", () => {
   const historical = requiredSourceAdapter("fusion-world-en@2");
   const current = requiredSourceAdapter("fusion-world-en@3");
@@ -260,7 +316,7 @@ test("historical and current production registrations keep byte-identical legali
   );
   const emptyBytes = new TextEncoder().encode(`
     <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
-    <body><h1>Restriction Rules</h1>
+    <body><h1>Restriction Rules</h1><p>0 records</p>
       <article data-publication-empty="true">No restrictions are currently published.</article>
     </body></html>`);
   const oldEmpty = historical.parseBytes(

@@ -4,6 +4,10 @@ import {
   deterministicGzip,
   deterministicGzipStream,
 } from "../src/catalogue/export-compression.ts";
+import {
+  verifyComponentExportRecord,
+  verifyExportRecord,
+} from "../src/catalogue/export-validation.ts";
 
 const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
 const goldenHex =
@@ -23,4 +27,23 @@ test("buffered and streaming export compression share exact golden bytes", async
   );
   assert.equal(Buffer.from(deterministicGzip(goldenInput)).toString("hex"), goldenHex);
   assert.equal(Buffer.from(streamed).toString("hex"), goldenHex);
+});
+
+test("component export validation rejects a valid record from the wrong component", () => {
+  const supportedGame = {
+    type: "supported_game",
+    id: "game_one-piece",
+    key: "one-piece",
+    name: "One Piece Card Game",
+    supported_locales: ["EN-OCEANIA"],
+    game_profile: "one-piece@1",
+  };
+  assert.doesNotThrow(() => verifyExportRecord(supportedGame));
+  assert.throws(
+    () => verifyComponentExportRecord(
+      "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ProductRecord",
+      supportedGame,
+    ),
+    /component record failed schema verification/u,
+  );
 });

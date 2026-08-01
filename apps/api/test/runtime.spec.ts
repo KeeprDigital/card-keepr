@@ -527,6 +527,13 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     ).bind(revisionId, publishedAt),
   ]);
 
+  const legalityAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(legalityAjv);
+  legalityAjv.addSchema(apiSchema);
+  const validateLegalityStatus = legalityAjv.getSchema(
+    `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
+  )!;
+
   for (const [index, testCase] of cases.entries()) {
     const response = await exports.default.fetch(
       new Request(
@@ -553,6 +560,10 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     }>();
     expect(body).not.toHaveProperty("included");
     expect(body).not.toHaveProperty("provenance");
+    expect(
+      validateLegalityStatus(body),
+      JSON.stringify(validateLegalityStatus.errors),
+    ).toBe(true);
     expect(body.data[0]).toMatchObject({
       status: "not_legal",
       rule_ids: [
@@ -577,31 +588,24 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         ),
       );
       expect(evidenceResponse.status).toBe(200);
-      await expect(evidenceResponse.json()).resolves.toMatchObject({
+      const evidenceBody = await evidenceResponse.json();
+      expect(
+        validateLegalityStatus(evidenceBody),
+        JSON.stringify(validateLegalityStatus.errors),
+      ).toBe(true);
+      expect(evidenceBody).toMatchObject({
         included: [
           {
-            type: "legality_rule",
-            id: "legality_rule_precedence_0_definitive",
-            official_wording: "Definitive exclusion 0.",
-            source_observation_id: "srcobs_api_precedence",
-            source_observation_pointer:
-              "/observations/0/value/legality_rules/0",
-          },
-          {
-            type: "legality_rule",
-            id: "legality_rule_precedence_0_unresolved",
-            official_wording: "Unresolved qualifier 0.",
-            source_observation_id: "srcobs_api_precedence",
-            source_observation_pointer:
-              "/observations/0/value/legality_rules/1",
+            type: "source_observation",
+            id: "srcobs_api_precedence",
+            captured_at: "2026-07-30T00:00:01.000Z",
+            source: "gundam-en-asia",
           },
         ],
         provenance: {
           "/data/0/status": ["srcobs_api_precedence"],
           "/data/0/rule_ids/0": ["srcobs_api_precedence"],
           "/data/0/rule_ids/1": ["srcobs_api_precedence"],
-          "/included/0/official_wording": ["srcobs_api_precedence"],
-          "/included/1/official_wording": ["srcobs_api_precedence"],
         },
       });
       const etag = response.headers.get("etag");

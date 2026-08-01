@@ -394,6 +394,12 @@
             "description": "Optional comparison scope. Omission never collapses regional results.",
             "schema": { "$ref": "./schemas/api.schema.json#/$defs/Region" }
           },
+          {
+            "name": "include",
+            "in": "query",
+            "description": "Set to evidence to include supporting Source Observation resources and response-field provenance.",
+            "schema": { "type": "string", "enum": ["evidence"] }
+          },
           { "$ref": "#/components/parameters/IfNoneMatch" }
         ],
         "responses": {

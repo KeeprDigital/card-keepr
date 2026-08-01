@@ -594,7 +594,7 @@ function historicalBandaiSnapshotDecoder(
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: false,
-    acceptExplicitEmptyPublication: false,
+    acceptPublisherDeclaredEmpty: false,
   });
 }
 
@@ -607,7 +607,7 @@ function legalityAwareBandaiSnapshotDecoder(
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
-    acceptExplicitEmptyPublication: true,
+    acceptPublisherDeclaredEmpty: true,
   });
 }
 
@@ -619,7 +619,7 @@ function bandaiSnapshotDecoder(
   urls: Readonly<Record<string, string>>,
   profile: Readonly<{
     parseLegality: boolean;
-    acceptExplicitEmptyPublication: boolean;
+    acceptPublisherDeclaredEmpty: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -699,16 +699,13 @@ function bandaiSnapshotDecoder(
             sourceLineage,
             surface,
             context.url,
-            profile.acceptExplicitEmptyPublication,
+            profile.acceptPublisherDeclaredEmpty &&
+              isLegalityPolicySurface(surface),
           );
     const legalityObservation = profile.parseLegality &&
         isLegalityPolicySurface(surface)
       ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ??
-        (parsed.explicitlyEmptyPublication
-          ? officialLegalityRulesObservation(game, sourceLineage, {
-              entries: [],
-            })
-          : null)
+        null
       : null;
     const observations = legalityObservation === null
       ? parsed.observations
@@ -820,7 +817,6 @@ type ParsedBandaiSurface = {
   observations: readonly Record<string, unknown>[];
   retainedDocument: Record<string, unknown>;
   consumedFields: readonly string[];
-  explicitlyEmptyPublication?: boolean;
 };
 
 function parseOnePieceBandaiCardList(
@@ -1722,7 +1718,7 @@ function parseBandaiSurfaceCoverage(
   sourceLineage: string,
   surface: string,
   url: string,
-  acceptExplicitEmptyPublication: boolean,
+  acceptPublisherDeclaredEmpty: boolean,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
   if (
@@ -1771,13 +1767,15 @@ function parseBandaiSurfaceCoverage(
   const publicationEntryMatches = [...html.matchAll(
     /<(?:article|li|tr)\b([^>]*)>([\s\S]*?)<\/(?:article|li|tr)>/giu,
   )];
-  const explicitlyEmpty = publicationEntryMatches.some(
-    (match) => htmlAttribute(match[1]!, "data-publication-empty") === "true",
+  const declaredCountMatch = html.match(
+    />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
   );
+  const publisherDeclaresEmpty = acceptPublisherDeclaredEmpty &&
+    declaredCountMatch?.[1] === "0";
   const publicationEntries = publicationEntryMatches
     .filter(
       (match) =>
-        !acceptExplicitEmptyPublication ||
+        !publisherDeclaresEmpty ||
         htmlAttribute(match[1]!, "data-publication-empty") !== "true",
     )
     .map((match) => htmlText(match[2]!))
@@ -1786,7 +1784,7 @@ function parseBandaiSurfaceCoverage(
     publicationLinks.length === 0 &&
     discoveredOptions.length === 0 &&
     publicationEntries.length === 0 &&
-    !(acceptExplicitEmptyPublication && explicitlyEmpty)
+    !publisherDeclaresEmpty
   ) {
     throw new Error(
       `Official Source ${surface} has no structural publication entries.`,
@@ -1800,7 +1798,7 @@ function parseBandaiSurfaceCoverage(
         ? publicationLinks.length
         : discoveredOptions.length;
   const declaredPublicationCount = Number.parseInt(
-    text.match(/\b(\d+)\s+(?:results?|records?|items?)\b/iu)?.[1] ??
+    declaredCountMatch?.[1] ??
       String(parsedPublicationCount),
     10,
   );
@@ -1850,8 +1848,6 @@ function parseBandaiSurfaceCoverage(
       "discovered_options",
       "publication_entries",
     ],
-    explicitlyEmptyPublication:
-      acceptExplicitEmptyPublication && explicitlyEmpty,
   };
 }
 

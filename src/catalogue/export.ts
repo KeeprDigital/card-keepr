@@ -9,8 +9,8 @@ import type {
 } from "./reconciliation-publication";
 import { exportedGameProfileSchema } from "./reconciliation-profile";
 import {
+  verifyComponentExportRecord,
   verifyExportManifest,
-  verifyExportRecord,
 } from "./export-validation";
 import {
   canonicalJson,
@@ -159,7 +159,9 @@ export async function buildCatalogueExport(
     recordSchemaMajor,
   ] of componentDefinitions) {
     const records = orderedExportRecords(recordFactories[name], order);
-    const analysis = await analyseComponent(records);
+    const recordSchema =
+      `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`;
+    const analysis = await analyseComponent(records, recordSchema);
     if (analysis.uncompressedBytes > maximumExportComponentBytes) {
       throw new CatalogueExportLimitError(
         "One Catalogue Export component exceeds the 12 MiB byte budget.",
@@ -182,7 +184,7 @@ export async function buildCatalogueExport(
       name,
       media_type: "application/x-ndjson",
       compression: "gzip",
-      record_schema: `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`,
+      record_schema: recordSchema,
       order,
       records: analysis.records,
       uncompressed_bytes: analysis.uncompressedBytes,
@@ -197,7 +199,9 @@ export async function buildCatalogueExport(
       sha256: analysis.compressedSha256,
       body: () =>
         fixedLengthBody(
-          deterministicGzipStream(catalogueRecordStream(records())),
+          deterministicGzipStream(
+            catalogueRecordStream(records(), recordSchema),
+          ),
           analysis.compressedBytes,
         ),
       contentType: "application/x-ndjson",
@@ -303,6 +307,7 @@ function exportOrderValue(value: unknown, field: "id" | "profile"): string {
 
 async function analyseComponent(
   records: ExportRecordFactory,
+  recordSchema: string,
 ): Promise<{
   records: number;
   uncompressedBytes: number;
@@ -315,6 +320,7 @@ async function analyseComponent(
   const compressedDigest = new crypto.DigestStream("SHA-256");
   const [content, compressionInput] = catalogueRecordStream(
     records(),
+    recordSchema,
     statistics,
   ).tee();
   await Promise.all([
@@ -336,6 +342,7 @@ async function analyseComponent(
 
 function catalogueRecordStream(
   records: Iterable<unknown>,
+  recordSchema: string,
   statistics?: { records: number },
 ): ReadableStream<Uint8Array> {
   const iterator = records[Symbol.iterator]();
@@ -346,7 +353,7 @@ function catalogueRecordStream(
         controller.close();
         return;
       }
-      verifyExportRecord(next.value);
+      verifyComponentExportRecord(recordSchema, next.value);
       const bytes = utf8(`${canonicalJson(next.value)}\n`);
       if (bytes.byteLength > maximumExportRecordBytes) {
         controller.error(

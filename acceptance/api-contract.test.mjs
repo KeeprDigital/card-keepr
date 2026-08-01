@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -20,6 +22,69 @@ test("Product detail documents invalid include requests", async () => {
     openapi.paths["/products/{product_id}"].get.responses["400"],
     { $ref: "#/components/responses/InvalidRequest" },
   );
+});
+
+test("Legality Status documents and validates base and evidence representations", async () => {
+  const [openapi, schema] = await Promise.all([
+    readFile(
+      resolve(root, "prototype/formalize-implementation-contracts/openapi.json"),
+      "utf8",
+    ).then(JSON.parse),
+    readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
+      ),
+      "utf8",
+    ).then(JSON.parse),
+  ]);
+  const include = openapi.paths["/legality-status"].get.parameters.find(
+    (parameter) => parameter.name === "include",
+  );
+  assert.deepEqual(include?.schema, { type: "string", enum: ["evidence"] });
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(schema);
+  const validate = ajv.getSchema(
+    `${schema.$id}#/$defs/LegalityStatusDocument`,
+  );
+  const base = {
+    data: [{
+      card_id: "card_test",
+      on: "2026-08-01",
+      format: "standard",
+      event_tier: null,
+      region: "EN-ASIA",
+      status: "not_legal",
+      rule_ids: ["legality_rule_test"],
+      derivation: "Derived from one exact rule.",
+    }],
+    meta: {
+      catalogue_revision_id: "catrev_test",
+      published_at: "2026-08-01T00:00:00.000Z",
+    },
+    links: {
+      self:
+        "/v1/legality-status?card_id=card_test&on=2026-08-01&format=standard&region=EN-ASIA",
+    },
+  };
+  assert.equal(validate(base), true, JSON.stringify(validate.errors));
+  const evidence = {
+    ...base,
+    included: [{
+      type: "source_observation",
+      id: "srcobs_test",
+      captured_at: "2026-07-31T00:00:00.000Z",
+      source: "gundam-en-asia",
+    }],
+    provenance: {
+      "/data/0/status": ["srcobs_test"],
+      "/data/0/rule_ids/0": ["srcobs_test"],
+      "/data/0/derivation": ["srcobs_test"],
+    },
+  };
+  assert.equal(validate(evidence), true, JSON.stringify(validate.errors));
 });
 
 test("export schema major 2 carries typed Product and Release projections", async () => {

@@ -1,7 +1,7 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
-import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
+import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json" with { type: "json" };
+import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json" with { type: "json" };
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
@@ -33,6 +33,19 @@ export function verifyExportManifest(manifest: unknown): void {
 
 export function verifyExportRecord(record: unknown): void {
   assertValid(validateRecord, record, "record");
+}
+
+export function verifyComponentExportRecord(
+  recordSchemaUri: string,
+  record: unknown,
+): void {
+  const validate = componentValidators.get(recordSchemaUri);
+  if (validate === undefined) {
+    throw new Error(
+      `Catalogue Export component advertises an unresolved record_schema ${recordSchemaUri}.`,
+    );
+  }
+  assertValid(validate, record, "component record");
 }
 
 function requiredValidator(uri: string): ValidateFunction {
