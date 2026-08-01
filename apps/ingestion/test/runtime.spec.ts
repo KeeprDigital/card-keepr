@@ -170,6 +170,8 @@ test("a successful Official Source response is snapshotted before parsing", asyn
       ],
     },
   );
+  expect(created.status).toBe(201);
+  const planned = await created.json<CollectionDocument>();
   expect(planned.state).toBe("collecting");
   const lifecycle = await administrationRequest(
     `/v1/ingestion-runs/${planned.id}`,
@@ -394,6 +396,8 @@ test("a full parent restart preserves each pending hostname child identity", asy
       ],
     },
   );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
   const accepted = await administrationRequest(
     `/v1/ingestion-runs/${run.id}/collection/resume`,
     "POST",
@@ -629,6 +633,8 @@ test(
           ],
         },
       );
+      expect(response.status).toBe(201);
+      const run = await response.json<CollectionDocument>();
       const terminal = await resumeCollection(run.id);
       expect(terminal).toMatchObject({
         state: "failed",
@@ -773,7 +779,7 @@ test("Retry-After is audited without shortening the Official Source deadline", a
   await childWorkflow.terminate();
 });
 
-test("adapter registrations stay constrained while unavailable production identities fail closed", async () => {
+test("adapter registrations stay constrained while mismatched production identities fail closed", async () => {
   const mismatched = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
@@ -792,7 +798,7 @@ test("adapter registrations stay constrained while unavailable production identi
   );
   expect(mismatched.status).toBe(422);
   await expect(mismatched.json()).resolves.toMatchObject({
-    code: "adapter_not_supported",
+    code: "adapter_binding_mismatch",
   });
 
   const constrained = await env.CATALOGUE_DB.prepare(
@@ -1242,6 +1248,8 @@ test("collection is sequential per hostname and different hostnames progress con
       ],
     },
   );
+  expect(response.status).toBe(201);
+  const run = await response.json<CollectionDocument>();
   const completed = await resumeCollection(run.id);
   expect(completed.state).toBe("parsing");
   const attempts = Object.fromEntries(
@@ -1337,6 +1345,8 @@ async function createCollection(
       requests: [{ id: "required-source", url, headers }],
     },
   );
+  expect(response.status).toBe(201);
+  return response.json<CollectionDocument>();
 }
 
 async function injectCollectionPlan(

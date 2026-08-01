@@ -480,32 +480,45 @@ export async function appendDiscoveredEvidenceRequests(
         }),
       ),
     );
-    await database
-      .prepare(
-        `INSERT OR IGNORE INTO source_requests (
-          ingestion_run_id, request_id, sequence_number, method, url,
-          request_headers_json, representation_fingerprint, state,
-          source_snapshot_id, failure_code, request_role,
-          discovered_from_request_id
+    await database.batch([
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO source_discovery_request_plans (
+             ingestion_run_id, request_id, sequence_number,
+             parent_request_id, method, url, request_headers_json,
+             representation_fingerprint, request_role
+           )
+           SELECT ?, ?, COALESCE(MAX(sequence_number), -1) + 1,
+                  ?, 'GET', ?, ?, ?, ?
+           FROM source_requests
+           WHERE ingestion_run_id = ?`,
         )
-        SELECT
-          ?, ?,
-          COALESCE(MAX(sequence_number), -1) + 1,
-          'GET', ?, ?, ?, 'pending', NULL, NULL, ?, ?
-        FROM source_requests
-        WHERE ingestion_run_id = ?`,
-      )
-      .bind(
-        run.id,
-        requestId,
-        new URL(request.url).href,
-        canonicalJson(request.headers),
-        representationFingerprint,
-        request.role,
-        parent.request_id,
-        run.id,
-      )
-      .run();
+        .bind(
+          run.id,
+          requestId,
+          parent.request_id,
+          new URL(request.url).href,
+          canonicalJson(request.headers),
+          representationFingerprint,
+          request.role,
+          run.id,
+        ),
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO source_requests (
+             ingestion_run_id, request_id, sequence_number, method, url,
+             request_headers_json, representation_fingerprint, state,
+             source_snapshot_id, failure_code, request_role,
+             discovered_from_request_id
+           )
+           SELECT ingestion_run_id, request_id, sequence_number, method, url,
+                  request_headers_json, representation_fingerprint,
+                  'pending', NULL, NULL, request_role, parent_request_id
+           FROM source_discovery_request_plans
+           WHERE ingestion_run_id = ? AND request_id = ?`,
+        )
+        .bind(run.id, requestId),
+    ]);
     const retained = await database
       .prepare(
         `SELECT * FROM source_requests

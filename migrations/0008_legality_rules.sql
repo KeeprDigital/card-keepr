@@ -1,21 +1,5 @@
 PRAGMA foreign_keys = ON;
 
-INSERT INTO source_adapter_versions (
-  adapter_version,
-  source_lineage,
-  supported_game,
-  game_profile_version,
-  parser_contract,
-  adapter_origin
-) VALUES (
-  'fixture-one-piece-json@2',
-  'one-piece-en',
-  'one-piece',
-  'one-piece@1',
-  'synthetic-fixture-card-document@1',
-  'synthetic_fixture'
-);
-
 CREATE TABLE official_source_collection_plans (
   ingestion_run_id TEXT PRIMARY KEY
     REFERENCES ingestion_evidence_plans(ingestion_run_id),
@@ -77,10 +61,44 @@ END;
 
 CREATE TRIGGER source_requests_plan_fields_immutable
 BEFORE UPDATE OF ingestion_run_id, request_id, sequence_number, method,
-  url, request_headers_json, representation_fingerprint
+  url, request_headers_json, representation_fingerprint, request_role,
+  discovered_from_request_id
 ON source_requests
 BEGIN
   SELECT RAISE(ABORT, 'source_request_plan_fields_immutable');
+END;
+
+CREATE TABLE source_discovery_request_plans (
+  ingestion_run_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  sequence_number INTEGER NOT NULL,
+  parent_request_id TEXT NOT NULL,
+  method TEXT NOT NULL CHECK (method = 'GET'),
+  url TEXT NOT NULL,
+  request_headers_json TEXT NOT NULL CHECK (json_valid(request_headers_json)),
+  representation_fingerprint TEXT NOT NULL CHECK (
+    length(representation_fingerprint) = 64
+    AND representation_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  request_role TEXT NOT NULL CHECK (
+    request_role IN ('listing', 'detail', 'product_detail', 'image')
+  ),
+  PRIMARY KEY (ingestion_run_id, request_id),
+  UNIQUE (ingestion_run_id, sequence_number),
+  FOREIGN KEY (ingestion_run_id, parent_request_id)
+    REFERENCES source_requests(ingestion_run_id, request_id)
+);
+
+CREATE TRIGGER source_discovery_request_plans_immutable_update
+BEFORE UPDATE ON source_discovery_request_plans
+BEGIN
+  SELECT RAISE(ABORT, 'source_discovery_request_plan_immutable');
+END;
+
+CREATE TRIGGER source_discovery_request_plans_immutable_delete
+BEFORE DELETE ON source_discovery_request_plans
+BEGIN
+  SELECT RAISE(ABORT, 'source_discovery_request_plan_immutable');
 END;
 
 CREATE TRIGGER source_requests_must_match_immutable_plan
@@ -88,10 +106,31 @@ BEFORE INSERT ON source_requests
 WHEN NOT EXISTS (
   SELECT 1
   FROM ingestion_evidence_plans AS plan,
-       json_each(plan.request_plan_json, '$.requests') AS planned
+       json_each(
+         CASE
+           WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
+             THEN json_extract(plan.request_plan_json, '$.plans')
+           ELSE json_array(json(plan.request_plan_json))
+         END
+       ) AS evidence_plan,
+       json_each(evidence_plan.value, '$.requests') AS planned
   WHERE plan.ingestion_run_id = NEW.ingestion_run_id
     AND json_extract(planned.value, '$.id') = NEW.request_id
-    AND CAST(planned.key AS INTEGER) = NEW.sequence_number
+    AND CAST(planned.key AS INTEGER) + (
+      SELECT COALESCE(
+        SUM(json_array_length(json_extract(preceding.value, '$.requests'))),
+        0
+      )
+      FROM json_each(
+        CASE
+          WHEN json_type(plan.request_plan_json, '$.plans') = 'array'
+            THEN json_extract(plan.request_plan_json, '$.plans')
+          ELSE json_array(json(plan.request_plan_json))
+        END
+      ) AS preceding
+      WHERE CAST(preceding.key AS INTEGER) <
+        CAST(evidence_plan.key AS INTEGER)
+    ) = NEW.sequence_number
     AND json_extract(planned.value, '$.method') = NEW.method
     AND json_extract(planned.value, '$.url') = NEW.url
     AND json_extract(planned.value, '$.headers') = NEW.request_headers_json
@@ -116,6 +155,19 @@ AND NOT EXISTS (
       NEW.representation_fingerprint
     AND json_type(planned.value, '$.surface') = 'text'
     AND length(json_extract(planned.value, '$.surface')) > 0
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM source_discovery_request_plans AS planned
+  WHERE planned.ingestion_run_id = NEW.ingestion_run_id
+    AND planned.request_id = NEW.request_id
+    AND planned.sequence_number = NEW.sequence_number
+    AND planned.method = NEW.method
+    AND planned.url = NEW.url
+    AND planned.request_headers_json = NEW.request_headers_json
+    AND planned.representation_fingerprint = NEW.representation_fingerprint
+    AND planned.request_role = NEW.request_role
+    AND planned.parent_request_id = NEW.discovered_from_request_id
 )
 BEGIN
   SELECT RAISE(ABORT, 'source_request_not_in_immutable_plan');

@@ -563,6 +563,7 @@ export async function retainedReconciliationResult(
       productIds.has(id)
     ),
     errata: candidate.errata ?? [],
+    legality_rules: candidate.legality_rules ?? [],
     diagnostics: response.diagnostics,
     warnings: response.warnings,
   };
@@ -581,6 +582,7 @@ function terminalFailureResult(
     printings: [],
     products: [],
     errata: [],
+    legality_rules: [],
     diagnostics,
     warnings: [],
   };

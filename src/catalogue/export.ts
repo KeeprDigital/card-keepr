@@ -38,17 +38,17 @@ import {
 } from "./export-limits";
 
 const componentDefinitions = [
-  ["supported-games", "SupportedGameRecord", "id:utf8", 1],
-  ["game-profiles", "GameProfileRecord", "profile:utf8", 1],
-  ["cards", "CardRecord", "id:utf8", 1],
-  ["printings", "PrintingRecord", "id:utf8", 1],
-  ["printing-images", "PrintingImageRecord", "id:utf8", 1],
-  ["products", "ProductRecord", "id:utf8", 1],
-  ["releases", "ReleaseRecord", "id:utf8", 1],
-  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 1],
-  ["errata", "ErratumRecord", "id:utf8", 1],
+  ["supported-games", "SupportedGameRecord", "id:utf8", 2],
+  ["game-profiles", "GameProfileRecord", "profile:utf8", 2],
+  ["cards", "CardRecord", "id:utf8", 2],
+  ["printings", "PrintingRecord", "id:utf8", 2],
+  ["printing-images", "PrintingImageRecord", "id:utf8", 2],
+  ["products", "ProductRecord", "id:utf8", 2],
+  ["releases", "ReleaseRecord", "id:utf8", 2],
+  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 2],
+  ["errata", "ErratumRecord", "id:utf8", 2],
   ["legality-rules", "LegalityRuleRecord", "id:utf8", 2],
-  ["relationships", "RelationshipRecord", "id:utf8", 1],
+  ["relationships", "RelationshipRecord", "id:utf8", 2],
 ] as const;
 const zFixed = 4;
 const zOk = 0;

@@ -59,7 +59,9 @@ export async function contextualLegalityStatusResponse(
       "The requested Card does not exist in the current Catalogue Revision.",
     );
   }
-  const card = JSON.parse(context.document_json) as CatalogueCard;
+  const card = catalogueCardData(
+    JSON.parse(context.document_json) as unknown,
+  );
   const supportedRegions = regionsFor(card.game);
   if (
     query.region !== null &&
@@ -131,6 +133,20 @@ export async function contextualLegalityStatusResponse(
       "cache-control": "private, max-age=0, must-revalidate",
     },
   });
+}
+
+function catalogueCardData(value: unknown): CatalogueCard {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>).data !== null &&
+    typeof (value as Record<string, unknown>).data === "object" &&
+    !Array.isArray((value as Record<string, unknown>).data)
+  ) {
+    return (value as { data: CatalogueCard }).data;
+  }
+  return value as CatalogueCard;
 }
 
 function deriveRegionStatus(

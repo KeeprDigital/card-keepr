@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://card-keepr.invalid/schemas/catalogue-export-manifest@2",
-  "title": "Card Keepr Catalogue Export manifest v2",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1",
+  "title": "Card Keepr Catalogue Export manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,45 +17,29 @@
     "manifest_sha256"
   ],
   "properties": {
-    "format": {
-      "const": "card-keepr-catalogue-export-manifest@2"
-    },
-    "serialization_profile": {
-      "const": "card-keepr-ndjson-gzip@1"
-    },
-    "export_schema_major": { "const": 2 },
+    "format": { "const": "card-keepr-catalogue-export-manifest@1" },
+    "serialization_profile": { "const": "card-keepr-ndjson-gzip@1" },
+    "export_schema_major": { "const": 1 },
     "catalogue_revision": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "content_sha256"],
       "properties": {
-        "id": {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/OpaqueId"
-        },
-        "content_sha256": {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Sha256"
-        }
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "content_sha256": { "$ref": "#/$defs/Sha256" }
       }
     },
-    "published_at": {
-      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Timestamp"
-    },
-    "export_created_at": {
-      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Timestamp"
-    },
+    "published_at": { "$ref": "#/$defs/Timestamp" },
+    "export_created_at": { "$ref": "#/$defs/Timestamp" },
     "supported_games": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {
-        "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/SupportedGame"
-      }
+      "items": { "$ref": "#/$defs/SupportedGame" }
     },
     "source_freshness": {
       "type": "array",
-      "items": {
-        "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Freshness"
-      }
+      "items": { "$ref": "#/$defs/Freshness" }
     },
     "components": {
       "type": "array",
@@ -77,16 +61,80 @@
       ],
       "items": false
     },
-    "manifest_sha256": {
-      "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Sha256"
-    }
+    "manifest_sha256": { "$ref": "#/$defs/Sha256" }
   },
   "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+    },
+    "Freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["game", "area", "checked_at"],
+      "properties": {
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "area": {
+          "enum": [
+            "cards-and-printings",
+            "products-and-releases",
+            "legality-rules",
+            "errata"
+          ]
+        },
+        "checked_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+    "Component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "media_type",
+        "compression",
+        "record_schema",
+        "order",
+        "records",
+        "uncompressed_bytes",
+        "content_sha256",
+        "compressed_bytes",
+        "compressed_sha256",
+        "content_url"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "media_type": { "const": "application/x-ndjson" },
+        "compression": { "const": "gzip" },
+        "record_schema": { "type": "string", "format": "uri-reference" },
+        "order": { "enum": ["id:utf8", "profile:utf8"] },
+        "records": { "type": "integer", "minimum": 0 },
+        "uncompressed_bytes": { "type": "integer", "minimum": 0 },
+        "content_sha256": { "$ref": "#/$defs/Sha256" },
+        "compressed_bytes": { "type": "integer", "minimum": 0 },
+        "compressed_sha256": { "$ref": "#/$defs/Sha256" },
+        "content_url": {
+          "type": "string",
+          "pattern": "^/v1/catalogue-exports/[^/]+/components/[^/]+$"
+        }
+      }
+    },
     "SupportedGamesComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -101,9 +149,7 @@
     },
     "GameProfilesComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -118,9 +164,7 @@
     },
     "CardsComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -135,9 +179,7 @@
     },
     "PrintingsComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -152,9 +194,7 @@
     },
     "PrintingImagesComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -169,9 +209,7 @@
     },
     "ProductsComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -186,9 +224,7 @@
     },
     "ReleasesComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -203,9 +239,7 @@
     },
     "DistributionContextsComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -220,9 +254,7 @@
     },
     "ErrataComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
@@ -237,15 +269,13 @@
     },
     "LegalityRulesComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {
             "name": { "const": "legality-rules" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/LegalityRuleRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -254,9 +284,7 @@
     },
     "RelationshipsComponent": {
       "allOf": [
-        {
-          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1#/$defs/Component"
-        },
+        { "$ref": "#/$defs/Component" },
         {
           "type": "object",
           "properties": {

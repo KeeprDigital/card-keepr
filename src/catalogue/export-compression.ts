@@ -1,4 +1,6 @@
-import { constants, deflateRaw } from "pako";
+import { deflateRaw } from "pako";
+
+const zFixed = 4;
 
 const crc32Table = Uint32Array.from(
   { length: 256 },
@@ -16,7 +18,7 @@ export function deterministicGzip(value: Uint8Array): Uint8Array {
     level: 9,
     windowBits: 15,
     memLevel: 8,
-    strategy: constants.Z_FIXED,
+    strategy: zFixed,
   });
   const result = new Uint8Array(10 + deflated.byteLength + 8);
   result.set(

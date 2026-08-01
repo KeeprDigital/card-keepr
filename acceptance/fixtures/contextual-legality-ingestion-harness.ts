@@ -2,6 +2,7 @@ import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
   OfficialSourceTransport,
+  ReconciliationWorkflow,
 } from "../../apps/ingestion/src/index";
 import {
   startEvidenceRun,
@@ -12,6 +13,7 @@ export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
   OfficialSourceTransport,
+  ReconciliationWorkflow,
 };
 
 export default {

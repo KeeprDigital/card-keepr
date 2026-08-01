@@ -68,6 +68,18 @@ type EvidencePlanRow = {
   request_plan_json: string;
 };
 
+type DiscoveryRequestPlanRow = {
+  ingestion_run_id: string;
+  request_id: string;
+  sequence_number: number;
+  parent_request_id: string;
+  method: "GET";
+  url: string;
+  request_headers_json: string;
+  representation_fingerprint: string;
+  request_role: Exclude<PlannedRequestRow["request_role"], "surface">;
+};
+
 const maximumAggregateReconciliationBytes = 32 * 1024 * 1024;
 
 export async function retainedReconciliationObservation(
@@ -81,6 +93,7 @@ export async function retainedReconciliationObservation(
     printingImageSnapshots,
     collectionPlan,
     evidencePlanRow,
+    discoveryRequestPlans,
   ] = await Promise.all([
     database
       .prepare(
@@ -168,6 +181,17 @@ export async function retainedReconciliationObservation(
         )
         .bind(runId)
         .first<EvidencePlanRow>(),
+      database
+        .prepare(
+          `SELECT ingestion_run_id, request_id, sequence_number,
+                  parent_request_id, method, url, request_headers_json,
+                  representation_fingerprint, request_role
+           FROM source_discovery_request_plans
+           WHERE ingestion_run_id = ?
+           ORDER BY sequence_number, request_id`,
+        )
+        .bind(runId)
+        .all<DiscoveryRequestPlanRow>(),
   ]);
   if (requests.results.length === 0 || evidencePlanRow === null) {
     throw new Error(
@@ -231,21 +255,34 @@ export async function retainedReconciliationObservation(
     }
   }
   const collectionRequests = await retainedCollectionRequests(collectionPlan);
-  if (collectionPlan !== null) {
-    const immutableRequestIds = new Set([
-      ...plannedRequests.map(({ id }) => id),
-      ...collectionRequests.map(({ id }) => id as string),
-    ]);
-    if (
-      immutableRequestIds.size !== requests.results.length ||
-      requests.results.some(({ request_id: requestId }) =>
-        !immutableRequestIds.has(requestId)
-      )
-    ) {
-      throw new Error(
-        "Official Source requests differ from the immutable Collection Plan.",
+  const immutableRequestIds = new Set([
+    ...plannedRequests.map(({ id }) => id),
+    ...collectionRequests.map(({ id }) => id as string),
+    ...discoveryRequestPlans.results.map(({ request_id }) => request_id),
+  ]);
+  if (
+    immutableRequestIds.size !== requests.results.length ||
+    requests.results.some(({ request_id: requestId }) =>
+      !immutableRequestIds.has(requestId)
+    ) ||
+    discoveryRequestPlans.results.some((planned) => {
+      const request = requests.results.find(
+        ({ request_id: requestId }) => requestId === planned.request_id,
       );
-    }
+      return request === undefined ||
+        request.sequence_number !== planned.sequence_number ||
+        request.method !== planned.method ||
+        request.url !== planned.url ||
+        request.request_headers_json !== planned.request_headers_json ||
+        request.representation_fingerprint !==
+          planned.representation_fingerprint ||
+        request.request_role !== planned.request_role ||
+        request.discovered_from_request_id !== planned.parent_request_id;
+    })
+  ) {
+    throw new Error(
+      "Operational Source Requests differ from their immutable request plans.",
+    );
   }
   const selectedSnapshots = new Map<string, PlannedRequestRow>();
   for (const request of requests.results) {
@@ -295,7 +332,6 @@ export async function retainedReconciliationObservation(
       row.request_id !== request.request_id ||
       row.snapshot_request_method !== request.method ||
       row.snapshot_request_url !== request.url ||
-      row.snapshot_request_headers_json !== request.request_headers_json ||
       row.snapshot_representation_fingerprint !==
         request.representation_fingerprint
     ) {
@@ -304,10 +340,6 @@ export async function retainedReconciliationObservation(
       );
     }
     if (
-      row.source_lineage !== first.source_lineage ||
-      row.supported_game !== first.supported_game ||
-      row.game_profile_version !== first.game_profile_version ||
-      row.adapter_version !== first.adapter_version ||
       row.source_lineage !== plan.source_lineage ||
       row.supported_game !== plan.supported_game ||
       row.game_profile_version !== plan.game_profile_version ||

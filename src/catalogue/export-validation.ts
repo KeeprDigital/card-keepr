@@ -1,16 +1,12 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchemaV1 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
-import manifestSchemaV2 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
-import recordSchemaV1 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
-import recordSchemaV2 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v2.schema.json";
+import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
+import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
-ajv.addSchema(manifestSchemaV1);
-ajv.addSchema(recordSchemaV1);
-const validateManifest = ajv.compile(manifestSchemaV2);
-const validateRecord = ajv.compile(recordSchemaV2);
+const validateManifest = ajv.compile(manifestSchema);
+const validateRecord = ajv.compile(recordSchema);
 const componentValidators = new Map<string, ValidateFunction>(
   [
     "SupportedGameRecord",
@@ -22,18 +18,13 @@ const componentValidators = new Map<string, ValidateFunction>(
     "ReleaseRecord",
     "DistributionContextRecord",
     "ErratumRecord",
+    "LegalityRuleRecord",
     "RelationshipRecord",
   ].map((definition) => {
     const uri =
-      `https://card-keepr.invalid/schemas/catalogue-export-record@1#/$defs/${definition}`;
+      `https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/${definition}`;
     return [uri, requiredValidator(uri)];
   }),
-);
-const legalityRuleRecordUri =
-  "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord";
-componentValidators.set(
-  legalityRuleRecordUri,
-  requiredValidator(legalityRuleRecordUri),
 );
 
 export function verifyExportManifest(manifest: unknown): void {

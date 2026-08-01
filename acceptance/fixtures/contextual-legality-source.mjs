@@ -417,6 +417,12 @@ function gundamObservation(cardNumber) {
           role: "front",
           source_url: `https://www.gundam-gcg.com/asia-en/images/${cardNumber}.png`,
           artwork_fingerprint: artwork,
+          media_type: "image/png",
+          width: 1,
+          height: 1,
+          content_sha256:
+            "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+          content_base64: "AA==",
         },
       ],
     },

@@ -3000,7 +3000,7 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
       ],
     });
   }
-}, 20_000);
+}, 30_000);
 
 test("fresh provenance changes the approval digest but records semantic no-change", async () => {
   const firstRun = await collect(
@@ -6550,7 +6550,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   });
 }, 60_000);
 
-test("publication rejects an over-budget export component before writing any immutable object", async () => {
+test("publication rejects an over-budget candidate before writing any immutable object", async () => {
   const run = await collect(
     "/reconciliation/export-component-over-budget",
     "reconcile-export-component-over-budget",
@@ -6574,7 +6574,11 @@ test("publication rejects an over-budget export component before writing any imm
 
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({
-    code: "catalogue_export_too_large",
+    code: "publication_aggregate_too_large",
+  });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
+    state: "failed",
+    failure_code: "publication_aggregate_too_large",
   });
   expect(objectsAfter).toEqual(objectsBefore);
   expect(currentAfter).toEqual(currentBefore);

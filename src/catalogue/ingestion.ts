@@ -672,7 +672,23 @@ async function approveRunAttempt(
       candidate,
     );
   }
-  assertPublicationAggregateBudget(candidate);
+  try {
+    assertPublicationAggregateBudget(candidate);
+  } catch (error) {
+    const problem = error instanceof AdministrationProblem
+      ? error
+      : publicationFailureProblem(error);
+    await failUnreservedPublication(
+      database,
+      run,
+      request,
+      requestJson,
+      now,
+      claimOwner,
+      problem,
+    );
+    throw problem;
+  }
   const revisionId = await catalogueRevisionIdentity({
     runId: run.id,
     candidateDigest: request.candidate_digest,

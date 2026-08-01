@@ -118,9 +118,9 @@ gzip member. An immutable R2 component key is derived from
 
 ## Manifest
 
-New manifests validate against
-`schemas/catalogue-export-manifest-v2.schema.json`; historical v1 manifests
-validate against `schemas/catalogue-export-manifest.schema.json`. Consumers
+New manifests validate against the canonical v2 schema at
+`schemas/catalogue-export-manifest.schema.json`; historical v1 manifests
+validate against `schemas/catalogue-export-manifest-v1.schema.json`. Consumers
 must resolve each component's advertised `record_schema` URI rather than infer
 it from the manifest major. The `components` array follows the fixed component
 order above. The manifest is canonical JSON under the same rules, followed by

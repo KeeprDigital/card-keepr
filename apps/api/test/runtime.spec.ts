@@ -14,9 +14,9 @@ import {
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
-import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
-import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
-import exportRecordSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json";
+import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
+import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
+import exportRecordSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v1.schema.json";
 import { deterministicGzip } from "../../../src/catalogue/export-compression";
 import {
   canonicalJson,

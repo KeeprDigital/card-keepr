@@ -1811,7 +1811,7 @@ test("normal approval never adopts a prefix that becomes a registered export", a
   );
   let registered = false;
   const racingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async get(...arguments_) {
+    async put() {
       if (!registered) {
         registered = true;
         const run = await testEnv.CATALOGUE_DB.prepare(
@@ -1846,7 +1846,7 @@ test("normal approval never adopts a prefix that becomes a registered export", a
           ),
         ]);
       }
-      return testEnv.CATALOGUE_EXPORTS.get(...arguments_);
+      throw new Error("the deterministic publication prefix became registered");
     },
   });
 

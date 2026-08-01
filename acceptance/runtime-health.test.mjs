@@ -20,7 +20,7 @@ const apiSchema = JSON.parse(
     "utf8",
   ),
 );
-const exportManifestSchemaV1 = JSON.parse(
+const exportManifestSchema = JSON.parse(
   readFileSync(
     resolve(
       root,
@@ -29,19 +29,19 @@ const exportManifestSchemaV1 = JSON.parse(
     "utf8",
   ),
 );
-const exportManifestSchemaV2 = JSON.parse(
+const exportManifestSchemaV1 = JSON.parse(
   readFileSync(
     resolve(
       root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json",
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json",
     ),
     "utf8",
   ),
 );
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
+ajv.addSchema(exportManifestSchema);
 ajv.addSchema(exportManifestSchemaV1);
-ajv.addSchema(exportManifestSchemaV2);
 ajv.addSchema(apiSchema);
 const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
 const validateCatalogue = ajv.getSchema(

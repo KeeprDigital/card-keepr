@@ -761,13 +761,13 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
 });
 
 test.each([
-  ["one-piece-json-document@3", "one-piece", "one-piece-en"],
-  ["fusion-world-en@2", "fusion-world", "fusion-world-en"],
-  ["digimon-en@2", "digimon", "digimon-en"],
-  ["gundam-en-asia@2", "gundam", "gundam-en-asia"],
-  ["gundam-en-us@2", "gundam", "gundam-en-us"],
+  ["one-piece-json-document@999", "one-piece", "one-piece-en"],
+  ["fusion-world-en@999", "fusion-world", "fusion-world-en"],
+  ["digimon-en@999", "digimon", "digimon-en"],
+  ["gundam-en-asia@999", "gundam", "gundam-en-asia"],
+  ["gundam-en-us@999", "gundam", "gundam-en-us"],
 ])(
-  "production planning rejects the undemonstrated %s JSON publisher representation",
+  "production planning rejects the unregistered %s publisher representation",
   async (adapter, game, lineage) => {
     const blocked = await request("/v1/ingestion-runs/evidence", {
       supported_game: game,
@@ -791,12 +791,12 @@ test.each([
 );
 
 test.each([
-  ["one-piece-json-document@1", "one-piece", "one-piece-en"],
-  ["one-piece-json-document@2", "one-piece", "one-piece-en"],
-  ["fusion-world-en@1", "fusion-world", "fusion-world-en"],
-  ["digimon-en@1", "digimon", "digimon-en"],
-  ["gundam-en-asia@1", "gundam", "gundam-en-asia"],
-  ["gundam-en-us@1", "gundam", "gundam-en-us"],
+  ["one-piece-normalized-envelope@1", "one-piece", "one-piece-en"],
+  ["one-piece-normalized-envelope@2", "one-piece", "one-piece-en"],
+  ["fusion-world-normalized-envelope@1", "fusion-world", "fusion-world-en"],
+  ["digimon-normalized-envelope@1", "digimon", "digimon-en"],
+  ["gundam-asia-normalized-envelope@1", "gundam", "gundam-en-asia"],
+  ["gundam-us-normalized-envelope@1", "gundam", "gundam-en-us"],
 ])(
   "production planning rejects unavailable adapter identity %s before capture",
   async (adapter, game, lineage) => {
@@ -923,7 +923,7 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
   const blocked = await request(
     `/v1/source-snapshots/${snapshotId}/observations`,
     {
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "one-piece-normalized-envelope@1",
       idempotency_key: "unavailable-adapter-raw-boundary-reparse",
     },
   );
@@ -936,11 +936,11 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
   expect(retained?.count).toBe(0);
 });
 
-test("an unfetched nested image URL cannot enter the official pipeline as byte-proven Printing identity", async () => {
+test("an unfetched nested image URL cannot enter through an unregistered production representation", async () => {
   const blocked = await request("/v1/ingestion-runs/evidence", {
     supported_game: "gundam",
     source_lineage: "gundam-en-asia",
-    adapter_version: "gundam-en-asia@2",
+    adapter_version: "gundam-en-asia@999",
     idempotency_key: "reject-unfetched-image-identity",
     requests: [
       {
@@ -958,11 +958,11 @@ test("an unfetched nested image URL cannot enter the official pipeline as byte-p
   });
 });
 
-test("every nested Fusion World image candidate is refused until final bytes and authority are captured", async () => {
+test("a nested Fusion World image candidate cannot enter through an unregistered representation", async () => {
   const blocked = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@2",
+    adapter_version: "fusion-world-en@999",
     idempotency_key: "reject-unverified-fusion-world-image-list",
     requests: [
       {
@@ -992,7 +992,7 @@ test.each([
     const blocked = await request("/v1/ingestion-runs/evidence", {
       supported_game: "gundam",
       source_lineage: "gundam-en-asia",
-      adapter_version: "gundam-en-asia@2",
+      adapter_version: "gundam-en-asia@999",
       idempotency_key: `reject-structured-${operand}`,
       requests: [
         {
@@ -1722,10 +1722,7 @@ test.each(["missing", "false"])(
        END`,
     ).run();
 
-    const blocked = await request(
-      `/v1/ingestion-runs/${runId}/reconciliation`,
-      {},
-    );
+    const blocked = await reconcile(runId);
     expect(blocked.response.status).toBe(409);
     expect(blocked.document).toMatchObject({
       state: "failed",
@@ -1897,11 +1894,11 @@ async function collectFixtureLegality(
   reconciled: Record<string, unknown>;
 }> {
   const runId = await collectFixtureLegalityEvidence(url, idempotencyKey);
-  const reconciled = await request(
-    `/v1/ingestion-runs/${runId}/reconciliation`,
-    {},
-  );
-  expect(reconciled.response.status).toBe(expectedStatus);
+  const reconciled = await reconcile(runId);
+  expect(
+    reconciled.response.status,
+    JSON.stringify(reconciled.document),
+  ).toBe(expectedStatus);
   return { runId, reconciled: reconciled.document };
 }
 
@@ -1929,6 +1926,46 @@ async function collectFixtureLegalityEvidence(
   expect(resumed.response.status).toBe(202);
   await waitForState(runId, "parsing");
   return runId;
+}
+
+async function reconcile(runId: string) {
+  const shown = await request(`/v1/ingestion-runs/${runId}`);
+  const body = {
+    expected_current_revision_id: requiredString(
+      shown.document,
+      "expected_current_revision_id",
+    ),
+    idempotency_key: `reconcile-${runId}`,
+  };
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const observed = await request(
+      `/v1/ingestion-runs/${runId}/reconciliation`,
+      body,
+    );
+    if (
+      observed.response.status !== 200 &&
+      observed.response.status !== 202
+    ) {
+      return observed;
+    }
+    if (
+      observed.document.status === "complete" &&
+      observed.document.output !== null &&
+      typeof observed.document.output === "object" &&
+      !Array.isArray(observed.document.output)
+    ) {
+      const document = observed.document.output as Record<string, unknown>;
+      return {
+        response: new Response(null, {
+          status: document.publishable === true ? 200 : 409,
+        }),
+        document,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`reconciliation Workflow ${runId} did not complete`);
 }
 
 function approve(
