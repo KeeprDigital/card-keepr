@@ -6719,7 +6719,11 @@ test("an oversized legality relationship export fails terminally before reservat
   const run = await collect(
     "/reconciliation/legality-relationship-over-budget",
     "reconcile-legality-relationship-over-budget",
-    undefined,
+    {
+      game: "one-piece",
+      lineage: "one-piece-en",
+      adapter: "fixture-one-piece-json@3",
+    },
     30_000,
   );
   const reconciled = await reconcile(run.id);
@@ -6823,7 +6827,11 @@ test("reserved oversized legality relationship recovery preserves the typed term
   const run = await collect(
     "/reconciliation/legality-relationship-over-budget",
     "reconcile-reserved-legality-relationship-over-budget",
-    undefined,
+    {
+      game: "one-piece",
+      lineage: "one-piece-en",
+      adapter: "fixture-one-piece-json@3",
+    },
     30_000,
   );
   const reconciled = await reconcile(run.id);
