@@ -40,6 +40,7 @@ type EvidenceRow = {
   game_profile_version: string;
   adapter_version: string;
   content_digest: string;
+  snapshot_content_digest: string;
   content_byte_length: number;
   content_object_key: string;
   observation_count: number;
@@ -129,6 +130,7 @@ export async function retainedReconciliationObservation(
           observations.game_profile_version,
           observations.adapter_version,
           observations.content_digest,
+          snapshots.content_digest AS snapshot_content_digest,
           observations.content_byte_length,
           observations.content_object_key,
           observations.observation_count,
@@ -364,6 +366,8 @@ export async function retainedReconciliationObservation(
   const legalityRulesByIdentity = new Map<string, {
     rule: RetainedLegalityRule;
     requestUrl: string;
+    representationFingerprint: string;
+    sourceByteDigest: string;
   }>();
   const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
   const completeLegalityRequestIds = new Set<string>();
@@ -458,6 +462,8 @@ export async function retainedReconciliationObservation(
             legalityRulesByIdentity,
             rule,
             request.url,
+            request.representation_fingerprint,
+            row.snapshot_content_digest,
           );
         }
         if (
@@ -564,23 +570,35 @@ function mergeRetainedLegalityRule(
   byIdentity: Map<string, {
     rule: RetainedLegalityRule;
     requestUrl: string;
+    representationFingerprint: string;
+    sourceByteDigest: string;
   }>,
   rule: RetainedLegalityRule,
   requestUrl: string,
+  representationFingerprint: string,
+  sourceByteDigest: string,
 ): void {
   const identity = `${rule.source_lineage}\u0000${rule.official_id}`;
   const prior = byIdentity.get(identity);
   if (prior === undefined) {
     rules.push(rule);
-    byIdentity.set(identity, { rule, requestUrl });
+    byIdentity.set(identity, {
+      rule,
+      requestUrl,
+      representationFingerprint,
+      sourceByteDigest,
+    });
     return;
   }
-  if (
-    prior.requestUrl !== requestUrl ||
-    retainedLegalitySemantic(prior.rule) !== retainedLegalitySemantic(rule)
-  ) {
+  const sameUrl = prior.requestUrl === requestUrl;
+  const sameRepresentation =
+    prior.representationFingerprint === representationFingerprint &&
+    prior.sourceByteDigest === sourceByteDigest;
+  const sameSemanticRule =
+    retainedLegalitySemantic(prior.rule) === retainedLegalitySemantic(rule);
+  if (!sameUrl || !sameRepresentation || !sameSemanticRule) {
     throw new Error(
-      `Conflicting Legality Rule identity ${rule.official_id} spans Official Source surfaces.`,
+      `Conflicting Legality Rule identity ${rule.official_id} spans Official Source surfaces (${!sameUrl ? "URL" : !sameRepresentation ? "representation" : "semantics"} mismatch).`,
     );
   }
 }

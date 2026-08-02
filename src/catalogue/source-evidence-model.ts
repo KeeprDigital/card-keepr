@@ -70,6 +70,8 @@ export type EvidenceParentWorkflowParams = {
 export type EvidenceHostWorkflowParams = {
   ingestion_run_id: string;
   hostname: string;
+  minimum_sequence_number: number;
+  maximum_sequence_number: number;
 };
 
 export async function validateEvidencePlan(

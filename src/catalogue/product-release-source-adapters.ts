@@ -863,8 +863,8 @@ function containsUnparsedLegalityPublication(
     if (retainedIndex === -1) return true;
     unmatchedEntries.splice(retainedIndex, 1);
   }
-  if (dedicatedPolicySurface && parsedRuleCount === 0) {
-    return links.length > 0 || unmatchedEntries.length > 0 || options.length > 0;
+  if (dedicatedPolicySurface) {
+    return containsUnmodeledDedicatedPolicyContent(html);
   }
   return [...links, ...options, ...unmatchedEntries]
     .map(publicationText)
@@ -872,6 +872,49 @@ function containsUnparsedLegalityPublication(
       /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?)\b|\bmay (?:no longer|not) be used\b|\bno more than \d+ cop(?:y|ies)\b/iu
         .test(text)
     );
+}
+
+function containsUnmodeledDedicatedPolicyContent(html: string): boolean {
+  const withoutModeledRules = html.replace(
+    /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
+    (article, attributes: string) =>
+      /(?:^|\s)restriction-card(?:\s|$)/u.test(
+          htmlAttribute(attributes, "class") ?? "",
+        )
+        ? ""
+        : article,
+  );
+  const semanticContainers = [...withoutModeledRules.matchAll(
+    /<(p|div|article|li|tr|option|a)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
+  )];
+  return semanticContainers.some((match) => {
+    const tag = match[1]!.toLowerCase();
+    const attributes = match[2]!;
+    const text = htmlText(match[3]!);
+    if (text.length === 0) return false;
+    if (tag === "p" && /^\d+\s+records?$/iu.test(text)) return false;
+    if (
+      tag === "article" &&
+      htmlAttribute(attributes, "data-publication-empty") === "true" &&
+      /^No (?:restrictions are currently published|published entries)\.$/iu
+        .test(text)
+    ) {
+      return false;
+    }
+    if (
+      tag === "a" &&
+      /^(?:Home|Back|Previous|Next|Card List|Products|Rules)$/iu.test(text)
+    ) {
+      return false;
+    }
+    if (
+      (tag === "li" || tag === "div") &&
+      /^(?:Home|Back|Previous|Next|Card List|Products|Rules)$/iu.test(text)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function publicationText(value: unknown): string {

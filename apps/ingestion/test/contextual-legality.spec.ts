@@ -1212,6 +1212,9 @@ test("the One Piece production release surface publishes release timing through 
 
 test.each([
   "card-keepr-mixed-modeled-unmodeled-legality-v3",
+  "card-keepr-residual-paragraph-legality-v3",
+  "card-keepr-residual-div-legality-v3",
+  "card-keepr-residual-synonym-legality-v3",
   "card-keepr-unrepresentable-legality-v3",
   "card-keepr-mixed-effect-legality-v3",
   "card-keepr-residual-semantics-legality-v3",
@@ -1228,6 +1231,7 @@ test.each([
   "card-keepr-wording-target-mismatch-v3",
   "card-keepr-wording-global-targeted-v3",
   "card-keepr-wording-region-mismatch-v3",
+  "card-keepr-wording-region-prefix-mismatch-v3",
   "card-keepr-wording-format-mismatch-v3",
   "card-keepr-wording-tier-omitted-v3",
   "card-keepr-wording-tier-mismatch-v3",
@@ -1253,6 +1257,97 @@ test.each([
   });
   expect((await request(`/v1/ingestion-runs/${runId}/candidate`)).response.status)
     .toBe(409);
+}, 90_000);
+
+test("same-URL legality observations with byte-identical source representations deduplicate", async () => {
+  const sourceUrl =
+    "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
+  const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "gundam",
+    source_lineage: "gundam-en-asia",
+    adapter_version: "fixture-gundam-en-asia-json@2",
+    idempotency_key: "legality-byte-identity-control",
+    requests: ["current", "history"].map((id) => ({
+      id,
+      method: "GET" as const,
+      url: sourceUrl,
+      headers: { "accept-language": "en-AU" },
+    })),
+  });
+  const runId = requiredString(started, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "parsing");
+
+  const shown = await request(`/v1/ingestion-runs/${runId}`);
+  const snapshots = shown.document.snapshots as Array<{
+    content: { digest: string };
+  }>;
+  expect(snapshots).toHaveLength(2);
+  expect(new Set(snapshots.map(({ content }) => content.digest)).size).toBe(1);
+
+  const reconciled = await reconcile(runId);
+  expect(reconciled.response.status, JSON.stringify(reconciled.document))
+    .toBe(200);
+  const rejected = await request(`/v1/ingestion-runs/${runId}/rejection`, {
+    candidate_digest: requiredString(reconciled.document, "candidate_digest"),
+    idempotency_key: "reject-byte-identical-control",
+  });
+  expect(rejected.response.status).toBe(200);
+}, 90_000);
+
+test("same-URL legality observations with byte-distinct source representations fail closed", async () => {
+  const sourceUrl =
+    "https://official-source.invalid/reconciliation/contextual-legality-byte-identity";
+  const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "gundam",
+    source_lineage: "gundam-en-asia",
+    adapter_version: "fixture-gundam-en-asia-json@2",
+    idempotency_key: "legality-byte-identity",
+    requests: [
+      {
+        id: "current-compact",
+        method: "GET",
+        url: sourceUrl,
+        headers: { "accept-language": "en-AU" },
+      },
+      {
+        id: "history-pretty",
+        method: "GET",
+        url: sourceUrl,
+        headers: { "accept-language": "en-US" },
+      },
+    ],
+  });
+  const runId = requiredString(started, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "parsing");
+
+  const shown = await request(`/v1/ingestion-runs/${runId}`);
+  const snapshots = shown.document.snapshots as Array<{
+    id: string;
+    content: { digest: string };
+  }>;
+  expect(snapshots).toHaveLength(2);
+  expect(new Set(snapshots.map(({ content }) => content.digest)).size).toBe(2);
+  const retainedBodies = await Promise.all(snapshots.map(async ({ id }) => {
+    const response = await exports.default.fetch(new Request(
+      `https://card-keepr.invalid/v1/source-snapshots/${id}/content`,
+      { headers: { authorization: "Bearer vitest-administration-key" } },
+    ));
+    expect(response.status).toBe(200);
+    return response.text();
+  }));
+  expect(retainedBodies[0]).not.toBe(retainedBodies[1]);
+
+  const blocked = await reconcile(runId);
+  expect(blocked.response.status).toBe(409);
+  expect(JSON.stringify(blocked.document)).toMatch(/conflict|representation/iu);
 }, 90_000);
 
 test.each([

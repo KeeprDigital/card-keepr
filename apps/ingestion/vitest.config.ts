@@ -615,6 +615,9 @@ export default defineConfig({
               [
                 "card-keepr-representable-legality-v3",
                 "card-keepr-mixed-modeled-unmodeled-legality-v3",
+                "card-keepr-residual-paragraph-legality-v3",
+                "card-keepr-residual-div-legality-v3",
+                "card-keepr-residual-synonym-legality-v3",
                 "card-keepr-unrepresentable-legality-v3",
                 "card-keepr-mixed-effect-legality-v3",
                 "card-keepr-residual-semantics-legality-v3",
@@ -632,6 +635,7 @@ export default defineConfig({
                 "card-keepr-wording-target-mismatch-v3",
                 "card-keepr-wording-global-targeted-v3",
                 "card-keepr-wording-region-mismatch-v3",
+                "card-keepr-wording-region-prefix-mismatch-v3",
                 "card-keepr-wording-format-mismatch-v3",
                 "card-keepr-wording-tier-omitted-v3",
                 "card-keepr-wording-tier-mismatch-v3",
@@ -676,7 +680,12 @@ export default defineConfig({
               const officialWording = artworkMarker ===
                     "card-keepr-representable-legality-v3" ||
                   artworkMarker ===
-                    "card-keepr-mixed-modeled-unmodeled-legality-v3"
+                    "card-keepr-mixed-modeled-unmodeled-legality-v3" ||
+                  artworkMarker ===
+                    "card-keepr-residual-paragraph-legality-v3" ||
+                  artworkMarker === "card-keepr-residual-div-legality-v3" ||
+                  artworkMarker ===
+                    "card-keepr-residual-synonym-legality-v3"
                 ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
                 : artworkMarker === "card-keepr-conflicting-shared-legality-v3"
                   ? "FB01-001 is banned from Standard decks."
@@ -698,6 +707,8 @@ export default defineConfig({
                   ? "Cards satisfying the published Standard eligibility rules may be used."
                 : artworkMarker === "card-keepr-wording-region-mismatch-v3"
                   ? "FB01-001 is eligible for Standard events in the EN-US region."
+                : artworkMarker === "card-keepr-wording-region-prefix-mismatch-v3"
+                  ? "For EN-US, FB01-001 is eligible for Standard play."
                 : artworkMarker === "card-keepr-wording-tier-omitted-v3" ||
                     artworkMarker === "card-keepr-wording-tier-mismatch-v3"
                   ? "For Championship events, decks may contain no more than 1 copy of FB01-001."
@@ -791,12 +802,21 @@ export default defineConfig({
                           </option>
                         </select>`
                       : ""}`;
+              const residualPublication =
+                artworkMarker === "card-keepr-residual-paragraph-legality-v3"
+                  ? "<p>FB01-099 is unavailable for decks.</p>"
+                  : artworkMarker === "card-keepr-residual-div-legality-v3"
+                    ? "<div>FB01-099 is unavailable for decks.</div>"
+                    : artworkMarker === "card-keepr-residual-synonym-legality-v3"
+                      ? "<p>FB01-099 is unavailable for decks.</p>"
+                      : "";
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
                   <main>
                     <p>${largeWorkflow ? 4_000 : 1} records</p>
                     ${legalityArticles}
+                    ${residualPublication}
                   </main>
                 </html>`,
                 {
@@ -1204,6 +1224,19 @@ export default defineConfig({
             const scenario = url.pathname.slice(
               reconciliationAt + "/reconciliation/".length,
             );
+            if (scenario === "contextual-legality-byte-identity") {
+              const document = contextualLegalityFixtureDocument(
+                "EN-ASIA",
+                "current",
+              );
+              return new Response(JSON.stringify(
+                document,
+                null,
+                request.headers.get("accept-language") === "en-US" ? 2 : 0,
+              ), {
+                headers: { "content-type": "application/json" },
+              });
+            }
             return Response.json(
               reconciliationSourceDocument(
                 scenario,
@@ -1263,10 +1296,27 @@ export default defineConfig({
             );
           }
           if (url.pathname === "/large-json") {
+            const body = JSON.stringify({ padding: "x".repeat(1024 * 1024) });
             return new Response(
-              JSON.stringify({ padding: "x".repeat(1024 * 1024) }),
-              { headers: { "content-type": "application/json" } },
+              body,
+              { headers: {
+                "content-length": String(new TextEncoder().encode(body).byteLength),
+                "content-type": "application/json",
+              } },
             );
+          }
+          if (url.pathname === "/oversized-chunked-json") {
+            let chunks = 0;
+            return new Response(new ReadableStream({
+              pull(controller) {
+                if (chunks === 5) {
+                  controller.close();
+                  return;
+                }
+                controller.enqueue(new Uint8Array(256 * 1024).fill(120));
+                chunks += 1;
+              },
+            }), { headers: { "content-type": "application/json" } });
           }
           if (url.pathname === "/huge-json") {
             return new Response(

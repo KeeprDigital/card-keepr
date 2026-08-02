@@ -450,6 +450,7 @@ export async function capturePreparedAttempt(
       evidenceObjects,
       operation.content_object_key,
       response,
+      requiredSourceAdapter(run.adapter_version).maximumSnapshotBytes,
     );
     await database
       .prepare(
@@ -782,6 +783,7 @@ async function streamSnapshotToR2(
   bucket: R2Bucket,
   objectKey: string,
   response: Response,
+  maximumBytes: number,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
   const metadata = {
@@ -791,7 +793,39 @@ async function streamSnapshotToR2(
       cacheControl: "private, max-age=31536000, immutable",
     },
   };
+  const declared = response.headers.get("content-length");
+  const declaredByteLength = declared === null
+    ? null
+    : Number.parseInt(declared, 10);
+  if (
+    declaredByteLength !== null &&
+    (!/^\d+$/u.test(declared!) ||
+      !Number.isSafeInteger(declaredByteLength) || declaredByteLength < 0)
+  ) {
+    if (response.body !== null) {
+      await response.body.cancel().catch(() => undefined);
+    }
+    throw new CapturePersistenceError(
+      "body_failure",
+      "Official Source returned an invalid Content-Length.",
+    );
+  }
+  if (declaredByteLength !== null && declaredByteLength > maximumBytes) {
+    if (response.body !== null) {
+      await response.body.cancel().catch(() => undefined);
+    }
+    throw new CapturePersistenceError(
+      "body_failure",
+      `Official Source body exceeds the ${maximumBytes}-byte adapter limit.`,
+    );
+  }
   if (response.body === null) {
+    if (declaredByteLength !== null && declaredByteLength !== 0) {
+      throw new CapturePersistenceError(
+        "body_failure",
+        "Official Source body ended before its declared Content-Length.",
+      );
+    }
     try {
       const stored = await bucket.put(objectKey, new Uint8Array(), {
         ...metadata,
@@ -806,19 +840,18 @@ async function streamSnapshotToR2(
     }
     return { byteLength: 0, digest: hash.digest("hex") };
   }
-  const declared = response.headers.get("content-length");
-  if (declared !== null) {
-    const byteLength = Number.parseInt(declared, 10);
-    if (!Number.isSafeInteger(byteLength) || byteLength < 0) {
-      throw new CapturePersistenceError(
-        "body_failure",
-        "Official Source returned an invalid Content-Length.",
-      );
-    }
+  if (declaredByteLength !== null) {
+    const byteLength = declaredByteLength;
     const fixed = new FixedLengthStream(byteLength);
     let observedLength = 0;
     const hashingStream = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
+        if (observedLength + chunk.byteLength > maximumBytes) {
+          throw new CapturePersistenceError(
+            "body_failure",
+            `Official Source body exceeds the ${maximumBytes}-byte adapter limit.`,
+          );
+        }
         observedLength += chunk.byteLength;
         hash.update(chunk);
         controller.enqueue(chunk);
@@ -833,6 +866,7 @@ async function streamSnapshotToR2(
     ]);
     const bodyResult = results[1]!;
     if (bodyResult.status === "rejected") {
+      await bucket.delete(objectKey).catch(() => undefined);
       throw new CapturePersistenceError(
         "body_failure",
         errorMessage(bodyResult.reason, "Official Source body stream failed."),
@@ -876,6 +910,13 @@ async function streamSnapshotToR2(
         );
       }
       if (read.done) break;
+      if (byteLength + read.value.byteLength > maximumBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new CapturePersistenceError(
+          "body_failure",
+          `Official Source body exceeds the ${maximumBytes}-byte adapter limit.`,
+        );
+      }
       hash.update(read.value);
       byteLength += read.value.byteLength;
       let offset = 0;

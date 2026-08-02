@@ -790,11 +790,9 @@ type ExactWordingInput = Readonly<{
 
 function assertExactWordingSemantics(input: ExactWordingInput): void {
   const directive = normalizedDirective(input.directive);
-  const wordingRegion = input.wording.match(/\b(EN-[A-Z]+)\s+region\b/iu)?.[1];
-  if (
-    wordingRegion !== undefined &&
-    wordingRegion.toUpperCase() !== input.region.toUpperCase()
-  ) {
+  const wordingRegions = [...input.wording.matchAll(/\bEN-[A-Z]+\b/giu)]
+    .map(([region]) => region.toUpperCase());
+  if (wordingRegions.some((region) => region !== input.region.toUpperCase())) {
     throw new Error("Official Legality wording region conflicts with its structured region.");
   }
 

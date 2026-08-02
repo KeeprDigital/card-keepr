@@ -499,6 +499,8 @@ test("current production legality parser blocks unmodeled notices beside an exac
     `<select aria-label="New restriction notice">
       <option value="FB01-099">FB01-099 may no longer be used</option>
     </select>`,
+    `<p>FB01-099 is unavailable for decks.</p>`,
+    `<div>FB01-099 is unavailable for decks.</div>`,
   ];
 
   for (const notice of unmodeledNotices) {
@@ -514,6 +516,16 @@ test("current production legality parser blocks unmodeled notices beside an exac
       /exact, complete Legality Rule parser/iu,
     );
   }
+});
+
+test("current production legality parser accepts a complete multi-rule publication with only bounded publisher framing", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const legality = current.parseBytes(
+    new TextEncoder().encode(exactFusionLegalityHtml),
+    fusionLegalityContext(current),
+  ).find(({ observation_type }) => observation_type === "legality_rules");
+  assert.equal(legality.legality_rules.length, 2);
+  assert.equal(legality.completeness.parsed_record_count, 2);
 });
 
 test("current production legality parser retains a truthful empty publication", () => {
@@ -918,6 +930,13 @@ test("every active production legality adapter requires exact wording targets an
         {
           [descriptor.fields.wording]:
             `${descriptor.card} is eligible for Standard events in the ${descriptor.otherRegion} region.`,
+        },
+      ],
+      [
+        "foreign regional prefix",
+        {
+          [descriptor.fields.wording]:
+            `For ${descriptor.otherRegion}, ${descriptor.card} is eligible for Standard play.`,
         },
       ],
       ["wrong structured format", { [descriptor.fields.format]: "unlimited" }],

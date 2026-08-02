@@ -21,6 +21,7 @@ import {
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   fusionWorldProductionCollectionRequests,
@@ -870,6 +871,101 @@ test("dynamic discovery durably plans and replays 2,500 requests within D1 limit
   ).bind(run.id).first("count")).toBe(2_501);
 }, 60_000);
 
+test("the authenticated Workflow shards a 5,000-request host plan into bounded child workloads", async () => {
+  const run = await createCollection(
+    "source_workflow_shard_bound_001",
+    "https://official-source.invalid/cards/root",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending discovery root missing");
+  await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    Array.from({ length: 4_999 }, (_, index) => ({
+      role: "detail" as const,
+      url: `https://official-source.invalid/cards/sharded/${String(index + 1).padStart(4, "0")}`,
+      headers: { accept: "application/json" },
+    })),
+  );
+
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  let observed: CollectionDocument | undefined;
+  try {
+    observed = await waitForEvidenceCondition(
+      run.id,
+      (current) => current.workflow.child_ids.length === 25,
+      8_000,
+    );
+  } finally {
+    const current = await showCollection(run.id);
+    if (current.workflow.parent_id !== null) {
+      await (await env.EVIDENCE_INGESTION_WORKFLOW.get(
+        current.workflow.parent_id,
+      )).terminate().catch(() => undefined);
+    }
+    const activeChildId = `evidence-host-${await sha256(utf8(canonicalJson({
+      ingestion_run_id: run.id,
+      hostname: "official-source.invalid",
+      minimum_sequence_number: 0,
+      maximum_sequence_number: 199,
+    })))}`;
+    await (await env.EVIDENCE_HOST_WORKFLOW.get(activeChildId)).terminate()
+      .catch(() => undefined);
+  }
+  expect(observed?.workflow.child_ids).toHaveLength(25);
+}, 90_000);
+
+test("a completed host shard durably releases the next same-host shard", async () => {
+  const run = await createCollection(
+    "source_workflow_shard_progression_001",
+    "https://official-source.invalid/sequence/root",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending discovery root missing");
+  await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    Array.from({ length: 200 }, (_, index) => ({
+      role: "detail" as const,
+      url: `https://official-source.invalid/sequence/shard-${String(index + 1).padStart(3, "0")}`,
+      headers: { accept: "application/json" },
+    })),
+  );
+  // Bounded test setup leaves one live request in each 200-sequence shard.
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE source_requests SET state = 'observed'
+     WHERE ingestion_run_id = ? AND sequence_number BETWEEN 1 AND 199`,
+  ).bind(run.id).run();
+
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.state === "parsing" &&
+      current.snapshots.length === 2 &&
+      current.workflow.child_ids.length === 2,
+    15_000,
+  );
+  expect(completed.snapshots.map(({ request }) => request.url).sort()).toEqual([
+    "https://official-source.invalid/sequence/root",
+    "https://official-source.invalid/sequence/shard-200",
+  ]);
+}, 30_000);
+
 test("dynamic discovery preserves the first edge when two parents reach one immutable request", async () => {
   const run = await createCollection(
     "source_dynamic_shared_request_001",
@@ -1193,40 +1289,41 @@ test.each([
   },
 );
 
-test("all successful response bytes stream to immutable storage while parsing stays bounded", async () => {
-  const retainedRun = await createCollection(
-    "source_large_parse_bound_001",
-    "https://large-official-source.invalid/large-json",
-    "fixture-one-piece-json-capped@1",
-  );
-  const retained = await resumeCollection(retainedRun.id);
-  expect(retained).toMatchObject({
-    state: "failed",
-    failure_code: "source_parse_too_large",
-  });
-  expect(retained.snapshots).toHaveLength(1);
-  expect(retained.snapshots[0]!.content.digest).toMatch(/^[a-f0-9]{64}$/);
-  expect(retained.snapshots[0]!.content.byte_length).toBeGreaterThan(
-    1024 * 1024,
-  );
-  expect(retained.observation_sets).toEqual([]);
-
-  const hugeRun = await createCollection(
-    "source_huge_capture_001",
-    "https://large-official-source.invalid/huge-json",
-    "fixture-one-piece-json-capped@1",
-  );
-  const huge = await resumeCollection(hugeRun.id);
-  expect(huge).toMatchObject({
-    state: "failed",
-    failure_code: "source_parse_too_large",
-  });
-  expect(huge.snapshots).toHaveLength(1);
-  expect(huge.snapshots[0]!.content.byte_length).toBeGreaterThan(
-    32 * 1024 * 1024,
-  );
-  expect(huge.snapshots[0]!.content.digest).toMatch(/^[a-f0-9]{64}$/);
-}, 15_000);
+test.each([
+  ["declared", "large-json"],
+  ["chunked", "oversized-chunked-json"],
+])(
+  "%s oversized response bodies fail before an immutable snapshot is retained",
+  async (shape, path) => {
+    const run = await createCollection(
+      `source_${shape}_capture_bound_001`,
+      `https://large-official-source.invalid/${path}`,
+      "fixture-one-piece-json-capped@1",
+    );
+    const failed = await resumeCollection(run.id, 15_000);
+    expect(failed).toMatchObject({
+      state: "failed",
+      failure_code: "source_request_retries_exhausted",
+      snapshots: [],
+      observation_sets: [],
+    });
+    expect(failed.diagnostics.map(({ outcome }) => outcome)).toEqual([
+      "body_failure",
+      "body_failure",
+      "body_failure",
+      "body_failure",
+    ]);
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const identity = await captureOperationIdentity(
+        run.id,
+        "required-source",
+        attempt,
+      );
+      expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).toBeNull();
+    }
+  },
+  30_000,
+);
 
 test("body streaming failures are durable diagnostics with bounded retries", async () => {
   const run = await createCollection(

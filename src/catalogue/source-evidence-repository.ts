@@ -815,6 +815,29 @@ export async function pendingEvidenceRequests(
     : result.results.filter((row) => new URL(row.url).hostname === hostname);
 }
 
+export async function pendingEvidenceRequestPage(
+  database: D1Database,
+  runId: string,
+  afterSequenceNumber: number,
+  maximumSequenceNumber: number,
+  limit: number,
+): Promise<EvidenceRequestRow[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Pending evidence request pages must contain 1-100 rows.");
+  }
+  const result = await database
+    .prepare(
+      `SELECT * FROM source_requests
+       WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
+         AND sequence_number > ? AND sequence_number <= ?
+       ORDER BY sequence_number
+       LIMIT ?`,
+    )
+    .bind(runId, afterSequenceNumber, maximumSequenceNumber, limit)
+    .all<EvidenceRequestRow>();
+  return result.results;
+}
+
 export async function recordWorkflowIds(
   database: D1Database,
   runId: string,
