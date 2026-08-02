@@ -755,6 +755,10 @@ export default defineConfig({
               `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>${
                 url.pathname === "/fw/en/rules/banned-limited-cards/" ||
                   (
+                    url.hostname === "world.digimoncard.com" &&
+                    url.pathname === "/rule/restriction_card/"
+                  ) ||
+                  (
                     url.hostname === "en.onepiece-cardgame.com" &&
                     (
                       url.pathname === "/rules/restriction/" ||
