@@ -74,24 +74,16 @@ export async function runReconciliationWorkflow(
         },
       );
     }
-    if (
-      new TextEncoder().encode(reconciliationResultJson).byteLength >=
-        524_288
-    ) {
-      throw new Error(
-        "The reconciliation Workflow result exceeds its 512 KiB bound.",
-      );
-    }
     return {
       result_json: reconciliationResultJson,
     };
 }
 
-function durableReconciliationResult(
+export function durableReconciliationResult(
   runId: string,
   result: Record<string, unknown>,
 ): string {
-  return canonicalJson(
+  const reference = canonicalJson(
     typeof result.candidate_digest === "string"
       ? {
         contract: "card-keepr-reconciliation-workflow-result@1",
@@ -104,4 +96,10 @@ function durableReconciliationResult(
         result,
       },
   );
+  if (new TextEncoder().encode(reference).byteLength >= 524_288) {
+    throw new Error(
+      "The reconciliation Workflow result exceeds its 512 KiB bound.",
+    );
+  }
+  return reference;
 }

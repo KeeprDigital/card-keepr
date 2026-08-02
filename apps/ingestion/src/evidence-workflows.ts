@@ -31,6 +31,7 @@ import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serializatio
 import {
   requiredSourceAdapter,
 } from "../../../src/catalogue/source-adapters";
+import { durableReconciliationResult } from "./reconciliation-workflow";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -216,25 +217,22 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         requiredSourceAdapter(run.adapter_version)
             .reconciliationCapability === "catalogue"
       ) {
-        const reconciliation = await step.do(
+        const reconciliationResultJson = await step.do(
           "reconcile retained Official Source evidence",
           deterministicDatabaseStep,
-          async () =>
-            JSON.parse(
-              canonicalJson(
-                await reconcileRetainedCardPrintingEvidence(
-                  this.env.CATALOGUE_DB,
-                  this.env.EVIDENCE_OBJECTS,
-                  runId,
-                  run.collection_completed_at ?? new Date().toISOString(),
-                ),
-              ),
-            ),
+          async () => {
+            const result = await reconcileRetainedCardPrintingEvidence(
+              this.env.CATALOGUE_DB,
+              this.env.EVIDENCE_OBJECTS,
+              runId,
+              run.collection_completed_at ?? new Date().toISOString(),
+            );
+            return durableReconciliationResult(runId, result);
+          },
         );
         return {
           ingestion_run_id: runId,
-          child_workflow_ids: allChildIds,
-          reconciliation,
+          reconciliation: JSON.parse(reconciliationResultJson),
         };
       }
       return {

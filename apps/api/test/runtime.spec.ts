@@ -895,6 +895,18 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
     { ...originalRule, game: "one-piece" },
     { ...originalRule, current: false, last_missing_revision_id: null },
+    { ...originalRule, effect: { type: "publisher_extension" } },
+    {
+      ...originalRule,
+      effect: { ...originalRule.effect, publisher_extension: true },
+    },
+    {
+      ...originalRule,
+      effect: {
+        type: "prohibited_combination",
+        with_card_numbers: ["OP01-999"],
+      },
+    },
   ];
   for (const malformed of malformedRules) {
     await testEnv.CATALOGUE_DB.prepare(

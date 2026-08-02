@@ -2,9 +2,9 @@ import type { CatalogueCard, SupportedGame } from "./catalogue-candidate";
 import type {
   LegalityRegion,
   LegalityRule,
-  LegalityRuleEffect,
 } from "./legality-rule";
 import { regionForLineage } from "./legality-rule";
+import { parseStoredLegalityRuleEffect } from "./legality-effect-policy";
 import {
   canonicalProfileAttributes,
   validateMembershipPredicate,
@@ -227,7 +227,7 @@ export function parseStoredLegalityRule(
       "Stored Legality Rule missing lifecycle omits its last missing revision.",
     );
   }
-  const effect = requiredCanonicalEffect(rule.effect);
+  const effect = parseStoredLegalityRuleEffect(rule.effect);
   const unresolvedScope = requiredUnresolvedScope(rule.unresolved_scope);
   if (
     (effectiveFrom === null &&
@@ -332,73 +332,6 @@ function requiredUnresolvedScope(
   return {
     dimensions: dimensions as ("effective_interval" | "event_tier")[],
   };
-}
-
-function requiredCanonicalEffect(value: unknown): LegalityRuleEffect {
-  const effect = requiredRecord(value, "stored Legality Rule effect");
-  const type = requiredText(effect.type, "stored Legality Rule effect type");
-  switch (type) {
-    case "eligible":
-    case "ban":
-      assertOnlyFields(effect, ["type"], "stored Legality Rule effect");
-      return { type };
-    case "copy_limit": {
-      assertOnlyFields(effect, ["type", "maximum_copies"], "stored Legality Rule effect");
-      const maximum = effect.maximum_copies;
-      if (!Number.isInteger(maximum) || Number(maximum) < 1) {
-        throw new Error("Stored Legality Rule copy limit is invalid.");
-      }
-      return { type, maximum_copies: Number(maximum) };
-    }
-    case "prohibited_combination":
-      assertOnlyFields(effect, ["type", "with_card_ids"], "stored Legality Rule effect");
-      return {
-        type,
-        with_card_ids: requiredUniqueStrings(
-          effect.with_card_ids,
-          "stored Legality Rule companion Card ids",
-          false,
-        ),
-      };
-    case "membership":
-      assertOnlyFields(effect, ["type", "attribute", "includes_any"], "stored Legality Rule effect");
-      return {
-        type,
-        attribute: requiredText(effect.attribute, "stored Legality Rule membership attribute"),
-        includes_any: requiredUniqueStrings(
-          effect.includes_any,
-          "stored Legality Rule membership values",
-          false,
-        ),
-      };
-    case "rotation":
-      assertOnlyFields(effect, ["type", "eligible_blocks"], "stored Legality Rule effect");
-      return {
-        type,
-        eligible_blocks: requiredUniqueStrings(
-          effect.eligible_blocks,
-          "stored Legality Rule eligible blocks",
-          false,
-        ),
-      };
-    case "release_timing":
-      assertOnlyFields(effect, ["type", "legal_from"], "stored Legality Rule effect");
-      return {
-        type,
-        legal_from: requiredDate(
-          effect.legal_from,
-          "stored Legality Rule legal_from",
-        ),
-      };
-    case "unresolved":
-      assertOnlyFields(effect, ["type", "reason"], "stored Legality Rule effect");
-      return {
-        type,
-        reason: requiredText(effect.reason, "stored Legality Rule unresolved reason"),
-      };
-    default:
-      throw new Error("Stored Legality Rule effect is unsupported.");
-  }
 }
 
 function parsedRecord(json: string, name: string): Record<string, unknown> {

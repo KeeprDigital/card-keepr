@@ -1189,24 +1189,22 @@ test("the One Piece production release surface publishes release timing through 
     `/v1/ingestion-runs/${changedRunId}/collection/resume`,
     {},
   )).response.status).toBe(202);
-  const changedFailed = await waitForState(changedRunId, "failed");
-  expect(changedFailed).toMatchObject({
-    state: "failed",
-    failure_code: "printing_reconciliation_blocked",
-  });
-  const failedWarnings = await testEnv.CATALOGUE_DB.prepare(
-    "SELECT warnings_json FROM ingestion_runs WHERE id = ?",
-  ).bind(changedRunId).first<{ warnings_json: string }>();
-  expect(JSON.parse(failedWarnings?.warnings_json ?? "[]")).toEqual([
-    expect.objectContaining({
-      detail: expect.stringContaining(
-        "Official Source releases retained non-empty Legality data without an exact, complete Legality Rule parser.",
-      ),
-    }),
-  ]);
-  expect((await request(
+  await waitForState(changedRunId, "awaiting_approval");
+  const changedCandidate = await request(
     `/v1/ingestion-runs/${changedRunId}/candidate`,
-  )).response.status).toBe(409);
+  );
+  expect(changedCandidate.response.status).toBe(200);
+  const rejected = await request(
+    `/v1/ingestion-runs/${changedRunId}/rejection`,
+    {
+      candidate_digest: requiredString(
+        changedCandidate.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-ordinary-one-piece-product-release",
+    },
+  );
+  expect(rejected.response.status).toBe(200);
   expect(await testEnv.CATALOGUE_DB.prepare(
     "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
   ).first("current_revision_id")).toBe(revisionId);
@@ -1221,6 +1219,10 @@ test.each([
   "card-keepr-mismatched-legality-total-v3",
   "card-keepr-truncated-legality-partition-v3",
   "card-keepr-conditional-legality-v3",
+  "card-keepr-conditional-when-legality-v3",
+  "card-keepr-conditional-if-legality-v3",
+  "card-keepr-conditional-during-legality-v3",
+  "card-keepr-conditional-only-legality-v3",
 ])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",

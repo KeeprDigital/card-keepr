@@ -641,19 +641,11 @@
         "unresolved_scope": {
           "oneOf": [
             { "type": "null" },
+            { "const": { "dimensions": ["effective_interval"] } },
+            { "const": { "dimensions": ["event_tier"] } },
             {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["dimensions"],
-              "properties": {
-                "dimensions": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": {
-                    "enum": ["effective_interval", "event_tier"]
-                  }
-                }
+              "const": {
+                "dimensions": ["effective_interval", "event_tier"]
               }
             }
           ]
@@ -691,7 +683,132 @@
           "$ref": "#/$defs/LegalityRuleSourceFieldPointers"
         },
         "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
-      }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "kind": { "const": "eligible" },
+                "effect": {
+                  "properties": { "type": { "const": "eligible" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "not_legal" },
+                "effect": {
+                  "properties": { "type": { "const": "ban" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "restricted" },
+                "effect": {
+                  "properties": { "type": { "const": "copy_limit" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "combination" },
+                "effect": {
+                  "properties": {
+                    "type": { "const": "prohibited_combination" }
+                  }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "conditional" },
+                "effect": {
+                  "properties": { "type": { "const": "membership" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "rotation" },
+                "effect": {
+                  "properties": { "type": { "const": "rotation" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "release" },
+                "effect": {
+                  "properties": { "type": { "const": "release_timing" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "indeterminate" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "unresolved_scope": { "type": "null" },
+                "effective_from": { "$ref": "#/$defs/Date" }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": { "dimensions": ["effective_interval"] }
+                },
+                "effective_from": { "type": "null" },
+                "effective_until": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": { "dimensions": ["event_tier"] }
+                },
+                "effective_from": { "$ref": "#/$defs/Date" },
+                "event_tier": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": {
+                    "dimensions": ["effective_interval", "event_tier"]
+                  }
+                },
+                "effective_from": { "type": "null" },
+                "effective_until": { "type": "null" },
+                "event_tier": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            }
+          ]
+        }
+      ]
     },
     "RelationshipRecord": {
       "type": "object",

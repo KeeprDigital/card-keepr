@@ -486,22 +486,32 @@ test("current production legality parser rejects mixed directives and foreign op
   );
 });
 
-test("current production legality parser rejects unmodelled conditions inside recognized wording", () => {
+test("current production legality parser rejects every unmodelled conditional clause inside recognized wording", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
-  const html = fusionLegalityPage(fusionLegalityRuleHtml({
-    id: "FW-2026-CONDITIONAL-BAN",
-    wording:
-      "FB01-030 is banned from Standard decks unless your Leader is FB01-999.",
-    cards: ["FB01-030"],
-    directive: "ban",
-  }));
-  assert.throws(
-    () => current.parseBytes(
-      new TextEncoder().encode(html),
-      fusionLegalityContext(current),
-    ),
-    /conditional|qualifier|cannot represent/u,
-  );
+  for (const [name, wording] of [
+    ["when", "FB01-030 is banned when your Leader is FB01-999."],
+    ["if", "FB01-030 is banned if your Leader is FB01-999."],
+    ["during", "FB01-030 is banned during Championship events."],
+    ["tier-scoped only", "FB01-030 is banned only at Championship events."],
+    ["unless", "FB01-030 is banned unless your Leader is FB01-999."],
+    ["exception", "FB01-030 is banned, except at Championship events."],
+    ["qualifier", "FB01-030 is banned subject to the event policy."],
+  ]) {
+    const html = fusionLegalityPage(fusionLegalityRuleHtml({
+      id: `FW-2026-CONDITIONAL-BAN-${name}`,
+      wording,
+      cards: ["FB01-030"],
+      directive: "ban",
+    }));
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(html),
+        fusionLegalityContext(current),
+      ),
+      /conditional|qualifier|cannot represent/u,
+      name,
+    );
+  }
 });
 
 test("current production legality parser preserves paragraph and list boundaries", () => {

@@ -12,6 +12,15 @@ an unknown interval or event tier from being serialized as an invented date or
 global scope. Existing v1 and v2 manifests and objects remain
 immutable and readable through the same revision-addressed API.
 
+The v3 component schema treats each effect as a closed discriminated shape:
+its discriminator fixes the matching export `kind`. An explicit unresolved
+scope is valid only for an `unresolved` effect targeting at least one Card.
+`effective_interval` uncertainty requires both effective dates to be `null`;
+otherwise `effective_from` remains an exact date. `event_tier` uncertainty
+requires a `null` event tier. Scope dimensions use the one canonical order,
+and prohibited-combination rules retain at least one direct Card as well as
+their companion operands.
+
 ## Consequences
 
 The serialization profile remains `card-keepr-ndjson-gzip@1`. The canonical v3

@@ -47,3 +47,118 @@ test("component export validation rejects a valid record from the wrong componen
     /component record failed schema verification/u,
   );
 });
+
+test("v3 Legality Rule component validation enforces effect and contextual scope invariants", () => {
+  const uri =
+    "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/LegalityRuleRecord";
+  const pointer = "/observations/0/value/legality_rules/0";
+  const base = {
+    type: "legality_rule",
+    id: "rule_schema_contract",
+    official_id: "RULE-SCHEMA-CONTRACT",
+    game: "fusion-world",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    unresolved_scope: null,
+    kind: "eligible",
+    effect: { type: "eligible" },
+    card_ids: ["card_schema_contract"],
+    official_wording: "FB01-001 is eligible for Standard play.",
+    source_lineage: "fusion-world-en",
+    source_observation_ids: ["srcobs_schema_contract"],
+    source_observation_pointer: pointer,
+    source_field_pointers: Object.fromEntries([
+      "official_wording", "effective_from", "effective_until",
+      "unresolved_scope", "region", "format", "event_tier",
+      "card_numbers", "effect",
+    ].map((field) => [field, `${pointer}/${field}`])),
+    lifecycle: {
+      first_revision_id: "catrev_schema_contract",
+      last_observed_revision_id: "catrev_schema_contract",
+      current: true,
+      last_missing_revision_id: null,
+    },
+  };
+  const effectKinds = [
+    [{ type: "eligible" }, "eligible"],
+    [{ type: "ban" }, "not_legal"],
+    [{ type: "copy_limit", maximum_copies: 1 }, "restricted"],
+    [{ type: "prohibited_combination", with_card_ids: ["card_companion"] }, "combination"],
+    [{ type: "membership", attribute: "traits", includes_any: ["Saiyan"] }, "conditional"],
+    [{ type: "rotation", eligible_blocks: ["01"] }, "rotation"],
+    [{ type: "release_timing", legal_from: "2026-02-01" }, "release"],
+    [{ type: "unresolved", reason: "Publisher context is unclear." }, "indeterminate"],
+  ];
+  for (const [effect, kind] of effectKinds) {
+    assert.doesNotThrow(() => verifyComponentExportRecord(uri, {
+      ...base,
+      kind,
+      effect,
+    }), `${effect.type} / ${kind}`);
+    assert.throws(() => verifyComponentExportRecord(uri, {
+      ...base,
+      kind: kind === "eligible" ? "restricted" : "eligible",
+      effect,
+    }), /component record failed schema verification/u, `${effect.type} mismatch`);
+  }
+
+  const invalid = [
+    { ...base, effective_from: null },
+    {
+      ...base,
+      unresolved_scope: { dimensions: ["effective_interval"] },
+    },
+    {
+      ...base,
+      kind: "indeterminate",
+      effect: { type: "unresolved", reason: "Unknown interval." },
+      unresolved_scope: { dimensions: ["effective_interval"] },
+      effective_from: "2026-01-01",
+    },
+    {
+      ...base,
+      kind: "indeterminate",
+      effect: { type: "unresolved", reason: "Unknown interval." },
+      unresolved_scope: { dimensions: ["effective_interval"] },
+      effective_from: null,
+      effective_until: "2026-02-01",
+    },
+    {
+      ...base,
+      kind: "indeterminate",
+      effect: { type: "unresolved", reason: "Unknown tier." },
+      unresolved_scope: { dimensions: ["event_tier"] },
+      event_tier: "championship",
+    },
+    {
+      ...base,
+      kind: "indeterminate",
+      effect: { type: "unresolved", reason: "Unknown interval." },
+      unresolved_scope: { dimensions: ["effective_interval"] },
+      effective_from: null,
+      card_ids: [],
+    },
+    {
+      ...base,
+      kind: "combination",
+      effect: { type: "prohibited_combination", with_card_ids: ["card_companion"] },
+      card_ids: [],
+    },
+    {
+      ...base,
+      kind: "indeterminate",
+      effect: { type: "unresolved", reason: "Unknown context." },
+      unresolved_scope: { dimensions: ["event_tier", "effective_interval"] },
+      effective_from: null,
+    },
+  ];
+  for (const record of invalid) {
+    assert.throws(
+      () => verifyComponentExportRecord(uri, record),
+      /component record failed schema verification/u,
+    );
+  }
+});

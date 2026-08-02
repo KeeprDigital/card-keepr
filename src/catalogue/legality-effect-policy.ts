@@ -155,6 +155,28 @@ export function parseLegalityRuleEffect(value: unknown): ParsedLegalityRuleEffec
   return strategies[effect.type as LegalityRuleEffect["type"]].parse(effect);
 }
 
+export function parseStoredLegalityRuleEffect(
+  value: unknown,
+): LegalityRuleEffect {
+  const effect = requiredRecord(value, "stored Legality Rule effect");
+  if (effect.type === "prohibited_combination") {
+    assertOnlyFields(effect, ["type", "with_card_ids"]);
+    return {
+      type: "prohibited_combination",
+      with_card_ids: requiredStrings(
+        effect.with_card_ids,
+        "stored prohibited combination Card ids",
+        false,
+      ),
+    };
+  }
+  const parsed = parseLegalityRuleEffect(effect);
+  if (parsed.type === "prohibited_combination") {
+    return mismatch();
+  }
+  return parsed;
+}
+
 export function legalityExportKind(effect: LegalityRuleEffect): LegalityExportKind {
   return strategies[effect.type].exportKind;
 }

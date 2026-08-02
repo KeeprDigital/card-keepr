@@ -509,6 +509,11 @@ export default defineConfig({
                 "card-keepr-truncated-legality-partition-v3",
                 "card-keepr-conflicting-shared-legality-v3",
                 "card-keepr-conditional-legality-v3",
+                "card-keepr-conditional-when-legality-v3",
+                "card-keepr-conditional-if-legality-v3",
+                "card-keepr-conditional-during-legality-v3",
+                "card-keepr-conditional-only-legality-v3",
+                "card-keepr-large-legality-workflow-v3",
               ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
@@ -552,6 +557,14 @@ export default defineConfig({
                   ? "FB01-001 is banned from Standard decks."
                 : artworkMarker === "card-keepr-conditional-legality-v3"
                   ? "FB01-001 is banned from Standard decks unless it has the Earth Federation trait."
+                : artworkMarker === "card-keepr-conditional-when-legality-v3"
+                  ? "FB01-001 is banned when your Leader is FB01-999."
+                : artworkMarker === "card-keepr-conditional-if-legality-v3"
+                  ? "FB01-001 is banned if your Leader is FB01-999."
+                : artworkMarker === "card-keepr-conditional-during-legality-v3"
+                  ? "FB01-001 is banned during Championship events."
+                : artworkMarker === "card-keepr-conditional-only-legality-v3"
+                  ? "FB01-001 is banned only at Championship events."
                 : artworkMarker === "card-keepr-mixed-effect-legality-v3"
                   ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
                   : artworkMarker === "card-keepr-definitive-unresolved-legality-v3"
@@ -565,12 +578,26 @@ export default defineConfig({
                 "card-keepr-missing-combination-side-v3";
               const conflictingShared = artworkMarker ===
                 "card-keepr-conflicting-shared-legality-v3";
-              return new Response(
-                `<html>
-                  <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
-                  <main>
-                    <p>1 record</p>
-                    <article class="restriction-card">
+              const largeWorkflow = artworkMarker ===
+                "card-keepr-large-legality-workflow-v3";
+              const legalityArticles = largeWorkflow
+                ? Array.from({ length: 4_000 }, (_, index) => {
+                  const ordinal = String(index + 1).padStart(4, "0");
+                  return `<article class="restriction-card">
+                    <dl>
+                      <dt>Rule Ref</dt><dd>fw_large_workflow_${ordinal}</dd>
+                      <dt>Notice</dt><dd>FB01-001 is eligible for Standard play.</dd>
+                      <dt>Market</dt><dd>EN-OCEANIA</dd>
+                      <dt>Play Format</dt><dd>standard</dd>
+                      <dt>Tier</dt><dd>-</dd>
+                      <dt>Active On</dt><dd>2026-01-01</dd>
+                      <dt>Expires On</dt><dd>-</dd>
+                      <dt>Cards</dt><dd>-</dd>
+                      <dt>Directive</dt><dd>eligible</dd>
+                    </dl>
+                  </article>`;
+                }).join("")
+                : `<article class="restriction-card">
                       <dl>
                         <dt>Rule Ref</dt><dd>fw_production_eligible</dd>
                         <dt>Notice</dt><dd>${officialWording}</dd>
@@ -592,7 +619,13 @@ export default defineConfig({
                       ${artworkMarker === "card-keepr-residual-semantics-legality-v3"
                         ? "<p>Except at championship events, where it is banned.</p>"
                         : ""}
-                    </article>
+                    </article>`;
+              return new Response(
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                  <main>
+                    <p>${largeWorkflow ? 4_000 : 1} records</p>
+                    ${legalityArticles}
                   </main>
                 </html>`,
                 {

@@ -337,6 +337,96 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   expect(completed.observation_sets.length).toBeGreaterThan(0);
 }, 15_000);
 
+test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 and replays only a bounded reference", async () => {
+  const marker = "card-keepr-large-legality-workflow-v3";
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@3",
+      idempotency_key: "source_parent_large_legality_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en").map(
+        (request) => ({
+          ...request,
+          headers: { ...request.headers, "user-agent": marker },
+        }),
+      ),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  const accepted = await resumed.json<{ workflow: { id: string } }>();
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(
+    accepted.workflow.id,
+  );
+  await waitForWorkflowStatus(
+    accepted.workflow.id,
+    () => parent.status(),
+    "complete",
+    90_000,
+  );
+
+  const assertBoundedOutput = async (expectsReference: boolean) => {
+    const status = await parent.status();
+    expect(status.status).toBe("complete");
+    const output = status.output as Record<string, unknown>;
+    expect(new TextEncoder().encode(JSON.stringify(output)).byteLength)
+      .toBeLessThan(524_288);
+    expect(output).toMatchObject(expectsReference
+      ? {
+        ingestion_run_id: run.id,
+        reconciliation: {
+          contract: "card-keepr-reconciliation-workflow-result@1",
+          run_id: run.id,
+          candidate_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        },
+      }
+      : {
+        ingestion_run_id: run.id,
+        state: "awaiting_approval",
+      });
+    expect(JSON.stringify(output)).not.toContain("legality_rules");
+  };
+  const candidateResponse = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+    "GET",
+  );
+  expect(candidateResponse.status).toBe(200);
+  const candidate = await candidateResponse.json<Record<string, unknown>>();
+  expect(candidate).toMatchObject({
+    diff: {
+      summary: {
+        legality_rules_added: 4_000,
+        legality_rules_current: 4_000,
+      },
+    },
+  });
+  const persisted = await env.CATALOGUE_DB.prepare(
+    `SELECT SUM(length(CAST(content AS BLOB))) AS candidate_bytes
+     FROM reconciliation_payload_chunks
+     WHERE ingestion_run_id = ? AND payload_kind = 'candidate'`,
+  ).bind(run.id).first<{ candidate_bytes: number }>();
+  expect(persisted?.candidate_bytes).toBeGreaterThan(1_048_576);
+
+  await assertBoundedOutput(true);
+
+  await parent.restart();
+  await waitForWorkflowStatus(
+    accepted.workflow.id,
+    () => parent.status(),
+    "complete",
+    90_000,
+  );
+  await assertBoundedOutput(false);
+}, 120_000);
+
 test("resuming collection restarts an existing errored hostname Workflow and its staged parse", async () => {
   const run = await createCollection(
     "source_collection_existing_child_001",
@@ -788,7 +878,7 @@ test("adapter registrations stay constrained while mismatched production identit
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@1",
+      adapter_version: "one-piece-en@2",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -1391,7 +1481,7 @@ function exactOnePiecePlan(idempotencyKey: string) {
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@1",
+    adapter_version: "one-piece-en@2",
     idempotency_key: idempotencyKey,
     requests: officialSourceDiscoveryRequests("one-piece-en").map(
       (request) => ({ ...request }),

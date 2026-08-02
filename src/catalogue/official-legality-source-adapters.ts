@@ -472,7 +472,6 @@ function exactEffect(
   directive: string,
   wording: string,
 ): Record<string, unknown> {
-  assertNoUnmodelledConditional(wording);
   switch (directive) {
     case "eligible":
       assertNoAdditionalStructuredSemantics("eligible", wording, [
@@ -489,6 +488,7 @@ function exactEffect(
         /\bbanned?\b|may not be included/iu,
       );
       assertNoNegatedLegalityPredicate(directive, wording);
+      assertDirectiveWordingGrammar(directive, wording);
       return { type: "eligible" };
     case "ban":
     case "banned":
@@ -509,6 +509,7 @@ function exactEffect(
         wording,
         /\b(?:not|never)\s+banned?\b|\bno longer banned?\b|\bban (?:is )?(?:lifted|removed)\b/iu,
       );
+      assertDirectiveWordingGrammar(directive, wording);
       return { type: "ban" };
     case "copy_limit":
     case "limited":
@@ -526,6 +527,7 @@ function exactEffect(
           "Official Legality copy limit",
         );
         assertExactCopyLimitWording(wording, maximumCopies);
+        assertDirectiveWordingGrammar(directive, wording);
         return {
           type: "copy_limit",
           maximum_copies: maximumCopies,
@@ -566,6 +568,7 @@ function exactEffect(
         wording,
         [...directCards, ...companionCards],
       );
+      assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "prohibited_combination",
         with_card_numbers: companionCards,
@@ -605,6 +608,7 @@ function exactEffect(
         /\bonly\b[\s\S]*\b(?:includes?|with|has|have)\b|\b(?:must|requires?)\b[\s\S]*\b(?:membership|traits?|attributes?)\b/iu,
       );
       assertWordingOperands(directive, wording, [attribute, ...values]);
+      assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "membership",
         attribute,
@@ -637,6 +641,7 @@ function exactEffect(
         /\b(?:eligible|legal|permitted)\b/iu,
       );
       assertWordingOperands(directive, wording, blocks);
+      assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "rotation",
         eligible_blocks: blocks,
@@ -667,6 +672,7 @@ function exactEffect(
         /\b(?:becomes?|is|will be)\s+(?:tournament\s+)?legal\b|\blegal\s+for\s+tournament\b/iu,
       );
       assertWordingOperands("release timing", wording, [legalFrom]);
+      assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "release_timing",
         legal_from: legalFrom,
@@ -692,6 +698,7 @@ function exactEffect(
         /\b(?:unresolved|unclear|unknown|cannot be determined|awaiting (?:publisher )?clarification)\b/iu,
       );
       assertWordingOperands(directive, wording, [reason]);
+      assertDirectiveWordingGrammar(directive, wording);
       return {
         type: "unresolved",
         reason,
@@ -704,15 +711,62 @@ function exactEffect(
   }
 }
 
-function assertNoUnmodelledConditional(wording: string): void {
-  if (
-    /\b(?:unless|except(?:\s+(?:when|for|during))?|provided\s+that|subject\s+to|otherwise|only\s+if)\b/iu
-      .test(wording)
-  ) {
+function assertDirectiveWordingGrammar(
+  directive: string,
+  wording: string,
+): void {
+  const normalized = normalizedDirective(directive);
+  const grammars = directiveWordingGrammars[normalized];
+  if (grammars === undefined || !grammars.some((grammar) => grammar.test(wording))) {
     throw new Error(
-      "Official Legality wording contains a conditional or qualifier this Source Adapter Version cannot represent.",
+      "Official Legality wording contains a conditional, qualifier, or residual clause this Source Adapter Version cannot represent.",
     );
   }
+}
+
+const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
+  eligible: [
+    /^[^\n.!?]+\b(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard play|Standard events in the [A-Z-]+ region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$/iu,
+    /^Cards satisfying the published [^\n.!?]+ eligibility rules may be used\.$/iu,
+  ],
+  ban: [
+    /^[^\n.!?]+\b(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$/iu,
+    /^[^\n.!?]+\bmay not be included(?:\s+in\s+(?:a|the|same)\s+deck)?\.$/iu,
+    /^[^\n.!?]+\b(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$/iu,
+  ],
+  copy_limit: [
+    /^[^\n.!?]+\b(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$/iu,
+    /^(?:For [^\n,.!?]+ events,\s+)?decks may contain (?:no more than\s+)?(?:only\s+)?(?:\d+|one|two|three|four)\s+cop(?:y|ies) of [^\n.!?]+\.$/iu,
+  ],
+  prohibited_combination: [
+    /^[^\n.!?]+\b(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$/iu,
+    /^[^\n.!?]+\b(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$/iu,
+    /^[^\n.!?]+\b(?:is|are)\s+a\s+prohibited\s+combination\.$/iu,
+  ],
+  membership: [
+    /^(?:Only\s+)?cards\s+(?:whose\s+|with\s+)[^\n.!?]+\b(?:includes?|with|has|have)\b[^\n.!?]+\b(?:is|are)\s+eligible(?:\s+for\s+this\s+event)?\.$/iu,
+  ],
+  rotation: [
+    /^Only cards bearing Block [^\n.!?]+ are eligible\.$/iu,
+    /^Blocks? [^\n.!?]+ (?:is|are) eligible for rotation\.$/iu,
+  ],
+  release_timing: [
+    /^[^\n.!?]+\b(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal(?:\s+for\s+(?:standard\s+)?tournament\s+play)?\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$/iu,
+    /^[^\n.!?]+\blegal\s+for\s+tournament\s+play\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$/iu,
+  ],
+  unresolved: [
+    /^[^\n.!?]+\b(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)\.$/iu,
+    /^The official notice does not identify whether [^\n.!?]+\.$/iu,
+    /^[^\n.!?]+\b(?:cannot be determined|is not stated|awaiting (?:publisher )?clarification)\.$/iu,
+  ],
+};
+
+function normalizedDirective(directive: string): string {
+  return directive === "banned" ? "ban"
+    : directive === "limited" ? "copy_limit"
+    : directive === "combination" ? "prohibited_combination"
+    : directive === "release" ? "release_timing"
+    : directive;
 }
 
 const operandFieldNames = [
@@ -730,12 +784,7 @@ function assertDirectiveSpecificOperands(
   fields: FieldMap,
   directive: string,
 ): void {
-  const normalized =
-    directive === "banned" ? "ban"
-      : directive === "limited" ? "copy_limit"
-      : directive === "combination" ? "prohibited_combination"
-      : directive === "release" ? "release_timing"
-      : directive;
+  const normalized = normalizedDirective(directive);
   const owned = new Set<keyof FieldMap>(
     normalized === "copy_limit" ? ["maximumCopies"]
       : normalized === "prohibited_combination" ? ["companionCards"]
