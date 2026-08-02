@@ -34,6 +34,10 @@ export type OfficialRawAdapterContract = {
   supportedGame: ProductSourceGame;
   format: DiscoveryFormat;
   requiredSurfaces: readonly string[];
+  sourceOrigin: string;
+  documentPathnamePrefixes: readonly string[];
+  imagePathnamePrefixes: readonly string[];
+  partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
   requestUrlForDiscovery?: () => string;
   requestUrlForSurface: (surface: string) => string;
   parseBytes: (
@@ -56,6 +60,10 @@ const rawContractDefinitions = [
     sourceLineage: "one-piece-en",
     supportedGame: "one-piece",
     format: "one-piece",
+    sourceOrigin: "https://en.onepiece-cardgame.com",
+    documentPathnamePrefixes: ["/cardlist/", "/products/", "/rules/"],
+    imagePathnamePrefixes: ["/images/"],
+    partition: "EN-OCEANIA",
     requiredSurfaces: [
       "card-list",
       "products",
@@ -82,6 +90,10 @@ const rawContractDefinitions = [
     sourceLineage: "fusion-world-en",
     supportedGame: "fusion-world",
     format: "fusion-world",
+    sourceOrigin: "https://www.dbs-cardgame.com",
+    documentPathnamePrefixes: ["/fw/en/"],
+    imagePathnamePrefixes: ["/fw/images/"],
+    partition: "EN-OCEANIA",
     requiredSurfaces: [
       "card-search",
       "products",
@@ -106,6 +118,10 @@ const rawContractDefinitions = [
     sourceLineage: "digimon-en",
     supportedGame: "digimon",
     format: "digimon",
+    sourceOrigin: "https://world.digimoncard.com",
+    documentPathnamePrefixes: ["/cards/", "/cardlist/", "/products/", "/rule/"],
+    imagePathnamePrefixes: ["/images/"],
+    partition: "EN-OCEANIA",
     requiredSurfaces: [
       "card-list",
       "products",
@@ -131,6 +147,10 @@ const rawContractDefinitions = [
     sourceLineage: "gundam-en-asia",
     supportedGame: "gundam",
     format: "gundam",
+    sourceOrigin: "https://www.gundam-gcg.com",
+    documentPathnamePrefixes: ["/asia-en/"],
+    imagePathnamePrefixes: ["/asia-en/"],
+    partition: "EN-ASIA",
     requiredSurfaces: [
       "packages",
       "products",
@@ -152,6 +172,10 @@ const rawContractDefinitions = [
     sourceLineage: "gundam-en-us",
     supportedGame: "gundam",
     format: "gundam",
+    sourceOrigin: "https://www.gundam-gcg.com",
+    documentPathnamePrefixes: ["/en/"],
+    imagePathnamePrefixes: ["/en/"],
+    partition: "EN-US",
     requiredSurfaces: [
       "packages",
       "products",
@@ -355,7 +379,6 @@ function bandaiRequestDiscovery(
       resolved.hash = "";
       if (
         resolved.protocol !== "https:" ||
-        !officialHostname(sourceLineage, resolved.hostname) ||
         resolved.href === current.href
       ) {
         continue;
@@ -370,6 +393,11 @@ function bandaiRequestDiscovery(
               resolved,
             );
       if (role === null) continue;
+      if (!officialUrl(
+        sourceLineage,
+        resolved,
+        role === "image" ? "image" : "document",
+      )) continue;
       candidates.push({
         role,
         url: resolved.href,
@@ -405,7 +433,7 @@ function structuredImageUrls(
         const url = new URL(item, base);
         if (
           url.protocol === "https:" &&
-          officialHostname(sourceLineage, url.hostname)
+          officialUrl(sourceLineage, url, "image")
         ) {
           discovered.push(url.href);
         }
@@ -566,18 +594,26 @@ function nonCardProductClassification(value: string): "accessory" | null {
     : null;
 }
 
-function officialHostname(sourceLineage: string, hostname: string): boolean {
-  const expected =
-    sourceLineage === "one-piece-en"
-      ? ["onepiece-cardgame.com"]
-      : sourceLineage === "fusion-world-en"
-        ? ["dbs-cardgame.com"]
-        : sourceLineage === "digimon-en"
-          ? ["digimoncard.com"]
-          : ["gundam-gcg.com"];
-  return expected.some((suffix) =>
-    hostname === suffix || hostname.endsWith(`.${suffix}`)
-  );
+function officialUrl(
+  sourceLineage: string,
+  url: URL,
+  role: "document" | "image",
+): boolean {
+  const contract = officialRawAdapterContracts.filter(
+    (candidate) => candidate.sourceLineage === sourceLineage,
+  ).at(-1);
+  return contract !== undefined &&
+    url.origin === contract.sourceOrigin &&
+    contract[
+      role === "image"
+        ? "imagePathnamePrefixes"
+        : "documentPathnamePrefixes"
+    ].some((prefix) =>
+      url.pathname.startsWith(prefix)
+    ) &&
+    url.username === "" &&
+    url.password === "" &&
+    url.hash === "";
 }
 
 function exactSurfaceUrl(
@@ -761,6 +797,22 @@ function bandaiSnapshotDecoder(
       ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ??
         null
       : null;
+    if (
+      profile.parseLegality &&
+      isLegalityRuleSurface(game, surface) &&
+      containsUnparsedLegalityPublication(
+        parsed.retainedDocument,
+        isLegalityPolicySurface(surface),
+        legalityObservation !== null &&
+          Array.isArray(legalityObservation.legality_rules)
+          ? legalityObservation.legality_rules.length
+          : 0,
+      )
+    ) {
+      throw new Error(
+        `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
+      );
+    }
     const observations = legalityObservation === null
       ? parsed.observations
       : [...parsed.observations, legalityObservation];
@@ -777,6 +829,40 @@ function bandaiSnapshotDecoder(
   };
 }
 
+function containsUnparsedLegalityPublication(
+  document: Readonly<Record<string, unknown>>,
+  dedicatedPolicySurface: boolean,
+  parsedRuleCount: number,
+): boolean {
+  const links = Array.isArray(document.publication_links)
+    ? document.publication_links
+    : [];
+  const entries = Array.isArray(document.publication_entries)
+    ? document.publication_entries
+    : [];
+  const options = Array.isArray(document.discovered_options)
+    ? document.discovered_options
+    : [];
+  if (dedicatedPolicySurface) {
+    return links.length > 0 ||
+      (parsedRuleCount === 0 && (entries.length > 0 || options.length > 0));
+  }
+  const semanticText = [...links, ...entries]
+    .map((value) =>
+      typeof value === "string"
+        ? value
+        : value !== null && typeof value === "object" &&
+            !Array.isArray(value) &&
+            typeof (value as Record<string, unknown>).label === "string"
+          ? (value as Record<string, string>).label
+          : ""
+    )
+    .join(" ");
+  return parsedRuleCount === 0 &&
+    /\b(?:ban(?:ned)?|block|eligib(?:le|ility)|legal(?:ity)?|limit(?:ed)?|restriction|tournament)\b/iu
+      .test(semanticText);
+}
+
 function bandaiDiscoveryRecords(
   html: string,
   sourceLineage: string,
@@ -788,6 +874,12 @@ function bandaiDiscoveryRecords(
   method: "GET";
   url: string;
   headers: { accept: "text/html" };
+  discovered_from: {
+    kind: "publisher_navigation";
+    label: string;
+    url: string;
+    resolution: string;
+  };
 }> {
   const headers = [...html.matchAll(
     /<header\b[^>]*>([\s\S]*?)<\/header>/giu,
@@ -800,7 +892,7 @@ function bandaiDiscoveryRecords(
   const seeds = bandaiDiscoverySeeds(sourceLineage);
   const acceptedLabels = new Set(seeds.map(({ label }) => label));
   const acceptedUrls = new Set(seeds.map(({ url }) => new URL(url).href));
-  const observedSeeds = new Map<string, string>();
+  const observedSeeds = new Map<string, { label: string; url: string }>();
   for (const match of headers[0]![1]!.matchAll(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
   )) {
@@ -837,7 +929,7 @@ function bandaiDiscoveryRecords(
         `Official Source discovery duplicates the ${seed.id} navigation link.`,
       );
     }
-    observedSeeds.set(seed.id, resolvedUrl);
+    observedSeeds.set(seed.id, { label, url: resolvedUrl });
   }
   if (observedSeeds.size !== seeds.length) {
     throw new Error(
@@ -851,15 +943,15 @@ function bandaiDiscoveryRecords(
         `Official Source discovery uses unknown required-surface vocabulary: ${surface}.`,
       );
     }
-    const observedSeedUrl = observedSeeds.get(seed.id);
-    if (observedSeedUrl === undefined) {
+    const observedSeed = observedSeeds.get(seed.id);
+    if (observedSeed === undefined) {
       throw new Error(
         `Official Source discovery did not retain the ${seed.id} navigation link.`,
       );
     }
     const resolvedUrl = new URL(
       seed.resolutions[surface]!,
-      observedSeedUrl,
+      observedSeed.url,
     ).href;
     const expectedUrl = exactSurfaceUrl(
       sourceLineage,
@@ -878,6 +970,12 @@ function bandaiDiscoveryRecords(
       method: "GET" as const,
       url: resolvedUrl,
       headers: { accept: "text/html" as const },
+      discovered_from: {
+        kind: "publisher_navigation" as const,
+        label: observedSeed.label,
+        url: observedSeed.url,
+        resolution: seed.resolutions[surface]!,
+      },
     };
   });
 }
@@ -1372,7 +1470,7 @@ function parseBandaiCardDetail(
         return [];
       }
       const resolved = new URL(decodeHtmlText(rawUrl), requestUrl).href;
-      return officialHostname(sourceLineage, new URL(resolved).hostname)
+      return officialUrl(sourceLineage, new URL(resolved), "image")
         ? [resolved]
         : [];
     });
@@ -1724,7 +1822,7 @@ function explicitFusionLeaderFaces(
     )]
       .map((image) => new URL(decodeHtmlText(image[1]!), requestUrl).href)
       .filter((url) =>
-        officialHostname(sourceLineage, new URL(url).hostname)
+        officialUrl(sourceLineage, new URL(url), "image")
       );
     if (imageMatches.length !== 1) {
       throw new Error(

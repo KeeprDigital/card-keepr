@@ -4,7 +4,6 @@ import {
   assertAdapterBinding,
   requiredActiveSourceAdapter,
   requiredSourceAdapter,
-  sourceAdapterRegistrations,
   type SourceAdapterRegistration,
 } from "./source-adapters";
 import { AdministrationProblem } from "./ingestion";
@@ -268,38 +267,6 @@ export async function validateEvidencePlans(
       "One Evidence Plan cannot mix Errata-only and complete Catalogue coverage.",
     );
   }
-  if (planOrigin === "production") {
-    const requiredLineagesByGame = new Map<string, Set<string>>();
-    for (const adapter of sourceAdapterRegistrations) {
-      if (
-        adapter.origin === "production" &&
-        adapter.reconciliationCapability === "catalogue"
-      ) {
-        const lineages =
-          requiredLineagesByGame.get(adapter.supportedGame) ?? new Set();
-        lineages.add(adapter.sourceLineage);
-        requiredLineagesByGame.set(adapter.supportedGame, lineages);
-      }
-    }
-    for (const game of new Set(plans.map(({ supported_game }) => supported_game))) {
-      const required = requiredLineagesByGame.get(game) ?? new Set();
-      const supplied = new Set(
-        plans
-          .filter(({ supported_game }) => supported_game === game)
-          .map(({ source_lineage }) => source_lineage),
-      );
-      if (
-        required.size !== supplied.size ||
-        [...required].some((lineage) => !supplied.has(lineage))
-      ) {
-        throw new AdministrationProblem(
-          422,
-          "incomplete_source_lineages",
-          "Every accepted Official Source lineage for each selected Supported Game must be planned together.",
-        );
-      }
-    }
-  }
   return plans;
 }
 
@@ -340,13 +307,22 @@ export async function officialCollectionRequestsFromDiscovery(
     if (
       !isRecord(record) ||
       Object.keys(record).sort().join(",") !==
-        "headers,id,method,surface,url" ||
+        "discovered_from,headers,id,method,surface,url" ||
       record.id !== expectedId ||
       record.surface !== surface ||
       record.method !== "GET" ||
       record.url !== expectedUrl ||
       !isRecord(record.headers) ||
-      canonicalJson(record.headers) !== canonicalJson({ accept: "text/html" })
+      canonicalJson(record.headers) !== canonicalJson({ accept: "text/html" }) ||
+      !isRecord(record.discovered_from) ||
+      Object.keys(record.discovered_from).sort().join(",") !==
+        "kind,label,resolution,url" ||
+      record.discovered_from.kind !== "publisher_navigation" ||
+      typeof record.discovered_from.label !== "string" ||
+      record.discovered_from.label.length === 0 ||
+      typeof record.discovered_from.url !== "string" ||
+      typeof record.discovered_from.resolution !== "string" ||
+      resolvedDiscoveryUrl(record.discovered_from) !== expectedUrl
     ) {
       throw new AdministrationProblem(
         422,
@@ -372,6 +348,19 @@ export async function officialCollectionRequestsFromDiscovery(
     });
   }
   return requests;
+}
+
+function resolvedDiscoveryUrl(
+  discovery: Record<string, unknown>,
+): string | null {
+  try {
+    return new URL(
+      discovery.resolution as string,
+      discovery.url as string,
+    ).href;
+  } catch {
+    return null;
+  }
 }
 
 export function parseEvidencePlan(json: string): EvidencePlan {

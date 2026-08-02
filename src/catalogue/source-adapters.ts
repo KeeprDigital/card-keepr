@@ -9,7 +9,8 @@ export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
   origin: string;
-  pathnamePrefix: string;
+  documentPathnamePrefixes: readonly string[];
+  imagePathnamePrefixes: readonly string[];
   requiredSurfaces: readonly string[];
 }>;
 
@@ -140,13 +141,15 @@ export function assertOfficialSourceUrl(
   const url = new URL(value);
   if (
     url.origin !== contract.origin ||
-    !url.pathname.startsWith(contract.pathnamePrefix) ||
+    !contract.documentPathnamePrefixes.some((prefix) =>
+      url.pathname.startsWith(prefix)
+    ) ||
     url.username !== "" ||
     url.password !== "" ||
     url.hash !== ""
   ) {
     throw new Error(
-      `Official Source URL must be within ${contract.origin}${contract.pathnamePrefix}.`,
+      `Official Source URL is outside the exact path authority registered for ${contract.origin}.`,
     );
   }
   return url;
@@ -198,6 +201,14 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         requiredSurfaces: adapter.requiredSurfaces,
         requestUrlForDiscovery: adapter.requestUrlForDiscovery,
         requestUrlForSurface: adapter.requestUrlForSurface,
+        officialSourceContract: {
+          supportedGame: adapter.supportedGame,
+          partition: adapter.partition,
+          origin: adapter.sourceOrigin,
+          documentPathnamePrefixes: adapter.documentPathnamePrefixes,
+          imagePathnamePrefixes: adapter.imagePathnamePrefixes,
+          requiredSurfaces: adapter.requiredSurfaces,
+        },
       })),
       ...[
         {

@@ -370,10 +370,28 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
         observation_type: "official_surface_evidence",
         source_lineage: "fusion-world-en",
         surface: "discovery",
-        records: fusionWorldProductionCollectionRequests.map((request) => ({
-          ...request,
-          surface: request.id.slice("fusion-world-en:".length),
-        })),
+        records: fusionWorldProductionCollectionRequests.map((request) => {
+          const surface = request.id.slice("fusion-world-en:".length);
+          const discovery = surface === "card-search"
+            ? { label: "cards", url: "https://www.dbs-cardgame.com/fw/en/cardlist/", resolution: "" }
+            : surface === "products" || surface === "releases"
+              ? { label: "all products", url: "https://www.dbs-cardgame.com/fw/en/products/", resolution: "" }
+              : {
+                  label: "rules",
+                  url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+                  resolution: surface === "errata"
+                    ? "../rules/errata-card/"
+                    : "../rules/banned-limited-cards/",
+                };
+          return {
+            ...request,
+            surface,
+            discovered_from: {
+              kind: "publisher_navigation",
+              ...discovery,
+            },
+          };
+        }),
         completeness: {
           declared_record_count:
             fusionWorldProductionCollectionRequests.length,
@@ -416,6 +434,38 @@ test("incomplete retained production discovery blocks collection and publication
   expect(terminal.observation_sets).toEqual([]);
   expect(terminal.official_source_collection_plans).toEqual([]);
   expect(terminal.workflow.child_ids).toHaveLength(1);
+  const candidate = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+    "GET",
+  );
+  expect(candidate.status).toBe(409);
+}, 15_000);
+
+test("notice-link-only production legality evidence fails closed before stale rules can carry forward", async () => {
+  const marker = "card-keepr-notice-link-only-legality-v3";
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@3",
+      idempotency_key: "source_parent_notice_only_legality_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en").map(
+        (request) => ({
+          ...request,
+          headers: { ...request.headers, "user-agent": marker },
+        }),
+      ),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const terminal = await resumeCollection(run.id, 12_000);
+  expect(terminal).toMatchObject({
+    state: "failed",
+    failure_code: "source_parse_failed",
+  });
   const candidate = await administrationRequest(
     `/v1/ingestion-runs/${run.id}/candidate`,
     "GET",

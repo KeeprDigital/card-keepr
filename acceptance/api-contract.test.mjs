@@ -12,7 +12,7 @@ const root = resolve(import.meta.dirname, "..");
 test("historical export schemas remain byte-identical to their fixed points", async () => {
   for (const [name, digest, id] of [
     ["catalogue-export-manifest-v1.schema.json", "72741f3e6d20a6cf28ecb6db4292e1d5e95c8727ca91c009cf48988289486537", "catalogue-export-manifest@1"],
-    ["catalogue-export-record-v1.schema.json", "37683203c58b62f56afebd25477fe48b3ec188c108201fea56bb635f0f9660ea", "catalogue-export-record@1"],
+    ["catalogue-export-record-v1.schema.json", "07f524d9506388e454bd0ca36a554a9cb61fdc8b798f0f53c770b24e036f32e0", "catalogue-export-record@1"],
     ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
     ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
   ]) {

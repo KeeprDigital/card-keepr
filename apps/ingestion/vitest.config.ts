@@ -516,6 +516,26 @@ export default defineConfig({
               );
             }
             if (
+              artworkMarker === "card-keepr-notice-link-only-legality-v3" &&
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/rules/banned-limited-cards/"
+            ) {
+              return new Response(
+                `<html>
+                  <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                  <a href="./new-legality-notice.html">
+                    New tournament eligibility wording effective immediately
+                  </a>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"notice-link-only-legality"',
+                  },
+                },
+              );
+            }
+            if (
               artworkMarker === "card-keepr-nonempty-legality-sidecar" &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
@@ -918,7 +938,7 @@ export default defineConfig({
                     Possible Booster Product
                   </a>
                   <img class="card-image"
-                    src="https://images.digimoncard.com/cards/BT99-999-fuzzy.png">
+                    src="https://world.digimoncard.com/images/cardlist/card/BT99-999-fuzzy.png">
                 </html>`,
                 {
                   headers: {
@@ -929,8 +949,8 @@ export default defineConfig({
               );
             }
             if (
-              url.hostname === "images.digimoncard.com" &&
-              url.pathname === "/cards/BT99-999-fuzzy.png"
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/images/cardlist/card/BT99-999-fuzzy.png"
             ) {
               return new Response(
                 new Uint8Array([
@@ -1014,7 +1034,7 @@ export default defineConfig({
                       : "No"
                   }</dd></dl>
                   <img class="card-image"
-                    src="https://images.digimoncard.com/cards/BT99-900.png">
+                    src="https://world.digimoncard.com/images/cardlist/card/BT99-900.png">
                 </html>`,
                 {
                   headers: {
@@ -1025,8 +1045,8 @@ export default defineConfig({
               );
             }
             if (
-              url.hostname === "images.digimoncard.com" &&
-              url.pathname === "/cards/BT99-900.png"
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/images/cardlist/card/BT99-900.png"
             ) {
               const bytes = new Uint8Array([
                 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,

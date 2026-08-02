@@ -761,8 +761,16 @@ function rawOfficialSurfaceRecords(
       if (sourceLineage === "one-piece-en" && surface === "releases") {
         const releaseTimingEntries =
           retained.document.release_timing_entries;
-        return Array.isArray(releaseTimingEntries)
-          ? releaseTimingEntries
+        if (Array.isArray(releaseTimingEntries) && releaseTimingEntries.length > 0) {
+          return releaseTimingEntries;
+        }
+        const publicationLinks = retained.document.publication_links;
+        return Array.isArray(publicationLinks)
+          ? publicationLinks.filter((link) =>
+            isRecord(link) && typeof link.label === "string" &&
+            /\b(?:ban(?:ned)?|block|eligib(?:le|ility)|legal(?:ity)?|limit(?:ed)?|restriction|tournament)\b/iu
+              .test(link.label)
+          )
           : [];
       }
       for (const field of [
@@ -772,6 +780,7 @@ function rawOfficialSurfaceRecords(
         "rows",
         "results",
         "publication_entries",
+        "publication_links",
       ]) {
         const records = retained.document[field];
         if (Array.isArray(records) && records.length > 0) return records;

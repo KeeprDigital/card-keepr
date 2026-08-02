@@ -230,8 +230,11 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         requestId: requests[0].id,
       },
     );
+    const discoveryRecords = discovery.flatMap(
+      (observation) => observation.records ?? [],
+    );
     assert.deepEqual(
-      discovery.flatMap((observation) => observation.records ?? []),
+      discoveryRecords.map(({ discovered_from: _derivation, ...record }) => record),
       adapter.requiredSurfaces.map((surface) => ({
         id: `${adapter.sourceLineage}:${surface}`,
         surface,
@@ -240,6 +243,95 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         headers: { accept: "text/html" },
       })),
     );
+    for (const record of discoveryRecords) {
+      assert.deepEqual(
+        Object.keys(record.discovered_from).sort(),
+        ["kind", "label", "resolution", "url"],
+      );
+      assert.equal(record.discovered_from.kind, "publisher_navigation");
+      assert.ok(
+        expectedDiscoveryLinks[adapter.sourceLineage].some(
+          ([label, href]) =>
+            label.toLowerCase() === record.discovered_from.label &&
+            new URL(href, requests[0].url).href === record.discovered_from.url,
+        ),
+      );
+      assert.equal(
+        new URL(
+          record.discovered_from.resolution,
+          record.discovered_from.url,
+        ).href,
+        record.url,
+      );
+    }
+  }
+});
+
+test("production registrations and dynamic discovery enforce exact lineage URL authority", () => {
+  for (const adapter of registeredProductionAdapters()) {
+    assert.ok(adapter.officialSourceContract);
+    const root = new URL(adapter.requestUrlForDiscovery());
+    assert.equal(adapter.officialSourceContract.origin, root.origin);
+    assert.ok(adapter.officialSourceContract.documentPathnamePrefixes.some(
+      (prefix) => root.pathname.startsWith(prefix),
+    ));
+
+    const validDetailUrl = new URL(root);
+    validDetailUrl.searchParams.set("detailSearch", "CK30");
+    const validDetail = validDetailUrl.href;
+    const hostileOrigin = new URL(validDetail);
+    hostileOrigin.hostname = `assets.${root.hostname}`;
+    const hostilePath = new URL(validDetail);
+    hostilePath.pathname = adapter.sourceLineage === "gundam-en-asia"
+      ? hostilePath.pathname.replace("/asia-en/", "/en/")
+      : adapter.sourceLineage === "gundam-en-us"
+        ? hostilePath.pathname.replace("/en/", "/asia-en/")
+        : `/outside-lineage${hostilePath.pathname}`;
+    const requests = adapter.discoverRequests(
+      new TextEncoder().encode(`
+        <a href="${validDetail}">Card detail</a>
+        <a href="${hostileOrigin.href}">Wrong subdomain</a>
+        <a href="${hostilePath.href}">Wrong locale path</a>
+      `),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface(adapter.requiredSurfaces[0]),
+        requestId: `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
+      },
+    );
+    assert.ok(requests.some(({ url }) => url === validDetail));
+    assert.equal(requests.some(({ url }) => url === hostileOrigin.href), false);
+    assert.equal(requests.some(({ url }) => url === hostilePath.href), false);
+  }
+});
+
+test("notice-link-only legality publications fail closed at the raw Official Source boundary", () => {
+  for (const adapter of registeredProductionAdapters()) {
+    const surface = adapter.requiredSurfaces.find((candidate) =>
+      /(?:legality|restriction|block-policy|don-rules)/u.test(candidate) ||
+      (adapter.sourceLineage === "one-piece-en" && candidate === "releases")
+    );
+    assert.ok(surface);
+    for (const declaredEmpty of [false, true]) {
+      assert.throws(
+        () => adapter.parseBytes(
+          new TextEncoder().encode(`
+            <html><title>BANDAI CARD PRODUCT RELEASE RULE RESTRICTION publication</title>
+              ${declaredEmpty ? "<p>0 records</p>" : ""}
+              <a href="./new-legality-notice.html">
+                New tournament eligibility wording effective immediately
+              </a>
+            </html>
+          `),
+          {
+            mediaType: "text/html; charset=utf-8",
+            url: adapter.requestUrlForSurface(surface),
+            requestId: `${adapter.sourceLineage}:${surface}`,
+          },
+        ),
+        /non-empty Legality data without an exact, complete Legality Rule parser/iu,
+      );
+    }
   }
 });
 
@@ -1088,19 +1180,16 @@ test("historical and current production registrations keep byte-identical legali
 
 test("current production legality parser fails closed for loose unknown rule markup", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
-  const observations = current.parseBytes(
-    new TextEncoder().encode(`
-      <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
-      <body><h1>Restriction Rules</h1>
-        <article class="unversioned-rule">FB01-001 might be restricted someday.</article>
-      </body></html>`),
-    fusionLegalityContext(current),
-  );
-  assert.equal(
-    observations.some(({ observation_type }) =>
-      observation_type === "legality_rules"
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(`
+        <html><head><title>Bandai Dragon Ball Fusion World Restriction Rules</title></head>
+        <body><h1>Restriction Rules</h1>
+          <article class="unversioned-rule">FB01-001 might be restricted someday.</article>
+        </body></html>`),
+      fusionLegalityContext(current),
     ),
-    false,
+    /non-empty Legality data without an exact, complete Legality Rule parser/iu,
   );
 });
 

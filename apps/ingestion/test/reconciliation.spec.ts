@@ -4661,20 +4661,33 @@ test("recovery health gates fixture evidence injection and reconciliation before
   });
 }, 60_000);
 
-test("the administration boundary requires every accepted lineage for each selected game", async () => {
+test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
+  const sourceLineage = "gundam-en-asia";
+  const adapterVersion = "gundam-en-asia@3";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
     plans: [{
       supported_game: "gundam",
-      source_lineage: "gundam-en-asia",
-      adapter_version: "gundam-en-asia@3",
-      requests: officialSourceDiscoveryRequests("gundam-en-asia"),
+      source_lineage: sourceLineage,
+      adapter_version: adapterVersion,
+      requests: officialSourceDiscoveryRequests(sourceLineage),
     }],
     idempotency_key: `gundam-one-lineage-${crypto.randomUUID()}`,
   });
-  expect(oneLocale.response.status).toBe(422);
+  expect(oneLocale.response.status).toBe(201);
   expect(oneLocale.document).toMatchObject({
-    code: "incomplete_source_lineages",
+    selected_games: ["gundam"],
+    evidence_plans: [{
+      supported_game: "gundam",
+      source_lineage: sourceLineage,
+      adapter_version: adapterVersion,
+    }],
   });
+  // Admission is the public behavior under test. Release the test database's
+  // singleton lock without depending on a live publisher response so the next
+  // independent administration scenario can begin.
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+  ).run();
 });
 
 test("a complete Product fixture publishes separated release and distribution records atomically", async () => {
