@@ -20,6 +20,7 @@ export {
   type LegalityRuleEffect,
 } from "./legality-effect-policy";
 import type { LegalityRuleEffect } from "./legality-effect-policy";
+import { registeredLegalitySourceScope } from "./source-adapters";
 export {
   legalityRulesForCandidate,
   normalizedLegalityRuleLifecycle,
@@ -332,16 +333,7 @@ function requiredRegion(value: unknown): LegalityRegion {
 }
 
 export function regionForLineage(lineage: string): LegalityRegion {
-  if (lineage === "gundam-en-asia") return "EN-ASIA";
-  if (lineage === "gundam-en-us") return "EN-US";
-  if (
-    lineage === "one-piece-en" ||
-    lineage === "fusion-world-en" ||
-    lineage === "digimon-en"
-  ) {
-    return "EN-OCEANIA";
-  }
-  throw new Error("Legality Rule source lineage is unsupported.");
+  return registeredLegalitySourceScope(lineage).region;
 }
 
 function requiredDate(value: unknown, name: string): string {

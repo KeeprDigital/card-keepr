@@ -1,4 +1,5 @@
 import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { requiredOfficialSourceScope } from "./official-source-scope.mjs";
 
 type OfficialLegalityGame =
   | "one-piece"
@@ -393,8 +394,9 @@ function exactEffect(
       assertNoContradiction(
         directive,
         wording,
-        /\b(?:banned?|not legal)\b|may not be included/iu,
+        /\bbanned?\b|may not be included/iu,
       );
+      assertNoNegatedLegalityPredicate(directive, wording);
       return { type: "eligible" };
     case "ban":
     case "banned":
@@ -474,6 +476,7 @@ function exactEffect(
         wording,
         /\b(?:does\s+not|do\s+not|need\s+not)\s+(?:require|include|have)\b|\bnot\s+required\b|\bwithout\s+(?:the\s+)?(?:membership|traits?|attributes?)\b/iu,
       );
+      assertNoNegatedLegalityPredicate(directive, wording);
       assertWording(
         directive,
         wording,
@@ -498,6 +501,7 @@ function exactEffect(
         wording,
         /\b(?:not\s+(?:eligible|legal|permitted)|ineligible|illegal|excluded)\b/iu,
       );
+      assertNoNegatedLegalityPredicate(directive, wording);
       assertWording(
         directive,
         wording,
@@ -520,6 +524,7 @@ function exactEffect(
         wording,
         /\b(?:not|never)\s+(?:be\s+|become\s+)?legal\b|\b(?:illegal|ineligible)\b|\bdelayed\s+(?:past|beyond|until after)\b/iu,
       );
+      assertNoNegatedLegalityPredicate("release timing", wording);
       assertWording(
         directive,
         wording,
@@ -614,10 +619,19 @@ function assertNoContradiction(
   }
 }
 
+function assertNoNegatedLegalityPredicate(
+  directive: string,
+  wording: string,
+): void {
+  assertNoContradiction(
+    directive,
+    wording,
+    /\b(?:not|never)\b(?:\s+[\p{L}\p{N}'-]+){0,4}\s+(?:eligible|legal|permitted|required|included?|requires?|includes?|has|have)\b/iu,
+  );
+}
+
 function regionForLineage(sourceLineage: string): string {
-  if (sourceLineage === "gundam-en-asia") return "EN-ASIA";
-  if (sourceLineage === "gundam-en-us") return "EN-US";
-  return "EN-OCEANIA";
+  return requiredOfficialSourceScope(sourceLineage).legalityRegion;
 }
 
 function requiredRecord(

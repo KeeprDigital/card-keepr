@@ -399,6 +399,11 @@ test("current production legality parser requires exact positive wording for eve
     ],
     [
       "Only cards whose trait includes Saiyan or Earthling are eligible.",
+      "Only cards whose trait does not currently include Saiyan or Earthling are eligible.",
+      /membership/u,
+    ],
+    [
+      "Only cards whose trait includes Saiyan or Earthling are eligible.",
       "Only cards whose trait includes Saiyan or Namekian are eligible.",
       /operand Earthling/u,
     ],
@@ -409,12 +414,22 @@ test("current production legality parser requires exact positive wording for eve
     ],
     [
       "Blocks 05 and 06 are eligible for rotation.",
+      "Blocks 05 and 06 are not currently eligible for rotation.",
+      /rotation/u,
+    ],
+    [
+      "Blocks 05 and 06 are eligible for rotation.",
       "Blocks 05 and 07 are eligible for rotation.",
       /operand 06/u,
     ],
     [
       "FB01-012 becomes legal for tournament play on 2026-09-04.",
       "FB01-012 is not legal for tournament play on 2026-09-04.",
+      /release timing/u,
+    ],
+    [
+      "FB01-012 becomes legal for tournament play on 2026-09-04.",
+      "FB01-012 is not currently tournament legal on 2026-09-04.",
       /release timing/u,
     ],
     [
@@ -433,6 +448,23 @@ test("current production legality parser requires exact positive wording for eve
       mismatch,
     );
   }
+});
+
+test("current production legality parser rejects modifier-scoped eligible negation", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = fusionLegalityPage(fusionLegalityRuleHtml({
+    id: "FW-2026-NEGATED-ELIGIBLE",
+    wording: "FB01-030 is not tournament legal for Standard play.",
+    cards: ["FB01-030"],
+    directive: "eligible",
+  }));
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html),
+      fusionLegalityContext(current),
+    ),
+    /wording contradicts directive eligible/u,
+  );
 });
 
 test("current production legality HTML decodes entities exactly once", () => {

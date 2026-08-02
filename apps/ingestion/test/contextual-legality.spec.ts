@@ -14,6 +14,11 @@ import {
   utf8,
 } from "../../../src/catalogue/serialization";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import {
+  fusionWorldProductionDiscoveryRequests,
+  onePieceProductionDiscoveryRequests,
+  type ProductionDiscoveryRequest,
+} from "./production-discovery-request-goldens";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -26,6 +31,31 @@ beforeEach(async () => {
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+});
+
+test("D1 freshness scope remains structural while registered Source metadata owns lineage semantics", async () => {
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at,
+       expected_current_revision_id, linked_run_id, idempotency_key,
+       candidate_json
+     ) VALUES (
+       'run_future_legality_scope', 'planning', '["gundam"]',
+       '2026-08-02T00:00:00.000Z', 'catrev_spine_000', NULL,
+       'future-legality-scope', '{}'
+     )`,
+  ).run();
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO source_freshness (
+       game, area, source_lineage, region, checked_at, ingestion_run_id
+     ) VALUES (
+       'gundam', 'legality-rules', 'gundam-en-future', 'EN-FUTURE',
+       '2026-08-02T00:00:00.000Z', 'run_future_legality_scope'
+     )`,
+  ).run()).resolves.toBeDefined();
+  await testEnv.CATALOGUE_DB.prepare(
+    "DELETE FROM source_freshness WHERE ingestion_run_id = 'run_future_legality_scope'",
+  ).run();
 });
 
 test("applied D1 request copies and owning run identities are immutable", async () => {
@@ -2540,97 +2570,6 @@ async function waitForState(runId: string, expected: string) {
   }
   throw new Error(`run ${runId} did not reach ${expected}`);
 }
-
-type ProductionDiscoveryRequest = {
-  id: string;
-  method: "GET";
-  url: string;
-  headers: Record<string, string>;
-};
-
-const fusionWorldProductionDiscoveryRequests: readonly ProductionDiscoveryRequest[] = [
-  {
-    id: "fusion-world-en:card-search",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "fusion-world-en:products",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/products/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "fusion-world-en:releases",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/products/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "fusion-world-en:legality-current",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "fusion-world-en:legality-history",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "fusion-world-en:errata",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
-    headers: { accept: "text/html" },
-  },
-];
-
-const onePieceProductionDiscoveryRequests: readonly ProductionDiscoveryRequest[] = [
-  {
-    id: "one-piece-en:card-list",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/cardlist/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:products",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/products/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:releases",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/products/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:restrictions",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/restriction/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:block-policy",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/block_icon/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:errata",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    headers: { accept: "text/html" },
-  },
-  {
-    id: "one-piece-en:don-rules",
-    method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/",
-    headers: { accept: "text/html" },
-  },
-];
 
 function productionFusionLegalityRequests(
   marker: string,

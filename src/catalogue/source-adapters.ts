@@ -3,6 +3,7 @@ import {
   officialRawAdapterContracts,
 } from "./official-raw-adapter-contracts.mjs";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.mjs";
+import { requiredOfficialSourceScope } from "./official-source-scope.mjs";
 
 export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
@@ -16,6 +17,7 @@ export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
   sourceLineage: string;
   supportedGame: string;
+  legalityRegion: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
   gameProfileVersion: string;
   parserContract: string;
   maximumSnapshotBytes: number;
@@ -377,7 +379,11 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           ? parseLegalitySourceDocument
           : parseSourceDocument,
       })),
-    ].map((adapter) => Object.freeze(adapter)),
+    ].map((adapter) => Object.freeze({
+      ...adapter,
+      legalityRegion:
+        requiredOfficialSourceScope(adapter.sourceLineage).legalityRegion,
+    })),
   );
 
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
@@ -409,6 +415,40 @@ export function requiredSourceAdapter(
     );
   }
   return adapter;
+}
+
+export function registeredLegalitySourceScope(
+  sourceLineage: string,
+): {
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  region: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
+} {
+  const registrations = installedSourceAdapterRegistrations.filter(
+    (adapter) => adapter.sourceLineage === sourceLineage,
+  );
+  const first = registrations[0];
+  if (
+    first === undefined ||
+    !["one-piece", "fusion-world", "digimon", "gundam"].includes(
+      first.supportedGame,
+    ) ||
+    registrations.some((adapter) =>
+      adapter.supportedGame !== first.supportedGame ||
+      adapter.legalityRegion !== first.legalityRegion
+    )
+  ) {
+    throw new Error(
+      "Legality Source Lineage has no consistent registered ownership.",
+    );
+  }
+  return {
+    game: first.supportedGame as
+      | "one-piece"
+      | "fusion-world"
+      | "digimon"
+      | "gundam",
+    region: first.legalityRegion,
+  };
 }
 
 export function assertAdapterBinding(

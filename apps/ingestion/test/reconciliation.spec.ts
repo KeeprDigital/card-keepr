@@ -23,7 +23,6 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
-import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
   startOrObserveReconciliationWorkflow,
@@ -35,7 +34,6 @@ import {
   type SupportedGame,
 } from "../../../src/catalogue/catalogue-candidate";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
 import {
   injectFixtureEvidencePlan,
@@ -46,6 +44,11 @@ import {
   GZIP_PROFILE_GOLDENS,
 } from "./deterministic-gzip-golden";
 import {
+  digimonProductionDiscoveryRequests,
+  fusionWorldProductionDiscoveryRequests,
+  onePieceProductionDiscoveryRequests,
+} from "./production-discovery-request-goldens";
+import {
   runReconciliationWorkflow,
 } from "../src/reconciliation-workflow";
 import ingestionWorker from "../src/index";
@@ -53,6 +56,16 @@ import ingestionWorker from "../src/index";
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
 };
+
+test("registered Source metadata rejects unowned stored Legality freshness scopes", () => {
+  expect(() => sourceFreshnessFromStorage({
+    game: "gundam",
+    area: "legality-rules",
+    source_lineage: "gundam-en-future",
+    region: "EN-ASIA",
+    checked_at: "2026-08-02T00:00:00.000Z",
+  })).toThrow(/registered ownership/);
+});
 let requestSequence = 0;
 
 beforeEach(async () => {
@@ -1703,7 +1716,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@3",
     idempotency_key: "reconcile-production-adapter-without-coverage",
-    requests: officialSourceDiscoveryRequests("fusion-world-en"),
+    requests: fusionWorldProductionDiscoveryRequests,
   });
   expect(started.response.status).toBe(201);
   const run = {
@@ -1744,7 +1757,7 @@ test("a production raw legality sidecar fails closed without an exact rule parse
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@2",
     idempotency_key: "reject-nonempty-raw-legality-sidecar",
-    requests: officialSourceDiscoveryRequests("fusion-world-en").map(
+    requests: fusionWorldProductionDiscoveryRequests.map(
       (request) =>
         request.id === "fusion-world-en:legality-current"
           ? {
@@ -1807,7 +1820,7 @@ test("complete image evidence publishes an unidentified artwork once without col
       | "alternate-two",
     expectedState = "awaiting_approval",
   ) => {
-    const requests = officialSourceDiscoveryRequests("digimon-en").map(
+    const requests = digimonProductionDiscoveryRequests.map(
       (sourceRequest) =>
         sourceRequest.id === "digimon-en:card-list"
           ? {
@@ -1926,7 +1939,7 @@ test("complete image evidence publishes an unidentified artwork once without col
 }, 60_000);
 
 test("production plans bind every request identity to its exact Official Source surface URL", async () => {
-  const requests = officialSourceDiscoveryRequests("one-piece-en").map(
+  const requests = onePieceProductionDiscoveryRequests.map(
     (request) => ({ ...request }),
   );
   requests[0]!.url =
@@ -4625,7 +4638,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-en@1",
     idempotency_key: "blocked-recovery-start",
-    requests: officialSourceDiscoveryRequests("one-piece-en"),
+    requests: onePieceProductionDiscoveryRequests,
   });
   expect(blockedStart.response.status).toBe(409);
   expect(blockedStart.document).toMatchObject({
@@ -4983,7 +4996,7 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
 }, 30_000);
 
 test("registered Product detail evidence outranks its conflicting listing through publication", async () => {
-  const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+  const requests = fusionWorldProductionDiscoveryRequests.map(
     (request) =>
       request.id === "fusion-world-en:products" ||
         request.id === "fusion-world-en:releases"
@@ -5049,7 +5062,7 @@ test("a registered code-less Product refresh preserves its established code", as
   const start = async (
     state: "coded" | "codeless",
   ) => {
-    const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+    const requests = fusionWorldProductionDiscoveryRequests.map(
       (request) =>
         request.id === "fusion-world-en:products"
           ? {
@@ -5139,7 +5152,7 @@ test("a registered code-less Product refresh preserves its established code", as
 }, 45_000);
 
 test("a registered fuzzy Product link remains a review warning through publication", async () => {
-  const requests = officialSourceDiscoveryRequests("digimon-en").map(
+  const requests = digimonProductionDiscoveryRequests.map(
     (request) =>
       request.id === "digimon-en:card-list"
         ? {

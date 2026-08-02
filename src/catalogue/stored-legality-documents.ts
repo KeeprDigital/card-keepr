@@ -5,6 +5,12 @@ import type {
   LegalityRuleEffect,
 } from "./legality-rule";
 import { regionForLineage } from "./legality-rule";
+import {
+  canonicalProfileAttributes,
+  validateMembershipPredicate,
+  type ProfileWarning,
+} from "./reconciliation-profile";
+import { registeredLegalitySourceScope } from "./source-adapters";
 import { isIsoCalendarDate } from "./calendar-date.mjs";
 import { canonicalJson, compareUtf8 } from "./serialization";
 
@@ -25,31 +31,22 @@ export type StoredLegalityStatusCard = Pick<
   "id" | "game" | "game_data"
 >;
 
-export type StoredLegalityStatusRule = Omit<
-  LegalityRule,
-  "source_field_pointers"
-> & {
-  source_field_pointers: Partial<LegalityRule["source_field_pointers"]> &
-    Pick<LegalityRule["source_field_pointers"], "official_wording">;
-};
+export type StoredLegalityStatusRule = LegalityRule;
 
 export function parseStoredCatalogueCard(
   json: string,
 ): StoredLegalityStatusCard {
   const root = parsedRecord(json, "stored Card document");
-  const envelope = root.data === undefined ? null : root;
-  if (envelope !== null) {
-    assertOnlyFields(
-      envelope,
-      ["data", "included", "provenance", "disagreements"],
-      "stored Card envelope",
-    );
-    requiredRecordArray(envelope.included, "stored Card included resources");
-    requiredProvenance(envelope.provenance, "stored Card provenance");
-    requiredRecordArray(envelope.disagreements, "stored Card disagreements");
-  }
-  const data = requiredRecord(envelope?.data ?? root, "stored Card data");
-  assertOnlyFields(
+  assertExactFields(
+    root,
+    ["data", "included", "provenance", "disagreements"],
+    "stored Card envelope",
+  );
+  requiredRecordArray(root.included, "stored Card included resources");
+  requiredProvenance(root.provenance, "stored Card provenance");
+  requiredRecordArray(root.disagreements, "stored Card disagreements");
+  const data = requiredRecord(root.data, "stored Card data");
+  assertExactFields(
     data,
     [
       "type",
@@ -66,26 +63,24 @@ export function parseStoredCatalogueCard(
     ],
     "stored Card data",
   );
-  if (data.type !== undefined && data.type !== "card") {
+  if (data.type !== "card") {
     throw new Error("Stored Card type is invalid.");
   }
   const id = requiredText(data.id, "stored Card id");
   const game = requiredGame(data.game, "stored Card game");
-  if (data.official_identity !== undefined) {
-    const identity = requiredRecord(
-      data.official_identity,
-      "stored Card official identity",
-    );
-    assertOnlyFields(identity, ["kind", "value"], "stored Card identity");
-    if (identity.kind === "card_number") {
-      requiredText(identity.value, "stored Card number");
-    } else if (
-      game !== "one-piece" ||
-      identity.kind !== "functional_designation" ||
-      identity.value !== "DON!!"
-    ) {
-      throw new Error("Stored Card official identity is invalid.");
-    }
+  const identity = requiredRecord(
+    data.official_identity,
+    "stored Card official identity",
+  );
+  assertExactFields(identity, ["kind", "value"], "stored Card identity");
+  if (identity.kind === "card_number") {
+    requiredText(identity.value, "stored Card number");
+  } else if (
+    game !== "one-piece" ||
+    identity.kind !== "functional_designation" ||
+    identity.value !== "DON!!"
+  ) {
+    throw new Error("Stored Card official identity is invalid.");
   }
   const gameData = requiredRecord(data.game_data, "stored Card game data");
   assertOnlyFields(gameData, ["profile", "attributes"], "stored Card game data");
@@ -93,30 +88,42 @@ export function parseStoredCatalogueCard(
   if (profile !== `${game}@1`) {
     throw new Error("Stored Card profile conflicts with its Supported Game.");
   }
-  const attributes = requiredRecord(
+  const rawAttributes = requiredRecord(
     gameData.attributes,
     "stored Card profile attributes",
   );
-  if (data.name !== undefined) requiredText(data.name, "stored Card name");
-  if (data.effective_rules_text !== undefined) {
-    nullableText(
-      data.effective_rules_text,
-      "stored Card Effective Rules Text",
-    );
+  const warnings: ProfileWarning[] = [];
+  const attributes = canonicalProfileAttributes(
+    "stored-card-document",
+    profile,
+    "card",
+    rawAttributes,
+    warnings,
+  );
+  if (
+    warnings.length > 0 ||
+    canonicalJson(attributes) !== canonicalJson(rawAttributes)
+  ) {
+    throw new Error("Stored Card profile attributes are not canonical.");
   }
-  if (data.printing_ids !== undefined) {
-    requiredUniqueStrings(data.printing_ids, "stored Card Printing ids", true);
+  requiredText(data.name, "stored Card name");
+  nullableText(data.effective_rules_text, "stored Card Effective Rules Text");
+  requiredUniqueStrings(data.printing_ids, "stored Card Printing ids", true);
+  const sourceLineages = requiredUniqueStrings(
+    data.source_lineages,
+    "stored Card Source Lineages",
+    true,
+  );
+  if (sourceLineages.some((lineage) =>
+    registeredLegalitySourceScope(lineage).game !== game
+  )) {
+    throw new Error("Stored Card Source Lineage conflicts with its Supported Game.");
   }
-  if (data.source_lineages !== undefined) {
-    requiredUniqueStrings(data.source_lineages, "stored Card Source Lineages", true);
-  }
-  if (data.lifecycle !== undefined) requiredLifecycle(data.lifecycle, "stored Card lifecycle");
-  if (data.links !== undefined) {
-    const links = requiredRecord(data.links, "stored Card links");
-    assertOnlyFields(links, ["self"], "stored Card links");
-    if (requiredText(links.self, "stored Card self link") !== `/v1/cards/${id}`) {
-      throw new Error("Stored Card self link conflicts with its identity.");
-    }
+  requiredLifecycle(data.lifecycle, "stored Card lifecycle");
+  const links = requiredRecord(data.links, "stored Card links");
+  assertExactFields(links, ["self"], "stored Card links");
+  if (requiredText(links.self, "stored Card self link") !== `/v1/cards/${id}`) {
+    throw new Error("Stored Card self link conflicts with its identity.");
   }
   return {
     id,
@@ -154,6 +161,9 @@ export function parseStoredLegalityRule(
   if (regionForLineage(sourceLineage) !== region) {
     throw new Error("Stored Legality Rule region conflicts with its Source Lineage.");
   }
+  if (registeredLegalitySourceScope(sourceLineage).game !== game) {
+    throw new Error("Stored Legality Rule game conflicts with its Source Lineage.");
+  }
   const effectiveFrom = requiredDate(
     rule.effective_from,
     "stored Legality Rule effective_from",
@@ -181,27 +191,44 @@ export function parseStoredLegalityRule(
     "official_wording", "effective_from", "effective_until", "region",
     "format", "event_tier", "card_numbers", "effect",
   ];
-  assertOnlyFields(
+  assertExactFields(
     sourceFieldPointers,
     pointerFields,
     "stored Legality Rule source field pointers",
   );
-  if (!("official_wording" in sourceFieldPointers)) {
-    throw new Error(
-      "Stored Legality Rule source field pointers omit official wording.",
-    );
-  }
-  for (const field of Object.keys(sourceFieldPointers)) {
-    requiredJsonPointer(
+  const sourceObservationPointer = requiredJsonPointer(
+    rule.source_observation_pointer,
+    "stored Legality Rule Source Observation pointer",
+  );
+  for (const field of pointerFields) {
+    const pointer = requiredJsonPointer(
       sourceFieldPointers[field],
       `stored Legality Rule ${field} pointer`,
     );
+    if (pointer !== `${sourceObservationPointer}/${field}`) {
+      throw new Error(
+        `Stored Legality Rule ${field} pointer conflicts with its observation pointer.`,
+      );
+    }
   }
   const current = requiredBoolean(rule.current, "stored Legality Rule current");
   const lastMissingRevisionId = nullableText(
     rule.last_missing_revision_id,
     "stored Legality Rule last missing revision id",
   );
+  if (!current && lastMissingRevisionId === null) {
+    throw new Error(
+      "Stored Legality Rule missing lifecycle omits its last missing revision.",
+    );
+  }
+  const effect = requiredCanonicalEffect(rule.effect);
+  if (effect.type === "membership") {
+    validateMembershipPredicate(
+      `${game}@1`,
+      effect.attribute,
+      effect.includes_any,
+    );
+  }
   return {
     id: requiredText(rule.id, "stored Legality Rule id"),
     official_id: requiredText(rule.official_id, "stored Legality Rule official id"),
@@ -216,7 +243,7 @@ export function parseStoredLegalityRule(
       rule.official_wording,
       "stored Legality Rule wording",
     ),
-    effect: requiredCanonicalEffect(rule.effect),
+    effect,
     source_lineage: sourceLineage,
     source_snapshot_id: requiredText(
       rule.source_snapshot_id,
@@ -230,10 +257,7 @@ export function parseStoredLegalityRule(
       rule.source_observation_id,
       "stored Legality Rule Source Observation id",
     ),
-    source_observation_pointer: requiredJsonPointer(
-      rule.source_observation_pointer,
-      "stored Legality Rule Source Observation pointer",
-    ),
+    source_observation_pointer: sourceObservationPointer,
     source_field_pointers:
       sourceFieldPointers as StoredLegalityStatusRule["source_field_pointers"],
     first_revision_id: requiredText(
@@ -355,9 +379,14 @@ function requiredLifecycle(value: unknown, name: string): void {
   );
   requiredText(lifecycle.first_revision_id, `${name} first revision id`);
   requiredText(lifecycle.last_observed_revision_id, `${name} last observed revision id`);
-  requiredBoolean(lifecycle.withdrawn, `${name} withdrawn`);
-  if (lifecycle.withdrawal !== null && lifecycle.withdrawal !== undefined) {
-    requiredRecord(lifecycle.withdrawal, `${name} withdrawal`);
+  const withdrawn = requiredBoolean(lifecycle.withdrawn, `${name} withdrawn`);
+  if (withdrawn) {
+    const withdrawal = requiredRecord(lifecycle.withdrawal, `${name} withdrawal`);
+    assertExactFields(withdrawal, ["revision_id", "evidence"], `${name} withdrawal`);
+    requiredText(withdrawal.revision_id, `${name} withdrawal revision id`);
+    requiredRecord(withdrawal.evidence, `${name} withdrawal evidence`);
+  } else if (lifecycle.withdrawal !== null && lifecycle.withdrawal !== undefined) {
+    throw new Error(`${name} cannot retain withdrawal evidence while current.`);
   }
 }
 
@@ -427,4 +456,14 @@ function assertOnlyFields(
   const allowed = new Set(fields);
   const unexpected = Object.keys(record).find((field) => !allowed.has(field));
   if (unexpected !== undefined) throw new Error(`${name} has unexpected field ${unexpected}.`);
+}
+
+function assertExactFields(
+  record: Record<string, unknown>,
+  fields: readonly string[],
+  name: string,
+): void {
+  assertOnlyFields(record, fields, name);
+  const missing = fields.find((field) => !(field in record));
+  if (missing !== undefined) throw new Error(`${name} omits required field ${missing}.`);
 }

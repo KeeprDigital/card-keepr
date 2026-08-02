@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,6 +8,19 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 const root = resolve(import.meta.dirname, "..");
+
+test("historical export record schema v1 remains byte-identical to its fixed point", async () => {
+  const bytes = await readFile(resolve(
+    root,
+    "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v1.schema.json",
+  ));
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    "37683203c58b62f56afebd25477fe48b3ec188c108201fea56bb635f0f9660ea",
+  );
+  assert.equal(JSON.parse(bytes.toString("utf8")).$id,
+    "https://card-keepr.invalid/schemas/catalogue-export-record@1");
+});
 
 test("Product detail documents invalid include requests", async () => {
   const openapi = JSON.parse(

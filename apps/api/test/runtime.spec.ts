@@ -408,7 +408,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
     {
       cardId: "card_precedence_rotation",
-      attributes: { block_icons: ["2"] },
+      attributes: { block_icon: "2" },
       effect: { type: "rotation", eligible_blocks: ["1"] },
     },
     {
@@ -421,12 +421,41 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     },
   ] as const;
   const cards = cases.map((testCase) => ({
+    type: "card",
     id: testCase.cardId,
     game: "gundam",
+    official_identity: {
+      kind: "card_number",
+      value: `GD-PRECEDENCE-${testCase.cardId}`,
+    },
+    name: `Precedence ${testCase.cardId}`,
+    effective_rules_text: null,
     game_data: {
       profile: "gundam@1",
-      attributes: testCase.attributes,
+      attributes: {
+        card_type: "unit",
+        colours: [],
+        level: null,
+        cost: null,
+        block_icon: null,
+        effect_text: null,
+        zone: null,
+        traits: [],
+        link_condition: null,
+        ap: null,
+        hp: null,
+        series_titles: [],
+        ...testCase.attributes,
+      },
     },
+    printing_ids: [],
+    source_lineages: ["gundam-en-asia"],
+    lifecycle: {
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      withdrawn: false,
+    },
+    links: { self: `/v1/cards/${testCase.cardId}` },
   }));
   const rules = cases.flatMap((testCase, index) => [
     {
@@ -518,7 +547,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         `INSERT INTO revision_cards (
           catalogue_revision_id, card_id, document_json
         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(card))
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
@@ -650,6 +679,99 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       expect(nonmatch.headers.get("etag")).toBe(etag);
     }
   }
+
+  const statusUrl =
+    "https://card-keepr.invalid/v1/legality-status" +
+    `?card_id=${cases[0].cardId}` +
+    "&on=2026-07-30&format=standard&region=EN-ASIA";
+  const expectInvalidStoredDocument = async () => {
+    const response = await exports.default.fetch(new Request(statusUrl, {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "cf-connecting-ip": "203.0.113.99",
+      },
+    }));
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_catalogue_document",
+    });
+  };
+  const originalCard = cards[0]!;
+  const malformedCards = [
+    { id: originalCard.id, game: originalCard.game, game_data: originalCard.game_data },
+    {
+      ...originalCard,
+      game_data: {
+        ...originalCard.game_data,
+        attributes: { ...originalCard.game_data.attributes, traits: {} },
+      },
+    },
+    {
+      ...originalCard,
+      official_identity: { kind: "functional_designation", value: "DON!!" },
+    },
+    {
+      ...originalCard,
+      lifecycle: {
+        ...originalCard.lifecycle,
+        withdrawn: true,
+      },
+    },
+  ];
+  for (const malformed of malformedCards) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_cards SET document_json = ?
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(
+      JSON.stringify(publishedCardEnvelope(malformed)),
+      revisionId,
+      originalCard.id,
+    ).run();
+    await expectInvalidStoredDocument();
+  }
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_cards SET document_json = ?
+     WHERE catalogue_revision_id = ? AND card_id = ?`,
+  ).bind(
+    JSON.stringify(publishedCardEnvelope(originalCard)),
+    revisionId,
+    originalCard.id,
+  ).run();
+
+  const pointer = "/observations/0/value/legality_rules/0";
+  const originalRule = {
+    ...rules[0]!,
+    source_observation_pointer: pointer,
+    source_field_pointers: legalityRuleFieldPointers(pointer),
+    first_revision_id: revisionId,
+    last_observed_revision_id: revisionId,
+    current: true,
+    last_missing_revision_id: null,
+  };
+  await testEnv.CATALOGUE_DB.prepare(
+    "DROP TRIGGER revision_legality_rules_immutable_update",
+  ).run();
+  const malformedRules = [
+    {
+      ...originalRule,
+      source_field_pointers: {
+        official_wording: `${pointer}/official_wording`,
+      },
+    },
+    { ...originalRule, game: "one-piece" },
+    { ...originalRule, current: false, last_missing_revision_id: null },
+  ];
+  for (const malformed of malformedRules) {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_legality_rules SET document_json = ?
+       WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
+    ).bind(
+      JSON.stringify(malformed),
+      revisionId,
+      originalRule.id,
+    ).run();
+    await expectInvalidStoredDocument();
+  }
 });
 
 test("authenticated Legality Status targets the functional DON!! Card and audits unresolved rules", async () => {
@@ -661,6 +783,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
   const companionId = "card_api_don_companion";
   const cards = [
     {
+      type: "card",
       id: donId,
       game: "one-piece",
       official_identity: {
@@ -669,17 +792,62 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
       },
       game_data: {
         profile: "one-piece@1",
-        attributes: { card_type: "don", traits: [] },
+        attributes: {
+          card_type: "don",
+          colours: [],
+          cost: null,
+          life: null,
+          battle_attributes: [],
+          power: null,
+          counter: null,
+          traits: [],
+          block_icons: [],
+          effect_text: null,
+          trigger_text: null,
+        },
       },
+      name: "DON!!",
+      effective_rules_text: null,
+      printing_ids: [],
+      source_lineages: ["one-piece-en"],
+      lifecycle: {
+        first_revision_id: revisionId,
+        last_observed_revision_id: revisionId,
+        withdrawn: false,
+      },
+      links: { self: `/v1/cards/${donId}` },
     },
     {
+      type: "card",
       id: companionId,
       game: "one-piece",
       official_identity: { kind: "card_number", value: "OP30-001" },
       game_data: {
         profile: "one-piece@1",
-        attributes: { card_type: "leader", traits: [] },
+        attributes: {
+          card_type: "leader",
+          colours: ["red"],
+          cost: null,
+          life: 5,
+          battle_attributes: [],
+          power: 5000,
+          counter: null,
+          traits: [],
+          block_icons: [],
+          effect_text: null,
+          trigger_text: null,
+        },
       },
+      name: "DON companion",
+      effective_rules_text: null,
+      printing_ids: [],
+      source_lineages: ["one-piece-en"],
+      lifecycle: {
+        first_revision_id: revisionId,
+        last_observed_revision_id: revisionId,
+        withdrawn: false,
+      },
+      links: { self: `/v1/cards/${companionId}` },
     },
   ];
   const baseRule = {
@@ -780,7 +948,7 @@ test("authenticated Legality Status targets the functional DON!! Card and audits
         `INSERT INTO revision_cards (
           catalogue_revision_id, card_id, document_json
         ) VALUES (?, ?, ?)`,
-      ).bind(revisionId, card.id, JSON.stringify(card))
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
     ),
     ...revisionLegalityRuleStatements(revisionId, rules),
     testEnv.CATALOGUE_DB.prepare(
@@ -1700,6 +1868,7 @@ function apiCard(input: {
     },
     effective_rules_text: input.effectiveRulesText ?? input.name,
     printing_ids: [],
+    source_lineages: ["one-piece-en"],
     lifecycle: {
       first_revision_id: "catrev_fixture",
       last_observed_revision_id: "catrev_fixture",
@@ -1776,7 +1945,7 @@ async function seedApiRevision(input: {
       ).bind(
         input.revisionId,
         card.id,
-        JSON.stringify(card),
+        JSON.stringify(publishedCardEnvelope(card)),
       ),
       ...cardSearchStatements(input.revisionId, card),
     ]),
@@ -2058,7 +2227,7 @@ function canonicalLegalityRuleStatements(
       rule.source_observation_set_id,
       rule.source_observation_id,
       pointer,
-      JSON.stringify({ official_wording: `${pointer}/official_wording` }),
+      JSON.stringify(legalityRuleFieldPointers(pointer)),
       revisionId,
       revisionId,
     );
@@ -2074,9 +2243,7 @@ function revisionLegalityRuleStatements(
     const document = {
       ...rule,
       source_observation_pointer: pointer,
-      source_field_pointers: {
-        official_wording: `${pointer}/official_wording`,
-      },
+      source_field_pointers: legalityRuleFieldPointers(pointer),
       first_revision_id: revisionId,
       last_observed_revision_id: revisionId,
       current: true,
@@ -2114,4 +2281,21 @@ function canonicalLegalityCardIds(
     )
     : [];
   return [...new Set([...rule.card_ids, ...companionIds])].sort();
+}
+
+function publishedCardEnvelope(data: Record<string, unknown>) {
+  return { data, included: [], provenance: {}, disagreements: [] };
+}
+
+function legalityRuleFieldPointers(pointer: string) {
+  return {
+    official_wording: `${pointer}/official_wording`,
+    effective_from: `${pointer}/effective_from`,
+    effective_until: `${pointer}/effective_until`,
+    region: `${pointer}/region`,
+    format: `${pointer}/format`,
+    event_tier: `${pointer}/event_tier`,
+    card_numbers: `${pointer}/card_numbers`,
+    effect: `${pointer}/effect`,
+  };
 }

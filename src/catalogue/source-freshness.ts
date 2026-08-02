@@ -3,7 +3,7 @@ import type {
   SupportedGame,
 } from "./catalogue-candidate";
 import type { LegalityRegion } from "./legality-rule";
-import { regionForLineage } from "./legality-rule";
+import { registeredLegalitySourceScope } from "./source-adapters";
 import { compareUtf8 } from "./serialization";
 
 export type SourceFreshnessStorageRow = {
@@ -20,9 +20,10 @@ export function sourceFreshnessFromStorage(
   const game = supportedGame(row.game);
   if (row.area === "legality-rules") {
     const region = legalityRegion(row.region);
+    const scope = registeredLegalitySourceScope(row.source_lineage);
     if (
-      regionForLineage(row.source_lineage) !== region ||
-      gameForLineage(row.source_lineage) !== game
+      scope.region !== region ||
+      scope.game !== game
     ) {
       throw new Error("Stored Legality freshness scope is inconsistent.");
     }
@@ -138,14 +139,4 @@ function legalityRegion(value: string): LegalityRegion {
     throw new Error("Stored Legality freshness has an unsupported region.");
   }
   return value as LegalityRegion;
-}
-
-function gameForLineage(lineage: string): SupportedGame {
-  if (lineage === "one-piece-en") return "one-piece";
-  if (lineage === "fusion-world-en") return "fusion-world";
-  if (lineage === "digimon-en") return "digimon";
-  if (lineage === "gundam-en-asia" || lineage === "gundam-en-us") {
-    return "gundam";
-  }
-  throw new Error("Stored Legality freshness has an unsupported lineage.");
 }

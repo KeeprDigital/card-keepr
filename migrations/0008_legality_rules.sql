@@ -26,18 +26,8 @@ CREATE TABLE source_freshness (
     OR
     (
       area = 'legality-rules'
-      AND (
-        (game = 'one-piece' AND source_lineage = 'one-piece-en'
-          AND region = 'EN-OCEANIA')
-        OR (game = 'fusion-world' AND source_lineage = 'fusion-world-en'
-          AND region = 'EN-OCEANIA')
-        OR (game = 'digimon' AND source_lineage = 'digimon-en'
-          AND region = 'EN-OCEANIA')
-        OR (game = 'gundam' AND source_lineage = 'gundam-en-asia'
-          AND region = 'EN-ASIA')
-        OR (game = 'gundam' AND source_lineage = 'gundam-en-us'
-          AND region = 'EN-US')
-      )
+      AND source_lineage <> ''
+      AND region <> ''
     )
   )
 );
