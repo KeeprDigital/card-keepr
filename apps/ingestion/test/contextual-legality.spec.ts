@@ -1223,6 +1223,13 @@ test.each([
   "card-keepr-conditional-if-legality-v3",
   "card-keepr-conditional-during-legality-v3",
   "card-keepr-conditional-only-legality-v3",
+  "card-keepr-wording-target-omitted-v3",
+  "card-keepr-wording-target-mismatch-v3",
+  "card-keepr-wording-global-targeted-v3",
+  "card-keepr-wording-region-mismatch-v3",
+  "card-keepr-wording-format-mismatch-v3",
+  "card-keepr-wording-tier-omitted-v3",
+  "card-keepr-wording-tier-mismatch-v3",
 ])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -2097,6 +2104,93 @@ test.each([
     expect(rejected.response.status).toBe(200);
   },
 );
+
+test("approval rejects a partial candidate when a carried-forward game's Legality Rule crosses its boundary", async () => {
+  const carriedRunId = await collectFixtureLegalityEvidence(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=release-only",
+    "legality-clock-carried-game-seed",
+  );
+  const carried = await reconcile(
+    carriedRunId,
+    "2025-12-31T23:50:00.000Z",
+  );
+  expect(carried.response.status).toBe(200);
+  expect((await approve(
+    carried.document,
+    "legality-clock-carried-game-seed-publish",
+    "2025-12-31T23:55:00.000Z",
+  )).response.status).toBe(200);
+
+  const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: "legality-clock-carried-game-partial",
+    requests: [{
+      id: "cards",
+      method: "GET",
+      url: "https://official-source.invalid/reconciliation/base",
+      headers: { accept: "application/json" },
+    }],
+  });
+  const runId = requiredString(started, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "parsing");
+  const partial = await reconcile(runId, "2025-12-31T23:59:00.000Z");
+  expect(partial.response.status).toBe(200);
+  expect(partial.document.legality_rules).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        game: "gundam",
+        effect: {
+          type: "release_timing",
+          legal_from: "2026-01-01",
+        },
+      }),
+    ]),
+  );
+  const beforeApproval = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, candidate_digest, expected_current_revision_id,
+            approval_json, approval_idempotency_key,
+            published_revision_id, publication_outcome,
+            resulting_revision_id
+     FROM ingestion_runs WHERE id = ?`,
+  ).bind(runId).first();
+
+  const blocked = await approve(
+    partial.document,
+    "legality-clock-carried-game-blocked",
+    "2026-01-01T00:01:00.000Z",
+  );
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({ code: "candidate_legality_stale" });
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, candidate_digest, expected_current_revision_id,
+            approval_json, approval_idempotency_key,
+            published_revision_id, publication_outcome,
+            resulting_revision_id
+     FROM ingestion_runs WHERE id = ?`,
+  ).bind(runId).first()).toEqual(beforeApproval);
+  expect((await request(
+    `/v1/ingestion-runs/${runId}`,
+    undefined,
+    "2026-01-01T00:01:00.000Z",
+  )).document).toMatchObject({ state: "awaiting_approval" });
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/rejection`,
+    {
+      candidate_digest: requiredString(
+        partial.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "legality-clock-carried-game-rejected",
+    },
+    "2026-01-01T00:02:00.000Z",
+  )).response.status).toBe(200);
+});
 
 test("approval rejects a missing-but-effective historical Legality Rule boundary", async () => {
   const initialRunId = await collectFixtureLegalityEvidence(

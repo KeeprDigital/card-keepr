@@ -448,6 +448,38 @@ test("current production legality parser requires exact positive wording for eve
       mismatch,
     );
   }
+
+  for (const [structured, mismatch] of [
+    [
+      valid.replace(
+        "<dt>Filter Values</dt><dd>Saiyan, Earthling</dd>",
+        "<dt>Filter Values</dt><dd>Saiyan</dd>",
+      ),
+      /wording membership values/iu,
+    ],
+    [
+      valid.replace(
+        "<dt>Blocks</dt><dd>05, 06</dd>",
+        "<dt>Blocks</dt><dd>05</dd>",
+      ),
+      /wording rotation blocks/iu,
+    ],
+    [
+      valid.replace(
+        "FB01-010 and FB01-011 may not be used together in the same deck.",
+        "FB01-010, FB01-011 and FB01-012 may not be used together in the same deck.",
+      ),
+      /wording target and companion Cards/iu,
+    ],
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(structured),
+        fusionLegalityContext(current),
+      ),
+      mismatch,
+    );
+  }
 });
 
 test("current production legality parser rejects modifier-scoped eligible negation", () => {
@@ -511,6 +543,154 @@ test("current production legality parser rejects every unmodelled conditional cl
       /conditional|qualifier|cannot represent/u,
       name,
     );
+  }
+});
+
+test("every active production legality adapter requires exact wording targets and play scope", () => {
+  const cases = [
+    {
+      adapter: "one-piece-en@2",
+      lineage: "one-piece-en",
+      surface: "restrictions",
+      card: "OP30-001",
+      otherCard: "OP99-999",
+      region: "EN-OCEANIA",
+      otherRegion: "EN-US",
+      fields: {
+        id: "notice_no", wording: "published_text", region: "territory",
+        format: "format_name", tier: "event_class", from: "start_date",
+        until: "end_date", cards: "card_numbers", directive: "restriction_code",
+        maximum: "maximum_copies",
+      },
+    },
+    {
+      adapter: "fusion-world-en@3",
+      lineage: "fusion-world-en",
+      surface: "legality-current",
+      card: "FB30-001",
+      otherCard: "FB99-999",
+      region: "EN-OCEANIA",
+      otherRegion: "EN-US",
+      fields: {
+        id: "rule_ref", wording: "notice", region: "market",
+        format: "play_format", tier: "tier", from: "active_on",
+        until: "expires_on", cards: "cards", directive: "directive",
+        maximum: "cap",
+      },
+    },
+    {
+      adapter: "digimon-en@3",
+      lineage: "digimon-en",
+      surface: "restrictions-current",
+      card: "BT30-001",
+      otherCard: "BT99-999",
+      region: "EN-OCEANIA",
+      otherRegion: "EN-US",
+      fields: {
+        id: "restriction_id", wording: "body", region: "language_scope",
+        format: "ruleset", tier: "tournament_level", from: "applies_from",
+        until: "applies_until", cards: "card_ids", directive: "status_code",
+        maximum: "deck_limit",
+      },
+    },
+    ...[
+      ["gundam-en-asia@3", "gundam-en-asia", "GD30-001", "EN-ASIA", "EN-US"],
+      ["gundam-en-us@3", "gundam-en-us", "GD30-001", "EN-US", "EN-ASIA"],
+    ].map(([adapter, lineage, card, region, otherRegion]) => ({
+      adapter,
+      lineage,
+      surface: "legality",
+      card,
+      otherCard: "GD99-999",
+      region,
+      otherRegion,
+      fields: {
+        id: "news_id", wording: "text", region: "region",
+        format: "format", tier: "event_tier", from: "effective_date",
+        until: "end_date", cards: "card_numbers", directive: "ruling",
+        maximum: "copy_limit",
+      },
+    })),
+  ];
+
+  for (const descriptor of cases) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const payload = rawSurfacePayload(descriptor.lineage, descriptor.surface);
+    const eligible = {
+      [descriptor.fields.id]: `${descriptor.lineage}-exact-scope`,
+      [descriptor.fields.wording]:
+        `${descriptor.card} is eligible for Standard events in the ${descriptor.region} region.`,
+      [descriptor.fields.region]: descriptor.region,
+      [descriptor.fields.format]: "standard",
+      [descriptor.fields.tier]: null,
+      [descriptor.fields.from]: "2026-01-01",
+      [descriptor.fields.until]: null,
+      [descriptor.fields.cards]: [descriptor.card],
+      [descriptor.fields.directive]: "eligible",
+    };
+    payload.entries = [eligible];
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    assert.doesNotThrow(
+      () => parseRegisteredSurface(adapter, descriptor.surface, payload),
+      descriptor.adapter,
+    );
+
+    for (const [name, changed] of [
+      ["omitted target", { [descriptor.fields.cards]: [] }],
+      ["wrong target", { [descriptor.fields.cards]: [descriptor.otherCard] }],
+      [
+        "wrong wording region",
+        {
+          [descriptor.fields.wording]:
+            `${descriptor.card} is eligible for Standard events in the ${descriptor.otherRegion} region.`,
+        },
+      ],
+      ["wrong structured format", { [descriptor.fields.format]: "unlimited" }],
+    ]) {
+      const mismatch = structuredClone(payload);
+      mismatch.entries[0] = { ...eligible, ...changed };
+      assert.throws(
+        () => parseRegisteredSurface(adapter, descriptor.surface, mismatch),
+        /wording.*(?:target|region|format|scope)|does not exactly support/iu,
+        `${descriptor.adapter}: ${name}`,
+      );
+    }
+
+    const global = structuredClone(payload);
+    global.entries[0] = {
+      ...eligible,
+      [descriptor.fields.wording]:
+        "Cards satisfying the published Standard eligibility rules may be used.",
+    };
+    assert.throws(
+      () => parseRegisteredSurface(adapter, descriptor.surface, global),
+      /wording.*target/iu,
+      `${descriptor.adapter}: global wording with structured target`,
+    );
+
+    const tiered = structuredClone(payload);
+    tiered.entries[0] = {
+      ...eligible,
+      [descriptor.fields.wording]:
+        `For Championship events, decks may contain no more than 1 copy of ${descriptor.card}.`,
+      [descriptor.fields.tier]: "championship",
+      [descriptor.fields.directive]: "copy_limit",
+      [descriptor.fields.maximum]: 1,
+    };
+    assert.doesNotThrow(
+      () => parseRegisteredSurface(adapter, descriptor.surface, tiered),
+      `${descriptor.adapter}: exact tier`,
+    );
+    for (const tier of [null, "regional"]) {
+      const mismatch = structuredClone(tiered);
+      mismatch.entries[0][descriptor.fields.tier] = tier;
+      assert.throws(
+        () => parseRegisteredSurface(adapter, descriptor.surface, mismatch),
+        /wording.*(?:tier|scope)/iu,
+        `${descriptor.adapter}: ${String(tier)} tier`,
+      );
+    }
   }
 });
 

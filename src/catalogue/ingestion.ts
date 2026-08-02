@@ -908,7 +908,6 @@ function assertRulesClockFresh(
   }
   const crossedLegalityBoundary = (candidate.legality_rules ?? []).some(
     (rule) =>
-      selected.has(rule.game) &&
       [
         rule.effective_from,
         rule.effective_until,

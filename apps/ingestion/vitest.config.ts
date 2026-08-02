@@ -513,6 +513,13 @@ export default defineConfig({
                 "card-keepr-conditional-if-legality-v3",
                 "card-keepr-conditional-during-legality-v3",
                 "card-keepr-conditional-only-legality-v3",
+                "card-keepr-wording-target-omitted-v3",
+                "card-keepr-wording-target-mismatch-v3",
+                "card-keepr-wording-global-targeted-v3",
+                "card-keepr-wording-region-mismatch-v3",
+                "card-keepr-wording-format-mismatch-v3",
+                "card-keepr-wording-tier-omitted-v3",
+                "card-keepr-wording-tier-mismatch-v3",
                 "card-keepr-large-legality-workflow-v3",
               ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
@@ -565,6 +572,17 @@ export default defineConfig({
                   ? "FB01-001 is banned during Championship events."
                 : artworkMarker === "card-keepr-conditional-only-legality-v3"
                   ? "FB01-001 is banned only at Championship events."
+                : artworkMarker === "card-keepr-wording-target-omitted-v3" ||
+                    artworkMarker === "card-keepr-wording-target-mismatch-v3" ||
+                    artworkMarker === "card-keepr-wording-format-mismatch-v3"
+                  ? "FB01-001 is eligible for Standard play."
+                : artworkMarker === "card-keepr-wording-global-targeted-v3"
+                  ? "Cards satisfying the published Standard eligibility rules may be used."
+                : artworkMarker === "card-keepr-wording-region-mismatch-v3"
+                  ? "FB01-001 is eligible for Standard events in the EN-US region."
+                : artworkMarker === "card-keepr-wording-tier-omitted-v3" ||
+                    artworkMarker === "card-keepr-wording-tier-mismatch-v3"
+                  ? "For Championship events, decks may contain no more than 1 copy of FB01-001."
                 : artworkMarker === "card-keepr-mixed-effect-legality-v3"
                   ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
                   : artworkMarker === "card-keepr-definitive-unresolved-legality-v3"
@@ -580,13 +598,20 @@ export default defineConfig({
                 "card-keepr-conflicting-shared-legality-v3";
               const largeWorkflow = artworkMarker ===
                 "card-keepr-large-legality-workflow-v3";
+              const wordingTier = artworkMarker ===
+                  "card-keepr-wording-tier-omitted-v3" ||
+                artworkMarker === "card-keepr-wording-tier-mismatch-v3";
+              const wordingTargetOmitted = artworkMarker ===
+                "card-keepr-wording-target-omitted-v3";
+              const wordingTargetMismatch = artworkMarker ===
+                "card-keepr-wording-target-mismatch-v3";
               const legalityArticles = largeWorkflow
                 ? Array.from({ length: 4_000 }, (_, index) => {
                   const ordinal = String(index + 1).padStart(4, "0");
                   return `<article class="restriction-card">
                     <dl>
                       <dt>Rule Ref</dt><dd>fw_large_workflow_${ordinal}</dd>
-                      <dt>Notice</dt><dd>FB01-001 is eligible for Standard play.</dd>
+                      <dt>Notice</dt><dd>Cards satisfying the published Standard eligibility rules may be used.</dd>
                       <dt>Market</dt><dd>EN-OCEANIA</dd>
                       <dt>Play Format</dt><dd>standard</dd>
                       <dt>Tier</dt><dd>-</dd>
@@ -602,14 +627,28 @@ export default defineConfig({
                         <dt>Rule Ref</dt><dd>fw_production_eligible</dd>
                         <dt>Notice</dt><dd>${officialWording}</dd>
                         <dt>Market</dt><dd>EN-OCEANIA</dd>
-                        <dt>Play Format</dt><dd>standard</dd>
-                        <dt>Tier</dt><dd>-</dd>
+                        <dt>Play Format</dt><dd>${
+                          artworkMarker === "card-keepr-wording-format-mismatch-v3"
+                            ? "unlimited"
+                            : "standard"
+                        }</dd>
+                        <dt>Tier</dt><dd>${
+                          artworkMarker === "card-keepr-wording-tier-mismatch-v3"
+                            ? "regional"
+                            : "-"
+                        }</dd>
                         <dt>Active On</dt><dd>2026-01-01</dd>
                         <dt>Expires On</dt><dd>-</dd>
-                        <dt>Cards</dt><dd>${missingCombination ? "-" : "FB01-001"}</dd>
-                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : conflictingShared ? "ban" : "eligible"}</dd>
+                        <dt>Cards</dt><dd>${
+                          missingCombination || wordingTargetOmitted
+                            ? "-"
+                            : wordingTargetMismatch ? "FB01-002" : "FB01-001"
+                        }</dd>
+                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : conflictingShared ? "ban" : wordingTier ? "copy_limit" : "eligible"}</dd>
                         ${artworkMarker === "card-keepr-mixed-effect-legality-v3"
                           ? "<dt>Cap</dt><dd>1</dd>"
+                          : wordingTier
+                            ? "<dt>Cap</dt><dd>1</dd>"
                           : unresolved
                             ? "<dt>Ambiguity</dt><dd>Publisher scope is unknown</dd>"
                             : missingCombination
