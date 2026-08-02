@@ -104,7 +104,7 @@ capture recency never establish authority.
 
 Legality freshness is published independently for each exact Source Lineage
 and region. Every `legality-rules` entry in `GET /v1/catalogue`, administration
-status, and export manifest v2 includes `source_lineage` and `region`; other
+status, and export manifest v3 includes `source_lineage` and `region`; other
 freshness areas omit both fields. A partial Gundam refresh advances only its
 own `EN-ASIA` or `EN-US` check and preserves the other lineage's last
 successful timestamp. Historical export manifest v1 artifacts retain their
@@ -129,13 +129,21 @@ including an `indeterminate` result where no effective published rule exists.
 Every result includes the applicable Legality Rule IDs and an auditable
 derivation. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
-`relationships` component. Newly generated exports use schema major 2 and
+`relationships` component. Newly generated exports use schema major 3 and
 retain `official_id`, source lineage and observation IDs, lifecycle, and each
 rule's complete normalized `effect`, including every operand and unresolved
 reason. Lifecycle on the rule itself states whether it is current and
 preserves its observation boundaries, including for globally applicable rules
 whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
-Historical schema-major-1 artifacts remain immutable and readable.
+Historical schema-major-1 and schema-major-2 artifacts remain byte-identical,
+immutable, and readable through their explicitly versioned schemas.
+
+Each revision materializes indexed applicability for every Card-scoped rule
+and one explicit `all_cards` row for a genuinely global rule. The authenticated
+status query selects only the requested Card plus those global rows and applies
+the requested region before loading stored rule documents. Publication and one
+status result are bounded to 16,384 applicability rows; exceeding that bound
+fails closed instead of scanning or allocating an unbounded result.
 
 Migration `0008_legality_rules.sql` adds canonical provenance retention and
 the revision-scoped rule snapshot used by the API. Apply it before deploying

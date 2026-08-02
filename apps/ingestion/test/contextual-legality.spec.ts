@@ -619,6 +619,20 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       expect.stringMatching(/legality_rule_card_ids_not_canonical/),
     ),
   );
+  const upgradedCanonicalEffectErrors =
+    await canonicalLegalityEffectInvariantErrors(
+      legacyDatabase,
+      {
+        ...upgradedRule,
+        source_field_pointers_json: sourceFieldPointers,
+      },
+      "upgraded",
+    );
+  expect(upgradedCanonicalEffectErrors.map(String)).toEqual(
+    upgradedCanonicalEffectErrors.map(() =>
+      expect.stringMatching(/legality_rule_effect_invalid/),
+    ),
+  );
   const upgradedProvenanceMutation = await rejectedError(
     legacyDatabase.prepare(
       `UPDATE legality_rules
@@ -1162,6 +1176,11 @@ test("the One Piece production release surface publishes release timing through 
 test.each([
   "card-keepr-unrepresentable-legality-v3",
   "card-keepr-mixed-effect-legality-v3",
+  "card-keepr-residual-semantics-legality-v3",
+  "card-keepr-definitive-unresolved-legality-v3",
+  "card-keepr-missing-combination-side-v3",
+  "card-keepr-mismatched-legality-total-v3",
+  "card-keepr-truncated-legality-partition-v3",
 ])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -1626,6 +1645,17 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   expect(freshCanonicalCardIdErrors.map(String)).toEqual(
     freshCanonicalCardIdErrors.map(() =>
       expect.stringMatching(/legality_rule_card_ids_not_canonical/),
+    ),
+  );
+  const freshCanonicalEffectErrors =
+    await canonicalLegalityEffectInvariantErrors(
+      testEnv.CATALOGUE_DB,
+      canonicalSnapshot,
+      "fresh",
+    );
+  expect(freshCanonicalEffectErrors.map(String)).toEqual(
+    freshCanonicalEffectErrors.map(() =>
+      expect.stringMatching(/legality_rule_effect_invalid/),
     ),
   );
   const revisionUpdate = await rejectedError(
@@ -2733,6 +2763,85 @@ async function canonicalLegalityCardIdInvariantErrors(
         ).run(),
       )
     ),
+  );
+}
+
+async function canonicalLegalityEffectInvariantErrors(
+  database: D1Database,
+  canonical: Record<string, unknown>,
+  prefix: string,
+): Promise<unknown[]> {
+  const direct = ["card_effect_direct"];
+  const malformed = [
+    { effect: { type: "eligible", attacker: true }, direct },
+    { effect: { type: "copy_limit", maximum_copies: 0 }, direct },
+    {
+      effect: {
+        type: "prohibited_combination",
+        with_card_ids: ["card_effect_companion"],
+      },
+      direct: [],
+    },
+    {
+      effect: { type: "prohibited_combination", with_card_ids: [] },
+      direct,
+    },
+    {
+      effect: { type: "membership", attribute: "traits", includes_any: [] },
+      direct,
+    },
+    {
+      effect: { type: "rotation", eligible_blocks: ["1", "1"] },
+      direct,
+    },
+    { effect: { type: "release_timing", legal_from: "2026-02-30" }, direct },
+    { effect: { type: "unresolved", reason: " " }, direct },
+    { effect: { type: "attacker_defined" }, direct },
+  ] as const;
+  return Promise.all(
+    malformed.map((variant, index) => {
+      const companion = "with_card_ids" in variant.effect &&
+          Array.isArray(variant.effect.with_card_ids)
+        ? variant.effect.with_card_ids
+        : [];
+      const allCardIds = [...variant.direct, ...companion].sort();
+      return rejectedError(
+        database.prepare(
+          `INSERT INTO legality_rules (
+             id, official_id, supported_game, region, format, event_tier,
+             effective_from, effective_until, official_wording, effect_json,
+             card_ids_json, direct_card_ids_json, source_lineage,
+             source_snapshot_id, source_observation_set_id,
+             source_observation_id, source_observation_pointer,
+             source_field_pointers_json, first_revision_id,
+             last_observed_revision_id, current, last_missing_revision_id
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             ?, ?, 1, NULL)`,
+        ).bind(
+          `legality_rule_${prefix}_malformed_effect_${index}`,
+          `${prefix}-malformed-effect-${index}`,
+          canonical.supported_game ?? canonical.game,
+          canonical.region,
+          canonical.format,
+          canonical.event_tier,
+          canonical.effective_from,
+          canonical.effective_until,
+          canonical.official_wording,
+          JSON.stringify(variant.effect),
+          JSON.stringify(allCardIds),
+          JSON.stringify(variant.direct),
+          canonical.source_lineage,
+          canonical.source_snapshot_id,
+          canonical.source_observation_set_id,
+          `srcobs_${prefix}_malformed_effect_${index}`,
+          `/observations/0/value/legality_rules/${index + 40}`,
+          canonical.source_field_pointers_json ??
+            JSON.stringify(canonical.source_field_pointers),
+          canonical.first_revision_id,
+          canonical.last_observed_revision_id,
+        ).run(),
+      );
+    }),
   );
 }
 

@@ -222,6 +222,18 @@ export function parseStoredLegalityRule(
     );
   }
   const effect = requiredCanonicalEffect(rule.effect);
+  if (effect.type === "prohibited_combination") {
+    if (cardIds.length === 0 || effect.with_card_ids.length === 0) {
+      throw new Error(
+        "Stored prohibited-combination Legality Rule requires direct and companion Cards.",
+      );
+    }
+    if (effect.with_card_ids.some((cardId) => cardIds.includes(cardId))) {
+      throw new Error(
+        "Stored prohibited-combination Legality Rule operands overlap.",
+      );
+    }
+  }
   if (effect.type === "membership") {
     validateMembershipPredicate(
       `${game}@1`,

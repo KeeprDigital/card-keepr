@@ -486,6 +486,78 @@ test("current production legality parser rejects mixed directives and foreign op
   );
 });
 
+test("current production legality parser rejects residual semantic article markup", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = fusionLegalityPage(
+    fusionLegalityRuleHtml({
+      id: "FW-2026-RESIDUAL",
+      wording: "FB01-030 is legal for Standard play.",
+      cards: ["FB01-030"],
+      directive: "eligible",
+    }).replace(
+      "</article>",
+      "<p>Except at championship events, where it is banned.</p></article>",
+    ),
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html),
+      fusionLegalityContext(current),
+    ),
+    /residual semantic content/u,
+  );
+});
+
+test("current production legality parser rejects definitive unresolved wording and missing combination sides", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  for (const html of [
+    fusionLegalityPage(fusionLegalityRuleHtml({
+      id: "FW-2026-UNRESOLVED-CONTRADICTION",
+      wording: "FB01-030 is banned from Standard decks.",
+      cards: ["FB01-030"],
+      directive: "unresolved",
+      effectFields: "<dt>Ambiguity</dt><dd>Publisher scope is unknown</dd>",
+    })),
+    fusionLegalityPage(fusionLegalityRuleHtml({
+      id: "FW-2026-COMBINATION-MISSING-DIRECT",
+      wording: "FB01-031 and FB01-032 are a prohibited combination.",
+      cards: [],
+      directive: "prohibited_combination",
+      effectFields: "<dt>Paired Cards</dt><dd>FB01-032</dd>",
+    })),
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(html),
+        fusionLegalityContext(current),
+      ),
+      /unresolved|Card numbers|additional structured semantics/u,
+    );
+  }
+});
+
+test("current machine legality surfaces require independent exact totals and partitions", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const mismatch = rawSurfacePayload("fusion-world-en", "legality-current");
+  mismatch.declared_record_count = 99;
+  assert.throws(
+    () => parseRegisteredSurface(current, "legality-current", mismatch),
+    /declares 99 records|declared total/u,
+  );
+  const truncated = rawSurfacePayload("fusion-world-en", "legality-current");
+  truncated.partition.has_next = true;
+  assert.throws(
+    () => parseRegisteredSurface(current, "legality-current", truncated),
+    /partition/u,
+  );
+  const unknown = rawSurfacePayload("fusion-world-en", "legality-current");
+  unknown.future_scope = "championship-only";
+  assert.throws(
+    () => parseRegisteredSurface(current, "legality-current", unknown),
+    /unknown field future_scope/u,
+  );
+});
+
 test("current production legality HTML decodes entities exactly once", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const html = fusionLegalityPage(fusionLegalityRuleHtml({

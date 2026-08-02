@@ -7,5 +7,6 @@ export const maximumCatalogueExportObjectBytes = 25 * 1024 * 1024;
 // record. It bounds identity hashing and record allocation independently of
 // how compact an input happens to be.
 export const maximumLegalityRuleRelationships = 16_384;
+export const maximumLegalityStatusRules = 16_384;
 
 export class CatalogueExportLimitError extends Error {}

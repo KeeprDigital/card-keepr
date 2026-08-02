@@ -2315,7 +2315,7 @@ function normalizeOnePieceSurface(
   }
   return normalizedSurfaceBody(
     normalizedPolicy(raw, `one-piece-${surface}`),
-    ["publication", "revision", "entries"],
+    ["publication", "revision", "declared_record_count", "partition", "entries"],
   );
 }
 
@@ -2374,7 +2374,7 @@ function normalizeFusionWorldSurface(
   }
   return normalizedSurfaceBody(
     normalizedPolicy(raw, `fusion-world-${surface}`),
-    ["publication", "revision", "entries"],
+    ["publication", "revision", "declared_record_count", "partition", "entries"],
   );
 }
 
@@ -2438,7 +2438,7 @@ function normalizeDigimonSurface(
   }
   return normalizedSurfaceBody(
     normalizedPolicy(raw, `digimon-${surface}`),
-    ["publication", "revision", "entries"],
+    ["publication", "revision", "declared_record_count", "partition", "entries"],
   );
 }
 
@@ -2503,7 +2503,7 @@ function normalizeGundamSurface(
   }
   return normalizedSurfaceBody(
     normalizedPolicy(raw, `gundam-${surface}`),
-    ["publication", "locale", "revision", "entries"],
+    ["publication", "locale", "revision", "declared_record_count", "partition", "entries"],
   );
 }
 
@@ -2646,9 +2646,44 @@ function normalizedPolicy(
   if (raw.publication !== expectedPublication) {
     throw new Error("Official policy publication identity is invalid.");
   }
+  const allowed = new Set([
+    "publication", "locale", "revision", "declared_record_count",
+    "partition", "entries",
+  ]);
+  const unknown = Object.keys(raw).find((field) => !allowed.has(field));
+  if (unknown !== undefined) {
+    throw new Error(`Official policy contains unknown field ${unknown}.`);
+  }
+  const entries = requiredArray(raw.entries, "Official policy entries");
+  const declaredRecordCount = requiredNonNegativeInteger(
+    raw.declared_record_count,
+    "Official policy declared record count",
+  );
+  const partition = requiredRecord(raw.partition, "Official policy partition");
+  const partitionFields = ["page", "pages", "total", "has_next"];
+  const unknownPartitionField = Object.keys(partition).find((field) =>
+    !partitionFields.includes(field)
+  );
+  if (unknownPartitionField !== undefined) {
+    throw new Error(
+      `Official policy partition contains unknown field ${unknownPartitionField}.`,
+    );
+  }
+  if (
+    partition.page !== 1 || partition.pages !== 1 ||
+    partition.has_next !== false || partition.total !== declaredRecordCount
+  ) {
+    throw new Error("Official policy partition is incomplete or conflicts with its declared total.");
+  }
+  if (declaredRecordCount !== entries.length) {
+    throw new Error(
+      `Official policy declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
+    );
+  }
   return {
     revision: requiredText(raw.revision, "Official policy revision"),
-    entries: requiredArray(raw.entries, "Official policy entries"),
+    declared_record_count: declaredRecordCount,
+    entries,
   };
 }
 

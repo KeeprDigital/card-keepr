@@ -156,6 +156,17 @@ export function officialLegalityRulesObservation(
     rawDocument.entries,
     "Official Source Legality entries",
   );
+  const declaredRecordCount = rawDocument.declared_record_count === undefined
+    ? entries.length
+    : requiredNonNegativeInteger(
+      rawDocument.declared_record_count,
+      "Official Source Legality declared record count",
+    );
+  if (declaredRecordCount !== entries.length) {
+    throw new Error(
+      `Official Source Legality declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
+    );
+  }
   return {
     observation_type: "legality_rules",
     legality_rules: entries.map((entry, index) =>
@@ -170,7 +181,7 @@ export function officialLegalityRulesObservation(
       structurally_complete: true,
       required_surfaces_complete: true,
       partitions_complete: true,
-      declared_record_count: entries.length,
+      declared_record_count: declaredRecordCount,
       parsed_record_count: entries.length,
     },
   };
@@ -235,6 +246,15 @@ export function officialLegalityRulesHtmlObservation(
           : field === "tier" || field === "effectiveUntil"
             ? value === "-" ? null : value
             : value;
+    }
+    const residual = pairs.reduce(
+      (content, pair) => content.replace(pair[0]!, ""),
+      article[2]!,
+    ).replace(/<\/?dl\b[^>]*>/giu, "");
+    if (htmlText(residual).length > 0) {
+      throw new Error(
+        `Official Legality HTML entry ${articleIndex} contains residual semantic content.`,
+      );
     }
     return entry;
   });
@@ -460,7 +480,7 @@ function exactEffect(
       const directCards = requiredTextArray(
         entry[fields.cards],
         "Official Legality Card numbers",
-        true,
+        false,
       );
       const companionCards = requiredTextArray(
         entry[fields.companionCards],
@@ -588,14 +608,31 @@ function exactEffect(
         legal_from: legalFrom,
       };
     }
-    case "unresolved":
+    case "unresolved": {
+      const reason = requiredText(
+        entry[fields.unresolvedReason],
+        "Official Legality unresolved reason",
+      );
+      assertNoAdditionalStructuredSemantics("unresolved", wording, [
+        banSemantics,
+        copyLimitSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+        /\b(?:eligible|legal|permitted)\b/iu,
+      ]);
+      assertWording(
+        directive,
+        wording,
+        /\b(?:unresolved|unclear|unknown|cannot be determined|awaiting (?:publisher )?clarification)\b/iu,
+      );
+      assertWordingOperands(directive, wording, [reason]);
       return {
         type: "unresolved",
-        reason: requiredText(
-          entry[fields.unresolvedReason],
-          "Official Legality unresolved reason",
-        ),
+        reason,
       };
+    }
     default:
       throw new Error(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
@@ -805,6 +842,13 @@ function requiredTextArray(
 function requiredPositiveInteger(value: unknown, name: string): number {
   if (!Number.isInteger(value) || Number(value) < 1) {
     throw new Error(`${name} must be a positive integer.`);
+  }
+  return Number(value);
+}
+
+function requiredNonNegativeInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error(`${name} is invalid.`);
   }
   return Number(value);
 }

@@ -743,6 +743,8 @@ export function officialRawSurfacePayload(pathname) {
       ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" }
       : {}),
     revision: "2026-07",
+    declared_record_count: 0,
+    partition: { page: 1, pages: 1, total: 0, has_next: false },
     entries: [],
   };
 }

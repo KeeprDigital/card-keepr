@@ -15,6 +15,7 @@ import {
   CatalogueExportLimitError,
   maximumExportComponentBytes,
   maximumLegalityRuleRelationships,
+  maximumLegalityStatusRules,
 } from "./export-limits";
 
 export function legalityRuleExportRecords(
@@ -62,10 +63,13 @@ export async function legalityRuleRelationshipRecords(
   let count = 0;
   let estimatedBytes = 0;
   for (const { rule, cardIds } of relationships) {
-    count += cardIds.length;
-    if (count > maximumLegalityRuleRelationships) {
+    count += Math.max(1, cardIds.length);
+    if (
+      count > maximumLegalityRuleRelationships ||
+      count > maximumLegalityStatusRules
+    ) {
       throw new CatalogueExportLimitError(
-        "Legality Rule relationships exceed the 16,384-record export budget.",
+        "Legality Rule applicability exceeds the 16,384-record publication budget.",
       );
     }
     for (const cardId of cardIds) {

@@ -158,6 +158,11 @@ function resolvedProhibitedCombination(
   cardIds: readonly string[],
   withCardIds: readonly string[],
 ): LegalityRuleEffect {
+  if (cardIds.length === 0 || withCardIds.length === 0) {
+    throw new Error(
+      `Legality Rule ${rule.official_id} requires non-empty direct and companion prohibited-combination operands.`,
+    );
+  }
   const directCardIds = new Set(cardIds);
   const overlappingCardId = withCardIds.find((cardId) =>
     directCardIds.has(cardId)

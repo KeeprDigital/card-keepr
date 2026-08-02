@@ -387,6 +387,115 @@ test("Legality Status rejects unknown, repeated, and duplicated evidence include
   }
 });
 
+test("authenticated Legality Status reads only indexed Card and regional applicability at high cardinality", async () => {
+  const revisionId = "catrev_api_legality_applicability";
+  const runId = "run_api_legality_applicability";
+  const targetCardId = "card_api_legality_applicability";
+  await seedApiRevision({
+    revisionId,
+    runId,
+    cards: [apiCard({
+      id: targetCardId,
+      cardNumber: "OP30-777",
+      name: "Applicability Target",
+    })],
+  });
+  await testEnv.CATALOGUE_DB.batch(legalitySourceStatements({
+    runId,
+    key: "api_legality_applicability",
+    game: "one-piece",
+    profile: "one-piece@1",
+    lineage: "one-piece-en",
+    adapter: "fixture-one-piece-json@2",
+    snapshotId: "srcsnap_api_legality_applicability",
+    observationSetId: "srcobsset_api_legality_applicability",
+  }));
+  const baseRule = {
+    game: "one-piece",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    source_lineage: "one-piece-en",
+    source_snapshot_id: "srcsnap_api_legality_applicability",
+    source_observation_set_id: "srcobsset_api_legality_applicability",
+    source_observation_id: "srcobs_api_legality_applicability",
+  };
+  const targetRule = {
+    ...baseRule,
+    id: "legality_rule_api_applicability_target",
+    official_id: "api-applicability-target",
+    region: "EN-OCEANIA",
+    card_ids: [targetCardId],
+    official_wording: "This Card is not legal in the standard format.",
+    effect: { type: "ban" },
+  };
+  const unrelatedCardRules = Array.from({ length: 256 }, (_, index) => ({
+    ...baseRule,
+    id: `legality_rule_api_applicability_card_${index}`,
+    official_id: `api-applicability-card-${index}`,
+    region: "EN-OCEANIA",
+    card_ids: [`card_api_unrelated_${index}`],
+    official_wording: `Unrelated Card rule ${index}.`,
+    effect: { type: "eligible" },
+  }));
+  const unrelatedRegionGlobals = Array.from(
+    { length: 256 },
+    (_, index) => ({
+      ...baseRule,
+      id: `legality_rule_api_applicability_region_${index}`,
+      official_id: `api-applicability-region-${index}`,
+      region: "EN-US",
+      card_ids: [],
+      official_wording: `Unrelated regional rule ${index}.`,
+      effect: { type: "eligible" },
+    }),
+  );
+  const rules = [targetRule, ...unrelatedCardRules, ...unrelatedRegionGlobals];
+  for (let offset = 0; offset < rules.length; offset += 64) {
+    await testEnv.CATALOGUE_DB.batch(
+      canonicalLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
+    );
+  }
+  for (let offset = 0; offset < rules.length; offset += 64) {
+    await testEnv.CATALOGUE_DB.batch(
+      revisionLegalityRuleStatements(revisionId, rules.slice(offset, offset + 64)),
+    );
+  }
+  await testEnv.CATALOGUE_DB.prepare(
+    "DROP TRIGGER revision_legality_rules_immutable_update",
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_legality_rules
+     SET document_json = '{"attacker":"malformed"}'
+     WHERE catalogue_revision_id = ?
+       AND legality_rule_id <> ?`,
+  ).bind(revisionId, targetRule.id).run();
+
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/legality-status" +
+      `?card_id=${targetCardId}` +
+      "&on=2026-07-30&format=standard&region=EN-OCEANIA",
+    { headers: apiHeaders("203.0.113.22") },
+  ));
+  await testEnv.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER revision_legality_rules_immutable_update
+     BEFORE UPDATE ON revision_legality_rules
+     BEGIN
+       SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
+     END`,
+  ).run();
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    data: [{
+      card_id: targetCardId,
+      region: "EN-OCEANIA",
+      status: "not_legal",
+      rule_ids: [targetRule.id],
+    }],
+  });
+});
+
 test("authenticated Legality Status gives definitive exclusions precedence while auditing unresolved rules", async () => {
   const revisionId = "catrev_api_legality_precedence";
   const runId = "run_api_legality_precedence";

@@ -498,18 +498,65 @@ export default defineConfig({
               );
             }
             if (
-              (artworkMarker === "card-keepr-representable-legality-v3" ||
-                artworkMarker === "card-keepr-unrepresentable-legality-v3" ||
-                artworkMarker === "card-keepr-mixed-effect-legality-v3") &&
+              [
+                "card-keepr-representable-legality-v3",
+                "card-keepr-unrepresentable-legality-v3",
+                "card-keepr-mixed-effect-legality-v3",
+                "card-keepr-residual-semantics-legality-v3",
+                "card-keepr-definitive-unresolved-legality-v3",
+                "card-keepr-missing-combination-side-v3",
+                "card-keepr-mismatched-legality-total-v3",
+                "card-keepr-truncated-legality-partition-v3",
+              ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
             ) {
+              if (
+                artworkMarker === "card-keepr-mismatched-legality-total-v3" ||
+                artworkMarker === "card-keepr-truncated-legality-partition-v3"
+              ) {
+                const truncated = artworkMarker ===
+                  "card-keepr-truncated-legality-partition-v3";
+                return new Response(
+                  `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                    <script type="application/ld+json">${JSON.stringify({
+                      "@context": "https://schema.org",
+                      "@type": "Dataset",
+                      publisher: { "@type": "Organization", name: "Bandai" },
+                      hasPart: [{
+                        "@type": "Dataset",
+                        identifier: "fusion-world-en:legality-current",
+                        payload: {
+                          publication: "fusion-world-legality-current",
+                          revision: "2026-08",
+                          declared_record_count: 1,
+                          partition: {
+                            page: 1,
+                            pages: truncated ? 2 : 1,
+                            total: 1,
+                            has_next: truncated,
+                          },
+                          entries: [],
+                        },
+                      }],
+                    }).replaceAll("<", "\\u003c")}</script></html>`,
+                  { headers: { "content-type": "text/html; charset=utf-8", etag: `"${artworkMarker}"` } },
+                );
+              }
               const officialWording = artworkMarker ===
                   "card-keepr-representable-legality-v3"
                 ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
                 : artworkMarker === "card-keepr-mixed-effect-legality-v3"
                   ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
+                  : artworkMarker === "card-keepr-definitive-unresolved-legality-v3"
+                    ? "FB01-001 is banned from Standard decks."
+                    : artworkMarker === "card-keepr-missing-combination-side-v3"
+                      ? "FB01-001 and FB01-002 are a prohibited combination."
                   : "FB01-001 is not currently eligible for Standard play.";
+              const unresolved = artworkMarker ===
+                "card-keepr-definitive-unresolved-legality-v3";
+              const missingCombination = artworkMarker ===
+                "card-keepr-missing-combination-side-v3";
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
@@ -524,12 +571,19 @@ export default defineConfig({
                         <dt>Tier</dt><dd>-</dd>
                         <dt>Active On</dt><dd>2026-01-01</dd>
                         <dt>Expires On</dt><dd>-</dd>
-                        <dt>Cards</dt><dd>FB01-001</dd>
-                        <dt>Directive</dt><dd>eligible</dd>
+                        <dt>Cards</dt><dd>${missingCombination ? "-" : "FB01-001"}</dd>
+                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : "eligible"}</dd>
                         ${artworkMarker === "card-keepr-mixed-effect-legality-v3"
                           ? "<dt>Cap</dt><dd>1</dd>"
-                          : ""}
+                          : unresolved
+                            ? "<dt>Ambiguity</dt><dd>Publisher scope is unknown</dd>"
+                            : missingCombination
+                              ? "<dt>Paired Cards</dt><dd>FB01-002</dd>"
+                              : ""}
                       </dl>
+                      ${artworkMarker === "card-keepr-residual-semantics-legality-v3"
+                        ? "<p>Except at championship events, where it is banned.</p>"
+                        : ""}
                     </article>
                   </main>
                 </html>`,

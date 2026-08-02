@@ -287,6 +287,84 @@ CREATE TABLE legality_rules (
   UNIQUE (source_lineage, official_id)
 );
 
+CREATE TRIGGER legality_rule_effect_valid_insert
+BEFORE INSERT ON legality_rules
+WHEN NOT (
+  (
+    json_extract(NEW.effect_json, '$.type') IN ('eligible', 'ban')
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 1
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'copy_limit'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
+    AND json_type(NEW.effect_json, '$.maximum_copies') = 'integer'
+    AND json_extract(NEW.effect_json, '$.maximum_copies') >= 1
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'prohibited_combination'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
+    AND json_type(NEW.effect_json, '$.with_card_ids') = 'array'
+    AND json_array_length(NEW.direct_card_ids_json) >= 1
+    AND json_array_length(NEW.effect_json, '$.with_card_ids') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.effect_json, '$.with_card_ids')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value FROM json_each(NEW.effect_json, '$.with_card_ids')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'membership'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 3
+    AND json_type(NEW.effect_json, '$.attribute') = 'text'
+    AND length(trim(json_extract(NEW.effect_json, '$.attribute'))) > 0
+    AND json_type(NEW.effect_json, '$.includes_any') = 'array'
+    AND json_array_length(NEW.effect_json, '$.includes_any') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.effect_json, '$.includes_any')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value FROM json_each(NEW.effect_json, '$.includes_any')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'rotation'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
+    AND json_type(NEW.effect_json, '$.eligible_blocks') = 'array'
+    AND json_array_length(NEW.effect_json, '$.eligible_blocks') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.effect_json, '$.eligible_blocks')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value FROM json_each(NEW.effect_json, '$.eligible_blocks')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'release_timing'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
+    AND json_type(NEW.effect_json, '$.legal_from') = 'text'
+    AND json_extract(NEW.effect_json, '$.legal_from')
+      GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    AND date(json_extract(NEW.effect_json, '$.legal_from')) =
+      json_extract(NEW.effect_json, '$.legal_from')
+  )
+  OR (
+    json_extract(NEW.effect_json, '$.type') = 'unresolved'
+    AND (SELECT COUNT(*) FROM json_each(NEW.effect_json)) = 2
+    AND json_type(NEW.effect_json, '$.reason') = 'text'
+    AND length(trim(json_extract(NEW.effect_json, '$.reason'))) > 0
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_effect_invalid');
+END;
+
 CREATE TRIGGER legality_rule_card_ids_canonical_insert
 BEFORE INSERT ON legality_rules
 WHEN NOT (
@@ -542,6 +620,153 @@ CREATE INDEX revision_legality_rules_context
     effective_from,
     effective_until
   );
+
+CREATE TABLE revision_legality_rule_applicability (
+  catalogue_revision_id TEXT NOT NULL,
+  legality_rule_id TEXT NOT NULL,
+  applicability_kind TEXT NOT NULL CHECK (
+    applicability_kind IN ('card', 'all_cards')
+  ),
+  card_id TEXT NOT NULL,
+  CHECK (
+    (applicability_kind = 'all_cards' AND card_id = '')
+    OR (
+      applicability_kind = 'card'
+      AND length(card_id) BETWEEN 1 AND 200
+      AND substr(card_id, 1, 1) GLOB '[A-Za-z0-9]'
+      AND card_id NOT GLOB '*[^A-Za-z0-9._:-]*'
+    )
+  ),
+  PRIMARY KEY (
+    catalogue_revision_id, legality_rule_id, applicability_kind, card_id
+  ),
+  FOREIGN KEY (catalogue_revision_id, legality_rule_id)
+    REFERENCES revision_legality_rules (
+      catalogue_revision_id, legality_rule_id
+    )
+);
+
+CREATE INDEX revision_legality_rule_applicability_lookup
+  ON revision_legality_rule_applicability (
+    catalogue_revision_id, applicability_kind, card_id, legality_rule_id
+  );
+
+CREATE TRIGGER revision_legality_rule_applicability_insert
+AFTER INSERT ON revision_legality_rules
+BEGIN
+  INSERT INTO revision_legality_rule_applicability (
+    catalogue_revision_id, legality_rule_id, applicability_kind, card_id
+  )
+  SELECT NEW.catalogue_revision_id, NEW.legality_rule_id, 'card', value
+  FROM json_each(NEW.card_ids_json);
+
+  INSERT INTO revision_legality_rule_applicability (
+    catalogue_revision_id, legality_rule_id, applicability_kind, card_id
+  )
+  SELECT NEW.catalogue_revision_id, NEW.legality_rule_id, 'all_cards', ''
+  WHERE json_array_length(NEW.card_ids_json) = 0;
+END;
+
+CREATE TRIGGER revision_legality_rule_applicability_immutable_update
+BEFORE UPDATE ON revision_legality_rule_applicability
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_applicability_immutable');
+END;
+
+CREATE TRIGGER revision_legality_rule_applicability_immutable_delete
+BEFORE DELETE ON revision_legality_rule_applicability
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_applicability_immutable');
+END;
+
+CREATE TRIGGER revision_legality_rule_effect_valid_insert
+BEFORE INSERT ON revision_legality_rules
+WHEN NOT (
+  (
+    json_extract(NEW.document_json, '$.effect.type') IN ('eligible', 'ban')
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 1
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'copy_limit'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
+    AND json_type(NEW.document_json, '$.effect.maximum_copies') = 'integer'
+    AND json_extract(NEW.document_json, '$.effect.maximum_copies') >= 1
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'prohibited_combination'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
+    AND json_type(NEW.document_json, '$.effect.with_card_ids') = 'array'
+    AND json_array_length(NEW.document_json, '$.card_ids') >= 1
+    AND json_array_length(NEW.document_json, '$.effect.with_card_ids') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.document_json, '$.effect.with_card_ids')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value
+      FROM json_each(NEW.document_json, '$.effect.with_card_ids')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+    AND NOT EXISTS (
+      SELECT direct.value
+      FROM json_each(NEW.document_json, '$.card_ids') AS direct
+      JOIN json_each(
+        NEW.document_json,
+        '$.effect.with_card_ids'
+      ) AS companion ON companion.value = direct.value
+    )
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'membership'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 3
+    AND json_type(NEW.document_json, '$.effect.attribute') = 'text'
+    AND length(trim(json_extract(NEW.document_json, '$.effect.attribute'))) > 0
+    AND json_type(NEW.document_json, '$.effect.includes_any') = 'array'
+    AND json_array_length(NEW.document_json, '$.effect.includes_any') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.document_json, '$.effect.includes_any')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value
+      FROM json_each(NEW.document_json, '$.effect.includes_any')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'rotation'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
+    AND json_type(NEW.document_json, '$.effect.eligible_blocks') = 'array'
+    AND json_array_length(NEW.document_json, '$.effect.eligible_blocks') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.document_json, '$.effect.eligible_blocks')
+      WHERE type <> 'text' OR length(trim(value)) = 0
+    )
+    AND NOT EXISTS (
+      SELECT value
+      FROM json_each(NEW.document_json, '$.effect.eligible_blocks')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'release_timing'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
+    AND json_type(NEW.document_json, '$.effect.legal_from') = 'text'
+    AND json_extract(NEW.document_json, '$.effect.legal_from')
+      GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    AND date(json_extract(NEW.document_json, '$.effect.legal_from')) =
+      json_extract(NEW.document_json, '$.effect.legal_from')
+  )
+  OR (
+    json_extract(NEW.document_json, '$.effect.type') = 'unresolved'
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json, '$.effect')) = 2
+    AND json_type(NEW.document_json, '$.effect.reason') = 'text'
+    AND length(trim(json_extract(NEW.document_json, '$.effect.reason'))) > 0
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_effect_invalid');
+END;
 
 CREATE TRIGGER revision_legality_rule_matches_canonical
 BEFORE INSERT ON revision_legality_rules

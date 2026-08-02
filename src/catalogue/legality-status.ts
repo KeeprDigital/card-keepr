@@ -7,6 +7,7 @@ import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { isIsoCalendarDate } from "./calendar-date.mjs";
 import { requiredLegalityRegionsForGame } from "./official-source-scope";
+import { maximumLegalityStatusRules } from "./export-limits";
 import {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
@@ -83,34 +84,62 @@ export async function contextualLegalityStatusResponse(
         : `${query.region} is not a Legality region for this Card's Supported Game.`,
     );
   }
+  const regions = query.region === null
+    ? supportedRegions
+    : [query.region];
   const rows = await database
     .prepare(
-      `SELECT rule.document_json
-       FROM revision_legality_rules AS rule
-       WHERE rule.catalogue_revision_id = ?
+      `WITH applicable AS (
+         SELECT legality_rule_id
+         FROM revision_legality_rule_applicability
+         WHERE catalogue_revision_id = ?
+           AND applicability_kind = 'card'
+           AND card_id = ?
+         UNION ALL
+         SELECT legality_rule_id
+         FROM revision_legality_rule_applicability
+         WHERE catalogue_revision_id = ?
+           AND applicability_kind = 'all_cards'
+           AND card_id = ''
+       )
+       SELECT rule.document_json
+       FROM applicable
+       JOIN revision_legality_rules AS rule
+         ON rule.catalogue_revision_id = ?
+        AND rule.legality_rule_id = applicable.legality_rule_id
+       WHERE rule.region IN (SELECT value FROM json_each(?))
          AND rule.supported_game = ?
          AND rule.format = ?
          AND rule.effective_from <= ?
          AND (rule.effective_until IS NULL OR ? < rule.effective_until)
          AND (rule.event_tier IS NULL OR rule.event_tier = ?)
-       ORDER BY rule.region, rule.legality_rule_id`,
+       ORDER BY rule.region, rule.legality_rule_id
+       LIMIT ?`,
     )
     .bind(
       context.current_revision_id,
+      query.cardId,
+      context.current_revision_id,
+      context.current_revision_id,
+      JSON.stringify(regions),
       card.game,
       query.format,
       query.on,
       query.on,
       query.eventTier,
+      maximumLegalityStatusRules + 1,
     )
     .all<RuleRow>();
+  if (rows.results.length > maximumLegalityStatusRules) {
+    throw new LegalityStatusProblem(
+      500,
+      "internal_error",
+      "The request could not be completed.",
+    );
+  }
   const rules = rows.results.map((row) =>
     parsedStoredDocument(() => parseStoredLegalityRule(row.document_json))
   );
-  const regions =
-    query.region === null
-      ? supportedRegions
-      : [query.region];
   const data = regions.map((region) =>
     deriveRegionStatus(card, rules, query, region),
   );
