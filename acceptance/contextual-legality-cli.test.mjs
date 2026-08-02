@@ -18,6 +18,7 @@ test("CLI requests one explicit contextual Legality Status", async (t) => {
         region: "EN-ASIA",
         status: "restricted",
         rule_ids: ["legality_rule_asia_copy_limit"],
+        unresolved_scope_rule_ids: [],
         derivation:
           "Restricted to one copy by legality_rule_asia_copy_limit.",
       },

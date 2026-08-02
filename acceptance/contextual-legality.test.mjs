@@ -123,7 +123,7 @@ test("the public CLI fails closed for incomplete production source plans", async
     [
       "source", "collect", "--game", "gundam",
       "--lineage", "gundam-en-asia",
-      "--adapter", "gundam-en-asia@2",
+      "--adapter", "gundam-en-asia@3",
       "--request-id", "discovery",
       "--url", "https://www.gundam-gcg.com/asia-en/contextual-legality",
       "--idempotency-key", "acceptance-undemonstrated-json",
@@ -833,7 +833,15 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
       JSON.stringify(validateLegalityStatus.errors),
     );
     assert.equal(document.data[0].status, expected);
-    assert.ok(document.data[0].rule_ids.length > 0);
+    if (number === "GD30-004") {
+      assert.ok(document.data[0].rule_ids.length > 0);
+      assert.deepEqual(document.data[0].unresolved_scope_rule_ids, [
+        asiaRuleId("legality_rule_asia_unresolved_scope"),
+      ]);
+    } else {
+      assert.ok(document.data[0].rule_ids.length > 0);
+      assert.deepEqual(document.data[0].unresolved_scope_rule_ids, []);
+    }
     assert.match(
       document.data[0].derivation,
       /legality_rule_[a-f0-9]{64}/,
@@ -1052,6 +1060,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
       "official_wording",
       "effective_from",
       "effective_until",
+      "unresolved_scope",
       "region",
       "format",
       "event_tier",
@@ -1103,6 +1112,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
         event_tier: "championship",
         effective_from: "2026-01-01",
         effective_until: null,
+        unresolved_scope: null,
         kind: "restricted",
         effect: { type: "copy_limit", maximum_copies: 1 },
         card_ids: [cards.get("GD30-002")],
@@ -1137,6 +1147,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
         event_tier: null,
         effective_from: "2026-01-01",
         effective_until: null,
+        unresolved_scope: null,
         kind: "conditional",
         effect: {
           type: "membership",
@@ -1166,6 +1177,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
         event_tier: null,
         effective_from: "2025-01-01",
         effective_until: null,
+        unresolved_scope: null,
         kind: "release",
         effect: {
           type: "release_timing",
@@ -1194,8 +1206,11 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
         region: "EN-ASIA",
         format: "standard",
         event_tier: null,
-        effective_from: "2026-01-01",
+        effective_from: null,
         effective_until: null,
+        unresolved_scope: {
+          dimensions: ["effective_interval", "event_tier"],
+        },
         kind: "indeterminate",
         effect: {
           type: "unresolved",

@@ -486,6 +486,43 @@ test("current production legality parser rejects mixed directives and foreign op
   );
 });
 
+test("current production legality parser rejects unmodelled conditions inside recognized wording", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = fusionLegalityPage(fusionLegalityRuleHtml({
+    id: "FW-2026-CONDITIONAL-BAN",
+    wording:
+      "FB01-030 is banned from Standard decks unless your Leader is FB01-999.",
+    cards: ["FB01-030"],
+    directive: "ban",
+  }));
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html),
+      fusionLegalityContext(current),
+    ),
+    /conditional|qualifier|cannot represent/u,
+  );
+});
+
+test("current production legality parser preserves paragraph and list boundaries", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = fusionLegalityPage(fusionLegalityRuleHtml({
+    id: "FW-2026-BLOCK-TEXT",
+    wording:
+      "<p>FB01-030 is legal for Standard play.</p><ul><li>Publisher notice:</li><li>Effective immediately.</li></ul>",
+    cards: ["FB01-030"],
+    directive: "eligible",
+  }));
+  const legality = current.parseBytes(
+    new TextEncoder().encode(html),
+    fusionLegalityContext(current),
+  ).find(({ observation_type }) => observation_type === "legality_rules");
+  assert.equal(
+    legality.legality_rules[0].official_wording,
+    "FB01-030 is legal for Standard play.\nPublisher notice:\nEffective immediately.",
+  );
+});
+
 test("current production legality parser rejects residual semantic article markup", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const html = fusionLegalityPage(
@@ -645,6 +682,7 @@ test("the versioned One Piece release surface emits its exact release-timing rul
     event_tier: null,
     effective_from: "2026-08-01",
     effective_until: null,
+    unresolved_scope: null,
     card_numbers: ["OP99-001"],
     official_wording:
       "OP99-001 becomes legal for standard tournament play on 2026-09-04.",

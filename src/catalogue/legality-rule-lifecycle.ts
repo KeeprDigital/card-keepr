@@ -84,6 +84,7 @@ function identityBoundSemantics(rule: LegalityRule): unknown {
     event_tier: rule.event_tier,
     effective_from: rule.effective_from,
     effective_until: rule.effective_until,
+    unresolved_scope: rule.unresolved_scope,
     card_ids: [...rule.card_ids].sort(compareUtf8),
     official_wording: rule.official_wording,
     effect: rule.effect,

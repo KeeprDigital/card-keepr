@@ -32,6 +32,7 @@ export function legalityRuleExportRecords(
     event_tier: rule.event_tier,
     effective_from: rule.effective_from,
     effective_until: rule.effective_until,
+    unresolved_scope: rule.unresolved_scope,
     kind: legalityExportKind(rule.effect),
     effect: exportEffect(rule.effect),
     card_ids: legalityRuleCardIds(rule),

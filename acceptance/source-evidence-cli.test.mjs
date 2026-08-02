@@ -156,7 +156,7 @@ async function collectResumeAndShow(
       plans: [{
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@1",
+        adapter_version: "one-piece-en@2",
         requests,
       }],
     }),
@@ -182,6 +182,7 @@ async function collectResumeAndShow(
   assert.equal(resumed.code, 0, resumed.stderr);
 
   const deadline = Date.now() + 20_000;
+  let lastDocument = null;
   while (Date.now() < deadline) {
     const shown = await runCli(
       ["source", "show", "--run-id", run.id, "--json"],
@@ -200,11 +201,16 @@ async function collectResumeAndShow(
       `${shown.stdout}\n${shown.stderr}\n${ingestion.getOutput()}`,
     );
     const document = JSON.parse(shown.stdout);
+    lastDocument = document;
     if (document.state === expectedState) return document;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
   }
   throw new Error(
-    `Ingestion Run ${run.id} did not reach ${expectedState}`,
+    `Ingestion Run ${run.id} did not reach ${expectedState}: ${JSON.stringify({
+      state: lastDocument?.state,
+      failure_code: lastDocument?.failure_code,
+      warnings: lastDocument?.warnings,
+    })}\n${ingestion.getOutput()}`,
   );
 }
 

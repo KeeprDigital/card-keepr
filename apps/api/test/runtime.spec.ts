@@ -592,13 +592,37 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       region: "EN-ASIA",
       format: "standard",
       event_tier: null,
-      effective_from: "2026-01-01",
+      effective_from: null,
       effective_until: null,
+      unresolved_scope: {
+        dimensions: ["effective_interval", "event_tier"] as const,
+      },
       card_ids: [testCase.cardId],
       official_wording: `Unresolved qualifier ${index}.`,
       effect: {
         type: "unresolved",
         reason: "A separate qualifier is not machine-readable.",
+      },
+      source_lineage: "gundam-en-asia",
+      source_snapshot_id: "srcsnap_api_precedence",
+      source_observation_set_id: "srcset_api_precedence",
+      source_observation_id: "srcobs_api_precedence",
+    },
+    {
+      id: `legality_rule_precedence_${index}_future_tier_uncertainty`,
+      official_id: `precedence-${index}-future-tier-uncertainty`,
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-08-01",
+      effective_until: null,
+      unresolved_scope: { dimensions: ["event_tier"] as const },
+      card_ids: [testCase.cardId],
+      official_wording: `Future event-tier uncertainty ${index}.`,
+      effect: {
+        type: "unresolved",
+        reason: "The future rule does not identify an event tier.",
       },
       source_lineage: "gundam-en-asia",
       source_snapshot_id: "srcsnap_api_precedence",
@@ -692,6 +716,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
       data: Array<{
         status: string;
         rule_ids: string[];
+        unresolved_scope_rule_ids: string[];
         derivation: string;
       }>;
       included?: unknown[];
@@ -705,8 +730,8 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     ).toBe(true);
     expect(body.data[0]).toMatchObject({
       status: "not_legal",
-      rule_ids: [
-        `legality_rule_precedence_${index}_definitive`,
+      rule_ids: [`legality_rule_precedence_${index}_definitive`],
+      unresolved_scope_rule_ids: [
         `legality_rule_precedence_${index}_unresolved`,
       ],
     });
@@ -744,7 +769,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
         provenance: {
           "/data/0/status": ["srcobs_api_precedence"],
           "/data/0/rule_ids/0": ["srcobs_api_precedence"],
-          "/data/0/rule_ids/1": ["srcobs_api_precedence"],
+          "/data/0/unresolved_scope_rule_ids/0": ["srcobs_api_precedence"],
         },
       });
       const etag = response.headers.get("etag");
@@ -2296,8 +2321,11 @@ function canonicalLegalityRuleStatements(
     region: string;
     format: string;
     event_tier: string | null;
-    effective_from: string;
+    effective_from: string | null;
     effective_until: string | null;
+    unresolved_scope?: {
+      dimensions: readonly ("effective_interval" | "event_tier")[];
+    } | null;
     card_ids: readonly string[];
     official_wording: string;
     effect: unknown;
@@ -2310,16 +2338,17 @@ function canonicalLegalityRuleStatements(
   return rules.map((rule, index) => {
     const pointer = `/observations/0/value/legality_rules/${index}`;
     const cardIds = canonicalLegalityCardIds(rule);
+    const unresolvedScope = rule.unresolved_scope ?? null;
     return testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO legality_rules (
         id, official_id, supported_game, region, format, event_tier,
-        effective_from, effective_until, official_wording,
+        effective_from, effective_until, unresolved_scope_json, official_wording,
         effect_json, card_ids_json, direct_card_ids_json, source_lineage,
         source_snapshot_id, source_observation_set_id,
         source_observation_id, source_observation_pointer,
         source_field_pointers_json, first_revision_id,
         last_observed_revision_id, current, last_missing_revision_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, 1, NULL)`,
     ).bind(
       rule.id,
@@ -2330,6 +2359,7 @@ function canonicalLegalityRuleStatements(
       rule.event_tier,
       rule.effective_from,
       rule.effective_until,
+      JSON.stringify(unresolvedScope),
       rule.official_wording,
       JSON.stringify(rule.effect),
       JSON.stringify(cardIds),
@@ -2352,8 +2382,10 @@ function revisionLegalityRuleStatements(
 ): D1PreparedStatement[] {
   return rules.map((rule, index) => {
     const pointer = `/observations/0/value/legality_rules/${index}`;
+    const unresolvedScope = rule.unresolved_scope ?? null;
     const document = {
       ...rule,
+      unresolved_scope: unresolvedScope,
       source_observation_pointer: pointer,
       source_field_pointers: legalityRuleFieldPointers(pointer),
       first_revision_id: revisionId,
@@ -2365,8 +2397,8 @@ function revisionLegalityRuleStatements(
       `INSERT INTO revision_legality_rules (
         catalogue_revision_id, legality_rule_id, supported_game,
         region, format, event_tier, effective_from, effective_until,
-        card_ids_json, document_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        unresolved_scope_json, card_ids_json, document_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       revisionId,
       rule.id,
@@ -2376,6 +2408,7 @@ function revisionLegalityRuleStatements(
       rule.event_tier,
       rule.effective_from,
       rule.effective_until,
+      JSON.stringify(unresolvedScope),
       JSON.stringify(canonicalLegalityCardIds(rule)),
       JSON.stringify(document),
     );
@@ -2404,6 +2437,7 @@ function legalityRuleFieldPointers(pointer: string) {
     official_wording: `${pointer}/official_wording`,
     effective_from: `${pointer}/effective_from`,
     effective_until: `${pointer}/effective_until`,
+    unresolved_scope: `${pointer}/unresolved_scope`,
     region: `${pointer}/region`,
     format: `${pointer}/format`,
     event_tier: `${pointer}/event_tier`,

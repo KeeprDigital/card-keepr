@@ -110,9 +110,25 @@ export async function contextualLegalityStatusResponse(
        WHERE rule.region IN (SELECT value FROM json_each(?))
          AND rule.supported_game = ?
          AND rule.format = ?
-         AND rule.effective_from <= ?
-         AND (rule.effective_until IS NULL OR ? < rule.effective_until)
-         AND (rule.event_tier IS NULL OR rule.event_tier = ?)
+         AND (
+           (
+             rule.effective_from <= ?
+             AND (rule.effective_until IS NULL OR ? < rule.effective_until)
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM json_each(rule.unresolved_scope_json, '$.dimensions')
+             WHERE value = 'effective_interval'
+           )
+         )
+         AND (
+           rule.event_tier IS NULL OR rule.event_tier = ?
+           OR EXISTS (
+             SELECT 1
+             FROM json_each(rule.unresolved_scope_json, '$.dimensions')
+             WHERE value = 'event_tier'
+           )
+         )
        ORDER BY rule.region, rule.legality_rule_id
        LIMIT ?`,
     )
@@ -199,6 +215,10 @@ function deriveRegionStatus(
   region: LegalityRegion,
 ) {
   const applicable = applicableRules(rules, query, region);
+  const effective = applicable.filter((rule) => rule.unresolved_scope === null);
+  const unresolvedScope = applicable.filter(
+    (rule) => rule.unresolved_scope !== null,
+  );
   const evaluations = applicable.map((rule) => ({
     rule,
     outcome: evaluateLegalityRuleEffect(
@@ -215,7 +235,8 @@ function deriveRegionStatus(
     event_tier: query.eventTier,
     region,
     status,
-    rule_ids: applicable.map((rule) => rule.id),
+    rule_ids: effective.map((rule) => rule.id),
+    unresolved_scope_rule_ids: unresolvedScope.map((rule) => rule.id),
     derivation: derivation(status, evaluations),
   };
 }
@@ -293,7 +314,14 @@ async function legalityEvidenceSidecar(
       provenance[`/data/${dataIndex}/derivation`] = observationIds;
     }
     for (const [ruleIndex, rule] of applicable.entries()) {
-      provenance[`/data/${dataIndex}/rule_ids/${ruleIndex}`] = [
+      const field = rule.unresolved_scope === null
+        ? "rule_ids"
+        : "unresolved_scope_rule_ids";
+      const fieldIndex = applicable.slice(0, ruleIndex).filter((candidate) =>
+        (candidate.unresolved_scope === null) ===
+          (rule.unresolved_scope === null)
+      ).length;
+      provenance[`/data/${dataIndex}/${field}/${fieldIndex}`] = [
         rule.source_observation_id,
       ];
     }
@@ -335,10 +363,14 @@ function derivation(
   const audit = evaluations
     .map(
       ({ rule, outcome }) =>
-        `${rule.id} (${rule.effect.type}) evaluated ${outcome}: ${rule.official_wording}`,
+        `${rule.id} (${rule.effect.type}${rule.unresolved_scope === null ? "" : ", unresolved scope"}) evaluated ${outcome}: ${rule.official_wording}`,
     )
     .join(" ");
-  return `Derived ${status} from ${evaluations.length} effective rule${evaluations.length === 1 ? "" : "s"}. ${audit}`;
+  const unresolvedCount = evaluations.filter(
+    ({ rule }) => rule.unresolved_scope !== null,
+  ).length;
+  const effectiveCount = evaluations.length - unresolvedCount;
+  return `Derived ${status} from ${effectiveCount} effective rule${effectiveCount === 1 ? "" : "s"} and ${unresolvedCount} contextual scope uncertaint${unresolvedCount === 1 ? "y" : "ies"}. ${audit}`;
 }
 
 function parseQuery(url: URL): {

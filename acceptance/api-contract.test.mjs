@@ -75,6 +75,7 @@ test("Legality Status documents and validates base and evidence representations"
       region: "EN-ASIA",
       status: "not_legal",
       rule_ids: ["legality_rule_test"],
+      unresolved_scope_rule_ids: [],
       derivation: "Derived from one exact rule.",
     }],
     meta: {

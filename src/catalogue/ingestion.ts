@@ -909,13 +909,16 @@ function assertRulesClockFresh(
   const crossedLegalityBoundary = (candidate.legality_rules ?? []).some(
     (rule) =>
       selected.has(rule.game) &&
-      rule.current !== false &&
-      (
-        (rule.effective_from > reconciledDate &&
-          rule.effective_from <= approvalDate) ||
-        (rule.effective_until !== null &&
-          rule.effective_until > reconciledDate &&
-          rule.effective_until <= approvalDate)
+      [
+        rule.effective_from,
+        rule.effective_until,
+        rule.effect.type === "release_timing"
+          ? rule.effect.legal_from
+          : null,
+      ].some((boundary) =>
+        boundary !== null &&
+        boundary > reconciledDate &&
+        boundary <= approvalDate
       ),
   );
   if (crossedLegalityBoundary) {

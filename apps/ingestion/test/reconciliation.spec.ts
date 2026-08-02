@@ -1745,30 +1745,23 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
-test("a production raw legality sidecar fails closed without an exact rule parser", async () => {
-  const currentBefore = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first();
-  const exportObjectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects
-    .map(({ key }) => key)
-    .sort();
-  const started = await post("/v1/ingestion-runs/evidence", {
+test("new collection rejects a superseded adapter while retained snapshots remain reparsable by it", async () => {
+  const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@2",
-    idempotency_key: "reject-nonempty-raw-legality-sidecar",
-    requests: fusionWorldProductionDiscoveryRequests.map(
-      (request) =>
-        request.id === "fusion-world-en:legality-current"
-          ? {
-              ...request,
-              headers: {
-                ...request.headers,
-                "user-agent": "card-keepr-nonempty-legality-sidecar",
-              },
-            }
-          : request,
-    ),
+    idempotency_key: "reject-superseded-production-adapter",
+    requests: fusionWorldProductionDiscoveryRequests,
+  });
+  expect(blocked.response.status).toBe(422);
+  expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
+
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@3",
+    idempotency_key: "active-adapter-retained-reparse-source",
+    requests: fusionWorldProductionDiscoveryRequests,
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
@@ -1777,37 +1770,31 @@ test("a production raw legality sidecar fails closed without an exact rule parse
     {},
   )).response.status).toBe(202);
 
-  let terminal: Record<string, unknown> | null = null;
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const shown = await get(`/v1/ingestion-runs/${runId}`);
-    if (shown.document.state === "failed" ||
-      shown.document.state === "awaiting_approval") {
-      terminal = shown.document;
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  expect(terminal).toMatchObject({
-    state: "failed",
+  await waitForRunState(runId, "awaiting_approval");
+  const snapshot = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT snapshot.id
+     FROM source_snapshots AS snapshot
+     WHERE snapshot.ingestion_run_id = ?
+       AND snapshot.request_id = 'fusion-world-en:legality-current'`,
+  ).bind(runId).first<{ id: string }>();
+  if (snapshot === null) throw new Error("Retained legality snapshot is absent");
+  const reparsed = await post(
+    `/v1/source-snapshots/${snapshot.id}/observations`,
+    {
+      adapter_version: "fusion-world-en@2",
+      idempotency_key: "historical-adapter-retained-reparse",
+    },
+  );
+  expect(reparsed.response.status).toBe(201);
+  expect(reparsed.document).toMatchObject({
+    source_snapshot_id: snapshot.id,
+    adapter_version: "fusion-world-en@2",
   });
-  expect(await testEnv.CATALOGUE_DB.prepare(
-    `SELECT candidate_digest, approval_json, published_revision_id,
-            publication_outcome, resulting_revision_id
-     FROM ingestion_runs WHERE id = ?`,
-  ).bind(runId).first()).toEqual({
-    candidate_digest: null,
-    approval_json: null,
-    published_revision_id: null,
-    publication_outcome: null,
-    resulting_revision_id: null,
-  });
-  expect(await testEnv.CATALOGUE_DB.prepare(
-    `SELECT current_revision_id FROM catalogue_state WHERE singleton = 1`,
-  ).first()).toEqual(currentBefore);
-  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects
-    .map(({ key }) => key)
-    .sort()).toEqual(exportObjectsBefore);
+  const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
+  expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {
+    candidate_digest: requiredString(candidate.document, "candidate_digest"),
+    idempotency_key: "reject-active-adapter-retained-reparse-source",
+  })).response.status).toBe(200);
 }, 30_000);
 
 test("complete image evidence publishes an unidentified artwork once without collapsing a new locator", async () => {
@@ -1947,7 +1934,7 @@ test("production plans bind every request identity to its exact Official Source 
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@1",
+    adapter_version: "one-piece-en@2",
     idempotency_key: "forged-production-surface-url",
     requests,
   });
@@ -4636,7 +4623,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@1",
+    adapter_version: "one-piece-en@2",
     idempotency_key: "blocked-recovery-start",
     requests: onePieceProductionDiscoveryRequests,
   });
@@ -4686,7 +4673,7 @@ test("the administration boundary requires every accepted lineage for each selec
     plans: [{
       supported_game: "gundam",
       source_lineage: "gundam-en-asia",
-      adapter_version: "gundam-en-asia@2",
+      adapter_version: "gundam-en-asia@3",
       requests: [
         "packages",
         "products",

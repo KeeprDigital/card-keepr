@@ -386,8 +386,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
        'legality_rule_provenance_owner_insert',
        'legality_rule_provenance_owner_update',
        'legality_rule_provenance_immutable',
+       'legality_rule_scope_valid_insert',
        'legality_rules_immutable_delete',
        'revision_legality_rule_matches_canonical',
+       'revision_legality_rule_scope_valid_insert',
        'revision_legality_rules_immutable_delete',
        'revision_legality_rules_immutable_update'
      ) ORDER BY name`,
@@ -399,8 +401,10 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     "legality_rule_provenance_immutable",
     "legality_rule_provenance_owner_insert",
     "legality_rule_provenance_owner_update",
+    "legality_rule_scope_valid_insert",
     "legality_rules_immutable_delete",
     "revision_legality_rule_matches_canonical",
+    "revision_legality_rule_scope_valid_insert",
     "revision_legality_rules_immutable_delete",
     "revision_legality_rules_immutable_update",
   ]);
@@ -427,6 +431,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     event_tier: null,
     effective_from: "2026-01-01",
     effective_until: null,
+    unresolved_scope: null,
     card_ids: ["card_upgraded_guard"],
     official_wording: "The upgraded guard remains authoritative.",
     effect: {
@@ -631,6 +636,19 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   expect(upgradedCanonicalEffectErrors.map(String)).toEqual(
     upgradedCanonicalEffectErrors.map(() =>
       expect.stringMatching(/legality_rule_effect_invalid/),
+    ),
+  );
+  const upgradedScopeErrors = await canonicalLegalityScopeInvariantErrors(
+    legacyDatabase,
+    {
+      ...upgradedRule,
+      source_field_pointers_json: sourceFieldPointers,
+    },
+    "upgraded",
+  );
+  expect(upgradedScopeErrors.map(String)).toEqual(
+    upgradedScopeErrors.map(() =>
+      expect.stringMatching(/legality_rule_scope_invalid/)
     ),
   );
   const upgradedProvenanceMutation = await rejectedError(
@@ -1066,6 +1084,27 @@ test("a versioned production adapter derives and exports an exact representable 
     effective_until: null,
     effect: { type: "eligible" },
   });
+
+  const conflicting = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@3",
+    idempotency_key: "production-conflicting-shared-legality-v3",
+    requests: productionFusionLegalityRequests(
+      "card-keepr-representable-legality-v3",
+      "card-keepr-conflicting-shared-legality-v3",
+    ),
+  });
+  expect(conflicting.response.status).toBe(201);
+  const conflictingRunId = requiredString(conflicting.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${conflictingRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  expect(await waitForState(conflictingRunId, "failed")).toMatchObject({
+    state: "failed",
+    failure_code: "printing_reconciliation_blocked",
+  });
 }, 90_000);
 
 test("the One Piece production release surface publishes release timing through the export seam", async () => {
@@ -1181,6 +1220,7 @@ test.each([
   "card-keepr-missing-combination-side-v3",
   "card-keepr-mismatched-legality-total-v3",
   "card-keepr-truncated-legality-partition-v3",
+  "card-keepr-conditional-legality-v3",
 ])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -1497,6 +1537,7 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
       official_wording: `${pointer}/official_wording`,
       effective_from: `${pointer}/effective_from`,
       effective_until: `${pointer}/effective_until`,
+      unresolved_scope: `${pointer}/unresolved_scope`,
       region: `${pointer}/region`,
       format: `${pointer}/format`,
       event_tier: `${pointer}/event_tier`,
@@ -1980,19 +2021,27 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
 test.each([
   {
     boundary: "effective_from",
+    rules: "current",
     reconciledAt: "2025-12-31T23:59:00.000Z",
     approvedAt: "2026-01-01T00:01:00.000Z",
   },
   {
     boundary: "effective_until",
+    rules: "current",
     reconciledAt: "2025-05-31T23:59:00.000Z",
     approvedAt: "2025-06-01T00:01:00.000Z",
   },
+  {
+    boundary: "release_timing.legal_from",
+    rules: "release-only",
+    reconciledAt: "2025-12-31T23:59:00.000Z",
+    approvedAt: "2026-01-01T00:01:00.000Z",
+  },
 ])(
   "approval rejects a candidate after a Legality Rule $boundary boundary passes",
-  async ({ boundary, reconciledAt, approvedAt }) => {
+  async ({ boundary, rules, reconciledAt, approvedAt }) => {
     const runId = await collectFixtureLegalityEvidence(
-      "https://official-source.invalid/reconciliation/contextual-legality-domain",
+      `https://official-source.invalid/reconciliation/contextual-legality-domain?rules=${rules}`,
       `legality-clock-${boundary}`,
     );
     const reconciled = await reconcile(runId, reconciledAt);
@@ -2046,6 +2095,52 @@ test.each([
     expect(rejected.response.status).toBe(200);
   },
 );
+
+test("approval rejects a missing-but-effective historical Legality Rule boundary", async () => {
+  const initialRunId = await collectFixtureLegalityEvidence(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain",
+    "legality-clock-missing-history-initial",
+  );
+  const initial = await reconcile(initialRunId, "2025-05-30T00:00:00.000Z");
+  expect(initial.response.status).toBe(200);
+  expect((await approve(
+    initial.document,
+    "legality-clock-missing-history-publish",
+    "2025-05-30T00:01:00.000Z",
+  )).response.status).toBe(200);
+  const missingRunId = await collectFixtureLegalityEvidence(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=empty",
+    "legality-clock-missing-history-candidate",
+  );
+  const missing = await reconcile(
+    missingRunId,
+    "2025-05-31T23:59:00.000Z",
+  );
+  expect(missing.response.status).toBe(200);
+  expect((missing.document.legality_rules as Array<Record<string, unknown>>)
+    .some((rule) =>
+      rule.current === false && rule.effective_until === "2025-06-01"
+    )).toBe(true);
+  const blocked = await approve(
+    missing.document,
+    "legality-clock-missing-history-blocked",
+    "2025-06-01T00:01:00.000Z",
+  );
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({ code: "candidate_legality_stale" });
+  const rejected = await request(
+    `/v1/ingestion-runs/${missingRunId}/rejection`,
+    {
+      candidate_digest: requiredString(
+        missing.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-legality-clock-missing-history",
+    },
+    "2025-06-01T00:01:00.000Z",
+  );
+  expect(rejected.response.status).toBe(200);
+});
 
 test.each(["event-tier", "effective-until"])(
   "nullable legality field %s must be explicitly retained for exact provenance",
@@ -2498,12 +2593,19 @@ async function waitForState(runId: string, expected: string) {
 
 function productionFusionLegalityRequests(
   marker: string,
+  historyMarker = marker,
 ): ProductionDiscoveryRequest[] {
   return fusionWorldProductionDiscoveryRequests.map((request) =>
-    request.id === "fusion-world-en:legality-current"
+    request.id === "fusion-world-en:legality-current" ||
+      request.id === "fusion-world-en:legality-history"
       ? {
           ...request,
-          headers: { ...request.headers, "user-agent": marker },
+          headers: {
+            ...request.headers,
+            "user-agent": request.id === "fusion-world-en:legality-history"
+              ? historyMarker
+              : marker,
+          },
         }
       : request
   );
@@ -2843,6 +2945,104 @@ async function canonicalLegalityEffectInvariantErrors(
       );
     }),
   );
+}
+
+async function canonicalLegalityScopeInvariantErrors(
+  database: D1Database,
+  canonical: Record<string, unknown>,
+  prefix: string,
+): Promise<unknown[]> {
+  const unresolved = {
+    type: "unresolved",
+    reason: "The Official Source omits contextual scope.",
+  };
+  const variants = [
+    {
+      effectiveFrom: null,
+      effectiveUntil: null,
+      eventTier: null,
+      scope: null,
+      direct: ["card_scope_direct"],
+      effect: unresolved,
+    },
+    {
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
+      eventTier: null,
+      scope: { dimensions: ["effective_interval"] },
+      direct: ["card_scope_direct"],
+      effect: unresolved,
+    },
+    {
+      effectiveFrom: null,
+      effectiveUntil: null,
+      eventTier: "championship",
+      scope: { dimensions: ["effective_interval", "event_tier"] },
+      direct: ["card_scope_direct"],
+      effect: unresolved,
+    },
+    {
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
+      eventTier: null,
+      scope: { dimensions: ["event_tier"] },
+      direct: [],
+      effect: unresolved,
+    },
+    {
+      effectiveFrom: null,
+      effectiveUntil: null,
+      eventTier: null,
+      scope: { dimensions: ["effective_interval"] },
+      direct: ["card_scope_direct"],
+      effect: { type: "eligible" },
+    },
+    {
+      effectiveFrom: null,
+      effectiveUntil: null,
+      eventTier: null,
+      scope: { dimensions: ["effective_interval", "effective_interval"] },
+      direct: ["card_scope_direct"],
+      effect: unresolved,
+    },
+  ] as const;
+  return Promise.all(variants.map((variant, index) =>
+    rejectedError(database.prepare(
+      `INSERT INTO legality_rules (
+         id, official_id, supported_game, region, format, event_tier,
+         effective_from, effective_until, unresolved_scope_json,
+         official_wording, effect_json, card_ids_json, direct_card_ids_json,
+         source_lineage, source_snapshot_id, source_observation_set_id,
+         source_observation_id, source_observation_pointer,
+         source_field_pointers_json, first_revision_id,
+         last_observed_revision_id, current, last_missing_revision_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         ?, ?, 1, NULL)`,
+    ).bind(
+      `legality_rule_${prefix}_malformed_scope_${index}`,
+      `${prefix}-malformed-scope-${index}`,
+      canonical.supported_game ?? canonical.game,
+      canonical.region,
+      canonical.format,
+      variant.eventTier,
+      variant.effectiveFrom,
+      variant.effectiveUntil,
+      JSON.stringify(variant.scope),
+      canonical.official_wording,
+      JSON.stringify(variant.effect),
+      JSON.stringify(variant.direct),
+      JSON.stringify(variant.direct),
+      canonical.source_lineage,
+      canonical.source_snapshot_id,
+      canonical.source_observation_set_id,
+      `srcobs_${prefix}_malformed_scope_${index}`,
+      `/observations/0/value/legality_rules/${index + 60}`,
+      canonical.source_field_pointers_json ??
+        JSON.stringify(canonical.source_field_pointers),
+      canonical.first_revision_id,
+      canonical.last_observed_revision_id,
+    ).run())
+  ));
 }
 
 async function rejectedError(promise: Promise<unknown>): Promise<unknown> {

@@ -361,6 +361,10 @@ export async function retainedReconciliationObservation(
   );
   const observationIds = new Set<string>();
   const legalityRules: RetainedLegalityRule[] = [];
+  const legalityRulesByIdentity = new Map<string, {
+    rule: RetainedLegalityRule;
+    requestUrl: string;
+  }>();
   const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
   const completeLegalityRequestIds = new Set<string>();
   const completeLegalityRuleCounts = new Map<string, number>();
@@ -441,16 +445,21 @@ export async function retainedReconciliationObservation(
             completeLegalityScopes.set(row.source_lineage, scope);
           }
         }
-        legalityRules.push(
-          ...parseRetainedLegalityRules(wrapped.value, {
+        for (const rule of parseRetainedLegalityRules(wrapped.value, {
             game: supportedGame(row.supported_game),
             sourceLineage: row.source_lineage,
             sourceSnapshotId: row.source_snapshot_id,
             sourceObservationSetId: row.observation_set_id,
             sourceObservationId: wrapped.id,
             sourceValuePointer: `/observations/${wrappedIndex}/value`,
-          }),
-        );
+          })) {
+          mergeRetainedLegalityRule(
+            legalityRules,
+            legalityRulesByIdentity,
+            rule,
+            request.url,
+          );
+        }
         if (
           isRecord(wrapped.value) &&
           wrapped.value.observation_type === "legality_rules"
@@ -547,6 +556,44 @@ export async function retainedReconciliationObservation(
       left.sourceLineage.localeCompare(right.sourceLineage)
     ),
   };
+}
+
+function mergeRetainedLegalityRule(
+  rules: RetainedLegalityRule[],
+  byIdentity: Map<string, {
+    rule: RetainedLegalityRule;
+    requestUrl: string;
+  }>,
+  rule: RetainedLegalityRule,
+  requestUrl: string,
+): void {
+  const identity = `${rule.source_lineage}\u0000${rule.official_id}`;
+  const prior = byIdentity.get(identity);
+  if (prior === undefined) {
+    rules.push(rule);
+    byIdentity.set(identity, { rule, requestUrl });
+    return;
+  }
+  if (
+    prior.requestUrl !== requestUrl ||
+    retainedLegalitySemantic(prior.rule) !== retainedLegalitySemantic(rule)
+  ) {
+    throw new Error(
+      `Conflicting Legality Rule identity ${rule.official_id} spans Official Source surfaces.`,
+    );
+  }
+}
+
+function retainedLegalitySemantic(rule: RetainedLegalityRule): string {
+  const {
+    source_snapshot_id: _snapshot,
+    source_observation_set_id: _set,
+    source_observation_id: _observation,
+    source_observation_pointer: _pointer,
+    source_field_pointers: _fieldPointers,
+    ...semantic
+  } = rule;
+  return canonicalJson(semantic);
 }
 
 function completeLegalityScope(value: Record<string, unknown>): boolean {
@@ -707,6 +754,13 @@ function rawOfficialSurfaceRecords(
         !isRecord(retained.document)
       ) {
         continue;
+      }
+      if (sourceLineage === "one-piece-en" && surface === "releases") {
+        const releaseTimingEntries =
+          retained.document.release_timing_entries;
+        return Array.isArray(releaseTimingEntries)
+          ? releaseTimingEntries
+          : [];
       }
       for (const field of [
         "entries",

@@ -76,7 +76,7 @@ for (const failureCase of failureCases) {
         plans: [{
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "one-piece-en@1",
+          adapter_version: "one-piece-en@2",
           requests,
         }],
       }),

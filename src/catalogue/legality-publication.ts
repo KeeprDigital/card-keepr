@@ -22,6 +22,7 @@ export function legalityPublicationStatements(
       event_tier: rule.event_tier,
       effective_from: rule.effective_from,
       effective_until: rule.effective_until,
+      unresolved_scope_json: canonicalJson(rule.unresolved_scope),
       official_wording: rule.official_wording,
       effect_json: canonicalJson(rule.effect),
       card_ids_json: canonicalJson(legalityRuleCardIds(rule)),
@@ -52,7 +53,8 @@ export function legalityPublicationStatements(
           `INSERT INTO legality_rules (
              id, official_id, supported_game, region, format, event_tier,
              effective_from, effective_until, official_wording,
-             effect_json, card_ids_json, direct_card_ids_json, source_lineage,
+             unresolved_scope_json, effect_json, card_ids_json,
+             direct_card_ids_json, source_lineage,
              source_snapshot_id, source_observation_set_id,
              source_observation_id, source_observation_pointer,
              source_field_pointers_json, first_revision_id,
@@ -68,6 +70,7 @@ export function legalityPublicationStatements(
                   json_extract(value, '$.effective_from'),
                   json_extract(value, '$.effective_until'),
                   json_extract(value, '$.official_wording'),
+                  json_extract(value, '$.unresolved_scope_json'),
                   json_extract(value, '$.effect_json'),
                   json_extract(value, '$.card_ids_json'),
                   json_extract(value, '$.direct_card_ids_json'),
@@ -97,12 +100,13 @@ export function legalityPublicationStatements(
           `INSERT INTO revision_legality_rules (
              catalogue_revision_id, legality_rule_id, supported_game,
              region, format, event_tier, effective_from, effective_until,
-             card_ids_json, document_json
+             unresolved_scope_json, card_ids_json, document_json
            )
            SELECT ?, canonical.id, canonical.supported_game,
                   canonical.region, canonical.format,
                   canonical.event_tier, canonical.effective_from,
-                  canonical.effective_until, canonical.card_ids_json,
+                  canonical.effective_until, canonical.unresolved_scope_json,
+                  canonical.card_ids_json,
                   json_set(
                     json_extract(value, '$.document_json'),
                     '$.source_snapshot_id',

@@ -784,6 +784,7 @@
         "region",
         "status",
         "rule_ids",
+        "unresolved_scope_rule_ids",
         "derivation"
       ],
       "properties": {
@@ -796,6 +797,10 @@
         "region": { "$ref": "#/$defs/Region" },
         "status": { "enum": ["legal", "restricted", "not_legal", "indeterminate"] },
         "rule_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "unresolved_scope_rule_ids": {
           "type": "array",
           "items": { "$ref": "#/$defs/OpaqueId" }
         },

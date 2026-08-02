@@ -15,6 +15,7 @@ type FieldMap = Readonly<{
   tier: string;
   effectiveFrom: string;
   effectiveUntil: string;
+  unresolvedScope: string;
   cards: string;
   directive: string;
   maximumCopies: string;
@@ -35,6 +36,7 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
     tier: "event_class",
     effectiveFrom: "start_date",
     effectiveUntil: "end_date",
+    unresolvedScope: "unresolved_scope",
     cards: "card_numbers",
     directive: "restriction_code",
     maximumCopies: "maximum_copies",
@@ -53,6 +55,7 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
     tier: "tier",
     effectiveFrom: "active_on",
     effectiveUntil: "expires_on",
+    unresolvedScope: "unresolved_scope",
     cards: "cards",
     directive: "directive",
     maximumCopies: "cap",
@@ -71,6 +74,7 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
     tier: "tournament_level",
     effectiveFrom: "applies_from",
     effectiveUntil: "applies_until",
+    unresolvedScope: "unresolved_scope",
     cards: "card_ids",
     directive: "status_code",
     maximumCopies: "deck_limit",
@@ -89,6 +93,7 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
     tier: "event_tier",
     effectiveFrom: "effective_date",
     effectiveUntil: "end_date",
+    unresolvedScope: "unresolved_scope",
     cards: "card_numbers",
     directive: "ruling",
     maximumCopies: "copy_limit",
@@ -114,6 +119,7 @@ const htmlLabelsByGame: Readonly<
     "Notice No": "id", "Published Text": "wording", Territory: "region",
     "Format Name": "format", "Event Class": "tier", "Start Date": "effectiveFrom",
     "End Date": "effectiveUntil", "Card Numbers": "cards",
+    "Unresolved Scope": "unresolvedScope",
     "Restriction Code": "directive", "Maximum Copies": "maximumCopies",
     "Related Cards": "companionCards", "Membership Attribute": "membershipAttribute",
     "Membership Values": "membershipValues", "Eligible Blocks": "eligibleBlocks",
@@ -123,6 +129,7 @@ const htmlLabelsByGame: Readonly<
     "Rule Ref": "id", Notice: "wording", Market: "region",
     "Play Format": "format", Tier: "tier", "Active On": "effectiveFrom",
     "Expires On": "effectiveUntil", Cards: "cards", Directive: "directive",
+    "Unresolved Scope": "unresolvedScope",
     Cap: "maximumCopies", "Paired Cards": "companionCards",
     "Filter Field": "membershipAttribute", "Filter Values": "membershipValues",
     Blocks: "eligibleBlocks", "Tournament Legal Date": "legalFrom",
@@ -132,6 +139,7 @@ const htmlLabelsByGame: Readonly<
     "Restriction ID": "id", Body: "wording", "Language Scope": "region",
     Ruleset: "format", "Tournament Level": "tier", "Applies From": "effectiveFrom",
     "Applies Until": "effectiveUntil", "Card IDs": "cards", "Status Code": "directive",
+    "Unresolved Scope": "unresolvedScope",
     "Deck Limit": "maximumCopies", "Prohibited With": "companionCards",
     "Membership Field": "membershipAttribute", "Membership Terms": "membershipValues",
     "Permitted Blocks": "eligibleBlocks", "Sale Eligible On": "legalFrom",
@@ -140,6 +148,7 @@ const htmlLabelsByGame: Readonly<
   gundam: {
     "News ID": "id", Text: "wording", Region: "region", Format: "format",
     "Event Tier": "tier", "Effective Date": "effectiveFrom", "End Date": "effectiveUntil",
+    "Unresolved Scope": "unresolvedScope",
     "Card Numbers": "cards", Ruling: "directive", "Copy Limit": "maximumCopies",
     "Companion Cards": "companionCards", Attribute: "membershipAttribute",
     Values: "membershipValues", "Legal Blocks": "eligibleBlocks",
@@ -237,13 +246,16 @@ export function officialLegalityRulesHtmlObservation(
         throw new Error(`Official Legality HTML label ${label} is duplicated.`);
       }
       const value = htmlText(pair[2]!);
-      entry[rawField] = field === "cards" ||
+      entry[rawField] = field === "unresolvedScope"
+        ? value === "-" ? null : { dimensions: value.split(",").map((item) => item.trim()) }
+        : field === "cards" ||
           field === "companionCards" || field === "membershipValues" ||
           field === "eligibleBlocks"
         ? value === "-" ? [] : value.split(",").map((item) => item.trim())
         : field === "maximumCopies"
           ? Number(value)
-          : field === "tier" || field === "effectiveUntil"
+          : field === "tier" || field === "effectiveFrom" ||
+              field === "effectiveUntil"
             ? value === "-" ? null : value
             : value;
     }
@@ -287,12 +299,17 @@ function htmlAttribute(attributes: string, name: string): string | null {
 
 function htmlText(value: string): string {
   return value
-    .replace(/<br\s*\/?\s*>/giu, "\n")
+    .replace(
+      /<br\s*\/?\s*>|<\/(?:address|article|aside|blockquote|dd|div|dl|dt|figcaption|figure|footer|h[1-6]|header|li|main|nav|ol|p|section|table|tbody|td|tfoot|th|thead|tr|ul)>/giu,
+      "\n",
+    )
     .replace(/<[^>]+>/gu, "")
     .replace(
       /&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu,
       (entity, reference: string) => decodedHtmlEntity(entity, reference),
     )
+    .replace(/[ \t]*\n[ \t]*/gu, "\n")
+    .replace(/\n{2,}/gu, "\n")
     .trim();
 }
 
@@ -375,32 +392,78 @@ function exactLegalityRule(
       "Official Legality region conflicts with its Source Lineage.",
     );
   }
+  const effectiveFrom = nullableDate(
+    entry[fields.effectiveFrom],
+    "Official Legality effective date",
+  );
+  const effectiveUntil = nullableDate(
+    entry[fields.effectiveUntil],
+    "Official Legality end date",
+  );
+  const unresolvedScope = exactUnresolvedScope(entry[fields.unresolvedScope]);
+  const eventTier = nullableText(
+    entry[fields.tier],
+    "Official Legality event tier",
+  );
+  const cardNumbers = requiredTextArray(
+    entry[fields.cards],
+    "Official Legality Card numbers",
+    true,
+  );
+  if (
+    (effectiveFrom === null &&
+      (unresolvedScope === null ||
+        !unresolvedScope.dimensions.includes("effective_interval"))) ||
+    (effectiveFrom !== null && effectiveUntil !== null &&
+      effectiveUntil <= effectiveFrom) ||
+    (unresolvedScope !== null &&
+      (effect.type !== "unresolved" || cardNumbers.length === 0 ||
+        (unresolvedScope.dimensions.includes("effective_interval")
+          ? effectiveFrom !== null || effectiveUntil !== null
+          : effectiveFrom === null) ||
+        (unresolvedScope.dimensions.includes("event_tier") &&
+          eventTier !== null)))
+  ) {
+    throw new Error("Official Legality unresolved scope conflicts with its exact context.");
+  }
   return {
     id: requiredText(entry[fields.id], "Official Legality identity"),
     game,
     region,
     format: requiredText(entry[fields.format], "Official Legality format"),
-    event_tier: nullableText(
-      entry[fields.tier],
-      "Official Legality event tier",
-    ),
-    effective_from: requiredDate(
-      entry[fields.effectiveFrom],
-      "Official Legality effective date",
-    ),
-    effective_until: nullableDate(
-      entry[fields.effectiveUntil],
-      "Official Legality end date",
-    ),
-    card_numbers: requiredTextArray(
-      entry[fields.cards],
-      "Official Legality Card numbers",
-      true,
-    ),
+    event_tier: eventTier,
+    effective_from: effectiveFrom,
+    effective_until: effectiveUntil,
+    unresolved_scope: unresolvedScope,
+    card_numbers: cardNumbers,
     official_wording: wording,
     effect,
     representable: true,
   };
+}
+
+function exactUnresolvedScope(
+  value: unknown,
+): { dimensions: ("effective_interval" | "event_tier")[] } | null {
+  if (value === undefined || value === null) return null;
+  const scope = requiredRecord(value, "Official Legality unresolved scope");
+  const unknown = Object.keys(scope).find((field) => field !== "dimensions");
+  if (unknown !== undefined || !Array.isArray(scope.dimensions)) {
+    throw new Error("Official Legality unresolved scope is invalid.");
+  }
+  const dimensions = scope.dimensions.map((dimension) => {
+    if (dimension !== "effective_interval" && dimension !== "event_tier") {
+      throw new Error("Official Legality unresolved scope dimension is invalid.");
+    }
+    return dimension;
+  });
+  if (
+    dimensions.length === 0 || new Set(dimensions).size !== dimensions.length ||
+    dimensions.join(",") !== [...dimensions].sort().join(",")
+  ) {
+    throw new Error("Official Legality unresolved scope dimensions are invalid.");
+  }
+  return { dimensions };
 }
 
 function exactEffect(
@@ -409,6 +472,7 @@ function exactEffect(
   directive: string,
   wording: string,
 ): Record<string, unknown> {
+  assertNoUnmodelledConditional(wording);
   switch (directive) {
     case "eligible":
       assertNoAdditionalStructuredSemantics("eligible", wording, [
@@ -637,6 +701,17 @@ function exactEffect(
       throw new Error(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
       );
+  }
+}
+
+function assertNoUnmodelledConditional(wording: string): void {
+  if (
+    /\b(?:unless|except(?:\s+(?:when|for|during))?|provided\s+that|subject\s+to|otherwise|only\s+if)\b/iu
+      .test(wording)
+  ) {
+    throw new Error(
+      "Official Legality wording contains a conditional or qualifier this Source Adapter Version cannot represent.",
+    );
   }
 }
 

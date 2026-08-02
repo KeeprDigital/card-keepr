@@ -403,6 +403,12 @@ const installedAdapters = new Map<string, SourceAdapterRegistration>(
   ]),
 );
 
+const activeAdapters = new Map<string, SourceAdapterRegistration>(
+  sourceAdapterRegistrations
+    .filter((adapter) => adapter.reconciliationCapability !== "unavailable")
+    .map((adapter) => [adapter.adapterVersion, adapter]),
+);
+
 export function requiredSourceAdapter(
   adapterVersion: string,
 ): SourceAdapterRegistration {
@@ -412,6 +418,20 @@ export function requiredSourceAdapter(
       422,
       "adapter_not_supported",
       "The requested Official Source adapter version is not installed.",
+    );
+  }
+  return adapter;
+}
+
+export function requiredActiveSourceAdapter(
+  adapterVersion: string,
+): SourceAdapterRegistration {
+  const adapter = activeAdapters.get(adapterVersion);
+  if (adapter === undefined) {
+    throw new AdministrationProblem(
+      422,
+      "adapter_not_supported",
+      "The requested Official Source adapter version is not active for new collection.",
     );
   }
   return adapter;

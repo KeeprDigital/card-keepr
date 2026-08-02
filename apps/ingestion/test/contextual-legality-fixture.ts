@@ -41,6 +41,7 @@ export function contextualLegalityFixtureDocument(
     | "current"
     | "omitted"
     | "empty"
+    | "release-only"
     | "omit-event-tier"
     | "omit-effective-until"
     | "resolved-card-order"
@@ -55,6 +56,8 @@ export function contextualLegalityFixtureDocument(
   const rules = legalityRules(region);
   const retainedRules = rulesVariant === "empty"
     ? []
+    : rulesVariant === "release-only"
+      ? rules.filter((rule) => rule.effect.type === "release_timing")
     : rulesVariant === "resolved-card-order"
       ? [{
           ...rules[0]!,
@@ -297,6 +300,7 @@ function rawGundamNotice(
     event_tier: rule.event_tier,
     effective_date: rule.effective_from,
     end_date: rule.effective_until,
+    unresolved_scope: rule.unresolved_scope,
     card_numbers: rule.card_numbers,
     ruling:
       effect.type === "prohibited_combination"
@@ -323,6 +327,7 @@ function legalityRules(region: Region) {
     event_tier: null,
     effective_from: "2026-01-01",
     effective_until: null,
+    unresolved_scope: null,
     representable: true,
   };
   if (region === "EN-US") {
@@ -414,6 +419,10 @@ function legalityRules(region: Region) {
     {
       ...base,
       id: "legality_rule_asia_unresolved_scope",
+      effective_from: null,
+      unresolved_scope: {
+        dimensions: ["effective_interval", "event_tier"],
+      },
       card_numbers: ["GD30-004"],
       official_wording:
         "The official notice does not identify whether GD30-004 applies to Championship side events.",

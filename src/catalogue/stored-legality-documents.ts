@@ -144,6 +144,7 @@ export function parseStoredLegalityRule(
     [
       "id", "official_id", "game", "region", "format", "event_tier",
       "effective_from", "effective_until", "card_ids", "official_wording",
+      "unresolved_scope",
       "effect", "source_lineage", "source_snapshot_id",
       "source_observation_set_id", "source_observation_id",
       "source_observation_pointer", "source_field_pointers",
@@ -164,15 +165,20 @@ export function parseStoredLegalityRule(
   if (registeredLegalitySourceScope(sourceLineage).game !== game) {
     throw new Error("Stored Legality Rule game conflicts with its Source Lineage.");
   }
-  const effectiveFrom = requiredDate(
-    rule.effective_from,
-    "stored Legality Rule effective_from",
-  );
+  const effectiveFrom = rule.effective_from === null
+    ? null
+    : requiredDate(
+      rule.effective_from,
+      "stored Legality Rule effective_from",
+    );
   const effectiveUntil = nullableDate(
     rule.effective_until,
     "stored Legality Rule effective_until",
   );
-  if (effectiveUntil !== null && effectiveUntil <= effectiveFrom) {
+  if (
+    effectiveFrom !== null && effectiveUntil !== null &&
+    effectiveUntil <= effectiveFrom
+  ) {
     throw new Error("Stored Legality Rule effective interval is invalid.");
   }
   const cardIds = requiredUniqueStrings(
@@ -189,7 +195,7 @@ export function parseStoredLegalityRule(
   );
   const pointerFields = [
     "official_wording", "effective_from", "effective_until", "region",
-    "format", "event_tier", "card_numbers", "effect",
+    "unresolved_scope", "format", "event_tier", "card_numbers", "effect",
   ];
   assertExactFields(
     sourceFieldPointers,
@@ -222,6 +228,21 @@ export function parseStoredLegalityRule(
     );
   }
   const effect = requiredCanonicalEffect(rule.effect);
+  const unresolvedScope = requiredUnresolvedScope(rule.unresolved_scope);
+  if (
+    (effectiveFrom === null &&
+      (unresolvedScope === null ||
+        !unresolvedScope.dimensions.includes("effective_interval"))) ||
+    (unresolvedScope !== null &&
+      (effect.type !== "unresolved" || cardIds.length === 0 ||
+        (unresolvedScope.dimensions.includes("effective_interval")
+          ? effectiveFrom !== null || effectiveUntil !== null
+          : effectiveFrom === null) ||
+        (unresolvedScope.dimensions.includes("event_tier") &&
+          rule.event_tier !== null)))
+  ) {
+    throw new Error("Stored Legality Rule unresolved scope is invalid.");
+  }
   if (effect.type === "prohibited_combination") {
     if (cardIds.length === 0 || effect.with_card_ids.length === 0) {
       throw new Error(
@@ -250,6 +271,7 @@ export function parseStoredLegalityRule(
     event_tier: nullableText(rule.event_tier, "stored Legality Rule event tier"),
     effective_from: effectiveFrom,
     effective_until: effectiveUntil,
+    unresolved_scope: unresolvedScope,
     card_ids: cardIds,
     official_wording: requiredText(
       rule.official_wording,
@@ -282,6 +304,33 @@ export function parseStoredLegalityRule(
     ),
     current,
     last_missing_revision_id: lastMissingRevisionId,
+  };
+}
+
+function requiredUnresolvedScope(
+  value: unknown,
+): LegalityRule["unresolved_scope"] {
+  if (value === null) return null;
+  const scope = requiredRecord(value, "stored Legality Rule unresolved scope");
+  assertExactFields(
+    scope,
+    ["dimensions"],
+    "stored Legality Rule unresolved scope",
+  );
+  const dimensions = requiredUniqueStrings(
+    scope.dimensions,
+    "stored Legality Rule unresolved scope dimensions",
+    false,
+  );
+  if (
+    dimensions.some((dimension) =>
+      dimension !== "effective_interval" && dimension !== "event_tier"
+    ) || canonicalJson(dimensions) !== canonicalJson([...dimensions].sort())
+  ) {
+    throw new Error("Stored Legality Rule unresolved scope is not canonical.");
+  }
+  return {
+    dimensions: dimensions as ("effective_interval" | "event_tier")[],
   };
 }
 

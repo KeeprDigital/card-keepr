@@ -35,9 +35,11 @@ establish complete empty coverage.
 
 The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
 `digimon-en@2`, and both Gundam `@2` versions) remain registered with their
-original parser contracts. Reprocessing retained bytes through one of those
-identities cannot gain Legality Rule observations; a non-empty legality
-sidecar still fails closed. Synthetic fixture adapters follow the same
+original parser contracts only for explicit reprocessing of retained Source
+Snapshots. New production Evidence Plans accept only the active registrations
+listed above. Reprocessing retained bytes through an earlier identity cannot
+gain Legality Rule observations; a non-empty legality sidecar still fails
+closed. Synthetic fixture adapters follow the same
 append-only rule: One Piece `@3` and the other games' `@2` versions are the
 legality-aware identities, while prior fixture versions retain their original
 behavior.
@@ -70,6 +72,13 @@ unknown publisher fields. Current rules, historical notices, and every One
 Piece policy stream are all rule-bearing: their wording must normalize into a
 Legality Rule or the run fails.
 
+When a publisher uses the same URL and byte-identical rule representation for
+current and history request identities, reconciliation keeps one deterministic
+rule observation. The two observations must agree on every identity-bound
+semantic field; a disagreement fails the run. Conditional prose such as
+"unless", "except", or "only if" also fails closed unless the adapter version
+has an explicit structured effect capable of retaining the condition.
+
 Legality Card details and notices are parsed by the game-specific adapter from
 raw Official Source fields. Card identity is established only from those
 details; nested Printing Image URLs must remain within the adapter's exact
@@ -80,7 +89,12 @@ being guessed into an effect.
 
 Each rule retains its Official Source identity as `official_id`, exact wording,
 game, region, format, nullable event tier, effective interval, affected Card
-Numbers, normalized effect, and `representable: true`. Its catalogue `id` is
+Numbers, normalized effect, and `representable: true`. If the publisher omits
+an effective boundary or event tier that cannot be inferred, the adapter emits
+an `unresolved` effect with `unresolved_scope.dimensions` naming
+`effective_interval`, `event_tier`, or both. Such a rule must target explicit
+Cards: it cannot become a global rule, invent an effective date, or claim an
+unbounded scope. Its catalogue `id` is
 derived from the canonical pair of `source_lineage` and `official_id`. Once
 that identity is observed, identity-bound rule semantics cannot change; the
 Official Source must publish a new official identity for a semantic change.
@@ -101,6 +115,12 @@ Gundam `EN-ASIA` and `EN-US` are separate source lineages. Do not ingest or
 derive an `EN-OCEANIA` Gundam scope. Rule applicability is determined only by
 the published effective interval and requested context; fetch order and
 capture recency never establish authority.
+
+Approval rechecks every status-changing date against the approval clock,
+including `effective_from`, `effective_until`, and
+`release_timing.legal_from`, for current and retained non-current rules alike.
+A candidate whose status could have changed since reconciliation must be
+reconciled again.
 
 Legality freshness is published independently for each exact Source Lineage
 and region. Every `legality-rules` entry in `GET /v1/catalogue`, administration
@@ -126,13 +146,17 @@ keepr legality status \
 
 Omitting `--region` returns every supported regional result separately,
 including an `indeterminate` result where no effective published rule exists.
-Every result includes the applicable Legality Rule IDs and an auditable
-derivation. `Catalogue Export` component `legality-rules` contains the
+Every result includes effective rules in `rule_ids`, contextual uncertainties
+in `unresolved_scope_rule_ids`, and an auditable derivation. A scoped
+uncertainty yields `indeterminate` when no definitive rule decides the result;
+definitive exclusions still take precedence while retaining the uncertainty
+in the audit. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
 `relationships` component. Newly generated exports use schema major 3 and
 retain `official_id`, source lineage and observation IDs, lifecycle, and each
 rule's complete normalized `effect`, including every operand and unresolved
-reason. Lifecycle on the rule itself states whether it is current and
+reason, plus nullable `effective_from` and explicit `unresolved_scope`.
+Lifecycle on the rule itself states whether it is current and
 preserves its observation boundaries, including for globally applicable rules
 whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
 Historical schema-major-1 and schema-major-2 artifacts remain byte-identical,

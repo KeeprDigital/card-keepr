@@ -6,7 +6,10 @@ also leaves a globally applicable rule without a Card relationship unable to
 expose whether the Official Source still publishes it. Newly generated exports
 therefore use manifest and record schema major 3 and retain the complete
 normalized discriminated `effect`, source provenance, and lifecycle directly
-on every Legality Rule. Existing v1 and v2 manifests and objects remain
+on every Legality Rule. V3 also permits a nullable `effective_from` only when
+an unresolved rule carries explicit `unresolved_scope` dimensions, preventing
+an unknown interval or event tier from being serialized as an invented date or
+global scope. Existing v1 and v2 manifests and objects remain
 immutable and readable through the same revision-addressed API.
 
 ## Consequences

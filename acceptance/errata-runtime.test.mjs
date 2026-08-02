@@ -77,15 +77,14 @@ test("the repository CLI rejects Official Errata authority outside the documente
       "The Official Errata adapter accepts only https://en.onepiece-cardgame.com/rules/errata_card/.",
   });
 
-  const untrustedRun = await collectSource(
+  const untrustedRun = await collectFixtureSource(
     {
-      adapter: "one-piece-json-document@1",
+      adapter: "fixture-one-piece-json@1",
       idempotencyKey: "retain-untrusted-generic-surface",
       requestId: "untrusted-generic",
       url: "https://publisher.example/claims/untrusted-card-list.json",
     },
     environment,
-    runtime,
   );
   const completed = await resumeAndWait(
     untrustedRun.id,
@@ -848,7 +847,7 @@ function digimonOfficialPlan() {
   return {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@2",
+    adapter_version: "digimon-en@3",
     requests: Object.entries(urls).map(([surface, url]) => ({
       id: `digimon-en:${surface}`,
       url,

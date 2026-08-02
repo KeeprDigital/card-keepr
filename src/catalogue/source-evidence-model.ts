@@ -2,6 +2,7 @@ import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertAdapterRequestSurface,
   assertAdapterBinding,
+  requiredActiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
   type SourceAdapterRegistration,
@@ -83,7 +84,9 @@ export async function validateEvidencePlan(
   assertIdentifier(request.source_lineage, "source_lineage");
   assertIdentifier(request.adapter_version, "adapter_version");
   assertIdentifier(request.idempotency_key, "idempotency_key");
-  const adapter = requiredSourceAdapter(request.adapter_version);
+  const adapter = planOrigin === "production"
+    ? requiredActiveSourceAdapter(request.adapter_version)
+    : requiredSourceAdapter(request.adapter_version);
   if (adapter.origin !== planOrigin) {
     throw new AdministrationProblem(
       422,

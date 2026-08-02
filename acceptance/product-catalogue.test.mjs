@@ -38,7 +38,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@2"),
+          officialPlan("digimon", "digimon-en", "digimon-en@3"),
         ],
       }),
       { mode: 0o600 },
@@ -47,26 +47,26 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@2"),
+          officialPlan("digimon", "digimon-en", "digimon-en@3"),
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@1",
+            "one-piece-en@2",
           ),
           officialPlan(
             "fusion-world",
             "fusion-world-en",
-            "fusion-world-en@2",
+            "fusion-world-en@3",
           ),
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@2",
+            "gundam-en-asia@3",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@2",
+            "gundam-en-us@3",
           ),
         ],
       }),
@@ -79,7 +79,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@1",
+            "one-piece-en@2",
           ),
         ],
       }),
@@ -257,51 +257,51 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@2",
+        adapter_version: "digimon-en@3",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@2",
+          "digimon-en@3",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@1",
+        adapter_version: "one-piece-en@2",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-en@1",
+          "one-piece-en@2",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@2",
+        adapter_version: "fusion-world-en@3",
         request_ids: officialPlan(
           "fusion-world",
           "fusion-world-en",
-          "fusion-world-en@2",
+          "fusion-world-en@3",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@2",
+        adapter_version: "gundam-en-asia@3",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@2",
+          "gundam-en-asia@3",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@2",
+        adapter_version: "gundam-en-us@3",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@2",
+          "gundam-en-us@3",
         ).requests.map(({ id }) => id),
       },
     ],
@@ -451,12 +451,17 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     successfulChecks.map(({ game, area }) => `${game}:${area}`),
     [
       "digimon:cards-and-printings",
+      "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
+      "fusion-world:legality-rules",
       "fusion-world:products-and-releases",
       "gundam:cards-and-printings",
+      "gundam:legality-rules",
+      "gundam:legality-rules",
       "gundam:products-and-releases",
       "one-piece:cards-and-printings",
+      "one-piece:legality-rules",
       "one-piece:products-and-releases",
     ],
   );
@@ -967,7 +972,11 @@ async function waitForRunState(
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
   }
   throw new Error(
-    `Run did not reach ${expectedState}: ${JSON.stringify(lastDocument)}\n` +
+    `Run did not reach ${expectedState}: ${JSON.stringify({
+      state: lastDocument?.state,
+      failure_code: lastDocument?.failure_code,
+      warnings: lastDocument?.warnings,
+    })}\n` +
       worker.getOutput(),
   );
 }

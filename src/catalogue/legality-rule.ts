@@ -33,12 +33,17 @@ export type LegalityRuleSourceFieldPointers = {
   official_wording: string;
   effective_from: string;
   effective_until: string;
+  unresolved_scope: string;
   region: string;
   format: string;
   event_tier: string;
   card_numbers: string;
   effect: string;
 };
+
+export type UnresolvedLegalityScope = Readonly<{
+  dimensions: readonly ("effective_interval" | "event_tier")[];
+}>;
 
 export type LegalityRule = {
   id: string;
@@ -47,8 +52,9 @@ export type LegalityRule = {
   region: LegalityRegion;
   format: string;
   event_tier: string | null;
-  effective_from: string;
+  effective_from: string | null;
   effective_until: string | null;
+  unresolved_scope: UnresolvedLegalityScope | null;
   card_ids: readonly string[];
   official_wording: string;
   effect: LegalityRuleEffect;
@@ -126,6 +132,11 @@ export async function resolveLegalityRuleCards(
         requiredCardId(cardsByOfficialIdentity, rule.game, number)
       ),
     );
+    if (rule.unresolved_scope !== null && cardIds.length === 0) {
+      throw new Error(
+        `Legality Rule ${rule.official_id} with unresolved scope must identify at least one Card.`,
+      );
+    }
     const effect =
       rule.effect.type === "prohibited_combination"
         ? resolvedProhibitedCombination(
@@ -224,6 +235,7 @@ function parseRule(
     "event_tier",
     "effective_from",
     "effective_until",
+    "unresolved_scope",
     "card_numbers",
     "official_wording",
     "effect",
@@ -246,10 +258,12 @@ function parseRule(
     );
   }
   const effect = parseLegalityRuleEffect(record.effect);
-  const effectiveFrom = requiredDate(
-    record.effective_from,
-    "legality rule effective_from",
-  );
+  const effectiveFrom = record.effective_from === null
+    ? null
+    : requiredDate(
+      record.effective_from,
+      "legality rule effective_from",
+    );
   if (!("effective_until" in record)) {
     throw new Error(
       "Legality Rule effective_until must be explicitly retained as a date or null.",
@@ -267,9 +281,29 @@ function parseRule(
           record.effective_until,
           "legality rule effective_until",
         );
-  if (effectiveUntil !== null && effectiveUntil <= effectiveFrom) {
+  if (
+    effectiveFrom !== null && effectiveUntil !== null &&
+    effectiveUntil <= effectiveFrom
+  ) {
     throw new Error(
       "A Legality Rule effective interval must end after it starts.",
+    );
+  }
+  const unresolvedScope = parsedUnresolvedScope(record.unresolved_scope);
+  if (
+    unresolvedScope !== null &&
+    (effect.type !== "unresolved" ||
+      (unresolvedScope.dimensions.includes("effective_interval")
+        ? effectiveFrom !== null || effectiveUntil !== null
+        : effectiveFrom === null) ||
+      (unresolvedScope.dimensions.includes("event_tier") &&
+        record.event_tier !== null))
+  ) {
+    throw new Error("Legality Rule unresolved scope conflicts with its exact context.");
+  }
+  if (effectiveFrom === null && unresolvedScope === null) {
+    throw new Error(
+      "Legality Rule without an effective interval requires explicit unresolved scope.",
     );
   }
   const sourceObservationPointer =
@@ -288,6 +322,7 @@ function parseRule(
         : requiredString(record.event_tier, "legality rule event tier"),
     effective_from: effectiveFrom,
     effective_until: effectiveUntil,
+    unresolved_scope: unresolvedScope,
     card_numbers: requiredCardNumbers(
       record.card_numbers,
       "legality rule card_numbers",
@@ -307,6 +342,7 @@ function parseRule(
       official_wording: `${sourceObservationPointer}/official_wording`,
       effective_from: `${sourceObservationPointer}/effective_from`,
       effective_until: `${sourceObservationPointer}/effective_until`,
+      unresolved_scope: `${sourceObservationPointer}/unresolved_scope`,
       region: `${sourceObservationPointer}/region`,
       format: `${sourceObservationPointer}/format`,
       event_tier: `${sourceObservationPointer}/event_tier`,
@@ -314,6 +350,30 @@ function parseRule(
       effect: `${sourceObservationPointer}/effect`,
     },
   };
+}
+
+function parsedUnresolvedScope(value: unknown): UnresolvedLegalityScope | null {
+  if (value === null) return null;
+  const scope = requiredRecord(value, "legality rule unresolved_scope");
+  assertOnlyFields(scope, ["dimensions"]);
+  if (!Array.isArray(scope.dimensions)) {
+    throw new Error("Legality Rule unresolved_scope dimensions must be an array.");
+  }
+  const dimensions = scope.dimensions.map((dimension) => {
+    if (dimension !== "effective_interval" && dimension !== "event_tier") {
+      throw new Error("Legality Rule unresolved_scope dimension is unsupported.");
+    }
+    return dimension;
+  });
+  if (
+    dimensions.length === 0 || new Set(dimensions).size !== dimensions.length ||
+    dimensions.join(",") !== [...dimensions].sort().join(",")
+  ) {
+    throw new Error(
+      "Legality Rule unresolved_scope dimensions must be non-empty, unique, and canonical.",
+    );
+  }
+  return { dimensions };
 }
 
 function requiredCardId(

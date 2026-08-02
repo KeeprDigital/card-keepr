@@ -507,6 +507,8 @@ export default defineConfig({
                 "card-keepr-missing-combination-side-v3",
                 "card-keepr-mismatched-legality-total-v3",
                 "card-keepr-truncated-legality-partition-v3",
+                "card-keepr-conflicting-shared-legality-v3",
+                "card-keepr-conditional-legality-v3",
               ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
@@ -546,6 +548,10 @@ export default defineConfig({
               const officialWording = artworkMarker ===
                   "card-keepr-representable-legality-v3"
                 ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
+                : artworkMarker === "card-keepr-conflicting-shared-legality-v3"
+                  ? "FB01-001 is banned from Standard decks."
+                : artworkMarker === "card-keepr-conditional-legality-v3"
+                  ? "FB01-001 is banned from Standard decks unless it has the Earth Federation trait."
                 : artworkMarker === "card-keepr-mixed-effect-legality-v3"
                   ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
                   : artworkMarker === "card-keepr-definitive-unresolved-legality-v3"
@@ -557,6 +563,8 @@ export default defineConfig({
                 "card-keepr-definitive-unresolved-legality-v3";
               const missingCombination = artworkMarker ===
                 "card-keepr-missing-combination-side-v3";
+              const conflictingShared = artworkMarker ===
+                "card-keepr-conflicting-shared-legality-v3";
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
@@ -572,7 +580,7 @@ export default defineConfig({
                         <dt>Active On</dt><dd>2026-01-01</dd>
                         <dt>Expires On</dt><dd>-</dd>
                         <dt>Cards</dt><dd>${missingCombination ? "-" : "FB01-001"}</dd>
-                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : "eligible"}</dd>
+                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : conflictingShared ? "ban" : "eligible"}</dd>
                         ${artworkMarker === "card-keepr-mixed-effect-legality-v3"
                           ? "<dt>Cap</dt><dd>1</dd>"
                           : unresolved
@@ -1228,6 +1236,7 @@ function reconciliationSourceDocument(
     return contextualLegalityFixtureDocument(
       "EN-ASIA",
       rules === "omitted" || rules === "empty" ||
+          rules === "release-only" ||
           rules === "omit-event-tier" ||
           rules === "omit-effective-until" ||
           rules === "resolved-card-order" ||
@@ -1718,6 +1727,7 @@ function reconciliationSourceDocument(
         event_tier: null,
         effective_from: "2026-01-01",
         effective_until: null,
+        unresolved_scope: null,
         card_numbers: cardNumbers,
         official_wording: `Relationship scale rule ${index + 1}.`,
         effect: { type: "ban" },
@@ -2383,6 +2393,7 @@ function reconciliationSourceDocument(
           event_tier: null,
           effective_from: "2026-01-01",
           effective_until: null,
+          unresolved_scope: null,
           card_numbers: ["DON!!"],
           official_wording: "DON!! may not be included in a deck.",
           effect: { type: "ban" },
@@ -2396,6 +2407,7 @@ function reconciliationSourceDocument(
           event_tier: null,
           effective_from: "2026-01-01",
           effective_until: null,
+          unresolved_scope: null,
           card_numbers: ["DON!!"],
           official_wording: "Decks may contain one copy of DON!!.",
           effect: { type: "copy_limit", maximum_copies: 1 },
@@ -2409,6 +2421,7 @@ function reconciliationSourceDocument(
           event_tier: null,
           effective_from: "2026-01-01",
           effective_until: null,
+          unresolved_scope: null,
           card_numbers: ["DON!!"],
           official_wording:
             "DON!! and OP30-001 may not be included in the same deck.",
@@ -2426,6 +2439,7 @@ function reconciliationSourceDocument(
           event_tier: null,
           effective_from: "2026-01-01",
           effective_until: null,
+          unresolved_scope: null,
           card_numbers: ["DON!!"],
           official_wording: "The secondary DON!! scope is unresolved.",
           effect: {

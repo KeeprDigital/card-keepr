@@ -72,6 +72,7 @@ export function contextualLegalityDomainDocument(
       event_tier: null,
       effective_from: "2026-01-01",
       effective_until: null,
+      unresolved_scope: null,
       id: "legality_rule_us_expanded",
       card_numbers: ["GD30-001"],
       official_wording:
@@ -97,6 +98,7 @@ export function donLegalityDomainDocument() {
     event_tier: null,
     effective_from: "2026-01-01",
     effective_until: null,
+    unresolved_scope: null,
     card_numbers: ["DON!!"],
     representable: true,
   };
@@ -214,6 +216,7 @@ function rules(region) {
     event_tier: null,
     effective_from: "2026-01-01",
     effective_until: null,
+    unresolved_scope: null,
   };
   if (region === "EN-US") {
     return [
@@ -314,6 +317,10 @@ function rules(region) {
     {
       ...base,
       id: "legality_rule_asia_unresolved_scope",
+      effective_from: null,
+      unresolved_scope: {
+        dimensions: ["effective_interval", "event_tier"],
+      },
       card_numbers: ["GD30-004"],
       official_wording:
         "The official notice does not identify whether GD30-004 applies to Championship side events.",

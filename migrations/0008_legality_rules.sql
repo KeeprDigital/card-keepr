@@ -253,9 +253,11 @@ CREATE TABLE legality_rules (
   ),
   format TEXT NOT NULL CHECK (length(format) > 0),
   event_tier TEXT CHECK (event_tier IS NULL OR length(event_tier) > 0),
-  effective_from TEXT NOT NULL,
-  effective_until TEXT CHECK (
-    effective_until IS NULL OR effective_until > effective_from
+  effective_from TEXT,
+  effective_until TEXT,
+  unresolved_scope_json TEXT NOT NULL DEFAULT 'null' CHECK (
+    json_valid(unresolved_scope_json)
+    AND json_type(unresolved_scope_json) IN ('null', 'object')
   ),
   official_wording TEXT NOT NULL CHECK (length(official_wording) > 0),
   effect_json TEXT NOT NULL CHECK (
@@ -284,6 +286,12 @@ CREATE TABLE legality_rules (
   last_observed_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   current INTEGER NOT NULL DEFAULT 1 CHECK (current IN (0, 1)),
   last_missing_revision_id TEXT REFERENCES catalogue_revisions(id),
+  CHECK (
+    (effective_from IS NOT NULL AND (
+      effective_until IS NULL OR effective_until > effective_from
+    ))
+    OR (effective_from IS NULL AND effective_until IS NULL)
+  ),
   UNIQUE (source_lineage, official_id)
 );
 
@@ -363,6 +371,72 @@ WHEN NOT (
 )
 BEGIN
   SELECT RAISE(ABORT, 'legality_rule_effect_invalid');
+END;
+
+CREATE TRIGGER legality_rule_scope_valid_insert
+BEFORE INSERT ON legality_rules
+WHEN NOT (
+  (
+    json_type(NEW.unresolved_scope_json) = 'null'
+    AND NEW.effective_from IS NOT NULL
+  )
+  OR (
+    json_type(NEW.unresolved_scope_json) = 'object'
+    AND json_extract(NEW.effect_json, '$.type') = 'unresolved'
+    AND json_array_length(NEW.direct_card_ids_json) >= 1
+    AND (SELECT COUNT(*) FROM json_each(NEW.unresolved_scope_json)) = 1
+    AND json_type(NEW.unresolved_scope_json, '$.dimensions') = 'array'
+    AND json_array_length(NEW.unresolved_scope_json, '$.dimensions') >= 1
+    AND NOT EXISTS (
+      SELECT 1 FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+      WHERE type <> 'text'
+        OR value NOT IN ('effective_interval', 'event_tier')
+    )
+    AND NOT EXISTS (
+      SELECT value
+      FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+      GROUP BY value HAVING COUNT(*) > 1
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM json_each(NEW.unresolved_scope_json, '$.dimensions') AS item
+      JOIN json_each(
+        NEW.unresolved_scope_json,
+        '$.dimensions'
+      ) AS prior ON prior.key = item.key - 1
+      WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
+    )
+    AND (
+      (
+        EXISTS (
+          SELECT 1
+          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+          WHERE value = 'effective_interval'
+        )
+        AND NEW.effective_from IS NULL
+        AND NEW.effective_until IS NULL
+      )
+      OR (
+        NOT EXISTS (
+          SELECT 1
+          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+          WHERE value = 'effective_interval'
+        )
+        AND NEW.effective_from IS NOT NULL
+      )
+    )
+    AND (
+      NOT EXISTS (
+        SELECT 1
+        FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+        WHERE value = 'event_tier'
+      )
+      OR NEW.event_tier IS NULL
+    )
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'legality_rule_scope_invalid');
 END;
 
 CREATE TRIGGER legality_rule_card_ids_canonical_insert
@@ -498,7 +572,8 @@ BEGIN
 END;
 
 CREATE TRIGGER legality_rule_card_ids_canonical_update
-BEFORE UPDATE OF effect_json, card_ids_json, direct_card_ids_json
+BEFORE UPDATE OF effect_json, card_ids_json, direct_card_ids_json,
+  unresolved_scope_json
 ON legality_rules
 BEGIN
   SELECT RAISE(ABORT, 'legality_rule_card_ids_not_canonical');
@@ -570,8 +645,9 @@ WHEN OLD.id <> NEW.id
   OR OLD.region <> NEW.region
   OR OLD.format <> NEW.format
   OR COALESCE(OLD.event_tier, '') <> COALESCE(NEW.event_tier, '')
-  OR OLD.effective_from <> NEW.effective_from
+  OR OLD.effective_from IS NOT NEW.effective_from
   OR COALESCE(OLD.effective_until, '') <> COALESCE(NEW.effective_until, '')
+  OR OLD.unresolved_scope_json <> NEW.unresolved_scope_json
   OR OLD.official_wording <> NEW.official_wording
   OR OLD.effect_json <> NEW.effect_json
   OR OLD.card_ids_json <> NEW.card_ids_json
@@ -598,15 +674,23 @@ CREATE TABLE revision_legality_rules (
   ),
   format TEXT NOT NULL CHECK (length(format) > 0),
   event_tier TEXT CHECK (event_tier IS NULL OR length(event_tier) > 0),
-  effective_from TEXT NOT NULL,
-  effective_until TEXT CHECK (
-    effective_until IS NULL OR effective_until > effective_from
+  effective_from TEXT,
+  effective_until TEXT,
+  unresolved_scope_json TEXT NOT NULL DEFAULT 'null' CHECK (
+    json_valid(unresolved_scope_json)
+    AND json_type(unresolved_scope_json) IN ('null', 'object')
   ),
   card_ids_json TEXT NOT NULL CHECK (
     json_valid(card_ids_json) AND json_type(card_ids_json) = 'array'
   ),
   document_json TEXT NOT NULL CHECK (
     json_valid(document_json) AND json_type(document_json) = 'object'
+  ),
+  CHECK (
+    (effective_from IS NOT NULL AND (
+      effective_until IS NULL OR effective_until > effective_from
+    ))
+    OR (effective_from IS NULL AND effective_until IS NULL)
   ),
   PRIMARY KEY (catalogue_revision_id, legality_rule_id)
 );
@@ -664,7 +748,8 @@ BEGIN
     catalogue_revision_id, legality_rule_id, applicability_kind, card_id
   )
   SELECT NEW.catalogue_revision_id, NEW.legality_rule_id, 'all_cards', ''
-  WHERE json_array_length(NEW.card_ids_json) = 0;
+  WHERE json_array_length(NEW.card_ids_json) = 0
+    AND json_type(NEW.unresolved_scope_json) = 'null';
 END;
 
 CREATE TRIGGER revision_legality_rule_applicability_immutable_update
@@ -768,6 +853,76 @@ BEGIN
   SELECT RAISE(ABORT, 'revision_legality_rule_effect_invalid');
 END;
 
+CREATE TRIGGER revision_legality_rule_scope_valid_insert
+BEFORE INSERT ON revision_legality_rules
+WHEN NOT (
+  json_extract(NEW.document_json, '$.unresolved_scope') IS
+    json_extract(NEW.unresolved_scope_json, '$')
+  AND (
+    (
+      json_type(NEW.unresolved_scope_json) = 'null'
+      AND NEW.effective_from IS NOT NULL
+    )
+    OR (
+      json_type(NEW.unresolved_scope_json) = 'object'
+      AND json_extract(NEW.document_json, '$.effect.type') = 'unresolved'
+      AND json_array_length(NEW.document_json, '$.card_ids') >= 1
+      AND (SELECT COUNT(*) FROM json_each(NEW.unresolved_scope_json)) = 1
+      AND json_type(NEW.unresolved_scope_json, '$.dimensions') = 'array'
+      AND json_array_length(NEW.unresolved_scope_json, '$.dimensions') >= 1
+      AND NOT EXISTS (
+        SELECT 1 FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+        WHERE type <> 'text'
+          OR value NOT IN ('effective_interval', 'event_tier')
+      )
+      AND NOT EXISTS (
+        SELECT value
+        FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+        GROUP BY value HAVING COUNT(*) > 1
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM json_each(NEW.unresolved_scope_json, '$.dimensions') AS item
+        JOIN json_each(
+          NEW.unresolved_scope_json,
+          '$.dimensions'
+        ) AS prior ON prior.key = item.key - 1
+        WHERE CAST(prior.value AS BLOB) >= CAST(item.value AS BLOB)
+      )
+      AND (
+        (
+          EXISTS (
+            SELECT 1
+            FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+            WHERE value = 'effective_interval'
+          )
+          AND NEW.effective_from IS NULL
+          AND NEW.effective_until IS NULL
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+            WHERE value = 'effective_interval'
+          )
+          AND NEW.effective_from IS NOT NULL
+        )
+      )
+      AND (
+        NOT EXISTS (
+          SELECT 1
+          FROM json_each(NEW.unresolved_scope_json, '$.dimensions')
+          WHERE value = 'event_tier'
+        )
+        OR NEW.event_tier IS NULL
+      )
+    )
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'revision_legality_rule_scope_invalid');
+END;
+
 CREATE TRIGGER revision_legality_rule_matches_canonical
 BEFORE INSERT ON revision_legality_rules
 WHEN NOT EXISTS (
@@ -778,8 +933,9 @@ WHEN NOT EXISTS (
     AND canonical.region = NEW.region
     AND canonical.format = NEW.format
     AND canonical.event_tier IS NEW.event_tier
-    AND canonical.effective_from = NEW.effective_from
+    AND canonical.effective_from IS NEW.effective_from
     AND canonical.effective_until IS NEW.effective_until
+    AND canonical.unresolved_scope_json = NEW.unresolved_scope_json
     AND canonical.card_ids_json = NEW.card_ids_json
     AND json_extract(NEW.document_json, '$.id') = canonical.id
     AND json_extract(NEW.document_json, '$.official_id') =
@@ -790,10 +946,12 @@ WHEN NOT EXISTS (
     AND json_extract(NEW.document_json, '$.format') = canonical.format
     AND json_extract(NEW.document_json, '$.event_tier') IS
       canonical.event_tier
-    AND json_extract(NEW.document_json, '$.effective_from') =
+    AND json_extract(NEW.document_json, '$.effective_from') IS
       canonical.effective_from
     AND json_extract(NEW.document_json, '$.effective_until') IS
       canonical.effective_until
+    AND json_extract(NEW.document_json, '$.unresolved_scope') IS
+      json_extract(canonical.unresolved_scope_json, '$')
     AND json_type(NEW.document_json, '$.card_ids') = 'array'
     AND json_extract(NEW.document_json, '$.card_ids') =
       canonical.direct_card_ids_json
@@ -854,7 +1012,7 @@ WHEN NOT EXISTS (
     AND json_extract(NEW.document_json, '$.current') = canonical.current
     AND json_extract(NEW.document_json, '$.last_missing_revision_id') IS
       canonical.last_missing_revision_id
-    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 21
+    AND (SELECT COUNT(*) FROM json_each(NEW.document_json)) = 22
     AND NOT EXISTS (
       SELECT value
       FROM json_each(
@@ -865,7 +1023,8 @@ WHEN NOT EXISTS (
         || '"official_wording","region","source_field_pointers",'
         || '"source_lineage","source_observation_id",'
         || '"source_observation_pointer",'
-        || '"source_observation_set_id","source_snapshot_id"]'
+        || '"source_observation_set_id","source_snapshot_id",'
+        || '"unresolved_scope"]'
       )
       EXCEPT
       SELECT key FROM json_each(NEW.document_json)
@@ -882,7 +1041,8 @@ WHEN NOT EXISTS (
         || '"official_wording","region","source_field_pointers",'
         || '"source_lineage","source_observation_id",'
         || '"source_observation_pointer",'
-        || '"source_observation_set_id","source_snapshot_id"]'
+        || '"source_observation_set_id","source_snapshot_id",'
+        || '"unresolved_scope"]'
       )
     )
 )

@@ -468,6 +468,7 @@
         "official_wording",
         "effective_from",
         "effective_until",
+        "unresolved_scope",
         "region",
         "format",
         "event_tier",
@@ -486,6 +487,10 @@
         "effective_until": {
           "type": "string",
           "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effective_until$"
+        },
+        "unresolved_scope": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/unresolved_scope$"
         },
         "region": {
           "type": "string",
@@ -612,6 +617,7 @@
         "event_tier",
         "effective_from",
         "effective_until",
+        "unresolved_scope",
         "kind",
         "effect",
         "card_ids",
@@ -630,8 +636,28 @@
         "region": { "$ref": "#/$defs/LegalityRegion" },
         "format": { "type": "string", "minLength": 1 },
         "event_tier": { "$ref": "#/$defs/NullableText" },
-        "effective_from": { "$ref": "#/$defs/Date" },
+        "effective_from": { "$ref": "#/$defs/NullableDate" },
         "effective_until": { "$ref": "#/$defs/NullableDate" },
+        "unresolved_scope": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dimensions"],
+              "properties": {
+                "dimensions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": ["effective_interval", "event_tier"]
+                  }
+                }
+              }
+            }
+          ]
+        },
         "kind": {
           "enum": [
             "eligible",
