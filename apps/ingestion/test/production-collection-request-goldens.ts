@@ -35,7 +35,7 @@ export const fusionWorldProductionCollectionRequests = [
     id: "fusion-world-en:legality-history",
     method: "GET",
     url:
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
     headers: { accept: "text/html" },
   },
   {

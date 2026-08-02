@@ -3,15 +3,15 @@ import { AdministrationProblem } from "./ingestion";
 import { requiredSourceAdapter } from "./source-adapters";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
+  completeOfficialCollectionRequestsFromDiscovery,
   headersRecord,
-  officialCollectionRequestsFromDiscovery,
   parseStringRecord,
   responseVary,
 } from "./source-evidence-model";
 import {
   discoverSnapshotRequests,
   parseSnapshot,
-  retainedOfficialDiscoveryRecords,
+  retainedOfficialDiscoveryRunRecords,
 } from "./source-evidence-parsing";
 import {
   appendDiscoveredEvidenceRequests,
@@ -318,6 +318,7 @@ export async function capturePreparedAttempt(
     run.id,
     sourceRequest.request_id,
   );
+  const evidencePlan = evidencePlanForRequest(run, request.request_id);
   const configuredHeaders = parseStringRecord(request.request_headers_json);
   const reusable = await findReusableSnapshot(database, run, request);
   const requestHeaders = {
@@ -450,7 +451,7 @@ export async function capturePreparedAttempt(
       evidenceObjects,
       operation.content_object_key,
       response,
-      requiredSourceAdapter(run.adapter_version).maximumSnapshotBytes,
+      requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
     );
     await database
       .prepare(
@@ -653,38 +654,47 @@ export async function parseCapturedRequest(
       },
     );
     const adapter = requiredSourceAdapter(evidencePlan.adapter_version);
+    const discovered = await discoverSnapshotRequests(
+      database,
+      evidenceObjects,
+      snapshotId,
+      evidencePlan.adapter_version,
+    );
+    await appendDiscoveredEvidenceRequests(
+      database,
+      run,
+      sourceRequest,
+      discovered,
+    );
     if (
       run.plan_origin === "production" &&
       adapter.requestUrlForDiscovery !== undefined &&
-      sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery`
+      (
+        sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery` ||
+        /:listing:[a-z0-9]+(?:-[a-z0-9]+)*:[a-f0-9]{64}$/u.test(
+          sourceRequest.request_id,
+        )
+      )
     ) {
-      const records = await retainedOfficialDiscoveryRecords(
-        evidenceObjects,
-        observationSet,
-      );
-      await persistOfficialSourceCollectionPlan(
+      const discovery = await retainedOfficialDiscoveryRunRecords(
         database,
+        evidenceObjects,
         run.id,
-        observationSet.id,
-        await officialCollectionRequestsFromDiscovery(
-          adapter,
-          records,
-          evidencePlan.requests[0]?.headers ?? {},
-        ),
+        evidencePlan.source_lineage,
       );
-    } else {
-      const discovered = await discoverSnapshotRequests(
-        database,
-        evidenceObjects,
-        snapshotId,
-        evidencePlan.adapter_version,
+      const complete = await completeOfficialCollectionRequestsFromDiscovery(
+        adapter,
+        discovery.records,
+        evidencePlan.requests[0]?.headers ?? {},
       );
-      await appendDiscoveredEvidenceRequests(
-        database,
-        run,
-        sourceRequest,
-        discovered,
-      );
+      if (complete !== null) {
+        await persistOfficialSourceCollectionPlan(
+          database,
+          run.id,
+          discovery.discoveryObservationSetId,
+          complete,
+        );
+      }
     }
     await database
       .prepare(

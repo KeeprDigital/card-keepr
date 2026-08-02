@@ -121,9 +121,28 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     directory,
   );
   assert.equal(successful.failure_code, null);
-  assert.equal(successful.snapshots.length, 9);
-  assert.equal(successful.observation_sets.length, 9);
-  assert.equal(successful.diagnostics.length, 9);
+  assert.deepEqual(
+    successful.snapshots.map(({ request }) => request.url),
+    [
+      "https://en.onepiece-cardgame.com/cardlist/",
+      "https://en.onepiece-cardgame.com/cardlist/",
+      "https://en.onepiece-cardgame.com/products/",
+      "https://en.onepiece-cardgame.com/rules/",
+      "https://en.onepiece-cardgame.com/cardlist/",
+      "https://en.onepiece-cardgame.com/products/",
+      "https://en.onepiece-cardgame.com/products/",
+      "https://en.onepiece-cardgame.com/rules/restriction/",
+      "https://en.onepiece-cardgame.com/rules/block_icon/",
+      "https://en.onepiece-cardgame.com/rules/errata_card/",
+      "https://en.onepiece-cardgame.com/rules/",
+      "https://en.onepiece-cardgame.com/images/OP99-001.png",
+    ],
+  );
+  assert.equal(
+    successful.observation_sets.length,
+    successful.snapshots.length,
+  );
+  assert.equal(successful.diagnostics.length, successful.snapshots.length);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
   const retained = await runCli(

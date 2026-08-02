@@ -40,6 +40,7 @@ export type SourceAdapterRegistration = Readonly<{
     context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly {
     role: "listing" | "detail" | "product_detail" | "image";
+    discoveryKey?: string;
     url: string;
     headers: Record<string, string>;
   }[];

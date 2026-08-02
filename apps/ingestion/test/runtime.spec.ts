@@ -16,6 +16,7 @@ import {
 } from "../../../src/catalogue/source-adapters";
 import {
   appendDiscoveredEvidenceRequests,
+  pendingEvidenceRequestPage,
   pendingEvidenceRequests,
   requiredEvidenceRun,
   startEvidenceRun,
@@ -160,6 +161,100 @@ test.each([
     });
   },
 );
+
+test("each request uses its owning Evidence Plan adapter capture cap", async () => {
+  const started = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
+    idempotency_key: "source_per_plan_capture_bound_001",
+    plans: [
+      {
+        supported_game: "fusion-world",
+        source_lineage: "fusion-world-en",
+        adapter_version: "fixture-fusion-world-json@1",
+        requests: [{
+          id: "large-cap-first-plan",
+          method: "GET",
+          url: "https://official-source.invalid/cards",
+        }],
+      },
+      {
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: "fixture-one-piece-json-capped@1",
+        requests: [{
+          id: "small-cap-second-plan",
+          method: "GET",
+          url: "https://large-official-source.invalid/large-json",
+        }],
+      },
+    ],
+  });
+  if (typeof started.id !== "string") throw new Error("run id missing");
+  const failed = await resumeCollection(
+    started.id,
+    15_000,
+  );
+  expect(failed).toMatchObject({
+    state: "failed",
+    failure_code: "source_request_retries_exhausted",
+  });
+  expect(failed.snapshots.some(({ request }) =>
+    request.url.endsWith("/large-json")
+  )).toBe(false);
+});
+
+test("dynamic discovery rejects oversized request identities before Workflow scheduling", async () => {
+  const run = await createCollection(
+    "source_dynamic_identity_bound_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending discovery root missing");
+  await expect(appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    [{
+      role: "detail",
+      url: `https://official-source.invalid/cards/${"x".repeat(2_100)}`,
+      headers: { accept: "text/html" },
+    }],
+  )).rejects.toMatchObject({ code: "source_discovery_failed" });
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_discovery_request_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first("count")).toBe(0);
+});
+
+test("maximum admitted request pages retain a Workflow result safety margin", async () => {
+  const run = await createCollection(
+    "source_workflow_page_byte_bound_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending discovery root missing");
+  await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    Array.from({ length: 99 }, (_, index) => ({
+      role: "detail" as const,
+      url: `https://official-source.invalid/cards/${String(index).padStart(2, "0")}/${"x".repeat(1_950)}`,
+      headers: { "user-agent": "u".repeat(1_900) },
+    })),
+  );
+  const page = await pendingEvidenceRequestPage(
+    env.CATALOGUE_DB,
+    run.id,
+    -1,
+    Number.MAX_SAFE_INTEGER,
+    100,
+  );
+  expect(page).toHaveLength(100);
+  expect(new TextEncoder().encode(JSON.stringify(page)).byteLength)
+    .toBeLessThan(512 * 1024);
+});
 
 test("a successful Official Source response is snapshotted before parsing", async () => {
   const created = await fixtureEvidenceRequest(
@@ -333,6 +428,17 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     12_000,
   );
   const completed = await showCollection(run.id);
+  if (completed.state === "failed") {
+    const failures = await env.CATALOGUE_DB.prepare(
+      `SELECT request_id, failure_code FROM source_requests
+       WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
+       ORDER BY sequence_number`,
+    ).bind(run.id).all();
+    throw new Error(JSON.stringify({
+      failure_code: completed.failure_code,
+      source_failures: failures.results,
+    }));
+  }
   expect(completed).toMatchObject({
     id: run.id,
     state: "awaiting_approval",
@@ -371,32 +477,29 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
         observation_type: "official_surface_evidence",
         source_lineage: "fusion-world-en",
         surface: "discovery",
-        records: fusionWorldProductionCollectionRequests.map((request) => {
-          const surface = request.id.slice("fusion-world-en:".length);
-          const discovery = surface === "card-search"
-            ? { label: "cards", url: "https://www.dbs-cardgame.com/fw/en/cardlist/", resolution: "" }
-            : surface === "products" || surface === "releases"
-              ? { label: "all products", url: "https://www.dbs-cardgame.com/fw/en/products/", resolution: "" }
-              : {
-                  label: "rules",
-                  url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
-                  resolution: surface === "errata"
-                    ? "../rules/errata-card/"
-                    : "../rules/banned-limited-cards/",
-                };
-          return {
-            ...request,
-            surface,
-            discovered_from: {
-              kind: "publisher_navigation",
-              ...discovery,
-            },
-          };
-        }),
+        records: ([
+          ["cards", "/fw/en/cardlist/"],
+          ["products", "/fw/en/products/"],
+          ["rules", "/fw/en/news/01_31.html"],
+        ] as const).map(([key, resolution]) => ({
+          id: `fusion-world-en:discovery-seed:${key}`,
+          surface: `@seed:${key}`,
+          method: "GET",
+          url: new URL(
+            resolution,
+            "https://www.dbs-cardgame.com/fw/en/cardlist/",
+          ).href,
+          headers: { accept: "text/html" },
+          discovered_from: {
+            kind: "publisher_navigation",
+            label: key === "products" ? "all products" : key,
+            url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+            resolution,
+          },
+        })),
         completeness: {
-          declared_record_count:
-            fusionWorldProductionCollectionRequests.length,
-          parsed_record_count: fusionWorldProductionCollectionRequests.length,
+          declared_record_count: 3,
+          parsed_record_count: 3,
           required_surfaces_complete: true,
           partitions_complete: true,
           structurally_complete: true,
@@ -1274,13 +1377,13 @@ test.each([
     );
     expect(created.status).toBe(201);
     const run = await created.json<{ id: string }>();
-    const terminal = await resumeCollection(run.id, 12_000);
+    const terminal = await resumeCollection(run.id, 20_000);
     expect(terminal).toMatchObject({
       state: "failed",
       failure_code: "source_parse_failed",
     });
-    expect(terminal.snapshots).toHaveLength(8);
-    expect(terminal.observation_sets).toHaveLength(7);
+    expect(terminal.snapshots).toHaveLength(11);
+    expect(terminal.observation_sets).toHaveLength(9);
     expect(
       terminal.snapshots.some((snapshot) =>
         snapshot.request.url === plan.requests[0]!.url

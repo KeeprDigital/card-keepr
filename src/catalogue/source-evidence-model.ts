@@ -2,7 +2,9 @@ import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertAdapterRequestSurface,
   assertAdapterBinding,
+  assertOfficialSourceUrl,
   requiredActiveSourceAdapter,
+  requiredOfficialSourceContract,
   requiredSourceAdapter,
   type SourceAdapterRegistration,
 } from "./source-adapters";
@@ -13,6 +15,8 @@ const allowedRequestHeaders = new Set([
   "accept-language",
   "user-agent",
 ]);
+const maximumOfficialSourceUrlBytes = 2_048;
+const maximumOfficialSourceHeadersBytes = 2_048;
 
 export type EvidencePlanRequest = {
   id: string;
@@ -141,6 +145,7 @@ export async function validateEvidencePlan(
       }
       headers[normalizedName] = value;
     }
+    assertBoundedOfficialSourceRequest(url.href, headers, false);
     requests.push({
       id: sourceRequest.id,
       url: url.href,
@@ -226,6 +231,23 @@ export async function validateEvidencePlan(
   };
 }
 
+export function assertBoundedOfficialSourceRequest(
+  url: string,
+  headers: Readonly<Record<string, string>>,
+  discovered: boolean,
+): void {
+  if (
+    utf8(url).byteLength > maximumOfficialSourceUrlBytes ||
+    utf8(canonicalJson(headers)).byteLength > maximumOfficialSourceHeadersBytes
+  ) {
+    throw new AdministrationProblem(
+      422,
+      discovered ? "source_discovery_failed" : "invalid_parameter",
+      "Official Source request URL and headers must fit the bounded Workflow identity contract.",
+    );
+  }
+}
+
 export async function validateEvidencePlans(
   request: StartEvidenceRunRequest,
   planOrigin: SourceAdapterRegistration["origin"] = "production",
@@ -305,7 +327,12 @@ export async function officialCollectionRequestsFromDiscovery(
   for (const [index, surface] of adapter.requiredSurfaces.entries()) {
     const record = records[index];
     const expectedId = `${adapter.sourceLineage}:${surface}`;
-    const expectedUrl = new URL(adapter.requestUrlForSurface(surface)).href;
+    const discoveredUrl = isRecord(record) && typeof record.url === "string"
+      ? assertOfficialSourceUrl(
+          record.url,
+          requiredOfficialSourceContract(adapter),
+        ).href
+      : null;
     if (
       !isRecord(record) ||
       Object.keys(record).sort().join(",") !==
@@ -313,7 +340,7 @@ export async function officialCollectionRequestsFromDiscovery(
       record.id !== expectedId ||
       record.surface !== surface ||
       record.method !== "GET" ||
-      record.url !== expectedUrl ||
+      discoveredUrl === null ||
       !isRecord(record.headers) ||
       canonicalJson(record.headers) !== canonicalJson({ accept: "text/html" }) ||
       !isRecord(record.discovered_from) ||
@@ -324,7 +351,7 @@ export async function officialCollectionRequestsFromDiscovery(
       record.discovered_from.label.length === 0 ||
       typeof record.discovered_from.url !== "string" ||
       typeof record.discovered_from.resolution !== "string" ||
-      resolvedDiscoveryUrl(record.discovered_from) !== expectedUrl
+      resolvedDiscoveryUrl(record.discovered_from) !== discoveredUrl
     ) {
       throw new AdministrationProblem(
         422,
@@ -340,16 +367,73 @@ export async function officialCollectionRequestsFromDiscovery(
       id: expectedId,
       surface,
       method: "GET",
-      url: expectedUrl,
+      url: discoveredUrl,
       headers,
       representation_fingerprint: await representationFingerprint({
         method: "GET",
-        url: expectedUrl,
+        url: discoveredUrl,
         headers,
       }),
     });
   }
   return requests;
+}
+
+export async function completeOfficialCollectionRequestsFromDiscovery(
+  adapter: SourceAdapterRegistration,
+  records: readonly unknown[],
+  inheritedHeaders: Readonly<Record<string, string>> = {},
+): Promise<OfficialSourceCollectionRequest[] | null> {
+  if (adapter.requiredSurfaces === undefined) {
+    throw new Error("The Source Adapter has no required surface vocabulary.");
+  }
+  const finalRecords: unknown[] = [];
+  for (const surface of adapter.requiredSurfaces) {
+    const matches = records.filter(
+      (record) => isRecord(record) && record.surface === surface,
+    );
+    if (matches.length === 0) return null;
+    if (matches.length !== 1) {
+      throw new AdministrationProblem(
+        422,
+        "source_discovery_failed",
+        `Official Source discovery duplicates the ${surface} surface.`,
+      );
+    }
+    const match = matches[0]!;
+    if (
+      isRecord(match) &&
+      isRecord(match.discovered_from) &&
+      match.discovered_from.kind === "retained_stage_request"
+    ) {
+      const seed = records.find((candidate) =>
+        isRecord(candidate) &&
+        typeof candidate.surface === "string" &&
+        candidate.surface.startsWith("@seed:") &&
+        candidate.url === match.url &&
+        isRecord(candidate.discovered_from) &&
+        candidate.discovered_from.kind === "publisher_navigation"
+      );
+      if (!isRecord(seed) || !isRecord(seed.discovered_from)) {
+        throw new AdministrationProblem(
+          422,
+          "source_discovery_failed",
+          `Official Source discovery did not retain the parent link for ${surface}.`,
+        );
+      }
+      finalRecords.push({
+        ...match,
+        discovered_from: seed.discovered_from,
+      });
+    } else {
+      finalRecords.push(match);
+    }
+  }
+  return officialCollectionRequestsFromDiscovery(
+    adapter,
+    finalRecords,
+    inheritedHeaders,
+  );
 }
 
 function resolvedDiscoveryUrl(

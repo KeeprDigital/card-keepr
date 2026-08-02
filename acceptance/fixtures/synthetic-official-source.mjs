@@ -3,8 +3,6 @@ import {
   donLegalityDomainDocument,
 } from "./contextual-legality-source.mjs";
 
-let onePieceCardListRequests = 0;
-
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -56,13 +54,6 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
-      if (
-        officialLineage === "one-piece-en" &&
-        url.pathname === "/cardlist/" &&
-        url.search === ""
-      ) {
-        onePieceCardListRequests += 1;
-      }
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -76,7 +67,9 @@ export default {
           officialLineage,
           transportOutcome,
           officialLineage === "one-piece-en" &&
-            onePieceCardListRequests > 2,
+            transportOutcome ===
+              "card-keepr-acceptance-product/codeless",
+          url,
         ),
         {
         headers: {
@@ -288,7 +281,12 @@ function officialLineageForUrl(url) {
   return null;
 }
 
-function officialBandaiDataset(lineage, parserSignal, codeLessProduct = false) {
+function officialBandaiDataset(
+  lineage,
+  parserSignal,
+  codeLessProduct = false,
+  requestUrl,
+) {
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
@@ -319,9 +317,64 @@ function officialBandaiDataset(lineage, parserSignal, codeLessProduct = false) {
   };
   return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title>${
     officialBandaiNavigationHeader(lineage)
-  }<script type="application/ld+json">${
-    JSON.stringify(publication).replaceAll("<", "\\u003c")
-  }</script></html>`;
+  }${officialBandaiStageNavigation(lineage, requestUrl)}${
+    publication.hasPart.map((part) => officialPublisherPayloadScript(
+      lineage,
+      part.identifier.slice(`${lineage}:`.length),
+      part.payload,
+    )).join("")
+  }</html>`;
+}
+
+export function officialPublisherPayloadScript(lineage, surface, payload) {
+  const prefix = lineage === "one-piece-en"
+    ? "one-piece-card-game"
+    : lineage === "fusion-world-en"
+      ? "fusion-world-card-game"
+      : lineage === "digimon-en"
+        ? "digimon-card-game"
+        : lineage === "gundam-en-asia"
+          ? "gundam-card-game-asia"
+          : "gundam-card-game-us";
+  return `<script type="application/json" id="${prefix}-${surface}-data">${
+    JSON.stringify(payload).replaceAll("<", "\\u003c")
+  }</script>`;
+}
+
+function officialBandaiStageNavigation(lineage, requestUrl) {
+  if (requestUrl === undefined) return "";
+  const path = `${requestUrl.pathname}${requestUrl.search}`;
+  if (lineage === "one-piece-en" && path === "/rules/") {
+    return `<main>
+      <a href="/rules/restriction/">Restriction Cards</a>
+      <a href="/rules/block_icon/">Block Policy</a>
+      <a href="/rules/errata_card/">Errata Cards</a>
+    </main>`;
+  }
+  if (lineage === "fusion-world-en" && path === "/fw/en/news/01_31.html") {
+    return `<main>
+      <a href="/fw/en/news/current-restrictions.html">Current banned and limited cards</a>
+      <a href="/fw/en/news/restriction-history.html">Previous restriction history</a>
+      <a href="/fw/en/rules/errata-card/">Errata Cards</a>
+    </main>`;
+  }
+  if (lineage === "digimon-en" && path === "/cardlist/") {
+    return `<main><a href="/cards/index.php?search=true">Card List</a></main>`;
+  }
+  if (lineage === "digimon-en" && path === "/rule/") {
+    return `<main>
+      <a href="/rule/restriction_card/">Current restriction cards</a>
+      <a href="/rule/restriction_history/">Previous restriction history</a>
+      <a href="/rule/errata_card/">Errata Cards</a>
+    </main>`;
+  }
+  if (lineage.startsWith("gundam-") && /\/cards\/$/u.test(path)) {
+    return `<main><a href="index.php">Find Cards</a></main>`;
+  }
+  if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
+    return `<main><a href="?subcategory=rules">Errata and corrections</a></main>`;
+  }
+  return "";
 }
 
 function makeOnePieceProductCodeLess(surface, payload) {

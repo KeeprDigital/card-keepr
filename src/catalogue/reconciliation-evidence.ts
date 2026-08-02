@@ -782,6 +782,10 @@ function rawOfficialSurfaceRecords(
         if (Array.isArray(releaseTimingEntries) && releaseTimingEntries.length > 0) {
           return releaseTimingEntries;
         }
+        const publicationEntries = retained.document.publication_entries;
+        if (Array.isArray(publicationEntries) && publicationEntries.length > 0) {
+          return publicationEntries;
+        }
         const publicationLinks = retained.document.publication_links;
         return Array.isArray(publicationLinks)
           ? publicationLinks.filter((link) =>

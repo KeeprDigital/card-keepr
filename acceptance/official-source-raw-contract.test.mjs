@@ -12,8 +12,10 @@ import {
   sourceAdapterRegistrations,
 } from "../src/catalogue/source-adapters.ts";
 import {
+  officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
+  officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "./fixtures/synthetic-official-source.mjs";
 
@@ -135,6 +137,14 @@ const expectedDiscoveryLinks = {
   ],
 };
 
+const expectedDiscoveryKeys = {
+  "one-piece-en": ["cards", "products", "rules"],
+  "fusion-world-en": ["cards", "products", "rules"],
+  "digimon-en": ["cards", "products", "rules"],
+  "gundam-en-asia": ["cards", "products", "rules", "news"],
+  "gundam-en-us": ["cards", "products", "rules", "news"],
+};
+
 function discoveryHtml(sourceLineage, mutate = (entries) => entries) {
   const entries = expectedDiscoveryLinks[sourceLineage].map(
     ([label, url]) => ({ label, url }),
@@ -233,13 +243,21 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     const discoveryRecords = discovery.flatMap(
       (observation) => observation.records ?? [],
     );
+    assert.ok(
+      discoveryRecords.every(({ discovered_from }) =>
+        discoveryHtml(adapter.sourceLineage).includes(
+          discovered_from.resolution,
+        )
+      ),
+      `${adapter.sourceLineage} discovery may only emit URLs literally retained in the source bytes`,
+    );
     assert.deepEqual(
       discoveryRecords.map(({ discovered_from: _derivation, ...record }) => record),
-      adapter.requiredSurfaces.map((surface) => ({
-        id: `${adapter.sourceLineage}:${surface}`,
-        surface,
+      expectedDiscoveryLinks[adapter.sourceLineage].map(([, href], index) => ({
+        id: `${adapter.sourceLineage}:discovery-seed:${expectedDiscoveryKeys[adapter.sourceLineage][index]}`,
+        surface: `@seed:${expectedDiscoveryKeys[adapter.sourceLineage][index]}`,
         method: "GET",
-        url: expectedSurfaceUrls[adapter.sourceLineage][surface],
+        url: new URL(href, requests[0].url).href,
         headers: { accept: "text/html" },
       })),
     );
@@ -253,7 +271,8 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         expectedDiscoveryLinks[adapter.sourceLineage].some(
           ([label, href]) =>
             label.toLowerCase() === record.discovered_from.label &&
-            new URL(href, requests[0].url).href === record.discovered_from.url,
+            href === record.discovered_from.resolution &&
+            record.discovered_from.url === requests[0].url,
         ),
       );
       assert.equal(
@@ -333,6 +352,25 @@ test("notice-link-only legality publications fail closed at the raw Official Sou
       );
     }
   }
+});
+
+test("One Piece release publications fail closed on unmodelled conditional legality wording", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@2");
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(`
+        <html><title>BANDAI ONE PIECE CARD PRODUCT RELEASE publication</title>
+          <article>OP01-001 may not be included unless your Leader is OP01-999.</article>
+        </html>
+      `),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("releases"),
+        requestId: "one-piece-en:releases",
+      },
+    ),
+    /non-empty Legality data without an exact, complete Legality Rule parser/iu,
+  );
 });
 
 test("production discovery is proven by complete exact retained navigation", () => {
@@ -501,6 +539,10 @@ test("current production legality parser blocks unmodeled notices beside an exac
     </select>`,
     `<p>FB01-099 is unavailable for decks.</p>`,
     `<div>FB01-099 is unavailable for decks.</div>`,
+    ...["section", "aside", "span", "blockquote", "h2", "table", "header"]
+      .map((tag) => `<${tag}>FB01-099 is unavailable for decks.</${tag}>`),
+    `<header><nav><a href="/fw/en/cardlist/">CARDS</a></nav>
+      <p>FB01-099 is unavailable for decks.</p></header>`,
   ];
 
   for (const notice of unmodeledNotices) {
@@ -940,6 +982,13 @@ test("every active production legality adapter requires exact wording targets an
         },
       ],
       ["wrong structured format", { [descriptor.fields.format]: "unlimited" }],
+      [
+        "foreign regional wording",
+        {
+          [descriptor.fields.wording]:
+            `In ${descriptor.region === "EN-US" ? "Asia" : "North America"}, ${descriptor.card} is eligible for Standard play.`,
+        },
+      ],
     ]) {
       const mismatch = structuredClone(payload);
       mismatch.entries[0] = { ...eligible, ...changed };
@@ -1405,26 +1454,45 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
 });
 
-test("One Piece aggregate JSON-LD retains an explicit first Printing identity", () => {
+test("generic Schema.org Dataset payloads cannot enter production adapters", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        `<html><script type="application/ld+json">${JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Dataset",
+          publisher: { "@type": "Organization", name: "Bandai" },
+          hasPart: [{
+            "@type": "Dataset",
+            identifier: "one-piece-en:card-list",
+            payload,
+          }],
+        })}</script></html>`,
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    ),
+    /Card List Recording discovery|publisher|card-list/iu,
+  );
+});
+
+test("One Piece publisher data retains an explicit first Printing identity", () => {
   const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const payload = officialRawSurfacePayload("/one-piece-en/card-list");
-  const publication = {
-    "@context": "https://schema.org",
-    "@type": "Dataset",
-    publisher: { "@type": "Organization", name: "Bandai" },
-    hasPart: [{
-      "@type": "Dataset",
-      identifier: "one-piece-en:card-list",
-      payload,
-    }],
-  };
   const observations = adapter.parseBytes(
     new TextEncoder().encode(
-      `<html><script type="application/ld+json">${
-        JSON.stringify(publication)
-      }</script></html>`,
+      `<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "card-list",
+        payload,
+      )}</html>`,
     ),
     {
       mediaType: "text/html; charset=utf-8",
@@ -1571,6 +1639,151 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       }),
     /leaf partition still displays/iu,
   );
+});
+
+test("Digimon staged discovery ignores only the known global header and retains one literal local Card List link", () => {
+  const adapter = requiredSourceAdapter("digimon-en@3");
+  const stageUrl = "https://world.digimoncard.com/cardlist/";
+  const stageLink = '<a href="/cards/index.php?search=true">Card List</a>';
+  const stageHtml = (links) => `<html>
+    <title>BANDAI DIGIMON CARD LIST</title>
+    ${officialBandaiNavigationHeader("digimon-en")}
+    <main>${links}</main>
+  </html>`;
+  const context = {
+    mediaType: "text/html; charset=utf-8",
+    url: stageUrl,
+    requestId: `digimon-en:listing:cards:${"a".repeat(64)}`,
+  };
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(stageHtml(stageLink)),
+    context,
+  );
+  const stage = observations.find(
+    ({ observation_type }) => observation_type === "official_surface_evidence",
+  );
+  assert.deepEqual(stage.records, [{
+    id: "digimon-en:card-list",
+    surface: "card-list",
+    method: "GET",
+    url: "https://world.digimoncard.com/cards/index.php?search=true",
+    headers: { accept: "text/html" },
+    discovered_from: {
+      kind: "publisher_navigation",
+      label: "card list",
+      url: stageUrl,
+      resolution: "/cards/index.php?search=true",
+    },
+  }]);
+  assert.deepEqual(
+    adapter.discoverRequests(
+      new TextEncoder().encode(stageHtml(stageLink)),
+      context,
+    ),
+    [],
+    "a literal final-surface link is plan closure, not a synthetic detail request",
+  );
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(stageHtml(`${stageLink}${stageLink}`)),
+      context,
+    ),
+    /duplicates the card-list surface link/iu,
+  );
+});
+
+test("intermediate publisher discovery stages cannot emit or schedule catalogue facts", () => {
+  const cases = [
+    {
+      lineage: "one-piece-en",
+      url: "https://en.onepiece-cardgame.com/products/",
+      detail: "/products/booster/op01/",
+      image: "/images/products/op01.png",
+    },
+    {
+      lineage: "fusion-world-en",
+      url: "https://www.dbs-cardgame.com/fw/en/products/",
+      detail: "/fw/en/products/booster/fb01/",
+      image: "/fw/images/products/fb01.png",
+    },
+    {
+      lineage: "digimon-en",
+      url: "https://world.digimoncard.com/products/",
+      detail: "/products/booster/bt01/",
+      image: "/images/products/bt01.png",
+    },
+    {
+      lineage: "gundam-en-asia",
+      url: "https://www.gundam-gcg.com/asia-en/products/list.php",
+      detail: "/asia-en/products/detail.php?id=gd01",
+      image: "/asia-en/images/products/gd01.png",
+    },
+    {
+      lineage: "gundam-en-us",
+      url: "https://www.gundam-gcg.com/en/products/list.php",
+      detail: "/en/products/detail.php?id=gd01",
+      image: "/en/images/products/gd01.png",
+    },
+  ];
+  for (const fixture of cases) {
+    const adapter = registeredProductionAdapters().find(
+      ({ sourceLineage }) => sourceLineage === fixture.lineage,
+    );
+    assert.ok(adapter);
+    const html = `<html>
+      <title>BANDAI Official Product List</title>
+      <main><a href="${fixture.detail}">Booster detail</a></main>
+      <img src="${fixture.image}">
+    </html>`;
+    const stageContext = {
+      mediaType: "text/html; charset=utf-8",
+      url: fixture.url,
+      requestId: `${fixture.lineage}:listing:products:${"a".repeat(64)}`,
+    };
+    const observations = adapter.parseBytes(
+      new TextEncoder().encode(html),
+      stageContext,
+    );
+    assert.ok(
+      observations.every(
+        ({ observation_type }) =>
+          observation_type === "official_surface_evidence",
+      ),
+      `${fixture.lineage} stage emitted a catalogue observation`,
+    );
+    assert.deepEqual(
+      adapter.discoverRequests(
+        new TextEncoder().encode(html),
+        stageContext,
+      ),
+      [],
+      `${fixture.lineage} stage scheduled a catalogue-bearing request`,
+    );
+  }
+});
+
+test("known publisher navigation cannot manufacture catalogue detail requests", () => {
+  for (const adapter of registeredProductionAdapters()) {
+    const surface = adapter.requiredSurfaces[0];
+    assert.ok(surface);
+    const requests = adapter.discoverRequests(
+      new TextEncoder().encode(
+        `<html><title>BANDAI Official Card List</title>${
+          officialBandaiNavigationHeader(adapter.sourceLineage)
+        }</html>`,
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface(surface),
+        requestId: `${adapter.sourceLineage}:${surface}`,
+      },
+    );
+    assert.deepEqual(
+      requests,
+      [],
+      `${adapter.sourceLineage} publisher navigation scheduled catalogue detail collection`,
+    );
+  }
 });
 
 test("Fusion leaders require explicit role-owned faces and images", () => {
@@ -2162,18 +2375,11 @@ test("structured accessory Products remain Distribution Context evidence on ever
     }
     const observations = adapter.parseBytes(
       new TextEncoder().encode(
-        `<html><script type="application/ld+json">${
-          JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Dataset",
-            publisher: { "@type": "Organization", name: "Bandai" },
-            hasPart: [{
-              "@type": "Dataset",
-              identifier: `fusion-world-en:${surface}`,
-              payload,
-            }],
-          })
-        }</script></html>`,
+        `<html>${officialPublisherPayloadScript(
+          "fusion-world-en",
+          surface,
+          payload,
+        )}</html>`,
       ),
       {
         mediaType: "text/html; charset=utf-8",
@@ -2228,18 +2434,11 @@ test("code-less structured Products and Releases retain name identity with valid
     partition.total = 1;
     const observations = adapter.parseBytes(
       new TextEncoder().encode(
-        `<html><script type="application/ld+json">${
-          JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "Dataset",
-            publisher: { "@type": "Organization", name: "Bandai" },
-            hasPart: [{
-              "@type": "Dataset",
-              identifier: `fusion-world-en:${surface}`,
-              payload,
-            }],
-          })
-        }</script></html>`,
+        `<html>${officialPublisherPayloadScript(
+          "fusion-world-en",
+          surface,
+          payload,
+        )}</html>`,
       ),
       {
         mediaType: "text/html; charset=utf-8",
@@ -2646,22 +2845,14 @@ function rawSurfacePayload(lineage, surface) {
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {
-  const publication = {
-    "@context": "https://schema.org",
-    "@type": "Dataset",
-    publisher: { "@type": "Organization", name: "Bandai" },
-    hasPart: [{
-      "@type": "Dataset",
-      identifier: `${adapter.sourceLineage}:${surface}`,
-      payload,
-    }],
-  };
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI Official publication</title>
-       <script type="application/ld+json">${
-        JSON.stringify(publication).replaceAll("<", "\\u003c")
-      }</script>`,
+       ${officialPublisherPayloadScript(
+        adapter.sourceLineage,
+        surface,
+        payload,
+      )}`,
     ),
     {
       mediaType: "text/html; charset=utf-8",

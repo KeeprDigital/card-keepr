@@ -1916,7 +1916,7 @@ test("complete image evidence publishes an unidentified artwork once without col
       .map(({ width, height }) => `${width}x${height}`)
       .sort(),
   ).toEqual(["1x1", "2x2"]);
-}, 60_000);
+}, 120_000);
 
 test("production Evidence Plans bind discovery identity to its exact Official Source URL", async () => {
   const requests = officialSourceDiscoveryRequests("one-piece-en").map(

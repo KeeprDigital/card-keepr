@@ -14,6 +14,7 @@ import {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
+  officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
@@ -351,6 +352,71 @@ export default defineConfig({
               },
             );
             if (
+              artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
+              officialLineage === "one-piece-en" &&
+              url.pathname === "/cardlist/"
+            ) {
+              const countKey = `${artworkMarker}:${url.href}`;
+              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
+              outboundRequestCounts.set(countKey, count);
+              if (count >= 3) {
+                const failure = artworkMarker.slice(
+                  "card-keepr-runtime-parser/".length,
+                );
+                const rawSurface = officialRawSurfacePayload(
+                  "/one-piece-en/card-list",
+                )!;
+                const pageInfo = rawSurface.page_info as Record<
+                  string,
+                  unknown
+                >;
+                if (failure === "cap") {
+                  pageInfo.cap_signal = "Too many search results";
+                } else {
+                  const page = (
+                    pageInfo.partitions as Array<Record<string, unknown>>
+                  )[0]!;
+                  page.pages = 2;
+                  page.has_next = true;
+                }
+                return new Response(
+                  `<html><title>BANDAI ONE PIECE CARD LIST</title>${
+                    officialPublisherPayloadScript(
+                      "one-piece-en",
+                      "card-list",
+                      rawSurface,
+                    )
+                  }</html>`,
+                  {
+                    headers: {
+                      "content-type": "text/html; charset=utf-8",
+                      etag: `"runtime-parser-${failure}"`,
+                    },
+                  },
+                );
+              }
+            }
+            if (
+              artworkMarker === "card-keepr-staged-discovery-gap-v3" &&
+              officialLineage === "fusion-world-en" &&
+              url.pathname === "/fw/en/cardlist/"
+            ) {
+              const countKey = `${artworkMarker}:${url.href}`;
+              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
+              outboundRequestCounts.set(countKey, count);
+              return new Response(
+                count === 1
+                  ? `<html><title>BANDAI Fusion World</title>${officialNavigation}</html>`
+                  : `<html><title>Publisher stage unavailable</title><main>Publisher stage unavailable.</main></html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: `"staged-discovery-gap-${count}"`,
+                  },
+                },
+              );
+            }
+            if (
               (
                 artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
                 artworkMarker === "card-keepr-one-piece-unrecognized-release-v2" ||
@@ -415,24 +481,54 @@ export default defineConfig({
               url.hostname === "en.onepiece-cardgame.com" &&
               url.pathname === "/products/"
             ) {
+              const countKey = `${artworkMarker}:${url.href}`;
+              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
+              outboundRequestCounts.set(countKey, count);
+              if (count === 1) {
+                return new Response(
+                  `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
+                    <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
+                  </html>`,
+                  {
+                    headers: {
+                      "content-type": "text/html; charset=utf-8",
+                      etag: `"card-keepr-one-piece-products-${count}"`,
+                    },
+                  },
+                );
+              }
+              const products = officialRawSurfacePayload(
+                "/one-piece-en/products",
+              )!;
+              const releases = officialRawSurfacePayload(
+                "/one-piece-en/releases",
+              )!;
+              releases.release_timing_entries = [{
+                notice_no: "OP-RELEASE-2026-001",
+                published_text:
+                  "OP01-001 becomes legal for standard tournament play on 2026-09-04.",
+                territory: "EN-OCEANIA",
+                format_name: "standard",
+                event_class: null,
+                start_date: "2026-08-01",
+                end_date: null,
+                card_numbers: ["OP01-001"],
+                restriction_code: "release_timing",
+                legal_from: "2026-09-04",
+              }];
               return new Response(
                 `<html>
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
-                  <main>
-                    <p>1 record</p>
-                    <article class="restriction-card"><dl>
-                      <dt>Notice No</dt><dd>OP-RELEASE-2026-001</dd>
-                      <dt>Published Text</dt><dd>OP01-001 becomes legal for standard tournament play on 2026-09-04.</dd>
-                      <dt>Territory</dt><dd>EN-OCEANIA</dd>
-                      <dt>Format Name</dt><dd>standard</dd>
-                      <dt>Event Class</dt><dd>-</dd>
-                      <dt>Start Date</dt><dd>2026-08-01</dd>
-                      <dt>End Date</dt><dd>-</dd>
-                      <dt>Card Numbers</dt><dd>OP01-001</dd>
-                      <dt>Restriction Code</dt><dd>release_timing</dd>
-                      <dt>Legal From</dt><dd>2026-09-04</dd>
-                    </dl></article>
-                  </main>
+                  ${officialPublisherPayloadScript(
+                    "one-piece-en",
+                    "products",
+                    products,
+                  )}
+                  ${officialPublisherPayloadScript(
+                    "one-piece-en",
+                    "releases",
+                    releases,
+                  )}
                 </html>`,
                 {
                   headers: {
@@ -447,17 +543,29 @@ export default defineConfig({
               url.hostname === "en.onepiece-cardgame.com" &&
               url.pathname === "/products/"
             ) {
+              const countKey = `${artworkMarker}:${url.href}`;
+              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
+              outboundRequestCounts.set(countKey, count);
+              if (count === 1) {
+                return new Response(
+                  `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
+                    <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
+                  </html>`,
+                  {
+                    headers: {
+                      "content-type": "text/html; charset=utf-8",
+                      etag: '"card-keepr-one-piece-products-stage"',
+                    },
+                  },
+                );
+              }
               return new Response(
                 `<html>
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
-                  <script type="application/ld+json">${JSON.stringify({
-                    "@context": "https://schema.org",
-                    "@type": "Dataset",
-                    publisher: { "@type": "Organization", name: "Bandai" },
-                    hasPart: [{
-                      "@type": "Dataset",
-                      identifier: "one-piece-en:products",
-                      payload: {
+                  ${officialPublisherPayloadScript(
+                    "one-piece-en",
+                    "products",
+                    {
                         page: "product-list",
                         series_options: [],
                         result: {
@@ -472,10 +580,11 @@ export default defineConfig({
                           }],
                         },
                       },
-                    }, {
-                      "@type": "Dataset",
-                      identifier: "one-piece-en:releases",
-                      payload: {
+                  )}
+                  ${officialPublisherPayloadScript(
+                    "one-piece-en",
+                    "releases",
+                    {
                         publication: "release-schedule",
                         events: {
                           cap_signal: null,
@@ -504,8 +613,7 @@ export default defineConfig({
                         },
                         release_timing_entries: [],
                       },
-                    }],
-                  }).replaceAll("<", "\\u003c")}</script>
+                  )}
                 </html>`,
                 {
                   headers: {
@@ -586,23 +694,16 @@ export default defineConfig({
               });
               return new Response(
                 `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
-                  <script type="application/ld+json">${JSON.stringify({
-                    "@context": "https://schema.org",
-                    "@type": "Dataset",
-                    publisher: { "@type": "Organization", name: "Bandai" },
-                    hasPart: [
-                      {
-                        "@type": "Dataset",
-                        identifier: "fusion-world-en:legality-current",
-                        payload: publication("legality-current", "eligible"),
-                      },
-                      {
-                        "@type": "Dataset",
-                        identifier: "fusion-world-en:legality-history",
-                        payload: publication("legality-history", "ban"),
-                      },
-                    ],
-                  }).replaceAll("<", "\\u003c")}</script></html>`,
+                  ${officialPublisherPayloadScript(
+                    "fusion-world-en",
+                    "legality-current",
+                    publication("legality-current", "eligible"),
+                  )}
+                  ${officialPublisherPayloadScript(
+                    "fusion-world-en",
+                    "legality-history",
+                    publication("legality-history", "ban"),
+                  )}</html>`,
                 {
                   headers: {
                     "content-type": "text/html; charset=utf-8",
@@ -645,6 +746,19 @@ export default defineConfig({
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
             ) {
+              if (url.searchParams.get("view") === "history") {
+                return new Response(
+                  `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION HISTORY</title>
+                    <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
+                  </html>`,
+                  {
+                    headers: {
+                      "content-type": "text/html; charset=utf-8",
+                      etag: `"${artworkMarker}-history"`,
+                    },
+                  },
+                );
+              }
               if (
                 artworkMarker === "card-keepr-mismatched-legality-total-v3" ||
                 artworkMarker === "card-keepr-truncated-legality-partition-v3"
@@ -653,14 +767,10 @@ export default defineConfig({
                   "card-keepr-truncated-legality-partition-v3";
                 return new Response(
                   `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
-                    <script type="application/ld+json">${JSON.stringify({
-                      "@context": "https://schema.org",
-                      "@type": "Dataset",
-                      publisher: { "@type": "Organization", name: "Bandai" },
-                      hasPart: [{
-                        "@type": "Dataset",
-                        identifier: "fusion-world-en:legality-current",
-                        payload: {
+                    ${officialPublisherPayloadScript(
+                      "fusion-world-en",
+                      "legality-current",
+                      {
                           publication: "fusion-world-legality-current",
                           revision: "2026-08",
                           declared_record_count: 1,
@@ -672,8 +782,7 @@ export default defineConfig({
                           },
                           entries: [],
                         },
-                      }],
-                    }).replaceAll("<", "\\u003c")}</script></html>`,
+                    )}</html>`,
                   { headers: { "content-type": "text/html; charset=utf-8", etag: `"${artworkMarker}"` } },
                 );
               }
@@ -1102,7 +1211,7 @@ export default defineConfig({
               });
             }
             return new Response(
-              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}<main>${
+              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}${officialStageNavigation(officialLineage, url)}<main>${
                 url.pathname === "/fw/en/rules/banned-limited-cards/" ||
                   (
                     url.hostname === "world.digimoncard.com" &&
@@ -1358,6 +1467,41 @@ export default defineConfig({
     testTimeout: 30_000,
   },
 });
+
+function officialStageNavigation(lineage: string, url: URL): string {
+  const path = `${url.pathname}${url.search}`;
+  if (lineage === "one-piece-en" && path === "/rules/") {
+    return `<nav aria-label="Rules publications">
+      <a href="/rules/restriction/">Restriction Cards</a>
+      <a href="/rules/block_icon/">Block Policy</a>
+      <a href="/rules/errata_card/">Errata Cards</a>
+    </nav>`;
+  }
+  if (lineage === "fusion-world-en" && path === "/fw/en/news/01_31.html") {
+    return `<nav aria-label="Rules publications">
+      <a href="/fw/en/rules/banned-limited-cards/">Current banned and limited cards</a>
+      <a href="/fw/en/rules/banned-limited-cards/?view=history">Previous restriction history</a>
+      <a href="/fw/en/rules/errata-card/">Errata Cards</a>
+    </nav>`;
+  }
+  if (lineage === "digimon-en" && path === "/cardlist/") {
+    return `<nav><a href="/cards/index.php?search=true">Card List</a></nav>`;
+  }
+  if (lineage === "digimon-en" && path === "/rule/") {
+    return `<nav aria-label="Rules publications">
+      <a href="/rule/restriction_card/">Current restriction cards</a>
+      <a href="/rule/restriction_card/?view=history">Previous restriction history</a>
+      <a href="/rule/errata_card/">Errata Cards</a>
+    </nav>`;
+  }
+  if (lineage.startsWith("gundam-") && /\/cards\/$/u.test(path)) {
+    return `<nav><a href="index.php">Find Cards</a></nav>`;
+  }
+  if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
+    return `<nav><a href="?subcategory=rules">Errata and corrections</a></nav>`;
+  }
+  return "";
+}
 
 function reconciliationSourceDocument(
   scenario: string,

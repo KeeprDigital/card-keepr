@@ -1055,7 +1055,21 @@ test("a versioned production adapter derives and exports an exact representable 
     `/v1/ingestion-runs/${runId}/collection/resume`,
     {},
   )).response.status).toBe(202);
-  await waitForState(runId, "awaiting_approval");
+  const completedProductionRun = await waitForState(
+    runId,
+    "awaiting_approval",
+  );
+  const childIds = (completedProductionRun.workflow as {
+    child_ids: string[];
+  }).child_ids;
+  expect(childIds.length).toBeGreaterThanOrEqual(3);
+  expect(new Set(childIds).size).toBe(childIds.length);
+  const duplicateSnapshots = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT request_id, COUNT(*) AS count
+     FROM source_snapshots WHERE ingestion_run_id = ?
+     GROUP BY request_id HAVING COUNT(*) > 1`,
+  ).bind(runId).all();
+  expect(duplicateSnapshots.results).toEqual([]);
   const candidate = await request(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);
   expect(requiredString(candidate.document, "candidate_digest")).toMatch(
@@ -1105,6 +1119,64 @@ test("a versioned production adapter derives and exports an exact representable 
     state: "failed",
     failure_code: "printing_reconciliation_blocked",
   });
+}, 90_000);
+
+test("production discovery retains literal stages and cannot freeze a Collection Plan before closure", async () => {
+  const started = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@3",
+    idempotency_key: "production-staged-discovery-gap-v3",
+    requests: productionFusionLegalityRequests(
+      "card-keepr-staged-discovery-gap-v3",
+    ),
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  expect(await waitForState(runId, "failed")).toMatchObject({
+    state: "failed",
+  });
+
+  const frozen = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM official_source_collection_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(runId).first<{ count: number }>();
+  expect(frozen?.count).toBe(0);
+
+  const staged = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT parent_request_id, url, request_role
+     FROM source_discovery_request_plans
+     WHERE ingestion_run_id = ?
+     ORDER BY sequence_number`,
+  ).bind(runId).all<{
+    parent_request_id: string;
+    url: string;
+    request_role: string;
+  }>();
+  expect(staged.results).toEqual(expect.arrayContaining([
+    {
+      parent_request_id: "fusion-world-en:discovery",
+      url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+      request_role: "listing",
+    },
+    {
+      parent_request_id: "fusion-world-en:discovery",
+      url: "https://www.dbs-cardgame.com/fw/en/products/",
+      request_role: "listing",
+    },
+    {
+      parent_request_id: "fusion-world-en:discovery",
+      url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+      request_role: "listing",
+    },
+  ]));
+  expect((await request(`/v1/ingestion-runs/${runId}/candidate`)).response.status)
+    .toBe(409);
 }, 90_000);
 
 test("the One Piece production release surface publishes release timing through the export seam", async () => {
@@ -2775,7 +2847,29 @@ async function waitForState(runId: string, expected: string) {
     last = shown.document;
     if (shown.document.state === expected) return shown.document;
     if (shown.document.state === "failed") {
-      throw new Error(JSON.stringify(shown.document));
+      const persisted = await testEnv.CATALOGUE_DB.prepare(
+        `SELECT warnings_json FROM ingestion_runs WHERE id = ?`,
+      ).bind(runId).first<{ warnings_json: string }>();
+      const sourceFailures = await testEnv.CATALOGUE_DB.prepare(
+        `SELECT requests.request_id, requests.failure_code, attempts.diagnostic
+         FROM source_requests AS requests
+         LEFT JOIN source_fetch_attempts AS attempts
+           ON attempts.ingestion_run_id = requests.ingestion_run_id
+          AND attempts.request_id = requests.request_id
+         WHERE requests.ingestion_run_id = ?
+           AND (requests.failure_code IS NOT NULL
+             OR attempts.diagnostic IS NOT NULL)
+         ORDER BY requests.request_id, attempts.attempt_number`,
+      ).bind(runId).all();
+      throw new Error(JSON.stringify({
+        id: shown.document.id,
+        state: shown.document.state,
+        failure_code: shown.document.failure_code,
+        reconciliation_diagnostics: JSON.parse(
+          persisted?.warnings_json ?? "[]",
+        ),
+        source_failures: sourceFailures.results,
+      }));
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }

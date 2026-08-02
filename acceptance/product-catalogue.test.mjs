@@ -80,6 +80,10 @@ test("the CLI publishes separated Product catalogue data consumed through authen
             "one-piece",
             "one-piece-en",
             "one-piece-en@2",
+            {
+              accept: "text/html",
+              "user-agent": "card-keepr-acceptance-product/codeless",
+            },
           ),
         ],
       }),
@@ -623,14 +627,20 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       .lifecycle.last_observed_revision_id,
     allFiveRevisionId,
   );
-  assert.equal(
-    products.find(({ official_code }) => official_code === "OP-RAW-01")
-      .lifecycle.last_observed_revision_id,
-    revisionId,
-  );
-  const establishedOnePiece = products.find(
+  const currentOnePiece = products.find(
     ({ official_code }) => official_code === "OP-RAW-01",
   );
+  assert.ok(
+    currentOnePiece,
+    JSON.stringify(
+      products.map(({ name, official_code }) => ({ name, official_code })),
+    ),
+  );
+  assert.equal(
+    currentOnePiece.lifecycle.last_observed_revision_id,
+    revisionId,
+  );
+  const establishedOnePiece = currentOnePiece;
   const establishedOnePieceResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/products/${establishedOnePiece.id}?include=evidence`,
     { headers },
@@ -976,6 +986,13 @@ async function waitForRunState(
       state: lastDocument?.state,
       failure_code: lastDocument?.failure_code,
       warnings: lastDocument?.warnings,
+      snapshot_urls: lastDocument?.snapshots?.map(({ request }) => request.url),
+      diagnostic_outcomes: lastDocument?.diagnostics?.map(
+        ({ request_id, outcome }) => ({ request_id, outcome }),
+      ),
+      evidence_plan_request_ids: lastDocument?.evidence_plans?.map(
+        ({ requests }) => requests.map(({ id }) => id),
+      ),
     })}\n` +
       worker.getOutput(),
   );
@@ -1059,7 +1076,12 @@ const officialDiscoveryUrls = {
   "gundam-en-us": "https://www.gundam-gcg.com/en/cards/index.php",
 };
 
-function officialPlan(game, lineage, adapter) {
+function officialPlan(
+  game,
+  lineage,
+  adapter,
+  headers = { accept: "text/html" },
+) {
   return {
     supported_game: game,
     source_lineage: lineage,
@@ -1067,7 +1089,7 @@ function officialPlan(game, lineage, adapter) {
     requests: [{
       id: `${lineage}:discovery`,
       url: officialDiscoveryUrls[lineage],
-      headers: { accept: "text/html" },
+      headers,
     }],
   };
 }

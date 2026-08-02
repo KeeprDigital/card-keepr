@@ -49,6 +49,7 @@ export type OfficialRawAdapterContract = {
     context: { mediaType: string | null; url: string; requestId?: string },
   ) => readonly {
     role: "listing" | "detail" | "product_detail" | "image";
+    discoveryKey?: string;
     url: string;
     headers: Record<string, string>;
   }[];
@@ -301,11 +302,26 @@ function bandaiRequestDiscovery(
     const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
       .toLowerCase();
     if (mediaType !== "text/html") return [];
-    const html = decodeUtf8(bytes, "request discovery").replace(
-      /<header\b[^>]*>[\s\S]*?<\/header>/giu,
-      "",
-    );
+    const html = decodeUtf8(bytes, "request discovery");
+    if (context.requestId === `${sourceLineage}:discovery`) {
+      return bandaiDiscoveryRecords(
+        html,
+        sourceLineage,
+        requiredSurfaces,
+        urls,
+      ).map((record) => ({
+        role: "listing" as const,
+        discoveryKey: record.surface.slice("@seed:".length),
+        url: record.url,
+        headers: { accept: "text/html" },
+      }));
+    }
     const dynamicRole = dynamicRequestRole(context.requestId);
+    const stageKey = discoveryStageKey(context.requestId);
+    if (stageKey !== null) {
+      return [];
+    }
+    const discoveryHtml = stripKnownPublisherNavigation(html);
     const initialSurface = dynamicRole === null
       ? surfaceFromContext(
           context,
@@ -321,8 +337,8 @@ function bandaiRequestDiscovery(
       headers: Record<string, string>;
     }[] = [];
     if (initialSurface !== null) {
-      const structured = bandaiJsonLdPayload(
-        html,
+      const structured = bandaiPublisherPayload(
+        discoveryHtml,
         sourceLineage,
         initialSurface,
       );
@@ -346,14 +362,16 @@ function bandaiRequestDiscovery(
       dynamicRole === "listing"
     ) {
       candidates.push(
-        ...discoveredPartitionRequests(format, html, current).map((url) => ({
-          role: "listing" as const,
-          url,
-          headers: { accept: "text/html" },
-        })),
+        ...discoveredPartitionRequests(format, discoveryHtml, current).map(
+          (url) => ({
+            role: "listing" as const,
+            url,
+            headers: { accept: "text/html" },
+          }),
+        ),
       );
     }
-    for (const match of html.matchAll(
+    for (const match of discoveryHtml.matchAll(
       /<(a|img|source)\b([^>]*?)>/giu,
     )) {
       const tag = match[1]!.toLowerCase();
@@ -541,9 +559,15 @@ function dynamicRequestRole(
   requestId: string | undefined,
 ): "listing" | "detail" | "product_detail" | "image" | null {
   const match = requestId?.match(
-    /:(listing|detail|product_detail|image):[a-f0-9]{64}$/u,
+    /:(listing|detail|product_detail|image)(?::[a-z0-9]+(?:-[a-z0-9]+)*)?:[a-f0-9]{64}$/u,
   );
   return match?.[1] as ReturnType<typeof dynamicRequestRole> ?? null;
+}
+
+function discoveryStageKey(requestId: string | undefined): string | null {
+  return requestId?.match(
+    /:listing:([a-z0-9]+(?:-[a-z0-9]+)*):[a-f0-9]{64}$/u,
+  )?.[1] ?? null;
 }
 
 function discoveredHtmlRole(
@@ -725,6 +749,33 @@ function bandaiSnapshotDecoder(
         },
       }];
     }
+    const discoveryKey = discoveryStageKey(context.requestId);
+    if (profile.acceptDiscoveryRoot === true && discoveryKey !== null) {
+      if (mediaType !== "text/html") {
+        throw new Error("Official Source discovery stages must be captured as text/html.");
+      }
+      const html = decodeUtf8(bytes, `discovery stage ${discoveryKey}`);
+      const records = bandaiDiscoveryStageRecords(
+        html,
+        context.url,
+        sourceLineage,
+        discoveryKey,
+        requiredSurfaces,
+      );
+      return [{
+        observation_type: "official_surface_evidence",
+        source_lineage: sourceLineage,
+        surface: "discovery",
+        records,
+        completeness: {
+          declared_record_count: records.length,
+          parsed_record_count: records.length,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          structurally_complete: true,
+        },
+      }];
+    }
     const surface = dynamicRole ??
       surfaceFromContext(
         context,
@@ -737,16 +788,15 @@ function bandaiSnapshotDecoder(
         `Official Source ${surface} must be captured as text/html.`,
       );
     }
-    const html = decodeUtf8(bytes, surface).replace(
-      /<header\b[^>]*>[\s\S]*?<\/header>/giu,
-      "",
+    const html = stripKnownPublisherNavigation(
+      decodeUtf8(bytes, surface),
     );
     if (/\bdata-keepr-official-payload\b/iu.test(html)) {
       throw new Error(
         "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
       );
     }
-    const structuredPayload = bandaiJsonLdPayload(
+    const structuredPayload = bandaiPublisherPayload(
       html,
       sourceLineage,
       surface,
@@ -864,12 +914,14 @@ function containsUnparsedLegalityPublication(
     unmatchedEntries.splice(retainedIndex, 1);
   }
   if (dedicatedPolicySurface) {
-    return containsUnmodeledDedicatedPolicyContent(html);
+    return containsUnmodeledDedicatedPolicyContent(
+      stripKnownPublisherNavigation(html),
+    );
   }
   return [...links, ...options, ...unmatchedEntries]
     .map(publicationText)
     .some((text) =>
-      /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?)\b|\bmay (?:no longer|not) be used\b|\bno more than \d+ cop(?:y|ies)\b/iu
+      /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?|unless)\b|\bmay (?:no longer|not) be (?:included|used)\b|\b(?:if|when) your\b|\bduring [^.]*events?\b|\bonly at\b|\bno more than \d+ cop(?:y|ies)\b/iu
         .test(text)
     );
 }
@@ -885,7 +937,7 @@ function containsUnmodeledDedicatedPolicyContent(html: string): boolean {
         : article,
   );
   const semanticContainers = [...withoutModeledRules.matchAll(
-    /<(p|div|article|li|tr|option|a)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
+    /<(p|div|article|li|tr|option|a|section|aside|span|blockquote|h2|table|header)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
   )];
   return semanticContainers.some((match) => {
     const tag = match[1]!.toLowerCase();
@@ -915,6 +967,53 @@ function containsUnmodeledDedicatedPolicyContent(html: string): boolean {
     }
     return true;
   });
+}
+
+function stripKnownPublisherNavigation(
+  html: string,
+  scope: "all" | "header-only" = "all",
+): string {
+  const allowed = new Set([
+    "find cards",
+    "all products",
+    "rules",
+    "cards",
+    "card list",
+    "products",
+    "product list",
+    "news",
+    "restriction cards",
+    "block policy",
+    "errata cards",
+    "current banned and limited cards",
+    "previous restriction history",
+    "current restriction cards",
+  ]);
+  const containsOnlyKnownLinks = (body: string): boolean => {
+    const anchors = [...body.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/giu)];
+    if (
+      anchors.length === 0 ||
+      anchors.some((anchor) =>
+        !allowed.has(htmlText(anchor[1]!).toLocaleLowerCase())
+      )
+    ) {
+      return false;
+    }
+    const withoutKnownNavigation = body
+      .replace(/<a\b[^>]*>[\s\S]*?<\/a>/giu, "")
+      .replace(/<\/?(?:nav|ul|ol|li)\b[^>]*>/giu, "");
+    return htmlText(withoutKnownNavigation).length === 0;
+  };
+  const withoutHeader = html.replace(
+    /<header\b[^>]*>([\s\S]*?)<\/header>/giu,
+    (header, body: string) => containsOnlyKnownLinks(body) ? "" : header,
+  );
+  if (scope === "header-only") return withoutHeader;
+  return withoutHeader.replace(
+    /<nav\b[^>]*>([\s\S]*?)<\/nav>/giu,
+    (navigation, body: string) =>
+      containsOnlyKnownLinks(body) ? "" : navigation,
+  );
 }
 
 function publicationText(value: unknown): string {
@@ -954,8 +1053,12 @@ function bandaiDiscoveryRecords(
   }
   const seeds = bandaiDiscoverySeeds(sourceLineage);
   const acceptedLabels = new Set(seeds.map(({ label }) => label));
-  const acceptedUrls = new Set(seeds.map(({ url }) => new URL(url).href));
-  const observedSeeds = new Map<string, { label: string; url: string }>();
+  const discoveryUrl = new URL(urls[requiredSurfaces[0]!]!).href;
+  const observedSeeds = new Map<string, {
+    label: string;
+    url: string;
+    resolution: string;
+  }>();
   for (const match of headers[0]![1]!.matchAll(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
   )) {
@@ -976,12 +1079,8 @@ function bandaiDiscoveryRecords(
       }
       continue;
     }
-    if (!acceptedLabels.has(label) && !acceptedUrls.has(resolvedUrl)) continue;
-    const seed = seeds.find(
-      (candidate) =>
-        candidate.label === label &&
-        new URL(candidate.url).href === resolvedUrl,
-    );
+    if (!acceptedLabels.has(label)) continue;
+    const seed = seeds.find((candidate) => candidate.label === label);
     if (seed === undefined) {
       throw new Error(
         "Official Source discovery contains unknown or mismatched required-surface navigation.",
@@ -992,55 +1091,225 @@ function bandaiDiscoveryRecords(
         `Official Source discovery duplicates the ${seed.id} navigation link.`,
       );
     }
-    observedSeeds.set(seed.id, { label, url: resolvedUrl });
+    if (!officialUrl(sourceLineage, new URL(resolvedUrl), "document")) {
+      throw new Error(
+        "Official Source discovery moved a required navigation URL outside its registered authority.",
+      );
+    }
+    observedSeeds.set(seed.id, {
+      label,
+      url: resolvedUrl,
+      resolution: decodeHtmlText(href),
+    });
   }
   if (observedSeeds.size !== seeds.length) {
     throw new Error(
       "Official Source discovery navigation does not prove every required surface family.",
     );
   }
-  return requiredSurfaces.map((surface) => {
-    const seed = seeds.find(({ resolutions }) => surface in resolutions);
-    if (seed === undefined) {
-      throw new Error(
-        `Official Source discovery uses unknown required-surface vocabulary: ${surface}.`,
-      );
-    }
+  return seeds.map((seed) => {
     const observedSeed = observedSeeds.get(seed.id);
     if (observedSeed === undefined) {
       throw new Error(
         `Official Source discovery did not retain the ${seed.id} navigation link.`,
       );
     }
-    const resolvedUrl = new URL(
-      seed.resolutions[surface]!,
-      observedSeed.url,
-    ).href;
-    const expectedUrl = exactSurfaceUrl(
-      sourceLineage,
-      requiredSurfaces,
-      urls,
-      surface,
-    );
-    if (resolvedUrl !== new URL(expectedUrl).href) {
-      throw new Error(
-        `Official Source discovery moved the ${surface} surface URL.`,
-      );
-    }
     return {
-      id: `${sourceLineage}:${surface}`,
-      surface,
+      id: `${sourceLineage}:discovery-seed:${seed.id}`,
+      surface: `@seed:${seed.id}`,
       method: "GET" as const,
-      url: resolvedUrl,
+      url: observedSeed.url,
       headers: { accept: "text/html" as const },
       discovered_from: {
         kind: "publisher_navigation" as const,
         label: observedSeed.label,
-        url: observedSeed.url,
-        resolution: seed.resolutions[surface]!,
+        url: discoveryUrl,
+        resolution: observedSeed.resolution,
       },
     };
   });
+}
+
+function bandaiDiscoveryStageRecords(
+  html: string,
+  requestUrl: string,
+  sourceLineage: string,
+  discoveryKey: string,
+  requiredSurfaces: readonly string[],
+): Array<{
+  id: string;
+  surface: string;
+  method: "GET";
+  url: string;
+  headers: { accept: "text/html" };
+  discovered_from: {
+    kind: "publisher_navigation" | "retained_stage_request";
+    label: string;
+    url: string;
+    resolution: string;
+  };
+}> {
+  const seed = bandaiDiscoverySeeds(sourceLineage).find(
+    ({ id }) => id === discoveryKey,
+  );
+  if (seed === undefined) {
+    throw new Error(
+      `Official Source discovery uses unknown stage vocabulary: ${discoveryKey}.`,
+    );
+  }
+  const current = new URL(requestUrl);
+  if (!officialUrl(sourceLineage, current, "document")) {
+    throw new Error("Official Source discovery stage is outside registered authority.");
+  }
+  const records = new Map<string, ReturnType<typeof stageRecord>>();
+  for (const surface of Object.keys(seed.resolutions)) {
+    if (!requiredSurfaces.includes(surface)) {
+      throw new Error(
+        `Official Source discovery uses unknown required-surface vocabulary: ${surface}.`,
+      );
+    }
+    if (seed.resolutions[surface] === "") {
+      assertDiscoveryStageSurface(html, discoveryKey, surface);
+      records.set(surface, stageRecord(
+        sourceLineage,
+        surface,
+        current.href,
+        {
+          kind: "retained_stage_request",
+          label: discoveryKey,
+          url: current.href,
+          resolution: "",
+        },
+      ));
+    }
+  }
+  const stageHtml = stripKnownPublisherNavigation(html, "header-only");
+  for (const match of stageHtml.matchAll(
+    /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
+  )) {
+    const href = htmlAttribute(match[1]!, "href");
+    if (href === null) continue;
+    const label = htmlText(match[2]!);
+    let resolved: URL;
+    try {
+      resolved = new URL(decodeHtmlText(href), current);
+    } catch {
+      continue;
+    }
+    resolved.hash = "";
+    if (!officialUrl(sourceLineage, resolved, "document")) continue;
+    const surfaces = discoverySurfacesForStageLink(
+      sourceLineage,
+      discoveryKey,
+      label,
+      resolved,
+    );
+    for (const surface of surfaces) {
+      if (!requiredSurfaces.includes(surface)) continue;
+      if (records.has(surface)) {
+        throw new Error(
+          `Official Source discovery duplicates the ${surface} surface link.`,
+        );
+      }
+      records.set(surface, stageRecord(
+        sourceLineage,
+        surface,
+        resolved.href,
+        {
+          kind: "publisher_navigation",
+          label: label.toLocaleLowerCase(),
+          url: current.href,
+          resolution: decodeHtmlText(href),
+        },
+      ));
+    }
+  }
+  return [...records.values()].sort((left, right) =>
+    requiredSurfaces.indexOf(left.surface) -
+      requiredSurfaces.indexOf(right.surface)
+  );
+}
+
+function assertDiscoveryStageSurface(
+  html: string,
+  discoveryKey: string,
+  surface: string,
+): void {
+  const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu);
+  const signal = title === null ? "" : htmlText(title[1]!);
+  const expected = discoveryKey === "cards"
+    ? /\bcard(?:s| list| search)?\b/iu
+    : discoveryKey === "products"
+      ? /\bproduct(?:s| list)?\b/iu
+      : discoveryKey === "rules"
+        ? /\brules?\b/iu
+        : /\bnews\b/iu;
+  if (!expected.test(signal)) {
+    throw new Error(
+      `Official Source ${surface} stage did not prove its publisher page identity.`,
+    );
+  }
+}
+
+function stageRecord(
+  sourceLineage: string,
+  surface: string,
+  url: string,
+  discoveredFrom: {
+    kind: "publisher_navigation" | "retained_stage_request";
+    label: string;
+    url: string;
+    resolution: string;
+  },
+) {
+  return {
+    id: `${sourceLineage}:${surface}`,
+    surface,
+    method: "GET" as const,
+    url,
+    headers: { accept: "text/html" as const },
+    discovered_from: discoveredFrom,
+  };
+}
+
+function discoverySurfacesForStageLink(
+  sourceLineage: string,
+  discoveryKey: string,
+  label: string,
+  url: URL,
+): string[] {
+  const signal = `${label} ${url.pathname} ${url.search}`.toLocaleLowerCase();
+  if (discoveryKey === "cards") {
+    if (sourceLineage === "digimon-en" && /cards\/index\.php|card list/u.test(signal)) {
+      return ["card-list"];
+    }
+    if (sourceLineage.startsWith("gundam-") && /cards\/index\.php|find cards/u.test(signal)) {
+      return ["packages"];
+    }
+    return [];
+  }
+  if (discoveryKey === "news" && /errata|correction/u.test(signal)) {
+    return ["errata"];
+  }
+  if (discoveryKey !== "rules") return [];
+  if (/errata|correction/u.test(signal)) return ["errata"];
+  if (sourceLineage === "one-piece-en") {
+    if (/block(?:_|\s|-)?icon|block policy/u.test(signal)) return ["block-policy"];
+    if (/restriction|banned|limited/u.test(signal)) return ["restrictions"];
+  }
+  if (sourceLineage === "fusion-world-en") {
+    if (/histor|previous|past/u.test(signal)) return ["legality-history"];
+    if (/restriction|banned|limited|official rules/u.test(signal)) {
+      return ["legality-current"];
+    }
+  }
+  if (sourceLineage === "digimon-en") {
+    if (/histor|previous|past/u.test(signal)) return ["restrictions-history"];
+    if (/restriction|banned|limited/u.test(signal)) {
+      return ["restrictions-current"];
+    }
+  }
+  return [];
 }
 
 function bandaiDiscoverySeeds(sourceLineage: string): ReadonlyArray<{
@@ -1178,53 +1447,51 @@ function bandaiDiscoverySeeds(sourceLineage: string): ReadonlyArray<{
   return seeds;
 }
 
-function bandaiJsonLdPayload(
+function bandaiPublisherPayload(
   html: string,
   sourceLineage: string,
   surface: string,
 ): Record<string, unknown> | null {
-  for (const match of html.matchAll(
-    /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/giu,
-  )) {
-    let value: unknown;
-    try {
-      value = JSON.parse(match[1]!);
-    } catch {
-      throw new Error("Official Source JSON-LD publication is invalid.");
-    }
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      continue;
-    }
-    const publication = value as Record<string, unknown>;
-    const publisher =
-      publication.publisher !== null &&
-      typeof publication.publisher === "object" &&
-      !Array.isArray(publication.publisher)
-        ? publication.publisher as Record<string, unknown>
-        : {};
-    if (
-      publication["@context"] !== "https://schema.org" ||
-      publication["@type"] !== "Dataset" ||
-      publisher.name !== "Bandai" ||
-      !Array.isArray(publication.hasPart)
-    ) {
-      continue;
-    }
-    const part = publication.hasPart.find(
-      (candidate) =>
-        candidate !== null &&
-        typeof candidate === "object" &&
-        !Array.isArray(candidate) &&
-        (candidate as Record<string, unknown>).identifier ===
-          `${sourceLineage}:${surface}`,
-    );
-    if (part === undefined) continue;
-    return requiredRecord(
-      (part as Record<string, unknown>).payload,
-      `Official Source ${surface} JSON-LD payload`,
-    );
+  const expectedId = publisherPayloadScriptId(sourceLineage, surface);
+  const matches = [...html.matchAll(
+    /<script\b([^>]*)>([\s\S]*?)<\/script>/giu,
+  )].filter((match) => htmlAttribute(match[1]!, "id") === expectedId);
+  if (matches.length > 1) {
+    throw new Error(`Official Source ${surface} publisher data is duplicated.`);
   }
-  return null;
+  const match = matches[0];
+  if (match === undefined) return null;
+  if (htmlAttribute(match[1]!, "type") !== "application/json") {
+    throw new Error(`Official Source ${surface} publisher data has the wrong media type.`);
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(match[2]!);
+  } catch {
+    throw new Error(`Official Source ${surface} publisher data is invalid JSON.`);
+  }
+  return requiredRecord(value, `Official Source ${surface} publisher data`);
+}
+
+function publisherPayloadScriptId(
+  sourceLineage: string,
+  surface: string,
+): string {
+  const prefix = sourceLineage === "one-piece-en"
+    ? "one-piece-card-game"
+    : sourceLineage === "fusion-world-en"
+      ? "fusion-world-card-game"
+      : sourceLineage === "digimon-en"
+        ? "digimon-card-game"
+        : sourceLineage === "gundam-en-asia"
+          ? "gundam-card-game-asia"
+          : sourceLineage === "gundam-en-us"
+            ? "gundam-card-game-us"
+            : null;
+  if (prefix === null) {
+    throw new Error(`Official Source publisher data has no grammar for ${sourceLineage}.`);
+  }
+  return `${prefix}-${surface}-data`;
 }
 
 function surfaceFromContext(
@@ -1238,7 +1505,7 @@ function surfaceFromContext(
     const surface = context.requestId.slice(prefix.length);
     if (
       requiredSurfaces.includes(surface) &&
-      new URL(context.url).href === new URL(urls[surface]!).href
+      officialUrl(sourceLineage, new URL(context.url), "document")
     ) {
       return surface;
     }

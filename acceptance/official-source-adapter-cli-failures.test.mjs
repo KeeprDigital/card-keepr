@@ -163,8 +163,27 @@ for (const failureCase of failureCases) {
       ingestion,
     );
     assert.equal(failed.failure_code, "source_parse_failed");
-    assert.equal(failed.snapshots.length, 8);
-    assert.equal(failed.observation_sets.length, 7);
+    assert.deepEqual(
+      failed.snapshots.map(({ request }) => request.url),
+      [
+        "https://en.onepiece-cardgame.com/cardlist/",
+        "https://en.onepiece-cardgame.com/cardlist/",
+        "https://en.onepiece-cardgame.com/products/",
+        "https://en.onepiece-cardgame.com/rules/",
+        "https://en.onepiece-cardgame.com/cardlist/",
+        "https://en.onepiece-cardgame.com/products/",
+        "https://en.onepiece-cardgame.com/products/",
+        "https://en.onepiece-cardgame.com/rules/restriction/",
+        "https://en.onepiece-cardgame.com/rules/block_icon/",
+        "https://en.onepiece-cardgame.com/rules/errata_card/",
+        "https://en.onepiece-cardgame.com/rules/",
+      ],
+    );
+    assert.equal(
+      failed.observation_sets.length,
+      failed.snapshots.length - 1,
+      "every successfully parsed root, stage, and final snapshot retains one observation set",
+    );
   });
 }
 

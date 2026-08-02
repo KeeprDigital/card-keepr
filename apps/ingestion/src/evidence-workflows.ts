@@ -114,31 +114,55 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
         0,
         ...activeChildren.map((child) => child.pendingRequestCount ?? 0),
       );
-      for (const child of pendingChildren) allChildIds.add(child.id);
-      const recordedChildIds = [...allChildIds].sort();
-      await step.do(
-        `record hostname Workflow identities stage ${barrierStage}`,
-        deterministicDatabaseStep,
-        async () => {
-          await recordWorkflowIds(
-            this.env.CATALOGUE_DB,
-            runId,
-            event.instanceId,
-            recordedChildIds,
-          );
-          return recordedChildIds;
-        },
-      );
+      let selectedChildIds: string[] = [];
       if (activeChildren.length > 0) {
-        await step.do(
+        selectedChildIds = await step.do(
           `recover pending hostname workflows stage ${barrierStage}`,
           deterministicDatabaseStep,
           async () => {
-            // createBatch is idempotent for deterministic IDs. A request can
-            // be committed before the child creation RPC succeeds, so every
-            // recovery pass closes that creation gap before reading status.
-            for (let offset = 0; offset < activeChildren.length; offset += 100) {
-              const batch = activeChildren.slice(offset, offset + 100);
+            const selected: Array<(typeof activeChildren)[number]> = [];
+            for (const child of activeChildren) {
+              const attempts = [...allChildIds]
+                .filter((id) =>
+                  id === child.id || id.startsWith(`${child.id}-attempt-`)
+                )
+                .sort((left, right) => childAttempt(left) - childAttempt(right));
+              const latestId = attempts.at(-1);
+              if (latestId === undefined) {
+                selected.push(child);
+                continue;
+              }
+              let latest;
+              let status;
+              try {
+                latest = await this.env.EVIDENCE_HOST_WORKFLOW.get(latestId);
+                status = await latest.status();
+              } catch {
+                selected.push(child);
+                continue;
+              }
+              if (status.status === "complete") {
+                selected.push({
+                  ...child,
+                  id: `${child.id}-attempt-${attempts.length}`,
+                });
+              } else {
+                if (
+                  status.status === "errored" ||
+                  status.status === "terminated"
+                ) {
+                  await latest.restart();
+                } else if (status.status === "paused") {
+                  await latest.resume();
+                }
+                selected.push({ ...child, id: latestId });
+              }
+            }
+            // createBatch is idempotent for deterministic attempt IDs. A
+            // request can be committed before child creation succeeds, so
+            // each recovery pass closes that gap.
+            for (let offset = 0; offset < selected.length; offset += 100) {
+              const batch = selected.slice(offset, offset + 100);
               await this.env.EVIDENCE_HOST_WORKFLOW.createBatch(
                 batch.map((child) => ({
                   id: child.id,
@@ -167,10 +191,26 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                 }
               }
             }
-            return activeChildren.map((child) => child.id);
+            return selected.map((child) => child.id);
           },
         );
       }
+      for (const child of pendingChildren) allChildIds.add(child.id);
+      for (const id of selectedChildIds) allChildIds.add(id);
+      const recordedChildIds = [...allChildIds].sort();
+      await step.do(
+        `record hostname Workflow identities stage ${barrierStage}`,
+        deterministicDatabaseStep,
+        async () => {
+          await recordWorkflowIds(
+            this.env.CATALOGUE_DB,
+            runId,
+            event.instanceId,
+            recordedChildIds,
+          );
+          return recordedChildIds;
+        },
+      );
       const run = await step.do(
         `finalize collection barrier stage ${barrierStage}`,
         deterministicDatabaseStep,
@@ -220,6 +260,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       };
     }
   }
+}
+
+function childAttempt(id: string): number {
+  const value = id.match(/-attempt-(\d+)$/u)?.[1];
+  return value === undefined ? 0 : Number.parseInt(value, 10) + 1;
 }
 
 async function loadPendingHostShards(

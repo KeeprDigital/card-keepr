@@ -174,6 +174,7 @@ export async function discoverSnapshotRequests(
   adapterVersion: string,
 ): Promise<readonly {
   role: "listing" | "detail" | "product_detail" | "image";
+  discoveryKey?: string;
   url: string;
   headers: Record<string, string>;
 }[]> {
@@ -200,11 +201,28 @@ export async function discoverSnapshotRequests(
     throw new Error("Source Snapshot bytes failed digest verification");
   }
   try {
-    return adapter.discoverRequests(bytes, {
+    const discovered = adapter.discoverRequests(bytes, {
       mediaType: snapshot.media_type,
       url: snapshot.request_url,
       requestId: snapshot.request_id,
     });
+    const inheritedHeaders: unknown = JSON.parse(snapshot.request_headers_json);
+    return discovered.map((request) => ({
+      ...request,
+      ...(request.discoveryKey === undefined || !isRecord(inheritedHeaders)
+        ? {}
+        : {
+            headers: {
+              ...request.headers,
+              ...Object.fromEntries(
+                Object.entries(inheritedHeaders).filter(
+                  (entry): entry is [string, string] =>
+                    typeof entry[1] === "string",
+                ),
+              ),
+            },
+          }),
+    }));
   } catch (error) {
     throw new AdministrationProblem(
       422,
@@ -266,6 +284,22 @@ export async function retainedOfficialDiscoveryRecords(
   evidenceObjects: R2Bucket,
   observationSet: ObservationSetRow,
 ): Promise<unknown[]> {
+  const discoveries = await retainedOfficialDiscoverySurfaces(
+    evidenceObjects,
+    observationSet,
+  );
+  if (discoveries.length !== 1) {
+    throw new Error(
+      "Official Source discovery retained an invalid surface count.",
+    );
+  }
+  return discoveries[0]!;
+}
+
+async function retainedOfficialDiscoverySurfaces(
+  evidenceObjects: R2Bucket,
+  observationSet: ObservationSetRow,
+): Promise<unknown[][]> {
   const object = await evidenceObjects.get(
     observationSet.content_object_key,
   );
@@ -295,14 +329,50 @@ export async function retainedOfficialDiscoveryRecords(
       wrapped.value.surface === "discovery" &&
       Array.isArray(wrapped.value.records),
   );
-  if (discoveries.length !== 1) {
-    throw new Error(
-      "Official Source discovery retained an invalid surface count.",
-    );
+  return discoveries.map((discovery) =>
+    (discovery as { value: { records: unknown[] } }).value.records
+  );
+}
+
+export async function retainedOfficialDiscoveryRunRecords(
+  database: D1Database,
+  evidenceObjects: R2Bucket,
+  runId: string,
+  sourceLineage: string,
+): Promise<{
+  discoveryObservationSetId: string;
+  records: unknown[];
+}> {
+  const retained = await database.prepare(
+    `SELECT observation_set.*, snapshot.request_id
+     FROM source_observation_sets AS observation_set
+     JOIN source_snapshots AS snapshot
+       ON snapshot.id = observation_set.source_snapshot_id
+     WHERE snapshot.ingestion_run_id = ?
+       AND snapshot.source_lineage = ?
+     ORDER BY snapshot.retrieved_at, observation_set.id`,
+  ).bind(runId, sourceLineage).all<ObservationSetRow & {
+    request_id: string;
+  }>();
+  const rootRequestId = `${sourceLineage}:discovery`;
+  const root = retained.results.find(
+    ({ request_id }) => request_id === rootRequestId,
+  );
+  if (root === undefined) {
+    throw new Error("Official Source discovery root observations are unavailable.");
   }
-  return (discoveries[0] as {
-    value: { records: unknown[] };
-  }).value.records;
+  const records: unknown[] = [];
+  for (const observationSet of retained.results) {
+    const surfaces = await retainedOfficialDiscoverySurfaces(
+      evidenceObjects,
+      observationSet,
+    );
+    for (const surfaceRecords of surfaces) records.push(...surfaceRecords);
+  }
+  return {
+    discoveryObservationSetId: root.id,
+    records,
+  };
 }
 
 export async function reparseSnapshot(

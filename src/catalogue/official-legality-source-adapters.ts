@@ -381,12 +381,13 @@ function exactLegalityRule(
     entry[fields.directive],
     "Official Legality directive",
   );
-  assertDirectiveSpecificOperands(entry, fields, directive);
-  const effect = exactEffect(entry, fields, directive, wording);
   const region = requiredText(
     entry[fields.region],
     "Official Legality region",
   );
+  assertWordingRegion(wording, region);
+  assertDirectiveSpecificOperands(entry, fields, directive);
+  const effect = exactEffect(entry, fields, directive, wording);
   if (region !== regionForLineage(sourceLineage)) {
     throw new Error(
       "Official Legality region conflicts with its Source Lineage.",
@@ -790,11 +791,7 @@ type ExactWordingInput = Readonly<{
 
 function assertExactWordingSemantics(input: ExactWordingInput): void {
   const directive = normalizedDirective(input.directive);
-  const wordingRegions = [...input.wording.matchAll(/\bEN-[A-Z]+\b/giu)]
-    .map(([region]) => region.toUpperCase());
-  if (wordingRegions.some((region) => region !== input.region.toUpperCase())) {
-    throw new Error("Official Legality wording region conflicts with its structured region.");
-  }
+  assertWordingRegion(input.wording, input.region);
 
   const wordingFormat = input.wording.match(/\b(standard|unlimited)\b/iu)?.[1];
   if (
@@ -849,6 +846,37 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
     assertExactUnresolvedWording(input.wording, input.effect);
   }
 }
+
+function assertWordingRegion(wording: string, structuredRegion: string): void {
+  const wordingRegions = [
+    ...[...wording.matchAll(/\bEN-[A-Z]+\b/giu)]
+      .map(([region]) => region.toUpperCase()),
+    ...regionPhrases.flatMap(({ pattern, region }) =>
+      pattern.test(wording) ? [region] : []
+    ),
+  ];
+  if (wordingRegions.some((region) => region !== structuredRegion.toUpperCase())) {
+    throw new Error("Official Legality wording region conflicts with its structured region.");
+  }
+}
+
+const regionPhrases: ReadonlyArray<{
+  region: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
+  pattern: RegExp;
+}> = [
+  {
+    region: "EN-US",
+    pattern: /\b(?:North America|United States|U\.S\.|USA)\b/iu,
+  },
+  {
+    region: "EN-ASIA",
+    pattern: /\b(?:Asia|South East Asia|Southeast Asia)\b/iu,
+  },
+  {
+    region: "EN-OCEANIA",
+    pattern: /\b(?:Oceania|Australia|New Zealand|Australia\/New Zealand)\b/iu,
+  },
+];
 
 function wordingCardNumbers(wording: string): string[] {
   const identifiers = wording.match(

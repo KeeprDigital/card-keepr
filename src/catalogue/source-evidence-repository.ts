@@ -1,6 +1,7 @@
 import { AdministrationProblem } from "./ingestion";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
+  assertBoundedOfficialSourceRequest,
   assertIdentifier,
   parseEvidencePlans,
   parseStringRecord,
@@ -56,6 +57,7 @@ export type EvidenceRequestRow = {
 
 export type DiscoveredEvidenceRequest = {
   role: Exclude<EvidenceRequestRow["request_role"], "surface">;
+  discoveryKey?: string;
   url: string;
   headers: Record<string, string>;
 };
@@ -444,22 +446,37 @@ export async function appendDiscoveredEvidenceRequests(
     headers_json: string;
     representation_fingerprint: string;
     role: DiscoveredEvidenceRequest["role"];
+    sequence_floor: number;
   }>();
   for (const request of discovered) {
+    if (
+      request.discoveryKey !== undefined &&
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(request.discoveryKey)
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "source_discovery_failed",
+        "The Official Source discovery stage identity is invalid.",
+      );
+    }
     const url = new URL(request.url).href;
     const headersJson = canonicalJson(request.headers);
+    assertBoundedOfficialSourceRequest(url, request.headers, true);
     const digest = await sha256(
       utf8(
         canonicalJson({
           source_lineage: plan.source_lineage,
           role: request.role,
+          discovery_key: request.discoveryKey ?? null,
           method: "GET",
           url,
           headers: request.headers,
         }),
       ),
     );
-    const requestId = `${plan.source_lineage}:${request.role}:${digest}`;
+    const requestId = request.discoveryKey === undefined
+      ? `${plan.source_lineage}:${request.role}:${digest}`
+      : `${plan.source_lineage}:${request.role}:${request.discoveryKey}:${digest}`;
     normalizedById.set(requestId, {
       id: requestId,
       url,
@@ -468,6 +485,7 @@ export async function appendDiscoveredEvidenceRequests(
         utf8(canonicalJson({ method: "GET", url, headers: request.headers })),
       ),
       role: request.role,
+      sequence_floor: request.discoveryKey === undefined ? 0 : 1_000_000,
     });
   }
   const normalized = [...normalizedById.values()];
@@ -550,7 +568,10 @@ export async function appendDiscoveredEvidenceRequests(
              representation_fingerprint, request_role
            )
            SELECT ?, json_extract(proposed.value, '$.id'),
-                  base.maximum_sequence + CAST(proposed.key AS INTEGER) + 1,
+                  MAX(
+                    base.maximum_sequence,
+                    json_extract(proposed.value, '$.sequence_floor') - 1
+                  ) + CAST(proposed.key AS INTEGER) + 1,
                   ?, 'GET', json_extract(proposed.value, '$.url'),
                   json_extract(proposed.value, '$.headers_json'),
                   json_extract(proposed.value, '$.representation_fingerprint'),
