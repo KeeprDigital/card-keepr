@@ -230,6 +230,10 @@ test("a legacy published run upgrades to the strict lifecycle representation wit
     },
     publication_cleanup: null,
   });
+  await applyD1Migrations(
+    legacyDatabase,
+    testEnv.TEST_MIGRATIONS.slice(2),
+  );
   const status = await administrationStatusDirect(
     legacyDatabase,
     testEnv.CATALOGUE_EXPORTS,

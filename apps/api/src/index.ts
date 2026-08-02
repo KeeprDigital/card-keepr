@@ -45,8 +45,23 @@ import {
   LegalityStatusProblem,
 } from "../../../src/catalogue/legality-status";
 
+export type ApiWorkerEnvironment = {
+  CATALOGUE_DB: D1Database;
+  PRINTING_IMAGES: R2Bucket;
+  CATALOGUE_EXPORTS: R2Bucket;
+  CORS_ALLOWED_ORIGINS: string;
+  API_BEARER_KEY?: string;
+  API_BEARER_KEY_REPLACEMENT?: string;
+  CREDENTIAL_CONSUMER_PROOF_KEY: string;
+  CATALOGUE_RATE_LIMIT: RateLimit;
+  PRINTING_IMAGE_RATE_LIMIT: RateLimit;
+};
+
 const apiWorker = {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: ApiWorkerEnvironment,
+  ): Promise<Response> {
     const requestId = crypto.randomUUID();
 
     try {
@@ -153,7 +168,9 @@ const apiWorker = {
                     ? "Not found"
                     : error.status === 422
                       ? "Invalid Legality region"
-                      : "Invalid request",
+                      : error.status === 500
+                        ? "Catalogue integrity failure"
+                        : "Invalid request",
                 detail: error.message,
               }),
             );
@@ -356,11 +373,13 @@ const apiWorker = {
       );
     }
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<ApiWorkerEnvironment>;
 
 export default apiWorker;
 
-export class ApiCredentialConsumer extends WorkerEntrypoint<Env> {
+export class ApiCredentialConsumer extends WorkerEntrypoint<
+  ApiWorkerEnvironment
+> {
   override async fetch(request: Request): Promise<Response> {
     return (
       await handleApiCredentialConsumerObservation(

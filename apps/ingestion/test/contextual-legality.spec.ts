@@ -5,8 +5,9 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
-import { contextualLegalityStatusResponse } from "../../../src/catalogue/legality-status";
-import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import apiWorker, {
+  type ApiWorkerEnvironment,
+} from "../../api/src/index";
 import {
   canonicalJson,
   sha256,
@@ -795,154 +796,157 @@ test.each([
   },
 );
 
-test("one multi-lineage refresh retires only the complete omitted Legality scope", async () => {
-  const start = async (
+test("legality freshness remains independent across partial regional refreshes", async () => {
+  const publishScope = async (
     key: string,
-    asiaRules: "current" | "empty",
+    lineage: "gundam-en-asia" | "gundam-en-us",
+    url: string,
+    observedAt: string,
   ) => {
     const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
       idempotency_key: key,
-      plans: [
-        {
-          supported_game: "gundam",
-          source_lineage: "gundam-en-asia",
-          adapter_version: "fixture-gundam-en-asia-json@2",
-          requests: [{
-            id: `${key}-asia`,
-            method: "GET",
-            url:
-              "https://official-source.invalid/reconciliation/" +
-              `contextual-legality-domain?rules=${asiaRules}`,
-            headers: { accept: "application/json" },
-          }],
-        },
-        {
-          supported_game: "gundam",
-          source_lineage: "gundam-en-us",
-          adapter_version: "fixture-gundam-en-us-json@2",
-          requests: [{
-            id: `${key}-us`,
-            method: "GET",
-            url:
-              "https://official-source.invalid/reconciliation/" +
-              "contextual-legality-domain-us",
-            headers: { accept: "application/json" },
-          }],
-        },
-      ],
+      supported_game: "gundam",
+      source_lineage: lineage,
+      adapter_version: lineage === "gundam-en-asia"
+        ? "fixture-gundam-en-asia-json@2"
+        : "fixture-gundam-en-us-json@2",
+      requests: [{
+        id: `${key}-rules`,
+        method: "GET",
+        url,
+        headers: { accept: "application/json" },
+      }],
     });
     const runId = requiredString(started, "id");
     expect((await request(
       `/v1/ingestion-runs/${runId}/collection/resume`,
       {},
+      observedAt,
     )).response.status).toBe(202);
     await waitForState(runId, "parsing");
-    return { runId, reconciled: (await reconcile(runId)).document };
+    const reconciled = await reconcile(runId, observedAt);
+    expect(reconciled.response.status).toBe(200);
+    const published = await approve(
+      reconciled.document,
+      `publish-${key}`,
+      observedAt,
+    );
+    expect(published.response.status).toBe(200);
+    const freshness = await testEnv.CATALOGUE_DB.prepare(
+      `SELECT checked_at
+       FROM source_freshness
+       WHERE game = 'gundam'
+         AND area = 'legality-rules'
+         AND source_lineage = ?
+         AND ingestion_run_id = ?`,
+    ).bind(lineage, runId).first<{ checked_at: string }>();
+    if (freshness === null) {
+      throw new Error(`Freshness for ${lineage} is absent`);
+    }
+    return {
+      runId,
+      checkedAt: freshness.checked_at,
+      revisionId: requiredString(
+        published.document,
+        "resulting_revision_id",
+      ),
+      reconciled: reconciled.document,
+    };
   };
-
-  const initial = await start("multi-legality-initial", "current");
-  expect(initial.reconciled.legality_rules).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        official_id: "legality_rule_asia_eligible",
-        source_lineage: "gundam-en-asia",
-        region: "EN-ASIA",
-        current: true,
-      }),
-      expect.objectContaining({
-        official_id: "legality_rule_us_eligible",
-        source_lineage: "gundam-en-us",
-        region: "EN-US",
-        current: true,
-      }),
-    ]),
-  );
-  expect((await approve(
-    initial.reconciled,
-    "publish-multi-legality-initial",
-  )).response.status).toBe(200);
-  const firstFreshness = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT checked_at, ingestion_run_id
+  const freshnessRows = () => testEnv.CATALOGUE_DB.prepare(
+    `SELECT game, area, source_lineage, region, checked_at, ingestion_run_id
      FROM source_freshness
-     WHERE game = 'gundam' AND area = 'legality-rules'`,
-  ).first<{ checked_at: string; ingestion_run_id: string }>();
-  expect(firstFreshness).toMatchObject({
-    ingestion_run_id: initial.runId,
-    checked_at: expect.any(String),
-  });
+     WHERE game = 'gundam' AND area = 'legality-rules'
+     ORDER BY source_lineage, region`,
+  ).all<Record<string, unknown>>();
 
-  const refreshed = await start("multi-legality-refresh", "empty");
-  const rules = refreshed.reconciled.legality_rules as Array<
-    Record<string, unknown>
-  >;
-  expect(rules.filter(({ official_id }) =>
-    official_id === "legality_rule_us_eligible"
-  )).toEqual([
-    expect.objectContaining({
+  const asia = await publishScope(
+    "regional-freshness-asia",
+    "gundam-en-asia",
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=current",
+    "2026-08-02T01:00:00.000Z",
+  );
+  expect((await freshnessRows()).results).toEqual([{
+    game: "gundam",
+    area: "legality-rules",
+    source_lineage: "gundam-en-asia",
+    region: "EN-ASIA",
+    checked_at: asia.checkedAt,
+    ingestion_run_id: asia.runId,
+  }]);
+
+  const us = await publishScope(
+    "regional-freshness-us",
+    "gundam-en-us",
+    "https://official-source.invalid/reconciliation/contextual-legality-domain-us",
+    "2026-08-02T02:00:00.000Z",
+  );
+  const afterUs = (await freshnessRows()).results;
+  expect(us.checkedAt).not.toBe(asia.checkedAt);
+  expect(afterUs).toEqual([
+    {
+      game: "gundam",
+      area: "legality-rules",
+      source_lineage: "gundam-en-asia",
+      region: "EN-ASIA",
+      checked_at: asia.checkedAt,
+      ingestion_run_id: asia.runId,
+    },
+    {
+      game: "gundam",
+      area: "legality-rules",
       source_lineage: "gundam-en-us",
       region: "EN-US",
-      current: true,
-    }),
+      checked_at: us.checkedAt,
+      ingestion_run_id: us.runId,
+    },
   ]);
-  expect(
-    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia"),
-  ).not.toHaveLength(0);
-  expect(
-    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia"),
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ current: false }),
-    ]),
-  );
-  expect(
-    rules.filter(({ source_lineage }) => source_lineage === "gundam-en-asia")
-      .every(({ current }) => current === false),
-  ).toBe(true);
-  expect(new Set(rules.map(({ id }) => id)).size).toBe(rules.length);
+  const retainedUsFreshness = structuredClone(afterUs[1]);
 
-  const published = await approve(
-    refreshed.reconciled,
-    "publish-multi-legality-refresh",
+  const retiredAsia = await publishScope(
+    "regional-freshness-asia-empty",
+    "gundam-en-asia",
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=empty",
+    "2026-08-02T03:00:00.000Z",
   );
-  expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
+  const afterPartialRefresh = (await freshnessRows()).results;
+  expect(retiredAsia.checkedAt).not.toBe(asia.checkedAt);
+  expect(retiredAsia.checkedAt).not.toBe(us.checkedAt);
+  expect(afterPartialRefresh[0]).toEqual({
+    game: "gundam",
+    area: "legality-rules",
+    source_lineage: "gundam-en-asia",
+    region: "EN-ASIA",
+    checked_at: retiredAsia.checkedAt,
+    ingestion_run_id: retiredAsia.runId,
+  });
+  expect(afterPartialRefresh[1]).toEqual(retainedUsFreshness);
+
   expect(await revisionLegalityRule(
-    revisionId,
+    retiredAsia.revisionId,
     "legality_rule_us_eligible",
   )).toMatchObject({ current: true, source_lineage: "gundam-en-us" });
   expect(await revisionLegalityRule(
-    revisionId,
+    retiredAsia.revisionId,
     "legality_rule_asia_eligible",
   )).toMatchObject({ current: false, source_lineage: "gundam-en-asia" });
-  const retiredAsiaRule = rules.find(
-    ({ official_id }) => official_id === "legality_rule_asia_copy_limit",
-  );
-  if (retiredAsiaRule === undefined) {
-    throw new Error("Retired EN-ASIA Legality Rule is absent");
-  }
-  const retiredLifecycle = {
-    current: false,
-    last_missing_revision_id: revisionId,
-  };
-  expect(await exportedLegalityRule(
-    revisionId,
-    "legality_rule_asia_copy_limit",
-  )).toMatchObject({ lifecycle: retiredLifecycle });
-  expect(
-    (await exportedComponentRecords(revisionId, "relationships")).find(
-      (relationship) =>
-        relationship.kind === "legality-rule-card" &&
-        relationship.relationship_value === retiredAsiaRule.id,
-    ),
-  ).toMatchObject({ lifecycle: retiredLifecycle });
-  expect(await testEnv.CATALOGUE_DB.prepare(
-    `SELECT checked_at, ingestion_run_id
-     FROM source_freshness
-     WHERE game = 'gundam' AND area = 'legality-rules'`,
-  ).first()).toMatchObject({ ingestion_run_id: refreshed.runId });
+  expect((await exportedManifest(retiredAsia.revisionId)).source_freshness)
+    .toEqual(expect.arrayContaining([
+      {
+        game: "gundam",
+        area: "legality-rules",
+        source_lineage: "gundam-en-asia",
+        region: "EN-ASIA",
+        checked_at: retiredAsia.checkedAt,
+      },
+      {
+        game: "gundam",
+        area: "legality-rules",
+        source_lineage: "gundam-en-us",
+        region: "EN-US",
+        checked_at: us.checkedAt,
+      },
+    ]));
 }, 90_000);
 
 test("a versioned production adapter derives and exports an exact representable Legality Rule", async () => {
@@ -995,6 +999,9 @@ test("a versioned production adapter derives and exports an exact representable 
   await waitForState(runId, "awaiting_approval");
   const candidate = await request(`/v1/ingestion-runs/${runId}/candidate`);
   expect(candidate.response.status).toBe(200);
+  expect(requiredString(candidate.document, "candidate_digest")).toMatch(
+    /^[0-9a-f]{64}$/u,
+  );
   const published = await approve(
     candidate.document,
     "publish-production-representable-legality-v3",
@@ -1005,23 +1012,21 @@ test("a versioned production adapter derives and exports an exact representable 
     "resulting_revision_id",
   );
 
-  const statusResponse = await contextualLegalityStatusResponse(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-08-01&format=standard&region=EN-OCEANIA`,
-    ),
-    testEnv.CATALOGUE_DB,
+  const { response: statusResponse, document: status } = await apiRequest(
+    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-08-01&format=standard&region=EN-OCEANIA`,
   );
   expect(statusResponse.status).toBe(200);
-  const status = await statusResponse.json() as {
+  const typedStatus = status as {
     data: Array<{ status: string; rule_ids: string[] }>;
   };
-  expect(status.data[0]).toMatchObject({ status: "legal" });
-  expect(status.data[0]!.rule_ids).toHaveLength(1);
+  expect(typedStatus.data[0]).toMatchObject({ status: "legal" });
+  expect(typedStatus.data[0]!.rule_ids).toHaveLength(1);
   expect(await exportedLegalityRule(
     revisionId,
     "fw_production_eligible",
   )).toMatchObject({
-    official_wording: "FB01-001 is eligible for Standard tournament play.",
+    official_wording:
+      "FB01-001 is eligible 'as printed' – publisher–confirmed &#39;literal&#39;.",
     region: "EN-OCEANIA",
     format: "standard",
     event_tier: null,
@@ -1092,17 +1097,14 @@ test("the One Piece production release surface publishes release timing through 
     ["2026-09-03", "not_legal"],
     ["2026-09-04", "legal"],
   ] as const) {
-    const response = await contextualLegalityStatusResponse(
-      new Request(
-        `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=${on}&format=standard&region=EN-OCEANIA`,
-      ),
-      testEnv.CATALOGUE_DB,
+    const { response, document } = await apiRequest(
+      `/v1/legality-status?card_id=${requiredString(card, "id")}&on=${on}&format=standard&region=EN-OCEANIA`,
     );
     expect(response.status).toBe(200);
-    const document = await response.json() as {
+    const typedDocument = document as {
       data: Array<{ status: string }>;
     };
-    expect(document.data[0]?.status).toBe(expected);
+    expect(typedDocument.data[0]?.status).toBe(expected);
   }
   expect(await exportedLegalityRule(
     revisionId,
@@ -1113,6 +1115,100 @@ test("the One Piece production release surface publishes release timing through 
       "OP01-001 becomes legal for standard tournament play on 2026-09-04.",
     effect: { type: "release_timing", legal_from: "2026-09-04" },
   });
+}, 90_000);
+
+test("authenticated Legality Status fails closed on malformed stored Card and Legality Rule documents", async () => {
+  const collected = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain",
+    "legality-status-malformed-stored-documents",
+  );
+  const published = await approve(
+    collected.reconciled,
+    "publish-legality-status-malformed-stored-documents",
+  );
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const card = (collected.reconciled.cards as Array<Record<string, unknown>>)
+    .find((candidate) =>
+      (candidate.official_identity as Record<string, unknown>).value ===
+        "GD30-001"
+    );
+  if (card === undefined) throw new Error("GD30-001 is absent");
+  const cardId = requiredString(card, "id");
+  const cardRow = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json
+     FROM revision_cards
+     WHERE catalogue_revision_id = ? AND card_id = ?`,
+  ).bind(revisionId, cardId).first<{ document_json: string }>();
+  if (cardRow === null) throw new Error("Stored Card document is absent");
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_cards
+     SET document_json = '{}'
+     WHERE catalogue_revision_id = ? AND card_id = ?`,
+  ).bind(revisionId, cardId).run();
+  try {
+    const malformedCard = await apiRequest(
+      `/v1/legality-status?card_id=${cardId}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    );
+    expect(malformedCard.response.status).toBe(500);
+    expect(malformedCard.document).toMatchObject({
+      code: "invalid_catalogue_document",
+    });
+  } finally {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_cards
+       SET document_json = ?
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(cardRow.document_json, revisionId, cardId).run();
+  }
+
+  const ruleRow = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT legality_rule_id, document_json
+     FROM revision_legality_rules
+     WHERE catalogue_revision_id = ?
+     ORDER BY legality_rule_id
+     LIMIT 1`,
+  ).bind(revisionId).first<{
+    legality_rule_id: string;
+    document_json: string;
+  }>();
+  if (ruleRow === null) throw new Error("Stored Legality Rule is absent");
+  const replaceRuleDocument = async (documentJson: string) => {
+    await testEnv.CATALOGUE_DB.prepare(
+      "DROP TRIGGER revision_legality_rules_immutable_update",
+    ).run();
+    try {
+      await testEnv.CATALOGUE_DB.prepare(
+        `UPDATE revision_legality_rules
+         SET document_json = ?
+         WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
+      ).bind(documentJson, revisionId, ruleRow.legality_rule_id).run();
+    } finally {
+      await testEnv.CATALOGUE_DB.prepare(
+        `CREATE TRIGGER revision_legality_rules_immutable_update
+         BEFORE UPDATE ON revision_legality_rules
+         BEGIN
+           SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
+         END`,
+      ).run();
+    }
+  };
+  await replaceRuleDocument("{}");
+  try {
+    const malformedRule = await apiRequest(
+      `/v1/legality-status?card_id=${cardId}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    );
+    expect(malformedRule.response.status).toBe(500);
+    expect(malformedRule.document).toMatchObject({
+      code: "invalid_catalogue_document",
+    });
+  } finally {
+    await replaceRuleDocument(ruleRow.document_json);
+  }
 }, 90_000);
 
 test("a versioned production adapter blocks official wording it cannot represent exactly", async () => {
@@ -1514,14 +1610,11 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(eligible).toMatchObject({ current: false });
 
-  const response = await contextualLegalityStatusResponse(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    ),
-    testEnv.CATALOGUE_DB,
+  const { response, document: statusDocument } = await apiRequest(
+    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
   );
   expect(response.status).toBe(200);
-  const status = await response.json() as {
+  const status = statusDocument as {
     data: Array<{ status: string; rule_ids: string[] }>;
   };
   expect(status.data[0]).toMatchObject({ status: "legal" });
@@ -1859,14 +1952,12 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/legality_rule_provenance_immutable/),
     expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
   ]);
-  const immutableResponse = await contextualLegalityStatusResponse(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    ),
-    testEnv.CATALOGUE_DB,
-  );
+  const { response: immutableResponse, document: immutableDocument } =
+    await apiRequest(
+      `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    );
   expect(immutableResponse.status).toBe(200);
-  expect(await immutableResponse.json()).toEqual(status);
+  expect(immutableDocument).toEqual(status);
 
   const reappeared = await collectFixtureLegality(
     "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=current",
@@ -1893,17 +1984,21 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   if (revisionRule === undefined) {
     throw new Error("Revision Legality Rule is absent");
   }
+  expect(revisionRule).toMatchObject({
+    current: true,
+    last_missing_revision_id: expect.any(String),
+  });
   const exportRule = await exportedLegalityRule(
     reappearedRevisionId,
     "legality_rule_asia_eligible",
   );
-  const reappearedApiResponse = await contextualLegalityStatusResponse(
-    new Request(
-      `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    ),
-    testEnv.CATALOGUE_DB,
+  const {
+    response: reappearedApiResponse,
+    document: reappearedApiDocument,
+  } = await apiRequest(
+    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
   );
-  const reappearedStatus = await reappearedApiResponse.json() as {
+  const reappearedStatus = reappearedApiDocument as {
     data: Array<{ rule_ids: string[] }>;
   };
   const canonicalProvenance = {
@@ -2446,10 +2541,101 @@ async function waitForState(runId: string, expected: string) {
   throw new Error(`run ${runId} did not reach ${expected}`);
 }
 
+type ProductionDiscoveryRequest = {
+  id: string;
+  method: "GET";
+  url: string;
+  headers: Record<string, string>;
+};
+
+const fusionWorldProductionDiscoveryRequests: readonly ProductionDiscoveryRequest[] = [
+  {
+    id: "fusion-world-en:card-search",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "fusion-world-en:products",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/products/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "fusion-world-en:releases",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/products/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "fusion-world-en:legality-current",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "fusion-world-en:legality-history",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "fusion-world-en:errata",
+    method: "GET",
+    url: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
+    headers: { accept: "text/html" },
+  },
+];
+
+const onePieceProductionDiscoveryRequests: readonly ProductionDiscoveryRequest[] = [
+  {
+    id: "one-piece-en:card-list",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/cardlist/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:products",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/products/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:releases",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/products/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:restrictions",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/rules/restriction/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:block-policy",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/rules/block_icon/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:errata",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    headers: { accept: "text/html" },
+  },
+  {
+    id: "one-piece-en:don-rules",
+    method: "GET",
+    url: "https://en.onepiece-cardgame.com/rules/",
+    headers: { accept: "text/html" },
+  },
+];
+
 function productionFusionLegalityRequests(
   marker: string,
-): ReturnType<typeof officialSourceDiscoveryRequests> {
-  return officialSourceDiscoveryRequests("fusion-world-en").map((request) =>
+): ProductionDiscoveryRequest[] {
+  return fusionWorldProductionDiscoveryRequests.map((request) =>
     request.id === "fusion-world-en:legality-current"
       ? {
           ...request,
@@ -2459,10 +2645,8 @@ function productionFusionLegalityRequests(
   );
 }
 
-function productionOnePieceReleaseTimingRequests(): ReturnType<
-  typeof officialSourceDiscoveryRequests
-> {
-  return officialSourceDiscoveryRequests("one-piece-en").map((request) =>
+function productionOnePieceReleaseTimingRequests(): ProductionDiscoveryRequest[] {
+  return onePieceProductionDiscoveryRequests.map((request) =>
     request.id === "one-piece-en:card-list" ||
       request.id === "one-piece-en:releases"
       ? {
@@ -2506,6 +2690,35 @@ async function request(
   };
 }
 
+async function apiRequest(pathname: string): Promise<{
+  response: Response;
+  document: Record<string, unknown>;
+}> {
+  const response = await apiWorker.fetch(
+    new Request(`https://card-keepr.invalid${pathname}`, {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
+      },
+    }),
+    {
+      CATALOGUE_DB: testEnv.CATALOGUE_DB,
+      PRINTING_IMAGES: testEnv.PRINTING_IMAGES,
+      CATALOGUE_EXPORTS: testEnv.CATALOGUE_EXPORTS,
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000",
+      API_BEARER_KEY: "vitest-api-key",
+      API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
+      CREDENTIAL_CONSUMER_PROOF_KEY: "vitest-consumer-proof-key",
+      CATALOGUE_RATE_LIMIT: testEnv.ADMINISTRATION_RATE_LIMIT,
+      PRINTING_IMAGE_RATE_LIMIT: testEnv.ADMINISTRATION_RATE_LIMIT,
+    } satisfies ApiWorkerEnvironment,
+  );
+  return {
+    response,
+    document: (await response.json()) as Record<string, unknown>,
+  };
+}
+
 function requiredString(
   document: Record<string, unknown>,
   field: string,
@@ -2542,6 +2755,19 @@ async function exportedLegalityRule(
   )).find((candidate) => candidate.official_id === officialId);
   if (rule === undefined) throw new Error("Exported Legality Rule is absent");
   return rule;
+}
+
+async function exportedManifest(revisionId: string): Promise<{
+  source_freshness: Array<Record<string, unknown>>;
+}> {
+  const exportRow = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key FROM catalogue_exports
+     WHERE catalogue_revision_id = ?`,
+  ).bind(revisionId).first<{ manifest_key: string }>();
+  if (exportRow === null) throw new Error("Catalogue Export is absent");
+  const object = await testEnv.CATALOGUE_EXPORTS.get(exportRow.manifest_key);
+  if (object === null) throw new Error("Export manifest is absent");
+  return object.json();
 }
 
 async function exportedComponentRecords(

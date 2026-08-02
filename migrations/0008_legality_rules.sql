@@ -1,5 +1,56 @@
 PRAGMA foreign_keys = ON;
 
+ALTER TABLE source_freshness RENAME TO source_freshness_before_legality_scope;
+
+CREATE TABLE source_freshness (
+  game TEXT NOT NULL CHECK (
+    game IN ('one-piece', 'fusion-world', 'digimon', 'gundam')
+  ),
+  area TEXT NOT NULL CHECK (
+    area IN (
+      'cards-and-printings', 'products-and-releases',
+      'legality-rules', 'errata'
+    )
+  ),
+  source_lineage TEXT NOT NULL DEFAULT '',
+  region TEXT NOT NULL DEFAULT '',
+  checked_at TEXT NOT NULL,
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
+  PRIMARY KEY (game, area, source_lineage, region),
+  CHECK (
+    (
+      area <> 'legality-rules'
+      AND source_lineage = ''
+      AND region = ''
+    )
+    OR
+    (
+      area = 'legality-rules'
+      AND (
+        (game = 'one-piece' AND source_lineage = 'one-piece-en'
+          AND region = 'EN-OCEANIA')
+        OR (game = 'fusion-world' AND source_lineage = 'fusion-world-en'
+          AND region = 'EN-OCEANIA')
+        OR (game = 'digimon' AND source_lineage = 'digimon-en'
+          AND region = 'EN-OCEANIA')
+        OR (game = 'gundam' AND source_lineage = 'gundam-en-asia'
+          AND region = 'EN-ASIA')
+        OR (game = 'gundam' AND source_lineage = 'gundam-en-us'
+          AND region = 'EN-US')
+      )
+    )
+  )
+);
+
+INSERT INTO source_freshness (
+  game, area, source_lineage, region, checked_at, ingestion_run_id
+)
+SELECT game, area, '', '', checked_at, ingestion_run_id
+FROM source_freshness_before_legality_scope
+WHERE area <> 'legality-rules';
+
+DROP TABLE source_freshness_before_legality_scope;
+
 CREATE TABLE official_source_collection_plans (
   ingestion_run_id TEXT NOT NULL
     REFERENCES ingestion_evidence_plans(ingestion_run_id),

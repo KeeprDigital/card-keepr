@@ -207,12 +207,14 @@ beforeEach(async () => {
     ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_freshness (
-         game, area, checked_at, ingestion_run_id
+         game, area, source_lineage, region, checked_at, ingestion_run_id
        ) VALUES
-         ('one-piece', 'cards-and-printings',
+         ('one-piece', 'cards-and-printings', '', '',
           '2026-01-01T01:00:00.000Z', 'run_products'),
-         ('one-piece', 'products-and-releases',
-          '2026-01-01T02:00:00.000Z', 'run_products')`,
+         ('one-piece', 'products-and-releases', '', '',
+          '2026-01-01T02:00:00.000Z', 'run_products'),
+         ('one-piece', 'legality-rules', 'one-piece-en', 'EN-OCEANIA',
+          '2026-01-01T03:00:00.000Z', 'run_products')`,
     ),
   ]);
   await testEnv.PRINTING_IMAGES.put(
@@ -612,6 +614,8 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
       last_successful_checks: {
         game: string;
         area: string;
+        source_lineage?: string;
+        region?: string;
         checked_at: string;
       }[];
     };
@@ -622,6 +626,13 @@ test("Catalogue status exposes independently checked areas and freshness-sensiti
       game: "one-piece",
       area: "cards-and-printings",
       checked_at: "2026-01-01T01:00:00.000Z",
+    },
+    {
+      game: "one-piece",
+      area: "legality-rules",
+      source_lineage: "one-piece-en",
+      region: "EN-OCEANIA",
+      checked_at: "2026-01-01T03:00:00.000Z",
     },
     {
       game: "one-piece",

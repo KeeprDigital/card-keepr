@@ -9,20 +9,14 @@ import {
   detailIncludeProjection,
   detailRepresentationKey,
 } from "./detail-representation";
+import {
+  sourceFreshnessFromStorage,
+  type SourceFreshnessStorageRow,
+} from "./source-freshness";
 
 type CatalogueStateRow = {
   current_revision_id: string;
   published_at: string;
-};
-
-type FreshnessRow = {
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
-  area:
-    | "cards-and-printings"
-    | "products-and-releases"
-    | "legality-rules"
-    | "errata";
-  checked_at: string;
 };
 
 type RevisionDocumentRow = CatalogueStateRow & {
@@ -87,16 +81,15 @@ export async function currentCatalogueStatus(database: D1Database) {
       .first<CatalogueStateRow>(),
     database
       .prepare(
-        `SELECT game, area, checked_at
+        `SELECT game, area, source_lineage, region, checked_at
          FROM source_freshness
-         ORDER BY game, area`,
+         ORDER BY game, area, source_lineage, region`,
       )
-      .all<FreshnessRow>(),
+      .all<SourceFreshnessStorageRow>(),
   ]);
   if (state === null) throw new Error("Catalogue state is unavailable");
   const lastSuccessfulChecks = freshness.results.map((row) => ({
-    game: row.game,
-    area: row.area,
+    ...sourceFreshnessFromStorage(row),
     checked_at: parsePublicationInstant(row.checked_at),
   }));
   return {

@@ -4,7 +4,7 @@ import type {
   ProductRelationship,
 } from "./product-release-catalogue";
 import type { CatalogueErratum } from "./errata-rules-text";
-import type { LegalityRule } from "./legality-rule";
+import type { LegalityRegion, LegalityRule } from "./legality-rule";
 
 export const catalogueCandidateContract =
   "card-keepr-catalogue-candidate@1" as const;
@@ -27,17 +27,27 @@ export type CatalogueCandidate = {
   card_observed_games?: readonly SupportedGame[];
   product_observed_games?: readonly SupportedGame[];
   product_observed_lineages?: readonly string[];
-  source_checks?: readonly {
-    game: SupportedGame;
-    area:
-      | "cards-and-printings"
-      | "products-and-releases"
-      | "legality-rules";
-    checked_at: string;
-  }[];
+  source_checks?: readonly CatalogueSourceCheck[];
   errata?: readonly CatalogueErratum[];
   legality_rules?: readonly LegalityRule[];
 };
+
+export type CatalogueSourceCheck =
+  | {
+      game: SupportedGame;
+      area:
+        | "cards-and-printings"
+        | "products-and-releases"
+        | "errata";
+      checked_at: string;
+    }
+  | {
+      game: SupportedGame;
+      area: "legality-rules";
+      source_lineage: string;
+      region: LegalityRegion;
+      checked_at: string;
+    };
 
 export type CatalogueCard = {
   id: string;

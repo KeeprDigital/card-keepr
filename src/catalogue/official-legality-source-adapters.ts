@@ -268,13 +268,56 @@ function htmlText(value: string): string {
   return value
     .replace(/<br\s*\/?\s*>/giu, "\n")
     .replace(/<[^>]+>/gu, "")
-    .replace(/&nbsp;/giu, " ")
-    .replace(/&amp;/giu, "&")
-    .replace(/&lt;/giu, "<")
-    .replace(/&gt;/giu, ">")
-    .replace(/&quot;/giu, '"')
-    .replace(/&#39;|&apos;/giu, "'")
+    .replace(
+      /&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu,
+      (entity, reference: string) => decodedHtmlEntity(entity, reference),
+    )
     .trim();
+}
+
+const namedHtmlEntities: Readonly<Record<string, string>> = {
+  amp: "&",
+  apos: "'",
+  bull: "•",
+  copy: "©",
+  gt: ">",
+  hellip: "…",
+  ldquo: "“",
+  lsquo: "‘",
+  lt: "<",
+  mdash: "—",
+  middot: "·",
+  nbsp: " ",
+  ndash: "–",
+  quot: '"',
+  rdquo: "”",
+  reg: "®",
+  rsquo: "’",
+  trade: "™",
+};
+
+function decodedHtmlEntity(entity: string, reference: string): string {
+  if (reference.startsWith("#")) {
+    const hexadecimal = reference[1]?.toLowerCase() === "x";
+    const digits = reference.slice(hexadecimal ? 2 : 1);
+    const codePoint = Number.parseInt(digits, hexadecimal ? 16 : 10);
+    if (
+      !Number.isSafeInteger(codePoint) ||
+      codePoint <= 0 ||
+      codePoint > 0x10ffff ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff)
+    ) {
+      throw new Error(`Official Legality HTML entity ${entity} is invalid.`);
+    }
+    return String.fromCodePoint(codePoint);
+  }
+  const decoded = namedHtmlEntities[reference.toLowerCase()];
+  if (decoded === undefined) {
+    throw new Error(
+      `Official Legality HTML entity ${entity} is not recognized by this Source Adapter Version.`,
+    );
+  }
+  return decoded;
 }
 
 function exactLegalityRule(
@@ -380,58 +423,114 @@ function exactEffect(
         };
       }
     case "combination":
-    case "prohibited_combination":
+    case "prohibited_combination": {
+      const directCards = requiredTextArray(
+        entry[fields.cards],
+        "Official Legality Card numbers",
+        true,
+      );
+      const companionCards = requiredTextArray(
+        entry[fields.companionCards],
+        "Official Legality companion Cards",
+        false,
+      );
       assertWording(
-        directive,
+        "prohibited combination",
         wording,
-        /\b(?:combination|same deck|together)\b/iu,
+        /\b(?:(?:may|must)\s+not|cannot|can't)\b[\s\S]*\b(?:together|same deck)\b|\bprohibited\s+combination\b/iu,
+      );
+      assertNoContradiction(
+        "prohibited combination",
+        wording,
+        /\b(?:may|can)\s+be\s+(?:used|included|played)\s+together\b|\bcombination\s+is\s+(?:allowed|legal|permitted)\b/iu,
+      );
+      assertWordingOperands(
+        "prohibited combination",
+        wording,
+        [...directCards, ...companionCards],
       );
       return {
         type: "prohibited_combination",
-        with_card_numbers: requiredTextArray(
-          entry[fields.companionCards],
-          "Official Legality companion Cards",
-          false,
-        ),
+        with_card_numbers: companionCards,
       };
-    case "membership":
+    }
+    case "membership": {
+      const attribute = requiredText(
+        entry[fields.membershipAttribute],
+        "Official Legality membership attribute",
+      );
+      const values = requiredTextArray(
+        entry[fields.membershipValues],
+        "Official Legality membership values",
+        false,
+      );
       assertWording(
         directive,
         wording,
-        /\b(?:membership|trait|attribute)\b/iu,
+        /\b(?:membership|traits?|attributes?)\b/iu,
       );
+      assertNoContradiction(
+        directive,
+        wording,
+        /\b(?:does\s+not|do\s+not|need\s+not)\s+(?:require|include|have)\b|\bnot\s+required\b|\bwithout\s+(?:the\s+)?(?:membership|traits?|attributes?)\b/iu,
+      );
+      assertWording(
+        directive,
+        wording,
+        /\bonly\b[\s\S]*\b(?:includes?|with|has|have)\b|\b(?:must|requires?)\b[\s\S]*\b(?:membership|traits?|attributes?)\b/iu,
+      );
+      assertWordingOperands(directive, wording, [attribute, ...values]);
       return {
         type: "membership",
-        attribute: requiredText(
-          entry[fields.membershipAttribute],
-          "Official Legality membership attribute",
-        ),
-        includes_any: requiredTextArray(
-          entry[fields.membershipValues],
-          "Official Legality membership values",
-          false,
-        ),
+        attribute,
+        includes_any: values,
       };
-    case "rotation":
+    }
+    case "rotation": {
+      const blocks = requiredTextArray(
+        entry[fields.eligibleBlocks],
+        "Official Legality rotation blocks",
+        false,
+      );
       assertWording(directive, wording, /\b(?:rotation|block)\b/iu);
+      assertNoContradiction(
+        directive,
+        wording,
+        /\b(?:not\s+(?:eligible|legal|permitted)|ineligible|illegal|excluded)\b/iu,
+      );
+      assertWording(
+        directive,
+        wording,
+        /\b(?:eligible|legal|permitted)\b/iu,
+      );
+      assertWordingOperands(directive, wording, blocks);
       return {
         type: "rotation",
-        eligible_blocks: requiredTextArray(
-          entry[fields.eligibleBlocks],
-          "Official Legality rotation blocks",
-          false,
-        ),
+        eligible_blocks: blocks,
       };
+    }
     case "release":
-    case "release_timing":
-      assertWording(directive, wording, /\b(?:legal|tournament|release)\b/iu);
+    case "release_timing": {
+      const legalFrom = requiredDate(
+        entry[fields.legalFrom],
+        "Official Legality tournament date",
+      );
+      assertNoContradiction(
+        "release timing",
+        wording,
+        /\b(?:not|never)\s+(?:be\s+|become\s+)?legal\b|\b(?:illegal|ineligible)\b|\bdelayed\s+(?:past|beyond|until after)\b/iu,
+      );
+      assertWording(
+        directive,
+        wording,
+        /\b(?:becomes?|is|will be)\s+(?:tournament\s+)?legal\b|\blegal\s+for\s+tournament\b/iu,
+      );
+      assertWordingOperands("release timing", wording, [legalFrom]);
       return {
         type: "release_timing",
-        legal_from: requiredDate(
-          entry[fields.legalFrom],
-          "Official Legality tournament date",
-        ),
+        legal_from: legalFrom,
       };
+    }
     case "unresolved":
       return {
         type: "unresolved",
@@ -445,6 +544,28 @@ function exactEffect(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
       );
   }
+}
+
+function assertWordingOperands(
+  directive: string,
+  wording: string,
+  operands: readonly string[],
+): void {
+  for (const operand of operands) {
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}])${escapeRegExp(operand)}(?![\\p{L}\\p{N}])`,
+      "iu",
+    );
+    if (!pattern.test(wording)) {
+      throw new Error(
+        `Official Legality wording does not exactly support ${directive} operand ${operand}.`,
+      );
+    }
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function assertExactCopyLimitWording(

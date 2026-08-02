@@ -449,7 +449,7 @@ export default defineConfig({
             ) {
               const officialWording = artworkMarker ===
                   "card-keepr-representable-legality-v3"
-                ? "FB01-001 is eligible for Standard tournament play."
+                ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
                 : "FB01-001 appears on opaque publication XQZ-17.";
               return new Response(
                 `<html>

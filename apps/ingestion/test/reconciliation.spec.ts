@@ -11,6 +11,12 @@ import {
 import { beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
+  compareSourceFreshness,
+  sourceFreshnessFromStorage,
+  sourceFreshnessKey,
+  type SourceFreshnessStorageRow,
+} from "../../../src/catalogue/source-freshness";
+import {
   canonicalJson,
   sha256,
 } from "../../../src/catalogue/serialization";
@@ -1221,26 +1227,20 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
   );
   if (publication === null) throw new Error("publication plan missing");
   const priorFreshness = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT game, area, checked_at
+    `SELECT game, area, source_lineage, region, checked_at
      FROM source_freshness
      WHERE area IN (
        'cards-and-printings', 'products-and-releases', 'legality-rules'
      )`,
-  ).all<{
-    game: SupportedGame;
-    area:
-      | "cards-and-printings"
-      | "products-and-releases"
-      | "legality-rules";
-    checked_at: string;
-  }>();
+  ).all<SourceFreshnessStorageRow>();
   const exactFreshness = new Map(
     priorFreshness.results
+      .map(sourceFreshnessFromStorage)
       .filter(({ game }) => candidate.selected_games.includes(game))
-      .map((check) => [`${check.game}:${check.area}`, check]),
+      .map((check) => [sourceFreshnessKey(check), check]),
   );
   for (const check of candidate.source_checks ?? []) {
-    exactFreshness.set(`${check.game}:${check.area}`, check);
+    exactFreshness.set(sourceFreshnessKey(check), check);
   }
   const catalogueExport = await buildCatalogueExport(
     candidate,
@@ -1257,11 +1257,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
       cardEvidence: publication.cardEvidence,
       printingEvidence: publication.printingEvidence,
     },
-    [...exactFreshness.values()].sort(
-      (left, right) =>
-        left.game.localeCompare(right.game) ||
-        left.area.localeCompare(right.area),
-    ),
+    [...exactFreshness.values()].sort(compareSourceFreshness),
   );
   const approval = {
     action: "approved",

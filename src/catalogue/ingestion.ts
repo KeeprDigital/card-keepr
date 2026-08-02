@@ -16,6 +16,14 @@ import {
   type CatalogueCandidate,
   type SupportedGame,
 } from "./catalogue-candidate";
+import {
+  compareSourceFreshness,
+  isCatalogueSourceCheck,
+  sourceFreshnessFromStorage,
+  sourceFreshnessKey,
+  sourceFreshnessStorageScope,
+  type SourceFreshnessStorageRow,
+} from "./source-freshness";
 import { canonicalJson, sha256 } from "./serialization";
 import {
   reconciliationPublication,
@@ -122,10 +130,7 @@ type IdempotencyRow = {
   outcome: "success" | "problem";
 };
 
-type FreshnessRow = {
-  game: string;
-  area: string;
-  checked_at: string;
+type FreshnessRow = SourceFreshnessStorageRow & {
   ingestion_run_id: string;
 };
 
@@ -395,9 +400,10 @@ export async function administrationStatus(
       currentOperationState(database),
       database
         .prepare(
-          `SELECT game, area, checked_at, ingestion_run_id
+          `SELECT game, area, source_lineage, region, checked_at,
+                  ingestion_run_id
           FROM source_freshness
-          ORDER BY game, area`,
+          ORDER BY game, area, source_lineage, region`,
         )
         .all<FreshnessRow>(),
       database
@@ -452,7 +458,10 @@ export async function administrationStatus(
       active === null
         ? null
         : publicRun(active, cleanupByRun.get(active.id) ?? null),
-    source_freshness: freshness.results,
+    source_freshness: freshness.results.map((row) => ({
+      ...sourceFreshnessFromStorage(row),
+      ingestion_run_id: row.ingestion_run_id,
+    })),
     diagnostics: {
       catalogue_revision_count: revisionCount?.count ?? 0,
       catalogue_export_count: exportCount?.count ?? 0,
@@ -4493,21 +4502,31 @@ function freshnessStatements(
   checks: readonly SourceFreshness[],
   runId: string,
 ): D1PreparedStatement[] {
-  return checks.map((check) =>
-    database
+  return checks.map((check) => {
+    const scope = sourceFreshnessStorageScope(check);
+    return database
       .prepare(
         `INSERT INTO source_freshness (
           game,
           area,
+          source_lineage,
+          region,
           checked_at,
           ingestion_run_id
-        ) VALUES (?, ?, ?, ?)
-        ON CONFLICT (game, area) DO UPDATE SET
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (game, area, source_lineage, region) DO UPDATE SET
           checked_at = excluded.checked_at,
           ingestion_run_id = excluded.ingestion_run_id`,
       )
-      .bind(check.game, check.area, check.checked_at, runId),
-  );
+      .bind(
+        check.game,
+        check.area,
+        scope.sourceLineage,
+        scope.region,
+        check.checked_at,
+        runId,
+      );
+  });
 }
 
 function checkedFreshnessAreas(
@@ -4515,46 +4534,42 @@ function checkedFreshnessAreas(
   candidate: CatalogueCandidate,
   checkedAt = "",
 ): SourceFreshness[] {
-  const capturedChecks = new Map(
-    (candidate.source_checks ?? []).map((check) => [
-      `${check.game}:${check.area}`,
-      check.checked_at,
-    ]),
-  );
-  return games.flatMap((game) => {
+  const capturedChecks = candidate.source_checks ?? [];
+  const generalChecks = games.flatMap((game) => {
     const supported = game as SupportedGame;
     const cardObservedGames =
       candidate.card_observed_games ?? candidate.selected_games;
+    const capturedAt = (
+      area: "cards-and-printings" | "products-and-releases",
+    ) => capturedChecks.find(
+      (check) => check.game === supported && check.area === area,
+    )?.checked_at ?? checkedAt;
     return [
       ...(cardObservedGames.includes(supported)
         ? [{
             game: supported,
             area: "cards-and-printings" as const,
-            checked_at:
-              capturedChecks.get(`${supported}:cards-and-printings`) ??
-              checkedAt,
+            checked_at: capturedAt("cards-and-printings"),
           }]
         : []),
       ...(candidate.product_observed_games?.includes(supported)
         ? [{
             game: supported,
             area: "products-and-releases" as const,
-            checked_at:
-              capturedChecks.get(`${supported}:products-and-releases`) ??
-              checkedAt,
-          }]
-        : []),
-      ...(capturedChecks.has(`${supported}:legality-rules`)
-        ? [{
-            game: supported,
-            area: "legality-rules" as const,
-            checked_at: capturedChecks.get(
-              `${supported}:legality-rules`,
-            )!,
+            checked_at: capturedAt("products-and-releases"),
           }]
         : []),
     ];
   });
+  const selectedGames = new Set(games);
+  return [
+    ...generalChecks,
+    ...capturedChecks.filter(
+      (check): check is Extract<SourceFreshness, {
+        area: "legality-rules";
+      }> => check.area === "legality-rules" && selectedGames.has(check.game),
+    ),
+  ];
 }
 
 async function freshnessArea(
@@ -4593,24 +4608,25 @@ async function sourceFreshnessForExport(
 ): Promise<SourceFreshness[]> {
   const prior = await database
     .prepare(
-      `SELECT game, area, checked_at
+      `SELECT game, area, source_lineage, region, checked_at
        FROM source_freshness
        WHERE area IN (
          'cards-and-printings', 'products-and-releases',
          'legality-rules', 'errata'
        )
-       ORDER BY game, area`,
+       ORDER BY game, area, source_lineage, region`,
     )
-    .all<SourceFreshness>();
+    .all<SourceFreshnessStorageRow>();
   const freshness = new Map<string, SourceFreshness>();
   for (const row of prior.results) {
-    if (catalogueGames.includes(row.game)) {
-      freshness.set(`${row.game}:${row.area}`, row);
+    const check = sourceFreshnessFromStorage(row);
+    if (catalogueGames.includes(check.game)) {
+      freshness.set(sourceFreshnessKey(check), check);
     }
   }
   for (const check of refreshedChecks) {
     if (catalogueGames.includes(check.game)) {
-      freshness.set(`${check.game}:${check.area}`, {
+      freshness.set(sourceFreshnessKey(check), {
         ...check,
         checked_at:
           check.checked_at.length === 0
@@ -4619,11 +4635,7 @@ async function sourceFreshnessForExport(
       });
     }
   }
-  return [...freshness.values()].sort(
-    (left, right) =>
-      left.game.localeCompare(right.game) ||
-      left.area.localeCompare(right.area),
-  );
+  return [...freshness.values()].sort(compareSourceFreshness);
 }
 
 async function expireOverdueRuns(
@@ -4890,7 +4902,10 @@ function isCatalogueCandidate(
       (Array.isArray(value.product_observed_lineages) &&
         value.product_observed_lineages.every(
           (lineage) => typeof lineage === "string" && lineage.length > 0,
-        )))
+        ))) &&
+    (value.source_checks === undefined ||
+      (Array.isArray(value.source_checks) &&
+        value.source_checks.every(isCatalogueSourceCheck)))
   );
 }
 

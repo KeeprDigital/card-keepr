@@ -12,6 +12,8 @@ import {
 } from "./official-artwork-identity.mjs";
 import {
   parseRetainedLegalityRules,
+  regionForLineage,
+  type LegalityRegion,
   type RetainedLegalityRule,
 } from "./legality-rule";
 
@@ -72,6 +74,7 @@ type EvidencePlanRow = {
 export type RetainedLegalityScope = {
   sourceLineage: string;
   supportedGame: SupportedGame;
+  region: LegalityRegion;
   checkedAt: string;
 };
 
@@ -423,6 +426,7 @@ export async function retainedReconciliationObservation(
           const scope: RetainedLegalityScope = {
             sourceLineage: row.source_lineage,
             supportedGame: supportedGame(row.supported_game),
+            region: regionForLineage(row.source_lineage),
             checkedAt: row.retrieved_at,
           };
           const prior = completeLegalityScopes.get(row.source_lineage);

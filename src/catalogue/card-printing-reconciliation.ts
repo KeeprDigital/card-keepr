@@ -835,13 +835,6 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.errata ?? [],
     observedErrata,
   );
-  const legalityChecks = new Map<SupportedGame, string>();
-  for (const scope of retained.legalityScopes) {
-    const prior = legalityChecks.get(scope.supportedGame);
-    if (prior === undefined || prior < scope.checkedAt) {
-      legalityChecks.set(scope.supportedGame, scope.checkedAt);
-    }
-  }
   const candidateCards = [...cards.values()]
     .map((card) => {
       if (
@@ -923,10 +916,12 @@ export async function reconcileRetainedCardPrintingEvidence(
           checked_at: latestCapture(observations),
         }),
       ),
-      ...[...legalityChecks].map(([game, checkedAt]) => ({
-        game,
+      ...retained.legalityScopes.map((scope) => ({
+        game: scope.supportedGame,
         area: "legality-rules" as const,
-        checked_at: checkedAt,
+        source_lineage: scope.sourceLineage,
+        region: scope.region,
+        checked_at: scope.checkedAt,
       })),
     ],
     errata,

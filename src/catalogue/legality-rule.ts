@@ -184,7 +184,9 @@ export async function canonicalLegalityRuleId(
   )}`;
 }
 
-export function legalityRuleCardIds(rule: LegalityRule): string[] {
+export function legalityRuleCardIds(
+  rule: Pick<LegalityRule, "card_ids" | "effect">,
+): string[] {
   return [
     ...new Set([
       ...rule.card_ids,
@@ -329,7 +331,7 @@ function requiredRegion(value: unknown): LegalityRegion {
   return value;
 }
 
-function regionForLineage(lineage: string): LegalityRegion {
+export function regionForLineage(lineage: string): LegalityRegion {
   if (lineage === "gundam-en-asia") return "EN-ASIA";
   if (lineage === "gundam-en-us") return "EN-US";
   if (

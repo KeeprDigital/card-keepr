@@ -192,6 +192,34 @@ const exactFusionLegalityHtml = `
     </dl></article>
   </body></html>`;
 
+function fusionLegalityRuleHtml({
+  id,
+  wording,
+  cards,
+  directive,
+  effectFields = "",
+}) {
+  return `<article class="restriction-card"><dl>
+    <dt>Rule Ref</dt><dd>${id}</dd>
+    <dt>Notice</dt><dd>${wording}</dd>
+    <dt>Market</dt><dd>EN-OCEANIA</dd>
+    <dt>Play Format</dt><dd>standard</dd>
+    <dt>Tier</dt><dd>-</dd>
+    <dt>Active On</dt><dd>2026-07-01</dd>
+    <dt>Expires On</dt><dd>-</dd>
+    <dt>Cards</dt><dd>${cards.length === 0 ? "-" : cards.join(", ")}</dd>
+    <dt>Directive</dt><dd>${directive}</dd>
+    ${effectFields}
+  </dl></article>`;
+}
+
+function fusionLegalityPage(...rules) {
+  return `<!doctype html><html><head>
+    <title>Bandai Dragon Ball Super Card Game Fusion World Restriction Rules</title>
+    </head><body><h1>Restriction Rules</h1><p>${rules.length} records</p>
+    ${rules.join("\n")}</body></html>`;
+}
+
 test("current production legality parser retains exact ordinary HTML rules and truthful multi-record completeness", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const observations = current.parseBytes(
@@ -291,6 +319,141 @@ test("current production legality parser rejects negated bans and copy limits wh
       fusionLegalityContext(current),
     ),
     /wording does not exactly support copy limit 1/u,
+  );
+});
+
+test("current production legality parser requires exact positive wording for every structured effect operand", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const valid = fusionLegalityPage(
+    fusionLegalityRuleHtml({
+      id: "FW-2026-COMBINATION",
+      wording: "FB01-010 and FB01-011 may not be used together in the same deck.",
+      cards: ["FB01-010"],
+      directive: "prohibited_combination",
+      effectFields: "<dt>Paired Cards</dt><dd>FB01-011</dd>",
+    }),
+    fusionLegalityRuleHtml({
+      id: "FW-2026-MEMBERSHIP",
+      wording: "Only cards whose trait includes Saiyan or Earthling are eligible.",
+      cards: [],
+      directive: "membership",
+      effectFields: `
+        <dt>Filter Field</dt><dd>trait</dd>
+        <dt>Filter Values</dt><dd>Saiyan, Earthling</dd>`,
+    }),
+    fusionLegalityRuleHtml({
+      id: "FW-2026-ROTATION",
+      wording: "Blocks 05 and 06 are eligible for rotation.",
+      cards: [],
+      directive: "rotation",
+      effectFields: "<dt>Blocks</dt><dd>05, 06</dd>",
+    }),
+    fusionLegalityRuleHtml({
+      id: "FW-2026-RELEASE",
+      wording: "FB01-012 becomes legal for tournament play on 2026-09-04.",
+      cards: ["FB01-012"],
+      directive: "release_timing",
+      effectFields:
+        "<dt>Tournament Legal Date</dt><dd>2026-09-04</dd>",
+    }),
+  );
+  const observations = current.parseBytes(
+    new TextEncoder().encode(valid),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.deepEqual(
+    legality.legality_rules.map(({ effect }) => effect),
+    [
+      {
+        type: "prohibited_combination",
+        with_card_numbers: ["FB01-011"],
+      },
+      {
+        type: "membership",
+        attribute: "trait",
+        includes_any: ["Saiyan", "Earthling"],
+      },
+      { type: "rotation", eligible_blocks: ["05", "06"] },
+      { type: "release_timing", legal_from: "2026-09-04" },
+    ],
+  );
+
+  for (const [original, wording, mismatch] of [
+    [
+      "FB01-010 and FB01-011 may not be used together in the same deck.",
+      "FB01-010 and FB01-011 may be used together in the same deck.",
+      /prohibited combination/u,
+    ],
+    [
+      "FB01-010 and FB01-011 may not be used together in the same deck.",
+      "FB01-010 and FB01-099 may not be used together in the same deck.",
+      /operand FB01-011/u,
+    ],
+    [
+      "Only cards whose trait includes Saiyan or Earthling are eligible.",
+      "Cards do not require a trait that includes Saiyan or Earthling.",
+      /membership/u,
+    ],
+    [
+      "Only cards whose trait includes Saiyan or Earthling are eligible.",
+      "Only cards whose trait includes Saiyan or Namekian are eligible.",
+      /operand Earthling/u,
+    ],
+    [
+      "Blocks 05 and 06 are eligible for rotation.",
+      "Blocks 05 and 06 are not eligible for rotation.",
+      /rotation/u,
+    ],
+    [
+      "Blocks 05 and 06 are eligible for rotation.",
+      "Blocks 05 and 07 are eligible for rotation.",
+      /operand 06/u,
+    ],
+    [
+      "FB01-012 becomes legal for tournament play on 2026-09-04.",
+      "FB01-012 is not legal for tournament play on 2026-09-04.",
+      /release timing/u,
+    ],
+    [
+      "FB01-012 becomes legal for tournament play on 2026-09-04.",
+      "FB01-012 becomes legal for tournament play on 2026-09-05.",
+      /operand 2026-09-04/u,
+    ],
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          valid.replace(original, wording),
+        ),
+        fusionLegalityContext(current),
+      ),
+      mismatch,
+    );
+  }
+});
+
+test("current production legality HTML decodes entities exactly once", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = fusionLegalityPage(fusionLegalityRuleHtml({
+    id: "FW-2026-ENTITIES",
+    wording:
+      "FB01-030 is legal &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;.",
+    cards: ["FB01-030"],
+    directive: "eligible",
+  }));
+  const observations = current.parseBytes(
+    new TextEncoder().encode(html),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.equal(
+    legality.legality_rules[0].official_wording,
+    "FB01-030 is legal 'as printed' – publisher–confirmed &#39;literal&#39;.",
   );
 });
 

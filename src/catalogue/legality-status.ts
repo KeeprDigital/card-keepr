@@ -1,7 +1,4 @@
-import type {
-  LegalityRegion,
-  LegalityRule,
-} from "./legality-rule";
+import type { LegalityRegion } from "./legality-rule";
 import {
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
@@ -9,12 +6,12 @@ import {
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { isIsoCalendarDate } from "./calendar-date.mjs";
-
-type CatalogueCard = {
-  id: string;
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
-  game_data: { attributes: Record<string, unknown> };
-};
+import {
+  parseStoredCatalogueCard,
+  parseStoredLegalityRule,
+  type StoredLegalityStatusCard,
+  type StoredLegalityStatusRule,
+} from "./stored-legality-documents";
 
 type ContextRow = {
   current_revision_id: string;
@@ -33,11 +30,12 @@ type SnapshotEvidenceRow = {
 
 export class LegalityStatusProblem extends Error {
   constructor(
-    readonly status: 400 | 404 | 422,
+    readonly status: 400 | 404 | 422 | 500,
     readonly code:
       | "invalid_parameter"
       | "not_found"
-      | "invalid_legality_region",
+      | "invalid_legality_region"
+      | "invalid_catalogue_document",
     message: string,
   ) {
     super(message);
@@ -68,8 +66,8 @@ export async function contextualLegalityStatusResponse(
       "The requested Card does not exist in the current Catalogue Revision.",
     );
   }
-  const card = catalogueCardData(
-    JSON.parse(context.document_json) as unknown,
+  const card = parsedStoredDocument(() =>
+    parseStoredCatalogueCard(context.document_json)
   );
   const supportedRegions = regionsFor(card.game);
   if (
@@ -105,8 +103,8 @@ export async function contextualLegalityStatusResponse(
       query.eventTier,
     )
     .all<RuleRow>();
-  const rules = rows.results.map(
-    (row) => JSON.parse(row.document_json) as LegalityRule,
+  const rules = rows.results.map((row) =>
+    parsedStoredDocument(() => parseStoredLegalityRule(row.document_json))
   );
   const regions =
     query.region === null
@@ -147,23 +145,21 @@ export async function contextualLegalityStatusResponse(
   });
 }
 
-function catalogueCardData(value: unknown): CatalogueCard {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    (value as Record<string, unknown>).data !== null &&
-    typeof (value as Record<string, unknown>).data === "object" &&
-    !Array.isArray((value as Record<string, unknown>).data)
-  ) {
-    return (value as { data: CatalogueCard }).data;
+function parsedStoredDocument<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch {
+    throw new LegalityStatusProblem(
+      500,
+      "invalid_catalogue_document",
+      "The current Catalogue contains an invalid stored document; Legality Status failed closed.",
+    );
   }
-  return value as CatalogueCard;
 }
 
 function deriveRegionStatus(
-  card: CatalogueCard,
-  rules: readonly LegalityRule[],
+  card: StoredLegalityStatusCard,
+  rules: readonly StoredLegalityStatusRule[],
   query: {
     cardId: string;
     on: string;
@@ -195,10 +191,10 @@ function deriveRegionStatus(
 }
 
 function applicableRules(
-  rules: readonly LegalityRule[],
+  rules: readonly StoredLegalityStatusRule[],
   query: { cardId: string },
   region: LegalityRegion,
-): LegalityRule[] {
+): StoredLegalityStatusRule[] {
   return rules.filter(
     (rule) =>
       rule.region === region &&
@@ -209,7 +205,7 @@ function applicableRules(
 
 async function legalityEvidenceSidecar(
   database: D1Database,
-  rules: readonly LegalityRule[],
+  rules: readonly StoredLegalityStatusRule[],
   query: { cardId: string },
   regions: readonly LegalityRegion[],
 ): Promise<{
@@ -299,7 +295,7 @@ function deriveStatus(
 function derivation(
   status: "legal" | "restricted" | "not_legal" | "indeterminate",
   evaluations: readonly {
-    rule: LegalityRule;
+    rule: StoredLegalityStatusRule;
     outcome: "legal" | "restricted" | "not_legal" | "indeterminate";
   }[],
 ): string {
@@ -417,7 +413,9 @@ function optionalParameter(url: URL, name: string): string | null {
   return value;
 }
 
-function regionsFor(game: CatalogueCard["game"]): readonly LegalityRegion[] {
+function regionsFor(
+  game: StoredLegalityStatusCard["game"],
+): readonly LegalityRegion[] {
   return game === "gundam"
     ? ["EN-ASIA", "EN-US"]
     : ["EN-OCEANIA"];

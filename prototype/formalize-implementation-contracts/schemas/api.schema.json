@@ -504,19 +504,95 @@
       }
     },
     "Freshness": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["game", "area", "checked_at"],
+          "properties": {
+            "game": { "$ref": "#/$defs/SupportedGame" },
+            "area": {
+              "enum": [
+                "cards-and-printings",
+                "products-and-releases",
+                "errata"
+              ]
+            },
+            "checked_at": { "$ref": "#/$defs/Timestamp" }
+          }
+        },
+        {
+          "$ref": "#/$defs/OnePieceLegalityFreshness"
+        },
+        {
+          "$ref": "#/$defs/FusionWorldLegalityFreshness"
+        },
+        {
+          "$ref": "#/$defs/DigimonLegalityFreshness"
+        },
+        {
+          "$ref": "#/$defs/GundamAsiaLegalityFreshness"
+        },
+        {
+          "$ref": "#/$defs/GundamUsLegalityFreshness"
+        }
+      ]
+    },
+    "OnePieceLegalityFreshness": {
+      "$ref": "#/$defs/ScopedLegalityFreshness",
+      "properties": {
+        "game": { "const": "one-piece" },
+        "source_lineage": { "const": "one-piece-en" },
+        "region": { "const": "EN-OCEANIA" }
+      }
+    },
+    "FusionWorldLegalityFreshness": {
+      "$ref": "#/$defs/ScopedLegalityFreshness",
+      "properties": {
+        "game": { "const": "fusion-world" },
+        "source_lineage": { "const": "fusion-world-en" },
+        "region": { "const": "EN-OCEANIA" }
+      }
+    },
+    "DigimonLegalityFreshness": {
+      "$ref": "#/$defs/ScopedLegalityFreshness",
+      "properties": {
+        "game": { "const": "digimon" },
+        "source_lineage": { "const": "digimon-en" },
+        "region": { "const": "EN-OCEANIA" }
+      }
+    },
+    "GundamAsiaLegalityFreshness": {
+      "$ref": "#/$defs/ScopedLegalityFreshness",
+      "properties": {
+        "game": { "const": "gundam" },
+        "source_lineage": { "const": "gundam-en-asia" },
+        "region": { "const": "EN-ASIA" }
+      }
+    },
+    "GundamUsLegalityFreshness": {
+      "$ref": "#/$defs/ScopedLegalityFreshness",
+      "properties": {
+        "game": { "const": "gundam" },
+        "source_lineage": { "const": "gundam-en-us" },
+        "region": { "const": "EN-US" }
+      }
+    },
+    "ScopedLegalityFreshness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["game", "area", "checked_at"],
+      "required": [
+        "game",
+        "area",
+        "source_lineage",
+        "region",
+        "checked_at"
+      ],
       "properties": {
         "game": { "$ref": "#/$defs/SupportedGame" },
-        "area": {
-          "enum": [
-            "cards-and-printings",
-            "products-and-releases",
-            "legality-rules",
-            "errata"
-          ]
-        },
+        "area": { "const": "legality-rules" },
+        "source_lineage": { "type": "string" },
+        "region": { "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"] },
         "checked_at": { "$ref": "#/$defs/Timestamp" }
       }
     },

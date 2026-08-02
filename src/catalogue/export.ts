@@ -1,5 +1,6 @@
 import type {
   CatalogueCandidate,
+  CatalogueSourceCheck,
   SupportedGame,
 } from "./catalogue-candidate";
 import type {
@@ -70,15 +71,7 @@ export type BuiltCatalogueExport = {
   objects: readonly ExportObject[];
 };
 
-export type SourceFreshness = {
-  game: SupportedGame;
-  area:
-    | "cards-and-printings"
-    | "products-and-releases"
-    | "legality-rules"
-    | "errata";
-  checked_at: string;
-};
+export type SourceFreshness = CatalogueSourceCheck;
 
 type CatalogueExportManifest = {
   format: "card-keepr-catalogue-export-manifest@2";

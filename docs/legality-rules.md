@@ -102,6 +102,14 @@ derive an `EN-OCEANIA` Gundam scope. Rule applicability is determined only by
 the published effective interval and requested context; fetch order and
 capture recency never establish authority.
 
+Legality freshness is published independently for each exact Source Lineage
+and region. Every `legality-rules` entry in `GET /v1/catalogue`, administration
+status, and export manifest v2 includes `source_lineage` and `region`; other
+freshness areas omit both fields. A partial Gundam refresh advances only its
+own `EN-ASIA` or `EN-US` check and preserves the other lineage's last
+successful timestamp. Historical export manifest v1 artifacts retain their
+original unscoped freshness representation.
+
 ## Consumer query
 
 Use authenticated `GET /v1/legality-status` or:
