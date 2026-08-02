@@ -731,7 +731,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
   await assertBoundedOutput(false);
 }, 120_000);
 
-test("resuming collection restarts an existing errored hostname Workflow and its staged parse", async () => {
+test("resuming collection reactivates an errored hostname Workflow with one persisted replacement", async () => {
   const run = await createCollection(
     "source_collection_existing_child_001",
     "https://official-source.invalid/cards",
@@ -769,11 +769,15 @@ test("resuming collection restarts an existing errored hostname Workflow and its
   const completed = await resumeCollection(run.id);
 
   expect(completed.state).toBe("parsing");
+  expect(completed.workflow.child_ids).toEqual([
+    childId,
+    `${childId}-attempt-0`,
+  ]);
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.observation_sets).toHaveLength(1);
 }, 15_000);
 
-test("a full parent restart preserves each pending hostname child identity", async () => {
+test("a full parent restart retains history and appends one bounded child identity", async () => {
   const created = await fixtureEvidenceRequest(
     {
       supported_game: "one-piece",
@@ -834,12 +838,15 @@ test("a full parent restart preserves each pending hostname child identity", asy
     run.id,
     (current) =>
       current.state === "parsing" &&
-      current.workflow.child_ids.length === originalChildIds.length &&
+      current.workflow.child_ids.length === originalChildIds.length + 1 &&
       current.snapshots.length === 2 &&
       current.observation_sets.length === 2,
     25_000,
   );
-  expect(completed.workflow.child_ids).toEqual(originalChildIds);
+  expect(completed.workflow.child_ids).toEqual([
+    ...originalChildIds,
+    `${remainingChildId}-attempt-0`,
+  ].sort());
   expect(completed.snapshots).toHaveLength(2);
   expect(completed.observation_sets).toHaveLength(2);
 }, 30_000);
@@ -995,6 +1002,47 @@ test("the parent Workflow creates a persisted dynamic host child before recovery
     "dynamic-b-official-source.invalid",
     "official-source.invalid",
   ]);
+});
+
+test("the parent Workflow fails deterministically at the persisted child-attempt ceiling", async () => {
+  const run = await createCollection(
+    "source_child_attempt_bound_001",
+    "https://official-source.invalid/cards",
+  );
+  const baseChildId = `evidence-host-${await sha256(utf8(canonicalJson({
+    ingestion_run_id: run.id,
+    hostname: "official-source.invalid",
+    minimum_sequence_number: 0,
+    maximum_sequence_number: 199,
+  })))}`;
+  const exhaustedIds = [
+    baseChildId,
+    `${baseChildId}-attempt-0`,
+    `${baseChildId}-attempt-1`,
+    `${baseChildId}-attempt-2`,
+  ];
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_evidence_plans SET child_workflow_ids_json = ?
+     WHERE ingestion_run_id = ?`,
+  ).bind(canonicalJson(exhaustedIds), run.id).run();
+
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const terminal = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.state !== "collecting",
+    15_000,
+  );
+  expect(terminal).toMatchObject({
+    state: "failed",
+    failure_code: "source_workflow_retries_exhausted",
+    workflow: { child_ids: exhaustedIds },
+  });
+  expect(terminal.workflow.child_ids).toHaveLength(4);
 });
 
 test("dynamic discovery durably plans and replays 2,500 requests within D1 limits", async () => {
@@ -1196,13 +1244,16 @@ test("a completed host shard durably releases the next same-host shard", async (
     (current) =>
       current.state === "parsing" &&
       current.snapshots.length === 2 &&
-      current.workflow.child_ids.length === 2,
+      current.workflow.child_ids.length === 3,
     15_000,
   );
   expect(completed.snapshots.map(({ request }) => request.url).sort()).toEqual([
     "https://official-source.invalid/sequence/root",
     "https://official-source.invalid/sequence/shard-200",
   ]);
+  expect(
+    completed.workflow.child_ids.filter((id) => id.endsWith("-attempt-0")),
+  ).toHaveLength(1);
 }, 30_000);
 
 test("dynamic discovery preserves the first edge when two parents reach one immutable request", async () => {

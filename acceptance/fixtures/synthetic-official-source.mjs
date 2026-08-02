@@ -185,47 +185,7 @@ export default {
   },
 };
 
-const officialLineageSurfaces = {
-  "one-piece-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ],
-  "fusion-world-en": [
-    "card-search",
-    "products",
-    "releases",
-    "legality-current",
-    "legality-history",
-    "errata",
-  ],
-  "digimon-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions-current",
-    "restrictions-history",
-    "errata",
-  ],
-  "gundam-en-asia": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
-  "gundam-en-us": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
-};
+const officialProductPageVisits = new Map();
 
 const officialLineageNavigationLinks = {
   "one-piece-en": [
@@ -287,11 +247,12 @@ function officialBandaiDataset(
   codeLessProduct = false,
   requestUrl,
 ) {
+  const surface = officialFixtureSurface(lineage, requestUrl, parserSignal);
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
     publisher: { "@type": "Organization", name: "Bandai" },
-    hasPart: officialLineageSurfaces[lineage].map((surface) => {
+    hasPart: surface === null ? [] : [surface].map((surface) => {
       const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
       if (
         lineage === "one-piece-en" &&
@@ -315,7 +276,14 @@ function officialBandaiDataset(
       };
     }),
   };
-  return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title>${
+  const supportedGame = lineage === "one-piece-en"
+    ? "one-piece"
+    : lineage === "fusion-world-en"
+      ? "fusion-world"
+      : lineage === "digimon-en"
+        ? "digimon"
+        : "gundam";
+  return `<html><title>BANDAI ${supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>${
     officialBandaiNavigationHeader(lineage)
   }${officialBandaiStageNavigation(lineage, requestUrl)}${
     publication.hasPart.map((part) => officialPublisherPayloadScript(
@@ -324,6 +292,52 @@ function officialBandaiDataset(
       part.payload,
     )).join("")
   }</html>`;
+}
+
+function officialFixtureSurface(lineage, requestUrl, parserSignal) {
+  const path = `${requestUrl.pathname}${requestUrl.search}`;
+  if (
+    (lineage === "one-piece-en" && requestUrl.pathname === "/products/") ||
+    (lineage === "fusion-world-en" && requestUrl.pathname === "/fw/en/products/") ||
+    (lineage === "digimon-en" && requestUrl.pathname === "/products/") ||
+    (lineage.startsWith("gundam-") && /\/products\/list\.php$/u.test(requestUrl.pathname))
+  ) {
+    const key = `${parserSignal ?? ""}\u0000${lineage}\u0000${requestUrl.href}`;
+    const visit = (officialProductPageVisits.get(key) ?? 0) + 1;
+    officialProductPageVisits.set(key, visit);
+    return visit % 3 === 0 ? "releases" : "products";
+  }
+  if (lineage === "one-piece-en") {
+    if (requestUrl.pathname === "/cardlist/") return "card-list";
+    if (requestUrl.pathname === "/rules/restriction/") return "restrictions";
+    if (requestUrl.pathname === "/rules/block_icon/") return "block-policy";
+    if (requestUrl.pathname === "/rules/errata_card/") return "errata";
+    if (requestUrl.pathname === "/rules/") return "don-rules";
+  } else if (lineage === "fusion-world-en") {
+    if (requestUrl.pathname === "/fw/en/cardlist/") return "card-search";
+    if (requestUrl.pathname === "/fw/en/rules/banned-limited-cards/") {
+      return requestUrl.searchParams.get("view") === "history"
+        ? "legality-history"
+        : "legality-current";
+    }
+    if (requestUrl.pathname === "/fw/en/rules/errata-card/") return "errata";
+  } else if (lineage === "digimon-en") {
+    if (requestUrl.pathname === "/cards/index.php") return "card-list";
+    if (requestUrl.pathname === "/rule/restriction_card/") {
+      return requestUrl.searchParams.get("view") === "history"
+        ? "restrictions-history"
+        : "restrictions-current";
+    }
+    if (requestUrl.pathname === "/rule/errata_card/") return "errata";
+  } else if (lineage.startsWith("gundam-")) {
+    if (/\/cards\/index\.php$/u.test(requestUrl.pathname)) return "packages";
+    if (/\/rules\/$/u.test(requestUrl.pathname)) return "legality";
+    if (
+      /\/news\/$/u.test(requestUrl.pathname) &&
+      requestUrl.searchParams.get("subcategory") === "rules"
+    ) return "errata";
+  }
+  return null;
 }
 
 export function officialPublisherPayloadScript(lineage, surface, payload) {
@@ -353,8 +367,8 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
   }
   if (lineage === "fusion-world-en" && path === "/fw/en/news/01_31.html") {
     return `<main>
-      <a href="/fw/en/news/current-restrictions.html">Current banned and limited cards</a>
-      <a href="/fw/en/news/restriction-history.html">Previous restriction history</a>
+      <a href="/fw/en/rules/banned-limited-cards/">Current banned and limited cards</a>
+      <a href="/fw/en/rules/banned-limited-cards/?view=history">Previous restriction history</a>
       <a href="/fw/en/rules/errata-card/">Errata Cards</a>
     </main>`;
   }
@@ -364,7 +378,7 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
   if (lineage === "digimon-en" && path === "/rule/") {
     return `<main>
       <a href="/rule/restriction_card/">Current restriction cards</a>
-      <a href="/rule/restriction_history/">Previous restriction history</a>
+      <a href="/rule/restriction_card/?view=history">Previous restriction history</a>
       <a href="/rule/errata_card/">Errata Cards</a>
     </main>`;
   }

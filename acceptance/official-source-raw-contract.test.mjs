@@ -613,6 +613,84 @@ test("structured legality publisher data cannot hide unmodeled sibling HTML", ()
   }
 });
 
+test("structured legality consumes only the exact lineage and surface publisher script", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const currentEmpty = rawSurfacePayload("fusion-world-en", "legality-current");
+  const currentNonempty = structuredClone(currentEmpty);
+  currentNonempty.entries = [{
+    rule_ref: "FW-2026-EXACT-SCRIPT",
+    notice: "FB30-001 is banned from standard tournament decks.",
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: "2026-07-01",
+    expires_on: null,
+    cards: ["FB30-001"],
+    directive: "ban",
+  }];
+  currentNonempty.declared_record_count = 1;
+  currentNonempty.partition.total = 1;
+  for (const [name, payload, siblingSurface] of [
+    ["zero current plus history", currentEmpty, "legality-history"],
+    ["nonzero current plus policy", currentNonempty, "block-policy"],
+    ["nonzero current plus unknown", currentNonempty, "unknown-policy"],
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+           ${officialPublisherPayloadScript(
+             "fusion-world-en",
+             "legality-current",
+             payload,
+           )}
+           ${officialPublisherPayloadScript(
+             "fusion-world-en",
+             siblingSurface,
+             currentEmpty,
+           )}</html>`,
+        ),
+        fusionLegalityContext(current),
+      ),
+      /exact, complete Legality Rule parser|unmatched.*publisher/iu,
+      name,
+    );
+  }
+});
+
+test("production legality rejects generic Dataset title framing around an owned script", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(
+        `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title>
+         ${officialPublisherPayloadScript(
+           "fusion-world-en",
+           "legality-current",
+           rawSurfacePayload("fusion-world-en", "legality-current"),
+         )}</html>`,
+      ),
+      fusionLegalityContext(current),
+    ),
+    /exact, complete Legality Rule parser|title/iu,
+  );
+});
+
+test("known navigation labels cannot hide an unrecognized publisher URL", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const html = exactFusionLegalityHtml.replace(
+    "</body>",
+    `<main><a href="/new-restriction/">Rules</a></main></body>`,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html),
+      fusionLegalityContext(current),
+    ),
+    /exact, complete Legality Rule parser|navigation/iu,
+  );
+});
+
 test("current production legality parser accepts a complete multi-rule publication with only bounded publisher framing", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const legality = current.parseBytes(
@@ -1038,12 +1116,33 @@ test("every active production legality adapter requires exact wording targets an
             } region.`,
         },
       ],
+      [
+        "conditional leading prose",
+        {
+          [descriptor.fields.wording]:
+            `If your Leader is red, ${descriptor.card} is eligible for Standard play.`,
+        },
+      ],
+      [
+        "event-scoped leading prose",
+        {
+          [descriptor.fields.wording]:
+            `During regional events, ${descriptor.card} is eligible for Standard play.`,
+        },
+      ],
+      [
+        "unknown regional leading prose",
+        {
+          [descriptor.fields.wording]:
+            `In Europe, ${descriptor.card} is eligible for Standard play.`,
+        },
+      ],
     ]) {
       const mismatch = structuredClone(payload);
       mismatch.entries[0] = { ...eligible, ...changed };
       assert.throws(
         () => parseRegisteredSurface(adapter, descriptor.surface, mismatch),
-        /wording.*region|structured.*region|region.*(?:unknown|invalid|match)/iu,
+        /wording.*region|structured.*region|region.*(?:unknown|invalid|match)|conditional|qualifier|scope/iu,
         `${descriptor.adapter}: ${name}`,
       );
     }
@@ -1233,7 +1332,7 @@ test("current production legality HTML decodes entities exactly once", () => {
   );
 });
 
-test("official legality entries classify publisher notes as metadata but reject unknown semantic fields", () => {
+test("official legality entries reject nonempty publisher notes and unknown semantic fields", () => {
   const entry = {
     rule_ref: "FW-2026-003",
     notice: "FB01-003 is banned from standard tournament decks.",
@@ -1244,7 +1343,7 @@ test("official legality entries classify publisher notes as metadata but reject 
     expires_on: null,
     cards: ["FB01-003"],
     directive: "ban",
-    publisher_note: "This publisher note is retained only as source metadata.",
+    publisher_note: "",
   };
   const observation = officialLegalityRulesObservation(
     "fusion-world",
@@ -1253,6 +1352,20 @@ test("official legality entries classify publisher notes as metadata but reject 
   );
   assert.equal(observation.legality_rules[0].official_wording, entry.notice);
   assert.equal("publisher_note" in observation.legality_rules[0], false);
+  for (const publisherNote of [
+    "This publisher note is retained only as source metadata.",
+    "Only during Championship events.",
+    "Unless your Leader is red.",
+  ]) {
+    assert.throws(
+      () => officialLegalityRulesObservation(
+        "fusion-world",
+        "fusion-world-en",
+        { entries: [{ ...entry, publisher_note: publisherNote }] },
+      ),
+      /publisher note|conditional|scope/iu,
+    );
+  }
   assert.throws(
     () => officialLegalityRulesObservation(
       "fusion-world",
@@ -2931,7 +3044,7 @@ function rawSurfacePayload(lineage, surface) {
 function parseRegisteredSurface(adapter, surface, payload) {
   return adapter.parseBytes(
     new TextEncoder().encode(
-      `<html><title>BANDAI Official publication</title>
+      `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
        ${officialPublisherPayloadScript(
         adapter.sourceLineage,
         surface,

@@ -11,6 +11,7 @@ import {
   utf8,
 } from "../../../src/catalogue/serialization";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
+import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 
 type ProductionDiscoveryRequest = ReturnType<
@@ -1625,6 +1626,201 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
   ).bind(snapshotId).first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });
+
+test.each([
+  {
+    adapterVersion: "one-piece-en@2",
+    lineage: "one-piece-en",
+    game: "one-piece",
+    surface: "restrictions",
+    scriptPrefix: "one-piece-card-game",
+    entry: {
+      notice_no: "OP-CONDITIONAL-WORKER",
+      published_text:
+        "If your Leader is red, OP30-001 is eligible for Standard play.",
+      territory: "EN-OCEANIA",
+      format_name: "standard",
+      event_class: null,
+      start_date: "2026-01-01",
+      end_date: null,
+      card_numbers: ["OP30-001"],
+      restriction_code: "eligible",
+    },
+  },
+  {
+    adapterVersion: "fusion-world-en@3",
+    lineage: "fusion-world-en",
+    game: "fusion-world",
+    surface: "legality-current",
+    scriptPrefix: "fusion-world-card-game",
+    entry: {
+      rule_ref: "FW-CONDITIONAL-WORKER",
+      notice:
+        "If your Leader is red, FB30-001 is eligible for Standard play.",
+      market: "EN-OCEANIA",
+      play_format: "standard",
+      tier: null,
+      active_on: "2026-01-01",
+      expires_on: null,
+      cards: ["FB30-001"],
+      directive: "eligible",
+    },
+  },
+  {
+    adapterVersion: "digimon-en@3",
+    lineage: "digimon-en",
+    game: "digimon",
+    surface: "restrictions-current",
+    scriptPrefix: "digimon-card-game",
+    entry: {
+      restriction_id: "DG-CONDITIONAL-WORKER",
+      body: "If your Leader is red, BT30-001 is eligible for Standard play.",
+      language_scope: "EN-OCEANIA",
+      ruleset: "standard",
+      tournament_level: null,
+      applies_from: "2026-01-01",
+      applies_until: null,
+      card_ids: ["BT30-001"],
+      status_code: "eligible",
+    },
+  },
+  ...([
+    ["gundam-en-asia@3", "gundam-en-asia", "EN-ASIA"],
+    ["gundam-en-us@3", "gundam-en-us", "EN-US"],
+  ] as const).map(([adapterVersion, lineage, region]) => ({
+    adapterVersion,
+    lineage,
+    game: "gundam",
+    surface: "legality",
+    scriptPrefix: lineage === "gundam-en-asia"
+      ? "gundam-card-game-asia"
+      : "gundam-card-game-us",
+    entry: {
+      news_id: `${lineage}-conditional-worker`,
+      text: "If your Leader is red, GD30-001 is eligible for Standard play.",
+      region,
+      format: "standard",
+      event_tier: null,
+      effective_date: "2026-01-01",
+      end_date: null,
+      card_numbers: ["GD30-001"],
+      ruling: "eligible",
+    },
+  })),
+])(
+  "authenticated Worker parsing rejects conditional leading legality prose for $lineage",
+  async ({ adapterVersion, lineage, game, surface, scriptPrefix, entry }) => {
+    const adapter = requiredSourceAdapter(adapterVersion);
+    const requestUrl = adapter.requestUrlForSurface!(surface);
+    const payload = {
+      publication: lineage.startsWith("gundam-")
+        ? "gundam-legality"
+        : `${lineage.replace(/-en$/u, "")}-${surface}`,
+      ...(lineage.startsWith("gundam-")
+        ? { locale: lineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US" }
+        : {}),
+      revision: "2026-07",
+      declared_record_count: 1,
+      partition: { page: 1, pages: 1, total: 1, has_next: false },
+      entries: [entry],
+    };
+    const html = `<html><title>BANDAI ${game} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title><script type="application/json" id="${scriptPrefix}-${surface}-data">${JSON.stringify(payload)}</script></html>`;
+    const bytes = utf8(html);
+    const digest = await sha256(bytes);
+    const suffix = lineage.replaceAll("-", "_");
+    const runId = `run_conditional_worker_${suffix}`;
+    const snapshotId = `srcsnap_conditional_worker_${suffix}`;
+    const fetchId = `srcfetch_conditional_worker_${suffix}`;
+    const objectKey = `source-snapshots/${snapshotId}.bin`;
+    const fingerprint = digest;
+    const plan = JSON.stringify({
+      requests: [{
+        id: "conditional-worker",
+        method: "GET",
+        url: requestUrl,
+        headers: { accept: "text/html" },
+        representation_fingerprint: fingerprint,
+      }],
+    });
+    await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes);
+    await testEnv.CATALOGUE_DB.batch([
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO ingestion_runs (
+           id, state, selected_games_json, started_at,
+           expected_current_revision_id, linked_run_id, idempotency_key,
+           candidate_json
+         ) VALUES (?, 'parsing', ?, '2026-08-01T00:00:00.000Z',
+           'catrev_spine_000', NULL, ?, '{}')`,
+      ).bind(runId, JSON.stringify([game]), `conditional-worker-${lineage}`),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO ingestion_evidence_plans (
+           ingestion_run_id, source_lineage, supported_game,
+           game_profile_version, adapter_version, request_plan_json,
+           plan_origin
+         ) VALUES (?, ?, ?, ?, ?, ?, 'production')`,
+      ).bind(runId, lineage, game, `${game}@1`, adapterVersion, plan),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_requests (
+           ingestion_run_id, request_id, sequence_number, method, url,
+           request_headers_json, representation_fingerprint, state,
+           source_snapshot_id
+         ) VALUES (?, 'conditional-worker', 0, 'GET', ?, ?, ?, 'observed', ?)`,
+      ).bind(
+        runId,
+        requestUrl,
+        JSON.stringify({ accept: "text/html" }),
+        fingerprint,
+        snapshotId,
+      ),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_fetch_attempts (
+           id, ingestion_run_id, request_id, attempt_number,
+           requested_at, completed_at, outcome, http_status,
+           response_headers_json, retry_after_ms, diagnostic
+         ) VALUES (?, ?, 'conditional-worker', 1,
+           '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
+           'success', 200, '{}', NULL, NULL)`,
+      ).bind(fetchId, runId),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_snapshots (
+           id, ingestion_run_id, request_id, fetch_attempt_id,
+           request_method, request_url, request_headers_json,
+           representation_fingerprint, response_vary_json, retrieved_at,
+           http_status, response_headers_json, media_type, content_digest,
+           content_byte_length, content_object_key, source_lineage,
+           supported_game, game_profile_version, adapter_version,
+           reused_source_snapshot_id
+         ) VALUES (?, ?, 'conditional-worker', ?, 'GET', ?, ?, ?, '[]',
+           '2026-08-01T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
+           ?, ?, ?, ?, NULL)`,
+      ).bind(
+        snapshotId,
+        runId,
+        fetchId,
+        requestUrl,
+        JSON.stringify({ accept: "text/html" }),
+        fingerprint,
+        digest,
+        bytes.byteLength,
+        objectKey,
+        lineage,
+        game,
+        `${game}@1`,
+        adapterVersion,
+      ),
+    ]);
+
+    const blocked = await request(
+      `/v1/source-snapshots/${snapshotId}/observations`,
+      {
+        adapter_version: adapterVersion,
+        idempotency_key: `conditional-worker-reparse-${lineage}`,
+      },
+    );
+    expect(blocked.response.status).toBe(422);
+    expect(blocked.document).toMatchObject({ code: "source_parse_failed" });
+  },
+);
 
 test("an unfetched nested image URL cannot enter through an unregistered production representation", async () => {
   const blocked = await request("/v1/ingestion-runs/evidence", {

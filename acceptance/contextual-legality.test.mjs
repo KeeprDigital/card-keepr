@@ -657,25 +657,33 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
         missingGlobalRule.lifecycle.last_missing_revision_id,
         missingRevisionId,
       );
-    },
-  );
-  await t.test(
-    "a still-effective historical rule remains applicable at the authenticated consumer boundary",
-    () => {
-      assert.equal(missingRuleResponse.status, 200);
-      assert.equal(missingRuleDocument.data[0].status, "legal");
       assert.deepEqual(
-        missingRuleDocument.data[0].rule_ids,
+        missingExportedRules
+          .filter((rule) =>
+            rule.source_lineage === "gundam-en-asia" &&
+            rule.lifecycle.current === false
+          )
+          .map((rule) => rule.id)
+          .filter((id) => effectiveHistoricalRuleIds.includes(id))
+          .sort(),
         effectiveHistoricalRuleIds,
       );
+    },
+  );
+  await t.test(
+    "a complete omission removes historical rules from the current authenticated status while retaining audit history",
+    () => {
+      assert.equal(missingRuleResponse.status, 200);
+      assert.equal(missingRuleDocument.data[0].status, "indeterminate");
+      assert.deepEqual(missingRuleDocument.data[0].rule_ids, []);
       assert.match(
         missingRuleDocument.data[0].derivation,
-        /Derived legal from 4 effective rules/i,
+        /no effective published Legality Rule/i,
       );
     },
   );
   await t.test(
-    "omitting region applies effective history independently in every supported region",
+    "omitting region does not carry non-current historical rules into any current regional status",
     () => {
       assert.deepEqual(
         missingRegionalDocument.data.map((result) => result.region),
@@ -688,11 +696,11 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
       assert.equal(asiaResult.on, "2026-07-30");
       assert.equal(asiaResult.format, "standard");
       assert.equal(asiaResult.event_tier, "championship");
-      assert.equal(asiaResult.status, "legal");
-      assert.deepEqual(asiaResult.rule_ids, effectiveHistoricalRuleIds);
+      assert.equal(asiaResult.status, "indeterminate");
+      assert.deepEqual(asiaResult.rule_ids, []);
       assert.match(
         asiaResult.derivation,
-        /Derived legal from 4 effective rules/i,
+        /no effective published Legality Rule/i,
       );
     },
   );

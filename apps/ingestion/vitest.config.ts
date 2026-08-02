@@ -497,9 +497,6 @@ export default defineConfig({
                   },
                 );
               }
-              const products = officialRawSurfacePayload(
-                "/one-piece-en/products",
-              )!;
               const releases = officialRawSurfacePayload(
                 "/one-piece-en/releases",
               )!;
@@ -521,13 +518,10 @@ export default defineConfig({
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
                   ${officialPublisherPayloadScript(
                     "one-piece-en",
-                    "products",
-                    products,
-                  )}
-                  ${officialPublisherPayloadScript(
-                    "one-piece-en",
-                    "releases",
-                    releases,
+                    count === 2 ? "products" : "releases",
+                    count === 2
+                      ? officialRawSurfacePayload("/one-piece-en/products")!
+                      : releases,
                   )}
                 </html>`,
                 {
@@ -564,8 +558,8 @@ export default defineConfig({
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
                   ${officialPublisherPayloadScript(
                     "one-piece-en",
-                    "products",
-                    {
+                    count === 2 ? "products" : "releases",
+                    count === 2 ? {
                         page: "product-list",
                         series_options: [],
                         result: {
@@ -579,12 +573,7 @@ export default defineConfig({
                             entries: [],
                           }],
                         },
-                      },
-                  )}
-                  ${officialPublisherPayloadScript(
-                    "one-piece-en",
-                    "releases",
-                    {
+                      } : {
                         publication: "release-schedule",
                         events: {
                           cap_signal: null,
@@ -666,7 +655,8 @@ export default defineConfig({
               request.headers.get("accept-language") ===
                 "card-keepr-conflicting-shared-legality-v3" &&
               url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/rules/banned-limited-cards/"
+              url.pathname === "/fw/en/rules/banned-limited-cards/" &&
+              url.searchParams.get("view") === "history"
             ) {
               const publication = (surface: string, directive: string) => ({
                 publication: `fusion-world-${surface}`,
@@ -694,11 +684,6 @@ export default defineConfig({
               });
               return new Response(
                 `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
-                  ${officialPublisherPayloadScript(
-                    "fusion-world-en",
-                    "legality-current",
-                    publication("legality-current", "eligible"),
-                  )}
                   ${officialPublisherPayloadScript(
                     "fusion-world-en",
                     "legality-history",

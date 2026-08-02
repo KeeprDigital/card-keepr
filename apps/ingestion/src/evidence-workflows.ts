@@ -18,6 +18,7 @@ import {
   type EvidenceParentWorkflowParams,
 } from "../../../src/catalogue/source-evidence-model";
 import {
+  failActiveEvidenceRequestsForWorkflowExhaustion,
   finalizeEvidenceRun,
   pendingEvidenceRequestPage,
   recordWorkflowIds,
@@ -48,6 +49,9 @@ const transportStep = {
 // even when every request consumes every capture attempt and parse step.
 const workflowRequestPageSize = 100;
 const hostShardRequestCapacity = 200;
+// One stable hostname identity plus three replacement identities exceeds the
+// deepest discovery chain while placing a hard ceiling on durable recovery.
+const maximumHostWorkflowIdentities = 4;
 
 type HostShard = Readonly<{
   hostname: string;
@@ -123,9 +127,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
             const selected: Array<(typeof activeChildren)[number]> = [];
             for (const child of activeChildren) {
               const attempts = [...allChildIds]
-                .filter((id) =>
-                  id === child.id || id.startsWith(`${child.id}-attempt-`)
-                )
+                .filter((id) => isChildWorkflowIdentity(child.id, id))
                 .sort((left, right) => childAttempt(left) - childAttempt(right));
               const latestId = attempts.at(-1);
               if (latestId === undefined) {
@@ -138,21 +140,37 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                 latest = await this.env.EVIDENCE_HOST_WORKFLOW.get(latestId);
                 status = await latest.status();
               } catch {
-                selected.push(child);
-                continue;
-              }
-              if (status.status === "complete") {
+                if (attempts.length >= maximumHostWorkflowIdentities) {
+                  await failActiveEvidenceRequestsForWorkflowExhaustion(
+                    this.env.CATALOGUE_DB,
+                    runId,
+                  );
+                  return [];
+                }
                 selected.push({
                   ...child,
-                  id: `${child.id}-attempt-${attempts.length}`,
+                  id: nextChildWorkflowIdentity(child.id, attempts),
+                });
+                continue;
+              }
+              if (
+                status.status === "complete" ||
+                status.status === "errored" ||
+                status.status === "terminated"
+              ) {
+                if (attempts.length >= maximumHostWorkflowIdentities) {
+                  await failActiveEvidenceRequestsForWorkflowExhaustion(
+                    this.env.CATALOGUE_DB,
+                    runId,
+                  );
+                  return [];
+                }
+                selected.push({
+                  ...child,
+                  id: nextChildWorkflowIdentity(child.id, attempts),
                 });
               } else {
-                if (
-                  status.status === "errored" ||
-                  status.status === "terminated"
-                ) {
-                  await latest.restart();
-                } else if (status.status === "paused") {
+                if (status.status === "paused") {
                   await latest.resume();
                 }
                 selected.push({ ...child, id: latestId });
@@ -181,12 +199,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
               );
               for (const child of children) {
                 const status = await child.status();
-                if (
-                  status.status === "errored" ||
-                  status.status === "terminated"
-                ) {
-                  await child.restart();
-                } else if (status.status === "paused") {
+                if (status.status === "paused") {
                   await child.resume();
                 }
               }
@@ -265,6 +278,20 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
 function childAttempt(id: string): number {
   const value = id.match(/-attempt-(\d+)$/u)?.[1];
   return value === undefined ? 0 : Number.parseInt(value, 10) + 1;
+}
+
+function isChildWorkflowIdentity(baseId: string, id: string): boolean {
+  if (id === baseId) return true;
+  if (!id.startsWith(`${baseId}-attempt-`)) return false;
+  return /^(?:0|[1-9]\d*)$/u.test(id.slice(`${baseId}-attempt-`.length));
+}
+
+function nextChildWorkflowIdentity(
+  baseId: string,
+  attempts: readonly string[],
+): string {
+  const attemptNumber = Math.max(...attempts.map(childAttempt));
+  return `${baseId}-attempt-${attemptNumber}`;
 }
 
 async function loadPendingHostShards(

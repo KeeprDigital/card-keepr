@@ -106,12 +106,6 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
   },
 };
 
-// This allow-list is deliberately narrow: these fields describe the publisher's
-// publication, not the rule's applicability or effect. They remain in the raw
-// Source Observation sidecar and become review warnings there. Every other
-// unknown entry field is treated as potentially semantic and fails closed.
-const optionalSourceMetadataFields = new Set(["publisher_note"]);
-
 const htmlLabelsByGame: Readonly<
   Record<OfficialLegalityGame, Readonly<Record<string, keyof FieldMap>>>
 > = {
@@ -366,11 +360,19 @@ function exactLegalityRule(
 ): Record<string, unknown> {
   const allowedFields = new Set(Object.values(fields));
   const unknownField = Object.keys(entry).find((field) =>
-    !allowedFields.has(field) && !optionalSourceMetadataFields.has(field)
+    !allowedFields.has(field) && field !== "publisher_note"
   );
   if (unknownField !== undefined) {
     throw new Error(
       `Official Legality entry contains unknown field ${unknownField}.`,
+    );
+  }
+  if (
+    "publisher_note" in entry &&
+    entry.publisher_note !== ""
+  ) {
+    throw new Error(
+      "Official Legality publisher note is nonempty and cannot be represented by this Source Adapter Version.",
     );
   }
   const wording = requiredText(
@@ -733,6 +735,11 @@ function assertDirectiveWordingGrammar(
   directive: string,
   wording: string,
 ): void {
+  if (/^(?:If|When|Unless|Except|During|In|Starting|From|Before|After)\b/iu.test(wording)) {
+    throw new Error(
+      "Official Legality wording contains a conditional, qualifier, or scope prefix this Source Adapter Version cannot represent.",
+    );
+  }
   const normalized = normalizedDirective(directive);
   const grammars = directiveWordingGrammars[normalized];
   if (grammars === undefined || !grammars.some((grammar) => grammar.test(wording))) {
@@ -742,24 +749,27 @@ function assertDirectiveWordingGrammar(
   }
 }
 
+const wordingCardOperand = String.raw`(?:[A-Z]{1,6}(?:\d{1,4})?-\d{1,4}|DON!!)`;
+const wordingCardOperandList = String.raw`${wordingCardOperand}(?:(?:,\s*|\s+(?:and|&)\s+)${wordingCardOperand})*`;
+
 const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
   eligible: [
-    /^[^\n.!?]+\b(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$/iu,
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$`, "iu"),
     /^Cards satisfying the published [^\n.!?]+ eligibility rules may be used\.$/iu,
   ],
   ban: [
-    /^[^\n.!?]+\b(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$/iu,
-    /^[^\n.!?]+\bmay not be included(?:\s+in\s+(?:a|the|same)\s+deck)?\.$/iu,
-    /^[^\n.!?]+\b(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$/iu,
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+may not be included(?:\s+in\s+(?:a|the|same)\s+deck)?\.$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$`, "iu"),
   ],
   copy_limit: [
-    /^[^\n.!?]+\b(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$/iu,
-    /^(?:For [^\n,.!?]+ events,\s+)?decks may contain (?:no more than\s+)?(?:only\s+)?(?:\d+|one|two|three|four)\s+cop(?:y|ies) of [^\n.!?]+\.$/iu,
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$`, "iu"),
+    new RegExp(String.raw`^(?:For (?:Championship|Regional|Local) events,\s+)?decks may contain (?:no more than\s+)?(?:only\s+)?(?:\d+|one|two|three|four)\s+cop(?:y|ies) of ${wordingCardOperandList}\.$`, "iu"),
   ],
   prohibited_combination: [
-    /^[^\n.!?]+\b(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$/iu,
-    /^[^\n.!?]+\b(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$/iu,
-    /^[^\n.!?]+\b(?:is|are)\s+a\s+prohibited\s+combination\.$/iu,
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+a\s+prohibited\s+combination\.$`, "iu"),
   ],
   membership: [
     /^(?:Only\s+)?cards\s+(?:whose\s+|with\s+)[^\n.!?]+\b(?:includes?|with|has|have)\b[^\n.!?]+\b(?:is|are)\s+eligible(?:\s+for\s+this\s+event)?\.$/iu,
@@ -769,8 +779,8 @@ const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
     /^Blocks? [^\n.!?]+ (?:is|are) eligible for rotation\.$/iu,
   ],
   release_timing: [
-    /^[^\n.!?]+\b(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal(?:\s+for\s+(?:standard\s+)?tournament\s+play)?\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$/iu,
-    /^[^\n.!?]+\blegal\s+for\s+tournament\s+play\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$/iu,
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal(?:\s+for\s+(?:standard\s+)?tournament\s+play)?\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+legal\s+for\s+tournament\s+play\s+on\s+(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[\p{L}]+\s+\d{4})\.$`, "iu"),
   ],
   unresolved: [
     /^[^\n.!?]+\b(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)\.$/iu,

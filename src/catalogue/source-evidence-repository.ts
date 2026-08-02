@@ -894,6 +894,20 @@ export async function recordWorkflowIds(
     .run();
 }
 
+export async function failActiveEvidenceRequestsForWorkflowExhaustion(
+  database: D1Database,
+  runId: string,
+): Promise<void> {
+  await database
+    .prepare(
+      `UPDATE source_requests
+       SET state = 'failed', failure_code = 'source_workflow_retries_exhausted'
+       WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')`,
+    )
+    .bind(runId)
+    .run();
+}
+
 export async function finalizeEvidenceRun(
   database: D1Database,
   runId: string,

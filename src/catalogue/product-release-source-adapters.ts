@@ -321,7 +321,11 @@ function bandaiRequestDiscovery(
     if (stageKey !== null) {
       return [];
     }
-    const discoveryHtml = stripKnownPublisherNavigation(html);
+    const discoveryHtml = stripKnownPublisherNavigation(
+      html,
+      sourceLineage,
+      context.url,
+    );
     const initialSurface = dynamicRole === null
       ? surfaceFromContext(
           context,
@@ -790,6 +794,8 @@ function bandaiSnapshotDecoder(
     }
     const html = stripKnownPublisherNavigation(
       decodeUtf8(bytes, surface),
+      sourceLineage,
+      context.url,
     );
     if (/\bdata-keepr-official-payload\b/iu.test(html)) {
       throw new Error(
@@ -805,7 +811,7 @@ function bandaiSnapshotDecoder(
       if (
         profile.parseLegality &&
         isLegalityRuleSurface(game, surface) &&
-        containsUnmodeledDedicatedPolicyContent(html, sourceLineage)
+        containsUnmodeledDedicatedPolicyContent(html, sourceLineage, surface)
       ) {
         throw new Error(
           `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
@@ -926,7 +932,7 @@ function containsUnparsedLegalityPublication(
   }
   if (dedicatedPolicySurface) {
     return containsUnmodeledDedicatedPolicyContent(
-      stripKnownPublisherNavigation(html),
+      html,
       sourceLineage,
     );
   }
@@ -941,6 +947,7 @@ function containsUnparsedLegalityPublication(
 function containsUnmodeledDedicatedPolicyContent(
   html: string,
   sourceLineage?: string,
+  consumedPublisherSurface?: string,
 ): boolean {
   let residual = html.replace(
     /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
@@ -951,19 +958,18 @@ function containsUnmodeledDedicatedPolicyContent(
         ? ""
         : article,
   );
-  if (sourceLineage !== undefined) {
-    const publisherPrefix = publisherPayloadScriptPrefix(sourceLineage);
+  if (sourceLineage !== undefined && consumedPublisherSurface !== undefined) {
+    const consumedPublisherScriptId = publisherPayloadScriptId(
+      sourceLineage,
+      consumedPublisherSurface,
+    );
     residual = residual.replace(
       /<script\b([^>]*)>[\s\S]*?<\/script>/giu,
       (script, attributes: string) => {
         const id = htmlAttribute(attributes, "id");
         return hasExactHtmlAttributes(attributes, ["id", "type"]) &&
             htmlAttribute(attributes, "type") === "application/json" &&
-            id !== null &&
-            new RegExp(
-              `^${publisherPrefix}-[a-z0-9]+(?:-[a-z0-9]+)*-data$`,
-              "u",
-            ).test(id)
+            id === consumedPublisherScriptId
           ? ""
           : script;
       },
@@ -999,7 +1005,7 @@ function containsUnmodeledDedicatedPolicyContent(
 }
 
 function isKnownLegalityPublisherTitle(title: string): boolean {
-  return /^(?:BANDAI Official publication|Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication|BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset|BANDAI CARD PRODUCT RELEASE RULE RESTRICTION publication|BANDAI (?:one-piece|fusion-world|digimon|gundam) CARD PRODUCT RELEASE RULE ERRATA RESTRICTION|BANDAI DRAGON BALL CARD RULE RESTRICTION(?: HISTORY)?|BANDAI ONE PIECE CARD RELEASE publication|Bandai Dragon Ball(?: Super Card Game)? Fusion World Restriction Rules)$/iu
+  return /^(?:BANDAI Official publication|Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication|BANDAI CARD PRODUCT RELEASE RULE RESTRICTION publication|BANDAI (?:one-piece|fusion-world|digimon|gundam) CARD PRODUCT RELEASE RULE ERRATA RESTRICTION|BANDAI DRAGON BALL CARD RULE RESTRICTION(?: HISTORY)?|BANDAI ONE PIECE CARD RELEASE publication|Bandai Dragon Ball(?: Super Card Game)? Fusion World Restriction Rules)$/iu
     .test(title);
 }
 
@@ -1021,53 +1027,106 @@ function hasExactHtmlAttributes(
 
 function stripKnownPublisherNavigation(
   html: string,
+  sourceLineage: string,
+  contextUrl: string,
   scope: "all" | "header-only" = "all",
 ): string {
-  const allowed = new Set([
-    "find cards",
-    "all products",
-    "rules",
-    "cards",
-    "card list",
-    "products",
-    "product list",
-    "news",
-    "restriction cards",
-    "block policy",
-    "errata cards",
-    "current banned and limited cards",
-    "previous restriction history",
-    "current restriction cards",
-    "errata and corrections",
-  ]);
+  const allowed = knownPublisherNavigationLinks(sourceLineage);
   const containsOnlyKnownLinks = (body: string): boolean => {
-    const anchors = [...body.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/giu)];
+    const anchors = [...body.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/giu)];
     if (
       anchors.length === 0 ||
-      anchors.some((anchor) =>
-        !allowed.has(htmlText(anchor[1]!).toLocaleLowerCase())
-      )
+      anchors.some((anchor) => {
+        if (!hasExactHtmlAttributes(anchor[1]!, ["href"])) return true;
+        const href = htmlAttribute(anchor[1]!, "href");
+        if (href === null) return true;
+        let resolved: string;
+        try {
+          resolved = new URL(decodeHtmlText(href), contextUrl).href;
+        } catch {
+          return true;
+        }
+        const label = htmlText(anchor[2]!).toLocaleLowerCase();
+        return !allowed.has(`${label}\u0000${resolved}`);
+      })
     ) {
       return false;
     }
     const withoutKnownNavigation = body
       .replace(/<a\b[^>]*>[\s\S]*?<\/a>/giu, "")
-      .replace(/<\/?(?:nav|ul|ol|li)\b[^>]*>/giu, "");
+      .replace(/<\/?(?:ul|ol|li)>/giu, "");
     return htmlText(withoutKnownNavigation).length === 0;
   };
   const withoutHeader = html.replace(
-    /<header\b[^>]*>([\s\S]*?)<\/header>/giu,
-    (header, body: string) => containsOnlyKnownLinks(body) ? "" : header,
+    /<header\b([^>]*)>([\s\S]*?)<\/header>/giu,
+    (header, attributes: string, body: string) => {
+      if (attributes.trim().length > 0) return header;
+      const navigation = body.match(
+        /^\s*<nav\b([^>]*)>([\s\S]*?)<\/nav>\s*$/iu,
+      );
+      return navigation !== null && navigation[1]!.trim().length === 0 &&
+          containsOnlyKnownLinks(navigation[2]!)
+        ? ""
+        : header;
+    },
   );
   if (scope === "header-only") return withoutHeader;
   return withoutHeader.replace(
-    /<nav\b[^>]*>([\s\S]*?)<\/nav>/giu,
-    (navigation, body: string) =>
-      containsOnlyKnownLinks(body) ? "" : navigation,
+    /<nav\b([^>]*)>([\s\S]*?)<\/nav>/giu,
+    (navigation, attributes: string, body: string) =>
+      hasExactNavigationContainerAttributes(attributes) &&
+        containsOnlyKnownLinks(body)
+        ? ""
+        : navigation,
   ).replace(
-    /<main\b[^>]*>([\s\S]*?)<\/main>/giu,
-    (main, body: string) => containsOnlyKnownLinks(body) ? "" : main,
+    /<main\b([^>]*)>([\s\S]*?)<\/main>/giu,
+    (main, attributes: string, body: string) =>
+      attributes.trim().length === 0 && containsOnlyKnownLinks(body)
+        ? ""
+        : main,
   );
+}
+
+function hasExactNavigationContainerAttributes(attributes: string): boolean {
+  return attributes.trim().length === 0 ||
+    (hasExactHtmlAttributes(attributes, ["aria-label"]) &&
+      htmlAttribute(attributes, "aria-label") === "Rules publications");
+}
+
+function knownPublisherNavigationLinks(sourceLineage: string): Set<string> {
+  const labelsBySurface: Readonly<Record<string, string>> = {
+    "card-list": "card list",
+    packages: "find cards",
+    restrictions: "restriction cards",
+    "block-policy": "block policy",
+    errata: sourceLineage.startsWith("gundam-")
+      ? "errata and corrections"
+      : "errata cards",
+    "legality-current": "current banned and limited cards",
+    "legality-history": "previous restriction history",
+    "restrictions-current": "current restriction cards",
+    "restrictions-history": "previous restriction history",
+  };
+  const allowed = new Set<string>();
+  for (const seed of bandaiDiscoverySeeds(sourceLineage)) {
+    allowed.add(`${seed.label}\u0000${new URL(seed.url).href}`);
+    for (const [surface, resolution] of Object.entries(seed.resolutions)) {
+      const label = labelsBySurface[surface];
+      if (label !== undefined) {
+        allowed.add(`${label}\u0000${new URL(resolution, seed.url).href}`);
+      }
+    }
+  }
+  if (sourceLineage === "fusion-world-en") {
+    allowed.add(
+      "previous restriction history\u0000https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
+    );
+  } else if (sourceLineage === "digimon-en") {
+    allowed.add(
+      "previous restriction history\u0000https://world.digimoncard.com/rule/restriction_card/?view=history",
+    );
+  }
+  return allowed;
 }
 
 function publicationText(value: unknown): string {
@@ -1237,7 +1296,12 @@ function bandaiDiscoveryStageRecords(
       ));
     }
   }
-  const stageHtml = stripKnownPublisherNavigation(html, "header-only");
+  const stageHtml = stripKnownPublisherNavigation(
+    html,
+    sourceLineage,
+    current.href,
+    "header-only",
+  );
   for (const match of stageHtml.matchAll(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
   )) {

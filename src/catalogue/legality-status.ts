@@ -110,6 +110,12 @@ export async function contextualLegalityStatusResponse(
        WHERE rule.region IN (SELECT value FROM json_each(?))
          AND rule.supported_game = ?
          AND rule.format = ?
+         AND NOT (
+           json_type(rule.document_json, '$.current') = 'false'
+           AND json_type(rule.document_json, '$.first_revision_id') = 'text'
+           AND json_type(rule.document_json, '$.last_observed_revision_id') = 'text'
+           AND json_type(rule.document_json, '$.last_missing_revision_id') = 'text'
+         )
          AND (
            (
              rule.effective_from <= ?
