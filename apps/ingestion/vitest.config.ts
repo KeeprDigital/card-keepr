@@ -11,6 +11,7 @@ import {
 } from "node:crypto";
 import { defineConfig } from "vitest/config";
 import {
+  officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
   officialRawSurfacePayload,
@@ -333,6 +334,22 @@ export default defineConfig({
             url.hostname.endsWith("gundam-gcg.com")
           ) {
             const artworkMarker = request.headers.get("user-agent");
+            const officialLineage = url.hostname === "en.onepiece-cardgame.com"
+              ? "one-piece-en"
+              : url.hostname === "www.dbs-cardgame.com"
+                ? "fusion-world-en"
+                : url.hostname === "world.digimoncard.com"
+                  ? "digimon-en"
+                  : url.pathname.startsWith("/asia-en/")
+                    ? "gundam-en-asia"
+                    : "gundam-en-us";
+            const officialNavigation = officialBandaiNavigationHeader(
+              officialLineage,
+              {
+                omitLast:
+                  artworkMarker === "card-keepr-incomplete-discovery-v3",
+              },
+            );
             if (
               (
                 artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
@@ -346,6 +363,7 @@ export default defineConfig({
               return new Response(
                 `<html>
                   <title>BANDAI ONE PIECE CARD LIST</title>
+                  ${officialNavigation}
                   <select id="recording">
                     <option value="1">All recordings</option>
                   </select>
@@ -865,6 +883,7 @@ export default defineConfig({
             ) {
               return new Response(
                 `<html><title>BANDAI DIGIMON CARD publication</title>
+                  ${officialNavigation}
                   <main><article>
                     <a href="/cards/detail.php?card=BT99-999">
                       Fuzzy Product Link Test
@@ -945,6 +964,7 @@ export default defineConfig({
                         : "base";
               return new Response(
                 `<html><title>BANDAI DIGIMON CARD publication</title>
+                  ${officialNavigation}
                   <main><article>
                     <a href="/cards/detail.php?card=BT99-900">
                       Test Digimon detail
@@ -1031,7 +1051,7 @@ export default defineConfig({
               });
             }
             return new Response(
-              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>${
+              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}<main>${
                 url.pathname === "/fw/en/rules/banned-limited-cards/" ||
                   (
                     url.hostname === "world.digimoncard.com" &&

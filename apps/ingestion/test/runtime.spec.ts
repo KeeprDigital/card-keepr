@@ -352,6 +352,75 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       })),
     },
   }]);
+  const discoveryPlan = completed.official_source_collection_plans[0];
+  const discoveryObservation = completed.observation_sets.find(
+    ({ id }) => id === discoveryPlan?.discovery_observation_set_id,
+  );
+  expect(discoveryObservation).toBeDefined();
+  const retainedObservation = await administrationRequest(
+    `/v1/source-observation-sets/${discoveryObservation!.id}/content`,
+    "GET",
+  );
+  expect(retainedObservation.status).toBe(200);
+  await expect(retainedObservation.json()).resolves.toMatchObject({
+    source_snapshot_id: discoveryObservation!.source_snapshot_id,
+    adapter_version: "fusion-world-en@3",
+    observations: [{
+      value: {
+        observation_type: "official_surface_evidence",
+        source_lineage: "fusion-world-en",
+        surface: "discovery",
+        records: fusionWorldProductionCollectionRequests.map((request) => ({
+          ...request,
+          surface: request.id.slice("fusion-world-en:".length),
+        })),
+        completeness: {
+          declared_record_count:
+            fusionWorldProductionCollectionRequests.length,
+          parsed_record_count: fusionWorldProductionCollectionRequests.length,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          structurally_complete: true,
+        },
+      },
+    }],
+  });
+}, 15_000);
+
+test("incomplete retained production discovery blocks collection and publication", async () => {
+  const marker = "card-keepr-incomplete-discovery-v3";
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@3",
+      idempotency_key: "source_parent_incomplete_discovery_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en").map(
+        (request) => ({
+          ...request,
+          headers: { ...request.headers, "user-agent": marker },
+        }),
+      ),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const terminal = await resumeCollection(run.id, 12_000);
+  expect(terminal).toMatchObject({
+    state: "failed",
+    failure_code: "source_parse_failed",
+  });
+  expect(terminal.snapshots).toHaveLength(1);
+  expect(terminal.observation_sets).toEqual([]);
+  expect(terminal.official_source_collection_plans).toEqual([]);
+  expect(terminal.workflow.child_ids).toHaveLength(1);
+  const candidate = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+    "GET",
+  );
+  expect(candidate.status).toBe(409);
 }, 15_000);
 
 test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 and replays only a bounded reference", async () => {

@@ -59,6 +59,92 @@ const expectedSurfaces = {
   ],
 };
 
+const expectedSurfaceUrls = {
+  "one-piece-en": {
+    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
+    products: "https://en.onepiece-cardgame.com/products/",
+    releases: "https://en.onepiece-cardgame.com/products/",
+    restrictions: "https://en.onepiece-cardgame.com/rules/restriction/",
+    "block-policy": "https://en.onepiece-cardgame.com/rules/block_icon/",
+    errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    "don-rules": "https://en.onepiece-cardgame.com/rules/",
+  },
+  "fusion-world-en": {
+    "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/",
+    products: "https://www.dbs-cardgame.com/fw/en/products/",
+    releases: "https://www.dbs-cardgame.com/fw/en/products/",
+    "legality-current":
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    "legality-history":
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    errata: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
+  },
+  "digimon-en": {
+    "card-list": "https://world.digimoncard.com/cards/index.php?search=true",
+    products: "https://world.digimoncard.com/products/",
+    releases: "https://world.digimoncard.com/products/",
+    "restrictions-current":
+      "https://world.digimoncard.com/rule/restriction_card/",
+    "restrictions-history":
+      "https://world.digimoncard.com/rule/restriction_card/",
+    errata: "https://world.digimoncard.com/rule/errata_card/",
+  },
+  "gundam-en-asia": {
+    packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
+    products: "https://www.gundam-gcg.com/asia-en/products/list.php",
+    releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
+    legality: "https://www.gundam-gcg.com/asia-en/rules/",
+    errata: "https://www.gundam-gcg.com/asia-en/news/?subcategory=rules",
+  },
+  "gundam-en-us": {
+    packages: "https://www.gundam-gcg.com/en/cards/index.php",
+    products: "https://www.gundam-gcg.com/en/products/list.php",
+    releases: "https://www.gundam-gcg.com/en/products/list.php",
+    legality: "https://www.gundam-gcg.com/en/rules/",
+    errata: "https://www.gundam-gcg.com/en/news/?subcategory=rules",
+  },
+};
+
+const expectedDiscoveryLinks = {
+  "one-piece-en": [
+    ["FIND CARDS", "/cardlist/"],
+    ["ALL PRODUCTS", "/products/"],
+    ["RULES", "/rules/"],
+  ],
+  "fusion-world-en": [
+    ["CARDS", "/fw/en/cardlist/"],
+    ["ALL PRODUCTS", "/fw/en/products/"],
+    ["RULES", "/fw/en/news/01_31.html"],
+  ],
+  "digimon-en": [
+    ["CARD LIST", "/cardlist/"],
+    ["PRODUCTS", "/products/"],
+    ["RULES", "/rule/"],
+  ],
+  "gundam-en-asia": [
+    ["FIND CARDS", "/asia-en/cards/"],
+    ["PRODUCT LIST", "/asia-en/products/list.php"],
+    ["RULES", "/asia-en/rules/"],
+    ["NEWS", "/asia-en/news/"],
+  ],
+  "gundam-en-us": [
+    ["FIND CARDS", "/en/cards/"],
+    ["PRODUCT LIST", "/en/products/list.php"],
+    ["RULES", "/en/rules/"],
+    ["NEWS", "/en/news/"],
+  ],
+};
+
+function discoveryHtml(sourceLineage, mutate = (entries) => entries) {
+  const entries = expectedDiscoveryLinks[sourceLineage].map(
+    ([label, url]) => ({ label, url }),
+  );
+  return `<!doctype html><html><head><title>Bandai Official Source</title>
+    </head><body><header><nav>${mutate(structuredClone(entries)).map(
+      ({ label, url }) => `<a href="${url}">${label}</a>`,
+    ).join("")}</nav></header></body></html>`;
+}
+
 const productionAdapterVersions = sourceAdapterRegistrations
   .filter(({ origin, reconciliationCapability, parseBytes }) =>
     origin === "production" &&
@@ -137,7 +223,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
 
     const discovery = adapter.parseBytes(
-      new TextEncoder().encode("<html><title>Bandai discovery</title></html>"),
+      new TextEncoder().encode(discoveryHtml(adapter.sourceLineage)),
       {
         mediaType: "text/html; charset=utf-8",
         url: requests[0].url,
@@ -150,10 +236,57 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         id: `${adapter.sourceLineage}:${surface}`,
         surface,
         method: "GET",
-        url: adapter.requestUrlForSurface(surface),
+        url: expectedSurfaceUrls[adapter.sourceLineage][surface],
         headers: { accept: "text/html" },
       })),
     );
+  }
+});
+
+test("production discovery is proven by complete exact retained navigation", () => {
+  for (const adapter of registeredProductionAdapters()) {
+    const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
+    const parse = (html) => adapter.parseBytes(new TextEncoder().encode(html), {
+      mediaType: "text/html; charset=utf-8",
+      url: request.url,
+      requestId: request.id,
+    });
+    const mutations = {
+      blank: () => "<!doctype html><html><body></body></html>",
+      missing: () =>
+        discoveryHtml(adapter.sourceLineage, (entries) => entries.slice(1)),
+      moved: () =>
+        discoveryHtml(adapter.sourceLineage, (entries) => {
+          entries[0].url = "https://example.com/moved";
+          return entries;
+        }),
+      extra: () =>
+        discoveryHtml(adapter.sourceLineage, (entries) => [
+          ...entries,
+          {
+            label: entries[0].label,
+            url: "https://example.com/unknown",
+          },
+        ]),
+      duplicate: () =>
+        discoveryHtml(adapter.sourceLineage, (entries) => [
+          entries[0],
+          entries[0],
+          ...entries.slice(2),
+        ]),
+      "mismatched semantic link": () =>
+        discoveryHtml(adapter.sourceLineage, (entries) => {
+          entries[0].label = entries[1].label;
+          return entries;
+        }),
+    };
+    for (const [failure, html] of Object.entries(mutations)) {
+      assert.throws(
+        () => parse(html()),
+        /discovery/iu,
+        `${adapter.sourceLineage} must reject ${failure} discovery evidence`,
+      );
+    }
   }
 });
 

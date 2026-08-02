@@ -277,7 +277,10 @@ function bandaiRequestDiscovery(
     const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
       .toLowerCase();
     if (mediaType !== "text/html") return [];
-    const html = decodeUtf8(bytes, "request discovery");
+    const html = decodeUtf8(bytes, "request discovery").replace(
+      /<header\b[^>]*>[\s\S]*?<\/header>/giu,
+      "",
+    );
     const dynamicRole = dynamicRequestRole(context.requestId);
     const initialSurface = dynamicRole === null
       ? surfaceFromContext(
@@ -666,18 +669,12 @@ function bandaiSnapshotDecoder(
           "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
         );
       }
-      const records = requiredSurfaces.map((surface) => ({
-        id: `${sourceLineage}:${surface}`,
-        surface,
-        method: "GET" as const,
-        url: exactSurfaceUrl(
-          sourceLineage,
-          requiredSurfaces,
-          urls,
-          surface,
-        ),
-        headers: { accept: "text/html" },
-      }));
+      const records = bandaiDiscoveryRecords(
+        html,
+        sourceLineage,
+        requiredSurfaces,
+        urls,
+      );
       return [{
         observation_type: "official_surface_evidence",
         source_lineage: sourceLineage,
@@ -704,7 +701,10 @@ function bandaiSnapshotDecoder(
         `Official Source ${surface} must be captured as text/html.`,
       );
     }
-    const html = decodeUtf8(bytes, surface);
+    const html = decodeUtf8(bytes, surface).replace(
+      /<header\b[^>]*>[\s\S]*?<\/header>/giu,
+      "",
+    );
     if (/\bdata-keepr-official-payload\b/iu.test(html)) {
       throw new Error(
         "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
@@ -775,6 +775,246 @@ function bandaiSnapshotDecoder(
       )
     );
   };
+}
+
+function bandaiDiscoveryRecords(
+  html: string,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): Array<{
+  id: string;
+  surface: string;
+  method: "GET";
+  url: string;
+  headers: { accept: "text/html" };
+}> {
+  const headers = [...html.matchAll(
+    /<header\b[^>]*>([\s\S]*?)<\/header>/giu,
+  )];
+  if (headers.length !== 1) {
+    throw new Error(
+      "Official Source discovery must retain exactly one publisher header.",
+    );
+  }
+  const seeds = bandaiDiscoverySeeds(sourceLineage);
+  const acceptedLabels = new Set(seeds.map(({ label }) => label));
+  const acceptedUrls = new Set(seeds.map(({ url }) => new URL(url).href));
+  const observedSeeds = new Map<string, string>();
+  for (const match of headers[0]![1]!.matchAll(
+    /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
+  )) {
+    const href = htmlAttribute(match[1]!, "href");
+    if (href === null) continue;
+    const label = htmlText(match[2]!).toLocaleLowerCase();
+    let resolvedUrl: string;
+    try {
+      resolvedUrl = new URL(
+        decodeHtmlText(href),
+        urls[requiredSurfaces[0]!]!,
+      ).href;
+    } catch {
+      if (acceptedLabels.has(label)) {
+        throw new Error(
+          "Official Source discovery moved a required navigation URL.",
+        );
+      }
+      continue;
+    }
+    if (!acceptedLabels.has(label) && !acceptedUrls.has(resolvedUrl)) continue;
+    const seed = seeds.find(
+      (candidate) =>
+        candidate.label === label &&
+        new URL(candidate.url).href === resolvedUrl,
+    );
+    if (seed === undefined) {
+      throw new Error(
+        "Official Source discovery contains unknown or mismatched required-surface navigation.",
+      );
+    }
+    if (observedSeeds.has(seed.id)) {
+      throw new Error(
+        `Official Source discovery duplicates the ${seed.id} navigation link.`,
+      );
+    }
+    observedSeeds.set(seed.id, resolvedUrl);
+  }
+  if (observedSeeds.size !== seeds.length) {
+    throw new Error(
+      "Official Source discovery navigation does not prove every required surface family.",
+    );
+  }
+  return requiredSurfaces.map((surface) => {
+    const seed = seeds.find(({ resolutions }) => surface in resolutions);
+    if (seed === undefined) {
+      throw new Error(
+        `Official Source discovery uses unknown required-surface vocabulary: ${surface}.`,
+      );
+    }
+    const observedSeedUrl = observedSeeds.get(seed.id);
+    if (observedSeedUrl === undefined) {
+      throw new Error(
+        `Official Source discovery did not retain the ${seed.id} navigation link.`,
+      );
+    }
+    const resolvedUrl = new URL(
+      seed.resolutions[surface]!,
+      observedSeedUrl,
+    ).href;
+    const expectedUrl = exactSurfaceUrl(
+      sourceLineage,
+      requiredSurfaces,
+      urls,
+      surface,
+    );
+    if (resolvedUrl !== new URL(expectedUrl).href) {
+      throw new Error(
+        `Official Source discovery moved the ${surface} surface URL.`,
+      );
+    }
+    return {
+      id: `${sourceLineage}:${surface}`,
+      surface,
+      method: "GET" as const,
+      url: resolvedUrl,
+      headers: { accept: "text/html" as const },
+    };
+  });
+}
+
+function bandaiDiscoverySeeds(sourceLineage: string): ReadonlyArray<{
+  id: string;
+  label: string;
+  url: string;
+  resolutions: Readonly<Record<string, string>>;
+}> {
+  const seeds: Array<{
+    id: string;
+    label: string;
+    url: string;
+    resolutions: Readonly<Record<string, string>>;
+  }> = sourceLineage === "one-piece-en"
+    ? [
+      {
+        id: "cards",
+        label: "find cards",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+        resolutions: { "card-list": "" },
+      },
+      {
+        id: "products",
+        label: "all products",
+        url: "https://en.onepiece-cardgame.com/products/",
+        resolutions: { products: "", releases: "" },
+      },
+      {
+        id: "rules",
+        label: "rules",
+        url: "https://en.onepiece-cardgame.com/rules/",
+        resolutions: {
+          restrictions: "restriction/",
+          "block-policy": "block_icon/",
+          errata: "errata_card/",
+          "don-rules": "",
+        },
+      },
+    ]
+    : sourceLineage === "fusion-world-en"
+      ? [
+        {
+          id: "cards",
+          label: "cards",
+          url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+          resolutions: { "card-search": "" },
+        },
+        {
+          id: "products",
+          label: "all products",
+          url: "https://www.dbs-cardgame.com/fw/en/products/",
+          resolutions: { products: "", releases: "" },
+        },
+        {
+          id: "rules",
+          label: "rules",
+          url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+          resolutions: {
+            "legality-current": "../rules/banned-limited-cards/",
+            "legality-history": "../rules/banned-limited-cards/",
+            errata: "../rules/errata-card/",
+          },
+        },
+      ]
+      : sourceLineage === "digimon-en"
+        ? [
+          {
+            id: "cards",
+            label: "card list",
+            url: "https://world.digimoncard.com/cardlist/",
+            resolutions: { "card-list": "../cards/index.php?search=true" },
+          },
+          {
+            id: "products",
+            label: "products",
+            url: "https://world.digimoncard.com/products/",
+            resolutions: { products: "", releases: "" },
+          },
+          {
+            id: "rules",
+            label: "rules",
+            url: "https://world.digimoncard.com/rule/",
+            resolutions: {
+              "restrictions-current": "restriction_card/",
+              "restrictions-history": "restriction_card/",
+              errata: "errata_card/",
+            },
+          },
+        ]
+        : sourceLineage === "gundam-en-asia" ||
+            sourceLineage === "gundam-en-us"
+          ? (() => {
+            const locale = sourceLineage === "gundam-en-asia"
+              ? "asia-en"
+              : "en";
+            const root = `https://www.gundam-gcg.com/${locale}/`;
+            return [
+              {
+                id: "cards",
+                label: "find cards",
+                url: `${root}cards/`,
+                resolutions: { packages: "index.php" },
+              },
+              {
+                id: "products",
+                label: "product list",
+                url: `${root}products/list.php`,
+                resolutions: { products: "", releases: "" },
+              },
+              {
+                id: "rules",
+                label: "rules",
+                url: `${root}rules/`,
+                resolutions: { legality: "" },
+              },
+              {
+                id: "news",
+                label: "news",
+                url: `${root}news/`,
+                resolutions: { errata: "?subcategory=rules" },
+              },
+            ] as Array<{
+              id: string;
+              label: string;
+              url: string;
+              resolutions: Readonly<Record<string, string>>;
+            }>;
+          })()
+          : [];
+  if (seeds.length === 0) {
+    throw new Error(
+      `Official Source discovery has no navigation grammar for ${sourceLineage}.`,
+    );
+  }
+  return seeds;
 }
 
 function bandaiJsonLdPayload(

@@ -234,6 +234,48 @@ const officialLineageSurfaces = {
   ],
 };
 
+const officialLineageNavigationLinks = {
+  "one-piece-en": [
+    ["FIND CARDS", "/cardlist/"],
+    ["ALL PRODUCTS", "/products/"],
+    ["RULES", "/rules/"],
+  ],
+  "fusion-world-en": [
+    ["CARDS", "/fw/en/cardlist/"],
+    ["ALL PRODUCTS", "/fw/en/products/"],
+    ["RULES", "/fw/en/news/01_31.html"],
+  ],
+  "digimon-en": [
+    ["CARD LIST", "/cardlist/"],
+    ["PRODUCTS", "/products/"],
+    ["RULES", "/rule/"],
+  ],
+  "gundam-en-asia": [
+    ["FIND CARDS", "/asia-en/cards/"],
+    ["PRODUCT LIST", "/asia-en/products/list.php"],
+    ["RULES", "/asia-en/rules/"],
+    ["NEWS", "/asia-en/news/"],
+  ],
+  "gundam-en-us": [
+    ["FIND CARDS", "/en/cards/"],
+    ["PRODUCT LIST", "/en/products/list.php"],
+    ["RULES", "/en/rules/"],
+    ["NEWS", "/en/news/"],
+  ],
+};
+
+export function officialBandaiNavigationHeader(
+  lineage,
+  { omitLast = false } = {},
+) {
+  const links = omitLast
+    ? officialLineageNavigationLinks[lineage].slice(0, -1)
+    : officialLineageNavigationLinks[lineage];
+  return `<header><nav>${links.map(([label, href]) =>
+    `<a href="${href}">${label}</a>`
+  ).join("")}</nav></header>`;
+}
+
 function officialLineageForUrl(url) {
   if (url.hostname === "en.onepiece-cardgame.com") return "one-piece-en";
   if (url.hostname === "www.dbs-cardgame.com") return "fusion-world-en";
@@ -275,7 +317,9 @@ function officialBandaiDataset(lineage, parserSignal, codeLessProduct = false) {
       };
     }),
   };
-  return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title><script type="application/ld+json">${
+  return `<html><title>BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset</title>${
+    officialBandaiNavigationHeader(lineage)
+  }<script type="application/ld+json">${
     JSON.stringify(publication).replaceAll("<", "\\u003c")
   }</script></html>`;
 }
