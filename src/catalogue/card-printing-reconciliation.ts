@@ -936,7 +936,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     (plan) => plan.observationKind === "card_printing",
   );
   const groupedMemberships = mergedPlanMemberships(cardPrintingPlans);
-  const errataOnlyEvidence = retained.reconciliationCapability === "errata";
+  const errataOnlyEvidence = retained.evidencePlans.every(
+    ({ reconciliationCapability }) => reconciliationCapability === "errata",
+  );
   const relationshipWarnings = (
     await Promise.all(
       groupedMemberships.map(({ printingId, sourceLineage, memberships }) =>

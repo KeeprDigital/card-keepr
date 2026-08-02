@@ -1,6 +1,6 @@
 {
   "profile": "card-keepr-ndjson-gzip@1",
-  "compressor": "pako@2.1.0",
+  "compressor": "pako@3.0.1",
   "cases": {
     "empty": {
       "component": "printing-images",

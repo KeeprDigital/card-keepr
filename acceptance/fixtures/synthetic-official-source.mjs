@@ -719,7 +719,11 @@ export function officialRawSurfacePayload(pathname) {
       }],
     };
     if (lineage === "one-piece-en") {
-      return { publication: "release-schedule", events };
+      return {
+        publication: "release-schedule",
+        events,
+        release_timing_entries: [],
+      };
     }
     if (lineage === "fusion-world-en") {
       return { publication: "product-release-dates", events };

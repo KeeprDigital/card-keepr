@@ -1,5 +1,4 @@
 import type {
-  CatalogueCandidate,
   CatalogueCard,
   SupportedGame,
 } from "./catalogue-candidate";
@@ -10,22 +9,24 @@ import {
   sha256Text,
 } from "./serialization";
 import { isIsoCalendarDate } from "./calendar-date.mjs";
+import {
+  parseLegalityRuleEffect,
+  type ParsedLegalityRuleEffect,
+} from "./legality-effect-policy";
+export {
+  evaluateLegalityRuleEffect,
+  legalityExportKind,
+  type LegalityEvaluation,
+  type LegalityRuleEffect,
+} from "./legality-effect-policy";
+import type { LegalityRuleEffect } from "./legality-effect-policy";
+export {
+  legalityRulesForCandidate,
+  normalizedLegalityRuleLifecycle,
+  type LegalityRuleLifecycle,
+} from "./legality-rule-lifecycle";
 
 export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
-
-export type LegalityRuleEffect =
-  | { type: "eligible" }
-  | { type: "ban" }
-  | { type: "copy_limit"; maximum_copies: number }
-  | { type: "prohibited_combination"; with_card_ids: readonly string[] }
-  | {
-      type: "membership";
-      attribute: string;
-      includes_any: readonly string[];
-    }
-  | { type: "rotation"; eligible_blocks: readonly string[] }
-  | { type: "release_timing"; legal_from: string }
-  | { type: "unresolved"; reason: string };
 
 export type LegalityRuleSourceFieldPointers = {
   official_wording: string;
@@ -62,35 +63,6 @@ export type LegalityRule = {
   last_missing_revision_id?: string | null;
 };
 
-export type LegalityRuleLifecycle = {
-  first_revision_id: string;
-  last_observed_revision_id: string;
-  current: boolean;
-  last_missing_revision_id: string | null;
-};
-
-export function normalizedLegalityRuleLifecycle(
-  rule: Pick<
-    LegalityRule,
-    | "first_revision_id"
-    | "last_observed_revision_id"
-    | "current"
-    | "last_missing_revision_id"
-  >,
-  revisionId: string,
-): LegalityRuleLifecycle {
-  const current = rule.current ?? true;
-  return {
-    first_revision_id: rule.first_revision_id ?? revisionId,
-    last_observed_revision_id:
-      rule.last_observed_revision_id ?? revisionId,
-    current,
-    last_missing_revision_id: current
-      ? rule.last_missing_revision_id ?? null
-      : rule.last_missing_revision_id ?? revisionId,
-  };
-}
-
 export type RetainedLegalityRule = Omit<
   LegalityRule,
   "id" | "card_ids" | "effect"
@@ -99,192 +71,7 @@ export type RetainedLegalityRule = Omit<
   effect: RetainedLegalityRuleEffect;
 };
 
-type RetainedLegalityRuleEffect =
-  | Exclude<LegalityRuleEffect, { type: "prohibited_combination" }>
-  | {
-      type: "prohibited_combination";
-      with_card_numbers: readonly string[];
-    };
-
-export type LegalityEvaluation =
-  | "legal"
-  | "restricted"
-  | "not_legal"
-  | "indeterminate";
-
-type LegalityExportKind =
-  | "eligible"
-  | "restricted"
-  | "not_legal"
-  | "combination"
-  | "conditional"
-  | "rotation"
-  | "release"
-  | "indeterminate";
-
-type LegalityEffectStrategy = Readonly<{
-  exportKind: LegalityExportKind;
-  parse: (record: Record<string, unknown>) => RetainedLegalityRuleEffect;
-  evaluate: (
-    effect: LegalityRuleEffect,
-    attributes: Readonly<Record<string, unknown>>,
-    on: string,
-  ) => LegalityEvaluation;
-}>;
-
-const legalityEffectStrategies = {
-  eligible: {
-    exportKind: "eligible",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type"]);
-      return { type: "eligible" };
-    },
-    evaluate: (effect) => {
-      if (effect.type !== "eligible") throw mismatchedEffectStrategy();
-      return "legal";
-    },
-  },
-  ban: {
-    exportKind: "not_legal",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type"]);
-      return { type: "ban" };
-    },
-    evaluate: (effect) => {
-      if (effect.type !== "ban") throw mismatchedEffectStrategy();
-      return "not_legal";
-    },
-  },
-  copy_limit: {
-    exportKind: "restricted",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "maximum_copies"]);
-      const maximum = effect.maximum_copies;
-      if (!Number.isInteger(maximum) || Number(maximum) < 1) {
-        throw new Error("A copy-limit rule requires a positive integer.");
-      }
-      return { type: "copy_limit", maximum_copies: Number(maximum) };
-    },
-    evaluate: (effect) => {
-      if (effect.type !== "copy_limit") throw mismatchedEffectStrategy();
-      return "restricted";
-    },
-  },
-  prohibited_combination: {
-    exportKind: "combination",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "with_card_numbers"]);
-      return {
-        type: "prohibited_combination",
-        with_card_numbers: requiredCardNumbers(
-          effect.with_card_numbers,
-          "prohibited combination card numbers",
-          false,
-        ),
-      };
-    },
-    evaluate: (effect) => {
-      if (effect.type !== "prohibited_combination") {
-        throw mismatchedEffectStrategy();
-      }
-      return "restricted";
-    },
-  },
-  membership: {
-    exportKind: "conditional",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "attribute", "includes_any"]);
-      return {
-        type: "membership",
-        attribute: requiredString(effect.attribute, "membership attribute"),
-        includes_any: requiredStrings(
-          effect.includes_any,
-          "membership values",
-          false,
-        ),
-      };
-    },
-    evaluate: (effect, attributes) => {
-      if (effect.type !== "membership") throw mismatchedEffectStrategy();
-      const value = attributes[effect.attribute];
-      if (value === null || value === undefined) return "indeterminate";
-      const values = Array.isArray(value) ? value : [value];
-      return values.some((candidate) =>
-          typeof candidate === "string" &&
-          effect.includes_any.some((member) =>
-            member.toUpperCase() === candidate.toUpperCase()
-          )
-        )
-        ? "legal"
-        : "not_legal";
-    },
-  },
-  rotation: {
-    exportKind: "rotation",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "eligible_blocks"]);
-      return {
-        type: "rotation",
-        eligible_blocks: requiredStrings(
-          effect.eligible_blocks,
-          "rotation blocks",
-          false,
-        ),
-      };
-    },
-    evaluate: (effect, attributes) => {
-      if (effect.type !== "rotation") throw mismatchedEffectStrategy();
-      const rawBlocks = attributes.block_icons !== undefined
-        ? attributes.block_icons
-        : attributes.block_icon;
-      if (rawBlocks === null || rawBlocks === undefined) return "indeterminate";
-      const blocks = Array.isArray(rawBlocks) ? rawBlocks : [rawBlocks];
-      return blocks.some((block) =>
-          typeof block === "string" &&
-          effect.eligible_blocks.some((eligible) =>
-            eligible.toUpperCase() === block.toUpperCase()
-          )
-        )
-        ? "legal"
-        : "not_legal";
-    },
-  },
-  release_timing: {
-    exportKind: "release",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "legal_from"]);
-      return {
-        type: "release_timing",
-        legal_from: requiredDate(
-          effect.legal_from,
-          "release timing legal_from",
-        ),
-      };
-    },
-    evaluate: (effect, _attributes, on) => {
-      if (effect.type !== "release_timing") throw mismatchedEffectStrategy();
-      return on >= effect.legal_from ? "legal" : "not_legal";
-    },
-  },
-  unresolved: {
-    exportKind: "indeterminate",
-    parse: (effect) => {
-      assertOnlyFields(effect, ["type", "reason"]);
-      return {
-        type: "unresolved",
-        reason: requiredString(effect.reason, "unresolved scope reason"),
-      };
-    },
-    evaluate: (effect) => {
-      if (effect.type !== "unresolved") throw mismatchedEffectStrategy();
-      return "indeterminate";
-    },
-  },
-} satisfies Record<LegalityRuleEffect["type"], LegalityEffectStrategy>;
-
-function mismatchedEffectStrategy(): Error {
-  return new Error("A Legality effect was dispatched to the wrong strategy.");
-}
+type RetainedLegalityRuleEffect = ParsedLegalityRuleEffect;
 
 export function parseRetainedLegalityRules(
   value: unknown,
@@ -385,61 +172,6 @@ function resolvedProhibitedCombination(
   };
 }
 
-export function legalityRulesForCandidate(
-  prior: CatalogueCandidate | null,
-  sourceLineage: string,
-  incoming: readonly LegalityRule[],
-): LegalityRule[] {
-  assertUniqueRuleIds(prior?.legality_rules ?? []);
-  assertUniqueRuleIds(incoming);
-  const priorById = new Map(
-    (prior?.legality_rules ?? []).map((rule) => [rule.id, rule]),
-  );
-  const observed = incoming.map((rule) => {
-    const {
-      last_observed_revision_id: _incomingLastObservedRevisionId,
-      ...freshRule
-    } = rule;
-    const priorRule = priorById.get(rule.id);
-    if (
-      priorRule !== undefined &&
-      canonicalJson(identityBoundSemantics(priorRule)) !==
-        canonicalJson(identityBoundSemantics(rule))
-    ) {
-      throw new Error(
-        `Legality Rule official identity ${rule.official_id} has changed semantics; the Official Source must publish a new official identity.`,
-      );
-    }
-    const firstRevisionId =
-      rule.first_revision_id ?? priorRule?.first_revision_id;
-    return {
-      ...freshRule,
-      ...(firstRevisionId === undefined
-        ? {}
-        : { first_revision_id: firstRevisionId }),
-      current: true,
-      last_missing_revision_id:
-        priorRule?.last_missing_revision_id ?? null,
-    };
-  });
-  return [
-    ...(prior?.legality_rules ?? []).flatMap((rule) => {
-      if (rule.source_lineage !== sourceLineage) return [rule];
-      if (incoming.some((incomingRule) => incomingRule.id === rule.id)) {
-        return [];
-      }
-      return [
-        {
-          ...rule,
-          current: false,
-          last_missing_revision_id: null,
-        },
-      ];
-    }),
-    ...observed,
-  ].sort((left, right) => compareUtf8(left.id, right.id));
-}
-
 export async function canonicalLegalityRuleId(
   sourceLineage: string,
   officialId: string,
@@ -450,24 +182,6 @@ export async function canonicalLegalityRuleId(
       source_lineage: sourceLineage,
     }),
   )}`;
-}
-
-export function legalityExportKind(
-  effect: LegalityRuleEffect,
-): LegalityExportKind {
-  return legalityEffectStrategies[effect.type].exportKind;
-}
-
-export function evaluateLegalityRuleEffect(
-  effect: LegalityRuleEffect,
-  attributes: Readonly<Record<string, unknown>>,
-  on: string,
-): LegalityEvaluation {
-  return legalityEffectStrategies[effect.type].evaluate(
-    effect,
-    attributes,
-    on,
-  );
 }
 
 export function legalityRuleCardIds(rule: LegalityRule): string[] {
@@ -523,7 +237,7 @@ function parseRule(
       "Legality Rule region conflicts with its separate source lineage.",
     );
   }
-  const effect = parseEffect(record.effect);
+  const effect = parseLegalityRuleEffect(record.effect);
   const effectiveFrom = requiredDate(
     record.effective_from,
     "legality rule effective_from",
@@ -592,48 +306,6 @@ function parseRule(
       effect: `${sourceObservationPointer}/effect`,
     },
   };
-}
-
-function identityBoundSemantics(rule: LegalityRule): unknown {
-  return {
-    official_id: rule.official_id,
-    game: rule.game,
-    region: rule.region,
-    format: rule.format,
-    event_tier: rule.event_tier,
-    effective_from: rule.effective_from,
-    effective_until: rule.effective_until,
-    card_ids: [...rule.card_ids].sort(compareUtf8),
-    official_wording: rule.official_wording,
-    effect: rule.effect,
-    source_lineage: rule.source_lineage,
-  };
-}
-
-function assertUniqueRuleIds(rules: readonly LegalityRule[]): void {
-  const identities = new Set<string>();
-  for (const rule of rules) {
-    if (identities.has(rule.id)) {
-      throw new Error(`Duplicate Legality Rule identity ${rule.id}.`);
-    }
-    identities.add(rule.id);
-  }
-}
-
-function parseEffect(value: unknown): RetainedLegalityRule["effect"] {
-  const effect = requiredRecord(value, "legality rule effect");
-  if (!isLegalityEffectType(effect.type)) {
-    throw new Error(
-      "Legality Rule wording uses an effect the installed adapter cannot represent.",
-    );
-  }
-  return legalityEffectStrategies[effect.type].parse(effect);
-}
-
-function isLegalityEffectType(
-  value: unknown,
-): value is LegalityRuleEffect["type"] {
-  return typeof value === "string" && value in legalityEffectStrategies;
 }
 
 function requiredCardId(

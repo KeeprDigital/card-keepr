@@ -334,6 +334,96 @@ export default defineConfig({
           ) {
             const artworkMarker = request.headers.get("user-agent");
             if (
+              (
+                artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
+                url.searchParams.get("recording") === "1"
+              ) &&
+              url.hostname === "en.onepiece-cardgame.com" &&
+              url.pathname === "/cardlist/"
+            ) {
+              const isLeaf = url.searchParams.get("recording") === "1";
+              return new Response(
+                `<html>
+                  <title>BANDAI ONE PIECE CARD LIST</title>
+                  <select id="recording">
+                    <option value="1">All recordings</option>
+                  </select>
+                  <div class="countCol">${isLeaf ? 1 : 0} results</div>
+                  ${isLeaf ? `<dl class="modalCol" id="OP01-001" data-artwork-id="op01-001-base">
+                    <div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>Leader</span></div>
+                    <div class="cardName">Monkey.D.Luffy</div>
+                    <div class="frontCol"><img data-src="/images/cardlist/card/OP01-001.png"></div>
+                    <dt>Color</dt><dd>Red</dd>
+                    <dt>Cost</dt><dd>-</dd>
+                    <dt>Life</dt><dd>5</dd>
+                    <dt>Attribute</dt><dd>Strike</dd>
+                    <dt>Power</dt><dd>5000</dd>
+                    <dt>Counter</dt><dd>-</dd>
+                    <dt>Type</dt><dd>Straw Hat Crew</dd>
+                    <dt>Block icon</dt><dd>1</dd>
+                    <dt>Effect</dt><dd>Official effective rules</dd>
+                    <dt>Card Set(s)</dt><dd>Test Card List</dd>
+                  </dl>` : ""}
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"card-keepr-one-piece-card-list-v2"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "en.onepiece-cardgame.com" &&
+              url.pathname === "/images/cardlist/card/OP01-001.png"
+            ) {
+              return new Response(
+                new Uint8Array([
+                  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+                  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+                  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                ]),
+                {
+                  headers: {
+                    "content-type": "image/png",
+                    etag: '"card-keepr-one-piece-card-image-v2"',
+                  },
+                },
+              );
+            }
+            if (
+              artworkMarker === "card-keepr-one-piece-release-timing-v2" &&
+              url.hostname === "en.onepiece-cardgame.com" &&
+              url.pathname === "/products/"
+            ) {
+              return new Response(
+                `<html>
+                  <title>BANDAI ONE PIECE CARD RELEASE publication</title>
+                  <main>
+                    <p>1 record</p>
+                    <article class="restriction-card"><dl>
+                      <dt>Notice No</dt><dd>OP-RELEASE-2026-001</dd>
+                      <dt>Published Text</dt><dd>OP01-001 becomes legal for standard tournament play on 2026-09-04.</dd>
+                      <dt>Territory</dt><dd>EN-OCEANIA</dd>
+                      <dt>Format Name</dt><dd>standard</dd>
+                      <dt>Event Class</dt><dd>-</dd>
+                      <dt>Start Date</dt><dd>2026-08-01</dd>
+                      <dt>End Date</dt><dd>-</dd>
+                      <dt>Card Numbers</dt><dd>OP01-001</dd>
+                      <dt>Restriction Code</dt><dd>release_timing</dd>
+                      <dt>Legal From</dt><dd>2026-09-04</dd>
+                    </dl></article>
+                  </main>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"card-keepr-one-piece-release-timing-v2"',
+                  },
+                },
+              );
+            }
+            if (
               artworkMarker === "card-keepr-nonempty-legality-sidecar" &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
@@ -663,7 +753,15 @@ export default defineConfig({
             }
             return new Response(
               `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title><main>${
-                url.pathname === "/fw/en/rules/banned-limited-cards/"
+                url.pathname === "/fw/en/rules/banned-limited-cards/" ||
+                  (
+                    url.hostname === "en.onepiece-cardgame.com" &&
+                    (
+                      url.pathname === "/rules/restriction/" ||
+                      url.pathname === "/rules/block_icon/" ||
+                      url.pathname === "/rules/"
+                    )
+                  )
                   ? "<p>0 records</p>"
                   : ""
               }<article data-publication-empty="true">No published entries.</article></main></html>`,

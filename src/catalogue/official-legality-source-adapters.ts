@@ -100,6 +100,12 @@ const fieldsByGame: Readonly<Record<OfficialLegalityGame, FieldMap>> = {
   },
 };
 
+// This allow-list is deliberately narrow: these fields describe the publisher's
+// publication, not the rule's applicability or effect. They remain in the raw
+// Source Observation sidecar and become review warnings there. Every other
+// unknown entry field is treated as potentially semantic and fails closed.
+const optionalSourceMetadataFields = new Set(["publisher_note"]);
+
 const htmlLabelsByGame: Readonly<
   Record<OfficialLegalityGame, Readonly<Record<string, keyof FieldMap>>>
 > = {
@@ -279,7 +285,7 @@ function exactLegalityRule(
 ): Record<string, unknown> {
   const allowedFields = new Set(Object.values(fields));
   const unknownField = Object.keys(entry).find((field) =>
-    !allowedFields.has(field)
+    !allowedFields.has(field) && !optionalSourceMetadataFields.has(field)
   );
   if (unknownField !== undefined) {
     throw new Error(
@@ -354,21 +360,25 @@ function exactEffect(
         wording,
         /\b(?:banned?|not legal)\b|may not be included/iu,
       );
+      assertNoContradiction(
+        directive,
+        wording,
+        /\b(?:not|never)\s+banned?\b|\bno longer banned?\b|\bban (?:is )?(?:lifted|removed)\b/iu,
+      );
       return { type: "ban" };
     case "copy_limit":
     case "limited":
-      assertWording(
-        directive,
-        wording,
-        /\b(?:cop(?:y|ies)|limit(?:ed)?)\b/iu,
-      );
-      return {
-        type: "copy_limit",
-        maximum_copies: requiredPositiveInteger(
+      {
+        const maximumCopies = requiredPositiveInteger(
           entry[fields.maximumCopies],
           "Official Legality copy limit",
-        ),
-      };
+        );
+        assertExactCopyLimitWording(wording, maximumCopies);
+        return {
+          type: "copy_limit",
+          maximum_copies: maximumCopies,
+        };
+      }
     case "combination":
     case "prohibited_combination":
       assertWording(
@@ -434,6 +444,28 @@ function exactEffect(
       throw new Error(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
       );
+  }
+}
+
+function assertExactCopyLimitWording(
+  wording: string,
+  maximumCopies: number,
+): void {
+  const statedCopyCounts = [...wording.matchAll(
+    /\b(\d+)\s+cop(?:y|ies)\b/giu,
+  )].map((match) => Number.parseInt(match[1]!, 10));
+  const statesExactLimit = new RegExp(
+    `\\b(?:limit(?:ed)?\\s+(?:of|to)|maximum(?:\\s+of)?|up\\s+to)\\s+(?:a\\s+maximum\\s+of\\s+)?${maximumCopies}\\s+cop(?:y|ies)\\b`,
+    "iu",
+  ).test(wording);
+  if (
+    !statesExactLimit ||
+    statedCopyCounts.length === 0 ||
+    statedCopyCounts.some((count) => count !== maximumCopies)
+  ) {
+    throw new Error(
+      `Official Legality wording does not exactly support copy limit ${maximumCopies}.`,
+    );
   }
 }
 

@@ -703,7 +703,7 @@ function bandaiSnapshotDecoder(
               isLegalityPolicySurface(surface),
           );
     const legalityObservation = profile.parseLegality &&
-        isLegalityPolicySurface(surface)
+        isLegalityRuleSurface(game, surface)
       ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ??
         null
       : null;
@@ -2171,7 +2171,12 @@ function normalizedSurfaceObservations(
   } else if (surface === "products") {
     observations = parseRawProductsSurface(document);
   } else if (surface === "releases") {
-    observations = parseRawReleasesSurface(document);
+    observations = [
+      ...parseRawReleasesSurface(document),
+      ...(legalityAware && isLegalityRuleSurface(game, surface)
+        ? [officialLegalityRulesObservation(game, sourceLineage, document)]
+        : []),
+    ];
   } else {
     observations = [
       rawCoverageObservation(document, surface),
@@ -2200,6 +2205,14 @@ function normalizedSurfaceObservations(
 
 function isLegalityPolicySurface(surface: string): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
+}
+
+function isLegalityRuleSurface(
+  game: ProductSourceGame,
+  surface: string,
+): boolean {
+  return isLegalityPolicySurface(surface) ||
+    (game === "one-piece" && surface === "releases");
 }
 
 function normalizeLineageSurface(
@@ -2287,11 +2300,17 @@ function normalizeOnePieceSurface(
       throw new Error("One Piece Release publication identity is invalid.");
     }
     return normalizedSurfaceBody(
-      normalizedPartitions(
+      {
+        ...normalizedPartitions(
         normalizePartitionEntries(raw.events, normalizeOnePieceReleaseEntry),
         "release-event",
-      ),
-      ["publication", "events"],
+        ),
+        entries: requiredArray(
+          raw.release_timing_entries,
+          "One Piece release-timing entries",
+        ),
+      },
+      ["publication", "events", "release_timing_entries"],
     );
   }
   return normalizedSurfaceBody(

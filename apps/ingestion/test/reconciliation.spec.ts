@@ -6320,6 +6320,85 @@ test("deterministic gzip profile matches independent full-byte edge-case goldens
   }
 }, 45_000);
 
+test("heterogeneous empty plans report each lineage independently regardless of plan order", async () => {
+  const seededRun = await collect(
+    "/reconciliation/profile-fusion-world",
+    "mixed-plan-empty-lineage-seed",
+    {
+      game: "fusion-world",
+      lineage: "fusion-world-en",
+      adapter: "fixture-fusion-world-json@1",
+    },
+  );
+  const seeded = await reconcile(seededRun.id);
+  const cardId = requiredString(requiredFirst(seeded.document, "cards"), "id");
+  const printingId = requiredString(
+    requiredFirst(seeded.document, "printings"),
+    "id",
+  );
+  expect((await approve(seeded.document)).response.status).toBe(200);
+
+  const inspectOrder = async (
+    lineages: readonly ("one-piece" | "fusion-world")[],
+    suffix: string,
+  ) => {
+    const started = await postFixtureEvidence({
+      idempotency_key: `mixed-plan-empty-lineage-${suffix}`,
+      plans: lineages.map((game) => ({
+        supported_game: game,
+        source_lineage: game === "one-piece"
+          ? "one-piece-en"
+          : "fusion-world-en",
+        adapter_version: game === "one-piece"
+          ? "fixture-one-piece-json@1"
+          : "fixture-fusion-world-json@1",
+        requests: [{
+          id: `${game}-empty-${suffix}`,
+          method: "GET" as const,
+          url:
+            "https://official-source.invalid/reconciliation/complete-empty-lineage",
+          headers: { accept: "application/json" },
+        }],
+      })),
+    });
+    expect(started.response.status).toBe(201);
+    const runId = requiredString(started.document, "id");
+    expect((await post(
+      `/v1/ingestion-runs/${runId}/collection/resume`,
+      {},
+    )).response.status).toBe(202);
+    await waitForRunState(runId, "parsing");
+    const candidate = await reconcile(runId);
+    expect(candidate.response.status).toBe(200);
+    const inspected = await get(`/v1/ingestion-runs/${runId}/candidate`);
+    const result = {
+      cards: (inspected.document.diff as {
+        cards: { missing_observations: string[] };
+      }).cards.missing_observations,
+      printings: (inspected.document.diff as {
+        printings: { missing_observations: string[] };
+      }).printings.missing_observations,
+    };
+    expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {
+      candidate_digest: requiredString(candidate.document, "candidate_digest"),
+      idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
+    })).response.status).toBe(200);
+    return result;
+  };
+
+  const forward = await inspectOrder(
+    ["one-piece", "fusion-world"],
+    "forward",
+  );
+  const reversed = await inspectOrder(
+    ["fusion-world", "one-piece"],
+    "reversed",
+  );
+  expect(forward).toEqual(reversed);
+  expect(forward.cards).toContain(cardId);
+  expect(forward.printings).toContain(printingId);
+}, 45_000);
+
 test("a Product-heavy export publishes bounded verified R2 components", async () => {
   const run = await collect(
     "/reconciliation/scale-1001-products",

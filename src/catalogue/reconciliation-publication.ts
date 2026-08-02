@@ -137,16 +137,18 @@ export async function reconciliationPublication(
   if (context === null) return null;
   const evidencePartitions = await database
     .prepare(
-      `SELECT DISTINCT source_lineage
+      `SELECT DISTINCT source_lineage, adapter_version
        FROM reconciliation_evidence_partitions
        WHERE ingestion_run_id = ?
-       ORDER BY source_lineage`,
+       ORDER BY source_lineage, adapter_version`,
     )
     .bind(runId)
-    .all<{ source_lineage: string }>();
+    .all<{ source_lineage: string; adapter_version: string }>();
   const observedSourceLineages =
     evidencePartitions.results.length > 0
-      ? evidencePartitions.results.map(({ source_lineage }) => source_lineage)
+      ? [...new Set(
+          evidencePartitions.results.map(({ source_lineage }) => source_lineage),
+        )]
       : [context.source_lineage];
   const candidate = JSON.parse(
     await requiredRunCandidate(database, runId),
@@ -424,8 +426,13 @@ export async function reconciliationPublication(
     result,
     publicationRows,
     observedSourceLineages,
-    requiredSourceAdapter(context.adapter_version)
-      .reconciliationCapability === "catalogue",
+    evidencePartitions.results.length > 0
+      ? evidencePartitions.results.every(({ adapter_version }) =>
+          requiredSourceAdapter(adapter_version).reconciliationCapability ===
+            "catalogue"
+        )
+      : requiredSourceAdapter(context.adapter_version)
+          .reconciliationCapability === "catalogue",
     revisionId,
   );
   const productReleaseLifecycles = await productReleaseLifecyclePlan(

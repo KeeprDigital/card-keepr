@@ -17,6 +17,7 @@ export async function inspectCatalogueCandidate(
     priorLegalityRules,
     plans,
     context,
+    evidenceLineages,
     printingLineages,
     cardLineages,
   ] = await Promise.all([
@@ -67,6 +68,15 @@ export async function inspectCatalogueCandidate(
       .first<{ source_lineage: string }>(),
     database
       .prepare(
+        `SELECT DISTINCT source_lineage
+         FROM reconciliation_evidence_partitions
+         WHERE ingestion_run_id = ?
+         ORDER BY source_lineage`,
+      )
+      .bind(input.runId)
+      .all<{ source_lineage: string }>(),
+    database
+      .prepare(
         `SELECT printing_id, source_lineage
          FROM reconciled_printing_locators
          WHERE current = 1
@@ -95,7 +105,9 @@ export async function inspectCatalogueCandidate(
     ),
   );
   const selectedLineages = new Set([
-    ...(context === null ? [] : [context.source_lineage]),
+    ...(evidenceLineages.results.length > 0
+      ? evidenceLineages.results.map(({ source_lineage }) => source_lineage)
+      : context === null ? [] : [context.source_lineage]),
     ...plans.results.map((plan) => plan.source_lineage),
   ]);
   const printingEvidence = groupedLineages(

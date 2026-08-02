@@ -1031,6 +1031,90 @@ test("a versioned production adapter derives and exports an exact representable 
   });
 }, 90_000);
 
+test("the One Piece production release surface publishes release timing through status and export seams", async () => {
+  const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: "seed-production-one-piece-release-card",
+    requests: [{
+      id: "seed-card",
+      method: "GET",
+      url: "https://official-source.invalid/reconciliation/base",
+      headers: { accept: "application/json" },
+    }],
+  });
+  const seededRunId = requiredString(seeded, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${seededRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(seededRunId, "parsing");
+  const seededCandidate = await reconcile(seededRunId);
+  expect(seededCandidate.response.status).toBe(200);
+  const card = (
+    seededCandidate.document.cards as Array<Record<string, unknown>>
+  ).find((item) =>
+    (item.official_identity as Record<string, unknown>).value === "OP01-001"
+  );
+  if (card === undefined) throw new Error("OP01-001 is absent");
+  expect((await approve(
+    seededCandidate.document,
+    "publish-production-one-piece-release-card",
+  )).response.status).toBe(200);
+
+  const started = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@2",
+    idempotency_key: "production-one-piece-release-timing-v2",
+    requests: productionOnePieceReleaseTimingRequests(),
+  });
+  expect(started.response.status).toBe(201);
+  const runId = requiredString(started.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "awaiting_approval");
+  const candidate = await request(`/v1/ingestion-runs/${runId}/candidate`);
+  const published = await approve(
+    candidate.document,
+    "publish-production-one-piece-release-timing-v2",
+  );
+  expect(published.response.status).toBe(200);
+  const revisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+
+  for (const [on, expected] of [
+    ["2026-09-03", "not_legal"],
+    ["2026-09-04", "legal"],
+  ] as const) {
+    const response = await contextualLegalityStatusResponse(
+      new Request(
+        `https://card-keepr.invalid/v1/legality-status?card_id=${requiredString(card, "id")}&on=${on}&format=standard&region=EN-OCEANIA`,
+      ),
+      testEnv.CATALOGUE_DB,
+    );
+    expect(response.status).toBe(200);
+    const document = await response.json() as {
+      data: Array<{ status: string }>;
+    };
+    expect(document.data[0]?.status).toBe(expected);
+  }
+  expect(await exportedLegalityRule(
+    revisionId,
+    "OP-RELEASE-2026-001",
+  )).toMatchObject({
+    game: "one-piece",
+    official_wording:
+      "OP01-001 becomes legal for standard tournament play on 2026-09-04.",
+    effect: { type: "release_timing", legal_from: "2026-09-04" },
+  });
+}, 90_000);
+
 test("a versioned production adapter blocks official wording it cannot represent exactly", async () => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -2370,6 +2454,23 @@ function productionFusionLegalityRequests(
       ? {
           ...request,
           headers: { ...request.headers, "user-agent": marker },
+        }
+      : request
+  );
+}
+
+function productionOnePieceReleaseTimingRequests(): ReturnType<
+  typeof officialSourceDiscoveryRequests
+> {
+  return officialSourceDiscoveryRequests("one-piece-en").map((request) =>
+    request.id === "one-piece-en:card-list" ||
+      request.id === "one-piece-en:releases"
+      ? {
+          ...request,
+          headers: {
+            ...request.headers,
+            "user-agent": "card-keepr-one-piece-release-timing-v2",
+          },
         }
       : request
   );

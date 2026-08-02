@@ -266,28 +266,105 @@ test("current production legality parser blocks a publisher total that disagrees
   );
 });
 
-test("official legality entries reject unknown publisher fields", () => {
+test("current production legality parser rejects negated bans and copy limits whose wording disagrees with the declared cap", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(
+        exactFusionLegalityHtml.replace(
+          "FB01-001 is banned from standard tournament decks.",
+          "FB01-001 is not banned from standard tournament decks.",
+        ),
+      ),
+      fusionLegalityContext(current),
+    ),
+    /wording contradicts directive ban/u,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(
+        exactFusionLegalityHtml.replace(
+          "FB01-002 is limited to 1 copy in standard decks.",
+          "FB01-002 is limited to 2 copies in standard decks.",
+        ),
+      ),
+      fusionLegalityContext(current),
+    ),
+    /wording does not exactly support copy limit 1/u,
+  );
+});
+
+test("official legality entries classify publisher notes as metadata but reject unknown semantic fields", () => {
+  const entry = {
+    rule_ref: "FW-2026-003",
+    notice: "FB01-003 is banned from standard tournament decks.",
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: "2026-07-01",
+    expires_on: null,
+    cards: ["FB01-003"],
+    directive: "ban",
+    publisher_note: "This publisher note is retained only as source metadata.",
+  };
+  const observation = officialLegalityRulesObservation(
+    "fusion-world",
+    "fusion-world-en",
+    { entries: [entry] },
+  );
+  assert.equal(observation.legality_rules[0].official_wording, entry.notice);
+  assert.equal("publisher_note" in observation.legality_rules[0], false);
   assert.throws(
     () => officialLegalityRulesObservation(
       "fusion-world",
       "fusion-world-en",
       {
-        entries: [{
-          rule_ref: "FW-2026-003",
-          notice: "FB01-003 is banned from standard tournament decks.",
-          market: "EN-OCEANIA",
-          play_format: "standard",
-          tier: null,
-          active_on: "2026-07-01",
-          expires_on: null,
-          cards: ["FB01-003"],
-          directive: "ban",
-          publisher_note: "This new field is not owned by the adapter.",
-        }],
+        entries: [{ ...entry, future_scope: "championship-only" }],
       },
     ),
-    /unknown field publisher_note/u,
+    /unknown field future_scope/u,
   );
+});
+
+test("the versioned One Piece release surface emits its exact release-timing rule beside Release evidence", () => {
+  const current = requiredSourceAdapter("one-piece-en@2");
+  const payload = rawSurfacePayload("one-piece-en", "releases");
+  payload.release_timing_entries = [{
+    notice_no: "OP-RELEASE-2026-001",
+    published_text:
+      "OP99-001 becomes legal for standard tournament play on 2026-09-04.",
+    territory: "EN-OCEANIA",
+    format_name: "standard",
+    event_class: null,
+    start_date: "2026-08-01",
+    end_date: null,
+    card_numbers: ["OP99-001"],
+    restriction_code: "release_timing",
+    legal_from: "2026-09-04",
+  }];
+  const observations = parseRegisteredSurface(current, "releases", payload);
+  assert.ok(observations.some(({ product_release_catalogue }) =>
+    product_release_catalogue?.products?.some(({ releases }) =>
+      releases.length > 0
+    )
+  ));
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.deepEqual(legality.legality_rules, [{
+    id: "OP-RELEASE-2026-001",
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-08-01",
+    effective_until: null,
+    card_numbers: ["OP99-001"],
+    official_wording:
+      "OP99-001 becomes legal for standard tournament play on 2026-09-04.",
+    effect: { type: "release_timing", legal_from: "2026-09-04" },
+    representable: true,
+  }]);
 });
 
 test("historical and current production registrations keep byte-identical legality decoder behavior isolated", () => {

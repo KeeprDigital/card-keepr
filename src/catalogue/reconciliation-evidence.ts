@@ -497,6 +497,16 @@ export async function retainedReconciliationObservation(
       requests.results,
     );
   }
+  const partitions = orderedRows.map((row, index) => ({
+    sequenceNumber: requests.results[index]!.sequence_number,
+    requestId: requests.results[index]!.request_id,
+    observationSetId: row.observation_set_id,
+    sourceSnapshotId: row.source_snapshot_id,
+    sourceLineage: row.source_lineage,
+    supportedGame: row.supported_game,
+    gameProfileVersion: row.game_profile_version,
+    adapterVersion: row.adapter_version,
+  }));
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -505,16 +515,20 @@ export async function retainedReconciliationObservation(
     reconciliationCapability:
       requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
-    partitions: orderedRows.map((row, index) => ({
-      sequenceNumber: requests.results[index]!.sequence_number,
-      requestId: requests.results[index]!.request_id,
-      observationSetId: row.observation_set_id,
-      sourceSnapshotId: row.source_snapshot_id,
-      sourceLineage: row.source_lineage,
-      supportedGame: row.supported_game,
-      gameProfileVersion: row.game_profile_version,
-      adapterVersion: row.adapter_version,
-    })),
+    partitions,
+    evidencePlans: evidencePlans.map((plan) => {
+      const requestIds = new Set(plan.requests.map(({ id }) => id));
+      return {
+        sourceLineage: plan.source_lineage,
+        supportedGame: supportedGame(plan.supported_game),
+        adapterVersion: plan.adapter_version,
+        reconciliationCapability:
+          requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
+        partitions: partitions.filter(({ requestId }) =>
+          requestIds.has(requestId)
+        ),
+      };
+    }),
     observations: merged,
     legalityRules,
     legalityScopes: [...completeLegalityScopes.values()].sort((left, right) =>

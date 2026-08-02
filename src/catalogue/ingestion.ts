@@ -4561,21 +4561,26 @@ async function freshnessArea(
   database: D1Database,
   runId: string,
 ): Promise<"cards-and-printings" | "errata" | null> {
-  const plan = await database
+  const plans = await database
     .prepare(
-      `SELECT adapter_version
+      `SELECT DISTINCT adapter_version
        FROM ingestion_evidence_plans
-       WHERE ingestion_run_id = ?`,
+       WHERE ingestion_run_id = ?
+       ORDER BY adapter_version`,
     )
     .bind(runId)
-    .first<{ adapter_version: string }>();
-  if (plan === null) return "cards-and-printings";
-  const coverage = requiredSourceAdapter(plan.adapter_version)
-    .reconciliationCapability;
-  if (coverage === "errata") {
+    .all<{ adapter_version: string }>();
+  if (plans.results.length === 0) return "cards-and-printings";
+  const coverage = new Set(
+    plans.results.map(({ adapter_version }) =>
+      requiredSourceAdapter(adapter_version).reconciliationCapability
+    ),
+  );
+  if (coverage.size !== 1) return null;
+  if (coverage.has("errata")) {
     return "errata";
   }
-  return coverage === "catalogue"
+  return coverage.has("catalogue")
     ? "cards-and-printings"
     : null;
 }

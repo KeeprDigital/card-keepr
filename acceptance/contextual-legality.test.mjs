@@ -978,7 +978,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     "authenticated randomized export bytes are revision-addressed and repeatable",
     () => {
       assert.equal(gzipGolden.profile, "card-keepr-ndjson-gzip@1");
-      assert.equal(gzipGolden.compressor, "pako@2.1.0");
+      assert.equal(gzipGolden.compressor, "pako@3.0.1");
       assert.deepEqual(gzipGolden.cases.empty.coverage, ["empty"]);
       assert.equal(emptyComponentText, "");
       assertGoldenComponent(
