@@ -22,7 +22,7 @@ const componentValidators = new Map<string, ValidateFunction>(
     "RelationshipRecord",
   ].map((definition) => {
     const uri =
-      `https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/${definition}`;
+      `https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/${definition}`;
     return [uri, requiredValidator(uri)];
   }),
 );

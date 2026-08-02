@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://card-keepr.invalid/schemas/catalogue-export-manifest@2",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-manifest@3",
   "title": "Card Keepr Catalogue Export manifest",
   "type": "object",
   "additionalProperties": false,
@@ -17,9 +17,9 @@
     "manifest_sha256"
   ],
   "properties": {
-    "format": { "const": "card-keepr-catalogue-export-manifest@2" },
+    "format": { "const": "card-keepr-catalogue-export-manifest@3" },
     "serialization_profile": { "const": "card-keepr-ndjson-gzip@1" },
-    "export_schema_major": { "const": 2 },
+    "export_schema_major": { "const": 3 },
     "catalogue_revision": {
       "type": "object",
       "additionalProperties": false,
@@ -216,7 +216,7 @@
           "properties": {
             "name": { "const": "supported-games" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/SupportedGameRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/SupportedGameRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -231,7 +231,7 @@
           "properties": {
             "name": { "const": "game-profiles" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/GameProfileRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/GameProfileRecord"
             },
             "order": { "const": "profile:utf8" }
           }
@@ -246,7 +246,7 @@
           "properties": {
             "name": { "const": "cards" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/CardRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/CardRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -261,7 +261,7 @@
           "properties": {
             "name": { "const": "printings" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/PrintingRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/PrintingRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -276,7 +276,7 @@
           "properties": {
             "name": { "const": "printing-images" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/PrintingImageRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/PrintingImageRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -291,7 +291,7 @@
           "properties": {
             "name": { "const": "products" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ProductRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/ProductRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -306,7 +306,7 @@
           "properties": {
             "name": { "const": "releases" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ReleaseRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/ReleaseRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -321,7 +321,7 @@
           "properties": {
             "name": { "const": "distribution-contexts" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/DistributionContextRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/DistributionContextRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -336,7 +336,7 @@
           "properties": {
             "name": { "const": "errata" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ErratumRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/ErratumRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -351,7 +351,7 @@
           "properties": {
             "name": { "const": "legality-rules" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/LegalityRuleRecord"
             },
             "order": { "const": "id:utf8" }
           }
@@ -366,7 +366,7 @@
           "properties": {
             "name": { "const": "relationships" },
             "record_schema": {
-              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/RelationshipRecord"
+              "const": "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/RelationshipRecord"
             },
             "order": { "const": "id:utf8" }
           }

@@ -6,6 +6,7 @@ import {
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { requiredLegalityRegionsForGame } from "./official-source-scope";
 import {
   parseStoredCatalogueCard,
   parseStoredLegalityRule,
@@ -35,7 +36,7 @@ export class LegalityStatusProblem extends Error {
       | "invalid_parameter"
       | "not_found"
       | "invalid_legality_region"
-      | "invalid_catalogue_document",
+      | "internal_error",
     message: string,
   ) {
     super(message);
@@ -69,7 +70,7 @@ export async function contextualLegalityStatusResponse(
   const card = parsedStoredDocument(() =>
     parseStoredCatalogueCard(context.document_json)
   );
-  const supportedRegions = regionsFor(card.game);
+  const supportedRegions = requiredLegalityRegionsForGame(card.game);
   if (
     query.region !== null &&
     !supportedRegions.includes(query.region)
@@ -151,8 +152,8 @@ function parsedStoredDocument<T>(parse: () => T): T {
   } catch {
     throw new LegalityStatusProblem(
       500,
-      "invalid_catalogue_document",
-      "The current Catalogue contains an invalid stored document; Legality Status failed closed.",
+      "internal_error",
+      "The request could not be completed.",
     );
   }
 }
@@ -411,12 +412,4 @@ function optionalParameter(url: URL, name: string): string | null {
     );
   }
   return value;
-}
-
-function regionsFor(
-  game: StoredLegalityStatusCard["game"],
-): readonly LegalityRegion[] {
-  return game === "gundam"
-    ? ["EN-ASIA", "EN-US"]
-    : ["EN-OCEANIA"];
 }

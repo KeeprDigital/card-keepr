@@ -363,6 +363,7 @@ export async function retainedReconciliationObservation(
   const legalityRules: RetainedLegalityRule[] = [];
   const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
   const completeLegalityRequestIds = new Set<string>();
+  const completeLegalityRuleCounts = new Map<string, number>();
   const officialSurfaces = new Map<
     string,
     {
@@ -423,6 +424,12 @@ export async function retainedReconciliationObservation(
             );
           }
           completeLegalityRequestIds.add(request.request_id);
+          completeLegalityRuleCounts.set(
+            request.request_id,
+            Array.isArray(wrapped.value.legality_rules)
+              ? wrapped.value.legality_rules.length
+              : 0,
+          );
           const scope: RetainedLegalityScope = {
             sourceLineage: row.source_lineage,
             supportedGame: supportedGame(row.supported_game),
@@ -491,6 +498,7 @@ export async function retainedReconciliationObservation(
       documents,
       rows: orderedRows,
       completeLegalityRequestIds,
+      completeLegalityRuleCounts,
       officialSurfaces,
     });
   }
@@ -566,6 +574,7 @@ async function validateOfficialSurfaceCoverage(input: {
   documents: readonly Awaited<ReturnType<typeof retainedObservationDocument>>[];
   rows: readonly EvidenceRow[];
   completeLegalityRequestIds: ReadonlySet<string>;
+  completeLegalityRuleCounts: ReadonlyMap<string, number>;
   officialSurfaces: ReadonlyMap<string, { records: unknown[] }>;
 }): Promise<void> {
   const { adapter, plan, requests } = input;
@@ -588,7 +597,9 @@ async function validateOfficialSurfaceCoverage(input: {
       "Complete Official Source evidence omitted a required live surface.",
     );
   }
-  for (const surface of requiredSurfaces.filter(isLegalitySurface)) {
+  for (const surface of requiredSurfaces.filter((surface) =>
+    isLegalitySurface(adapter, surface)
+  )) {
     const requestId = `${adapter.sourceLineage}:${surface}`;
     const requestIndex = requests.findIndex(
       (request) => request.request_id === requestId,
@@ -598,15 +609,20 @@ async function validateOfficialSurfaceCoverage(input: {
         "Complete Official Source evidence omitted a required live surface.",
       );
     }
-    const rawRecords = input.officialSurfaces.get(requestId)?.records ??
-      rawOfficialSurfaceRecords(
+    const explicitRecords = input.officialSurfaces.get(requestId)?.records;
+    const rawRecords = explicitRecords !== undefined && explicitRecords.length > 0
+      ? explicitRecords
+      : rawOfficialSurfaceRecords(
         input.documents[requestIndex]!,
         surface,
         input.rows[requestIndex]!.source_lineage,
       );
     if (
       rawRecords.length > 0 &&
-      !input.completeLegalityRequestIds.has(requestId)
+      (
+        !input.completeLegalityRequestIds.has(requestId) ||
+        input.completeLegalityRuleCounts.get(requestId) === 0
+      )
     ) {
       throw new Error(
         `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
@@ -664,8 +680,12 @@ async function validateLegacyCollectionPlan(
   }
 }
 
-function isLegalitySurface(surface: string): boolean {
-  return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
+function isLegalitySurface(
+  adapter: ReturnType<typeof requiredSourceAdapter>,
+  surface: string,
+): boolean {
+  return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
+    (adapter.adapterVersion === "one-piece-en@2" && surface === "releases");
 }
 
 function rawOfficialSurfaceRecords(
@@ -697,7 +717,21 @@ function rawOfficialSurfaceRecords(
         "publication_entries",
       ]) {
         const records = retained.document[field];
-        if (Array.isArray(records)) return records;
+        if (Array.isArray(records) && records.length > 0) return records;
+      }
+      for (const partitionOwner of [
+        retained.document,
+        retained.document.events,
+      ]) {
+        if (!isRecord(partitionOwner) || !Array.isArray(partitionOwner.partitions)) {
+          continue;
+        }
+        const records = partitionOwner.partitions.flatMap((partition) =>
+          isRecord(partition) && Array.isArray(partition.entries)
+            ? partition.entries
+            : []
+        );
+        if (records.length > 0) return records;
       }
     }
   }

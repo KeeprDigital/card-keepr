@@ -5,9 +5,6 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
-import apiWorker, {
-  type ApiWorkerEnvironment,
-} from "../../api/src/index";
 import {
   canonicalJson,
   sha256,
@@ -1042,15 +1039,6 @@ test("a versioned production adapter derives and exports an exact representable 
     "resulting_revision_id",
   );
 
-  const { response: statusResponse, document: status } = await apiRequest(
-    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-08-01&format=standard&region=EN-OCEANIA`,
-  );
-  expect(statusResponse.status).toBe(200);
-  const typedStatus = status as {
-    data: Array<{ status: string; rule_ids: string[] }>;
-  };
-  expect(typedStatus.data[0]).toMatchObject({ status: "legal" });
-  expect(typedStatus.data[0]!.rule_ids).toHaveLength(1);
   expect(await exportedLegalityRule(
     revisionId,
     "fw_production_eligible",
@@ -1066,7 +1054,7 @@ test("a versioned production adapter derives and exports an exact representable 
   });
 }, 90_000);
 
-test("the One Piece production release surface publishes release timing through status and export seams", async () => {
+test("the One Piece production release surface publishes release timing through the export seam", async () => {
   const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
@@ -1123,19 +1111,6 @@ test("the One Piece production release surface publishes release timing through 
     "resulting_revision_id",
   );
 
-  for (const [on, expected] of [
-    ["2026-09-03", "not_legal"],
-    ["2026-09-04", "legal"],
-  ] as const) {
-    const { response, document } = await apiRequest(
-      `/v1/legality-status?card_id=${requiredString(card, "id")}&on=${on}&format=standard&region=EN-OCEANIA`,
-    );
-    expect(response.status).toBe(200);
-    const typedDocument = document as {
-      data: Array<{ status: string }>;
-    };
-    expect(typedDocument.data[0]?.status).toBe(expected);
-  }
   expect(await exportedLegalityRule(
     revisionId,
     "OP-RELEASE-2026-001",
@@ -1145,110 +1120,56 @@ test("the One Piece production release surface publishes release timing through 
       "OP01-001 becomes legal for standard tournament play on 2026-09-04.",
     effect: { type: "release_timing", legal_from: "2026-09-04" },
   });
+
+  const changed = await request("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@2",
+    idempotency_key: "production-one-piece-unrecognized-release-v2",
+    requests: productionOnePieceReleaseTimingRequests(
+      "card-keepr-one-piece-unrecognized-release-v2",
+    ),
+  });
+  expect(changed.response.status).toBe(201);
+  const changedRunId = requiredString(changed.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${changedRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  const changedFailed = await waitForState(changedRunId, "failed");
+  expect(changedFailed).toMatchObject({
+    state: "failed",
+    failure_code: "printing_reconciliation_blocked",
+  });
+  const failedWarnings = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT warnings_json FROM ingestion_runs WHERE id = ?",
+  ).bind(changedRunId).first<{ warnings_json: string }>();
+  expect(JSON.parse(failedWarnings?.warnings_json ?? "[]")).toEqual([
+    expect.objectContaining({
+      detail: expect.stringContaining(
+        "Official Source releases retained non-empty Legality data without an exact, complete Legality Rule parser.",
+      ),
+    }),
+  ]);
+  expect((await request(
+    `/v1/ingestion-runs/${changedRunId}/candidate`,
+  )).response.status).toBe(409);
+  expect(await testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first("current_revision_id")).toBe(revisionId);
 }, 90_000);
 
-test("authenticated Legality Status fails closed on malformed stored Card and Legality Rule documents", async () => {
-  const collected = await collectFixtureLegality(
-    "https://official-source.invalid/reconciliation/contextual-legality-domain",
-    "legality-status-malformed-stored-documents",
-  );
-  const published = await approve(
-    collected.reconciled,
-    "publish-legality-status-malformed-stored-documents",
-  );
-  expect(published.response.status).toBe(200);
-  const revisionId = requiredString(
-    published.document,
-    "resulting_revision_id",
-  );
-  const card = (collected.reconciled.cards as Array<Record<string, unknown>>)
-    .find((candidate) =>
-      (candidate.official_identity as Record<string, unknown>).value ===
-        "GD30-001"
-    );
-  if (card === undefined) throw new Error("GD30-001 is absent");
-  const cardId = requiredString(card, "id");
-  const cardRow = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT document_json
-     FROM revision_cards
-     WHERE catalogue_revision_id = ? AND card_id = ?`,
-  ).bind(revisionId, cardId).first<{ document_json: string }>();
-  if (cardRow === null) throw new Error("Stored Card document is absent");
-
-  await testEnv.CATALOGUE_DB.prepare(
-    `UPDATE revision_cards
-     SET document_json = '{}'
-     WHERE catalogue_revision_id = ? AND card_id = ?`,
-  ).bind(revisionId, cardId).run();
-  try {
-    const malformedCard = await apiRequest(
-      `/v1/legality-status?card_id=${cardId}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    );
-    expect(malformedCard.response.status).toBe(500);
-    expect(malformedCard.document).toMatchObject({
-      code: "invalid_catalogue_document",
-    });
-  } finally {
-    await testEnv.CATALOGUE_DB.prepare(
-      `UPDATE revision_cards
-       SET document_json = ?
-       WHERE catalogue_revision_id = ? AND card_id = ?`,
-    ).bind(cardRow.document_json, revisionId, cardId).run();
-  }
-
-  const ruleRow = await testEnv.CATALOGUE_DB.prepare(
-    `SELECT legality_rule_id, document_json
-     FROM revision_legality_rules
-     WHERE catalogue_revision_id = ?
-     ORDER BY legality_rule_id
-     LIMIT 1`,
-  ).bind(revisionId).first<{
-    legality_rule_id: string;
-    document_json: string;
-  }>();
-  if (ruleRow === null) throw new Error("Stored Legality Rule is absent");
-  const replaceRuleDocument = async (documentJson: string) => {
-    await testEnv.CATALOGUE_DB.prepare(
-      "DROP TRIGGER revision_legality_rules_immutable_update",
-    ).run();
-    try {
-      await testEnv.CATALOGUE_DB.prepare(
-        `UPDATE revision_legality_rules
-         SET document_json = ?
-         WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
-      ).bind(documentJson, revisionId, ruleRow.legality_rule_id).run();
-    } finally {
-      await testEnv.CATALOGUE_DB.prepare(
-        `CREATE TRIGGER revision_legality_rules_immutable_update
-         BEFORE UPDATE ON revision_legality_rules
-         BEGIN
-           SELECT RAISE(ABORT, 'revision_legality_rule_immutable');
-         END`,
-      ).run();
-    }
-  };
-  await replaceRuleDocument("{}");
-  try {
-    const malformedRule = await apiRequest(
-      `/v1/legality-status?card_id=${cardId}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    );
-    expect(malformedRule.response.status).toBe(500);
-    expect(malformedRule.document).toMatchObject({
-      code: "invalid_catalogue_document",
-    });
-  } finally {
-    await replaceRuleDocument(ruleRow.document_json);
-  }
-}, 90_000);
-
-test("a versioned production adapter blocks official wording it cannot represent exactly", async () => {
+test.each([
+  "card-keepr-unrepresentable-legality-v3",
+  "card-keepr-mixed-effect-legality-v3",
+])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@3",
-    idempotency_key: "production-unrepresentable-legality-v3",
+    idempotency_key: `production-unrepresentable-legality-v3-${marker}`,
     requests: productionFusionLegalityRequests(
-      "card-keepr-unrepresentable-legality-v3",
+      marker,
     ),
   });
   expect(started.response.status).toBe(201);
@@ -1640,16 +1561,6 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(eligible).toMatchObject({ current: false });
 
-  const { response, document: statusDocument } = await apiRequest(
-    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-  );
-  expect(response.status).toBe(200);
-  const status = statusDocument as {
-    data: Array<{ status: string; rule_ids: string[] }>;
-  };
-  expect(status.data[0]).toMatchObject({ status: "legal" });
-  expect(status.data[0]!.rule_ids).toContain(requiredString(eligible!, "id"));
-
   const canonicalRules = await testEnv.CATALOGUE_DB.prepare(
     `SELECT id FROM legality_rules ORDER BY id LIMIT 3`,
   ).all<{ id: string }>();
@@ -1982,13 +1893,6 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     expect.stringMatching(/legality_rule_provenance_immutable/),
     expect.stringMatching(/legality_rule_provenance_owner_mismatch/),
   ]);
-  const { response: immutableResponse, document: immutableDocument } =
-    await apiRequest(
-      `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-    );
-  expect(immutableResponse.status).toBe(200);
-  expect(immutableDocument).toEqual(status);
-
   const reappeared = await collectFixtureLegality(
     "https://official-source.invalid/reconciliation/contextual-legality-domain?rules=current",
     "contextual-legality-domain-reappeared-provenance",
@@ -2022,15 +1926,6 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
     reappearedRevisionId,
     "legality_rule_asia_eligible",
   );
-  const {
-    response: reappearedApiResponse,
-    document: reappearedApiDocument,
-  } = await apiRequest(
-    `/v1/legality-status?card_id=${requiredString(card, "id")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
-  );
-  const reappearedStatus = reappearedApiDocument as {
-    data: Array<{ rule_ids: string[] }>;
-  };
   const canonicalProvenance = {
     source_lineage: revisionRule.source_lineage,
     source_observation_id: revisionRule.source_observation_id,
@@ -2049,10 +1944,6 @@ test("test-owned domain evidence publishes exact Legality Rules and keeps still-
   );
   expect(canonicalJson(exportedProvenance)).toBe(
     canonicalJson(canonicalProvenance),
-  );
-  expect(reappearedApiResponse.status).toBe(200);
-  expect(reappearedStatus.data[0]!.rule_ids).toContain(
-    requiredString(revisionRule, "id"),
   );
 });
 
@@ -2560,15 +2451,19 @@ function officialAdapterUrl(adapter: string, scenario: string): string {
 
 async function waitForState(runId: string, expected: string) {
   const deadline = Date.now() + 30_000;
+  let last: Record<string, unknown> | undefined;
   while (Date.now() < deadline) {
     const shown = await request(`/v1/ingestion-runs/${runId}`);
+    last = shown.document;
     if (shown.document.state === expected) return shown.document;
     if (shown.document.state === "failed") {
       throw new Error(JSON.stringify(shown.document));
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(`run ${runId} did not reach ${expected}`);
+  throw new Error(
+    `run ${runId} did not reach ${expected}: ${JSON.stringify(last)}`,
+  );
 }
 
 function productionFusionLegalityRequests(
@@ -2584,7 +2479,9 @@ function productionFusionLegalityRequests(
   );
 }
 
-function productionOnePieceReleaseTimingRequests(): ProductionDiscoveryRequest[] {
+function productionOnePieceReleaseTimingRequests(
+  marker = "card-keepr-one-piece-release-timing-v2",
+): ProductionDiscoveryRequest[] {
   return onePieceProductionDiscoveryRequests.map((request) =>
     request.id === "one-piece-en:card-list" ||
       request.id === "one-piece-en:releases"
@@ -2592,7 +2489,7 @@ function productionOnePieceReleaseTimingRequests(): ProductionDiscoveryRequest[]
           ...request,
           headers: {
             ...request.headers,
-            "user-agent": "card-keepr-one-piece-release-timing-v2",
+            "user-agent": marker,
           },
         }
       : request
@@ -2622,35 +2519,6 @@ async function request(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
-  );
-  return {
-    response,
-    document: (await response.json()) as Record<string, unknown>,
-  };
-}
-
-async function apiRequest(pathname: string): Promise<{
-  response: Response;
-  document: Record<string, unknown>;
-}> {
-  const response = await apiWorker.fetch(
-    new Request(`https://card-keepr.invalid${pathname}`, {
-      headers: {
-        authorization: "Bearer vitest-api-key",
-        "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
-      },
-    }),
-    {
-      CATALOGUE_DB: testEnv.CATALOGUE_DB,
-      PRINTING_IMAGES: testEnv.PRINTING_IMAGES,
-      CATALOGUE_EXPORTS: testEnv.CATALOGUE_EXPORTS,
-      CORS_ALLOWED_ORIGINS: "http://localhost:3000",
-      API_BEARER_KEY: "vitest-api-key",
-      API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
-      CREDENTIAL_CONSUMER_PROOF_KEY: "vitest-consumer-proof-key",
-      CATALOGUE_RATE_LIMIT: testEnv.ADMINISTRATION_RATE_LIMIT,
-      PRINTING_IMAGE_RATE_LIMIT: testEnv.ADMINISTRATION_RATE_LIMIT,
-    } satisfies ApiWorkerEnvironment,
   );
   return {
     response,

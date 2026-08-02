@@ -9,17 +9,20 @@ import addFormats from "ajv-formats";
 
 const root = resolve(import.meta.dirname, "..");
 
-test("historical export record schema v1 remains byte-identical to its fixed point", async () => {
-  const bytes = await readFile(resolve(
-    root,
-    "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v1.schema.json",
-  ));
-  assert.equal(
-    createHash("sha256").update(bytes).digest("hex"),
-    "37683203c58b62f56afebd25477fe48b3ec188c108201fea56bb635f0f9660ea",
-  );
-  assert.equal(JSON.parse(bytes.toString("utf8")).$id,
-    "https://card-keepr.invalid/schemas/catalogue-export-record@1");
+test("historical export schemas remain byte-identical to their fixed points", async () => {
+  for (const [name, digest, id] of [
+    ["catalogue-export-manifest-v1.schema.json", "72741f3e6d20a6cf28ecb6db4292e1d5e95c8727ca91c009cf48988289486537", "catalogue-export-manifest@1"],
+    ["catalogue-export-record-v1.schema.json", "37683203c58b62f56afebd25477fe48b3ec188c108201fea56bb635f0f9660ea", "catalogue-export-record@1"],
+    ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
+    ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
+  ]) {
+    const bytes = await readFile(resolve(
+      root,
+      `prototype/formalize-implementation-contracts/schemas/${name}`,
+    ));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), digest);
+    assert.equal(JSON.parse(bytes.toString("utf8")).$id.endsWith(id), true);
+  }
 });
 
 test("Product detail documents invalid include requests", async () => {
@@ -101,7 +104,7 @@ test("Legality Status documents and validates base and evidence representations"
   assert.equal(validate(evidence), true, JSON.stringify(validate.errors));
 });
 
-test("export schema major 2 carries typed Product and Release projections", async () => {
+test("export schema major 3 carries typed Product, Release, and Legality projections", async () => {
   const [api, exportSchema, exportManifest] = await Promise.all(
     [
       "api.schema.json",
@@ -159,9 +162,9 @@ test("export schema major 2 carries typed Product and Release projections", asyn
     exportSchema.$defs.SupportedGameRecord.properties.name.minLength,
     1,
   );
-  assert.equal(exportSchema.$id.endsWith("catalogue-export-record@2"), true);
-  assert.equal(exportManifest.$id.endsWith("catalogue-export-manifest@2"), true);
-  assert.equal(exportManifest.properties.export_schema_major.const, 2);
+  assert.equal(exportSchema.$id.endsWith("catalogue-export-record@3"), true);
+  assert.equal(exportManifest.$id.endsWith("catalogue-export-manifest@3"), true);
+  assert.equal(exportManifest.properties.export_schema_major.const, 3);
   assert.equal(
     exportSchema.$defs.ReleaseRecord.required.includes("event_key"),
     true,
@@ -172,7 +175,7 @@ test("export schema major 2 carries typed Product and Release projections", asyn
   );
   assert.ok(
     exportManifest.$defs.ReleasesComponent.allOf[1].properties.record_schema
-      .const.includes("catalogue-export-record@2"),
+      .const.includes("catalogue-export-record@3"),
   );
   for (const definition of [
     "PrintingProductProjection",

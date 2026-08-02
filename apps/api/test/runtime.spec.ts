@@ -15,7 +15,8 @@ import {
   cardSearchText,
 } from "../../../src/catalogue/card-search";
 import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
-import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
+import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
+import exportManifestSchemaV3 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
 import exportRecordSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v1.schema.json";
 import { deterministicGzip } from "../../../src/catalogue/export-compression";
 import {
@@ -693,7 +694,7 @@ test("authenticated Legality Status gives definitive exclusions precedence while
     }));
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({
-      code: "invalid_catalogue_document",
+      code: "internal_error",
     });
   };
   const originalCard = cards[0]!;
@@ -1124,6 +1125,7 @@ test("the public Printing response validates full Distribution Context objects",
   addFormats(ajv);
   ajv.addSchema(exportManifestSchemaV1);
   ajv.addSchema(exportManifestSchemaV2);
+  ajv.addSchema(exportManifestSchemaV3);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/PrintingDocument`,
@@ -1766,6 +1768,7 @@ test("the normative Printing schema excludes SourceBucket from canonical relatio
   addFormats(ajv);
   ajv.addSchema(exportManifestSchemaV1);
   ajv.addSchema(exportManifestSchemaV2);
+  ajv.addSchema(exportManifestSchemaV3);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/RelationshipEvidence`,

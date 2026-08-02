@@ -1,1 +1,4 @@
-export { requiredOfficialSourceScope } from "./official-source-scope.ts";
+export {
+  requiredLegalityRegionsForGame,
+  requiredOfficialSourceScope,
+} from "./official-source-scope.ts";

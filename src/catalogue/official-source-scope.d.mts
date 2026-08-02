@@ -7,3 +7,6 @@ export type OfficialSourceScope = Readonly<{
 export function requiredOfficialSourceScope(
   sourceLineage: string,
 ): OfficialSourceScope;
+export function requiredLegalityRegionsForGame(
+  game: OfficialSourceScope["game"],
+): readonly OfficialSourceScope["legalityRegion"][];

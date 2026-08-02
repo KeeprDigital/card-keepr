@@ -45,22 +45,10 @@ import {
   LegalityStatusProblem,
 } from "../../../src/catalogue/legality-status";
 
-export type ApiWorkerEnvironment = {
-  CATALOGUE_DB: D1Database;
-  PRINTING_IMAGES: R2Bucket;
-  CATALOGUE_EXPORTS: R2Bucket;
-  CORS_ALLOWED_ORIGINS: string;
-  API_BEARER_KEY?: string;
-  API_BEARER_KEY_REPLACEMENT?: string;
-  CREDENTIAL_CONSUMER_PROOF_KEY: string;
-  CATALOGUE_RATE_LIMIT: RateLimit;
-  PRINTING_IMAGE_RATE_LIMIT: RateLimit;
-};
-
 const apiWorker = {
   async fetch(
     request: Request,
-    env: ApiWorkerEnvironment,
+    env: Env,
   ): Promise<Response> {
     const requestId = crypto.randomUUID();
 
@@ -373,12 +361,12 @@ const apiWorker = {
       );
     }
   },
-} satisfies ExportedHandler<ApiWorkerEnvironment>;
+} satisfies ExportedHandler<Env>;
 
 export default apiWorker;
 
 export class ApiCredentialConsumer extends WorkerEntrypoint<
-  ApiWorkerEnvironment
+  Env
 > {
   override async fetch(request: Request): Promise<Response> {
     return (

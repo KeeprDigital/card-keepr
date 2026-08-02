@@ -467,6 +467,25 @@ test("current production legality parser rejects modifier-scoped eligible negati
   );
 });
 
+test("current production legality parser rejects mixed directives and foreign operands", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const mixed = fusionLegalityPage(fusionLegalityRuleHtml({
+    id: "FW-2026-MIXED-ELIGIBLE",
+    wording:
+      "FB01-030 is legal for Standard play, but decks are limited to 1 copy.",
+    cards: ["FB01-030"],
+    directive: "eligible",
+    effectFields: "<dt>Cap</dt><dd>1</dd>",
+  }));
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(mixed),
+      fusionLegalityContext(current),
+    ),
+    /foreign operand|additional structured semantics/u,
+  );
+});
+
 test("current production legality HTML decodes entities exactly once", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const html = fusionLegalityPage(fusionLegalityRuleHtml({

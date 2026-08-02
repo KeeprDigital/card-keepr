@@ -41,7 +41,7 @@ test("component export validation rejects a valid record from the wrong componen
   assert.doesNotThrow(() => verifyExportRecord(supportedGame));
   assert.throws(
     () => verifyComponentExportRecord(
-      "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/ProductRecord",
+      "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/ProductRecord",
       supportedGame,
     ),
     /component record failed schema verification/u,

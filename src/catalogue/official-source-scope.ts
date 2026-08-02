@@ -46,3 +46,17 @@ export function requiredOfficialSourceScope(
   }
   return scope;
 }
+
+export function requiredLegalityRegionsForGame(
+  game: SupportedGame,
+): readonly LegalityRegion[] {
+  const regions = [...new Set(
+    scopes
+      .filter((scope) => scope.game === game)
+      .map((scope) => scope.legalityRegion),
+  )].sort();
+  if (regions.length === 0) {
+    throw new Error("Supported Game has no registered Official Source scope.");
+  }
+  return regions;
+}

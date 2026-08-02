@@ -52,16 +52,15 @@ The v2 component order is:
 
 ## Export schema compatibility
 
-Export schema major 2 is intentionally incompatible with major 1. Product,
-Release, Distribution Context, and typed game-profile records added required
-properties that a major-1 consumer, whose schemas reject unknown properties,
-cannot safely interpret. Publishers therefore emit the
-`card-keepr-catalogue-export-manifest@2` format and `catalogue-export-record@2`
-component schema URIs. Consumers must select a decoder by
-`export_schema_major` and URI; they must not validate a major-2 component with a
-major-1 schema. A consumer migrating from major 1 must add the four new
-component decoders and accept required nullable Release `status` values before
-switching its current-manifest pointer.
+Export schema majors are immutable compatibility contracts. Major 2 added
+Product, Release, Distribution Context, and typed game-profile properties to
+major 1. Major 3 adds the complete normalized Legality Rule `effect`, source
+provenance, and lifecycle required for exact contextual legality. Publishers
+emit `card-keepr-catalogue-export-manifest@3` and
+`catalogue-export-record@3` component schema URIs. Consumers must select a
+decoder by `export_schema_major` and URI and must never validate a component
+with a different major. The historical major-1 and major-2 schemas remain
+checked in byte-identically for revision-addressed exports.
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are

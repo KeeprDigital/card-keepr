@@ -50,6 +50,15 @@ const exportManifestSchemaV1 = JSON.parse(
     "utf8",
   ),
 );
+const exportManifestSchemaV2 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const gzipGolden = JSON.parse(
   readFileSync(
     resolve(
@@ -63,6 +72,7 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(exportManifestSchema);
 ajv.addSchema(exportManifestSchemaV1);
+ajv.addSchema(exportManifestSchemaV2);
 ajv.addSchema(apiSchema);
 ajv.addSchema(exportRecordSchema);
 const validateLegalityStatus = ajv.getSchema(
@@ -1066,14 +1076,14 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     );
   }
   await t.test(
-    "Legality Rule exports use schema v2 and retain exact effects",
+    "Legality Rule exports use schema v3 and retain exact effects",
     () => {
-      assert.equal(manifestDocument.data.export_schema_major, 2);
+      assert.equal(manifestDocument.data.export_schema_major, 3);
       assert.equal(
         manifestDocument.data.components.find(
           (component) => component.name === "legality-rules",
         ).record_schema,
-        "https://card-keepr.invalid/schemas/catalogue-export-record@2#/$defs/LegalityRuleRecord",
+        "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/LegalityRuleRecord",
       );
     },
   );

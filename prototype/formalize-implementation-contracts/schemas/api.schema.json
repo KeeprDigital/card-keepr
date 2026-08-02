@@ -871,6 +871,9 @@
             },
             {
               "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@2"
+            },
+            {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@3"
             }
           ]
         },

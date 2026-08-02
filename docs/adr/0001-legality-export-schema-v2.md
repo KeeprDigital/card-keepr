@@ -1,7 +1,0 @@
-# Use Catalogue Export schema v2 for exact Legality Rule effects
-
-Catalogue Export schema v1 can identify only a broad Legality Rule kind, so it cannot represent membership predicates, release dates, unresolved reasons, or other rule operands without losing semantics. It also places lifecycle only on relationship records, which leaves a globally applicable rule with no affected Card relationship unable to expose whether the Official Source still publishes it. Newly generated exports therefore use manifest and record schema major 2 and retain the complete normalized discriminated `effect`, source provenance, and lifecycle directly on every Legality Rule; existing v1 manifests and objects remain immutable and readable through the same revision-addressed API.
-
-## Consequences
-
-The serialization profile remains `card-keepr-ndjson-gzip@1`. The canonical v2 manifest advertises `catalogue-export-record@2` schema URIs for every component, including components whose individual fields did not change, so the composition has one unambiguous schema major. Rule records require `source_lineage`, at least one `source_observation_id`, and the same revision-bounded lifecycle shape used by relationships. Card-scoped rules continue to publish `legality-rule-card` relationships as supplemental navigation evidence. Separately named v1 manifest and record schemas remain checked in solely for immutable historical export artifacts; a new v2 manifest never references them.

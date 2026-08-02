@@ -336,6 +336,7 @@ export default defineConfig({
             if (
               (
                 artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
+                artworkMarker === "card-keepr-one-piece-unrecognized-release-v2" ||
                 url.searchParams.get("recording") === "1"
               ) &&
               url.hostname === "en.onepiece-cardgame.com" &&
@@ -424,6 +425,61 @@ export default defineConfig({
               );
             }
             if (
+              artworkMarker === "card-keepr-one-piece-unrecognized-release-v2" &&
+              url.hostname === "en.onepiece-cardgame.com" &&
+              url.pathname === "/products/"
+            ) {
+              return new Response(
+                `<html>
+                  <title>BANDAI ONE PIECE CARD RELEASE publication</title>
+                  <script type="application/ld+json">${JSON.stringify({
+                    "@context": "https://schema.org",
+                    "@type": "Dataset",
+                    publisher: { "@type": "Organization", name: "Bandai" },
+                    hasPart: [{
+                      "@type": "Dataset",
+                      identifier: "one-piece-en:releases",
+                      payload: {
+                        publication: "release-schedule",
+                        events: {
+                          cap_signal: null,
+                          partitions: [{
+                            bucket: "all-releases",
+                            page: 1,
+                            pages: 1,
+                            total: 1,
+                            has_next: false,
+                            entries: [{
+                              product: {
+                                product_code: "OP-RAW-01",
+                                product_name: "One Piece Raw Product",
+                              },
+                              release: {
+                                product_code: "OP-RAW-01",
+                                announcement_id:
+                                  "OP-RAW-01-EN-OCEANIA-CHANGED",
+                                region: "EN-OCEANIA",
+                                precision: "day",
+                                date: "2026-12-02",
+                                status: "released",
+                              },
+                            }],
+                          }],
+                        },
+                        release_timing_entries: [],
+                      },
+                    }],
+                  }).replaceAll("<", "\\u003c")}</script>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"card-keepr-one-piece-unrecognized-release-v2"',
+                  },
+                },
+              );
+            }
+            if (
               artworkMarker === "card-keepr-nonempty-legality-sidecar" &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
@@ -443,14 +499,17 @@ export default defineConfig({
             }
             if (
               (artworkMarker === "card-keepr-representable-legality-v3" ||
-                artworkMarker === "card-keepr-unrepresentable-legality-v3") &&
+                artworkMarker === "card-keepr-unrepresentable-legality-v3" ||
+                artworkMarker === "card-keepr-mixed-effect-legality-v3") &&
               url.hostname === "www.dbs-cardgame.com" &&
               url.pathname === "/fw/en/rules/banned-limited-cards/"
             ) {
               const officialWording = artworkMarker ===
                   "card-keepr-representable-legality-v3"
                 ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
-                : "FB01-001 is not currently eligible for Standard play.";
+                : artworkMarker === "card-keepr-mixed-effect-legality-v3"
+                  ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
+                  : "FB01-001 is not currently eligible for Standard play.";
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
@@ -467,6 +526,9 @@ export default defineConfig({
                         <dt>Expires On</dt><dd>-</dd>
                         <dt>Cards</dt><dd>FB01-001</dd>
                         <dt>Directive</dt><dd>eligible</dd>
+                        ${artworkMarker === "card-keepr-mixed-effect-legality-v3"
+                          ? "<dt>Cap</dt><dd>1</dd>"
+                          : ""}
                       </dl>
                     </article>
                   </main>

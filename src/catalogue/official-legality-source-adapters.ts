@@ -344,6 +344,7 @@ function exactLegalityRule(
     entry[fields.directive],
     "Official Legality directive",
   );
+  assertDirectiveSpecificOperands(entry, fields, directive);
   const effect = exactEffect(entry, fields, directive, wording);
   const region = requiredText(
     entry[fields.region],
@@ -390,6 +391,13 @@ function exactEffect(
 ): Record<string, unknown> {
   switch (directive) {
     case "eligible":
+      assertNoAdditionalStructuredSemantics("eligible", wording, [
+        copyLimitSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+      ]);
       assertWording(directive, wording, /\b(?:eligible|legal)\b/iu);
       assertNoContradiction(
         directive,
@@ -400,6 +408,13 @@ function exactEffect(
       return { type: "eligible" };
     case "ban":
     case "banned":
+      assertNoAdditionalStructuredSemantics("ban", wording, [
+        copyLimitSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+      ]);
       assertWording(
         directive,
         wording,
@@ -414,6 +429,14 @@ function exactEffect(
     case "copy_limit":
     case "limited":
       {
+        assertNoAdditionalStructuredSemantics("copy limit", wording, [
+          banSemantics,
+          combinationSemantics,
+          membershipSemantics,
+          rotationSemantics,
+          releaseTimingSemantics,
+          /\b(?:eligible|legal|permitted)\b/iu,
+        ]);
         const maximumCopies = requiredPositiveInteger(
           entry[fields.maximumCopies],
           "Official Legality copy limit",
@@ -426,6 +449,14 @@ function exactEffect(
       }
     case "combination":
     case "prohibited_combination": {
+      assertNoAdditionalStructuredSemantics("prohibited combination", wording, [
+        banSemantics,
+        copyLimitSemantics,
+        membershipSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+        /\b(?:eligible|legal|permitted)\b/iu,
+      ]);
       const directCards = requiredTextArray(
         entry[fields.cards],
         "Official Legality Card numbers",
@@ -457,6 +488,13 @@ function exactEffect(
       };
     }
     case "membership": {
+      assertNoAdditionalStructuredSemantics("membership", wording, [
+        banSemantics,
+        copyLimitSemantics,
+        combinationSemantics,
+        rotationSemantics,
+        releaseTimingSemantics,
+      ]);
       const attribute = requiredText(
         entry[fields.membershipAttribute],
         "Official Legality membership attribute",
@@ -490,6 +528,13 @@ function exactEffect(
       };
     }
     case "rotation": {
+      assertNoAdditionalStructuredSemantics("rotation", wording, [
+        banSemantics,
+        copyLimitSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        releaseTimingSemantics,
+      ]);
       const blocks = requiredTextArray(
         entry[fields.eligibleBlocks],
         "Official Legality rotation blocks",
@@ -515,6 +560,13 @@ function exactEffect(
     }
     case "release":
     case "release_timing": {
+      assertNoAdditionalStructuredSemantics("release timing", wording, [
+        banSemantics,
+        copyLimitSemantics,
+        combinationSemantics,
+        membershipSemantics,
+        rotationSemantics,
+      ]);
       const legalFrom = requiredDate(
         entry[fields.legalFrom],
         "Official Legality tournament date",
@@ -548,6 +600,75 @@ function exactEffect(
       throw new Error(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
       );
+  }
+}
+
+const operandFieldNames = [
+  "maximumCopies",
+  "companionCards",
+  "membershipAttribute",
+  "membershipValues",
+  "eligibleBlocks",
+  "legalFrom",
+  "unresolvedReason",
+] as const;
+
+function assertDirectiveSpecificOperands(
+  entry: Record<string, unknown>,
+  fields: FieldMap,
+  directive: string,
+): void {
+  const normalized =
+    directive === "banned" ? "ban"
+      : directive === "limited" ? "copy_limit"
+      : directive === "combination" ? "prohibited_combination"
+      : directive === "release" ? "release_timing"
+      : directive;
+  const owned = new Set<keyof FieldMap>(
+    normalized === "copy_limit" ? ["maximumCopies"]
+      : normalized === "prohibited_combination" ? ["companionCards"]
+      : normalized === "membership"
+        ? ["membershipAttribute", "membershipValues"]
+      : normalized === "rotation" ? ["eligibleBlocks"]
+      : normalized === "release_timing" ? ["legalFrom"]
+      : normalized === "unresolved" ? ["unresolvedReason"]
+      : [],
+  );
+  for (const fieldName of operandFieldNames) {
+    const value = entry[fields[fieldName]];
+    const meaningful =
+      value !== undefined &&
+      value !== null &&
+      (!Array.isArray(value) || value.length > 0);
+    if (meaningful && !owned.has(fieldName)) {
+      throw new Error(
+        `Official Legality directive ${directive} contains foreign operand ${fields[fieldName]}.`,
+      );
+    }
+  }
+}
+
+const banSemantics =
+  /\b(?:banned?|not\s+(?:currently\s+|tournament\s+)*legal)\b|may not be included/iu;
+const copyLimitSemantics =
+  /\b(?:limit(?:ed)?\s+(?:of|to)|maximum(?:\s+of)?|up\s+to)\s+(?:a\s+maximum\s+of\s+)?\d+\s+cop(?:y|ies)\b/iu;
+const combinationSemantics =
+  /\b(?:(?:may|must)\s+not|cannot|can't)\b[\s\S]*\b(?:together|same deck)\b|\bprohibited\s+combination\b/iu;
+const membershipSemantics =
+  /\b(?:membership|traits?|attributes?)\b[\s\S]*\b(?:includes?|with|has|have|required|requires?)\b/iu;
+const rotationSemantics = /\b(?:rotation|blocks?)\b/iu;
+const releaseTimingSemantics =
+  /\b(?:becomes?|is|will be)\s+(?:standard\s+|tournament\s+)*legal\b[\s\S]*\b\d{4}-\d{2}-\d{2}\b|\blegal\s+for\s+tournament\b[\s\S]*\b\d{4}-\d{2}-\d{2}\b/iu;
+
+function assertNoAdditionalStructuredSemantics(
+  directive: string,
+  wording: string,
+  patterns: readonly RegExp[],
+): void {
+  if (patterns.some((pattern) => pattern.test(wording))) {
+    throw new Error(
+      `Official Legality directive ${directive} contains additional structured semantics.`,
+    );
   }
 }
 
