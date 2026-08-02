@@ -509,6 +509,7 @@ export async function retainedReconciliationObservation(
       completeLegalityRequestIds,
       completeLegalityRuleCounts,
       officialSurfaces,
+      collectionRequests,
     });
   }
   for (const collectionPlan of collectionPlans.results) {
@@ -538,7 +539,6 @@ export async function retainedReconciliationObservation(
     structurallyComplete: true,
     partitions,
     evidencePlans: evidencePlans.map((plan) => {
-      const requestIds = new Set(plan.requests.map(({ id }) => id));
       return {
         sourceLineage: plan.source_lineage,
         supportedGame: supportedGame(plan.supported_game),
@@ -546,7 +546,8 @@ export async function retainedReconciliationObservation(
         reconciliationCapability:
           requiredSourceAdapter(plan.adapter_version).reconciliationCapability,
         partitions: partitions.filter(({ requestId }) =>
-          requestIds.has(requestId)
+          requestId.startsWith(`${plan.source_lineage}:`) ||
+          plan.requests.some(({ id }) => id === requestId)
         ),
       };
     }),
@@ -623,6 +624,7 @@ async function validateOfficialSurfaceCoverage(input: {
   completeLegalityRequestIds: ReadonlySet<string>;
   completeLegalityRuleCounts: ReadonlyMap<string, number>;
   officialSurfaces: ReadonlyMap<string, { records: unknown[] }>;
+  collectionRequests: readonly Record<string, unknown>[];
 }): Promise<void> {
   const { adapter, plan, requests } = input;
   if (
@@ -634,9 +636,10 @@ async function validateOfficialSurfaceCoverage(input: {
   const requiredSurfaces = adapter.requiredSurfaces ?? [];
   if (
     requiredSurfaces.some((surface) =>
-      !plan.requests.some(
-        (request) =>
-          request.id === `${adapter.sourceLineage}:${surface}`,
+      !input.collectionRequests.some(
+        (request) => request.id === `${adapter.sourceLineage}:${surface}`,
+      ) && !plan.requests.some(
+        (request) => request.id === `${adapter.sourceLineage}:${surface}`,
       )
     )
   ) {
@@ -889,10 +892,12 @@ function assertClosedRequestGraph(
         throw new Error("Root Source Request graph identity is invalid.");
       }
       const surface = request.request_id.slice(prefix.length);
-      rootSurfaces.set(row.adapter_version, new Set([
-        ...(rootSurfaces.get(row.adapter_version) ?? []),
-        surface,
-      ]));
+      if (surface !== "discovery") {
+        rootSurfaces.set(row.adapter_version, new Set([
+          ...(rootSurfaces.get(row.adapter_version) ?? []),
+          surface,
+        ]));
+      }
       return;
     }
     if (request.discovered_from_request_id === null) {

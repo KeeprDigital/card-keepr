@@ -841,7 +841,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
   } else if (directive === "rotation") {
     assertExactRotationWording(input.wording, input.effect);
   } else if (directive === "release_timing") {
-    const wordingDate = wordingCalendarDate(input.wording);
+    const wordingDate = wordingReleaseCalendarDate(input.wording);
     if (wordingDate !== input.effect.legal_from) {
       throw new Error(
         "Official Legality wording release date conflicts with its structured effect.",
@@ -961,11 +961,26 @@ function assertExactUnresolvedWording(
   }
 }
 
-function wordingCalendarDate(wording: string): string | undefined {
-  const iso = wording.match(/\b(\d{4}-\d{2}-\d{2})\b/u)?.[1];
-  if (iso !== undefined) return iso;
-  const human = wording.match(
-    /\b(\d{1,2})\s+([\p{L}]+)\s+(\d{4})\b/iu,
+function wordingReleaseCalendarDate(wording: string): string | undefined {
+  const datePattern = "(?:\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\s+[\\p{L}]+\\s+\\d{4})";
+  const operative = wording.match(new RegExp(
+    `\\blegal(?:\\s+for\\s+(?:standard\\s+)?tournament\\s+play)?\\s+on\\s+(${datePattern})\\.$`,
+    "iu",
+  ))?.[1];
+  const allDates = [...wording.matchAll(new RegExp(
+    `(?<![\\p{L}\\p{N}])(${datePattern})(?![\\p{L}\\p{N}])`,
+    "giu",
+  ))].map((match) => match[1]!);
+  if (operative === undefined || allDates.length !== 1) return undefined;
+  return normalizedWordingCalendarDate(operative);
+}
+
+function normalizedWordingCalendarDate(value: string): string | undefined {
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    return isIsoCalendarDate(value) ? value : undefined;
+  }
+  const human = value.match(
+    /^(\d{1,2})\s+([\p{L}]+)\s+(\d{4})$/iu,
   );
   if (human === null) return undefined;
   const month = [

@@ -833,26 +833,15 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
 });
 
 function digimonOfficialPlan() {
-  const urls = {
-    "card-list":
-      "https://world.digimoncard.com/cards/index.php?search=true",
-    products: "https://world.digimoncard.com/products/",
-    releases: "https://world.digimoncard.com/products/",
-    "restrictions-current":
-      "https://world.digimoncard.com/rule/restriction_card/",
-    "restrictions-history":
-      "https://world.digimoncard.com/rule/restriction_card/",
-    errata: "https://world.digimoncard.com/rule/errata_card/",
-  };
   return {
     supported_game: "digimon",
     source_lineage: "digimon-en",
     adapter_version: "digimon-en@3",
-    requests: Object.entries(urls).map(([surface, url]) => ({
-      id: `digimon-en:${surface}`,
-      url,
+    requests: [{
+      id: "digimon-en:discovery",
+      url: "https://world.digimoncard.com/cards/index.php?search=true",
       headers: { accept: "text/html" },
-    })),
+    }],
   };
 }
 

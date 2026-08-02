@@ -45,9 +45,12 @@ legality-aware identities, while prior fixture versions retain their original
 behavior.
 
 An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
-separate plan for every selected Source Lineage. Static root requests and every
-dynamically discovered child request are immutable and provenance-bound to
-their owning plan and parent request. Reconciliation validates completeness,
+separate plan for every selected Source Lineage. Each complete production plan
+contains exactly one discovery request. Parsing that retained discovery
+evidence creates a separately immutable Official Source Collection Plan for
+the exact bounded surface requests; later dynamically discovered child
+requests remain immutable and provenance-bound to their parent request.
+Reconciliation verifies all three artifacts and validates completeness,
 lifecycle, and freshness independently for each lineage; it never assigns a
 combined run to the first plan's lineage.
 

@@ -1050,96 +1050,13 @@ function processEnvironment(statePath) {
   };
 }
 
-const officialSurfaces = {
-  "one-piece-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions",
-    "block-policy",
-    "errata",
-    "don-rules",
-  ],
-  "fusion-world-en": [
-    "card-search",
-    "products",
-    "releases",
-    "legality-current",
-    "legality-history",
-    "errata",
-  ],
-  "digimon-en": [
-    "card-list",
-    "products",
-    "releases",
-    "restrictions-current",
-    "restrictions-history",
-    "errata",
-  ],
-  "gundam-en-asia": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
-  "gundam-en-us": [
-    "packages",
-    "products",
-    "releases",
-    "legality",
-    "errata",
-  ],
-};
-
-const officialUrls = {
-  "one-piece-en": {
-    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
-    products: "https://en.onepiece-cardgame.com/products/",
-    releases: "https://en.onepiece-cardgame.com/products/",
-    restrictions:
-      "https://en.onepiece-cardgame.com/rules/restriction/",
-    "block-policy":
-      "https://en.onepiece-cardgame.com/rules/block_icon/",
-    errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    "don-rules": "https://en.onepiece-cardgame.com/rules/",
-  },
-  "fusion-world-en": {
-    "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/",
-    products: "https://www.dbs-cardgame.com/fw/en/products/",
-    releases: "https://www.dbs-cardgame.com/fw/en/products/",
-    "legality-current":
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    "legality-history":
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    errata: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
-  },
-  "digimon-en": {
-    "card-list":
-      "https://world.digimoncard.com/cards/index.php?search=true",
-    products: "https://world.digimoncard.com/products/",
-    releases: "https://world.digimoncard.com/products/",
-    "restrictions-current":
-      "https://world.digimoncard.com/rule/restriction_card/",
-    "restrictions-history":
-      "https://world.digimoncard.com/rule/restriction_card/",
-    errata: "https://world.digimoncard.com/rule/errata_card/",
-  },
-  "gundam-en-asia": {
-    packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
-    products: "https://www.gundam-gcg.com/asia-en/products/list.php",
-    releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
-    legality: "https://www.gundam-gcg.com/asia-en/rules/",
-    errata:
-      "https://www.gundam-gcg.com/asia-en/news/?subcategory=rules",
-  },
-  "gundam-en-us": {
-    packages: "https://www.gundam-gcg.com/en/cards/index.php",
-    products: "https://www.gundam-gcg.com/en/products/list.php",
-    releases: "https://www.gundam-gcg.com/en/products/list.php",
-    legality: "https://www.gundam-gcg.com/en/rules/",
-    errata: "https://www.gundam-gcg.com/en/news/?subcategory=rules",
-  },
+const officialDiscoveryUrls = {
+  "one-piece-en": "https://en.onepiece-cardgame.com/cardlist/",
+  "fusion-world-en": "https://www.dbs-cardgame.com/fw/en/cardlist/",
+  "digimon-en":
+    "https://world.digimoncard.com/cards/index.php?search=true",
+  "gundam-en-asia": "https://www.gundam-gcg.com/asia-en/cards/index.php",
+  "gundam-en-us": "https://www.gundam-gcg.com/en/cards/index.php",
 };
 
 function officialPlan(game, lineage, adapter) {
@@ -1147,10 +1064,10 @@ function officialPlan(game, lineage, adapter) {
     supported_game: game,
     source_lineage: lineage,
     adapter_version: adapter,
-    requests: officialSurfaces[lineage].map((surface) => ({
-      id: `${lineage}:${surface}`,
-      url: officialUrls[lineage][surface],
+    requests: [{
+      id: `${lineage}:discovery`,
+      url: officialDiscoveryUrls[lineage],
       headers: { accept: "text/html" },
-    })),
+    }],
   };
 }

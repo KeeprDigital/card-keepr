@@ -10,12 +10,12 @@ import {
   sha256,
   utf8,
 } from "../../../src/catalogue/serialization";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
-import {
-  fusionWorldProductionDiscoveryRequests,
-  onePieceProductionDiscoveryRequests,
-  type ProductionDiscoveryRequest,
-} from "./production-discovery-request-goldens";
+
+type ProductionDiscoveryRequest = ReturnType<
+  typeof officialSourceDiscoveryRequests
+>[number];
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -1230,6 +1230,7 @@ test.each([
   "card-keepr-wording-format-mismatch-v3",
   "card-keepr-wording-tier-omitted-v3",
   "card-keepr-wording-tier-mismatch-v3",
+  "card-keepr-multiple-date-release-v3",
 ])("a versioned production adapter blocks official wording it cannot represent exactly: %s", async (marker) => {
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -2691,37 +2692,25 @@ function productionFusionLegalityRequests(
   marker: string,
   historyMarker = marker,
 ): ProductionDiscoveryRequest[] {
-  return fusionWorldProductionDiscoveryRequests.map((request) =>
-    request.id === "fusion-world-en:legality-current" ||
-      request.id === "fusion-world-en:legality-history"
-      ? {
-          ...request,
-          headers: {
-            ...request.headers,
-            "user-agent": request.id === "fusion-world-en:legality-history"
-              ? historyMarker
-              : marker,
-          },
-        }
-      : request
-  );
+  return officialSourceDiscoveryRequests("fusion-world-en").map((request) => ({
+    ...request,
+    headers: {
+      ...request.headers,
+      "user-agent": marker,
+      ...(historyMarker === marker
+        ? {}
+        : { "accept-language": historyMarker }),
+    },
+  }));
 }
 
 function productionOnePieceReleaseTimingRequests(
   marker = "card-keepr-one-piece-release-timing-v2",
 ): ProductionDiscoveryRequest[] {
-  return onePieceProductionDiscoveryRequests.map((request) =>
-    request.id === "one-piece-en:card-list" ||
-      request.id === "one-piece-en:releases"
-      ? {
-          ...request,
-          headers: {
-            ...request.headers,
-            "user-agent": marker,
-          },
-        }
-      : request
-  );
+  return officialSourceDiscoveryRequests("one-piece-en").map((request) => ({
+    ...request,
+    headers: { ...request.headers, "user-agent": marker },
+  }));
 }
 
 async function request(

@@ -86,12 +86,12 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     directory,
   );
   assert.equal(rejected.failure_code, "source_redirect_rejected");
-  assert.equal(rejected.snapshots.length, 6);
-  assert.equal(rejected.observation_sets.length, 6);
-  assert.equal(rejected.diagnostics.length, 7);
+  assert.equal(rejected.snapshots.length, 0);
+  assert.equal(rejected.observation_sets.length, 0);
+  assert.equal(rejected.diagnostics.length, 1);
   assert.equal(
     rejected.diagnostics.find(
-      ({ request_id }) => request_id === "one-piece-en:card-list",
+      ({ request_id }) => request_id === "one-piece-en:discovery",
     )?.outcome,
     "redirect",
   );
@@ -108,9 +108,9 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     terminalFailure.failure_code,
     "source_request_retries_exhausted",
   );
-  assert.equal(terminalFailure.snapshots.length, 6);
-  assert.equal(terminalFailure.observation_sets.length, 6);
-  assert.equal(terminalFailure.diagnostics.length, 10);
+  assert.equal(terminalFailure.snapshots.length, 0);
+  assert.equal(terminalFailure.observation_sets.length, 0);
+  assert.equal(terminalFailure.diagnostics.length, 4);
 
   const successful = await collectResumeAndShow(
     "cli_success_evidence_001",
@@ -121,9 +121,9 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     directory,
   );
   assert.equal(successful.failure_code, null);
-  assert.equal(successful.snapshots.length, 8);
-  assert.equal(successful.observation_sets.length, 8);
-  assert.equal(successful.diagnostics.length, 8);
+  assert.equal(successful.snapshots.length, 9);
+  assert.equal(successful.observation_sets.length, 9);
+  assert.equal(successful.diagnostics.length, 9);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
   const retained = await runCli(
@@ -215,20 +215,10 @@ async function collectResumeAndShow(
 }
 
 function exactOnePieceRequests() {
-  return Object.entries({
-    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
-    products: "https://en.onepiece-cardgame.com/products/",
-    releases: "https://en.onepiece-cardgame.com/products/",
-    restrictions:
-      "https://en.onepiece-cardgame.com/rules/restriction/",
-    "block-policy":
-      "https://en.onepiece-cardgame.com/rules/block_icon/",
-    errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    "don-rules": "https://en.onepiece-cardgame.com/rules/",
-  }).map(([surface, url]) => ({
-    id: `one-piece-en:${surface}`,
-    url,
-  }));
+  return [{
+    id: "one-piece-en:discovery",
+    url: "https://en.onepiece-cardgame.com/cardlist/",
+  }];
 }
 
 function parseCliErrorCode(stdout) {

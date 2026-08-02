@@ -22,6 +22,9 @@ import {
 } from "../../../src/catalogue/source-evidence-repository";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import {
+  fusionWorldProductionCollectionRequests,
+} from "./production-collection-request-goldens";
 
 declare global {
   interface __BaseEnv_Env {
@@ -326,6 +329,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       (await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id))
         .status(),
     "complete",
+    12_000,
   );
   const completed = await showCollection(run.id);
   expect(completed).toMatchObject({
@@ -335,6 +339,19 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   });
   expect(completed.snapshots.length).toBeGreaterThan(0);
   expect(completed.observation_sets.length).toBeGreaterThan(0);
+  expect(completed.official_source_collection_plans).toMatchObject([{
+    source_lineage: "fusion-world-en",
+    contract: "card-keepr-official-source-collection-plan@1",
+    discovery_observation_set_id: expect.stringMatching(/^srcobsset_/u),
+    content_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    plan: {
+      source_lineage: "fusion-world-en",
+      requests: fusionWorldProductionCollectionRequests.map((request) => ({
+        ...request,
+        surface: request.id.slice("fusion-world-en:".length),
+      })),
+    },
+  }]);
 }, 15_000);
 
 test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 and replays only a bounded reference", async () => {
@@ -693,6 +710,95 @@ test("the parent Workflow creates a persisted dynamic host child before recovery
   ]);
 });
 
+test("dynamic discovery durably plans and replays 2,500 requests within D1 limits", async () => {
+  const run = await createCollection(
+    "source_dynamic_plan_d1_limit_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const parentRequest = (
+    await pendingEvidenceRequests(env.CATALOGUE_DB, run.id)
+  )[0];
+  if (parentRequest === undefined) {
+    throw new Error("pending discovery parent request missing");
+  }
+  const discovered = Array.from({ length: 2_500 }, (_, index) => ({
+    role: "detail" as const,
+    url: `https://official-source.invalid/cards/${String(index + 1).padStart(4, "0")}`,
+    headers: { accept: "text/html" },
+  }));
+
+  expect(await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    parentRequest,
+    discovered,
+  )).toHaveLength(2_500);
+  expect(await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    parentRequest,
+    discovered,
+  )).toHaveLength(2_500);
+
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_discovery_request_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first("count")).toBe(2_500);
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_requests
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first("count")).toBe(2_501);
+}, 60_000);
+
+test("dynamic discovery preserves the first edge when two parents reach one immutable request", async () => {
+  const run = await createCollection(
+    "source_dynamic_shared_request_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending discovery root missing");
+  const discovered = [
+    {
+      role: "detail" as const,
+      url: "https://official-source.invalid/cards/one",
+      headers: { accept: "text/html" },
+    },
+    {
+      role: "detail" as const,
+      url: "https://official-source.invalid/cards/two",
+      headers: { accept: "text/html" },
+    },
+  ];
+  const [first, second] = await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    discovered,
+  );
+  if (first === undefined || second === undefined) {
+    throw new Error("dynamic requests were not persisted");
+  }
+
+  const replayed = await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    first,
+    [discovered[1]!],
+  );
+
+  expect(replayed).toHaveLength(1);
+  expect(replayed[0]).toMatchObject({
+    request_id: second.request_id,
+    discovered_from_request_id: root.request_id,
+  });
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_requests
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first("count")).toBe(3);
+});
+
 test(
   "successful captures remain auditable when a later required response is rejected or terminally fails",
   async () => {
@@ -921,9 +1027,9 @@ test("adapter registrations stay constrained while mismatched production identit
   );
 });
 
-test("a production plan that omits a required raw surface is rejected", async () => {
+test("a production plan cannot replace its discovery root with a raw surface", async () => {
   const plan = exactOnePiecePlan("source_exact_plan_omission_001");
-  plan.requests.pop();
+  plan.requests[0]!.id = "one-piece-en:card-list";
   const response = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
@@ -958,8 +1064,8 @@ test.each([
       state: "failed",
       failure_code: "source_parse_failed",
     });
-    expect(terminal.snapshots).toHaveLength(7);
-    expect(terminal.observation_sets).toHaveLength(6);
+    expect(terminal.snapshots).toHaveLength(8);
+    expect(terminal.observation_sets).toHaveLength(7);
     expect(
       terminal.snapshots.some((snapshot) =>
         snapshot.request.url === plan.requests[0]!.url
@@ -1420,6 +1526,17 @@ type CollectionDocument = {
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];
   workflow: { parent_id: string | null; child_ids: string[] };
+  official_source_collection_plans: Array<{
+    source_lineage: string;
+    discovery_observation_set_id: string;
+    contract: string;
+    content_digest: string;
+    created_at: string;
+    plan: {
+      source_lineage: string;
+      requests: Array<Record<string, unknown>>;
+    };
+  }>;
 };
 
 async function createCollection(

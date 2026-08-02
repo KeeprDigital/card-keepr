@@ -117,10 +117,9 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     const requests = officialSourceDiscoveryRequests(adapter.sourceLineage);
     assert.deepEqual(
       requests.map(({ id }) => id),
-      adapter.requiredSurfaces.map(
-        (surface) => `${adapter.sourceLineage}:${surface}`,
-      ),
+      [`${adapter.sourceLineage}:discovery`],
     );
+    assert.equal(requests.length, 1);
     assert.ok(
       requests.every(({ url }) =>
         new URL(url).hostname.endsWith("bandai.com") ||
@@ -135,6 +134,25 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         !new URL(url).pathname.includes(adapter.sourceLineage)
       ),
       `${adapter.sourceLineage} must use upstream paths, not Keepr paths`,
+    );
+
+    const discovery = adapter.parseBytes(
+      new TextEncoder().encode("<html><title>Bandai discovery</title></html>"),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: requests[0].url,
+        requestId: requests[0].id,
+      },
+    );
+    assert.deepEqual(
+      discovery.flatMap((observation) => observation.records ?? []),
+      adapter.requiredSurfaces.map((surface) => ({
+        id: `${adapter.sourceLineage}:${surface}`,
+        surface,
+        method: "GET",
+        url: adapter.requestUrlForSurface(surface),
+        headers: { accept: "text/html" },
+      })),
     );
   }
 });
@@ -436,6 +454,11 @@ test("current production legality parser requires exact positive wording for eve
       "FB01-012 becomes legal for tournament play on 2026-09-04.",
       "FB01-012 becomes legal for tournament play on 2026-09-05.",
       /operand 2026-09-04/u,
+    ],
+    [
+      "FB01-012 becomes legal for tournament play on 2026-09-04.",
+      "Starting 2026-09-04, FB01-012 becomes legal for tournament play on 2026-09-05.",
+      /release date|residual|qualifier/iu,
     ],
   ]) {
     assert.throws(

@@ -132,10 +132,13 @@ for (const failureCase of failureCases) {
     );
     if (failureCase.failure === "omission") {
       assert.notEqual(collected.code, 0);
-      assert.match(
-        `${collected.stdout}\n${collected.stderr}`,
-        /incomplete_source_plan/u,
-      );
+      assert.deepEqual(JSON.parse(collected.stdout), {
+        contract: "card-keepr-cli-problem@1",
+        status: "error",
+        code: "invalid_parameter",
+        detail:
+          "requests must contain between 1 and 100 Official Source requests.",
+      });
       return;
     }
     assert.equal(
@@ -160,30 +163,20 @@ for (const failureCase of failureCases) {
       ingestion,
     );
     assert.equal(failed.failure_code, "source_parse_failed");
-    assert.equal(failed.snapshots.length, 7);
-    assert.equal(failed.observation_sets.length, 6);
+    assert.equal(failed.snapshots.length, 8);
+    assert.equal(failed.observation_sets.length, 7);
   });
 }
 
 function exactOnePieceRequests() {
-  return Object.entries({
-    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
-    products: "https://en.onepiece-cardgame.com/products/",
-    releases: "https://en.onepiece-cardgame.com/products/",
-    restrictions:
-      "https://en.onepiece-cardgame.com/rules/restriction/",
-    "block-policy":
-      "https://en.onepiece-cardgame.com/rules/block_icon/",
-    errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    "don-rules": "https://en.onepiece-cardgame.com/rules/",
-  }).map(([surface, url]) => ({
-    id: `one-piece-en:${surface}`,
-    url,
-  }));
+  return [{
+    id: "one-piece-en:discovery",
+    url: "https://en.onepiece-cardgame.com/cardlist/",
+  }];
 }
 
 async function waitForFailedRun(runId, environment, ingestion) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 90_000;
   let lastDocument = null;
   while (Date.now() < deadline) {
     const shown = await runCli(

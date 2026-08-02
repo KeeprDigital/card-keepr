@@ -438,6 +438,24 @@ export default defineConfig({
                     publisher: { "@type": "Organization", name: "Bandai" },
                     hasPart: [{
                       "@type": "Dataset",
+                      identifier: "one-piece-en:products",
+                      payload: {
+                        page: "product-list",
+                        series_options: [],
+                        result: {
+                          cap_signal: null,
+                          partitions: [{
+                            bucket: "recording",
+                            page: 1,
+                            pages: 1,
+                            total: 0,
+                            has_next: false,
+                            entries: [],
+                          }],
+                        },
+                      },
+                    }, {
+                      "@type": "Dataset",
                       identifier: "one-piece-en:releases",
                       payload: {
                         publication: "release-schedule",
@@ -498,6 +516,64 @@ export default defineConfig({
               );
             }
             if (
+              artworkMarker === "card-keepr-representable-legality-v3" &&
+              request.headers.get("accept-language") ===
+                "card-keepr-conflicting-shared-legality-v3" &&
+              url.hostname === "www.dbs-cardgame.com" &&
+              url.pathname === "/fw/en/rules/banned-limited-cards/"
+            ) {
+              const publication = (surface: string, directive: string) => ({
+                publication: `fusion-world-${surface}`,
+                revision: "2026-08",
+                declared_record_count: 1,
+                partition: {
+                  page: 1,
+                  pages: 1,
+                  total: 1,
+                  has_next: false,
+                },
+                entries: [{
+                  rule_ref: "fw_production_eligible",
+                  notice: directive === "eligible"
+                    ? "FB01-001 is eligible for Standard play."
+                    : "FB01-001 is banned from Standard decks.",
+                  market: "EN-OCEANIA",
+                  play_format: "standard",
+                  tier: null,
+                  active_on: "2026-01-01",
+                  expires_on: null,
+                  cards: ["FB01-001"],
+                  directive,
+                }],
+              });
+              return new Response(
+                `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+                  <script type="application/ld+json">${JSON.stringify({
+                    "@context": "https://schema.org",
+                    "@type": "Dataset",
+                    publisher: { "@type": "Organization", name: "Bandai" },
+                    hasPart: [
+                      {
+                        "@type": "Dataset",
+                        identifier: "fusion-world-en:legality-current",
+                        payload: publication("legality-current", "eligible"),
+                      },
+                      {
+                        "@type": "Dataset",
+                        identifier: "fusion-world-en:legality-history",
+                        payload: publication("legality-history", "ban"),
+                      },
+                    ],
+                  }).replaceAll("<", "\\u003c")}</script></html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"card-keepr-conflicting-shared-legality-v3"',
+                  },
+                },
+              );
+            }
+            if (
               [
                 "card-keepr-representable-legality-v3",
                 "card-keepr-unrepresentable-legality-v3",
@@ -520,6 +596,7 @@ export default defineConfig({
                 "card-keepr-wording-format-mismatch-v3",
                 "card-keepr-wording-tier-omitted-v3",
                 "card-keepr-wording-tier-mismatch-v3",
+                "card-keepr-multiple-date-release-v3",
                 "card-keepr-large-legality-workflow-v3",
               ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
@@ -583,6 +660,8 @@ export default defineConfig({
                 : artworkMarker === "card-keepr-wording-tier-omitted-v3" ||
                     artworkMarker === "card-keepr-wording-tier-mismatch-v3"
                   ? "For Championship events, decks may contain no more than 1 copy of FB01-001."
+                : artworkMarker === "card-keepr-multiple-date-release-v3"
+                  ? "Starting 2026-01-01, FB01-001 becomes legal for tournament play on 2026-02-01."
                 : artworkMarker === "card-keepr-mixed-effect-legality-v3"
                   ? "FB01-001 is legal for Standard play, but decks are limited to 1 copy."
                   : artworkMarker === "card-keepr-definitive-unresolved-legality-v3"
@@ -605,6 +684,8 @@ export default defineConfig({
                 "card-keepr-wording-target-omitted-v3";
               const wordingTargetMismatch = artworkMarker ===
                 "card-keepr-wording-target-mismatch-v3";
+              const multipleDateRelease = artworkMarker ===
+                "card-keepr-multiple-date-release-v3";
               const legalityArticles = largeWorkflow
                 ? Array.from({ length: 4_000 }, (_, index) => {
                   const ordinal = String(index + 1).padStart(4, "0");
@@ -644,11 +725,13 @@ export default defineConfig({
                             ? "-"
                             : wordingTargetMismatch ? "FB01-002" : "FB01-001"
                         }</dd>
-                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : conflictingShared ? "ban" : wordingTier ? "copy_limit" : "eligible"}</dd>
+                        <dt>Directive</dt><dd>${unresolved ? "unresolved" : missingCombination ? "prohibited_combination" : conflictingShared ? "ban" : wordingTier ? "copy_limit" : multipleDateRelease ? "release_timing" : "eligible"}</dd>
                         ${artworkMarker === "card-keepr-mixed-effect-legality-v3"
                           ? "<dt>Cap</dt><dd>1</dd>"
                           : wordingTier
                             ? "<dt>Cap</dt><dd>1</dd>"
+                          : multipleDateRelease
+                            ? "<dt>Legal From</dt><dd>2026-01-01</dd>"
                           : unresolved
                             ? "<dt>Ambiguity</dt><dd>Publisher scope is unknown</dd>"
                             : missingCombination

@@ -208,7 +208,7 @@ describe("Errata rules-text lifecycle", () => {
     }
   });
 
-  test("generic production Card evidence cannot self-assert Official Errata authority", async () => {
+  test("a retired generic production Card adapter cannot self-assert Official Errata authority", async () => {
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
@@ -222,43 +222,14 @@ describe("Errata rules-text lifecycle", () => {
         headers: { accept: "application/json" },
       }],
     });
-    expect(started.response.status).toBe(201);
-    const runId = requiredString(started.document, "id");
-    expect(
-      (await post(
-        `/v1/ingestion-runs/${runId}/collection/resume`,
-        {},
-      )).response.status,
-    ).toBe(202);
-    await waitForRunState(runId, "parsing");
-
-    const reconciled = await reconcile(runId);
-
-    expect(reconciled.response.status).toBe(409);
-    expect(reconciled.document.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "retained_evidence_invalid",
-          detail:
-            "Retained Source Observation Set provenance is invalid.",
-        }),
-      ]),
-    );
-    const terminal = await get(`/v1/ingestion-runs/${runId}`);
-    expect(terminal.document).toMatchObject({ state: "failed" });
-    expect(terminal.document).not.toHaveProperty("publication_outcome");
-    expect(terminal.document).not.toHaveProperty("published_revision_id");
-    expect(terminal.document).not.toHaveProperty("resulting_revision_id");
-    const status = await get("/v1/status");
-    expect(status.document).toMatchObject({
-      safe_state: {
-        current_revision_id: requiredString(
-          started.document,
-          "expected_current_revision_id",
-        ),
-        active_ingestion_run_id: null,
-      },
+    expect(started.response.status).toBe(422);
+    expect(started.document).toMatchObject({
+      code: "adapter_not_supported",
     });
+    expect(await testEnv.CATALOGUE_DB.prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_runs
+       WHERE idempotency_key = 'reject-generic-production-errata-authority'`,
+    ).first("count")).toBe(0);
   });
 
   test("raw Errata NDJSON bytes follow the manifest id:utf8 ordering contract", async () => {

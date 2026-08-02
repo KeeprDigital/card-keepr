@@ -152,7 +152,32 @@ export async function validateEvidencePlan(
       }),
     });
   }
-  if (adapter.requiredSurfaces !== undefined) {
+  if (adapter.requestUrlForDiscovery !== undefined) {
+    const expectedIds = [`${adapter.sourceLineage}:discovery`];
+    const actualIds = requests.map(({ id }) => id);
+    if (
+      actualIds.length !== expectedIds.length ||
+      expectedIds.some((id) => !requestIds.has(id))
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "incomplete_source_plan",
+        "A complete Official Source Evidence Plan must contain its one exact discovery request.",
+      );
+    }
+    for (const sourceRequest of requests) {
+      if (
+        new URL(sourceRequest.url).href !==
+          new URL(adapter.requestUrlForDiscovery()).href
+      ) {
+        throw new AdministrationProblem(
+          422,
+          "source_surface_binding_mismatch",
+          "The discovery request must use its exact Official Source URL contract.",
+        );
+      }
+    }
+  } else if (adapter.requiredSurfaces !== undefined) {
     const expectedIds = adapter.requiredSurfaces.map(
       (surface) => `${adapter.sourceLineage}:${surface}`,
     );
@@ -284,6 +309,69 @@ export async function representationFingerprint(input: {
   headers: Record<string, string>;
 }): Promise<string> {
   return sha256(utf8(canonicalJson(input)));
+}
+
+export async function officialCollectionRequestsFromDiscovery(
+  adapter: SourceAdapterRegistration,
+  records: readonly unknown[],
+  inheritedHeaders: Readonly<Record<string, string>> = {},
+): Promise<OfficialSourceCollectionRequest[]> {
+  if (
+    adapter.requestUrlForDiscovery === undefined ||
+    adapter.requestUrlForSurface === undefined ||
+    adapter.requiredSurfaces === undefined
+  ) {
+    throw new Error(
+      "The Source Adapter has no complete Official Source discovery contract.",
+    );
+  }
+  if (records.length !== adapter.requiredSurfaces.length) {
+    throw new AdministrationProblem(
+      422,
+      "source_discovery_failed",
+      "Official Source discovery omitted required collection surfaces.",
+    );
+  }
+  const requests: OfficialSourceCollectionRequest[] = [];
+  for (const [index, surface] of adapter.requiredSurfaces.entries()) {
+    const record = records[index];
+    const expectedId = `${adapter.sourceLineage}:${surface}`;
+    const expectedUrl = new URL(adapter.requestUrlForSurface(surface)).href;
+    if (
+      !isRecord(record) ||
+      Object.keys(record).sort().join(",") !==
+        "headers,id,method,surface,url" ||
+      record.id !== expectedId ||
+      record.surface !== surface ||
+      record.method !== "GET" ||
+      record.url !== expectedUrl ||
+      !isRecord(record.headers) ||
+      canonicalJson(record.headers) !== canonicalJson({ accept: "text/html" })
+    ) {
+      throw new AdministrationProblem(
+        422,
+        "source_discovery_failed",
+        "Official Source discovery does not match its exact bounded collection contract.",
+      );
+    }
+    const headers = {
+      ...(record.headers as Record<string, string>),
+      ...inheritedHeaders,
+    };
+    requests.push({
+      id: expectedId,
+      surface,
+      method: "GET",
+      url: expectedUrl,
+      headers,
+      representation_fingerprint: await representationFingerprint({
+        method: "GET",
+        url: expectedUrl,
+        headers,
+      }),
+    });
+  }
+  return requests;
 }
 
 export function parseEvidencePlan(json: string): EvidencePlan {

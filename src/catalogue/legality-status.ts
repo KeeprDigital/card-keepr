@@ -313,14 +313,15 @@ async function legalityEvidenceSidecar(
       provenance[`/data/${dataIndex}/status`] = observationIds;
       provenance[`/data/${dataIndex}/derivation`] = observationIds;
     }
-    for (const [ruleIndex, rule] of applicable.entries()) {
+    let definitiveIndex = 0;
+    let unresolvedIndex = 0;
+    for (const rule of applicable) {
       const field = rule.unresolved_scope === null
         ? "rule_ids"
         : "unresolved_scope_rule_ids";
-      const fieldIndex = applicable.slice(0, ruleIndex).filter((candidate) =>
-        (candidate.unresolved_scope === null) ===
-          (rule.unresolved_scope === null)
-      ).length;
+      const fieldIndex = rule.unresolved_scope === null
+        ? definitiveIndex++
+        : unresolvedIndex++;
       provenance[`/data/${dataIndex}/${field}/${fieldIndex}`] = [
         rule.source_observation_id,
       ];

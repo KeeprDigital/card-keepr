@@ -43,6 +43,7 @@ export type SourceAdapterRegistration = Readonly<{
     headers: Record<string, string>;
   }[];
   requiredSurfaces?: readonly string[];
+  requestUrlForDiscovery?: () => string;
   requestUrlForSurface?: (surface: string) => string;
   officialSourceContract?: OfficialSourceContract;
 }>;
@@ -195,6 +196,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
+        requestUrlForDiscovery: adapter.requestUrlForDiscovery,
         requestUrlForSurface: adapter.requestUrlForSurface,
       })),
       ...[

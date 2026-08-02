@@ -34,6 +34,7 @@ export type OfficialRawAdapterContract = {
   supportedGame: ProductSourceGame;
   format: DiscoveryFormat;
   requiredSurfaces: readonly string[];
+  requestUrlForDiscovery?: () => string;
   requestUrlForSurface: (surface: string) => string;
   parseBytes: (
     bytes: Uint8Array,
@@ -206,6 +207,14 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.urls,
               surface,
             ),
+          requestUrlForDiscovery: version.legalityAware
+            ? () => exactSurfaceUrl(
+                version.sourceLineage,
+                version.requiredSurfaces,
+                version.urls,
+                version.requiredSurfaces[0]!,
+              )
+            : undefined,
           parseBytes: version.legalityAware
             ? legalityAwareBandaiSnapshotDecoder(
                 version.format,
@@ -246,12 +255,15 @@ export function officialSourceDiscoveryRequests(
   if (contract === undefined) {
     throw new Error("Official Source lineage has no discovery contract.");
   }
-  return contract.requiredSurfaces.map((surface) => ({
-    id: `${sourceLineage}:${surface}`,
+  if (contract.requestUrlForDiscovery === undefined) {
+    throw new Error("Official Source lineage has no active discovery root.");
+  }
+  return [{
+    id: `${sourceLineage}:discovery`,
     method: "GET",
-    url: contract.requestUrlForSurface(surface),
+    url: contract.requestUrlForDiscovery(),
     headers: { accept: "text/html" },
-  }));
+  }];
 }
 
 function bandaiRequestDiscovery(
@@ -608,6 +620,7 @@ function legalityAwareBandaiSnapshotDecoder(
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
     acceptPublisherDeclaredEmpty: true,
+    acceptDiscoveryRoot: true,
   });
 }
 
@@ -620,6 +633,7 @@ function bandaiSnapshotDecoder(
   profile: Readonly<{
     parseLegality: boolean;
     acceptPublisherDeclaredEmpty: boolean;
+    acceptDiscoveryRoot?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -637,6 +651,46 @@ function bandaiSnapshotDecoder(
         );
       }
       return [];
+    }
+    if (
+      profile.acceptDiscoveryRoot === true &&
+      context.requestId === `${sourceLineage}:discovery` &&
+      new URL(context.url).href === new URL(urls[requiredSurfaces[0]!]!).href
+    ) {
+      if (mediaType !== "text/html") {
+        throw new Error("Official Source discovery must be captured as text/html.");
+      }
+      const html = decodeUtf8(bytes, "discovery");
+      if (/\bdata-keepr-official-payload\b/iu.test(html)) {
+        throw new Error(
+          "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
+        );
+      }
+      const records = requiredSurfaces.map((surface) => ({
+        id: `${sourceLineage}:${surface}`,
+        surface,
+        method: "GET" as const,
+        url: exactSurfaceUrl(
+          sourceLineage,
+          requiredSurfaces,
+          urls,
+          surface,
+        ),
+        headers: { accept: "text/html" },
+      }));
+      return [{
+        observation_type: "official_surface_evidence",
+        source_lineage: sourceLineage,
+        surface: "discovery",
+        records,
+        completeness: {
+          declared_record_count: records.length,
+          parsed_record_count: records.length,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          structurally_complete: true,
+        },
+      }];
     }
     const surface = dynamicRole ??
       surfaceFromContext(

@@ -1,11 +1,11 @@
-export type ProductionDiscoveryRequest = {
+export type ProductionCollectionRequest = {
   id: string;
   method: "GET";
   url: string;
   headers: Record<string, string>;
 };
 
-export const fusionWorldProductionDiscoveryRequests = [
+export const fusionWorldProductionCollectionRequests = [
   {
     id: "fusion-world-en:card-search",
     method: "GET",
@@ -44,8 +44,8 @@ export const fusionWorldProductionDiscoveryRequests = [
     url: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
     headers: { accept: "text/html" },
   },
-] satisfies readonly ProductionDiscoveryRequest[];
-export const onePieceProductionDiscoveryRequests = [
+] satisfies readonly ProductionCollectionRequest[];
+export const onePieceProductionCollectionRequests = [
   {
     id: "one-piece-en:card-list",
     method: "GET",
@@ -88,9 +88,9 @@ export const onePieceProductionDiscoveryRequests = [
     url: "https://en.onepiece-cardgame.com/rules/",
     headers: { accept: "text/html" },
   },
-] satisfies readonly ProductionDiscoveryRequest[];
+] satisfies readonly ProductionCollectionRequest[];
 
-export const digimonProductionDiscoveryRequests = [
+export const digimonProductionCollectionRequests = [
   {
     id: "digimon-en:card-list",
     method: "GET",
@@ -127,4 +127,4 @@ export const digimonProductionDiscoveryRequests = [
     url: "https://world.digimoncard.com/rule/errata_card/",
     headers: { accept: "text/html" },
   },
-] satisfies readonly ProductionDiscoveryRequest[];
+] satisfies readonly ProductionCollectionRequest[];

@@ -1,18 +1,22 @@
 import { createHash } from "node:crypto";
 import { AdministrationProblem } from "./ingestion";
+import { requiredSourceAdapter } from "./source-adapters";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   headersRecord,
+  officialCollectionRequestsFromDiscovery,
   parseStringRecord,
   responseVary,
 } from "./source-evidence-model";
 import {
   discoverSnapshotRequests,
   parseSnapshot,
+  retainedOfficialDiscoveryRecords,
 } from "./source-evidence-parsing";
 import {
   appendDiscoveredEvidenceRequests,
   evidencePlanForRequest,
+  persistOfficialSourceCollectionPlan,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
   type SnapshotRow,
@@ -647,18 +651,40 @@ export async function parseCapturedRequest(
         idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
       },
     );
-    const discovered = await discoverSnapshotRequests(
-      database,
-      evidenceObjects,
-      snapshotId,
-      evidencePlan.adapter_version,
-    );
-    await appendDiscoveredEvidenceRequests(
-      database,
-      run,
-      sourceRequest,
-      discovered,
-    );
+    const adapter = requiredSourceAdapter(evidencePlan.adapter_version);
+    if (
+      run.plan_origin === "production" &&
+      adapter.requestUrlForDiscovery !== undefined &&
+      sourceRequest.request_id === `${evidencePlan.source_lineage}:discovery`
+    ) {
+      const records = await retainedOfficialDiscoveryRecords(
+        evidenceObjects,
+        observationSet,
+      );
+      await persistOfficialSourceCollectionPlan(
+        database,
+        run.id,
+        observationSet.id,
+        await officialCollectionRequestsFromDiscovery(
+          adapter,
+          records,
+          evidencePlan.requests[0]?.headers ?? {},
+        ),
+      );
+    } else {
+      const discovered = await discoverSnapshotRequests(
+        database,
+        evidenceObjects,
+        snapshotId,
+        evidencePlan.adapter_version,
+      );
+      await appendDiscoveredEvidenceRequests(
+        database,
+        run,
+        sourceRequest,
+        discovered,
+      );
+    }
     await database
       .prepare(
         `UPDATE source_requests SET state = 'observed'

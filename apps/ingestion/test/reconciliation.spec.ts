@@ -34,6 +34,7 @@ import {
   type SupportedGame,
 } from "../../../src/catalogue/catalogue-candidate";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
 import {
   injectFixtureEvidencePlan,
@@ -43,11 +44,6 @@ import {
   EMPTY_CATALOGUE_GZIP_HEX,
   GZIP_PROFILE_GOLDENS,
 } from "./deterministic-gzip-golden";
-import {
-  digimonProductionDiscoveryRequests,
-  fusionWorldProductionDiscoveryRequests,
-  onePieceProductionDiscoveryRequests,
-} from "./production-discovery-request-goldens";
 import {
   runReconciliationWorkflow,
 } from "../src/reconciliation-workflow";
@@ -1716,7 +1712,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@3",
     idempotency_key: "reconcile-production-adapter-without-coverage",
-    requests: fusionWorldProductionDiscoveryRequests,
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
   expect(started.response.status).toBe(201);
   const run = {
@@ -1751,7 +1747,7 @@ test("new collection rejects a superseded adapter while retained snapshots remai
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@2",
     idempotency_key: "reject-superseded-production-adapter",
-    requests: fusionWorldProductionDiscoveryRequests,
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
@@ -1761,7 +1757,7 @@ test("new collection rejects a superseded adapter while retained snapshots remai
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@3",
     idempotency_key: "active-adapter-retained-reparse-source",
-    requests: fusionWorldProductionDiscoveryRequests,
+    requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
   expect(started.response.status).toBe(201);
   const runId = requiredString(started.document, "id");
@@ -1807,17 +1803,14 @@ test("complete image evidence publishes an unidentified artwork once without col
       | "alternate-two",
     expectedState = "awaiting_approval",
   ) => {
-    const requests = digimonProductionDiscoveryRequests.map(
-      (sourceRequest) =>
-        sourceRequest.id === "digimon-en:card-list"
-          ? {
-              ...sourceRequest,
-              headers: {
-                ...sourceRequest.headers,
-                "user-agent": `card-keepr-artwork-digest-${variant}`,
-              },
-            }
-          : sourceRequest,
+    const requests = officialSourceDiscoveryRequests("digimon-en").map(
+      (sourceRequest) => ({
+        ...sourceRequest,
+        headers: {
+          ...sourceRequest.headers,
+          "user-agent": `card-keepr-artwork-digest-${variant}`,
+        },
+      }),
     );
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "digimon",
@@ -1925,8 +1918,8 @@ test("complete image evidence publishes an unidentified artwork once without col
   ).toEqual(["1x1", "2x2"]);
 }, 60_000);
 
-test("production plans bind every request identity to its exact Official Source surface URL", async () => {
-  const requests = onePieceProductionDiscoveryRequests.map(
+test("production Evidence Plans bind discovery identity to its exact Official Source URL", async () => {
+  const requests = officialSourceDiscoveryRequests("one-piece-en").map(
     (request) => ({ ...request }),
   );
   requests[0]!.url =
@@ -4625,7 +4618,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-en@2",
     idempotency_key: "blocked-recovery-start",
-    requests: onePieceProductionDiscoveryRequests,
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
   expect(blockedStart.response.status).toBe(409);
   expect(blockedStart.document).toMatchObject({
@@ -4674,17 +4667,7 @@ test("the administration boundary requires every accepted lineage for each selec
       supported_game: "gundam",
       source_lineage: "gundam-en-asia",
       adapter_version: "gundam-en-asia@3",
-      requests: [
-        "packages",
-        "products",
-        "releases",
-        "legality",
-        "errata",
-      ].map((surface) => ({
-        id: `gundam-en-asia:${surface}`,
-        method: "GET",
-        url: officialGundamUrl("gundam-en-asia", surface),
-      })),
+      requests: officialSourceDiscoveryRequests("gundam-en-asia"),
     }],
     idempotency_key: `gundam-one-lineage-${crypto.randomUUID()}`,
   });
@@ -4983,18 +4966,14 @@ test("a disappeared Distribution Context with no remaining lineage is not curren
 }, 30_000);
 
 test("registered Product detail evidence outranks its conflicting listing through publication", async () => {
-  const requests = fusionWorldProductionDiscoveryRequests.map(
-    (request) =>
-      request.id === "fusion-world-en:products" ||
-        request.id === "fusion-world-en:releases"
-        ? {
-            ...request,
-            headers: {
-              ...request.headers,
-              "user-agent": "card-keepr-product-authority",
-            },
-          }
-        : request,
+  const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+    (request) => ({
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": "card-keepr-product-authority",
+      },
+    }),
   );
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
@@ -5049,17 +5028,14 @@ test("a registered code-less Product refresh preserves its established code", as
   const start = async (
     state: "coded" | "codeless",
   ) => {
-    const requests = fusionWorldProductionDiscoveryRequests.map(
-      (request) =>
-        request.id === "fusion-world-en:products"
-          ? {
-              ...request,
-              headers: {
-                ...request.headers,
-                "user-agent": `card-keepr-product-identity-${state}`,
-              },
-            }
-          : request,
+    const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+      (request) => ({
+        ...request,
+        headers: {
+          ...request.headers,
+          "user-agent": `card-keepr-product-identity-${state}`,
+        },
+      }),
     );
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "fusion-world",
@@ -5139,17 +5115,14 @@ test("a registered code-less Product refresh preserves its established code", as
 }, 45_000);
 
 test("a registered fuzzy Product link remains a review warning through publication", async () => {
-  const requests = digimonProductionDiscoveryRequests.map(
-    (request) =>
-      request.id === "digimon-en:card-list"
-        ? {
-            ...request,
-            headers: {
-              ...request.headers,
-              "user-agent": "card-keepr-product-fuzzy-warning",
-            },
-          }
-        : request,
+  const requests = officialSourceDiscoveryRequests("digimon-en").map(
+    (request) => ({
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": "card-keepr-product-fuzzy-warning",
+      },
+    }),
   );
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",

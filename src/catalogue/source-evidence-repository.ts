@@ -438,6 +438,39 @@ export async function appendDiscoveredEvidenceRequests(
   discovered: readonly DiscoveredEvidenceRequest[],
 ): Promise<readonly EvidenceRequestRow[]> {
   const plan = evidencePlanForRequest(run, parent.request_id);
+  const normalizedById = new Map<string, {
+    id: string;
+    url: string;
+    headers_json: string;
+    representation_fingerprint: string;
+    role: DiscoveredEvidenceRequest["role"];
+  }>();
+  for (const request of discovered) {
+    const url = new URL(request.url).href;
+    const headersJson = canonicalJson(request.headers);
+    const digest = await sha256(
+      utf8(
+        canonicalJson({
+          source_lineage: plan.source_lineage,
+          role: request.role,
+          method: "GET",
+          url,
+          headers: request.headers,
+        }),
+      ),
+    );
+    const requestId = `${plan.source_lineage}:${request.role}:${digest}`;
+    normalizedById.set(requestId, {
+      id: requestId,
+      url,
+      headers_json: headersJson,
+      representation_fingerprint: await sha256(
+        utf8(canonicalJson({ method: "GET", url, headers: request.headers })),
+      ),
+      role: request.role,
+    });
+  }
+  const normalized = [...normalizedById.values()];
   const count = await database
     .prepare(
       `SELECT COUNT(*) AS count
@@ -446,9 +479,19 @@ export async function appendDiscoveredEvidenceRequests(
     )
     .bind(run.id)
     .first<{ count: number }>();
+  const existing = normalized.length === 0
+    ? { count: 0 }
+    : await database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM source_requests
+         WHERE ingestion_run_id = ?
+           AND request_id IN (SELECT value FROM json_each(?))`,
+      )
+      .bind(run.id, JSON.stringify(normalized.map(({ id }) => id)))
+      .first<{ count: number }>();
   if (
-    count === null ||
-    count.count + discovered.length > 5_000
+    count === null || existing === null ||
+    count.count + normalized.length - existing.count > 5_000
   ) {
     throw new AdministrationProblem(
       422,
@@ -456,30 +499,49 @@ export async function appendDiscoveredEvidenceRequests(
       "The Official Source request graph exceeds its bounded request limit.",
     );
   }
-  const inserted: EvidenceRequestRow[] = [];
-  for (const request of discovered) {
-    const digest = await sha256(
-      utf8(
-        canonicalJson({
-          source_lineage: plan.source_lineage,
-          role: request.role,
-          method: "GET",
-          url: new URL(request.url).href,
-          headers: request.headers,
-        }),
-      ),
-    );
-    const requestId = `${plan.source_lineage}:${request.role}:${digest}`;
-    const representationFingerprint = await sha256(
-      utf8(
-        canonicalJson({
-          method: "GET",
-          url: new URL(request.url).href,
-          headers: request.headers,
-        }),
-      ),
-    );
-    await database.batch([
+  if (normalized.length === 0) return [];
+  const chunks = chunked(normalized, 100);
+  const statements: D1PreparedStatement[] = [
+    database.prepare(
+      `WITH proposed AS (
+         SELECT value AS request_id FROM json_each(?)
+       )
+       SELECT CASE WHEN (
+         SELECT COUNT(*) FROM source_requests WHERE ingestion_run_id = ?
+       ) + (
+         SELECT COUNT(*) FROM proposed
+         WHERE NOT EXISTS (
+           SELECT 1 FROM source_requests
+           WHERE ingestion_run_id = ?
+             AND request_id = proposed.request_id
+         )
+       ) > 5000 THEN json('source_discovery_too_large') ELSE 1 END`,
+    ).bind(
+      JSON.stringify(normalized.map(({ id }) => id)),
+      run.id,
+      run.id,
+    ),
+  ];
+  for (const chunk of chunks) {
+    const json = JSON.stringify(chunk);
+    statements.push(
+      database.prepare(
+        `SELECT CASE WHEN EXISTS (
+           SELECT 1
+           FROM json_each(?) AS proposed
+           JOIN source_discovery_request_plans AS retained
+             ON retained.ingestion_run_id = ?
+            AND retained.request_id = json_extract(proposed.value, '$.id')
+           WHERE retained.method <> 'GET'
+              OR retained.url <> json_extract(proposed.value, '$.url')
+              OR retained.request_headers_json <>
+                   json_extract(proposed.value, '$.headers_json')
+              OR retained.representation_fingerprint <>
+                   json_extract(proposed.value, '$.representation_fingerprint')
+              OR retained.request_role <>
+                   json_extract(proposed.value, '$.role')
+         ) THEN json('source_discovery_identity_collision') ELSE 1 END`,
+      ).bind(json, run.id),
       database
         .prepare(
           `INSERT OR IGNORE INTO source_discovery_request_plans (
@@ -487,19 +549,22 @@ export async function appendDiscoveredEvidenceRequests(
              parent_request_id, method, url, request_headers_json,
              representation_fingerprint, request_role
            )
-           SELECT ?, ?, COALESCE(MAX(sequence_number), -1) + 1,
-                  ?, 'GET', ?, ?, ?, ?
-           FROM source_requests
-           WHERE ingestion_run_id = ?`,
+           SELECT ?, json_extract(proposed.value, '$.id'),
+                  base.maximum_sequence + CAST(proposed.key AS INTEGER) + 1,
+                  ?, 'GET', json_extract(proposed.value, '$.url'),
+                  json_extract(proposed.value, '$.headers_json'),
+                  json_extract(proposed.value, '$.representation_fingerprint'),
+                  json_extract(proposed.value, '$.role')
+           FROM json_each(?) AS proposed
+           CROSS JOIN (
+             SELECT COALESCE(MAX(sequence_number), -1) AS maximum_sequence
+             FROM source_requests WHERE ingestion_run_id = ?
+           ) AS base`,
         )
         .bind(
           run.id,
-          requestId,
           parent.request_id,
-          new URL(request.url).href,
-          canonicalJson(request.headers),
-          representationFingerprint,
-          request.role,
+          json,
           run.id,
         ),
       database
@@ -514,22 +579,41 @@ export async function appendDiscoveredEvidenceRequests(
                   request_headers_json, representation_fingerprint,
                   'pending', NULL, NULL, request_role, parent_request_id
            FROM source_discovery_request_plans
-           WHERE ingestion_run_id = ? AND request_id = ?`,
+           WHERE ingestion_run_id = ?
+             AND request_id IN (
+               SELECT json_extract(value, '$.id') FROM json_each(?)
+             )`,
         )
-        .bind(run.id, requestId),
-    ]);
-    const retained = await database
-      .prepare(
+        .bind(run.id, json),
+    );
+  }
+  await database.batch(statements);
+  const retainedResults = await database.batch<EvidenceRequestRow>(
+    chunks.map((chunk) =>
+      database.prepare(
         `SELECT * FROM source_requests
-         WHERE ingestion_run_id = ? AND request_id = ?`,
-      )
-      .bind(run.id, requestId)
-      .first<EvidenceRequestRow>();
+         WHERE ingestion_run_id = ?
+           AND request_id IN (
+             SELECT json_extract(value, '$.id') FROM json_each(?)
+           )`,
+      ).bind(run.id, JSON.stringify(chunk))
+    ),
+  );
+  const retainedById = new Map(
+    retainedResults.flatMap(({ results }) => results)
+      .map((row) => [row.request_id, row] as const),
+  );
+  const inserted: EvidenceRequestRow[] = [];
+  for (const expected of normalized) {
+    const retained = retainedById.get(expected.id);
     if (
       retained === null ||
-      retained.url !== new URL(request.url).href ||
-      retained.request_headers_json !== canonicalJson(request.headers) ||
-      retained.request_role !== request.role
+      retained === undefined ||
+      retained.url !== expected.url ||
+      retained.request_headers_json !== expected.headers_json ||
+      retained.representation_fingerprint !==
+        expected.representation_fingerprint ||
+      retained.request_role !== expected.role
     ) {
       throw new Error(
         "Discovered Source Request identity collided with different immutable evidence.",
@@ -538,6 +622,14 @@ export async function appendDiscoveredEvidenceRequests(
     inserted.push(retained);
   }
   return inserted;
+}
+
+function chunked<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 export async function persistOfficialSourceCollectionPlan(
@@ -572,7 +664,10 @@ export async function persistOfficialSourceCollectionPlan(
   }
   if (
     discoveryPlan.requests.length !== 1 ||
-    discoveryPlan.requests[0]!.id !== "discovery"
+    ![
+      "discovery",
+      `${discoveryPlan.source_lineage}:discovery`,
+    ].includes(discoveryPlan.requests[0]!.id)
   ) {
     throw new Error(
       "Complete Official Source planning lost its discovery seed.",
@@ -835,7 +930,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -860,6 +955,22 @@ export async function showEvidenceRun(
       )
       .bind(runId)
       .all<AttemptRow>(),
+    database
+      .prepare(
+        `SELECT source_lineage, discovery_observation_set_id, contract,
+                collection_plan_json, content_digest, created_at
+         FROM official_source_collection_plans
+         WHERE ingestion_run_id = ? ORDER BY source_lineage`,
+      )
+      .bind(runId)
+      .all<{
+        source_lineage: string;
+        discovery_observation_set_id: string;
+        contract: string;
+        collection_plan_json: string;
+        content_digest: string;
+        created_at: string;
+      }>(),
   ]);
   return {
     id: run.id,
@@ -875,6 +986,14 @@ export async function showEvidenceRun(
         }
       : {}),
     plan_origin: run.plan_origin,
+    official_source_collection_plans: collectionPlans.results.map((row) => ({
+      source_lineage: row.source_lineage,
+      discovery_observation_set_id: row.discovery_observation_set_id,
+      contract: row.contract,
+      content_digest: row.content_digest,
+      created_at: row.created_at,
+      plan: JSON.parse(row.collection_plan_json),
+    })),
     idempotency_key: run.idempotency_key,
     linked_run_id: run.linked_run_id,
     expected_current_revision_id: run.expected_current_revision_id,
