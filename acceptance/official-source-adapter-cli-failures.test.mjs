@@ -182,7 +182,13 @@ for (const failureCase of failureCases) {
     assert.equal(
       failed.observation_sets.length,
       failed.snapshots.length - 1,
-      "every successfully parsed root, stage, and final snapshot retains one observation set",
+      `every successfully parsed root, stage, and final snapshot retains one observation set; missing: ${
+        JSON.stringify(failed.snapshots.filter(({ id }) =>
+          !failed.observation_sets.some(
+            ({ source_snapshot_id }) => source_snapshot_id === id,
+          )
+        ).map(({ request }) => request.url))
+      }`,
     );
   });
 }

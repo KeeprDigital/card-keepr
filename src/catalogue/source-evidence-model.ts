@@ -363,6 +363,7 @@ export async function officialCollectionRequestsFromDiscovery(
       ...(record.headers as Record<string, string>),
       ...inheritedHeaders,
     };
+    assertBoundedOfficialSourceRequest(discoveredUrl, headers, true);
     requests.push({
       id: expectedId,
       surface,

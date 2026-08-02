@@ -539,7 +539,7 @@ test("current production legality parser blocks unmodeled notices beside an exac
     </select>`,
     `<p>FB01-099 is unavailable for decks.</p>`,
     `<div>FB01-099 is unavailable for decks.</div>`,
-    ...["section", "aside", "span", "blockquote", "h2", "table", "header"]
+    ...["section", "aside", "span", "strong", "em", "blockquote", "h2", "table", "header"]
       .map((tag) => `<${tag}>FB01-099 is unavailable for decks.</${tag}>`),
     `<header><nav><a href="/fw/en/cardlist/">CARDS</a></nav>
       <p>FB01-099 is unavailable for decks.</p></header>`,
@@ -556,6 +556,59 @@ test("current production legality parser blocks unmodeled notices beside an exac
         fusionLegalityContext(current),
       ),
       /exact, complete Legality Rule parser/iu,
+    );
+  }
+});
+
+test("structured legality publisher data cannot hide unmodeled sibling HTML", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const nonempty = rawSurfacePayload("fusion-world-en", "legality-current");
+  nonempty.entries = [{
+    rule_ref: "FW-2026-SCRIPT-SIBLING",
+    notice: "FB30-001 is banned from standard tournament decks.",
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: "2026-07-01",
+    expires_on: null,
+    cards: ["FB30-001"],
+    directive: "ban",
+  }];
+  nonempty.declared_record_count = 1;
+  nonempty.partition.total = 1;
+  const empty = rawSurfacePayload("fusion-world-en", "legality-current");
+
+  for (const [name, payload, sibling] of [
+    [
+      "zero-rule article",
+      empty,
+      "<article>FB01-099 is unavailable for decks.</article>",
+    ],
+    [
+      "zero-rule strong",
+      empty,
+      "<strong>FB01-099 is unavailable for decks.</strong>",
+    ],
+    [
+      "nonzero unknown sibling",
+      nonempty,
+      "<em>Additional tournament restriction applies.</em>",
+    ],
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html><title>BANDAI Official publication</title>
+           ${officialPublisherPayloadScript(
+             "fusion-world-en",
+             "legality-current",
+             payload,
+           )}${sibling}</html>`,
+        ),
+        fusionLegalityContext(current),
+      ),
+      /exact, complete Legality Rule parser/iu,
+      name,
     );
   }
 });
@@ -963,6 +1016,37 @@ test("every active production legality adapter requires exact wording targets an
       () => parseRegisteredSurface(adapter, descriptor.surface, payload),
       descriptor.adapter,
     );
+
+    for (const [name, changed] of [
+      [
+        "unknown structured region",
+        { [descriptor.fields.region]: "EUROPE" },
+      ],
+      [
+        "unknown wording region",
+        {
+          [descriptor.fields.wording]:
+            `${descriptor.card} is eligible for Standard events in the EUROPE region.`,
+        },
+      ],
+      [
+        "known inconsistent region alias",
+        {
+          [descriptor.fields.wording]:
+            `${descriptor.card} is eligible for Standard events in the ${
+              descriptor.region === "EN-US" ? "Asia" : "North America"
+            } region.`,
+        },
+      ],
+    ]) {
+      const mismatch = structuredClone(payload);
+      mismatch.entries[0] = { ...eligible, ...changed };
+      assert.throws(
+        () => parseRegisteredSurface(adapter, descriptor.surface, mismatch),
+        /wording.*region|structured.*region|region.*(?:unknown|invalid|match)/iu,
+        `${descriptor.adapter}: ${name}`,
+      );
+    }
 
     for (const [name, changed] of [
       ["omitted target", { [descriptor.fields.cards]: [] }],

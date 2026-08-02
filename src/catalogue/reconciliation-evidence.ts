@@ -369,6 +369,7 @@ export async function retainedReconciliationObservation(
     representationFingerprint: string;
     sourceByteDigest: string;
   }>();
+  const legalityPublicationDigests = new Map<string, string>();
   const completeLegalityScopes = new Map<string, RetainedLegalityScope>();
   const completeLegalityRequestIds = new Set<string>();
   const completeLegalityRuleCounts = new Map<string, number>();
@@ -431,6 +432,12 @@ export async function retainedReconciliationObservation(
               "The observed Legality Rule stream lacks explicit structurally complete coverage.",
             );
           }
+          assertRetainedLegalityPublicationIdentity(
+            legalityPublicationDigests,
+            row.source_lineage,
+            request.url,
+            row.snapshot_content_digest,
+          );
           completeLegalityRequestIds.add(request.request_id);
           completeLegalityRuleCounts.set(
             request.request_id,
@@ -563,6 +570,22 @@ export async function retainedReconciliationObservation(
       left.sourceLineage.localeCompare(right.sourceLineage)
     ),
   };
+}
+
+function assertRetainedLegalityPublicationIdentity(
+  publicationDigests: Map<string, string>,
+  sourceLineage: string,
+  requestUrl: string,
+  sourceByteDigest: string,
+): void {
+  const identity = `${sourceLineage}\u0000${requestUrl}`;
+  const priorDigest = publicationDigests.get(identity);
+  if (priorDigest !== undefined && priorDigest !== sourceByteDigest) {
+    throw new Error(
+      "Conflicting same-URL Legality publications retain different source representations.",
+    );
+  }
+  publicationDigests.set(identity, sourceByteDigest);
 }
 
 function mergeRetainedLegalityRule(

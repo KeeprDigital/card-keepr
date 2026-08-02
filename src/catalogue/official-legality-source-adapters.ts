@@ -381,10 +381,10 @@ function exactLegalityRule(
     entry[fields.directive],
     "Official Legality directive",
   );
-  const region = requiredText(
+  const region = canonicalLegalityRegion(requiredText(
     entry[fields.region],
     "Official Legality region",
-  );
+  ), "structured region");
   assertWordingRegion(wording, region);
   assertDirectiveSpecificOperands(entry, fields, directive);
   const effect = exactEffect(entry, fields, directive, wording);
@@ -744,7 +744,7 @@ function assertDirectiveWordingGrammar(
 
 const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
   eligible: [
-    /^[^\n.!?]+\b(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the [A-Z-]+ region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$/iu,
+    /^[^\n.!?]+\b(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$/iu,
     /^Cards satisfying the published [^\n.!?]+ eligibility rules may be used\.$/iu,
   ],
   ban: [
@@ -848,9 +848,19 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
 }
 
 function assertWordingRegion(wording: string, structuredRegion: string): void {
+  const explicitQualifier = wording.match(
+    /\bin the ([^\n.!?]+?) region\b/iu,
+  )?.[1];
+  if (
+    explicitQualifier !== undefined &&
+    canonicalLegalityRegion(explicitQualifier, "wording region") !==
+      structuredRegion
+  ) {
+    throw new Error("Official Legality wording region conflicts with its structured region.");
+  }
   const wordingRegions = [
     ...[...wording.matchAll(/\bEN-[A-Z]+\b/giu)]
-      .map(([region]) => region.toUpperCase()),
+      .map(([region]) => canonicalLegalityRegion(region, "wording region")),
     ...regionPhrases.flatMap(({ pattern, region }) =>
       pattern.test(wording) ? [region] : []
     ),
@@ -859,6 +869,37 @@ function assertWordingRegion(wording: string, structuredRegion: string): void {
     throw new Error("Official Legality wording region conflicts with its structured region.");
   }
 }
+
+type CanonicalLegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
+
+function canonicalLegalityRegion(
+  value: string,
+  source: "structured region" | "wording region",
+): CanonicalLegalityRegion {
+  const normalized = value.trim().replace(/\s+/gu, " ").toUpperCase();
+  const region = regionAliases.get(normalized);
+  if (region === undefined) {
+    throw new Error(`Official Legality ${source} is unknown or invalid.`);
+  }
+  return region;
+}
+
+const regionAliases = new Map<string, CanonicalLegalityRegion>([
+  ["EN-US", "EN-US"],
+  ["NORTH AMERICA", "EN-US"],
+  ["UNITED STATES", "EN-US"],
+  ["U.S.", "EN-US"],
+  ["USA", "EN-US"],
+  ["EN-ASIA", "EN-ASIA"],
+  ["ASIA", "EN-ASIA"],
+  ["SOUTH EAST ASIA", "EN-ASIA"],
+  ["SOUTHEAST ASIA", "EN-ASIA"],
+  ["EN-OCEANIA", "EN-OCEANIA"],
+  ["OCEANIA", "EN-OCEANIA"],
+  ["AUSTRALIA", "EN-OCEANIA"],
+  ["NEW ZEALAND", "EN-OCEANIA"],
+  ["AUSTRALIA/NEW ZEALAND", "EN-OCEANIA"],
+]);
 
 const regionPhrases: ReadonlyArray<{
   region: "EN-OCEANIA" | "EN-ASIA" | "EN-US";

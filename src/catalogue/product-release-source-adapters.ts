@@ -802,6 +802,15 @@ function bandaiSnapshotDecoder(
       surface,
     );
     if (structuredPayload !== null) {
+      if (
+        profile.parseLegality &&
+        isLegalityRuleSurface(game, surface) &&
+        containsUnmodeledDedicatedPolicyContent(html, sourceLineage)
+      ) {
+        throw new Error(
+          `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
+        );
+      }
       return normalizedSurfaceObservations(
         format,
         game,
@@ -852,6 +861,7 @@ function bandaiSnapshotDecoder(
       isLegalityRuleSurface(game, surface) &&
       containsUnparsedLegalityPublication(
         html,
+        sourceLineage,
         parsed.retainedDocument,
         isLegalityPolicySurface(surface),
         legalityObservation !== null &&
@@ -882,6 +892,7 @@ function bandaiSnapshotDecoder(
 
 function containsUnparsedLegalityPublication(
   html: string,
+  sourceLineage: string,
   document: Readonly<Record<string, unknown>>,
   dedicatedPolicySurface: boolean,
   parsedRuleCount: number,
@@ -916,6 +927,7 @@ function containsUnparsedLegalityPublication(
   if (dedicatedPolicySurface) {
     return containsUnmodeledDedicatedPolicyContent(
       stripKnownPublisherNavigation(html),
+      sourceLineage,
     );
   }
   return [...links, ...options, ...unmatchedEntries]
@@ -926,8 +938,11 @@ function containsUnparsedLegalityPublication(
     );
 }
 
-function containsUnmodeledDedicatedPolicyContent(html: string): boolean {
-  const withoutModeledRules = html.replace(
+function containsUnmodeledDedicatedPolicyContent(
+  html: string,
+  sourceLineage?: string,
+): boolean {
+  let residual = html.replace(
     /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
     (article, attributes: string) =>
       /(?:^|\s)restriction-card(?:\s|$)/u.test(
@@ -936,37 +951,72 @@ function containsUnmodeledDedicatedPolicyContent(html: string): boolean {
         ? ""
         : article,
   );
-  const semanticContainers = [...withoutModeledRules.matchAll(
-    /<(p|div|article|li|tr|option|a|section|aside|span|blockquote|h2|table|header)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
+  if (sourceLineage !== undefined) {
+    const publisherPrefix = publisherPayloadScriptPrefix(sourceLineage);
+    residual = residual.replace(
+      /<script\b([^>]*)>[\s\S]*?<\/script>/giu,
+      (script, attributes: string) => {
+        const id = htmlAttribute(attributes, "id");
+        return hasExactHtmlAttributes(attributes, ["id", "type"]) &&
+            htmlAttribute(attributes, "type") === "application/json" &&
+            id !== null &&
+            new RegExp(
+              `^${publisherPrefix}-[a-z0-9]+(?:-[a-z0-9]+)*-data$`,
+              "u",
+            ).test(id)
+          ? ""
+          : script;
+      },
+    );
+  }
+  residual = residual
+    .replace(/<!doctype\s+html\s*>/giu, "")
+    .replace(
+      /<title\b[^>]*>([\s\S]*?)<\/title>/giu,
+      (title, body: string) =>
+        isKnownLegalityPublisherTitle(htmlText(body)) ? "" : title,
+    )
+    .replace(
+      /<h1\b[^>]*>([\s\S]*?)<\/h1>/giu,
+      (heading, body: string) =>
+        htmlText(body) === "Restriction Rules" ? "" : heading,
+    )
+    .replace(
+      /<p\b[^>]*>([\s\S]*?)<\/p>/giu,
+      (paragraph, body: string) =>
+        /^\d+\s+records?$/iu.test(htmlText(body)) ? "" : paragraph,
+    )
+    .replace(
+      /<article\b([^>]*)>([\s\S]*?)<\/article>/giu,
+      (article, attributes: string, body: string) =>
+        htmlAttribute(attributes, "data-publication-empty") === "true" &&
+          /^No (?:restrictions are currently published|published entries)\.$/iu
+            .test(htmlText(body))
+          ? ""
+          : article,
+    );
+  return htmlText(residual).length > 0;
+}
+
+function isKnownLegalityPublisherTitle(title: string): boolean {
+  return /^(?:BANDAI Official publication|Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication|BANDAI Official CARD PRODUCT RELEASE RULE ERRATA RESTRICTION Dataset|BANDAI CARD PRODUCT RELEASE RULE RESTRICTION publication|BANDAI (?:one-piece|fusion-world|digimon|gundam) CARD PRODUCT RELEASE RULE ERRATA RESTRICTION|BANDAI DRAGON BALL CARD RULE RESTRICTION(?: HISTORY)?|BANDAI ONE PIECE CARD RELEASE publication|Bandai Dragon Ball(?: Super Card Game)? Fusion World Restriction Rules)$/iu
+    .test(title);
+}
+
+function hasExactHtmlAttributes(
+  attributes: string,
+  expected: readonly string[],
+): boolean {
+  const retained = [...attributes.matchAll(
+    /\b([a-z][a-z0-9:-]*)\s*=\s*(?:"[^"]*"|'[^']*')/giu,
   )];
-  return semanticContainers.some((match) => {
-    const tag = match[1]!.toLowerCase();
-    const attributes = match[2]!;
-    const text = htmlText(match[3]!);
-    if (text.length === 0) return false;
-    if (tag === "p" && /^\d+\s+records?$/iu.test(text)) return false;
-    if (
-      tag === "article" &&
-      htmlAttribute(attributes, "data-publication-empty") === "true" &&
-      /^No (?:restrictions are currently published|published entries)\.$/iu
-        .test(text)
-    ) {
-      return false;
-    }
-    if (
-      tag === "a" &&
-      /^(?:Home|Back|Previous|Next|Card List|Products|Rules)$/iu.test(text)
-    ) {
-      return false;
-    }
-    if (
-      (tag === "li" || tag === "div") &&
-      /^(?:Home|Back|Previous|Next|Card List|Products|Rules)$/iu.test(text)
-    ) {
-      return false;
-    }
-    return true;
-  });
+  const names = retained.map((match) => match[1]!.toLowerCase()).sort();
+  const residue = retained.reduce(
+    (value, match) => value.replace(match[0], ""),
+    attributes,
+  ).trim();
+  return residue.length === 0 &&
+    names.join(",") === [...expected].sort().join(",");
 }
 
 function stripKnownPublisherNavigation(
@@ -988,6 +1038,7 @@ function stripKnownPublisherNavigation(
     "current banned and limited cards",
     "previous restriction history",
     "current restriction cards",
+    "errata and corrections",
   ]);
   const containsOnlyKnownLinks = (body: string): boolean => {
     const anchors = [...body.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/giu)];
@@ -1013,6 +1064,9 @@ function stripKnownPublisherNavigation(
     /<nav\b[^>]*>([\s\S]*?)<\/nav>/giu,
     (navigation, body: string) =>
       containsOnlyKnownLinks(body) ? "" : navigation,
+  ).replace(
+    /<main\b[^>]*>([\s\S]*?)<\/main>/giu,
+    (main, body: string) => containsOnlyKnownLinks(body) ? "" : main,
   );
 }
 
@@ -1477,6 +1531,10 @@ function publisherPayloadScriptId(
   sourceLineage: string,
   surface: string,
 ): string {
+  return `${publisherPayloadScriptPrefix(sourceLineage)}-${surface}-data`;
+}
+
+function publisherPayloadScriptPrefix(sourceLineage: string): string {
   const prefix = sourceLineage === "one-piece-en"
     ? "one-piece-card-game"
     : sourceLineage === "fusion-world-en"
@@ -1491,7 +1549,7 @@ function publisherPayloadScriptId(
   if (prefix === null) {
     throw new Error(`Official Source publisher data has no grammar for ${sourceLineage}.`);
   }
-  return `${prefix}-${surface}-data`;
+  return prefix;
 }
 
 function surfaceFromContext(

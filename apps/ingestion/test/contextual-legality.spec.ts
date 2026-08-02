@@ -1423,6 +1423,64 @@ test("same-URL legality observations with byte-distinct source representations f
 }, 90_000);
 
 test.each([
+  ["disjoint official rule identities", "contextual-legality-byte-disjoint"],
+  ["different empty publications", "contextual-legality-byte-empty"],
+])(
+  "same-URL legality publications fail closed for %s when retained bytes differ",
+  async (_caseName, scenario) => {
+    const sourceUrl =
+      `https://official-source.invalid/reconciliation/${scenario}`;
+    const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+      supported_game: "gundam",
+      source_lineage: "gundam-en-asia",
+      adapter_version: "fixture-gundam-en-asia-json@2",
+      idempotency_key: `legality-publication-identity-${scenario}`,
+      requests: [
+        {
+          id: "current-compact",
+          method: "GET",
+          url: sourceUrl,
+          headers: { "accept-language": "en-AU" },
+        },
+        {
+          id: "history-pretty",
+          method: "GET",
+          url: sourceUrl,
+          headers: { "accept-language": "en-US" },
+        },
+      ],
+    });
+    const runId = requiredString(started, "id");
+    expect((await request(
+      `/v1/ingestion-runs/${runId}/collection/resume`,
+      {},
+    )).response.status).toBe(202);
+    await waitForState(runId, "parsing");
+
+    const shown = await request(`/v1/ingestion-runs/${runId}`);
+    const snapshots = shown.document.snapshots as Array<{
+      content: { digest: string };
+    }>;
+    expect(snapshots).toHaveLength(2);
+    expect(new Set(snapshots.map(({ content }) => content.digest)).size).toBe(2);
+
+    const blocked = await reconcile(runId);
+    if (blocked.response.status === 200) {
+      const rejected = await request(`/v1/ingestion-runs/${runId}/rejection`, {
+        candidate_digest: requiredString(blocked.document, "candidate_digest"),
+        idempotency_key: `reject-unexpected-publication-${scenario}`,
+      });
+      expect(rejected.response.status).toBe(200);
+    }
+    expect(blocked.response.status).toBe(409);
+    expect(JSON.stringify(blocked.document)).toMatch(
+      /conflict|publication|representation/iu,
+    );
+  },
+  90_000,
+);
+
+test.each([
   ["one-piece-normalized-envelope@1", "one-piece", "one-piece-en"],
   ["one-piece-normalized-envelope@2", "one-piece", "one-piece-en"],
   ["fusion-world-normalized-envelope@1", "fusion-world", "fusion-world-en"],

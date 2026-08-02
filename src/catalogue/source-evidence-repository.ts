@@ -489,13 +489,19 @@ export async function appendDiscoveredEvidenceRequests(
     });
   }
   const normalized = [...normalizedById.values()];
+  const planRequestIds = JSON.stringify(plan.requests.map(({ id }) => id));
+  const lineageRequestPattern = `${plan.source_lineage}:%`;
   const count = await database
     .prepare(
       `SELECT COUNT(*) AS count
        FROM source_requests
-       WHERE ingestion_run_id = ?`,
+       WHERE ingestion_run_id = ?
+         AND (
+           request_id LIKE ?
+           OR request_id IN (SELECT value FROM json_each(?))
+         )`,
     )
-    .bind(run.id)
+    .bind(run.id, lineageRequestPattern, planRequestIds)
     .first<{ count: number }>();
   const existing = normalized.length === 0
     ? { count: 0 }
@@ -525,7 +531,12 @@ export async function appendDiscoveredEvidenceRequests(
          SELECT value AS request_id FROM json_each(?)
        )
        SELECT CASE WHEN (
-         SELECT COUNT(*) FROM source_requests WHERE ingestion_run_id = ?
+         SELECT COUNT(*) FROM source_requests
+         WHERE ingestion_run_id = ?
+           AND (
+             request_id LIKE ?
+             OR request_id IN (SELECT value FROM json_each(?))
+           )
        ) + (
          SELECT COUNT(*) FROM proposed
          WHERE NOT EXISTS (
@@ -537,6 +548,8 @@ export async function appendDiscoveredEvidenceRequests(
     ).bind(
       JSON.stringify(normalized.map(({ id }) => id)),
       run.id,
+      lineageRequestPattern,
+      planRequestIds,
       run.id,
     ),
   ];

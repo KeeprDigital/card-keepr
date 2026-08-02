@@ -362,7 +362,7 @@ export default defineConfig({
               if (count >= 3) {
                 const failure = artworkMarker.slice(
                   "card-keepr-runtime-parser/".length,
-                );
+                ).split("-", 1)[0];
                 const rawSurface = officialRawSurfacePayload(
                   "/one-piece-en/card-list",
                 )!;
@@ -1337,6 +1337,32 @@ export default defineConfig({
               const document = contextualLegalityFixtureDocument(
                 "EN-ASIA",
                 "current",
+              );
+              return new Response(JSON.stringify(
+                document,
+                null,
+                request.headers.get("accept-language") === "en-US" ? 2 : 0,
+              ), {
+                headers: { "content-type": "application/json" },
+              });
+            }
+            if (scenario === "contextual-legality-byte-disjoint") {
+              const document = contextualLegalityFixtureDocument(
+                "EN-ASIA",
+                "current",
+              );
+              const pretty = request.headers.get("accept-language") === "en-US";
+              document.legality_rules = [document.legality_rules[pretty ? 1 : 0]!];
+              document.legality_completeness.declared_record_count = 1;
+              document.legality_completeness.parsed_record_count = 1;
+              return new Response(JSON.stringify(document, null, pretty ? 2 : 0), {
+                headers: { "content-type": "application/json" },
+              });
+            }
+            if (scenario === "contextual-legality-byte-empty") {
+              const document = contextualLegalityFixtureDocument(
+                "EN-ASIA",
+                "empty",
               );
               return new Response(JSON.stringify(
                 document,
