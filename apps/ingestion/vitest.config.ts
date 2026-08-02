@@ -614,6 +614,7 @@ export default defineConfig({
             if (
               [
                 "card-keepr-representable-legality-v3",
+                "card-keepr-mixed-modeled-unmodeled-legality-v3",
                 "card-keepr-unrepresentable-legality-v3",
                 "card-keepr-mixed-effect-legality-v3",
                 "card-keepr-residual-semantics-legality-v3",
@@ -673,7 +674,9 @@ export default defineConfig({
                 );
               }
               const officialWording = artworkMarker ===
-                  "card-keepr-representable-legality-v3"
+                    "card-keepr-representable-legality-v3" ||
+                  artworkMarker ===
+                    "card-keepr-mixed-modeled-unmodeled-legality-v3"
                 ? "FB01-001 is eligible &#39;as printed&#39; &#x2013; publisher&ndash;confirmed &amp;#39;literal&amp;#39;."
                 : artworkMarker === "card-keepr-conflicting-shared-legality-v3"
                   ? "FB01-001 is banned from Standard decks."
@@ -779,7 +782,15 @@ export default defineConfig({
                       ${artworkMarker === "card-keepr-residual-semantics-legality-v3"
                         ? "<p>Except at championship events, where it is banned.</p>"
                         : ""}
-                    </article>`;
+                    </article>
+                    ${artworkMarker ===
+                        "card-keepr-mixed-modeled-unmodeled-legality-v3"
+                      ? `<select aria-label="New restriction notice">
+                          <option value="FB01-099">
+                            FB01-099 may no longer be used in Standard tournament decks.
+                          </option>
+                        </select>`
+                      : ""}`;
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>

@@ -490,6 +490,32 @@ test("current production legality parser retains exact ordinary HTML rules and t
   });
 });
 
+test("current production legality parser blocks unmodeled notices beside an exact rule", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const unmodeledNotices = [
+    `<article class="policy-notice">
+      FB01-099 may no longer be used in standard tournament decks.
+    </article>`,
+    `<select aria-label="New restriction notice">
+      <option value="FB01-099">FB01-099 may no longer be used</option>
+    </select>`,
+  ];
+
+  for (const notice of unmodeledNotices) {
+    const html = exactFusionLegalityHtml.replace(
+      "</body>",
+      `${notice}</body>`,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(html),
+        fusionLegalityContext(current),
+      ),
+      /exact, complete Legality Rule parser/iu,
+    );
+  }
+});
+
 test("current production legality parser retains a truthful empty publication", () => {
   const current = requiredSourceAdapter("fusion-world-en@3");
   const observations = current.parseBytes(

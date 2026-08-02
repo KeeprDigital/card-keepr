@@ -801,6 +801,7 @@ function bandaiSnapshotDecoder(
       profile.parseLegality &&
       isLegalityRuleSurface(game, surface) &&
       containsUnparsedLegalityPublication(
+        html,
         parsed.retainedDocument,
         isLegalityPolicySurface(surface),
         legalityObservation !== null &&
@@ -830,6 +831,7 @@ function bandaiSnapshotDecoder(
 }
 
 function containsUnparsedLegalityPublication(
+  html: string,
   document: Readonly<Record<string, unknown>>,
   dedicatedPolicySurface: boolean,
   parsedRuleCount: number,
@@ -843,24 +845,42 @@ function containsUnparsedLegalityPublication(
   const options = Array.isArray(document.discovered_options)
     ? document.discovered_options
     : [];
-  if (dedicatedPolicySurface) {
-    return links.length > 0 ||
-      (parsedRuleCount === 0 && (entries.length > 0 || options.length > 0));
-  }
-  const semanticText = [...links, ...entries]
-    .map((value) =>
-      typeof value === "string"
-        ? value
-        : value !== null && typeof value === "object" &&
-            !Array.isArray(value) &&
-            typeof (value as Record<string, unknown>).label === "string"
-          ? (value as Record<string, string>).label
-          : ""
+  const unmatchedEntries = [...entries];
+  const exactRuleEntries = [...html.matchAll(
+    /<article\b([^>]*)>([\s\S]*?)<\/article>/giu,
+  )]
+    .filter((match) =>
+      /(?:^|\s)restriction-card(?:\s|$)/u.test(
+        htmlAttribute(match[1]!, "class") ?? "",
+      )
     )
-    .join(" ");
-  return parsedRuleCount === 0 &&
-    /\b(?:ban(?:ned)?|block|eligib(?:le|ility)|legal(?:ity)?|limit(?:ed)?|restriction|tournament)\b/iu
-      .test(semanticText);
+    .map((match) => htmlText(match[2]!));
+  if (exactRuleEntries.length !== parsedRuleCount) return true;
+  for (const exactRuleEntry of exactRuleEntries) {
+    const retainedIndex = unmatchedEntries.findIndex(
+      (entry) => entry === exactRuleEntry,
+    );
+    if (retainedIndex === -1) return true;
+    unmatchedEntries.splice(retainedIndex, 1);
+  }
+  if (dedicatedPolicySurface && parsedRuleCount === 0) {
+    return links.length > 0 || unmatchedEntries.length > 0 || options.length > 0;
+  }
+  return [...links, ...options, ...unmatchedEntries]
+    .map(publicationText)
+    .some((text) =>
+      /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?)\b|\bmay (?:no longer|not) be used\b|\bno more than \d+ cop(?:y|ies)\b/iu
+        .test(text)
+    );
+}
+
+function publicationText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const label = (value as Record<string, unknown>).label;
+  return typeof label === "string" ? label : "";
 }
 
 function bandaiDiscoveryRecords(
@@ -2157,7 +2177,7 @@ function parseBandaiSurfaceCoverage(
     }))
     .filter(({ value, label }) => value.length > 0 || label.length > 0);
   const publicationEntryMatches = [...html.matchAll(
-    /<(?:article|li|tr)\b([^>]*)>([\s\S]*?)<\/(?:article|li|tr)>/giu,
+    /<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
   )];
   const declaredCountMatch = html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
@@ -2168,9 +2188,9 @@ function parseBandaiSurfaceCoverage(
     .filter(
       (match) =>
         !publisherDeclaresEmpty ||
-        htmlAttribute(match[1]!, "data-publication-empty") !== "true",
+        htmlAttribute(match[2]!, "data-publication-empty") !== "true",
     )
-    .map((match) => htmlText(match[2]!))
+    .map((match) => htmlText(match[3]!))
     .filter((entry) => entry.length > 0);
   if (
     publicationLinks.length === 0 &&

@@ -1211,6 +1211,7 @@ test("the One Piece production release surface publishes release timing through 
 }, 90_000);
 
 test.each([
+  "card-keepr-mixed-modeled-unmodeled-legality-v3",
   "card-keepr-unrepresentable-legality-v3",
   "card-keepr-mixed-effect-legality-v3",
   "card-keepr-residual-semantics-legality-v3",
