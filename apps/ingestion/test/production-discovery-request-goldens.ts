@@ -45,7 +45,6 @@ export const fusionWorldProductionDiscoveryRequests = [
     headers: { accept: "text/html" },
   },
 ] satisfies readonly ProductionDiscoveryRequest[];
-
 export const onePieceProductionDiscoveryRequests = [
   {
     id: "one-piece-en:card-list",
@@ -129,4 +128,3 @@ export const digimonProductionDiscoveryRequests = [
     headers: { accept: "text/html" },
   },
 ] satisfies readonly ProductionDiscoveryRequest[];
-
