@@ -155,6 +155,23 @@ export function officialLegalityRulesObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
 ): Record<string, unknown> {
+  return officialLegalityObservation(game, sourceLineage, rawDocument, false);
+}
+
+export function officialLiveLegalityRulesObservation(
+  game: OfficialLegalityGame,
+  sourceLineage: string,
+  rawDocument: Record<string, unknown>,
+): Record<string, unknown> {
+  return officialLegalityObservation(game, sourceLineage, rawDocument, true);
+}
+
+function officialLegalityObservation(
+  game: OfficialLegalityGame,
+  sourceLineage: string,
+  rawDocument: Record<string, unknown>,
+  allowKnownPolicyWithUnresolvedInterval: boolean,
+): Record<string, unknown> {
   const entries = requiredArray(
     rawDocument.entries,
     "Official Source Legality entries",
@@ -178,6 +195,7 @@ export function officialLegalityRulesObservation(
         sourceLineage,
         fieldsByGame[game],
         requiredRecord(entry, `Official Source Legality entry ${index}`),
+        allowKnownPolicyWithUnresolvedInterval,
       )
     ),
     completeness: {
@@ -357,22 +375,15 @@ function exactLegalityRule(
   sourceLineage: string,
   fields: FieldMap,
   entry: Record<string, unknown>,
+  allowKnownPolicyWithUnresolvedInterval = false,
 ): Record<string, unknown> {
   const allowedFields = new Set(Object.values(fields));
   const unknownField = Object.keys(entry).find((field) =>
-    !allowedFields.has(field) && field !== "publisher_note"
+    !allowedFields.has(field)
   );
   if (unknownField !== undefined) {
     throw new Error(
       `Official Legality entry contains unknown field ${unknownField}.`,
-    );
-  }
-  if (
-    "publisher_note" in entry &&
-    entry.publisher_note !== ""
-  ) {
-    throw new Error(
-      "Official Legality publisher note is nonempty and cannot be represented by this Source Adapter Version.",
     );
   }
   const wording = requiredText(
@@ -389,7 +400,13 @@ function exactLegalityRule(
   ), "structured region");
   assertWordingRegion(wording, region);
   assertDirectiveSpecificOperands(entry, fields, directive);
-  const effect = exactEffect(entry, fields, directive, wording);
+  const effect = exactEffect(
+    entry,
+    fields,
+    directive,
+    wording,
+    allowKnownPolicyWithUnresolvedInterval,
+  );
   if (region !== regionForLineage(sourceLineage)) {
     throw new Error(
       "Official Legality region conflicts with its Source Lineage.",
@@ -441,6 +458,7 @@ function exactLegalityRule(
     eventTier,
     cardNumbers,
     effect,
+    allowKnownPolicyWithUnresolvedInterval,
   });
   return {
     id: requiredText(entry[fields.id], "Official Legality identity"),
@@ -487,6 +505,7 @@ function exactEffect(
   fields: FieldMap,
   directive: string,
   wording: string,
+  allowKnownPolicyWithUnresolvedInterval: boolean,
 ): Record<string, unknown> {
   switch (directive) {
     case "eligible":
@@ -522,7 +541,7 @@ function exactEffect(
       assertWording(
         directive,
         wording,
-        /\b(?:banned?|not legal)\b|may not be included/iu,
+        /\b(?:banned?|not legal)\b|(?:may not|cannot) be included/iu,
       );
       assertNoContradiction(
         directive,
@@ -703,6 +722,17 @@ function exactEffect(
         entry[fields.unresolvedReason],
         "Official Legality unresolved reason",
       );
+      const cardNumbers = requiredTextArray(
+        entry[fields.cards],
+        "Official Legality Card numbers",
+        false,
+      );
+      if (
+        allowKnownPolicyWithUnresolvedInterval &&
+        isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)
+      ) {
+        return { type: "unresolved", reason };
+      }
       assertNoAdditionalStructuredSemantics("unresolved", wording, [
         banSemantics,
         copyLimitSemantics,
@@ -731,6 +761,34 @@ function exactEffect(
   }
 }
 
+function isExactPolicyWithUnresolvedInterval(
+  wording: string,
+  reason: string,
+  cardNumbers: readonly string[],
+): boolean {
+  if (
+    reason !== `Effective interval for ${cardNumbers.join(", ")} is not stated.`
+  ) {
+    return false;
+  }
+  const recognizedPolicy = [
+    /^No copies of the card are permitted in the deck\.\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Only 1 copy of the card is permitted in the deck\.\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Only 2 copy of the card is permitted in the deck\.\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Banned cards: Can(?:'|’)t be included in decks\.\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Restricted Cards \(1\) - Decks can only include one copy of these cards\.\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Banned Pair: If A is included in a deck, B is banned from being included in the deck\.(?:\n[A-Z0-9-]+ [^\n]+){2,}$/u,
+    /^Restricted Cards〈2〉\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Banned [Pp]air\n[A-Z0-9-]+ [^\n]+\n[A-Z0-9-]+ [^\n]+$/u,
+    /^Cards A and B cannot be used at the same time\n[A-Z0-9-]+ [^\n]+\n[A-Z0-9-]+ [^\n]+$/u,
+    /^All combinations of cards that match the above description "a Unit card that is Lv\.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck\.\n(?:[A-Z0-9-]+ [^\n]+\n?)+$/u,
+  ].some((pattern) => pattern.test(wording));
+  if (!recognizedPolicy) return false;
+  const wordingCards = wordingCardNumbers(wording);
+  return wordingCards.length === cardNumbers.length &&
+    wordingCards.every((card, index) => card === cardNumbers[index]);
+}
+
 function assertDirectiveWordingGrammar(
   directive: string,
   wording: string,
@@ -754,13 +812,14 @@ const wordingCardOperandList = String.raw`${wordingCardOperand}(?:(?:,\s*|\s+(?:
 
 const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
   eligible: [
-    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+[^\n.!?]+\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$`, "iu"),
+    new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+(?:eligible|legal)(?:\s+for\s+(?:Standard (?:tournament )?play|Standard events in the (?:EN-(?:US|ASIA|OCEANIA)|North America|United States|U\.S\.|USA|Asia|South East Asia|Southeast Asia|Oceania|Australia(?:\/New Zealand)?|New Zealand) region|this event|rotation))?(?:\s+under\s+the\s+published\s+(?:Championship|Regional|Local)(?:-only)?\s+rule)?(?:\s+'as printed'\s+–\s+publisher–confirmed\s+&#39;literal&#39;)?\.(?:\nPublisher notice:\nEffective immediately\.)?$`, "iu"),
     /^Cards satisfying the published [^\n.!?]+ eligibility rules may be used\.$/iu,
   ],
   ban: [
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are|was|were)\s+banned(?:\s+from\s+(?:standard\s+)?(?:tournament\s+)?decks)?\.$`, "iu"),
     new RegExp(String.raw`^${wordingCardOperandList}\s+may not be included(?:\s+in\s+(?:a|the|same)\s+deck)?\.$`, "iu"),
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:was|were)\s+(?:banned\s+and\s+)?(?:may not be included|not legal)\s+before\s+[^\n.!?]+\.$`, "iu"),
+    new RegExp(String.raw`^The following card\(s\) cannot be included in any deck\.\n${wordingCardOperand}\s+[^\n]+$`, "iu"),
   ],
   copy_limit: [
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+limited\s+to\s+\d+\s+cop(?:y|ies)(?:\s+in\s+(?:standard\s+)?decks)?\.$`, "iu"),
@@ -770,6 +829,7 @@ const directiveWordingGrammars: Readonly<Record<string, readonly RegExp[]>> = {
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)(?:\s+together)?\s+in\s+the\s+same\s+deck\.$`, "iu"),
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:may|must)\s+not\s+be\s+(?:used|included|played)\s+together(?:\s+in\s+the\s+same\s+deck)?\.$`, "iu"),
     new RegExp(String.raw`^${wordingCardOperandList}\s+(?:is|are)\s+a\s+prohibited\s+combination\.$`, "iu"),
+    new RegExp(String.raw`^Card A and Card B cannot be included in the same deck\.\n${wordingCardOperand}\s+[^\n]+\n${wordingCardOperand}\s+[^\n]+$`, "iu"),
   ],
   membership: [
     /^(?:Only\s+)?cards\s+(?:whose\s+|with\s+)[^\n.!?]+\b(?:includes?|with|has|have)\b[^\n.!?]+\b(?:is|are)\s+eligible(?:\s+for\s+this\s+event)?\.$/iu,
@@ -797,6 +857,7 @@ type ExactWordingInput = Readonly<{
   eventTier: string | null;
   cardNumbers: readonly string[];
   effect: Record<string, unknown>;
+  allowKnownPolicyWithUnresolvedInterval: boolean;
 }>;
 
 function assertExactWordingSemantics(input: ExactWordingInput): void {
@@ -813,6 +874,8 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
 
   const explicitTier = input.wording.match(
     /^(?:For|At)\s+([^,\n.!?]+?)\s+events\b/iu,
+  )?.[1] ?? input.wording.match(
+    /\bunder the published (Championship|Regional|Local)(?:-only)? rule\b/iu,
   )?.[1];
   if (
     (explicitTier !== undefined &&
@@ -853,7 +916,12 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
       );
     }
   } else if (directive === "unresolved") {
-    assertExactUnresolvedWording(input.wording, input.effect);
+    assertExactUnresolvedWording(
+      input.wording,
+      input.effect,
+      input.cardNumbers,
+      input.allowKnownPolicyWithUnresolvedInterval,
+    );
   }
 }
 
@@ -1020,6 +1088,8 @@ function assertExactRotationWording(
 function assertExactUnresolvedWording(
   wording: string,
   effect: Record<string, unknown>,
+  cardNumbers: readonly string[],
+  allowKnownPolicyWithUnresolvedInterval: boolean,
 ): void {
   const reason = requiredText(
     effect.reason,
@@ -1028,6 +1098,12 @@ function assertExactUnresolvedWording(
   const expressed = wording.match(
     /^(?:The official notice does not identify whether\s+)?([^\n.!?]+?)(?:\s+(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)|\s+(?:cannot be determined|is not stated|awaiting (?:publisher )?clarification))\.$/iu,
   )?.[1];
+  if (
+    allowKnownPolicyWithUnresolvedInterval &&
+    isExactPolicyWithUnresolvedInterval(wording, reason, cardNumbers)
+  ) {
+    return;
+  }
   if (
     expressed === undefined ||
     normalizeWordingOperand(expressed) !== normalizeWordingOperand(reason)

@@ -13,6 +13,8 @@ import {
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/product-release-source-adapters";
 import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import fusionLivePolicyRoot from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-live.json";
+import fusionLivePolicyDetail from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-policy-detail.json";
 
 type ProductionDiscoveryRequest = ReturnType<
   typeof officialSourceDiscoveryRequests
@@ -1178,6 +1180,166 @@ test("production discovery retains literal stages and cannot freeze a Collection
   ]));
   expect((await request(`/v1/ingestion-runs/${runId}/candidate`)).response.status)
     .toBe(409);
+}, 90_000);
+
+test("authenticated parsing retains staged live Fusion policy root and detail observations", async () => {
+  const runId = "run_live_fusion_policy_evidence";
+  const rootRequestId = `fusion-world-en:listing:rules:${"a".repeat(64)}`;
+  const detailRequestId = `fusion-world-en:detail:${"b".repeat(64)}`;
+  const fixtures = [
+    {
+      requestId: rootRequestId,
+      snapshotId: "srcsnap_live_fusion_policy_root",
+      fetchId: "srcfetch_live_fusion_policy_root",
+      fixture: fusionLivePolicyRoot,
+    },
+    {
+      requestId: detailRequestId,
+      snapshotId: "srcsnap_live_fusion_policy_detail",
+      fetchId: "srcfetch_live_fusion_policy_detail",
+      fixture: fusionLivePolicyDetail,
+    },
+  ];
+  const retained = await Promise.all(fixtures.map(async (item) => {
+    const bytes = Uint8Array.from(
+      atob(item.fixture.body_base64),
+      (character) => character.charCodeAt(0),
+    );
+    return { ...item, bytes, digest: await sha256(bytes) };
+  }));
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_json
+       ) VALUES (?, 'parsing', '["fusion-world"]',
+         '2026-08-03T00:00:00.000Z', 'catrev_spine_000', NULL, ?, '{}')`,
+    ).bind(runId, "live-fusion-policy-evidence"),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_evidence_plans (
+         ingestion_run_id, source_lineage, supported_game,
+         game_profile_version, adapter_version, request_plan_json,
+         plan_origin
+       ) VALUES (?, 'fusion-world-en', 'fusion-world', 'fusion-world@1',
+         'fusion-world-en@3', ?, 'production')`,
+    ).bind(runId, JSON.stringify({
+      requests: retained.map((item) => ({
+        id: item.requestId,
+        method: "GET",
+        url: item.fixture.source_url,
+        headers: { accept: "text/html" },
+        representation_fingerprint: item.digest,
+      })),
+    })),
+    ...retained.flatMap((item, index) => [
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_requests (
+           ingestion_run_id, request_id, sequence_number, method, url,
+           request_headers_json, representation_fingerprint, state,
+           source_snapshot_id
+         ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'observed', ?)`,
+      ).bind(
+        runId,
+        item.requestId,
+        index,
+        item.fixture.source_url,
+        JSON.stringify({ accept: "text/html" }),
+        item.digest,
+        item.snapshotId,
+      ),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_fetch_attempts (
+           id, ingestion_run_id, request_id, attempt_number,
+           requested_at, completed_at, outcome, http_status,
+           response_headers_json, retry_after_ms, diagnostic
+         ) VALUES (?, ?, ?, 1, '2026-08-03T00:00:00.000Z',
+           '2026-08-03T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
+      ).bind(item.fetchId, runId, item.requestId),
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO source_snapshots (
+           id, ingestion_run_id, request_id, fetch_attempt_id,
+           request_method, request_url, request_headers_json,
+           representation_fingerprint, response_vary_json, retrieved_at,
+           http_status, response_headers_json, media_type, content_digest,
+           content_byte_length, content_object_key, source_lineage,
+           supported_game, game_profile_version, adapter_version,
+           reused_source_snapshot_id
+         ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
+           '2026-08-03T00:00:01.000Z', 200, '{}', ?, ?, ?, ?,
+           'fusion-world-en', 'fusion-world', 'fusion-world@1',
+           'fusion-world-en@3', NULL)`,
+      ).bind(
+        item.snapshotId,
+        runId,
+        item.requestId,
+        item.fetchId,
+        item.fixture.source_url,
+        JSON.stringify({ accept: "text/html" }),
+        item.digest,
+        item.fixture.content_type,
+        item.digest,
+        item.bytes.byteLength,
+        `source-snapshots/${item.snapshotId}.bin`,
+      ),
+    ]),
+  ]);
+  await Promise.all(retained.map((item) =>
+    testEnv.EVIDENCE_OBJECTS.put(
+      `source-snapshots/${item.snapshotId}.bin`,
+      item.bytes,
+    )
+  ));
+
+  for (const item of retained) {
+    const parsed = await request(
+      `/v1/source-snapshots/${item.snapshotId}/observations`,
+      {
+        adapter_version: "fusion-world-en@3",
+        idempotency_key: `parse-${item.snapshotId}`,
+      },
+    );
+    expect(parsed.response.status).toBe(201);
+  }
+
+  const observationSets = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_snapshot_id, observation_count, content_object_key
+     FROM source_observation_sets
+     WHERE source_snapshot_id IN (?, ?)
+     ORDER BY source_snapshot_id`,
+  ).bind(fixtures[0]!.snapshotId, fixtures[1]!.snapshotId).all<{
+    source_snapshot_id: string;
+    observation_count: number;
+    content_object_key: string;
+  }>();
+  expect(observationSets.results.map((row) => row.observation_count))
+    .toEqual([1, 1]);
+  const documents = await Promise.all(observationSets.results.map(async (row) => {
+    const object = await testEnv.EVIDENCE_OBJECTS.get(row.content_object_key);
+    if (object === null) throw new Error("Live policy observations are absent");
+    return object.json<{
+      observations: Array<{ value: Record<string, unknown> }>;
+    }>();
+  }));
+  const rootObservation = documents.flatMap(({ observations }) => observations)
+    .find(({ value }) => value.observation_type === "official_surface_evidence")
+    ?.value;
+  expect(rootObservation?.records).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      surface: "legality-current",
+      url: "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+    }),
+  ]));
+  const legalityObservation = documents.flatMap(({ observations }) => observations)
+    .find(({ value }) => value.observation_type === "legality_rules")?.value;
+  const rules = legalityObservation?.legality_rules as
+    | Array<Record<string, unknown>>
+    | undefined;
+  expect(rules).toHaveLength(8);
+  expect(rules?.every((rule) =>
+    rule.effective_from === null &&
+    (rule.effect as Record<string, unknown>).type === "unresolved"
+  )).toBe(true);
 }, 90_000);
 
 test("the One Piece production release surface publishes release timing through the export seam", async () => {

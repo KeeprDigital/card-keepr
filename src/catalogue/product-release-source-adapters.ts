@@ -11,9 +11,11 @@ import {
   officialArtworkFingerprint,
 } from "./official-artwork-identity.mjs";
 import {
+  officialLiveLegalityRulesObservation,
   officialLegalityRulesHtmlObservation,
   officialLegalityRulesObservation,
 } from "./official-legality-source-adapters.mjs";
+import { liveOfficialLegalityDocument } from "./official-legality-live-html.mjs";
 
 type ProductSourceGame =
   | "one-piece"
@@ -581,6 +583,14 @@ function discoveredHtmlRole(
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
+    format === "gundam" &&
+    initialSurface === "legality" &&
+    /\/(?:asia-en|en)\/news\/01_279\.html$/u.test(url.pathname)
+  ) {
+    return "detail";
+  }
+  if (initialSurface === "legality") return null;
+  if (
     initialSurface === "products" ||
     initialSurface === "releases" ||
     /\/products?\//iu.test(target)
@@ -826,6 +836,29 @@ function bandaiSnapshotDecoder(
         profile.parseLegality,
       );
     }
+    const liveLegality = profile.parseLegality
+      ? liveOfficialLegalityDocument(
+          game,
+          sourceLineage,
+          surface,
+          context.url,
+          html,
+        )
+      : null;
+    if (liveLegality !== null && dynamicRole !== null) {
+      return [attachRawSurfaceEvidence(
+        officialLiveLegalityRulesObservation(
+          game,
+          sourceLineage,
+          liveLegality.document,
+        ),
+        sourceLineage,
+        liveLegality.surface,
+        liveLegality.document,
+        true,
+        Object.keys(liveLegality.document),
+      )];
+    }
     if (dynamicRole === "detail") {
       return [
         parseBandaiCardDetail(
@@ -857,15 +890,21 @@ function bandaiSnapshotDecoder(
             profile.acceptPublisherDeclaredEmpty &&
               isLegalityPolicySurface(surface),
           );
+    const liveLegalityDocument = liveLegality?.document ?? null;
     const legalityObservation = profile.parseLegality &&
         isLegalityRuleSurface(game, surface)
-      ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ??
-        null
+      ? liveLegalityDocument === null
+        ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ?? null
+        : officialLiveLegalityRulesObservation(
+            game,
+            sourceLineage,
+            liveLegalityDocument,
+          )
       : null;
     if (
       profile.parseLegality &&
       isLegalityRuleSurface(game, surface) &&
-      containsUnparsedLegalityPublication(
+      liveLegalityDocument === null && containsUnparsedLegalityPublication(
         html,
         sourceLineage,
         parsed.retainedDocument,
@@ -936,7 +975,7 @@ function containsUnparsedLegalityPublication(
       sourceLineage,
     );
   }
-  return [...links, ...options, ...unmatchedEntries]
+  return [...links, ...options, ...unmatchedEntries, htmlText(html)]
     .map(publicationText)
     .some((text) =>
       /\b(?:ban(?:ned)?|block(?:ed)?|eligib(?:le|ility)|forbid(?:den)?|legal(?:ity)?|limit(?:ed)?|prohibit(?:ed)?|restriction|rotation|suspend(?:ed)?|unless)\b|\bmay (?:no longer|not) be (?:included|used)\b|\b(?:if|when) your\b|\bduring [^.]*events?\b|\bonly at\b|\bno more than \d+ cop(?:y|ies)\b/iu
@@ -975,6 +1014,7 @@ function containsUnmodeledDedicatedPolicyContent(
       },
     );
   }
+  if (/<script\b/iu.test(residual)) return true;
   residual = residual
     .replace(/<!doctype\s+html\s*>/giu, "")
     .replace(
@@ -1157,7 +1197,7 @@ function bandaiDiscoveryRecords(
   };
 }> {
   const headers = [...html.matchAll(
-    /<header\b[^>]*>([\s\S]*?)<\/header>/giu,
+    /<header\b([^>]*)>([\s\S]*?)<\/header>/giu,
   )];
   if (headers.length !== 1) {
     throw new Error(
@@ -1165,54 +1205,41 @@ function bandaiDiscoveryRecords(
     );
   }
   const seeds = bandaiDiscoverySeeds(sourceLineage);
-  const acceptedLabels = new Set(seeds.map(({ label }) => label));
+  const framing = exactPublisherDiscoveryFraming(sourceLineage);
+  if (
+    headers[0]![1]!.trim() !== framing.headerAttributes ||
+    !framing.container.test(html)
+  ) {
+    throw new Error(
+      "Official Source discovery does not match its retained publisher navigation framing.",
+    );
+  }
   const discoveryUrl = new URL(urls[requiredSurfaces[0]!]!).href;
   const observedSeeds = new Map<string, {
     label: string;
     url: string;
     resolution: string;
   }>();
-  for (const match of headers[0]![1]!.matchAll(
-    /<a\b([^>]*)>([\s\S]*?)<\/a>/giu,
-  )) {
-    const href = htmlAttribute(match[1]!, "href");
-    if (href === null) continue;
-    const label = htmlText(match[2]!).toLocaleLowerCase();
-    let resolvedUrl: string;
-    try {
-      resolvedUrl = new URL(
-        decodeHtmlText(href),
-        urls[requiredSurfaces[0]!]!,
-      ).href;
-    } catch {
-      if (acceptedLabels.has(label)) {
-        throw new Error(
-          "Official Source discovery moved a required navigation URL.",
-        );
-      }
+  for (const seed of seeds) {
+    const anchor = framing.seeds[seed.id];
+    if (anchor === undefined || !anchor.pattern.test(html)) {
       continue;
     }
-    if (!acceptedLabels.has(label)) continue;
-    const seed = seeds.find((candidate) => candidate.label === label);
-    if (seed === undefined) {
-      throw new Error(
-        "Official Source discovery contains unknown or mismatched required-surface navigation.",
-      );
-    }
-    if (observedSeeds.has(seed.id)) {
+    if (countPatternMatches(html, anchor.pattern) !== 1) {
       throw new Error(
         `Official Source discovery duplicates the ${seed.id} navigation link.`,
       );
     }
-    if (!officialUrl(sourceLineage, new URL(resolvedUrl), "document")) {
+    const resolvedUrl = new URL(anchor.resolution, discoveryUrl).href;
+    if (resolvedUrl !== new URL(seed.url).href) {
       throw new Error(
-        "Official Source discovery moved a required navigation URL outside its registered authority.",
+        "Official Source discovery moved a required navigation URL.",
       );
     }
     observedSeeds.set(seed.id, {
-      label,
+      label: seed.label,
       url: resolvedUrl,
-      resolution: decodeHtmlText(href),
+      resolution: anchor.resolution,
     });
   }
   if (observedSeeds.size !== seeds.length) {
@@ -1241,6 +1268,108 @@ function bandaiDiscoveryRecords(
       },
     };
   });
+}
+
+type ExactDiscoveryFraming = Readonly<{
+  headerAttributes: string;
+  container: RegExp;
+  seeds: Readonly<Record<string, Readonly<{
+    pattern: RegExp;
+    resolution: string;
+  }>>>;
+}>;
+
+function countPatternMatches(html: string, pattern: RegExp): number {
+  return [...html.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))]
+    .length;
+}
+
+function exactPublisherDiscoveryFraming(
+  sourceLineage: string,
+): ExactDiscoveryFraming {
+  if (sourceLineage === "one-piece-en") {
+    return {
+      headerAttributes: 'class="headerCol js-header uniweb-translation-mask"',
+      container: /<div class="headerColInner">[\s\S]*<div class="headerColInnerWrap">[\s\S]*<nav class="gnaviCol uniweb-translation-mask">/u,
+      seeds: {
+        cards: {
+          pattern: /<li class="menuColListItem">\s*<a class="menuColListLink" href="\/cardlist\/">\s*<span class="menuColListLinkTit">FIND CARDS<\/span>\s*<\/a>\s*<\/li>/u,
+          resolution: "/cardlist/",
+        },
+        products: {
+          pattern: /<li class="menuColListItem">\s*<a class="menuColListLink" href="\/products\/">\s*<span class="menuColListLinkTit">ALL PRODUCTS<\/span>\s*<\/a>\s*<\/li>/u,
+          resolution: "/products/",
+        },
+        rules: {
+          pattern: /<li class="menuColListItem">\s*<a class="menuColListLink" href="\/rules\/">\s*<span class="menuColListLinkTit">RULES<\/span>\s*<span class="menuColListLinkTxt">Rules and important updates<\/span>\s*<\/a>\s*<\/li>/u,
+          resolution: "/rules/",
+        },
+      },
+    };
+  }
+  if (sourceLineage === "fusion-world-en") {
+    return {
+      headerAttributes: 'class="header js-header"',
+      container: /<nav class="headerGnavCol">[\s\S]*<ul class="headerGnavList">[\s\S]*<div class="headerDropMenuListItemInner">/u,
+      seeds: {
+        cards: {
+          pattern: /<li class="headerGnavListItem navLink">\s*<a href="\/fw\/en\/cardlist\/" class="js-headerGnavItem">CARDS<\/a>\s*<\/li>/u,
+          resolution: "/fw/en/cardlist/",
+        },
+        products: {
+          pattern: /<div class="headerDropMenuListBox">\s*<p class="largeMenu"><a href="\/fw\/en\/products\/">ALL Products<\/a><\/p>\s*<\/div>/u,
+          resolution: "/fw/en/products/",
+        },
+        rules: {
+          pattern: /<li class="headerGnavListItem navLink">\s*<a href="\/fw\/en\/news\/01_31\.html" class="js-headerGnavItem">RULES<\/a>\s*<\/li>/u,
+          resolution: "/fw/en/news/01_31.html",
+        },
+      },
+    };
+  }
+  if (sourceLineage === "digimon-en") {
+    return {
+      headerAttributes: 'class="header"',
+      container: /<\/header>\s*<nav id="gnavi_sp" class="switch">\s*<div class="inner">[\s\S]*<ul class="gnavi_inner">/u,
+      seeds: {
+        cards: {
+          pattern: /<li class="gnavi_cardlist current"><a href="\/cardlist\/">\s*<img src="\/images\/common\/gnavi\/gnavi_cardlist\.png\?v02" alt="CARD LIST"><\/a><\/li>/u,
+          resolution: "/cardlist/",
+        },
+        products: {
+          pattern: /<li class="gnavi_products "><a href="\/products\/"><img src="\/images\/common\/gnavi\/gnavi_products\.png" alt="PRODUCTS"><\/a><\/li>/u,
+          resolution: "/products/",
+        },
+        rules: {
+          pattern: /<li class="gnavi_rule "><a href="\/rule\/"><img src="\/images\/common\/gnavi\/gnavi_rule\.png\?v02" alt="RULES"><\/a><\/li>/u,
+          resolution: "/rule/",
+        },
+      },
+    };
+  }
+  const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+  return {
+    headerAttributes: 'class="header"',
+    container: /<div class="headerWrapper">[\s\S]*<div id="js_headerGnav" class="headerNavWrapper">\s*<nav class="">\s*<ul class="headerGnavList">/u,
+    seeds: {
+      cards: {
+        pattern: new RegExp(`<li class="menuColListItem">\\s*<a class="menuColListLink" href="/${locale}/cards/">\\s*<span class="menuColListLinkTit">FIND CARDS</span>\\s*</a>\\s*</li>`, "u"),
+        resolution: `/${locale}/cards/`,
+      },
+      products: {
+        pattern: new RegExp(`<li class="menuColListItem">\\s*<a class="menuColListLink" href="/${locale}/products/list\\.php">\\s*<span class="menuColListLinkTit">PRODUCT LIST</span>\\s*</a>\\s*</li>`, "u"),
+        resolution: `/${locale}/products/list.php`,
+      },
+      rules: {
+        pattern: new RegExp(`<li><a class="hoverText" href="/${locale}/rules/">RULES</a></li>`, "u"),
+        resolution: `/${locale}/rules/`,
+      },
+      news: {
+        pattern: new RegExp(`<li><a class="hoverText" href="/${locale}/news/">NEWS</a></li>`, "u"),
+        resolution: `/${locale}/news/`,
+      },
+    },
+  };
 }
 
 function bandaiDiscoveryStageRecords(

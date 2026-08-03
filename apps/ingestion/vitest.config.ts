@@ -17,6 +17,11 @@ import {
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
+import digimonDiscovery from "../../acceptance/fixtures/retained-official-source/digimon-en-discovery.json";
+import fusionWorldDiscovery from "../../acceptance/fixtures/retained-official-source/fusion-world-en-discovery.json";
+import gundamAsiaDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-asia-discovery.json";
+import gundamUsDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-us-discovery.json";
+import onePieceDiscovery from "../../acceptance/fixtures/retained-official-source/one-piece-en-discovery.json";
 import {
   consumerProofMessage,
   credentialConsumerProofRequestHeader,
@@ -32,6 +37,67 @@ const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
+const productionDiscoveryRootVisits = new Map<string, number>();
+const retainedProductionDiscoveryFixtures = {
+  "one-piece-en": onePieceDiscovery,
+  "fusion-world-en": fusionWorldDiscovery,
+  "digimon-en": digimonDiscovery,
+  "gundam-en-asia": gundamAsiaDiscovery,
+  "gundam-en-us": gundamUsDiscovery,
+} as const;
+
+type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
+
+function productionDiscoveryRootVisitKey(
+  lineage: ProductionSourceLineage,
+  marker: string | null,
+  url: URL,
+): string {
+  return [marker ?? "", lineage, url.href].join("\u0000");
+}
+
+function productionDiscoveryRootVisitCount(
+  lineage: ProductionSourceLineage,
+  marker: string | null,
+  url: URL,
+): number {
+  return productionDiscoveryRootVisits.get(
+    productionDiscoveryRootVisitKey(lineage, marker, url),
+  ) ?? 0;
+}
+
+function retainedProductionDiscoveryRoot(
+  lineage: ProductionSourceLineage,
+  marker: string | null,
+  url: URL,
+): Response | null {
+  const fixture = retainedProductionDiscoveryFixtures[lineage];
+  if (url.href !== fixture.source_url) return null;
+  const visitKey = productionDiscoveryRootVisitKey(lineage, marker, url);
+  const visit = (productionDiscoveryRootVisits.get(visitKey) ?? 0) + 1;
+  productionDiscoveryRootVisits.set(visitKey, visit);
+  const requestsPerCycle =
+    lineage === "one-piece-en" || lineage === "fusion-world-en" ? 3 : 2;
+  if ((visit - 1) % requestsPerCycle !== 0) return null;
+  const retainedBytes = Buffer.from(fixture.body_base64, "base64");
+  const responseBytes =
+    marker === "card-keepr-incomplete-discovery-v3" &&
+      lineage === "fusion-world-en"
+      ? Buffer.from(
+          retainedBytes.toString("utf8").replace(
+            "/fw/en/news/01_31.html",
+            "/fw/en/news/missing.html",
+          ),
+          "utf8",
+        )
+      : retainedBytes;
+  return new Response(responseBytes, {
+    headers: {
+      "content-type": fixture.content_type,
+      etag: `"${lineage}-retained-discovery-${visit}"`,
+    },
+  });
+}
 let digimonArtworkVariant:
   | "base"
   | "base-reencoded"
@@ -351,14 +417,22 @@ export default defineConfig({
                   artworkMarker === "card-keepr-incomplete-discovery-v3",
               },
             );
+            const retainedDiscovery = retainedProductionDiscoveryRoot(
+              officialLineage,
+              artworkMarker,
+              url,
+            );
+            if (retainedDiscovery !== null) return retainedDiscovery;
             if (
               artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
               officialLineage === "one-piece-en" &&
               url.pathname === "/cardlist/"
             ) {
-              const countKey = `${artworkMarker}:${url.href}`;
-              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
-              outboundRequestCounts.set(countKey, count);
+              const count = productionDiscoveryRootVisitCount(
+                officialLineage,
+                artworkMarker,
+                url,
+              );
               if (count >= 3) {
                 const failure = artworkMarker.slice(
                   "card-keepr-runtime-parser/".length,
@@ -401,17 +475,12 @@ export default defineConfig({
               officialLineage === "fusion-world-en" &&
               url.pathname === "/fw/en/cardlist/"
             ) {
-              const countKey = `${artworkMarker}:${url.href}`;
-              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
-              outboundRequestCounts.set(countKey, count);
               return new Response(
-                count === 1
-                  ? `<html><title>BANDAI Fusion World</title>${officialNavigation}</html>`
-                  : `<html><title>Publisher stage unavailable</title><main>Publisher stage unavailable.</main></html>`,
+                `<html><title>Publisher stage unavailable</title><main>Publisher stage unavailable.</main></html>`,
                 {
                   headers: {
                     "content-type": "text/html; charset=utf-8",
-                    etag: `"staged-discovery-gap-${count}"`,
+                    etag: '"staged-discovery-gap"',
                   },
                 },
               );
@@ -608,6 +677,22 @@ export default defineConfig({
                   headers: {
                     "content-type": "text/html; charset=utf-8",
                     etag: '"card-keepr-one-piece-unrecognized-release-v2"',
+                  },
+                },
+              );
+            }
+            if (
+              url.hostname === "en.onepiece-cardgame.com" &&
+              url.pathname === "/products/"
+            ) {
+              return new Response(
+                `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
+                  <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
+                </html>`,
+                {
+                  headers: {
+                    "content-type": "text/html; charset=utf-8",
+                    etag: '"one-piece-products-and-releases-empty"',
                   },
                 },
               );

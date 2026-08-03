@@ -1,0 +1,470 @@
+import { isIsoCalendarDate } from "./calendar-date.mjs";
+
+type LiveLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
+
+export function liveOfficialLegalityDocument(
+  game: LiveLegalityGame,
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+  html: string,
+): { surface: string; document: Record<string, unknown> } | null {
+  if (
+    game === "one-piece" &&
+    sourceLineage === "one-piece-en" &&
+    surface === "restrictions" &&
+    new URL(requestUrl).href ===
+      "https://en.onepiece-cardgame.com/rules/restriction/" &&
+    /<title>Banned\/Restricted Card Addition Notice \| ONE PIECE CARD GAME - Official Web Site<\/title>/u.test(html)
+  ) {
+    return { surface, document: onePieceCurrentRestrictions(html) };
+  }
+  if (
+    game === "fusion-world" &&
+    sourceLineage === "fusion-world-en" &&
+    surface === "detail" &&
+    new URL(requestUrl).href ===
+      "https://www.dbs-cardgame.com/fw/en/news/01_305.html" &&
+    /<title>Banned\/Restricted Cards from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(html)
+  ) {
+    return {
+      surface: "legality-current",
+      document: fusionWorldCurrentRestrictions(html),
+    };
+  }
+  if (
+    game === "digimon" &&
+    sourceLineage === "digimon-en" &&
+    (surface === "restrictions-current" || surface === "restrictions-history") &&
+    new URL(requestUrl).href ===
+      "https://world.digimoncard.com/rule/restriction_card/" &&
+    /<title>Banned and Restricted Card Announcement \(Mar\. 16, 2026\) − RULE｜Digimon Card Game<\/title>/u.test(html)
+  ) {
+    return {
+      surface,
+      document: digimonCurrentRestrictions(html),
+    };
+  }
+  if (
+    game === "gundam" &&
+    (sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us") &&
+    surface === "detail"
+  ) {
+    const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+    if (
+      new URL(requestUrl).href ===
+        `https://www.gundam-gcg.com/${locale}/news/01_279.html` &&
+      /<h3>Current List of Banned \/ Restricted Cards<\/h3>/u.test(html)
+    ) {
+      return {
+        surface: "legality",
+        document: gundamCurrentRestrictions(sourceLineage, html),
+      };
+    }
+  }
+  return null;
+}
+
+function gundamCurrentRestrictions(
+  sourceLineage: "gundam-en-asia" | "gundam-en-us",
+  html: string,
+): Record<string, unknown> {
+  if (
+    !/<div class="date">July 24, 2026<\/div>/u.test(html) ||
+    !/<h3>Current List of Banned \/ Restricted Cards<\/h3>/u.test(html)
+  ) {
+    throw new Error("Gundam current policy identity is unavailable.");
+  }
+  const start = html.indexOf("<h3>Current List of Banned / Restricted Cards</h3>");
+  const end = html.indexOf("</section>", start);
+  if (start < 0 || end < 0) {
+    throw new Error("Gundam current policy section is incomplete.");
+  }
+  const current = html.slice(start, end);
+  for (const semantic of [
+    "No copies of the card are permitted in the deck.",
+    "Only 2 copy of the card is permitted in the deck.",
+    "Cards A and B cannot be used at the same time",
+    'All combinations of cards that match the above description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck.',
+  ]) {
+    if (!current.includes(`<p>${semantic}</p>`)) {
+      throw new Error("Gundam current policy semantics are incomplete.");
+    }
+  }
+  const cards = [...current.matchAll(
+    /<p(?: style="text-align: center;")?>([A-Z]{1,6}\d{0,4}-\d{1,4}) ([^<]+)<\/p>/gu,
+  )].map((match) => ({
+    number: match[1]!,
+    label: `${match[1]} ${decodedText(match[2]!)}`,
+  }));
+  if (cards.length !== 26 || new Set(cards.map(({ number }) => number)).size !== 26) {
+    throw new Error("Gundam current policy Card total changed.");
+  }
+  const groups = [
+    {
+      id: "01_279-ban",
+      wording: "No copies of the card are permitted in the deck.",
+      cards: cards.slice(0, 1),
+    },
+    {
+      id: "01_279-restricted-2",
+      wording: "Only 2 copy of the card is permitted in the deck.",
+      cards: cards.slice(1, 2),
+    },
+    {
+      id: "01_279-pair-1",
+      wording: "Cards A and B cannot be used at the same time",
+      cards: cards.slice(2, 4),
+    },
+    {
+      id: "01_279-pair-2",
+      wording: "Cards A and B cannot be used at the same time",
+      cards: cards.slice(4, 6),
+    },
+    {
+      id: "01_279-membership-pair",
+      wording: 'All combinations of cards that match the above description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck.',
+      cards: cards.slice(6),
+    },
+  ];
+  const entries = groups.map((group) => {
+    const numbers = group.cards.map(({ number }) => number);
+    return {
+      news_id: group.id,
+      text: `${group.wording}\n${group.cards.map(({ label }) => label).join("\n")}`,
+      region: sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US",
+      format: "standard",
+      event_tier: null,
+      effective_date: null,
+      end_date: null,
+      unresolved_scope: { dimensions: ["effective_interval"] },
+      card_numbers: numbers,
+      ruling: "unresolved",
+      reason: `Effective interval for ${numbers.join(", ")} is not stated.`,
+    };
+  });
+  return { entries, declared_record_count: entries.length };
+}
+
+function digimonCurrentRestrictions(html: string): Record<string, unknown> {
+  if (
+    !/<title>Banned and Restricted Card Announcement \(Mar\. 16, 2026\) − RULE｜Digimon Card Game<\/title>/u.test(html)
+  ) {
+    throw new Error("Digimon current policy identity is unavailable.");
+  }
+  const start = html.indexOf('<section class="cardWrap mt_l" id="application">');
+  const mainEnd = html.indexOf("</main>", start);
+  const end = html.lastIndexOf("</section>", mainEnd);
+  if (start < 0 || mainEnd < 0 || end <= start) {
+    throw new Error("Digimon current affected-card section is incomplete.");
+  }
+  const current = html.slice(start, end);
+  if (!/<h4 class="subTit txtNormal">List of Currently Affected Cards<\/h4>/u.test(current)) {
+    throw new Error("Digimon current affected-card heading is unavailable.");
+  }
+  const pairWording = "Banned Pair: If A is included in a deck, B is banned from being included in the deck.";
+  const banWording = "Banned cards: Can’t be included in decks.";
+  const restrictedWording = "Restricted Cards (1) - Decks can only include one copy of these cards.";
+  for (const wording of [pairWording, banWording, restrictedWording]) {
+    if (!current.includes(`<h5 class="minTit txtNormal">${wording}</h5>`)) {
+      throw new Error("Digimon current policy semantics are incomplete.");
+    }
+  }
+  const pairStart = current.indexOf(pairWording);
+  const banStart = current.indexOf(banWording, pairStart);
+  const restrictedStart = current.indexOf(restrictedWording, banStart);
+  if (pairStart < 0 || banStart < 0 || restrictedStart < 0) {
+    throw new Error("Digimon current policy categories are incomplete.");
+  }
+  const pairArea = current.slice(pairStart, banStart);
+  const pairStarts = [...pairArea.matchAll(/<div class="noticeFrame noticeBase">/gu)]
+    .map((match) => match.index);
+  const pairGroups = pairStarts.map((position, index) =>
+    cardLinks(pairArea.slice(position, pairStarts[index + 1] ?? pairArea.length))
+  );
+  const bannedCards = digimonCardEntries(
+    current.slice(banStart, restrictedStart),
+  );
+  const restrictedCards = digimonCardEntries(current.slice(restrictedStart));
+  if (
+    pairGroups.length !== 2 ||
+    pairGroups[0]?.length !== 2 ||
+    pairGroups[1]?.length !== 3 ||
+    bannedCards.length !== 3 ||
+    restrictedCards.length !== 50
+  ) {
+    throw new Error("Digimon current policy category totals changed.");
+  }
+  const common = {
+    language_scope: "EN-OCEANIA",
+    ruleset: "standard",
+    tournament_level: null,
+    applies_from: null,
+    applies_until: null,
+    unresolved_scope: { dimensions: ["effective_interval"] },
+    status_code: "unresolved",
+  };
+  const unresolvedEntry = (
+    id: string,
+    wording: string,
+    cards: Array<{ number: string; label: string }>,
+  ) => {
+    const numbers = cards.map(({ number }) => number);
+    return {
+      ...common,
+      restriction_id: id,
+      body: `${wording}\n${cards.map(({ label }) => label).join("\n")}`,
+      card_ids: numbers,
+      clarification: `Effective interval for ${numbers.join(", ")} is not stated.`,
+    };
+  };
+  const entries = [
+    ...pairGroups.map((cards, index) =>
+      unresolvedEntry(`current-pair-${index + 1}`, pairWording, cards)
+    ),
+    ...bannedCards.map((card) =>
+      unresolvedEntry(`current-ban-${card.number}`, banWording, [card])
+    ),
+    ...restrictedCards.map((card) =>
+      unresolvedEntry(`current-restricted-${card.number}`, restrictedWording, [card])
+    ),
+  ];
+  return { entries, declared_record_count: entries.length };
+}
+
+function digimonCardEntries(
+  html: string,
+): Array<{ number: string; label: string }> {
+  return [...html.matchAll(
+    /<a href="\/cardlist\/index\.php\?search=true&card_no=([A-Z]{1,6}\d{0,4}-\d{1,4})"><dd class="cardName"><span class="num">([^<]+)<\/span>([\s\S]*?)<\/dd><\/a>/gu,
+  )].map((match) => {
+    if (match[1] !== match[2]) {
+      throw new Error("Digimon policy Card URL and label identities conflict.");
+    }
+    return {
+      number: match[1]!,
+      label: `${match[1]} ${decodedText(match[3]!.replace(/<br>/gu, " "))}`,
+    };
+  });
+}
+
+function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
+  if (
+    !/<time class="time" datetime="2026-03-13">March 13, 2026<\/time>\s*<span class="txt">Banned\/Restricted Cards from March 2026<\/span>/u.test(html)
+  ) {
+    throw new Error("Fusion World current policy identity is unavailable.");
+  }
+  const article = requiredCapture(
+    html,
+    /<article class="articleCol">([\s\S]*?)<\/article>/u,
+    "Fusion World current policy article",
+  );
+  const banned = requiredPolicyCardSection(
+    article,
+    "Banned Cards",
+    "No copies of the card are permitted in the deck.",
+    "Restricted Cards",
+  );
+  const restricted = requiredPolicyCardSection(
+    article,
+    "Restricted Cards",
+    "Only 1 copy of the card is permitted in the deck.",
+    null,
+  );
+  if (banned.cards.length !== 3 || restricted.cards.length !== 5) {
+    throw new Error("Fusion World current policy category totals changed.");
+  }
+  const common = {
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: null,
+    expires_on: null,
+    unresolved_scope: { dimensions: ["effective_interval"] },
+    directive: "unresolved",
+  };
+  const entries = [...banned.cards, ...restricted.cards].map(
+    ({ number, label }, index) => {
+      const policy = index < banned.cards.length
+        ? banned.wording
+        : restricted.wording;
+      return {
+        ...common,
+        rule_ref: `01_305-${number}`,
+        notice: `${policy}\n${label}`,
+        cards: [number],
+        ambiguity: `Effective interval for ${number} is not stated.`,
+      };
+    },
+  );
+  return { entries, declared_record_count: entries.length };
+}
+
+function requiredPolicyCardSection(
+  html: string,
+  heading: string,
+  wording: string,
+  nextHeading: string | null,
+): { wording: string; cards: Array<{ number: string; label: string }> } {
+  const end = nextHeading === null
+    ? "[\\s\\S]*$"
+    : `[\\s\\S]*?<h4>${escapeRegExp(nextHeading)}</h4>`;
+  const section = requiredCapture(
+    html,
+    new RegExp(
+      `<h4>${escapeRegExp(heading)}</h4>[\\s\\S]*?<p>${escapeRegExp(wording)}<br>\\s*\\*Tap the image to view the card list\\.</p>(${end})`,
+      "u",
+    ),
+    `Official ${heading} section`,
+  );
+  const cards = [...section.matchAll(
+    /<p class="cms-card-subtitle" data-num="\d+">\s*([A-Z]{1,6}\d{0,4}-\d{1,4})\s+([^<]+)<\/p>/gu,
+  )].map((match) => ({
+    number: match[1]!,
+    label: `${match[1]} ${decodedText(match[2]!)}`,
+  }));
+  return { wording, cards };
+}
+
+function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
+  const effectiveDate = exactHumanDate(requiredCapture(
+    html,
+    /<h3>Banned\/Restricted Cards effective from ([^<]+)<\/h3>/u,
+    "One Piece active restriction effective date",
+  ));
+  const activeStart = html.indexOf("<h3>Cards with Active Restrictions</h3>");
+  if (activeStart < 0) {
+    throw new Error("One Piece active restriction section is unavailable.");
+  }
+  const activeEnd = html.indexOf(
+    '<div class="row js-setGallery rel-base c-gallery"',
+    activeStart + 1,
+  );
+  if (activeEnd < 0) {
+    throw new Error("One Piece active restriction section is incomplete.");
+  }
+  const active = html.slice(activeStart, activeEnd);
+  const bannedSection = requiredCapture(
+    active,
+    /<h4>Banned Cards<\/h4>\s*<p>(The following card\(s\) cannot be included in any deck\.)<\/p>([\s\S]*?)<h4>Restricted Cards<\/h4>/u,
+    "One Piece active banned cards",
+    2,
+  );
+  const banPolicy = requiredCapture(
+    active,
+    /<h4>Banned Cards<\/h4>\s*<p>(The following card\(s\) cannot be included in any deck\.)<\/p>/u,
+    "One Piece active ban wording",
+  );
+  const bannedCards = cardLinks(bannedSection);
+  if (bannedCards.length === 0) {
+    throw new Error("One Piece active banned-card list is empty.");
+  }
+  if (!/<h4>Restricted Cards<\/h4>\s*<p>There are currently no cards in this category\.<\/p>/u.test(active)) {
+    throw new Error("One Piece restricted-card category is not exactly accounted for.");
+  }
+  const pairSection = requiredCapture(
+    active,
+    /<h4>Banned Pair Cards<\/h4>\s*<p>(Card A and Card B cannot be included in the same deck\.)<\/p>([\s\S]*)$/u,
+    "One Piece active banned pairs",
+    2,
+  );
+  const pairPolicy = requiredCapture(
+    active,
+    /<h4>Banned Pair Cards<\/h4>\s*<p>(Card A and Card B cannot be included in the same deck\.)<\/p>/u,
+    "One Piece active banned-pair wording",
+  );
+  const pairGroups = [...pairSection.matchAll(
+    /<ul>([\s\S]*?)<\/ul>/gu,
+  )].map((match) => cardLinks(match[1]!));
+  if (
+    pairGroups.length === 0 ||
+    pairGroups.some((cards) => cards.length !== 2)
+  ) {
+    throw new Error("One Piece active banned pairs are incomplete.");
+  }
+  const common = {
+    territory: "EN-OCEANIA",
+    format_name: "standard",
+    event_class: null,
+    start_date: effectiveDate,
+    end_date: null,
+    unresolved_scope: null,
+  };
+  return {
+    entries: [
+      ...bannedCards.map(({ number, label }) => ({
+        ...common,
+        notice_no: `active-${effectiveDate}-ban-${number}`,
+        published_text: `${banPolicy}\n${label}`,
+        card_numbers: [number],
+        restriction_code: "ban",
+      })),
+      ...pairGroups.map(([left, right]) => ({
+        ...common,
+        notice_no: `active-${effectiveDate}-pair-${left!.number}-${right!.number}`,
+        published_text: `${pairPolicy}\n${left!.label}\n${right!.label}`,
+        card_numbers: [left!.number],
+        related_cards: [right!.number],
+        restriction_code: "prohibited_combination",
+      })),
+    ],
+    declared_record_count: bannedCards.length + pairGroups.length,
+  };
+}
+
+function cardLinks(html: string): Array<{ number: string; label: string }> {
+  return [...html.matchAll(
+    /<a\b[^>]*href="[^"]*(?:freewords|card_no|q)=([A-Z]{1,6}\d{0,4}-\d{1,4})[^"]*"[^>]*>([^<]+)<\/a>/gu,
+  )].map((match) => {
+    const label = decodedText(match[2]!);
+    if (!label.startsWith(`${match[1]} `)) {
+      throw new Error("Official policy Card label conflicts with its URL identity.");
+    }
+    return { number: match[1]!, label };
+  });
+}
+
+function requiredCapture(
+  value: string,
+  pattern: RegExp,
+  name: string,
+  group = 1,
+): string {
+  const matches = [...value.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
+  if (matches.length !== 1 || matches[0]![group] === undefined) {
+    throw new Error(`${name} does not match its exact publisher structure.`);
+  }
+  return matches[0]![group]!;
+}
+
+function exactHumanDate(value: string): string {
+  const match = value.match(/^([A-Z][a-z]+) (\d{1,2}), (\d{4})$/u);
+  const month = match === null
+    ? 0
+    : [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ].indexOf(match[1]!) + 1;
+  if (match === null || month === 0) {
+    throw new Error("Official policy effective date is not an exact calendar date.");
+  }
+  const day = String(Number.parseInt(match[2]!, 10)).padStart(2, "0");
+  const date = `${match[3]}-${String(month).padStart(2, "0")}-${day}`;
+  if (!isIsoCalendarDate(date)) {
+    throw new Error("Official policy effective date is not an exact calendar date.");
+  }
+  return date;
+}
+
+function decodedText(value: string): string {
+  return value
+    .replace(/&amp;/gu, "&")
+    .replace(/&#39;|&apos;/gu, "'")
+    .replace(/&quot;/gu, '"')
+    .replace(/&nbsp;/gu, " ")
+    .trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}

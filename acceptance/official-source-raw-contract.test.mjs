@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   officialSourceDiscoveryRequests,
@@ -177,6 +179,303 @@ function registeredProductionAdapters() {
   );
 }
 
+function retainedOfficialSourceFixture(slug) {
+  const metadata = JSON.parse(readFileSync(
+    new URL(
+      `./fixtures/retained-official-source/${slug}.json`,
+      import.meta.url,
+    ),
+    "utf8",
+  ));
+  const bytes = Buffer.from(metadata.body_base64, "base64");
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    metadata.body_sha256,
+    `${slug} retained bytes changed`,
+  );
+  assert.equal(
+    bytes.length,
+    metadata.range_end_exclusive - metadata.range_start,
+    `${slug} retained byte range changed`,
+  );
+  assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[23]T/u);
+  return { bytes, metadata };
+}
+
+const retainedDiscoveryFixtures = {
+  "one-piece-en": "one-piece-en-discovery",
+  "fusion-world-en": "fusion-world-en-discovery",
+  "digimon-en": "digimon-en-discovery",
+  "gundam-en-asia": "gundam-en-asia-discovery",
+  "gundam-en-us": "gundam-en-us-discovery",
+};
+
+function retainedLegalityRules(adapter, surface, slug, context = {}) {
+  const fixture = retainedOfficialSourceFixture(slug);
+  const observations = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: context.requestId ?? `${adapter.sourceLineage}:${surface}`,
+  });
+  return observations.find(
+    (observation) => observation.observation_type === "legality_rules",
+  )?.legality_rules;
+}
+
+test("retained live One Piece policy bytes publish the complete current active list", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const rules = retainedLegalityRules(
+    adapter,
+    "restrictions",
+    "one-piece-en-policy",
+  );
+  assert.deepEqual(
+    rules.map((rule) => ({
+      cards: rule.card_numbers,
+      effect: rule.effect,
+      effective_from: rule.effective_from,
+    })),
+    [
+      { cards: ["OP06-047"], effect: { type: "ban" }, effective_from: "2026-04-10" },
+      { cards: ["OP03-040"], effect: { type: "ban" }, effective_from: "2026-04-10" },
+      { cards: ["OP06-086"], effect: { type: "ban" }, effective_from: "2026-04-10" },
+      { cards: ["ST10-001"], effect: { type: "ban" }, effective_from: "2026-04-10" },
+      { cards: ["OP06-116"], effect: { type: "ban" }, effective_from: "2026-04-10" },
+      {
+        cards: ["OP07-115"],
+        effect: { type: "prohibited_combination", with_card_numbers: ["EB04-058"] },
+        effective_from: "2026-04-10",
+      },
+      {
+        cards: ["OP11-040"],
+        effect: { type: "prohibited_combination", with_card_numbers: ["OP11-067"] },
+        effective_from: "2026-04-10",
+      },
+      {
+        cards: ["OP11-040"],
+        effect: { type: "prohibited_combination", with_card_numbers: ["OP08-069"] },
+        effective_from: "2026-04-10",
+      },
+    ],
+  );
+});
+
+test("retained live Fusion World policy bytes retain every target without inventing a day", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const rules = retainedLegalityRules(
+    adapter,
+    "detail",
+    "fusion-world-en-policy-detail",
+    { requestId: `fusion-world-en:detail:${"a".repeat(64)}` },
+  );
+  assert.deepEqual(
+    rules.map((rule) => rule.card_numbers[0]),
+    [
+      "FB01-056", "FB01-005", "FB02-031", "FB04-085",
+      "FB04-094", "FB04-095", "SB01-011", "SB01-015",
+    ],
+  );
+  assert.ok(rules.every((rule) =>
+    rule.effective_from === null &&
+    rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
+    rule.effect.type === "unresolved" &&
+    rule.effect.reason ===
+      `Effective interval for ${rule.card_numbers[0]} is not stated.`
+  ));
+});
+
+test("retained live Digimon policy bytes retain the complete current affected list", () => {
+  const adapter = requiredSourceAdapter("digimon-en@3");
+  const rules = retainedLegalityRules(
+    adapter,
+    "restrictions-current",
+    "digimon-en-policy",
+  );
+  assert.equal(rules.length, 55);
+  assert.deepEqual(rules.slice(0, 2).map((rule) => rule.card_numbers), [
+    ["EX2-007", "EX7-064"],
+    ["BT20-037", "BT17-035", "EX8-037"],
+  ]);
+  assert.deepEqual(
+    rules.slice(2, 5).map((rule) => rule.card_numbers[0]),
+    ["BT5-109", "BT2-090", "EX5-065"],
+  );
+  assert.deepEqual(
+    rules.slice(-3).map((rule) => rule.card_numbers[0]),
+    ["BT6-100", "EX1-068", "BT7-072"],
+  );
+  assert.ok(rules.every((rule) =>
+    rule.effective_from === null &&
+    rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
+    rule.effect.type === "unresolved"
+  ));
+});
+
+test("retained live Gundam locale policy bytes retain every current rule target", () => {
+  for (const descriptor of [
+    { adapter: "gundam-en-asia@3", slug: "gundam-en-asia-policy-detail", region: "EN-ASIA" },
+    { adapter: "gundam-en-us@3", slug: "gundam-en-us-policy-detail", region: "EN-US" },
+  ]) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const rules = retainedLegalityRules(
+      adapter,
+      "detail",
+      descriptor.slug,
+      { requestId: `${adapter.sourceLineage}:detail:${"b".repeat(64)}` },
+    );
+    assert.equal(rules.length, 5, descriptor.adapter);
+    assert.deepEqual(rules.map((rule) => rule.card_numbers.length), [1, 1, 2, 2, 20]);
+    assert.equal(rules[0].card_numbers[0], "GD01-020");
+    assert.equal(rules[1].card_numbers[0], "ST02-016");
+    assert.deepEqual(rules[2].card_numbers, ["ST01-010", "ST05-010"]);
+    assert.deepEqual(rules[3].card_numbers, ["GD01-008", "GD05-015"]);
+    assert.equal(rules[4].card_numbers.at(-1), "ST10-005");
+    assert.ok(rules.every((rule) =>
+      rule.region === descriptor.region &&
+      rule.effective_from === null &&
+      rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
+      rule.effect.type === "unresolved"
+    ));
+  }
+});
+
+test("retained live policy roots schedule the exact current detail publications", () => {
+  const fusion = requiredSourceAdapter("fusion-world-en@3");
+  const fusionRoot = retainedOfficialSourceFixture("fusion-world-en-policy-live");
+  const fusionEvidence = fusion.parseBytes(fusionRoot.bytes, {
+    mediaType: fusionRoot.metadata.content_type,
+    url: fusionRoot.metadata.source_url,
+    requestId: `fusion-world-en:listing:rules:${"c".repeat(64)}`,
+  });
+  assert.equal(
+    fusionEvidence[0].records.find(
+      (record) => record.surface === "legality-current",
+    )?.url,
+    "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+  );
+
+  for (const descriptor of [
+    { adapter: "gundam-en-asia@3", slug: "gundam-en-asia-policy", locale: "asia-en" },
+    { adapter: "gundam-en-us@3", slug: "gundam-en-us-policy", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const fixture = retainedOfficialSourceFixture(descriptor.slug);
+    const requests = adapter.discoverRequests(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      url: fixture.metadata.source_url,
+      requestId: `${adapter.sourceLineage}:legality`,
+    });
+    assert.deepEqual(
+      requests.filter((request) => request.role !== "image"),
+      [{
+        role: "detail",
+        url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
+        headers: { accept: "text/html" },
+      }],
+    );
+    assert.deepEqual(
+      requests.filter((request) =>
+        request.url ===
+          `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`
+      ),
+      [{
+        role: "detail",
+        url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
+        headers: { accept: "text/html" },
+      }],
+    );
+  }
+});
+
+test("retained historical Fusion policy 404 cannot establish a successful surface", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-policy-historical-404",
+  );
+  assert.equal(fixture.metadata.http_status, 404);
+  assert.throws(
+    () => adapter.parseBytes(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      url: fixture.metadata.source_url,
+      requestId: "fusion-world-en:legality-history",
+    }),
+    /unavailable|unparsed|exact|coverage|publication|publisher|surface/iu,
+  );
+});
+
+test("retained live policy parsers reject tag-agnostic residual conditions", () => {
+  const cases = [
+    {
+      adapter: "one-piece-en@2",
+      slug: "one-piece-en-policy",
+      surface: "restrictions",
+      requestId: "one-piece-en:restrictions",
+      wording: "The following card(s) cannot be included in any deck.",
+    },
+    {
+      adapter: "fusion-world-en@3",
+      slug: "fusion-world-en-policy-detail",
+      surface: "detail",
+      requestId: `fusion-world-en:detail:${"d".repeat(64)}`,
+      wording: "No copies of the card are permitted in the deck.",
+    },
+    {
+      adapter: "digimon-en@3",
+      slug: "digimon-en-policy",
+      surface: "restrictions-current",
+      requestId: "digimon-en:restrictions-current",
+      wording: "Restricted Cards (1) - Decks can only include one copy of these cards.",
+    },
+    {
+      adapter: "gundam-en-us@3",
+      slug: "gundam-en-us-policy-detail",
+      surface: "detail",
+      requestId: `gundam-en-us:detail:${"e".repeat(64)}`,
+      wording: "No copies of the card are permitted in the deck.",
+    },
+  ];
+  for (const descriptor of cases) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const fixture = retainedOfficialSourceFixture(descriptor.slug);
+    const mutated = Buffer.from(
+      fixture.bytes.toString("utf8").replaceAll(
+        descriptor.wording,
+        `${descriptor.wording} Unless the publisher grants an exception.`,
+      ),
+    );
+    assert.throws(
+      () => adapter.parseBytes(mutated, {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: descriptor.requestId,
+      }),
+      /exact|incomplete|unavailable|unparsed|semantics|structure/iu,
+      descriptor.adapter,
+    );
+  }
+});
+
+test("retained live discovery bytes derive every production surface family", () => {
+  for (const adapter of registeredProductionAdapters()) {
+    const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
+    const fixture = retainedOfficialSourceFixture(
+      retainedDiscoveryFixtures[adapter.sourceLineage],
+    );
+    assert.equal(fixture.metadata.http_status, 200);
+    assert.equal(fixture.metadata.source_url, request.url);
+    const records = adapter.parseBytes(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      url: request.url,
+      requestId: request.id,
+    }).flatMap((observation) => observation.records ?? []);
+    assert.deepEqual(
+      records.map(({ surface }) => surface),
+      expectedDiscoveryKeys[adapter.sourceLineage].map((key) => `@seed:${key}`),
+    );
+  }
+});
+
 test("every production lineage owns an exact raw decoder and discovery plan", () => {
   const production = registeredProductionAdapters();
   assert.deepEqual(
@@ -232,10 +531,14 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       `${adapter.sourceLineage} must use upstream paths, not Keepr paths`,
     );
 
+    const retainedDiscovery = retainedOfficialSourceFixture(
+      retainedDiscoveryFixtures[adapter.sourceLineage],
+    );
+    const retainedHtml = retainedDiscovery.bytes.toString("utf8");
     const discovery = adapter.parseBytes(
-      new TextEncoder().encode(discoveryHtml(adapter.sourceLineage)),
+      retainedDiscovery.bytes,
       {
-        mediaType: "text/html; charset=utf-8",
+        mediaType: retainedDiscovery.metadata.content_type,
         url: requests[0].url,
         requestId: requests[0].id,
       },
@@ -245,7 +548,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.ok(
       discoveryRecords.every(({ discovered_from }) =>
-        discoveryHtml(adapter.sourceLineage).includes(
+        retainedHtml.includes(
           discovered_from.resolution,
         )
       ),
@@ -356,21 +659,27 @@ test("notice-link-only legality publications fail closed at the raw Official Sou
 
 test("One Piece release publications fail closed on unmodelled conditional legality wording", () => {
   const adapter = requiredSourceAdapter("one-piece-en@2");
-  assert.throws(
-    () => adapter.parseBytes(
-      new TextEncoder().encode(`
-        <html><title>BANDAI ONE PIECE CARD PRODUCT RELEASE publication</title>
-          <article>OP01-001 may not be included unless your Leader is OP01-999.</article>
-        </html>
-      `),
-      {
-        mediaType: "text/html; charset=utf-8",
-        url: adapter.requestUrlForSurface("releases"),
-        requestId: "one-piece-en:releases",
-      },
-    ),
-    /non-empty Legality data without an exact, complete Legality Rule parser/iu,
-  );
+  for (const publication of [
+    "<article>OP01-001 may not be included unless your Leader is OP01-999.</article>",
+    `<article>Official product entry</article>
+     <span>OP01-001 may not be included unless your Leader is OP01-999.</span>`,
+  ]) {
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(`
+          <html><title>BANDAI ONE PIECE CARD PRODUCT RELEASE publication</title>
+            ${publication}
+          </html>
+        `),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: adapter.requestUrlForSurface("releases"),
+          requestId: "one-piece-en:releases",
+        },
+      ),
+      /non-empty Legality data without an exact, complete Legality Rule parser/iu,
+    );
+  }
 });
 
 test("production discovery is proven by complete exact retained navigation", () => {
@@ -409,6 +718,15 @@ test("production discovery is proven by complete exact retained navigation", () 
           entries[0].label = entries[1].label;
           return entries;
         }),
+      "undemonstrated anchor attributes": () =>
+        discoveryHtml(adapter.sourceLineage).replace(
+          "<a href=",
+          '<a class="unexpected" href=',
+        ),
+      "undemonstrated anchor nesting": () =>
+        discoveryHtml(adapter.sourceLineage)
+          .replace("<a href=", "<div><a href=")
+          .replace("</a>", "</a></div>"),
     };
     for (const [failure, html] of Object.entries(mutations)) {
       assert.throws(
@@ -654,6 +972,27 @@ test("structured legality consumes only the exact lineage and surface publisher 
       ),
       /exact, complete Legality Rule parser|unmatched.*publisher/iu,
       name,
+    );
+  }
+  for (const siblingScript of [
+    "<script></script>",
+    "<script>   </script>",
+    '<script id="publisher-extension"></script>',
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+           ${officialPublisherPayloadScript(
+             "fusion-world-en",
+             "legality-current",
+             currentEmpty,
+           )}
+           ${siblingScript}</html>`,
+        ),
+        fusionLegalityContext(current),
+      ),
+      /exact, complete Legality Rule parser|unmatched.*script/iu,
     );
   }
 });
@@ -1216,6 +1555,27 @@ test("every active production legality adapter requires exact wording targets an
         `${descriptor.adapter}: ${String(tier)} tier`,
       );
     }
+
+    const knownTierScope = structuredClone(payload);
+    knownTierScope.entries[0] = {
+      ...eligible,
+      [descriptor.fields.wording]:
+        `${descriptor.card} is eligible under the published Championship-only rule.`,
+      [descriptor.fields.tier]: "championship",
+    };
+    assert.doesNotThrow(
+      () => parseRegisteredSurface(adapter, descriptor.surface, knownTierScope),
+      `${descriptor.adapter}: exact closed tier scope`,
+    );
+    for (const tier of [null, "regional"]) {
+      const mismatch = structuredClone(knownTierScope);
+      mismatch.entries[0][descriptor.fields.tier] = tier;
+      assert.throws(
+        () => parseRegisteredSurface(adapter, descriptor.surface, mismatch),
+        /wording.*(?:tier|scope)/iu,
+        `${descriptor.adapter}: closed tier scope conflicts with ${String(tier)}`,
+      );
+    }
   }
 });
 
@@ -1286,6 +1646,28 @@ test("current production legality parser rejects definitive unresolved wording a
       /unresolved|Card numbers|additional structured semantics/u,
     );
   }
+  assert.throws(
+    () => officialLegalityRulesObservation(
+      "fusion-world",
+      "fusion-world-en",
+      {
+        entries: [{
+          rule_ref: "FW-UNTRUSTED-LIVE-SHAPE",
+          notice: "No copies of the card are permitted in the deck.\nFB01-030 Example",
+          market: "EN-OCEANIA",
+          play_format: "standard",
+          tier: null,
+          active_on: null,
+          expires_on: null,
+          unresolved_scope: { dimensions: ["effective_interval"] },
+          cards: ["FB01-030"],
+          directive: "unresolved",
+          ambiguity: "Effective interval for FB01-030 is not stated.",
+        }],
+      },
+    ),
+    /unresolved|additional structured semantics/iu,
+  );
 });
 
 test("current machine legality surfaces require independent exact totals and partitions", () => {
@@ -1332,7 +1714,7 @@ test("current production legality HTML decodes entities exactly once", () => {
   );
 });
 
-test("official legality entries reject nonempty publisher notes and unknown semantic fields", () => {
+test("official legality entries reject publisher notes and unknown semantic fields", () => {
   const entry = {
     rule_ref: "FW-2026-003",
     notice: "FB01-003 is banned from standard tournament decks.",
@@ -1343,16 +1725,9 @@ test("official legality entries reject nonempty publisher notes and unknown sema
     expires_on: null,
     cards: ["FB01-003"],
     directive: "ban",
-    publisher_note: "",
   };
-  const observation = officialLegalityRulesObservation(
-    "fusion-world",
-    "fusion-world-en",
-    { entries: [entry] },
-  );
-  assert.equal(observation.legality_rules[0].official_wording, entry.notice);
-  assert.equal("publisher_note" in observation.legality_rules[0], false);
   for (const publisherNote of [
+    "",
     "This publisher note is retained only as source metadata.",
     "Only during Championship events.",
     "Unless your Leader is red.",
@@ -1363,7 +1738,7 @@ test("official legality entries reject nonempty publisher notes and unknown sema
         "fusion-world-en",
         { entries: [{ ...entry, publisher_note: publisherNote }] },
       ),
-      /publisher note|conditional|scope/iu,
+      /unknown field publisher_note/iu,
     );
   }
   assert.throws(
@@ -1418,6 +1793,24 @@ test("the versioned One Piece release surface emits its exact release-timing rul
     effect: { type: "release_timing", legal_from: "2026-09-04" },
     representable: true,
   }]);
+});
+
+test("one identical ordinary One Piece Product document is valid for Product and Release roles", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const bytes = Buffer.from(
+    `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
+      <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
+    </html>`,
+    "utf8",
+  );
+  for (const surface of ["products", "releases"]) {
+    const observations = adapter.parseBytes(bytes, {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/products/",
+      requestId: `one-piece-en:${surface}`,
+    });
+    assert.ok(observations.length >= 1, surface);
+  }
 });
 
 test("historical and current production registrations keep byte-identical legality decoder behavior isolated", () => {
@@ -2344,7 +2737,7 @@ test("real Digimon and Gundam details close every known profile field and reject
   );
 });
 
-test("every production lineage parses its exact real HTML policy surfaces", () => {
+test("every production lineage preserves its synthetic publisher-contract examples", () => {
   for (const adapter of registeredProductionAdapters()) {
     const surface = adapter.requiredSurfaces.find(
       (candidate) => candidate !== "card-list",

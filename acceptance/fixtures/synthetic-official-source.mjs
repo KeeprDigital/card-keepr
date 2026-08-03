@@ -2,6 +2,21 @@ import {
   contextualLegalityDomainDocument,
   donLegalityDomainDocument,
 } from "./contextual-legality-source.mjs";
+import digimonDiscovery from "./retained-official-source/digimon-en-discovery.json" with {
+  type: "json",
+};
+import fusionWorldDiscovery from "./retained-official-source/fusion-world-en-discovery.json" with {
+  type: "json",
+};
+import gundamAsiaDiscovery from "./retained-official-source/gundam-en-asia-discovery.json" with {
+  type: "json",
+};
+import gundamUsDiscovery from "./retained-official-source/gundam-en-us-discovery.json" with {
+  type: "json",
+};
+import onePieceDiscovery from "./retained-official-source/one-piece-en-discovery.json" with {
+  type: "json",
+};
 
 export default {
   fetch(request) {
@@ -59,6 +74,19 @@ export default {
           headers: {
             "content-type": "image/png",
             etag: `"${officialLineage}-image-v1"`,
+          },
+        });
+      }
+      const retainedDiscovery = retainedOfficialDiscovery(
+        officialLineage,
+        transportOutcome,
+        url,
+      );
+      if (retainedDiscovery !== null) {
+        return new Response(retainedDiscovery.body, {
+          headers: {
+            "content-type": retainedDiscovery.contentType,
+            etag: `"${officialLineage}-retained-discovery-v1"`,
           },
         });
       }
@@ -186,6 +214,38 @@ export default {
 };
 
 const officialProductPageVisits = new Map();
+const officialDiscoveryRootVisits = new Map();
+
+const retainedOfficialDiscoveryFixtures = {
+  "one-piece-en": onePieceDiscovery,
+  "fusion-world-en": fusionWorldDiscovery,
+  "digimon-en": digimonDiscovery,
+  "gundam-en-asia": gundamAsiaDiscovery,
+  "gundam-en-us": gundamUsDiscovery,
+};
+
+function retainedOfficialDiscovery(lineage, parserSignal, requestUrl) {
+  const fixture = retainedOfficialDiscoveryFixtures[lineage];
+  if (requestUrl.href !== fixture.source_url) return null;
+  const visitKey = [parserSignal ?? "", lineage, requestUrl.href].join("\u0000");
+  const visit = officialDiscoveryRootVisits.get(visitKey) ?? 0;
+  officialDiscoveryRootVisits.set(visitKey, visit + 1);
+  const requestsPerDiscoveryCycle =
+    lineage === "one-piece-en" || lineage === "fusion-world-en" ? 3 : 2;
+  return visit % requestsPerDiscoveryCycle === 0
+    ? retainedDiscoveryResponse(fixture)
+    : null;
+}
+
+function retainedDiscoveryResponse(fixture) {
+  return {
+    body: Uint8Array.from(
+      atob(fixture.body_base64),
+      (character) => character.charCodeAt(0),
+    ),
+    contentType: fixture.content_type,
+  };
+}
 
 const officialLineageNavigationLinks = {
   "one-piece-en": [
