@@ -619,6 +619,46 @@ test("retained Fusion policy permits text-free publisher framing at article boun
   );
 });
 
+test("retained One Piece and Digimon policies reject unconsumed event scope while allowing text-free framing", () => {
+  const cases = [
+    {
+      adapter: "one-piece-en@2",
+      slug: "one-piece-en-policy",
+      requestId: "one-piece-en:restrictions",
+      anchor: "<h4>Banned Cards</h4>",
+    },
+    {
+      adapter: "digimon-en@3",
+      slug: "digimon-en-policy",
+      requestId: "digimon-en:restrictions-current",
+      anchor:
+        '<h4 class="subTit txtNormal">List of Currently Affected Cards</h4>',
+    },
+  ];
+  for (const descriptor of cases) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const fixture = retainedOfficialSourceFixture(descriptor.slug);
+    const source = fixture.bytes.toString("utf8");
+    const parse = (html) => adapter.parseBytes(Buffer.from(html), {
+      mediaType: fixture.metadata.content_type,
+      url: fixture.metadata.source_url,
+      requestId: descriptor.requestId,
+    });
+    assert.throws(
+      () => parse(source.replace(
+        descriptor.anchor,
+        `${descriptor.anchor}<p>These restrictions apply at Championship events.</p>`,
+      )),
+      /unconsumed|exact|semantics|structure/iu,
+      descriptor.adapter,
+    );
+    assert.doesNotThrow(() => parse(source.replace(
+      descriptor.anchor,
+      `<div class="publisher-frame"></div>${descriptor.anchor}`,
+    )));
+  }
+});
+
 test("retained live discovery bytes derive every production surface family", () => {
   for (const adapter of registeredProductionAdapters()) {
     const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
@@ -726,6 +766,115 @@ test("One Piece parser-failure markers survive retained discovery, staged listin
         : /pagination evidence does not prove complete partitions/iu,
     );
   }
+});
+
+test("Product and Release fixture bytes are invariant under retries and reordering", async () => {
+  const url = "https://en.onepiece-cardgame.com/products/";
+  const responseBytes = async (surface) => new Uint8Array(
+    await (await syntheticOfficialSource.fetch(new Request(url, {
+      headers: {
+        "user-agent":
+          `card-keepr-product-routing-golden; request-role=surface; request-surface=${surface}`,
+      },
+    }))).arrayBuffer(),
+  );
+  const productA = await responseBytes("products");
+  const releaseA = await responseBytes("releases");
+  const productB = await responseBytes("products");
+  const releaseB = await responseBytes("releases");
+  const productC = await responseBytes("products");
+
+  assert.deepEqual(productB, productA);
+  assert.deepEqual(productC, productA);
+  assert.deepEqual(releaseB, releaseA);
+  assert.notDeepEqual(releaseA, productA);
+});
+
+test("Digimon explicit surfaces deterministically disambiguate shared Product, Release, and policy URLs", async () => {
+  const adapter = requiredSourceAdapter("digimon-en@3");
+  const cases = [
+    ["products", "https://world.digimoncard.com/products/"],
+    ["releases", "https://world.digimoncard.com/products/"],
+    [
+      "restrictions-current",
+      "https://world.digimoncard.com/rule/restriction_card/",
+    ],
+    [
+      "restrictions-history",
+      "https://world.digimoncard.com/rule/restriction_card/?view=history",
+    ],
+  ];
+  const captured = new Map();
+  for (const [surface, url] of [...cases, ...cases.toReversed()]) {
+    const response = await syntheticOfficialSource.fetch(new Request(url, {
+      headers: {
+        "user-agent":
+          `card-keepr-digimon-routing; request-role=surface; request-surface=${surface}`,
+      },
+    }));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (captured.has(surface)) {
+      assert.deepEqual(bytes, captured.get(surface), surface);
+    } else {
+      captured.set(surface, bytes);
+    }
+    assert.doesNotThrow(() => adapter.parseBytes(bytes, {
+      mediaType: response.headers.get("content-type"),
+      url,
+      requestId: `digimon-en:${surface}`,
+    }), surface);
+  }
+  assert.notDeepEqual(
+    captured.get("products"),
+    captured.get("releases"),
+  );
+  assert.notDeepEqual(
+    captured.get("restrictions-current"),
+    captured.get("restrictions-history"),
+  );
+});
+
+test("Fusion staged policy discovery rejects keyword-matched sibling news pages", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  for (const [label, href] of [
+    ["Banned cards", "/fw/en/news/01_998.html"],
+    ["Previous history", "/fw/en/news/01_999.html"],
+  ]) {
+    assert.throws(
+      () => adapter.parseBytes(new TextEncoder().encode(`<html>
+        <title>BANDAI DRAGON BALL CARD RULES</title>
+        <a href="${href}">${label}</a>
+      </html>`), {
+        mediaType: "text/html",
+        url: "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+        requestId: `fusion-world-en:listing:rules:${"a".repeat(64)}`,
+      }),
+      /exact|sibling|policy|discovery/iu,
+      label,
+    );
+  }
+});
+
+test("Fusion final policy parsing rejects a sibling news URL", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const payload = officialRawSurfacePayload(
+    "/fusion-world-en/legality-current",
+  );
+  assert.throws(
+    () => adapter.parseBytes(new TextEncoder().encode(`<html>
+      <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+      ${officialPublisherPayloadScript(
+        "fusion-world-en",
+        "legality-current",
+        payload,
+      )}
+    </html>`), {
+      mediaType: "text/html",
+      url: "https://www.dbs-cardgame.com/fw/en/news/01_999.html",
+      requestId: "fusion-world-en:legality-current",
+    }),
+    /exact|identity|URL contract/iu,
+  );
 });
 
 test("every production lineage owns an exact raw decoder and discovery plan", () => {
@@ -1047,6 +1196,26 @@ test("historical production identities preserve their original JSON-LD observati
       adapterVersion,
     );
   }
+});
+
+test("historical V1 coverage retains its original Showing-count grammar", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@1");
+  const observations = adapter.parseBytes(Buffer.from(`
+    <html><title>BANDAI ONE PIECE RULE RESTRICTION</title>
+      <p>Showing 2 results</p><li>one</li>
+    </html>
+  `), {
+    mediaType: "text/html",
+    url: adapter.requestUrlForSurface("restrictions"),
+    requestId: "one-piece-en:restrictions",
+  });
+  assert.deepEqual(observations[0].completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 2,
+    parsed_record_count: 1,
+  });
 });
 
 test("historical production identities freeze every original decoder path", () => {

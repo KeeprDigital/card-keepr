@@ -33,6 +33,7 @@ import {
 import {
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
+  productionSourceFixtureSurface,
 } from "./production-source-fixture-routing";
 
 declare global {
@@ -92,6 +93,20 @@ test("production source fixture selection is invariant under retries and reorder
     "user-agent":
       "card-keepr-representable-legality-v3; request-role=listing",
   }))).toBe("card-keepr-representable-legality-v3");
+  const products = new Headers({
+    "user-agent":
+      "card-keepr-products-v3; request-role=surface; request-surface=products",
+  });
+  const releases = new Headers({
+    "user-agent":
+      "card-keepr-products-v3; request-role=surface; request-surface=releases",
+  });
+  expect([releases, products, releases, products].map(
+    productionSourceFixtureSurface,
+  )).toEqual(["releases", "products", "releases", "products"]);
+  expect(productionSourceFixtureMarker(products)).toBe(
+    "card-keepr-products-v3",
+  );
   expect(productionSourceFixtureMarker(new Headers({
     "user-agent":
       "card-keepr-representable-legality-v3; request-role=surface",
@@ -291,11 +306,17 @@ test("final Official Source requests keep discovery evidence immutable while exp
     canonicalJson(headers) === canonicalJson({ accept: "text/html" })
   )).toBe(true);
   expect(requests).toHaveLength(adapter.requiredSurfaces?.length ?? 0);
-  expect(requests.every(({ headers }) =>
-    headers.accept === "text/html" &&
-    headers["user-agent"] ===
-      "card-keepr-representable-legality-v3; request-role=surface"
-  )).toBe(true);
+  expect(requests.map(({ surface, headers }) => ({
+    surface,
+    headers,
+  }))).toEqual(requests.map(({ surface }) => ({
+    surface,
+    headers: {
+      accept: "text/html",
+      "user-agent":
+        `card-keepr-representable-legality-v3; request-role=surface; request-surface=${surface}`,
+    },
+  })));
 });
 
 test("final Official Source collection identities enforce the URL byte bound", async () => {
@@ -329,7 +350,8 @@ test("final Official Source collection identities enforce the merged-header byte
   const records = fusionWorldDiscoveryRecords();
   const headerBase = utf8(canonicalJson({
     accept: "text/html",
-    "user-agent": "card-keepr-official-source/1; request-role=surface",
+    "user-agent":
+      "card-keepr-official-source/1; request-role=surface; request-surface=legality-current",
     "x-final-bound": "",
   })).byteLength;
   await expect(officialCollectionRequestsFromDiscovery(

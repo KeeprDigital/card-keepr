@@ -147,6 +147,27 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
   ) {
     throw new Error("Digimon current policy category totals changed.");
   }
+  const visibleText = normalizedVisiblePolicyText(current);
+  const expectedVisibleText = [
+    "List of Currently Affected Cards",
+    pairWording,
+    ...pairGroups.flatMap((cards) => [
+      "Component Card A",
+      "・",
+      cards[0]!.label,
+      "Component Card B",
+      ...cards.slice(1).flatMap(({ label }) => ["・", label]),
+    ]),
+    banWording,
+    ...bannedCards.map(({ label }) => label.replace(/\s+/gu, " ")),
+    restrictedWording,
+    ...restrictedCards.map(({ label }) => label.replace(/\s+/gu, " ")),
+  ].join(" ");
+  if (visibleText !== expectedVisibleText) {
+    throw new Error(
+      "Digimon current policy contains unconsumed prose or structure.",
+    );
+  }
   const common = {
     language_scope: "EN-OCEANIA",
     ruleset: "standard",
@@ -351,6 +372,25 @@ function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
     pairGroups.some((cards) => cards.length !== 2)
   ) {
     throw new Error("One Piece active banned pairs are incomplete.");
+  }
+  const visibleText = normalizedVisiblePolicyText(active);
+  const expectedVisibleText = [
+    "Cards with Active Restrictions",
+    "Banned Cards",
+    banPolicy,
+    ...bannedCards.flatMap(({ label }) => ["・", label]),
+    "Restricted Cards",
+    "There are currently no cards in this category.",
+    "Banned Pair Cards",
+    pairPolicy,
+    ...pairGroups.flatMap((cards) =>
+      cards.flatMap(({ label }) => ["・", label])
+    ),
+  ].join(" ");
+  if (visibleText !== expectedVisibleText) {
+    throw new Error(
+      "One Piece current policy contains unconsumed prose or structure.",
+    );
   }
   const common = {
     territory: "EN-OCEANIA",

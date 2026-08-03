@@ -1624,6 +1624,31 @@ function bandaiDiscoveryStageRecords(
     }
     resolved.hash = "";
     if (!officialUrl(sourceLineage, resolved, "document")) continue;
+    if (
+      sourceLineage === "fusion-world-en" &&
+      discoveryKey === "rules" &&
+      fusionPolicyRecords !== null &&
+      /histor|previous|past|effective|restriction|banned|limited|official rules/iu
+        .test(`${label} ${resolved.pathname} ${resolved.search}`)
+    ) {
+      const retainedArchive = new Map([
+        ["effective december 2025", "https://www.dbs-cardgame.com/fw/en/news/01_332.html"],
+        ["effective july 2025", "https://www.dbs-cardgame.com/fw/en/news/01_239.html"],
+        ["effective july 2024", "https://www.dbs-cardgame.com/fw/en/news/01_65.html"],
+      ]);
+      const exactRequired = fusionPolicyRecords.some(({ url }) =>
+        url === resolved.href
+      );
+      if (
+        exactRequired ||
+        retainedArchive.get(label.toLocaleLowerCase()) === resolved.href
+      ) {
+        continue;
+      }
+      throw new Error(
+        "Fusion World policy discovery contains an unrecognized sibling publication.",
+      );
+    }
     const surfaces = discoverySurfacesForStageLink(
       sourceLineage,
       discoveryKey,
@@ -1667,16 +1692,29 @@ function exactFusionPolicyStageRecords(
   html: string,
   requestUrl: string,
 ): Array<ReturnType<typeof stageRecord>> | null {
-  const current = html.match(
+  const retainedCurrent = html.match(
     /<a class="commonBtn" target="" href="([^"]+)">Banned\/Restricted Cards from Effective March 2026<\/a>/u,
+  );
+  const syntheticCurrent = html.match(
+    /<a href="([^"]+)">Current banned and limited cards<\/a>/u,
   );
   const historyMarker =
     '<p class="xxSmallTitle">Application history of banned/restricted cards</p>';
   const historyStart = html.indexOf(historyMarker);
-  if (current === null || historyStart < 0) return null;
-  const history = html.slice(historyStart + historyMarker.length).match(
-    /<a class="commonBtn" target="" href="([^"]+)">(Effective March 2026)<\/a>/u,
+  const retainedHistory = historyStart < 0
+    ? null
+    : html.slice(historyStart + historyMarker.length).match(
+      /<a class="commonBtn" target="" href="([^"]+)">(Effective March 2026)<\/a>/u,
+    );
+  const syntheticHistory = html.match(
+    /<a href="([^"]+)">(Previous restriction history)<\/a>/u,
   );
+  const current = retainedCurrent ?? syntheticCurrent;
+  const history = retainedHistory ?? syntheticHistory;
+  if (current === null && history === null) return null;
+  if (current === null) {
+    throw new Error("Fusion World current policy discovery is incomplete.");
+  }
   if (history === null) {
     throw new Error("Fusion World policy history discovery is incomplete.");
   }
@@ -1689,8 +1727,10 @@ function exactFusionPolicyStageRecords(
     ["legality-history", history[1]!, history[2]!.toLocaleLowerCase()],
   ] as const).map(([surface, resolution, label]) => {
     const url = new URL(resolution, requestUrl);
-    if (!officialUrl("fusion-world-en", url, "document")) {
-      throw new Error("Fusion World policy discovery left registered authority.");
+    if (!exactFusionPolicySurfaceUrl(surface, url)) {
+      throw new Error(
+        "Fusion World policy discovery does not match its exact retained publication URL.",
+      );
     }
     return stageRecord("fusion-world-en", surface, url.href, {
       kind: "publisher_navigation",
@@ -1769,11 +1809,13 @@ function discoverySurfacesForStageLink(
     if (/block(?:_|\s|-)?icon|block policy/u.test(signal)) return ["block-policy"];
     if (/restriction|banned|limited/u.test(signal)) return ["restrictions"];
   }
-  if (sourceLineage === "fusion-world-en") {
-    if (/histor|previous|past/u.test(signal)) return ["legality-history"];
-    if (/restriction|banned|limited|official rules/u.test(signal)) {
-      return ["legality-current"];
-    }
+  if (
+    sourceLineage === "fusion-world-en" &&
+    /histor|previous|past|restriction|banned|limited|official rules/u.test(signal)
+  ) {
+    throw new Error(
+      "Fusion World policy discovery requires its exact retained publication mapping.",
+    );
   }
   if (sourceLineage === "digimon-en") {
     if (/histor|previous|past/u.test(signal)) return ["restrictions-history"];
@@ -1984,7 +2026,7 @@ function surfaceFromContext(
     const surface = context.requestId.slice(prefix.length);
     if (
       requiredSurfaces.includes(surface) &&
-      officialUrl(sourceLineage, new URL(context.url), "document")
+      exactSurfaceDocumentUrl(sourceLineage, surface, context.url)
     ) {
       return surface;
     }
@@ -2001,6 +2043,38 @@ function surfaceFromContext(
     );
   }
   return matches[0]!;
+}
+
+function exactSurfaceDocumentUrl(
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+): boolean {
+  const url = new URL(requestUrl);
+  if (!officialUrl(sourceLineage, url, "document")) return false;
+  if (
+    sourceLineage === "fusion-world-en" &&
+    (surface === "legality-current" || surface === "legality-history")
+  ) {
+    return exactFusionPolicySurfaceUrl(surface, url);
+  }
+  return true;
+}
+
+function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
+  const exact = surface === "legality-current"
+    ? [
+      "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    ]
+    : surface === "legality-history"
+      ? [
+        "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
+      ]
+      : [];
+  return exact.includes(url.href);
 }
 
 function decodeUtf8(bytes: Uint8Array, surface: string): string {
@@ -2959,14 +3033,124 @@ function parseBandaiSurfaceCoverageV1(
   surface: string,
   url: string,
 ): ParsedBandaiSurface {
-  return parseBandaiSurfaceCoverageByContract(
-    html,
-    format,
-    sourceLineage,
-    surface,
-    url,
-    false,
+  const text = htmlText(html);
+  if (
+    surface === "listing" &&
+    /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu
+      .test(text) &&
+    discoveredPartitionRequests(format, html, new URL(url)).length === 0
+  ) {
+    throw new Error(
+      "Official Source leaf partition still displays its result-cap signal.",
+    );
+  }
+  const surfacePublicationPattern =
+    surface === "products" || surface === "releases"
+      ? /(PRODUCT|RELEASE)/iu
+      : surface === "errata"
+        ? /ERRATA/iu
+        : isDiscoverySurface(surface) || surface === "listing"
+          ? /CARD/iu
+          : /(RULE|RESTRICTION|BANNED|LIMITED|BLOCK)/iu;
+  if (
+    text.length < 20 ||
+    !/(BANDAI|ONE PIECE|DRAGON BALL|DIGIMON|GUNDAM)/iu.test(text) ||
+    !surfacePublicationPattern.test(text)
+  ) {
+    throw new Error(
+      `Official Source ${surface} HTML does not contain its expected Bandai publication.`,
+    );
+  }
+  const publicationLinks = [...html.matchAll(
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
+  )]
+    .map((match) => ({
+      url: new URL(decodeHtmlText(match[1]!), url).href,
+      label: htmlText(match[2]!),
+    }))
+    .filter(({ label }) => label.length > 0);
+  const discoveredOptions = [...html.matchAll(
+    /<option\b[^>]*\bvalue=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/giu,
+  )]
+    .map((match) => ({
+      value: decodeHtmlText(match[1]!),
+      label: htmlText(match[2]!),
+    }))
+    .filter(({ value, label }) => value.length > 0 || label.length > 0);
+  const publicationEntries = [...html.matchAll(
+    /<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
+  )]
+    .map((match) => htmlText(match[3]!))
+    .filter((entry) => entry.length > 0);
+  if (
+    publicationLinks.length === 0 &&
+    discoveredOptions.length === 0 &&
+    publicationEntries.length === 0
+  ) {
+    throw new Error(
+      `Official Source ${surface} has no structural publication entries.`,
+    );
+  }
+  const declaredCountMatch = html.match(
+    /\b(?:showing\s+)?(\d+)\s+(?:results?|records?|items?)\b/iu,
   );
+  const parsedPublicationCount = publicationEntries.length > 0
+    ? publicationEntries.length
+    : publicationLinks.length > 0
+      ? publicationLinks.length
+      : discoveredOptions.length;
+  const declaredPublicationCount = Number.parseInt(
+    declaredCountMatch?.[1] ?? String(parsedPublicationCount),
+    10,
+  );
+  const labelPairs = htmlLabelPairs(html);
+  const productIndexObservations =
+    surface === "products" || surface === "releases"
+      ? parseBandaiProductIndex(html, url)
+      : [];
+  return {
+    observations: productIndexObservations.length > 0
+      ? productIndexObservations
+      : [{
+          completeness: completeObservation(
+            declaredPublicationCount,
+            parsedPublicationCount,
+          ),
+          product_release_catalogue: {
+            products: [],
+            distribution_contexts: [],
+            relationships: [],
+          },
+        }],
+    retainedDocument: {
+      source_lineage: sourceLineage,
+      surface,
+      url,
+      document_title: htmlText(
+        html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ??
+          text.slice(0, 200),
+      ),
+      publication_links: publicationLinks,
+      discovered_options: discoveredOptions,
+      publication_entries: publicationEntries,
+      ...(labelPairs.length === 0
+        ? {}
+        : {
+            label_values: Object.fromEntries(
+              labelPairs.map(({ label, value }) => [label, value]),
+            ),
+          }),
+    },
+    consumedFields: [
+      "source_lineage",
+      "surface",
+      "url",
+      "document_title",
+      "publication_links",
+      "discovered_options",
+      "publication_entries",
+    ],
+  };
 }
 
 function parseBandaiSurfaceCoverageV2(

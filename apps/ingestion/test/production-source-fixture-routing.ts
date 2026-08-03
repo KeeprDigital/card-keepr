@@ -4,6 +4,8 @@ export type ProductionSourceFixtureRole =
 
 const requestRoleSuffix =
   /;\s*request-role=(?:surface|listing|detail|product_detail|image)(?=;|$)/gu;
+const requestSurfaceSuffix =
+  /;\s*request-surface=[a-z0-9]+(?:-[a-z0-9]+)*(?=;|$)/gu;
 
 export function productionSourceFixtureRole(
   headers: Headers,
@@ -17,7 +19,17 @@ export function productionSourceFixtureRole(
 export function productionSourceFixtureMarker(
   headers: Headers,
 ): string | null {
-  return headers.get("user-agent")?.replace(requestRoleSuffix, "") ?? null;
+  return headers.get("user-agent")
+    ?.replace(requestRoleSuffix, "")
+    .replace(requestSurfaceSuffix, "") ?? null;
+}
+
+export function productionSourceFixtureSurface(
+  headers: Headers,
+): string | null {
+  return headers.get("user-agent")?.match(
+    /(?:^|;\s*)request-surface=([a-z0-9]+(?:-[a-z0-9]+)*)(?:;|$)/u,
+  )?.[1] ?? null;
 }
 
 export function productionOfficialStageResponse(

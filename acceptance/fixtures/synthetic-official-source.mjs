@@ -20,6 +20,7 @@ import onePieceDiscovery from "./retained-official-source/one-piece-en-discovery
 import {
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
+  productionSourceFixtureSurface,
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
 export default {
@@ -104,6 +105,7 @@ export default {
             officialScenarioMarker ===
               "card-keepr-acceptance-product/codeless",
           url,
+          productionSourceFixtureSurface(request.headers),
         ),
         {
         headers: {
@@ -219,8 +221,6 @@ export default {
   },
 };
 
-const officialProductPageVisits = new Map();
-
 const retainedOfficialDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
   "fusion-world-en": fusionWorldDiscovery,
@@ -307,8 +307,9 @@ function officialBandaiDataset(
   parserSignal,
   codeLessProduct = false,
   requestUrl,
+  requestSurface = null,
 ) {
-  const surface = officialFixtureSurface(lineage, requestUrl, parserSignal);
+  const surface = officialFixtureSurface(lineage, requestUrl, requestSurface);
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
@@ -355,7 +356,8 @@ function officialBandaiDataset(
   }</html>`;
 }
 
-function officialFixtureSurface(lineage, requestUrl, parserSignal) {
+function officialFixtureSurface(lineage, requestUrl, requestSurface) {
+  if (requestSurface !== null) return requestSurface;
   const path = `${requestUrl.pathname}${requestUrl.search}`;
   if (
     (lineage === "one-piece-en" && requestUrl.pathname === "/products/") ||
@@ -363,10 +365,7 @@ function officialFixtureSurface(lineage, requestUrl, parserSignal) {
     (lineage === "digimon-en" && requestUrl.pathname === "/products/") ||
     (lineage.startsWith("gundam-") && /\/products\/list\.php$/u.test(requestUrl.pathname))
   ) {
-    const key = `${parserSignal ?? ""}\u0000${lineage}\u0000${requestUrl.href}`;
-    const visit = (officialProductPageVisits.get(key) ?? 0) + 1;
-    officialProductPageVisits.set(key, visit);
-    return visit % 3 === 0 ? "releases" : "products";
+    return null;
   }
   if (lineage === "one-piece-en") {
     if (requestUrl.pathname === "/cardlist/") return "card-list";

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
+import { DatabaseSync } from "node:sqlite";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
@@ -958,7 +959,7 @@ function startWorker({ config, envFile, inspectorPort, port, statePath }) {
   child.stderr.on("data", (chunk) => {
     output += chunk;
   });
-  return { process: child, getOutput: () => output };
+  return { process: child, getOutput: () => output, statePath };
 }
 
 async function waitForRunState(
@@ -993,9 +994,92 @@ async function waitForRunState(
       evidence_plan_request_ids: lastDocument?.evidence_plans?.map(
         ({ requests }) => requests.map(({ id }) => id),
       ),
+      persisted: await persistedRunDiagnostics(worker.statePath, runId),
     })}\n` +
       worker.getOutput(),
   );
+}
+
+async function persistedRunDiagnostics(statePath, runId) {
+  const sqliteFiles = await sqliteFilesUnder(statePath);
+  const failures = [];
+  for (const path of sqliteFiles) {
+    let database;
+    try {
+      database = new DatabaseSync(path, { readOnly: true });
+      const hasRequests = database.prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'source_requests'",
+      ).get();
+      if (hasRequests === undefined) continue;
+      const hasRun = database.prepare(
+        "SELECT 1 FROM source_requests WHERE ingestion_run_id = ? LIMIT 1",
+      ).get(runId);
+      if (hasRun === undefined) continue;
+      const all = (sql) => database.prepare(sql).all(runId);
+      return {
+        source_requests: all(`
+          SELECT request_id, request_role, url, request_headers_json, state,
+                 failure_code, source_snapshot_id, discovered_from_request_id
+          FROM source_requests WHERE ingestion_run_id = ?
+          ORDER BY sequence_number
+        `),
+        fetch_attempts: all(`
+          SELECT request_id, attempt_number, outcome, http_status,
+                 response_headers_json, diagnostic
+          FROM source_fetch_attempts WHERE ingestion_run_id = ?
+          ORDER BY request_id, attempt_number
+        `),
+        captures: all(`
+          SELECT request_id, attempt_number, state, http_status,
+                 response_headers_json, media_type, content_digest,
+                 content_byte_length, diagnostic
+          FROM source_capture_operations WHERE ingestion_run_id = ?
+          ORDER BY request_id, attempt_number
+        `),
+        snapshots: all(`
+          SELECT id, request_id, request_url, request_headers_json, http_status,
+                 response_headers_json, media_type, content_digest,
+                 content_byte_length
+          FROM source_snapshots WHERE ingestion_run_id = ?
+          ORDER BY retrieved_at, request_id
+        `),
+        parses: all(`
+          SELECT snapshots.request_id, operations.id, operations.state,
+                 operations.adapter_version, operations.observation_count
+          FROM source_parse_operations AS operations
+          JOIN source_snapshots AS snapshots
+            ON snapshots.id = operations.source_snapshot_id
+          WHERE snapshots.ingestion_run_id = ?
+          ORDER BY snapshots.request_id
+        `),
+        discovery_children: all(`
+          SELECT request_id, parent_request_id, request_role, url,
+                 request_headers_json
+          FROM source_discovery_request_plans
+          WHERE ingestion_run_id = ?
+          ORDER BY sequence_number
+        `),
+      };
+    } catch (error) {
+      failures.push({ path, error: String(error) });
+    } finally {
+      database?.close();
+    }
+  }
+  return { sqlite_files: sqliteFiles, inspection_failures: failures };
+}
+
+async function sqliteFilesUnder(path) {
+  const entries = await readdir(path, { withFileTypes: true });
+  const nested = await Promise.all(entries.map((entry) => {
+    const child = join(path, entry.name);
+    return entry.isDirectory()
+      ? sqliteFilesUnder(child)
+      : entry.name.endsWith(".sqlite")
+        ? [child]
+        : [];
+  }));
+  return nested.flat();
 }
 
 async function waitForHealth(url, key, worker) {

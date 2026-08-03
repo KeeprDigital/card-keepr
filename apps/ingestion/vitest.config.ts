@@ -36,12 +36,13 @@ import {
   productionOfficialStageResponse,
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
+  productionSourceFixtureSurface,
 } from "./test/production-source-fixture-routing";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
-const outboundRequestCounts = new Map<string, number>();
+const retryAttemptCounts = new Map<string, number>();
 const retainedProductionDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
   "fusion-world-en": fusionWorldDiscovery,
@@ -386,6 +387,9 @@ export default defineConfig({
             const artworkMarker = productionSourceFixtureMarker(
               request.headers,
             );
+            const fixtureSurface = productionSourceFixtureSurface(
+              request.headers,
+            );
             const officialLineage = url.hostname === "en.onepiece-cardgame.com"
               ? "one-piece-en"
               : url.hostname === "www.dbs-cardgame.com"
@@ -532,10 +536,7 @@ export default defineConfig({
               url.hostname === "en.onepiece-cardgame.com" &&
               url.pathname === "/products/"
             ) {
-              const countKey = `${artworkMarker}:${url.href}`;
-              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
-              outboundRequestCounts.set(countKey, count);
-              if (count === 1) {
+              if (fixtureSurface === null) {
                 return new Response(
                   `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
                     <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
@@ -543,7 +544,7 @@ export default defineConfig({
                   {
                     headers: {
                       "content-type": "text/html; charset=utf-8",
-                      etag: `"card-keepr-one-piece-products-${count}"`,
+                    etag: '"card-keepr-one-piece-products-stage"',
                     },
                   },
                 );
@@ -569,8 +570,8 @@ export default defineConfig({
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
                   ${officialPublisherPayloadScript(
                     "one-piece-en",
-                    count === 2 ? "products" : "releases",
-                    count === 2
+                    fixtureSurface,
+                    fixtureSurface === "products"
                       ? officialRawSurfacePayload("/one-piece-en/products")!
                       : releases,
                   )}
@@ -578,7 +579,8 @@ export default defineConfig({
                 {
                   headers: {
                     "content-type": "text/html; charset=utf-8",
-                    etag: '"card-keepr-one-piece-release-timing-v2"',
+                  etag:
+                    `"card-keepr-one-piece-release-timing-v2-${fixtureSurface}"`,
                   },
                 },
               );
@@ -588,10 +590,7 @@ export default defineConfig({
               url.hostname === "en.onepiece-cardgame.com" &&
               url.pathname === "/products/"
             ) {
-              const countKey = `${artworkMarker}:${url.href}`;
-              const count = (outboundRequestCounts.get(countKey) ?? 0) + 1;
-              outboundRequestCounts.set(countKey, count);
-              if (count === 1) {
+              if (fixtureSurface === null) {
                 return new Response(
                   `<html><title>BANDAI ONE PIECE CARD PRODUCTS</title>
                     <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>
@@ -609,8 +608,8 @@ export default defineConfig({
                   <title>BANDAI ONE PIECE CARD RELEASE publication</title>
                   ${officialPublisherPayloadScript(
                     "one-piece-en",
-                    count === 2 ? "products" : "releases",
-                    count === 2 ? {
+                    fixtureSurface,
+                    fixtureSurface === "products" ? {
                         page: "product-list",
                         series_options: [],
                         result: {
@@ -1449,8 +1448,8 @@ export default defineConfig({
           }
           if (url.pathname === "/retry-once") {
             const key = `${url.hostname}${url.pathname}`;
-            const count = (outboundRequestCounts.get(key) ?? 0) + 1;
-            outboundRequestCounts.set(key, count);
+            const count = (retryAttemptCounts.get(key) ?? 0) + 1;
+            retryAttemptCounts.set(key, count);
             if (count === 1) {
               return new Response("temporarily unavailable", {
                 status: 503,

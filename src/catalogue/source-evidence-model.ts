@@ -359,7 +359,7 @@ export async function officialCollectionRequestsFromDiscovery(
         "Official Source discovery does not match its exact bounded collection contract.",
       );
     }
-    const headers = officialCollectionRequestHeaders({
+    const headers = officialCollectionRequestHeaders(surface, {
       ...(record.headers as Record<string, string>),
       ...inheritedHeaders,
     });
@@ -381,6 +381,7 @@ export async function officialCollectionRequestsFromDiscovery(
 }
 
 function officialCollectionRequestHeaders(
+  surface: string,
   headers: Readonly<Record<string, string>>,
 ): Record<string, string> {
   const baseUserAgent = (
@@ -391,7 +392,8 @@ function officialCollectionRequestHeaders(
   );
   return {
     ...headers,
-    "user-agent": `${baseUserAgent}; request-role=surface`,
+    "user-agent":
+      `${baseUserAgent}; request-role=surface; request-surface=${surface}`,
   };
 }
 
