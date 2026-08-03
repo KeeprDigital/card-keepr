@@ -66,7 +66,7 @@ export function liveOfficialLegalityDocument(
 }
 
 function gundamCurrentRestrictions(
-  sourceLineage: "gundam-en-asia" | "gundam-en-us",
+  _sourceLineage: "gundam-en-asia" | "gundam-en-us",
   html: string,
 ): Record<string, unknown> {
   if (
@@ -81,6 +81,7 @@ function gundamCurrentRestrictions(
     throw new Error("Gundam current policy section is incomplete.");
   }
   const current = html.slice(start, end);
+  assertNoUnconsumedPolicyConditions(current);
   for (const semantic of [
     "No copies of the card are permitted in the deck.",
     "Only 2 copy of the card is permitted in the deck.",
@@ -91,59 +92,9 @@ function gundamCurrentRestrictions(
       throw new Error("Gundam current policy semantics are incomplete.");
     }
   }
-  const cards = [...current.matchAll(
-    /<p(?: style="text-align: center;")?>([A-Z]{1,6}\d{0,4}-\d{1,4}) ([^<]+)<\/p>/gu,
-  )].map((match) => ({
-    number: match[1]!,
-    label: `${match[1]} ${decodedText(match[2]!)}`,
-  }));
-  if (cards.length !== 26 || new Set(cards.map(({ number }) => number)).size !== 26) {
-    throw new Error("Gundam current policy Card total changed.");
-  }
-  const groups = [
-    {
-      id: "01_279-ban",
-      wording: "No copies of the card are permitted in the deck.",
-      cards: cards.slice(0, 1),
-    },
-    {
-      id: "01_279-restricted-2",
-      wording: "Only 2 copy of the card is permitted in the deck.",
-      cards: cards.slice(1, 2),
-    },
-    {
-      id: "01_279-pair-1",
-      wording: "Cards A and B cannot be used at the same time",
-      cards: cards.slice(2, 4),
-    },
-    {
-      id: "01_279-pair-2",
-      wording: "Cards A and B cannot be used at the same time",
-      cards: cards.slice(4, 6),
-    },
-    {
-      id: "01_279-membership-pair",
-      wording: 'All combinations of cards that match the above description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck.',
-      cards: cards.slice(6),
-    },
-  ];
-  const entries = groups.map((group) => {
-    const numbers = group.cards.map(({ number }) => number);
-    return {
-      news_id: group.id,
-      text: `${group.wording}\n${group.cards.map(({ label }) => label).join("\n")}`,
-      region: sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US",
-      format: "standard",
-      event_tier: null,
-      effective_date: null,
-      end_date: null,
-      unresolved_scope: { dimensions: ["effective_interval"] },
-      card_numbers: numbers,
-      ruling: "unresolved",
-      reason: `Effective interval for ${numbers.join(", ")} is not stated.`,
-    };
-  });
-  return { entries, declared_record_count: entries.length };
+  throw new Error(
+    "Gundam compound prohibited-combination and copy-limit policy is not exactly representable.",
+  );
 }
 
 function digimonCurrentRestrictions(html: string): Record<string, unknown> {
@@ -159,6 +110,7 @@ function digimonCurrentRestrictions(html: string): Record<string, unknown> {
     throw new Error("Digimon current affected-card section is incomplete.");
   }
   const current = html.slice(start, end);
+  assertNoUnconsumedPolicyConditions(current);
   if (!/<h4 class="subTit txtNormal">List of Currently Affected Cards<\/h4>/u.test(current)) {
     throw new Error("Digimon current affected-card heading is unavailable.");
   }
@@ -259,6 +211,7 @@ function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
     /<article class="articleCol">([\s\S]*?)<\/article>/u,
     "Fusion World current policy article",
   );
+  assertNoUnconsumedPolicyConditions(article);
   const banned = requiredPolicyCardSection(
     article,
     "Banned Cards",
@@ -344,6 +297,7 @@ function onePieceCurrentRestrictions(html: string): Record<string, unknown> {
     throw new Error("One Piece active restriction section is incomplete.");
   }
   const active = html.slice(activeStart, activeEnd);
+  assertNoUnconsumedPolicyConditions(active);
   const bannedSection = requiredCapture(
     active,
     /<h4>Banned Cards<\/h4>\s*<p>(The following card\(s\) cannot be included in any deck\.)<\/p>([\s\S]*?)<h4>Restricted Cards<\/h4>/u,
@@ -463,6 +417,19 @@ function decodedText(value: string): string {
     .replace(/&quot;/gu, '"')
     .replace(/&nbsp;/gu, " ")
     .trim();
+}
+
+function assertNoUnconsumedPolicyConditions(html: string): void {
+  const text = decodedText(html.replace(/<[^>]+>/gu, " "))
+    .replace(/\s+/gu, " ");
+  if (
+    /\b(?:unless|except(?:\s+(?:if|when|where))?|provided\s+that|only\s+(?:if|when))\b/iu
+      .test(text)
+  ) {
+    throw new Error(
+      "Official policy retains an unconsumed condition that is not exactly representable.",
+    );
+  }
 }
 
 function escapeRegExp(value: string): string {

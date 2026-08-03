@@ -312,31 +312,22 @@ test("retained live Digimon policy bytes retain the complete current affected li
   ));
 });
 
-test("retained live Gundam locale policy bytes retain every current rule target", () => {
+test("retained live Gundam locale policy bytes fail closed on their compound effect", () => {
   for (const descriptor of [
     { adapter: "gundam-en-asia@3", slug: "gundam-en-asia-policy-detail", region: "EN-ASIA" },
     { adapter: "gundam-en-us@3", slug: "gundam-en-us-policy-detail", region: "EN-US" },
   ]) {
     const adapter = requiredSourceAdapter(descriptor.adapter);
-    const rules = retainedLegalityRules(
-      adapter,
-      "detail",
-      descriptor.slug,
-      { requestId: `${adapter.sourceLineage}:detail:${"b".repeat(64)}` },
+    const fixture = retainedOfficialSourceFixture(descriptor.slug);
+    assert.throws(
+      () => adapter.parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: `${adapter.sourceLineage}:detail:${"b".repeat(64)}`,
+      }),
+      /compound.*combination.*copy.limit.*not exactly representable/iu,
+      descriptor.adapter,
     );
-    assert.equal(rules.length, 5, descriptor.adapter);
-    assert.deepEqual(rules.map((rule) => rule.card_numbers.length), [1, 1, 2, 2, 20]);
-    assert.equal(rules[0].card_numbers[0], "GD01-020");
-    assert.equal(rules[1].card_numbers[0], "ST02-016");
-    assert.deepEqual(rules[2].card_numbers, ["ST01-010", "ST05-010"]);
-    assert.deepEqual(rules[3].card_numbers, ["GD01-008", "GD05-015"]);
-    assert.equal(rules[4].card_numbers.at(-1), "ST10-005");
-    assert.ok(rules.every((rule) =>
-      rule.region === descriptor.region &&
-      rule.effective_from === null &&
-      rule.unresolved_scope.dimensions.join(",") === "effective_interval" &&
-      rule.effect.type === "unresolved"
-    ));
   }
 });
 
@@ -386,6 +377,62 @@ test("retained live policy roots schedule the exact current detail publications"
       }],
     );
   }
+});
+
+test("retained Fusion and exact Digimon Rules stages close current and history identities", () => {
+  const fusion = requiredSourceAdapter("fusion-world-en@3");
+  const fusionFixture = retainedOfficialSourceFixture(
+    "fusion-world-en-policy-live",
+  );
+  const fusionRecords = fusion.parseBytes(fusionFixture.bytes, {
+    mediaType: fusionFixture.metadata.content_type,
+    url: fusionFixture.metadata.source_url,
+    requestId: `fusion-world-en:listing:rules:${"a".repeat(64)}`,
+  })[0].records;
+  assert.deepEqual(
+    fusionRecords.filter(({ surface }) =>
+      surface === "legality-current" || surface === "legality-history"
+    ).map(({ surface, url }) => ({ surface, url })),
+    [
+      {
+        surface: "legality-current",
+        url: "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      },
+      {
+        surface: "legality-history",
+        url: "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+      },
+    ],
+  );
+
+  const digimon = requiredSourceAdapter("digimon-en@3");
+  const digimonRules = Buffer.from(`
+    <html><title>DIGIMON CARD GAME RULES</title><main>
+      <a href="/rule/restriction_card/">Banned and Restricted Cards</a>
+      <a href="/rule/errata_card/">Errata Cards</a>
+    </main></html>
+  `);
+  const digimonRecords = digimon.parseBytes(digimonRules, {
+    mediaType: "text/html; charset=utf-8",
+    url: "https://world.digimoncard.com/rule/",
+    requestId: `digimon-en:listing:rules:${"b".repeat(64)}`,
+  })[0].records;
+  assert.deepEqual(
+    digimonRecords.filter(({ surface }) =>
+      surface === "restrictions-current" ||
+      surface === "restrictions-history"
+    ).map(({ surface, url }) => ({ surface, url })),
+    [
+      {
+        surface: "restrictions-current",
+        url: "https://world.digimoncard.com/rule/restriction_card/",
+      },
+      {
+        surface: "restrictions-history",
+        url: "https://world.digimoncard.com/rule/restriction_card/",
+      },
+    ],
+  );
 });
 
 test("retained historical Fusion policy 404 cannot establish a successful surface", () => {
@@ -451,6 +498,55 @@ test("retained live policy parsers reject tag-agnostic residual conditions", () 
         requestId: descriptor.requestId,
       }),
       /exact|incomplete|unavailable|unparsed|semantics|structure/iu,
+      descriptor.adapter,
+    );
+  }
+});
+
+test("retained live policy parsers reject separate unconsumed conditions", () => {
+  const cases = [
+    {
+      adapter: "one-piece-en@2",
+      slug: "one-piece-en-policy",
+      requestId: "one-piece-en:restrictions",
+      anchor: "The following card(s) cannot be included in any deck.",
+    },
+    {
+      adapter: "fusion-world-en@3",
+      slug: "fusion-world-en-policy-detail",
+      requestId: `fusion-world-en:detail:${"c".repeat(64)}`,
+      anchor: "No copies of the card are permitted in the deck.",
+    },
+    {
+      adapter: "digimon-en@3",
+      slug: "digimon-en-policy",
+      requestId: "digimon-en:restrictions-current",
+      anchor:
+        "Restricted Cards (1) - Decks can only include one copy of these cards.",
+    },
+    {
+      adapter: "gundam-en-us@3",
+      slug: "gundam-en-us-policy-detail",
+      requestId: `gundam-en-us:detail:${"d".repeat(64)}`,
+      anchor: "No copies of the card are permitted in the deck.",
+    },
+  ];
+  for (const descriptor of cases) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    const fixture = retainedOfficialSourceFixture(descriptor.slug);
+    const mutated = Buffer.from(
+      fixture.bytes.toString("utf8").replaceAll(
+        descriptor.anchor,
+        `${descriptor.anchor}</p><p>Except when the publisher grants an exception.`,
+      ),
+    );
+    assert.throws(
+      () => adapter.parseBytes(mutated, {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: descriptor.requestId,
+      }),
+      /condition|exact|incomplete|unparsed|semantics|structure/iu,
       descriptor.adapter,
     );
   }
@@ -752,6 +848,45 @@ test("historical production adapter identities remain exact lookup-only contract
     assert.match(adapter.parserContract, /-raw-surfaces@1$/u);
     assert.equal(typeof adapter.parseBytes, "function");
     assert.ok(!productionAdapterVersions.includes(adapterVersion));
+  }
+});
+
+test("historical production identities preserve their original JSON-LD observation bytes", () => {
+  const golden = [
+    ["one-piece-en@1", "one-piece-en", "b19ee89d92a3d519f3e4fb740720a063f716c0805f2a3a5b65197bd3d23b0299"],
+    ["fusion-world-en@2", "fusion-world-en", "9c93da95648fe1b1c6a1e2428224224144a950d27559c14681d48112c39ecf8e"],
+    ["digimon-en@2", "digimon-en", "a57968449b6be5a130d46424893680d38b1066eaa326d9ed82a51b422aefbee2"],
+    ["gundam-en-asia@2", "gundam-en-asia", "441a8045e5e19c26927a9071c1e767577136f7a1713f682106bc0b8a7252afaf"],
+    ["gundam-en-us@2", "gundam-en-us", "e2e7bdd65f96886ca4d3573252f6bc51cc8c380e130bcf6e0cb533984703a2ee"],
+  ];
+  for (const [adapterVersion, sourceLineage, digest] of golden) {
+    const adapter = requiredSourceAdapter(adapterVersion);
+    const surface = "products";
+    const publication = {
+      "@context": "https://schema.org",
+      "@type": "Dataset",
+      publisher: { "@type": "Organization", name: "Bandai" },
+      hasPart: [{
+        "@type": "Dataset",
+        identifier: `${sourceLineage}:${surface}`,
+        payload: officialRawSurfacePayload(`/${sourceLineage}/${surface}`),
+      }],
+    };
+    const bytes = Buffer.from(
+      `<html><script type="application/ld+json">${
+        JSON.stringify(publication)
+      }</script></html>`,
+    );
+    const observations = adapter.parseBytes(bytes, {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface(surface),
+      requestId: `${sourceLineage}:${surface}`,
+    });
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(observations)).digest("hex"),
+      digest,
+      adapterVersion,
+    );
   }
 });
 
@@ -3062,7 +3197,7 @@ test("code-less structured Products and Releases retain name identity with valid
 });
 
 test("code-less named Products and Releases survive registered discovery surfaces", () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@2");
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
   const payload = structuredClone(
     officialRawSurfacePayload("/fusion-world-en/card-search"),
   );

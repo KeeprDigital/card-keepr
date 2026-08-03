@@ -781,7 +781,6 @@ function isExactPolicyWithUnresolvedInterval(
     /^Restricted Cards〈2〉\n[A-Z0-9-]+ [^\n]+$/u,
     /^Banned [Pp]air\n[A-Z0-9-]+ [^\n]+\n[A-Z0-9-]+ [^\n]+$/u,
     /^Cards A and B cannot be used at the same time\n[A-Z0-9-]+ [^\n]+\n[A-Z0-9-]+ [^\n]+$/u,
-    /^All combinations of cards that match the above description "a Unit card that is Lv\.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck\.\n(?:[A-Z0-9-]+ [^\n]+\n?)+$/u,
   ].some((pattern) => pattern.test(wording));
   if (!recognizedPolicy) return false;
   const wordingCards = wordingCardNumbers(wording);
