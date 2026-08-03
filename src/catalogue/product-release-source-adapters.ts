@@ -250,7 +250,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.requiredSurfaces,
                 version.urls,
               )
-            : historicalBandaiSnapshotDecoder(
+            : historicalBandaiSnapshotDecoderV1(
                 version.format,
                 version.supportedGame,
                 version.sourceLineage,
@@ -315,7 +315,7 @@ function bandaiRequestDiscovery(
         role: "listing" as const,
         discoveryKey: record.surface.slice("@seed:".length),
         url: record.url,
-        headers: { accept: "text/html" },
+        headers: officialDiscoveredRequestHeaders("listing"),
       }));
     }
     const dynamicRole = dynamicRequestRole(context.requestId);
@@ -354,10 +354,7 @@ function bandaiRequestDiscovery(
             (url) => ({
               role: "image" as const,
               url,
-              headers: {
-                accept:
-                  "image/avif,image/webp,image/png,image/jpeg,image/gif",
-              },
+              headers: officialDiscoveredRequestHeaders("image"),
             }),
           ),
         );
@@ -372,7 +369,7 @@ function bandaiRequestDiscovery(
           (url) => ({
             role: "listing" as const,
             url,
-            headers: { accept: "text/html" },
+            headers: officialDiscoveredRequestHeaders("listing"),
           }),
         ),
       );
@@ -425,11 +422,7 @@ function bandaiRequestDiscovery(
       candidates.push({
         role,
         url: resolved.href,
-        headers: {
-          accept: role === "image"
-            ? "image/avif,image/webp,image/png,image/jpeg,image/gif"
-            : "text/html",
-        },
+        headers: officialDiscoveredRequestHeaders(role),
       });
     }
     return [
@@ -442,6 +435,17 @@ function bandaiRequestDiscovery(
     ].sort((left, right) =>
       `${left.role}:${left.url}`.localeCompare(`${right.role}:${right.url}`)
     );
+  };
+}
+
+function officialDiscoveredRequestHeaders(
+  role: "listing" | "detail" | "product_detail" | "image",
+): Record<string, string> {
+  return {
+    accept: role === "image"
+      ? "image/avif,image/webp,image/png,image/jpeg,image/gif"
+      : "text/html",
+    "user-agent": `card-keepr-official-source/1; request-role=${role}`,
   };
 }
 
@@ -654,6 +658,19 @@ function officialUrl(
     url.hash === "";
 }
 
+function officialHostname(sourceLineage: string, hostname: string): boolean {
+  const expected = sourceLineage === "one-piece-en"
+    ? ["onepiece-cardgame.com"]
+    : sourceLineage === "fusion-world-en"
+      ? ["dbs-cardgame.com"]
+      : sourceLineage === "digimon-en"
+        ? ["digimoncard.com"]
+        : ["gundam-gcg.com"];
+  return expected.some((suffix) =>
+    hostname === suffix || hostname.endsWith(`.${suffix}`)
+  );
+}
+
 function exactSurfaceUrl(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
@@ -674,7 +691,7 @@ function exactSurfaceUrl(
   return new URL(url).href;
 }
 
-function historicalBandaiSnapshotDecoder(
+function historicalBandaiSnapshotDecoderV1(
   format: DiscoveryFormat,
   game: ProductSourceGame,
   sourceLineage: string,
@@ -697,7 +714,7 @@ function historicalBandaiSnapshotDecoder(
       }
       return [];
     }
-    const surface = dynamicRole ?? historicalSurfaceFromContext(
+    const surface = dynamicRole ?? historicalSurfaceFromContextV1(
       context,
       sourceLineage,
       requiredSurfaces,
@@ -714,23 +731,22 @@ function historicalBandaiSnapshotDecoder(
         "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
       );
     }
-    const structuredPayload = historicalBandaiJsonLdPayload(
+    const structuredPayload = historicalBandaiJsonLdPayloadV1(
       html,
       sourceLineage,
       surface,
     );
     if (structuredPayload !== null) {
-      return normalizedSurfaceObservations(
+      return normalizedSurfaceObservationsV1(
         format,
         game,
         sourceLineage,
         surface,
         structuredPayload,
-        false,
       );
     }
     if (dynamicRole === "detail") {
-      return [parseBandaiCardDetail(
+      return [parseBandaiCardDetailV1(
         html,
         format,
         sourceLineage,
@@ -738,20 +754,19 @@ function historicalBandaiSnapshotDecoder(
       )];
     }
     if (dynamicRole === "product_detail") {
-      return [parseBandaiProductDetail(html, sourceLineage, context.url)];
+      return [parseBandaiProductDetailV1(html, sourceLineage, context.url)];
     }
     const parsed = format === "one-piece" && surface === "card-list"
-      ? parseOnePieceBandaiCardList(html, context.url)
-      : parseBandaiSurfaceCoverage(
+      ? parseOnePieceBandaiCardListV1(html, context.url)
+      : parseBandaiSurfaceCoverageV1(
           html,
           format,
           sourceLineage,
           surface,
           context.url,
-          false,
         );
     return parsed.observations.map((observation, index) =>
-      attachRawSurfaceEvidence(
+      attachRawSurfaceEvidenceV1(
         observation,
         sourceLineage,
         surface,
@@ -763,7 +778,7 @@ function historicalBandaiSnapshotDecoder(
   };
 }
 
-function historicalBandaiJsonLdPayload(
+function historicalBandaiJsonLdPayloadV1(
   html: string,
   sourceLineage: string,
   surface: string,
@@ -810,7 +825,7 @@ function historicalBandaiJsonLdPayload(
   return null;
 }
 
-function historicalSurfaceFromContext(
+function historicalSurfaceFromContextV1(
   context: { url: string; requestId?: string },
   sourceLineage: string,
   requiredSurfaces: readonly string[],
@@ -980,7 +995,7 @@ function bandaiSnapshotDecoder(
           `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
         );
       }
-      return normalizedSurfaceObservations(
+      return normalizedSurfaceObservationsV2(
         format,
         game,
         sourceLineage,
@@ -999,7 +1014,7 @@ function bandaiSnapshotDecoder(
         )
       : null;
     if (liveLegality !== null && dynamicRole !== null) {
-      return [attachRawSurfaceEvidence(
+      return [attachRawSurfaceEvidenceV1(
         officialLiveLegalityRulesObservation(
           game,
           sourceLineage,
@@ -1014,7 +1029,7 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "detail") {
       return [
-        parseBandaiCardDetail(
+        parseBandaiCardDetailV2(
           html,
           format,
           sourceLineage,
@@ -1024,7 +1039,7 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "product_detail") {
       return [
-        parseBandaiProductDetail(
+        parseBandaiProductDetailV1(
           html,
           sourceLineage,
           context.url,
@@ -1033,8 +1048,8 @@ function bandaiSnapshotDecoder(
     }
     const parsed =
       format === "one-piece" && surface === "card-list"
-        ? parseOnePieceBandaiCardList(html, context.url)
-        : parseBandaiSurfaceCoverage(
+        ? parseOnePieceBandaiCardListV1(html, context.url)
+        : parseBandaiSurfaceCoverageV2(
             html,
             format,
             sourceLineage,
@@ -1076,7 +1091,7 @@ function bandaiSnapshotDecoder(
       ? parsed.observations
       : [...parsed.observations, legalityObservation];
     return observations.map((observation, index) =>
-      attachRawSurfaceEvidence(
+      attachRawSurfaceEvidenceV1(
         observation,
         sourceLineage,
         surface,
@@ -1341,7 +1356,7 @@ function bandaiDiscoveryRecords(
   surface: string;
   method: "GET";
   url: string;
-  headers: { accept: "text/html" };
+  headers: Record<string, string>;
   discovered_from: {
     kind: "publisher_navigation";
     label: string;
@@ -2005,7 +2020,7 @@ type ParsedBandaiSurface = {
   consumedFields: readonly string[];
 };
 
-function parseOnePieceBandaiCardList(
+function parseOnePieceBandaiCardListV1(
   html: string,
   requestUrl: string,
 ): ParsedBandaiSurface {
@@ -2203,11 +2218,42 @@ function parseOnePieceBandaiCardList(
   };
 }
 
-function parseBandaiCardDetail(
+function parseBandaiCardDetailV1(
   html: string,
   format: DiscoveryFormat,
   sourceLineage: string,
   requestUrl: string,
+): Record<string, unknown> {
+  return parseBandaiCardDetailByContract(
+    html,
+    format,
+    sourceLineage,
+    requestUrl,
+    "hostname-v1",
+  );
+}
+
+function parseBandaiCardDetailV2(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  return parseBandaiCardDetailByContract(
+    html,
+    format,
+    sourceLineage,
+    requestUrl,
+    "path-v2",
+  );
+}
+
+function parseBandaiCardDetailByContract(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+  imageAuthority: "hostname-v1" | "path-v2",
 ): Record<string, unknown> {
   const pairs = htmlLabelPairs(html);
   const field = (names: readonly string[]): string | null =>
@@ -2264,7 +2310,9 @@ function parseBandaiCardDetail(
         return [];
       }
       const resolved = new URL(decodeHtmlText(rawUrl), requestUrl).href;
-      return officialUrl(sourceLineage, new URL(resolved), "image")
+      return (imageAuthority === "hostname-v1"
+          ? officialHostname(sourceLineage, new URL(resolved).hostname)
+          : officialUrl(sourceLineage, new URL(resolved), "image"))
         ? [resolved]
         : [];
     });
@@ -2307,7 +2355,12 @@ function parseBandaiCardDetail(
   const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
   const fusionFaces =
     format === "fusion-world" && normalizedType === "leader"
-      ? explicitFusionLeaderFaces(html, requestUrl, sourceLineage)
+      ? explicitFusionLeaderFaces(
+          html,
+          requestUrl,
+          sourceLineage,
+          imageAuthority,
+        )
       : null;
   const imageEvidence =
     fusionFaces === null
@@ -2583,7 +2636,7 @@ function parseBandaiCardDetail(
     "Where to get it",
     "Card Set(s)",
   ];
-  return attachRawSurfaceEvidence(
+  return attachRawSurfaceEvidenceV1(
     observation,
     sourceLineage,
     "card-detail",
@@ -2597,6 +2650,7 @@ function explicitFusionLeaderFaces(
   html: string,
   requestUrl: string,
   sourceLineage: string,
+  imageAuthority: "hostname-v1" | "path-v2",
 ): {
   role: "front" | "back";
   name: string;
@@ -2615,9 +2669,9 @@ function explicitFusionLeaderFaces(
       /<img\b[^>]*\b(?:data-src|src)=["']([^"']+\.(?:avif|gif|jpe?g|png|webp)(?:\?[^"']*)?)["']/giu,
     )]
       .map((image) => new URL(decodeHtmlText(image[1]!), requestUrl).href)
-      .filter((url) =>
-        officialUrl(sourceLineage, new URL(url), "image")
-      );
+      .filter((url) => imageAuthority === "hostname-v1"
+        ? officialHostname(sourceLineage, new URL(url).hostname)
+        : officialUrl(sourceLineage, new URL(url), "image"));
     if (imageMatches.length !== 1) {
       throw new Error(
         `Fusion World Leader ${role} face requires exactly one role-specific image.`,
@@ -2701,7 +2755,7 @@ function productLinksFromHtml(
   };
 }
 
-function parseBandaiProductDetail(
+function parseBandaiProductDetailV1(
   html: string,
   sourceLineage: string,
   requestUrl: string,
@@ -2733,7 +2787,7 @@ function parseBandaiProductDetail(
     const rawDocument = Object.fromEntries(
       pairs.map(({ label, value }) => [label, value]),
     );
-    return attachRawSurfaceEvidence(
+    return attachRawSurfaceEvidenceV1(
       {
         completeness: completeObservation(),
         product_release_catalogue: {
@@ -2782,7 +2836,7 @@ function parseBandaiProductDetail(
     { revision: "captured-by-policy-surface", entries: [] },
     { revision: "captured-by-policy-surface", entries: [] },
   );
-  return attachRawSurfaceEvidence(
+  return attachRawSurfaceEvidenceV1(
     observation,
     sourceLineage,
     "product-detail",
@@ -2898,7 +2952,42 @@ function allLabelValues(
     .filter((value) => value.length > 0 && value !== "-");
 }
 
-function parseBandaiSurfaceCoverage(
+function parseBandaiSurfaceCoverageV1(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  surface: string,
+  url: string,
+): ParsedBandaiSurface {
+  return parseBandaiSurfaceCoverageByContract(
+    html,
+    format,
+    sourceLineage,
+    surface,
+    url,
+    false,
+  );
+}
+
+function parseBandaiSurfaceCoverageV2(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  surface: string,
+  url: string,
+  acceptPublisherDeclaredEmpty: boolean,
+): ParsedBandaiSurface {
+  return parseBandaiSurfaceCoverageByContract(
+    html,
+    format,
+    sourceLineage,
+    surface,
+    url,
+    acceptPublisherDeclaredEmpty,
+  );
+}
+
+function parseBandaiSurfaceCoverageByContract(
   html: string,
   format: DiscoveryFormat,
   sourceLineage: string,
@@ -3336,7 +3425,313 @@ function requiredNullableText(value: string | null, name: string): string | null
   return value;
 }
 
-function normalizedSurfaceObservations(
+function normalizedSurfaceObservationsV1(
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  surface: string,
+  rawDocument: Record<string, unknown>,
+): readonly unknown[] {
+  const normalized = normalizeLineageSurfaceV1(
+    format,
+    sourceLineage,
+    surface,
+    rawDocument,
+  );
+  const document = normalized.document;
+  const observations = isDiscoverySurface(surface)
+    ? parseRawDiscoverySurface(document, format, game)
+    : surface === "products"
+      ? parseRawProductsSurface(document)
+      : surface === "releases"
+        ? parseRawReleasesSurface(document)
+        : [rawCoverageObservation(document, surface)];
+  return observations.map((observation, index) =>
+    attachRawSurfaceEvidenceV1(
+      observation,
+      sourceLineage,
+      surface,
+      rawDocument,
+      index === 0,
+      normalized.consumedFields,
+    )
+  );
+}
+
+function normalizeLineageSurfaceV1(
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  surface: string,
+  raw: Record<string, unknown>,
+): {
+  document: Record<string, unknown>;
+  consumedFields: readonly string[];
+} {
+  const normalized = format === "one-piece"
+    ? normalizeOnePieceSurfaceV1(surface, raw)
+    : format === "fusion-world"
+      ? normalizeFusionWorldSurfaceV1(surface, raw)
+      : format === "digimon"
+        ? normalizeDigimonSurfaceV1(surface, raw)
+        : normalizeGundamSurfaceV1(sourceLineage, surface, raw);
+  return {
+    document: {
+      contract: "card-keepr-official-source-surface@1",
+      lineage: sourceLineage,
+      surface,
+      ...normalized.value,
+    },
+    consumedFields: normalized.consumedFields,
+  };
+}
+
+function normalizeOnePieceSurfaceV1(
+  surface: string,
+  raw: Record<string, unknown>,
+): NormalizedSurfaceBody {
+  if (surface === "card-list") {
+    if (raw.page !== "card-list") {
+      throw new Error("One Piece card-list page identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.series_options,
+        raw.page_info,
+        normalizeOnePieceDetails(raw.card_pages),
+        normalizeOnePieceProducts(raw.products),
+        normalizeOnePieceReleases(raw.release_schedule),
+        "recording",
+        exactOnePieceLeaves(raw.series_options),
+      ),
+      [
+        "page", "series_options", "page_info", "card_pages", "products",
+        "release_schedule",
+      ],
+    );
+  }
+  if (surface === "products") {
+    if (raw.page !== "product-list") {
+      throw new Error("One Piece Product page identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeOnePieceProduct),
+        "recording",
+      ),
+      ["page", "series_options", "result"],
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "release-schedule") {
+      throw new Error("One Piece Release publication identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeOnePieceReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
+    );
+  }
+  return normalizedSurfaceBody(
+    normalizedPolicyV1(raw, `one-piece-${surface}`),
+    ["publication", "revision", "entries"],
+  );
+}
+
+function normalizeFusionWorldSurfaceV1(
+  surface: string,
+  raw: Record<string, unknown>,
+): NormalizedSurfaceBody {
+  if (surface === "card-search") {
+    if (raw.view !== "card-search") {
+      throw new Error("Fusion World card-search view identity is invalid.");
+    }
+    const facets = requiredRecord(raw.facets, "Fusion World facets");
+    for (const name of ["card_type", "colour", "cost"]) {
+      requiredArray(facets[name], `Fusion World ${name} facet`);
+    }
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        Object.entries(facets).map(([name, values]) => ({ name, values })),
+        raw.result,
+        normalizeFusionWorldDetails(raw.detail_pages),
+        normalizeFusionWorldProducts(raw.products),
+        normalizeFusionWorldReleases(raw.releases),
+        "card_type=leader&colour=red&cost=1",
+        exactFusionLeaves(facets),
+      ),
+      ["view", "facets", "result", "detail_pages", "products", "releases"],
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "products") {
+      throw new Error("Fusion World Product view identity is invalid.");
+    }
+    const tabs = uniqueTextValues(raw.status_tabs, "Fusion World Product tabs");
+    if (!tabs.includes("available") || !tabs.includes("coming-soon")) {
+      throw new Error("Fusion World Product tabs are incomplete.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeFusionWorldProduct),
+        "product-status",
+      ),
+      ["view", "status_tabs", "result"],
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "product-release-dates") {
+      throw new Error("Fusion World Release publication identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeFusionWorldReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
+    );
+  }
+  return normalizedSurfaceBody(
+    normalizedPolicyV1(raw, `fusion-world-${surface}`),
+    ["publication", "revision", "entries"],
+  );
+}
+
+function normalizeDigimonSurfaceV1(
+  surface: string,
+  raw: Record<string, unknown>,
+): NormalizedSurfaceBody {
+  if (surface === "card-list") {
+    if (raw.view !== "card-list") {
+      throw new Error("Digimon card-list view identity is invalid.");
+    }
+    const filters = requiredRecord(raw.filters, "Digimon filters");
+    for (const name of ["category", "cardcategory", "colour"]) {
+      requiredArray(filters[name], `Digimon ${name} filter`);
+    }
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.version_options,
+        raw.result,
+        normalizeDigimonDetails(raw.card_popups),
+        normalizeDigimonProducts(raw.products),
+        normalizeDigimonReleases(raw.release_calendar),
+        "category=all&cardcategory=digimon&colour=blue",
+        exactDigimonLeaves(filters),
+      ),
+      [
+        "view", "version_options", "filters", "result", "card_popups",
+        "products", "release_calendar",
+      ],
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "product-index") {
+      throw new Error("Digimon Product index identity is invalid.");
+    }
+    requiredArray(raw.tile_categories, "Digimon Product tile categories");
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeDigimonProduct),
+        "product-category",
+      ),
+      ["view", "tile_categories", "result"],
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "product-release-calendar") {
+      throw new Error("Digimon Release publication identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeDigimonReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "events"],
+    );
+  }
+  return normalizedSurfaceBody(
+    normalizedPolicyV1(raw, `digimon-${surface}`),
+    ["publication", "revision", "entries"],
+  );
+}
+
+function normalizeGundamSurfaceV1(
+  sourceLineage: string,
+  surface: string,
+  raw: Record<string, unknown>,
+): NormalizedSurfaceBody {
+  const expectedLocale = sourceLineage === "gundam-en-asia"
+    ? "EN-ASIA"
+    : "EN-US";
+  if (raw.locale !== expectedLocale) {
+    throw new Error("Gundam surface locale does not match its Source Lineage.");
+  }
+  if (surface === "packages") {
+    if (raw.view !== "card-search") {
+      throw new Error("Gundam card-search view identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedDiscovery(
+        raw.package_options,
+        raw.result,
+        normalizeGundamDetails(raw.card_details),
+        normalizeGundamProducts(raw.products),
+        normalizeGundamReleases(raw.releases),
+        "package=all",
+        exactGundamLeaves(raw.package_options),
+      ),
+      [
+        "view", "locale", "package_options", "result", "card_details",
+        "products", "releases",
+      ],
+    );
+  }
+  if (surface === "products") {
+    if (raw.view !== "product-list") {
+      throw new Error("Gundam Product list identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.result, normalizeGundamProduct),
+        "package",
+      ),
+      ["view", "locale", "result"],
+    );
+  }
+  if (surface === "releases") {
+    if (raw.publication !== "locale-product-release-dates") {
+      throw new Error("Gundam Release publication identity is invalid.");
+    }
+    return normalizedSurfaceBody(
+      normalizedPartitions(
+        normalizePartitionEntries(raw.events, normalizeGundamReleaseEntry),
+        "release-event",
+      ),
+      ["publication", "locale", "events"],
+    );
+  }
+  return normalizedSurfaceBody(
+    normalizedPolicyV1(raw, `gundam-${surface}`),
+    ["publication", "locale", "revision", "entries"],
+  );
+}
+
+function normalizedPolicyV1(
+  raw: Record<string, unknown>,
+  expectedPublication: string,
+): Record<string, unknown> {
+  if (raw.publication !== expectedPublication) {
+    throw new Error("Official policy publication identity is invalid.");
+  }
+  return {
+    revision: requiredText(raw.revision, "Official policy revision"),
+    entries: requiredArray(raw.entries, "Official policy entries"),
+  };
+}
+
+function normalizedSurfaceObservationsV2(
   format: DiscoveryFormat,
   game: ProductSourceGame,
   sourceLineage: string,
@@ -3378,7 +3773,7 @@ function normalizedSurfaceObservations(
     ];
   }
   return observations.map((observation, index) =>
-    attachRawSurfaceEvidence(
+    attachRawSurfaceEvidenceV1(
       observation,
       sourceLineage,
       surface,
@@ -4287,7 +4682,7 @@ function canonicalRelease(
   };
 }
 
-function attachRawSurfaceEvidence(
+function attachRawSurfaceEvidenceV1(
   observation: unknown,
   sourceLineage: string,
   surface: string,

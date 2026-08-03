@@ -224,6 +224,22 @@ function fusionWorldCurrentRestrictions(html: string): Record<string, unknown> {
     "Only 1 copy of the card is permitted in the deck.",
     null,
   );
+  const visibleText = normalizedVisiblePolicyText(article);
+  const expectedVisibleText = [
+    "Banned/Restricted Cards",
+    "This is a list of banned and restricted cards. Please check the effective date and confirm the types and quantities of cards that can be used.",
+    "Banned Cards",
+    "No copies of the card are permitted in the deck. *Tap the image to view the card list.",
+    ...banned.cards.map(({ label }) => label),
+    "Restricted Cards",
+    "Only 1 copy of the card is permitted in the deck. *Tap the image to view the card list.",
+    ...restricted.cards.map(({ label }) => label),
+  ].join(" ");
+  if (visibleText !== expectedVisibleText) {
+    throw new Error(
+      "Fusion World current policy contains unconsumed prose or structure.",
+    );
+  }
   if (banned.cards.length !== 3 || restricted.cards.length !== 5) {
     throw new Error("Fusion World current policy category totals changed.");
   }
@@ -420,8 +436,7 @@ function decodedText(value: string): string {
 }
 
 function assertNoUnconsumedPolicyConditions(html: string): void {
-  const text = decodedText(html.replace(/<[^>]+>/gu, " "))
-    .replace(/\s+/gu, " ");
+  const text = normalizedVisiblePolicyText(html);
   if (
     /\b(?:unless|except(?:\s+(?:if|when|where))?|provided\s+that|only\s+(?:if|when))\b/iu
       .test(text)
@@ -430,6 +445,11 @@ function assertNoUnconsumedPolicyConditions(html: string): void {
       "Official policy retains an unconsumed condition that is not exactly representable.",
     );
   }
+}
+
+function normalizedVisiblePolicyText(html: string): string {
+  return decodedText(html.replace(/<[^>]+>/gu, " "))
+    .replace(/\s+/gu, " ");
 }
 
 function escapeRegExp(value: string): string {

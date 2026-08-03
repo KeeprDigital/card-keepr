@@ -17,6 +17,10 @@ import gundamUsDiscovery from "./retained-official-source/gundam-en-us-discovery
 import onePieceDiscovery from "./retained-official-source/one-piece-en-discovery.json" with {
   type: "json",
 };
+import {
+  productionSourceFixtureMarker,
+  productionSourceFixtureRole,
+} from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
 export default {
   fetch(request) {
@@ -69,6 +73,9 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
+      const officialScenarioMarker = productionSourceFixtureMarker(
+        request.headers,
+      );
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -79,8 +86,7 @@ export default {
       }
       const retainedDiscovery = retainedOfficialDiscovery(
         officialLineage,
-        transportOutcome,
-        url,
+        request,
       );
       if (retainedDiscovery !== null) {
         return new Response(retainedDiscovery.body, {
@@ -93,9 +99,9 @@ export default {
       return new Response(
         officialBandaiDataset(
           officialLineage,
-          transportOutcome,
+          officialScenarioMarker,
           officialLineage === "one-piece-en" &&
-            transportOutcome ===
+            officialScenarioMarker ===
               "card-keepr-acceptance-product/codeless",
           url,
         ),
@@ -214,7 +220,6 @@ export default {
 };
 
 const officialProductPageVisits = new Map();
-const officialDiscoveryRootVisits = new Map();
 
 const retainedOfficialDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
@@ -224,17 +229,13 @@ const retainedOfficialDiscoveryFixtures = {
   "gundam-en-us": gundamUsDiscovery,
 };
 
-function retainedOfficialDiscovery(lineage, parserSignal, requestUrl) {
+function retainedOfficialDiscovery(lineage, request) {
   const fixture = retainedOfficialDiscoveryFixtures[lineage];
-  if (requestUrl.href !== fixture.source_url) return null;
-  const visitKey = [parserSignal ?? "", lineage, requestUrl.href].join("\u0000");
-  const visit = officialDiscoveryRootVisits.get(visitKey) ?? 0;
-  officialDiscoveryRootVisits.set(visitKey, visit + 1);
-  const requestsPerDiscoveryCycle =
-    lineage === "one-piece-en" || lineage === "fusion-world-en" ? 3 : 2;
-  return visit % requestsPerDiscoveryCycle === 0
-    ? retainedDiscoveryResponse(fixture)
-    : null;
+  if (
+    request.url !== fixture.source_url ||
+    productionSourceFixtureRole(request.headers) !== "retained-discovery"
+  ) return null;
+  return retainedDiscoveryResponse(fixture);
 }
 
 function retainedDiscoveryResponse(fixture) {

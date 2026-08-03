@@ -359,10 +359,10 @@ export async function officialCollectionRequestsFromDiscovery(
         "Official Source discovery does not match its exact bounded collection contract.",
       );
     }
-    const headers = {
+    const headers = officialCollectionRequestHeaders({
       ...(record.headers as Record<string, string>),
       ...inheritedHeaders,
-    };
+    });
     assertBoundedOfficialSourceRequest(discoveredUrl, headers, true);
     requests.push({
       id: expectedId,
@@ -378,6 +378,21 @@ export async function officialCollectionRequestsFromDiscovery(
     });
   }
   return requests;
+}
+
+function officialCollectionRequestHeaders(
+  headers: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const baseUserAgent = (
+    headers["user-agent"] ?? "card-keepr-official-source/1"
+  ).replace(
+    /;\s*request-role=(?:surface|listing|detail|product_detail|image)(?=;|$)/gu,
+    "",
+  );
+  return {
+    ...headers,
+    "user-agent": `${baseUserAgent}; request-role=surface`,
+  };
 }
 
 export async function completeOfficialCollectionRequestsFromDiscovery(

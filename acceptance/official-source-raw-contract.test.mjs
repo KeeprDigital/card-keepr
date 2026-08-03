@@ -13,13 +13,16 @@ import {
   requiredSourceAdapter,
   sourceAdapterRegistrations,
 } from "../src/catalogue/source-adapters.ts";
-import {
+import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
   officialDiscoveryDocument,
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "./fixtures/synthetic-official-source.mjs";
+import {
+  productionOfficialStageResponse,
+} from "../apps/ingestion/test/production-source-fixture-routing.ts";
 
 const expectedSurfaces = {
   "one-piece-en": [
@@ -362,7 +365,11 @@ test("retained live policy roots schedule the exact current detail publications"
       [{
         role: "detail",
         url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-        headers: { accept: "text/html" },
+        headers: {
+          accept: "text/html",
+          "user-agent":
+            "card-keepr-official-source/1; request-role=detail",
+        },
       }],
     );
     assert.deepEqual(
@@ -373,7 +380,11 @@ test("retained live policy roots schedule the exact current detail publications"
       [{
         role: "detail",
         url: `https://www.gundam-gcg.com/${descriptor.locale}/news/01_279.html`,
-        headers: { accept: "text/html" },
+        headers: {
+          accept: "text/html",
+          "user-agent":
+            "card-keepr-official-source/1; request-role=detail",
+        },
       }],
     );
   }
@@ -552,6 +563,62 @@ test("retained live policy parsers reject separate unconsumed conditions", () =>
   }
 });
 
+test("retained Fusion policy rejects unconsumed event and expiry prose", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-policy-detail",
+  );
+  for (const prose of [
+    "This restriction applies at championship events.",
+    "This restriction remains active through June 30, 2026.",
+  ]) {
+    const mutated = Buffer.from(
+      fixture.bytes.toString("utf8").replace(
+        "<h4>Restricted Cards</h4>",
+        `<p>${prose}</p><h4>Restricted Cards</h4>`,
+      ),
+    );
+    assert.throws(
+      () => adapter.parseBytes(mutated, {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: `fusion-world-en:detail:${"f".repeat(64)}`,
+      }),
+      /exact|residual|unconsumed|structure/iu,
+      prose,
+    );
+  }
+});
+
+test("retained Fusion policy permits text-free publisher framing at article boundaries", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-policy-detail",
+  );
+  const framed = Buffer.from(
+    fixture.bytes.toString("utf8")
+      .replace(
+        '<article class="articleCol">',
+        '<article class="articleCol"><div class="publisher-frame"></div>',
+      )
+      .replace(
+        "</article>",
+        '<div class="publisher-frame-end"></div></article>',
+      ),
+  );
+  const observations = adapter.parseBytes(framed, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `fusion-world-en:detail:${"e".repeat(64)}`,
+  });
+  assert.equal(
+    observations.find(({ observation_type }) =>
+      observation_type === "legality_rules"
+    )?.legality_rules.length,
+    8,
+  );
+});
+
 test("retained live discovery bytes derive every production surface family", () => {
   for (const adapter of registeredProductionAdapters()) {
     const request = officialSourceDiscoveryRequests(adapter.sourceLineage)[0];
@@ -568,6 +635,95 @@ test("retained live discovery bytes derive every production surface family", () 
     assert.deepEqual(
       records.map(({ surface }) => surface),
       expectedDiscoveryKeys[adapter.sourceLineage].map((key) => `@seed:${key}`),
+    );
+    const staged = adapter.discoverRequests(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      url: request.url,
+      requestId: request.id,
+    });
+    assert.ok(staged.length > 0);
+    assert.ok(staged.every(({ headers }) =>
+      headers["user-agent"] ===
+        "card-keepr-official-source/1; request-role=listing"
+    ));
+  }
+});
+
+test("the exact Fusion listing fixture dispatch closes its staged surfaces", async () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const url = "https://www.dbs-cardgame.com/fw/en/news/01_31.html";
+  const response = productionOfficialStageResponse(
+    "fusion-world-en",
+    new Request(url, {
+      headers: {
+        accept: "text/html",
+        "user-agent":
+          "card-keepr-representable-legality-v3; request-role=listing",
+      },
+    }),
+    officialBandaiNavigationHeader("fusion-world-en"),
+  );
+  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+  const observations = adapter.parseBytes(
+    new Uint8Array(await response.arrayBuffer()),
+    {
+      mediaType: response.headers.get("content-type"),
+      url,
+      requestId:
+        "fusion-world-en:listing:rules:ef7d6c9e469758959c58e79b0c21594afc89769eaf8264187e80c71d14c12b76",
+    },
+  );
+  assert.deepEqual(
+    observations.flatMap(({ records }) => records ?? []).map(({ surface }) =>
+      surface
+    ),
+    ["legality-current", "legality-history", "errata"],
+  );
+});
+
+test("One Piece parser-failure markers survive retained discovery, staged listing, and final surface transport", async () => {
+  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const url = "https://en.onepiece-cardgame.com/cardlist/";
+  for (const failure of ["cap", "pagination"]) {
+    const marker = `card-keepr-acceptance-parser/${failure}`;
+    const responseForRole = (role) => syntheticOfficialSource.fetch(
+      new Request(url, {
+        headers: {
+          "user-agent": role === null
+            ? marker
+            : `${marker}; request-role=${role}`,
+        },
+      }),
+    );
+    const rootBytes = new Uint8Array(
+      await (await responseForRole(null)).arrayBuffer(),
+    );
+    const listingResponse = await responseForRole("listing");
+    const listingBytes = new Uint8Array(await listingResponse.arrayBuffer());
+    assert.notDeepEqual(
+      listingBytes,
+      rootBytes,
+      "the listing request must not be routed back to retained root bytes",
+    );
+    assert.deepEqual(
+      adapter.parseBytes(listingBytes, {
+        mediaType: listingResponse.headers.get("content-type"),
+        url,
+        requestId: `one-piece-en:listing:cards:${"a".repeat(64)}`,
+      }).flatMap(({ records }) => records ?? []).map(({ surface }) => surface),
+      ["card-list"],
+    );
+    const surfaceResponse = await responseForRole("surface");
+    const surfaceBytes = new Uint8Array(await surfaceResponse.arrayBuffer());
+    assert.throws(
+      () => adapter.parseBytes(surfaceBytes, {
+        mediaType: surfaceResponse.headers.get("content-type"),
+        url,
+        requestId: "one-piece-en:card-list",
+      }),
+      failure === "cap"
+        ? /result-cap evidence does not prove complete coverage/iu
+        : /pagination evidence does not prove complete partitions/iu,
     );
   }
 });
@@ -610,6 +766,9 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       requests.map(({ id }) => id),
       [`${adapter.sourceLineage}:discovery`],
     );
+    assert.deepEqual(requests[0].headers, {
+      accept: "text/html",
+    });
     assert.equal(requests.length, 1);
     assert.ok(
       requests.every(({ url }) =>
@@ -888,6 +1047,121 @@ test("historical production identities preserve their original JSON-LD observati
       adapterVersion,
     );
   }
+});
+
+test("historical production identities freeze every original decoder path", () => {
+  const digest = (observations) =>
+    createHash("sha256").update(JSON.stringify(observations)).digest("hex");
+  const legacyPublication = (lineage, surface, payload) => Buffer.from(
+    `<html><script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Dataset",
+      publisher: { "@type": "Organization", name: "Bandai" },
+      hasPart: [{
+        "@type": "Dataset",
+        identifier: `${lineage}:${surface}`,
+        payload,
+      }],
+    })}</script></html>`,
+  );
+  const actual = {};
+
+  const fusion = requiredSourceAdapter("fusion-world-en@2");
+  const legacyPolicy = structuredClone(
+    officialRawSurfacePayload("/fusion-world-en/legality-current"),
+  );
+  delete legacyPolicy.declared_record_count;
+  delete legacyPolicy.partition;
+  actual.policy = digest(fusion.parseBytes(
+    legacyPublication("fusion-world-en", "legality-current", legacyPolicy),
+    {
+      mediaType: "text/html",
+      url: fusion.requestUrlForSurface("legality-current"),
+      requestId: "fusion-world-en:legality-current",
+    },
+  ));
+
+  const onePiece = requiredSourceAdapter("one-piece-en@1");
+  const legacyReleases = structuredClone(
+    officialRawSurfacePayload("/one-piece-en/releases"),
+  );
+  delete legacyReleases.release_timing_entries;
+  actual.releases = digest(onePiece.parseBytes(
+    legacyPublication("one-piece-en", "releases", legacyReleases),
+    {
+      mediaType: "text/html",
+      url: onePiece.requestUrlForSurface("releases"),
+      requestId: "one-piece-en:releases",
+    },
+  ));
+
+  actual.cardDetail = digest(onePiece.parseBytes(Buffer.from(`
+    <h1>Legacy Leader</h1>
+    <dl><dt>Card Number</dt><dd>OP99-001</dd></dl>
+    <dl><dt>Card Type</dt><dd>Leader</dd></dl>
+    <dl><dt>Color</dt><dd>Red</dd></dl>
+    <dl><dt>Life</dt><dd>5</dd></dl>
+    <dl><dt>Power</dt><dd>5000</dd></dl>
+    <img class="card-image" src="/legacy-media/OP99-001.png">
+  `), {
+    mediaType: "text/html",
+    url: "https://en.onepiece-cardgame.com/legacy/card/OP99-001",
+    requestId: `one-piece-en:detail:${"1".repeat(64)}`,
+  }));
+
+  const gundam = requiredSourceAdapter("gundam-en-us@2");
+  actual.productDetail = digest(gundam.parseBytes(Buffer.from(`
+    <h1>Legacy Booster</h1>
+    <dl><dt>Product Code</dt><dd>GD-LEGACY</dd></dl>
+    <dl><dt>Release Date</dt><dd>August 3, 2026</dd></dl>
+    <dl><dt>Status</dt><dd>Available</dd></dl>
+  `), {
+    mediaType: "text/html",
+    url: "https://www.gundam-gcg.com/en/legacy/product/",
+    requestId: `gundam-en-us:product_detail:${"2".repeat(64)}`,
+  }));
+
+  actual.coverage = digest(fusion.parseBytes(Buffer.from(`
+    <html><title>BANDAI Fusion World ERRATA publication</title>
+      <main><p>1 result</p><ul><li>Official errata correction entry</li></ul></main>
+    </html>
+  `), {
+    mediaType: "text/html",
+    url: fusion.requestUrlForSurface("errata"),
+    requestId: "fusion-world-en:errata",
+  }));
+
+  actual.onePieceList = digest(onePiece.parseBytes(Buffer.from(`
+    <select id="recording"><option value="1">Legacy Set</option></select>
+    <div class="countCol">1 result</div>
+    <dl class="modalCol" id="OP99-002" data-artwork-id="legacy-art">
+      <dt><div class="infoCol"><span>OP99-002</span> | <span>L</span> | <span>LEADER</span></div>
+        <div class="cardName">Legacy Modal Leader</div></dt>
+      <dd><div class="frontCol"><img data-src="../images/cardlist/card/OP99-002.png"></div>
+        <div class="backCol"><div class="cost"><h3>Life</h3>5</div>
+        <div class="attribute"><h3>Attribute</h3>Strike</div>
+        <div class="power"><h3>Power</h3>5000</div>
+        <div class="counter"><h3>Counter</h3>-</div>
+        <div class="color"><h3>Color</h3>Red</div>
+        <div class="block"><h3>Block icon</h3>1</div>
+        <div class="feature"><h3>Type</h3>Legacy</div>
+        <div class="text"><h3>Effect</h3>Legacy effect</div>
+        <div class="getInfo"><h3>Card Set(s)</h3>Legacy Set</div></div></dd>
+    </dl>
+  `), {
+    mediaType: "text/html",
+    url: onePiece.requestUrlForSurface("card-list"),
+    requestId: "one-piece-en:card-list",
+  }));
+
+  assert.deepEqual(actual, {
+    policy: "c37d7541af19d570b0b5b51750ca23d3ce297cb2857e67a7fbd62bdc62c4d529",
+    releases: "6a10d3ad46f520462e6fc35f78bf8c128c6248503ecce38df7ab7ceab4dd2a16",
+    cardDetail: "c26cb476250e5a7265d866531db155f16ac17ffcb54400b73abd13b7fea10163",
+    productDetail: "7159d4d9472dc669a1f6eb68e016da9759f446308e5049544c544cc64092999e",
+    coverage: "03f630a79aef27c067d8e0db573d57022a42d2f035abc935e2503a5efe83f55e",
+    onePieceList: "7f69bd4a4042c8957321595614fac21b8a96b69761205bb34da245011e501184",
+  });
 });
 
 function fusionLegalityContext(adapter) {
@@ -2392,7 +2666,9 @@ test("Digimon staged discovery ignores only the known global header and retains 
     surface: "card-list",
     method: "GET",
     url: "https://world.digimoncard.com/cards/index.php?search=true",
-    headers: { accept: "text/html" },
+    headers: {
+      accept: "text/html",
+    },
     discovered_from: {
       kind: "publisher_navigation",
       label: "card list",

@@ -32,12 +32,16 @@ import {
   contextualLegalitySourceDocument,
   onePiecePolicySourceDocument,
 } from "./test/contextual-legality-fixture";
+import {
+  productionOfficialStageResponse,
+  productionSourceFixtureMarker,
+  productionSourceFixtureRole,
+} from "./test/production-source-fixture-routing";
 
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
 const outboundRequestCounts = new Map<string, number>();
-const productionDiscoveryRootVisits = new Map<string, number>();
 const retainedProductionDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
   "fusion-world-en": fusionWorldDiscovery,
@@ -48,37 +52,16 @@ const retainedProductionDiscoveryFixtures = {
 
 type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
 
-function productionDiscoveryRootVisitKey(
-  lineage: ProductionSourceLineage,
-  marker: string | null,
-  url: URL,
-): string {
-  return [marker ?? "", lineage, url.href].join("\u0000");
-}
-
-function productionDiscoveryRootVisitCount(
-  lineage: ProductionSourceLineage,
-  marker: string | null,
-  url: URL,
-): number {
-  return productionDiscoveryRootVisits.get(
-    productionDiscoveryRootVisitKey(lineage, marker, url),
-  ) ?? 0;
-}
-
 function retainedProductionDiscoveryRoot(
   lineage: ProductionSourceLineage,
   marker: string | null,
-  url: URL,
+  request: Request,
 ): Response | null {
   const fixture = retainedProductionDiscoveryFixtures[lineage];
-  if (url.href !== fixture.source_url) return null;
-  const visitKey = productionDiscoveryRootVisitKey(lineage, marker, url);
-  const visit = (productionDiscoveryRootVisits.get(visitKey) ?? 0) + 1;
-  productionDiscoveryRootVisits.set(visitKey, visit);
-  const requestsPerCycle =
-    lineage === "one-piece-en" || lineage === "fusion-world-en" ? 3 : 2;
-  if ((visit - 1) % requestsPerCycle !== 0) return null;
+  if (
+    request.url !== fixture.source_url ||
+    productionSourceFixtureRole(request.headers) !== "retained-discovery"
+  ) return null;
   const retainedBytes = Buffer.from(fixture.body_base64, "base64");
   const responseBytes =
     marker === "card-keepr-incomplete-discovery-v3" &&
@@ -94,7 +77,7 @@ function retainedProductionDiscoveryRoot(
   return new Response(responseBytes, {
     headers: {
       "content-type": fixture.content_type,
-      etag: `"${lineage}-retained-discovery-${visit}"`,
+      etag: `"${lineage}-retained-discovery"`,
     },
   });
 }
@@ -400,7 +383,9 @@ export default defineConfig({
             url.hostname.endsWith("digimoncard.com") ||
             url.hostname.endsWith("gundam-gcg.com")
           ) {
-            const artworkMarker = request.headers.get("user-agent");
+            const artworkMarker = productionSourceFixtureMarker(
+              request.headers,
+            );
             const officialLineage = url.hostname === "en.onepiece-cardgame.com"
               ? "one-piece-en"
               : url.hostname === "www.dbs-cardgame.com"
@@ -420,7 +405,7 @@ export default defineConfig({
             const retainedDiscovery = retainedProductionDiscoveryRoot(
               officialLineage,
               artworkMarker,
-              url,
+              request,
             );
             if (retainedDiscovery !== null) return retainedDiscovery;
             if (
@@ -428,12 +413,9 @@ export default defineConfig({
               officialLineage === "one-piece-en" &&
               url.pathname === "/cardlist/"
             ) {
-              const count = productionDiscoveryRootVisitCount(
-                officialLineage,
-                artworkMarker,
-                url,
-              );
-              if (count >= 3) {
+              if (
+                productionSourceFixtureRole(request.headers) === "surface"
+              ) {
                 const failure = artworkMarker.slice(
                   "card-keepr-runtime-parser/".length,
                 ).split("-", 1)[0];
@@ -1280,30 +1262,10 @@ export default defineConfig({
                 },
               });
             }
-            return new Response(
-              `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}${officialStageNavigation(officialLineage, url)}<main>${
-                url.pathname === "/fw/en/rules/banned-limited-cards/" ||
-                  (
-                    url.hostname === "world.digimoncard.com" &&
-                    url.pathname === "/rule/restriction_card/"
-                  ) ||
-                  (
-                    url.hostname === "en.onepiece-cardgame.com" &&
-                    (
-                      url.pathname === "/rules/restriction/" ||
-                      url.pathname === "/rules/block_icon/" ||
-                      url.pathname === "/rules/"
-                    )
-                  )
-                  ? "<p>0 records</p>"
-                  : ""
-              }<article data-publication-empty="true">No published entries.</article></main></html>`,
-              {
-                headers: {
-                  "content-type": "text/html; charset=utf-8",
-                  etag: `"official-${url.pathname.replaceAll("/", "-")}"`,
-                },
-              },
+            return productionOfficialStageResponse(
+              officialLineage,
+              request,
+              officialNavigation,
             );
           }
           if (!url.hostname.endsWith("official-source.invalid")) {
@@ -1563,41 +1525,6 @@ export default defineConfig({
     testTimeout: 30_000,
   },
 });
-
-function officialStageNavigation(lineage: string, url: URL): string {
-  const path = `${url.pathname}${url.search}`;
-  if (lineage === "one-piece-en" && path === "/rules/") {
-    return `<nav aria-label="Rules publications">
-      <a href="/rules/restriction/">Restriction Cards</a>
-      <a href="/rules/block_icon/">Block Policy</a>
-      <a href="/rules/errata_card/">Errata Cards</a>
-    </nav>`;
-  }
-  if (lineage === "fusion-world-en" && path === "/fw/en/news/01_31.html") {
-    return `<nav aria-label="Rules publications">
-      <a href="/fw/en/rules/banned-limited-cards/">Current banned and limited cards</a>
-      <a href="/fw/en/rules/banned-limited-cards/?view=history">Previous restriction history</a>
-      <a href="/fw/en/rules/errata-card/">Errata Cards</a>
-    </nav>`;
-  }
-  if (lineage === "digimon-en" && path === "/cardlist/") {
-    return `<nav><a href="/cards/index.php?search=true">Card List</a></nav>`;
-  }
-  if (lineage === "digimon-en" && path === "/rule/") {
-    return `<nav aria-label="Rules publications">
-      <a href="/rule/restriction_card/">Current restriction cards</a>
-      <a href="/rule/restriction_card/?view=history">Previous restriction history</a>
-      <a href="/rule/errata_card/">Errata Cards</a>
-    </nav>`;
-  }
-  if (lineage.startsWith("gundam-") && /\/cards\/$/u.test(path)) {
-    return `<nav><a href="index.php">Find Cards</a></nav>`;
-  }
-  if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
-    return `<nav><a href="?subcategory=rules">Errata and corrections</a></nav>`;
-  }
-  return "";
-}
 
 function reconciliationSourceDocument(
   scenario: string,

@@ -30,6 +30,10 @@ import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   fusionWorldProductionCollectionRequests,
 } from "./production-collection-request-goldens";
+import {
+  productionSourceFixtureMarker,
+  productionSourceFixtureRole,
+} from "./production-source-fixture-routing";
 
 declare global {
   interface __BaseEnv_Env {
@@ -63,6 +67,35 @@ test("the administration authentication boundary runs in the Workers runtime", a
     runtime: "ingestion",
     status: "ok",
   });
+});
+
+test("production source fixture selection is invariant under retries and reordering", () => {
+  const discoveryHeaders = new Headers({
+    accept: "text/html",
+  });
+  const surfaceHeaders = new Headers({
+    accept: "text/html",
+    "user-agent": "card-keepr-official-source/1; request-role=surface",
+  });
+  expect([
+    surfaceHeaders,
+    discoveryHeaders,
+    discoveryHeaders,
+    surfaceHeaders,
+  ].map(productionSourceFixtureRole)).toEqual([
+    "surface",
+    "retained-discovery",
+    "retained-discovery",
+    "surface",
+  ]);
+  expect(productionSourceFixtureMarker(new Headers({
+    "user-agent":
+      "card-keepr-representable-legality-v3; request-role=listing",
+  }))).toBe("card-keepr-representable-legality-v3");
+  expect(productionSourceFixtureMarker(new Headers({
+    "user-agent":
+      "card-keepr-representable-legality-v3; request-role=surface",
+  }))).toBe("card-keepr-representable-legality-v3");
 });
 
 test("every pinned aggregate adapter retains its immutable parser contract", () => {
@@ -245,6 +278,26 @@ function fusionWorldDiscoveryRecords() {
   }));
 }
 
+test("final Official Source requests keep discovery evidence immutable while exposing a deterministic fixture role", async () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const records = fusionWorldDiscoveryRecords();
+  const requests = await officialCollectionRequestsFromDiscovery(
+    adapter,
+    records,
+    { "user-agent": "card-keepr-representable-legality-v3" },
+  );
+
+  expect(records.every(({ headers }) =>
+    canonicalJson(headers) === canonicalJson({ accept: "text/html" })
+  )).toBe(true);
+  expect(requests).toHaveLength(adapter.requiredSurfaces?.length ?? 0);
+  expect(requests.every(({ headers }) =>
+    headers.accept === "text/html" &&
+    headers["user-agent"] ===
+      "card-keepr-representable-legality-v3; request-role=surface"
+  )).toBe(true);
+});
+
 test("final Official Source collection identities enforce the URL byte bound", async () => {
   const adapter = requiredSourceAdapter("fusion-world-en@3");
   const records = fusionWorldDiscoveryRecords();
@@ -276,6 +329,7 @@ test("final Official Source collection identities enforce the merged-header byte
   const records = fusionWorldDiscoveryRecords();
   const headerBase = utf8(canonicalJson({
     accept: "text/html",
+    "user-agent": "card-keepr-official-source/1; request-role=surface",
     "x-final-bound": "",
   })).byteLength;
   await expect(officialCollectionRequestsFromDiscovery(

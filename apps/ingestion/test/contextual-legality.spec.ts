@@ -3267,15 +3267,48 @@ async function waitForState(runId: string, expected: string) {
         `SELECT warnings_json FROM ingestion_runs WHERE id = ?`,
       ).bind(runId).first<{ warnings_json: string }>();
       const sourceFailures = await testEnv.CATALOGUE_DB.prepare(
-        `SELECT requests.request_id, requests.failure_code, attempts.diagnostic
+        `SELECT requests.request_id, requests.state AS request_state,
+                requests.failure_code, requests.request_role,
+                requests.method, requests.url,
+                requests.request_headers_json,
+                attempts.attempt_number, attempts.outcome,
+                attempts.http_status, attempts.response_headers_json,
+                attempts.diagnostic AS fetch_diagnostic,
+                capture.state AS capture_state,
+                capture.diagnostic AS capture_diagnostic,
+                snapshots.id AS snapshot_id,
+                snapshots.content_digest AS snapshot_content_digest,
+                snapshots.content_byte_length AS snapshot_content_byte_length,
+                snapshots.media_type AS snapshot_media_type,
+                parse.id AS parse_operation_id,
+                parse.state AS parse_operation_state
          FROM source_requests AS requests
          LEFT JOIN source_fetch_attempts AS attempts
            ON attempts.ingestion_run_id = requests.ingestion_run_id
           AND attempts.request_id = requests.request_id
+         LEFT JOIN source_capture_operations AS capture
+           ON capture.ingestion_run_id = requests.ingestion_run_id
+          AND capture.request_id = requests.request_id
+          AND capture.attempt_number = attempts.attempt_number
+         LEFT JOIN source_snapshots AS snapshots
+           ON snapshots.ingestion_run_id = requests.ingestion_run_id
+          AND snapshots.request_id = requests.request_id
+          AND snapshots.fetch_attempt_id = attempts.id
+         LEFT JOIN source_parse_operations AS parse
+           ON parse.source_snapshot_id = snapshots.id
          WHERE requests.ingestion_run_id = ?
            AND (requests.failure_code IS NOT NULL
-             OR attempts.diagnostic IS NOT NULL)
+             OR attempts.diagnostic IS NOT NULL
+             OR capture.diagnostic IS NOT NULL)
          ORDER BY requests.request_id, attempts.attempt_number`,
+      ).bind(runId).all();
+      const discoveryChildren = await testEnv.CATALOGUE_DB.prepare(
+        `SELECT parent_request_id, request_id, sequence_number,
+                method, url, request_headers_json,
+                representation_fingerprint, request_role
+         FROM source_discovery_request_plans
+         WHERE ingestion_run_id = ?
+         ORDER BY sequence_number`,
       ).bind(runId).all();
       throw new Error(JSON.stringify({
         id: shown.document.id,
@@ -3285,6 +3318,9 @@ async function waitForState(runId: string, expected: string) {
           persisted?.warnings_json ?? "[]",
         ),
         source_failures: sourceFailures.results,
+        parse_failure_diagnostic_persistence:
+          "parse failures are represented by source_requests.failure_code; source_parse_operations persists state but has no failure diagnostic column",
+        discovery_children: discoveryChildren.results,
       }));
     }
     await new Promise((resolve) => setTimeout(resolve, 25));

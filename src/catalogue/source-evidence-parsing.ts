@@ -212,15 +212,18 @@ export async function discoverSnapshotRequests(
       ...(request.discoveryKey === undefined || !isRecord(inheritedHeaders)
         ? {}
         : {
-            headers: {
-              ...request.headers,
-              ...Object.fromEntries(
-                Object.entries(inheritedHeaders).filter(
-                  (entry): entry is [string, string] =>
-                    typeof entry[1] === "string",
+            headers: discoveredRequestHeaders(
+              request,
+              {
+                ...request.headers,
+                ...Object.fromEntries(
+                  Object.entries(inheritedHeaders).filter(
+                    (entry): entry is [string, string] =>
+                      typeof entry[1] === "string",
+                  ),
                 ),
-              ),
-            },
+              },
+            ),
           }),
     }));
   } catch (error) {
@@ -232,6 +235,22 @@ export async function discoverSnapshotRequests(
         : "The Official Source request graph could not be discovered.",
     );
   }
+}
+
+function discoveredRequestHeaders(
+  request: { role: "listing" | "detail" | "product_detail" | "image" },
+  headers: Record<string, string>,
+): Record<string, string> {
+  const baseUserAgent = (
+    headers["user-agent"] ?? "card-keepr-official-source/1"
+  ).replace(
+    /;\s*request-role=(?:surface|listing|detail|product_detail|image)(?=;|$)/gu,
+    "",
+  );
+  return {
+    ...headers,
+    "user-agent": `${baseUserAgent}; request-role=${request.role}`,
+  };
 }
 
 function observationEvidenceSummary(observations: readonly unknown[]) {
