@@ -1741,7 +1741,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
-test("new collection rejects a superseded adapter while retained snapshots remain reparsable by it", async () => {
+test("new collection rejects a superseded adapter while retained snapshots reparse with their exact capturing version", async () => {
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
@@ -1777,14 +1777,14 @@ test("new collection rejects a superseded adapter while retained snapshots remai
   const reparsed = await post(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     {
-      adapter_version: "fusion-world-en@2",
-      idempotency_key: "historical-adapter-retained-reparse",
+      adapter_version: "fusion-world-en@3",
+      idempotency_key: "capturing-adapter-retained-reparse",
     },
   );
   expect(reparsed.response.status).toBe(201);
   expect(reparsed.document).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fusion-world-en@2",
+    adapter_version: "fusion-world-en@3",
   });
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {

@@ -1,4 +1,5 @@
 import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { compareUtf8 } from "./serialization";
 
 export type LegalityRuleEffect =
   | { type: "eligible" }
@@ -189,6 +190,30 @@ export function evaluateLegalityRuleEffect(
   return strategies[effect.type].evaluate(effect, attributes, on);
 }
 
+export function canonicalLegalityRuleEffect(
+  effect: LegalityRuleEffect,
+): LegalityRuleEffect {
+  switch (effect.type) {
+    case "prohibited_combination":
+      return {
+        ...effect,
+        with_card_ids: canonicalStringSet(effect.with_card_ids),
+      };
+    case "membership":
+      return {
+        ...effect,
+        includes_any: canonicalStringSet(effect.includes_any),
+      };
+    case "rotation":
+      return {
+        ...effect,
+        eligible_blocks: canonicalStringSet(effect.eligible_blocks),
+      };
+    default:
+      return effect;
+  }
+}
+
 function mismatch(): never {
   throw new Error("A Legality effect was dispatched to the wrong strategy.");
 }
@@ -203,8 +228,11 @@ function requiredStrings(value: unknown, name: string, emptyAllowed: boolean): s
   if (!Array.isArray(value)) throw new Error(`${name} must be an array.`);
   const values = value.map((item) => requiredString(item, name));
   if (!emptyAllowed && values.length === 0) throw new Error(`${name} must not be empty.`);
-  if (new Set(values).size !== values.length) throw new Error(`${name} must not contain duplicates.`);
-  return values;
+  return canonicalStringSet(values);
+}
+
+function canonicalStringSet(values: readonly string[]): string[] {
+  return [...new Set(values)].sort(compareUtf8);
 }
 
 function requiredString(value: unknown, name: string): string {

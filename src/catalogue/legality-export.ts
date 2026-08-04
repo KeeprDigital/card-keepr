@@ -3,11 +3,10 @@ import {
   legalityExportKind,
   legalityRuleCardIds,
   normalizedLegalityRuleLifecycle,
-  type LegalityRuleEffect,
 } from "./legality-rule";
+import { canonicalLegalityRuleEffect } from "./legality-effect-policy";
 import {
   canonicalJson,
-  compareUtf8,
   sha256Text,
   utf8,
 } from "./serialization";
@@ -34,7 +33,7 @@ export function legalityRuleExportRecords(
     effective_until: rule.effective_until,
     unresolved_scope: rule.unresolved_scope,
     kind: legalityExportKind(rule.effect),
-    effect: exportEffect(rule.effect),
+    effect: canonicalLegalityRuleEffect(rule.effect),
     card_ids: legalityRuleCardIds(rule),
     official_wording: rule.official_wording,
     source_lineage: rule.source_lineage,
@@ -43,14 +42,6 @@ export function legalityRuleExportRecords(
     source_field_pointers: rule.source_field_pointers,
     lifecycle: normalizedLegalityRuleLifecycle(rule, revisionId),
   }));
-}
-
-function exportEffect(effect: LegalityRuleEffect): LegalityRuleEffect {
-  if (effect.type !== "prohibited_combination") return effect;
-  return {
-    ...effect,
-    with_card_ids: [...new Set(effect.with_card_ids)].sort(compareUtf8),
-  };
 }
 
 export async function legalityRuleRelationshipRecords(

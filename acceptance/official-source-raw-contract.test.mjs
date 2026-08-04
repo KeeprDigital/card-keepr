@@ -721,6 +721,91 @@ test("the exact Fusion listing fixture dispatch closes its staged surfaces", asy
   );
 });
 
+test("registered Fusion policy collection identities parse their retained current and history bytes", async () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const listingUrl = "https://www.dbs-cardgame.com/fw/en/news/01_31.html";
+  const listingResponse = productionOfficialStageResponse(
+    "fusion-world-en",
+    new Request(listingUrl, {
+      headers: {
+        accept: "text/html",
+        "user-agent": "card-keepr-official-source/1; request-role=listing",
+      },
+    }),
+    officialBandaiNavigationHeader("fusion-world-en"),
+  );
+  const planned = adapter.parseBytes(
+    new Uint8Array(await listingResponse.arrayBuffer()),
+    {
+      mediaType: listingResponse.headers.get("content-type"),
+      url: listingUrl,
+      requestId: `fusion-world-en:listing:rules:${"e".repeat(64)}`,
+    },
+  )[0].records.filter(({ surface }) =>
+    surface === "legality-current" || surface === "legality-history"
+  );
+  assert.deepEqual(
+    planned.map(({ id, surface, url }) => ({ id, surface, url })),
+    [
+      {
+        id: "fusion-world-en:legality-current",
+        surface: "legality-current",
+        url: adapter.requestUrlForSurface("legality-current"),
+      },
+      {
+        id: "fusion-world-en:legality-history",
+        surface: "legality-history",
+        url: adapter.requestUrlForSurface("legality-history"),
+      },
+    ],
+  );
+
+  const current = retainedOfficialSourceFixture(
+    "fusion-world-en-policy-detail",
+  );
+  const historyResponse = productionOfficialStageResponse(
+    "fusion-world-en",
+    new Request(planned[1].url, {
+      headers: {
+        accept: "text/html",
+        "user-agent":
+          "card-keepr-official-source/1; request-role=surface; request-surface=legality-history",
+      },
+    }),
+    officialBandaiNavigationHeader("fusion-world-en"),
+  );
+  const history = {
+    bytes: new Uint8Array(await historyResponse.arrayBuffer()),
+    mediaType: historyResponse.headers.get("content-type"),
+  };
+  for (const [request, retained, expectedCount] of [
+    [planned[0], { bytes: current.bytes, mediaType: current.metadata.content_type }, 8],
+    [planned[1], history, 0],
+  ]) {
+    const observations = adapter.parseBytes(retained.bytes, {
+      mediaType: retained.mediaType,
+      url: request.url,
+      requestId: request.id,
+    });
+    const legality = observations.find(
+      ({ observation_type }) => observation_type === "legality_rules",
+    );
+    assert.equal(legality.legality_rules.length, expectedCount, request.surface);
+    assert.deepEqual(legality.completeness, {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: expectedCount,
+      parsed_record_count: expectedCount,
+    }, request.surface);
+    assert.equal(
+      legality.source_sidecar.raw.official_surfaces[0].surface,
+      request.surface,
+      request.surface,
+    );
+  }
+});
+
 test("One Piece parser-failure markers survive retained discovery, staged listing, and final surface transport", async () => {
   const adapter = requiredSourceAdapter("one-piece-en@2");
   const url = "https://en.onepiece-cardgame.com/cardlist/";
@@ -1304,7 +1389,7 @@ test("historical V1 discovery stays frozen while decoder authority diverges from
   );
 });
 
-test("historical Fusion V1 reparses snapshots retained at exact live policy URLs", () => {
+test("historical Fusion V1 accepts only its frozen policy URL identities", () => {
   const historical = requiredSourceAdapter("fusion-world-en@2");
   const retainedEmptyPolicy = new TextEncoder().encode(`
     <html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
@@ -1313,6 +1398,8 @@ test("historical Fusion V1 reparses snapshots retained at exact live policy URLs
       </main>
     </html>
   `);
+  const frozenUrl =
+    "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/";
   for (const [surface, url] of [
     [
       "legality-current",
@@ -1325,10 +1412,19 @@ test("historical Fusion V1 reparses snapshots retained at exact live policy URLs
   ]) {
     const observations = historical.parseBytes(retainedEmptyPolicy, {
       mediaType: "text/html; charset=utf-8",
-      url,
+      url: frozenUrl,
       requestId: `fusion-world-en:${surface}`,
     });
     assert.equal(observations.length, 1, surface);
+    assert.throws(
+      () => historical.parseBytes(retainedEmptyPolicy, {
+        mediaType: "text/html; charset=utf-8",
+        url,
+        requestId: `fusion-world-en:${surface}`,
+      }),
+      /identity.*URL contract/iu,
+      surface,
+    );
   }
 });
 

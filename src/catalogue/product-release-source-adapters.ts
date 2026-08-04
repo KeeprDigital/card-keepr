@@ -1107,14 +1107,7 @@ function historicalSurfaceFromContextV1(
     const contextUrl = new URL(context.url).href;
     if (
       requiredSurfaces.includes(surface) &&
-      (
-        contextUrl === new URL(urls[surface]!).href ||
-        historicalRetainedSurfaceUrlV1(
-          sourceLineage,
-          surface,
-          contextUrl,
-        )
-      )
+      contextUrl === new URL(urls[surface]!).href
     ) {
       return surface;
     }
@@ -1131,21 +1124,6 @@ function historicalSurfaceFromContextV1(
     );
   }
   return matches[0]!;
-}
-
-function historicalRetainedSurfaceUrlV1(
-  sourceLineage: string,
-  surface: string,
-  url: string,
-): boolean {
-  if (sourceLineage !== "fusion-world-en") return false;
-  const exactRetainedPolicyUrls: Readonly<Record<string, string>> = {
-    "legality-current":
-      "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
-    "legality-history":
-      "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
-  };
-  return exactRetainedPolicyUrls[surface] === url;
 }
 
 function legalityAwareBandaiSnapshotDecoder(
@@ -1319,7 +1297,14 @@ function bandaiSnapshotDecoder(
           html,
         )
       : null;
-    if (liveLegality !== null && dynamicRole !== null) {
+    const isPlannedFusionPolicyRoot =
+      sourceLineage === "fusion-world-en" &&
+      dynamicRole === null &&
+      (surface === "legality-current" || surface === "legality-history");
+    if (
+      liveLegality !== null &&
+      (dynamicRole !== null || isPlannedFusionPolicyRoot)
+    ) {
       return [attachRawSurfaceEvidenceV1(
         officialLiveLegalityRulesObservation(
           game,

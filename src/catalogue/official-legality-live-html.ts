@@ -22,7 +22,7 @@ export function liveOfficialLegalityDocument(
   if (
     game === "fusion-world" &&
     sourceLineage === "fusion-world-en" &&
-    surface === "detail" &&
+    (surface === "detail" || surface === "legality-current") &&
     new URL(requestUrl).href ===
       "https://www.dbs-cardgame.com/fw/en/news/01_305.html" &&
     /<title>Banned\/Restricted Cards from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(html)
@@ -30,6 +30,19 @@ export function liveOfficialLegalityDocument(
     return {
       surface: "legality-current",
       document: fusionWorldCurrentRestrictions(html),
+    };
+  }
+  if (
+    game === "fusion-world" &&
+    sourceLineage === "fusion-world-en" &&
+    surface === "legality-history" &&
+    new URL(requestUrl).href ===
+      "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
+    fusionWorldPublisherDeclaresExactEmptyHistory(html)
+  ) {
+    return {
+      surface,
+      document: { entries: [], declared_record_count: 0 },
     };
   }
   if (
@@ -63,6 +76,14 @@ export function liveOfficialLegalityDocument(
     }
   }
   return null;
+}
+
+function fusionWorldPublisherDeclaresExactEmptyHistory(html: string): boolean {
+  const title = html.match(/<title>([^<]+)<\/title>/u)?.[1] ?? "";
+  const main = html.match(/<main>([\s\S]*?)<\/main>/u)?.[1] ?? "";
+  return /\bBANDAI\b[\s\S]*\bRULE\b[\s\S]*\bRESTRICTION\b/iu.test(title) &&
+    /^\s*<p>0 records<\/p>\s*<article data-publication-empty="true">No published entries\.<\/article>\s*$/u
+      .test(main);
 }
 
 function gundamCurrentRestrictions(
