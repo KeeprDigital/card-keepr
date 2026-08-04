@@ -4318,9 +4318,52 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     ),
     /complete.*leaf.*one exact publisher total/iu,
   );
+  const duplicatedCount = exactEmpty.replace(
+    '<span class="num">0</span>',
+    '<span class="num">1</span><span class="num">0</span>',
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(duplicatedCount),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  const exactTotal =
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>';
+  for (const malformedDuplicate of [
+    exactEmpty.replace(
+      exactTotal,
+      `<div class="resultTxt">Result</div>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `${exactTotal}<div class="resultTxt">Result</div>`,
+    ),
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(malformedDuplicate),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(malformedDuplicate),
+        context,
+      ),
+    );
+  }
   assert.doesNotThrow(
     () => previous.parseBytes(
       new TextEncoder().encode(exactEmpty),
+      context,
+    ),
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(duplicatedCount),
       context,
     ),
   );
