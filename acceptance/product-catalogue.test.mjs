@@ -108,13 +108,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   config.services = [
     {
       binding: "OFFICIAL_SOURCE_TRANSPORT",
-      service: "card-keepr-synthetic-official-source",
+      service: "card-keepr-fusion-world-official-source",
     },
   ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
   const source = startWorker({
-    config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
+    config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     inspectorPort: 23_229,
     port: sourcePort,
     statePath: join(directory, "source-state"),
@@ -466,6 +466,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
+      "fusion-world:errata",
       "fusion-world:legality-rules",
       "fusion-world:products-and-releases",
       "gundam:cards-and-printings",
@@ -473,6 +474,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "gundam:legality-rules",
       "gundam:products-and-releases",
       "one-piece:cards-and-printings",
+      "one-piece:errata",
       "one-piece:legality-rules",
       "one-piece:products-and-releases",
     ],

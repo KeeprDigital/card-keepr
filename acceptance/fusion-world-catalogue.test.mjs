@@ -296,7 +296,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       power: 10000,
       combo_power: 5000,
       traits: ["Test"],
-      skills: [{ kind: "ordinary", text: "Official skill" }],
+      skills: [{ kind: "ordinary", text: "Official printed rules" }],
       leader_faces: [
         {
           role: "front",

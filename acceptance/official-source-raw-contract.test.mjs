@@ -1549,6 +1549,10 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       : adapter.sourceLineage === "gundam-en-us"
         ? hostilePath.pathname.replace("/en/", "/asia-en/")
         : `/outside-lineage${hostilePath.pathname}`;
+    const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
+    const discoveryUrl = fusionLeaf
+      ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`
+      : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(`
         <a href="${validDetail}">Card detail</a>
@@ -1557,8 +1561,10 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       `),
       {
         mediaType: "text/html; charset=utf-8",
-        url: adapter.requestUrlForSurface(adapter.requiredSurfaces[0]),
-        requestId: `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
+        url: discoveryUrl,
+        requestId: fusionLeaf
+          ? `fusion-world-en:listing:${"6".repeat(64)}`
+          : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
       },
     );
     assert.ok(requests.some(({ url }) => url === validDetail));
@@ -3859,8 +3865,62 @@ test("active Fusion discovery preserves retained checkbox facet vocabulary", () 
     "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=2",
   ]);
   assert.deepEqual(
-    requestsAt(previous, previous.requestUrlForSurface("card-search")),
+    requestsAt(previous, previous.requestUrlForSurface("card-search")).filter(
+      ({ url }) => new URL(url).pathname === "/fw/en/cardlist/",
+    ),
     [],
+  );
+});
+
+test("active Fusion card search schedules details only from a complete leaf", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const bytes = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ));
+  const requestsAt = (url, requestId) => current.discoverRequests(bytes, {
+    mediaType: "text/html; charset=UTF-8",
+    url,
+    requestId,
+  }).map(({ role, url: requestUrl }) => ({ role, url: requestUrl }));
+  const root = current.requestUrlForSurface("card-search");
+
+  assert.deepEqual(requestsAt(root, "fusion-world-en:card-search"), [
+    { role: "listing", url: `${root}?card_type%5B%5D=Battle` },
+    { role: "listing", url: `${root}?card_type%5B%5D=Leader` },
+  ]);
+  const leader = `${root}?card_type%5B%5D=Leader`;
+  assert.deepEqual(
+    requestsAt(leader, `fusion-world-en:listing:${"9".repeat(64)}`),
+    [
+      { role: "listing", url: `${leader}&color%5B%5D=Blue` },
+      { role: "listing", url: `${leader}&color%5B%5D=Red` },
+    ],
+  );
+  const red = `${leader}&color%5B%5D=Red`;
+  assert.deepEqual(
+    requestsAt(red, `fusion-world-en:listing:${"8".repeat(64)}`),
+    [
+      { role: "listing", url: `${red}&cost%5B%5D=0` },
+      { role: "listing", url: `${red}&cost%5B%5D=1` },
+      { role: "listing", url: `${red}&cost%5B%5D=2` },
+    ],
+  );
+  const leaf = `${red}&cost%5B%5D=1`;
+  assert.deepEqual(
+    requestsAt(leaf, `fusion-world-en:listing:${"7".repeat(64)}`),
+    [
+      {
+        role: "detail",
+        url:
+          "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001",
+      },
+      {
+        role: "detail",
+        url:
+          "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p1",
+      },
+    ],
   );
 });
 
@@ -3926,6 +3986,56 @@ test("active Fusion discovery derives full locators from retained data-src links
   assert.throws(
     () => details(current, unknownLocatorField),
     /full locator.*unsupported.*query/iu,
+  );
+});
+
+test("active Fusion listings reconcile publisher totals to unique full locators", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const html = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+    requestId: `fusion-world-en:listing:${"d".repeat(64)}`,
+  };
+  assert.equal(
+    current.parseBytes(new TextEncoder().encode(html), context).length,
+    2,
+  );
+
+  const missingVariant = html.replace(
+    /\s*<li class="cardItem"><a\b[^>]*\bdata-src="detail\.php\?card_no=FB99-001&amp;p=_p1"[^>]*>[\s\S]*?<\/a><\/li>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingVariant),
+      context,
+    ),
+    /declared 2.*yielded 1 unique/iu,
+  );
+});
+
+test("historical Fusion discovery does not learn bracketed facet names", () => {
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const capped = `<html>
+    <title>BANDAI DRAGON BALL CARD search</title>
+    <p>More than 1,000 results were capped</p>
+    <select name="card_type[]">
+      <option value="leader">Leader</option>
+      <option value="battle">Battle</option>
+    </select>
+  </html>`;
+  assert.throws(
+    () => previous.parseBytes(new TextEncoder().encode(capped), {
+      mediaType: "text/html; charset=UTF-8",
+      url: previous.requestUrlForSurface("card-search"),
+      requestId: `fusion-world-en:listing:${"c".repeat(64)}`,
+    }),
+    /leaf partition still displays/iu,
   );
 });
 
@@ -5043,24 +5153,36 @@ test("production coverage rejects keyword-only HTML without structural entries",
   }
 });
 
-test("production adapters discover staged detail, page, product, and image requests", () => {
+test("Fusion leaf and Product surfaces keep their discovery roles separate", () => {
   const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   assert.ok(adapter);
-  const requests = adapter.discoverRequests(
+  const leafRequests = adapter.discoverRequests(
     new TextEncoder().encode(`
-      <a href="/fw/en/cardlist/detail.php?cardId=FB01-001">Card detail</a>
-      <a href="/fw/en/cardlist/?card_type=leader&colour=red&cost=1&page=2">Next</a>
-      <a href="/fw/en/products/booster/fb01/">Product detail</a>
-      <img src="/fw/images/cards/FB01-001-front.png">
+      <a href="javascript:void(0);"
+         data-src="detail.php?card_no=FB01-001">Card detail</a>
     `),
     {
       mediaType: "text/html; charset=utf-8",
-      url: adapter.requestUrlForSurface("card-search"),
-      requestId: "fusion-world-en:card-search",
+      url:
+        `${adapter.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+      requestId: `fusion-world-en:listing:${"5".repeat(64)}`,
     },
   );
+  const productRequests = adapter.discoverRequests(
+    new TextEncoder().encode(`
+      <a href="/fw/en/products/?page=2">Next</a>
+      <a href="/fw/en/products/booster/fb01/">Product detail</a>
+      <img src="/fw/images/products/FB01-box.png">
+    `),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("products"),
+      requestId: "fusion-world-en:products",
+    },
+  );
+  const requests = [...leafRequests, ...productRequests];
   assert.deepEqual(
     requests.map(({ role }) => role).sort(),
     ["detail", "image", "listing", "product_detail"],
@@ -5409,7 +5531,7 @@ test("active Fusion HTML listings dedupe compatible locators and reject conflict
   const context = {
     mediaType: "text/html",
     url:
-      "https://www.dbs-cardgame.com/fw/en/cardlist/?card_type=leader&colour=red&cost=1",
+      "https://www.dbs-cardgame.com/fw/en/cardlist/?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1",
     requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
   };
   const entry = (number, name) => `<article>
