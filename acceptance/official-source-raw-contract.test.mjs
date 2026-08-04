@@ -4724,6 +4724,37 @@ test("Fusion complete listing DOM parsing is bounded below the snapshot maximum"
   );
 });
 
+test("Fusion intermediate listing discovery is not subject to the complete-leaf parser bound", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const root = current.requestUrlForSurface("card-search");
+  const url = `${root}?card_type%5B%5D=Leader`;
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const oversizedIntermediate = retained + " ".repeat(
+    1024 * 1024 + 1 - Buffer.byteLength(retained),
+  );
+  const bytes = new TextEncoder().encode(oversizedIntermediate);
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url,
+    requestId: `fusion-world-en:listing:${"6".repeat(64)}`,
+  };
+
+  assert.equal(bytes.byteLength, 1024 * 1024 + 1);
+  assert.doesNotThrow(() => current.parseBytes(bytes, context));
+  assert.deepEqual(
+    current.discoverRequests(bytes, context)
+      .filter(({ role }) => role === "listing")
+      .map(({ url: requestUrl }) => requestUrl),
+    [
+      `${url}&color%5B%5D=Blue`,
+      `${url}&color%5B%5D=Red`,
+    ],
+  );
+});
+
 test("historical Fusion discovery does not learn bracketed facet names", () => {
   const previous = requiredSourceAdapter("fusion-world-en@3");
   const capped = `<html>
