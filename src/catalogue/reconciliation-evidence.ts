@@ -493,11 +493,13 @@ export async function retainedReconciliationObservation(
             row.plan_origin === "production",
           ),
         );
-        assertObservationAuthority(
-          parsed,
-          requiredSourceAdapter(row.adapter_version)
-            .reconciliationCapability,
+        const adapter = requiredSourceAdapter(row.adapter_version);
+        const sourceSurface = sourceSurfaceForRequest(
+          request,
+          requestsById,
+          row,
         );
+        assertObservationAuthority(parsed, adapter, sourceSurface);
         merged.push({
           ...parsed,
           sourceObservationSetId: row.observation_set_id,
@@ -505,11 +507,7 @@ export async function retainedReconciliationObservation(
           sourceCapturedAt: row.retrieved_at,
           sourceLineage: row.source_lineage,
           sourceRequestRole: request.request_role,
-          sourceSurface: sourceSurfaceForRequest(
-            request,
-            requestsById,
-            row,
-          ),
+          sourceSurface,
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
         });
@@ -979,6 +977,7 @@ function assertClosedRequestGraph(
   const listingLocators = new Map<string, {
     requestId: string;
     semantic: string;
+    canonical: string | null;
   }>();
   const listingPages = new Map<string, Set<number>>();
   requests.forEach((request, index) => {
@@ -1055,7 +1054,12 @@ function assertClosedRequestGraph(
     if (request.request_role === "listing") {
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
-        const identity = observation.value.identity_evidence;
+        const strictFusionIdentity = row.adapter_version ===
+            "fusion-world-en@4"
+          ? observation.value.listing_identity_evidence
+          : undefined;
+        const identity = strictFusionIdentity ??
+          observation.value.identity_evidence;
         if (!isRecord(identity) || typeof identity.locator !== "string") {
           continue;
         }
@@ -1063,20 +1067,26 @@ function assertClosedRequestGraph(
         const semantic = compatibleListingObservationSemantic(
           observation.value,
         );
+        const canonical = typeof identity.canonical === "string"
+          ? identity.canonical
+          : null;
         const prior = listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
-          if (
-            adapter.adapterVersion !== "one-piece-en@3" ||
-            prior.semantic !== semantic
-          ) {
+          const compatible = adapter.adapterVersion === "one-piece-en@3"
+            ? prior.semantic === semantic
+            : adapter.adapterVersion === "fusion-world-en@4"
+              ? prior.canonical === canonical
+              : false;
+          if (!compatible) {
             throw new Error(
               `Official Source leaf partitions overlap at locator ${identity.locator}.`,
             );
           }
         }
         listingLocators.set(locatorKey, {
-          requestId: request.request_id,
+          requestId: prior?.requestId ?? request.request_id,
           semantic,
+          canonical,
         });
       }
       const url = new URL(request.url);
@@ -1374,15 +1384,19 @@ function base64(bytes: Uint8Array): string {
 
 function assertObservationAuthority(
   observation: ReturnType<typeof parseReconciliationObservation>,
-  coverage: ReturnType<
-    typeof requiredSourceAdapter
-  >["reconciliationCapability"],
+  adapter: ReturnType<typeof requiredSourceAdapter>,
+  sourceSurface: string | undefined,
 ): void {
+  const coverage = adapter.reconciliationCapability;
   const errataOnly = coverage === "errata";
+  const catalogueErratum =
+    coverage === "catalogue" &&
+    adapter.origin === "production" &&
+    sourceSurface === "errata";
   if (
-    (errataOnly && observation.kind !== "official_erratum") ||
-    (observation.kind === "official_erratum" &&
-      coverage !== "errata" && coverage !== "catalogue") ||
+    (observation.kind === "official_erratum"
+      ? !errataOnly && !catalogueErratum
+      : errataOnly) ||
     (observation.kind === "card_printing" &&
       observation.errata.length > 0 &&
       coverage !== "catalogue")

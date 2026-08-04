@@ -1749,7 +1749,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1784,7 +1784,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@2",
+    adapter_version: "fusion-world-en@3",
     idempotency_key: "reject-superseded-production-adapter",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1794,7 +1794,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "active-adapter-retained-reparse-source",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1816,14 +1816,14 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const reparsed = await post(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     {
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "capturing-adapter-retained-reparse",
     },
   );
   expect(reparsed.response.status).toBe(201);
   expect(reparsed.document).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
   });
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {
@@ -5030,7 +5030,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });
@@ -5092,7 +5092,7 @@ test("a registered code-less Product refresh preserves its established code", as
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key:
         `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,

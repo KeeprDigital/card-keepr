@@ -1003,12 +1003,17 @@ export default defineConfig({
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <article class="booster">
+                  <nav>
+                    <a data-product-status="available" href="#available">Available</a>
+                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
+                  </nav>
+                  <article class="booster" data-product-status="available">
                     <a data-product-code="FB-AUTHORITY"
                        href="/fw/en/products/booster/fb-authority/">
                       Conflicting Product Listing
                     </a>
                   </article>
+                  <article data-product-status="coming-soon">No coming-soon Product.</article>
                 </html>`,
                 {
                   headers: {
@@ -1032,12 +1037,17 @@ export default defineConfig({
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <article class="booster">
+                  <nav>
+                    <a data-product-status="available" href="#available">Available</a>
+                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
+                  </nav>
+                  <article class="booster" data-product-status="available">
                     <a ${code === "" ? "" : `data-product-code="${code}"`}
                        href="/fw/en/products/booster/fb-stable-${state}/">
                       Stable Product Identity
                     </a>
                   </article>
+                  <article data-product-status="coming-soon">No coming-soon Product.</article>
                 </html>`,
                 {
                   headers: {

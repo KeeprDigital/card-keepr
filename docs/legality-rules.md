@@ -12,7 +12,7 @@ credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
 - `one-piece-en@3`
-- `fusion-world-en@3`
+- `fusion-world-en@4`
 - `digimon-en@3`
 - `gundam-en-asia@3`
 - `gundam-en-us@3`
@@ -34,7 +34,7 @@ contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
 The earlier production versions (`one-piece-en@1`, `one-piece-en@2`,
-`fusion-world-en@2`,
+`fusion-world-en@2`, `fusion-world-en@3`,
 `digimon-en@2`, and both Gundam `@2` versions) remain registered with their
 original parser contracts only for explicit reprocessing of retained Source
 Snapshots. New production Evidence Plans accept only the active registrations
@@ -176,6 +176,7 @@ the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
-Migration `0009_one_piece_complete_catalogue.sql` registers the complete One
-Piece adapter after `0008_legality_rules.sql`. Apply both before deploying
-either Worker.
+Migrations `0009_one_piece_complete_catalogue.sql` and
+`0010_fusion_world_complete_catalogue.sql` register the complete One Piece and
+Fusion World adapters after `0008_legality_rules.sql`. Apply all three before
+deploying either Worker.

@@ -93,6 +93,15 @@ export function productionOfficialStageResponse(
   officialNavigation: string,
 ): Response {
   const url = new URL(request.url);
+  const fusionProductCoverage =
+    lineage === "fusion-world-en" && url.pathname === "/fw/en/products/"
+      ? `<nav aria-label="Product status">
+          <a data-product-status="available" href="#available">Available</a>
+          <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
+        </nav>
+        <article data-publication-empty="true" data-product-status="available">No available entries.</article>
+        <article data-publication-empty="true" data-product-status="coming-soon">No coming-soon entries.</article>`
+      : `<article data-publication-empty="true">No published entries.</article>`;
   return new Response(
     `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}${productionOfficialStageNavigation(lineage, url)}<main>${
       url.pathname === "/fw/en/news/01_305.html" ||
@@ -111,7 +120,7 @@ export function productionOfficialStageResponse(
         )
         ? "<p>0 records</p>"
         : ""
-    }<article data-publication-empty="true">No published entries.</article></main></html>`,
+    }${fusionProductCoverage}</main></html>`,
     {
       headers: {
         "content-type": "text/html; charset=utf-8",

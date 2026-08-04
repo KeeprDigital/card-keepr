@@ -170,7 +170,7 @@ const productionAdapterVersions = sourceAdapterRegistrations
 
 const expectedProductionAdapterVersions = [
   "digimon-en@3",
-  "fusion-world-en@3",
+  "fusion-world-en@4",
   "gundam-en-asia@3",
   "gundam-en-us@3",
   "one-piece-en@3",
@@ -1029,7 +1029,11 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.match(
       adapter.parserContract,
-      /-(?:raw-surfaces-with-legality@2|complete-catalogue@3)$/u,
+      adapter.sourceLineage === "one-piece-en"
+        ? /-complete-catalogue@3$/u
+        : adapter.sourceLineage === "fusion-world-en"
+          ? /-raw-surfaces-with-legality-and-catalogue@3$/u
+          : /-raw-surfaces-with-legality@2$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -1129,7 +1133,10 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
     ));
 
     const validDetailUrl = new URL(root);
-    validDetailUrl.searchParams.set("detailSearch", "CK30");
+    validDetailUrl.searchParams.set(
+      "detailSearch",
+      adapter.sourceLineage === "fusion-world-en" ? "FB99-001_p2" : "CK30",
+    );
     const validDetail = validDetailUrl.href;
     const hostileOrigin = new URL(validDetail);
     hostileOrigin.hostname = `assets.${root.hostname}`;
@@ -1296,6 +1303,15 @@ test("historical production identities preserve their original JSON-LD observati
   for (const [adapterVersion, sourceLineage, digest] of golden) {
     const adapter = requiredSourceAdapter(adapterVersion);
     const surface = "products";
+    const payload = officialRawSurfacePayload(`/${sourceLineage}/${surface}`);
+    if (adapterVersion === "fusion-world-en@2") {
+      payload.result.partitions = [{
+        ...payload.result.partitions.find(
+          ({ bucket }) => bucket === "available",
+        ),
+        bucket: "all-products",
+      }];
+    }
     const publication = {
       "@context": "https://schema.org",
       "@type": "Dataset",
@@ -1303,7 +1319,7 @@ test("historical production identities preserve their original JSON-LD observati
       hasPart: [{
         "@type": "Dataset",
         identifier: `${sourceLineage}:${surface}`,
-        payload: officialRawSurfacePayload(`/${sourceLineage}/${surface}`),
+        payload,
       }],
     };
     const bytes = Buffer.from(
@@ -3661,7 +3677,7 @@ test("Fusion leaders require explicit role-owned faces and images", () => {
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const html = `
-    <h1>Test Leader</h1>
+    <h1 data-card-id="FB99-001">Test Leader</h1>
     <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
     <dl><dt>Card Type</dt><dd>Leader</dd></dl>
     <dl><dt>Color</dt><dd>Red</dd></dl>
@@ -4054,16 +4070,20 @@ test("live Product indexes emit typed Products, classifications, and announced r
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-        <article class="booster">
+        <nav>
+          <a data-product-status="available" href="?status=available">Available</a>
+          <a data-product-status="coming-soon" href="?status=coming-soon">Coming Soon</a>
+        </nav>
+        <article class="booster" data-product-status="coming-soon">
           <a data-product-code="FB-BOOST-01"
              href="/fw/en/products/booster/fb-boost-01/">Booster Set 01</a>
           <span>Coming Soon</span>
         </article>
-        <article class="accessory">
+        <article class="accessory" data-product-status="available">
           <a data-product-code="FB-SLEEVE-01"
              href="/fw/en/products/accessory/fb-sleeve-01/">Official Sleeves</a>
         </article>
-        <article class="booster">
+        <article class="booster" data-product-status="available">
           <a href="/fw/en/products/booster/name-only/">
             Name-only Booster
           </a>
@@ -4125,11 +4145,16 @@ test("a Product URL slug cannot become a canonical official code but its authori
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-        <article class="booster">
+        <nav>
+          <a data-product-status="available" href="?status=available">Available</a>
+          <a data-product-status="coming-soon" href="?status=coming-soon">Coming Soon</a>
+        </nav>
+        <article class="booster" data-product-status="available">
           <a href="/fw/en/products/booster/presentation-only-slug/">
             Presentation-only Product
           </a>
         </article>
+        <li data-product-status="coming-soon">Coming Soon</li>
       </html>
     `),
     {
@@ -4342,7 +4367,7 @@ test("code-less structured Products and Releases retain name identity with valid
 });
 
 test("code-less named Products and Releases survive registered discovery surfaces", () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const payload = structuredClone(
     officialRawSurfacePayload("/fusion-world-en/card-search"),
   );
@@ -4673,9 +4698,8 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
 });
 
 test("discovered Fusion facets require disjoint exact split-order leaves", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
   const incomplete = rawSurfacePayload("fusion-world-en", "card-search");
   incomplete.result.partitions.pop();
   assert.throws(
@@ -4702,10 +4726,389 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     structuredClone(overlapping.result.partitions[0].entries[0]),
   );
   overlapping.result.partitions[1].total = 1;
-  assert.throws(
+  assert.doesNotThrow(
     () => parseRegisteredSurface(adapter, "card-search", overlapping),
+  );
+  assert.throws(
+    () => parseRegisteredSurface(
+      previous,
+      "card-search",
+      withLegacyFusionCanonicalFields(overlapping),
+    ),
     /leaf partitions overlap/iu,
   );
+
+  overlapping.result.partitions[1].entries[0].number = "FB99-999";
+  assert.throws(
+    () => parseRegisteredSurface(adapter, "card-search", overlapping),
+    /locator.*conflicts between leaf partitions/iu,
+  );
+
+  const conflictingWithinLeaf = rawSurfacePayload(
+    "fusion-world-en",
+    "card-search",
+  );
+  const conflictingEntry = structuredClone(
+    conflictingWithinLeaf.result.partitions[0].entries[0],
+  );
+  conflictingEntry.number = "FB99-999";
+  conflictingWithinLeaf.result.partitions[0].entries.push(conflictingEntry);
+  conflictingWithinLeaf.result.partitions[0].total = 2;
+  assert.throws(
+    () =>
+      parseRegisteredSurface(
+        adapter,
+        "card-search",
+        conflictingWithinLeaf,
+      ),
+    /full locator.*conflicts within leaf partition/iu,
+  );
+  assert.throws(
+    () =>
+      parseRegisteredSurface(
+        previous,
+        "card-search",
+        withLegacyFusionCanonicalFields(conflictingWithinLeaf),
+      ),
+    /do not prove complete coverage/iu,
+  );
+});
+
+test("Fusion World detail identity must match its exact requested locator", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const mismatched = rawSurfacePayload("fusion-world-en", "card-search");
+  mismatched.detail_pages[0].card_number = "FB99-999";
+
+  assert.throws(
+    () => parseRegisteredSurface(adapter, "card-search", mismatched),
+    /full locator.*card number.*FB99-999/iu,
+  );
+  Object.assign(mismatched.detail_pages[0], {
+    profile: "fusion-world@1",
+    artwork_fingerprint: "legacy-artwork",
+    printed_fields_digest: "legacy-printed-fields",
+  });
+  mismatched.detail_pages[0].printing.normalized_rarity = null;
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(previous, "card-search", mismatched),
+  );
+});
+
+test("active Fusion structured details derive canonical fields from publisher facts", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const supplied = rawSurfacePayload("fusion-world-en", "card-search");
+  const suppliedDetail = supplied.detail_pages[0];
+  suppliedDetail.profile = "attacker-profile@9";
+  suppliedDetail.printing.normalized_rarity = "attacker-rarity";
+  suppliedDetail.artwork_fingerprint = "attacker-artwork";
+  suppliedDetail.printed_fields_digest = "attacker-printed-fields";
+  assert.throws(
+    () => parseRegisteredSurface(current, "card-search", supplied),
+    /caller-supplied canonical field.*profile/iu,
+  );
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(previous, "card-search", supplied),
+  );
+
+  const publisherOnly = structuredClone(supplied);
+  const publisherDetail = publisherOnly.detail_pages[0];
+  delete publisherDetail.profile;
+  delete publisherDetail.printing.normalized_rarity;
+  publisherDetail.printing.rarity = "Leader";
+  delete publisherDetail.artwork_fingerprint;
+  delete publisherDetail.printed_fields_digest;
+  const [observation] = parseRegisteredSurface(
+    current,
+    "card-search",
+    publisherOnly,
+  );
+  assert.equal(observation.card.game_data.profile, "fusion-world@1");
+  assert.equal(
+    observation.printing.rarity.normalized,
+    observation.printing.rarity.raw.toLowerCase(),
+  );
+  assert.match(
+    observation.identity_evidence.artwork_fingerprint,
+    /^official-artwork:.*"official_card_identity":"FB99-001"/u,
+  );
+  assert.match(
+    observation.identity_evidence.printed_fields_digest,
+    /^printed-material:.*"card_number":"FB99-001"/u,
+  );
+  assert.equal(
+    JSON.stringify(observation).includes("attacker-"),
+    false,
+  );
+});
+
+test("Fusion World Products prove every available and coming-soon status leaf", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const complete = rawSurfacePayload("fusion-world-en", "products");
+  const available = complete.result.partitions[0];
+  available.bucket = "available";
+  const comingSoon = structuredClone(available);
+  comingSoon.bucket = "coming-soon";
+  comingSoon.total = 0;
+  comingSoon.entries = [];
+  complete.result.partitions = [available, comingSoon];
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(adapter, "products", complete),
+  );
+
+  for (const missingStatus of ["available", "coming-soon"]) {
+    const incomplete = structuredClone(complete);
+    incomplete.result.partitions = incomplete.result.partitions.filter(
+      ({ bucket }) => bucket !== missingStatus,
+    );
+    assert.throws(
+      () => parseRegisteredSurface(adapter, "products", incomplete),
+      new RegExp(`Product status leaves.*${missingStatus}`, "iu"),
+    );
+    assert.doesNotThrow(
+      () => parseRegisteredSurface(previous, "products", incomplete),
+    );
+  }
+});
+
+test("active Fusion HTML listings dedupe compatible locators and reject conflicts", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const context = {
+    mediaType: "text/html",
+    url:
+      "https://www.dbs-cardgame.com/fw/en/cardlist/?card_type=leader&colour=red&cost=1",
+    requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
+  };
+  const entry = (number, name) => `<article>
+    <a data-card-number="${number}"
+       href="/fw/en/cardlist/detail.php?cardId=FB99-001_p2">${name}</a>
+  </article>`;
+  const compatible = `<html><title>BANDAI DRAGON BALL CARD LIST</title>
+    ${entry("FB99-001", "Fusion Leader")}
+    ${entry("FB99-001", "Fusion Leader")}
+  </html>`;
+  assert.equal(
+    current.discoverRequests(new TextEncoder().encode(compatible), context)
+      .filter(({ role }) => role === "detail").length,
+    1,
+  );
+  const observations = current.parseBytes(
+    new TextEncoder().encode(compatible),
+    context,
+  );
+  assert.deepEqual(
+    observations.flatMap(({ listing_identity_evidence }) =>
+      listing_identity_evidence === undefined
+        ? []
+        : [listing_identity_evidence.locator]
+    ),
+    ["FB99-001_p2"],
+  );
+
+  const conflicting = compatible.replace(
+    entry("FB99-001", "Fusion Leader"),
+    entry("FB99-999", "Conflicting Leader"),
+  );
+  assert.throws(
+    () => current.discoverRequests(
+      new TextEncoder().encode(conflicting),
+      context,
+    ),
+    /full locator.*conflict/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(conflicting), context),
+    /full locator.*conflict/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.discoverRequests(
+      new TextEncoder().encode(conflicting),
+      context,
+    ),
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(new TextEncoder().encode(conflicting), context),
+  );
+});
+
+test("active Fusion HTML details bind base identity and variant to the full locator", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><main data-card-id="FB99-001_p2">
+    <h1>Variant Battle Card</h1>
+    <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
+    <dl><dt>Card Type</dt><dd>Battle</dd></dl>
+    <dl><dt>Color</dt><dd>Red</dd></dl>
+    <img class="card-image" src="/fw/images/cards/FB99-001_p2.png">
+  </main></html>`;
+  const context = {
+    mediaType: "text/html",
+    url:
+      "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?cardId=FB99-001_p2",
+    requestId: `fusion-world-en:detail:${"b".repeat(64)}`,
+  };
+  const observation = current.parseBytes(
+    new TextEncoder().encode(html),
+    context,
+  )[0];
+  assert.equal(observation.card.official_identity.value, "FB99-001");
+  assert.equal(observation.identity_evidence.locator, "FB99-001_p2");
+  assert.equal(observation.identity_evidence.variant_key, "_p2");
+  assert.throws(
+    () => previous.parseBytes(new TextEncoder().encode(html), context),
+    /requested Card identity does not match/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html.replace("FB99-001_p2\">", "FB99-001_p3\">")),
+      context,
+    ),
+    /full locator.*data-card-id.*match/iu,
+  );
+});
+
+test("active Fusion ordinary Errata emits exact typed correction authority", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><title>BANDAI DRAGON BALL CARD ERRATA</title><main>
+    <article class="erratum" data-erratum-id="fusion-world-erratum-fb99-001">
+      <dl>
+        <dt>Card Number</dt><dd>FB99-001</dd>
+        <dt>Published On</dt><dd>2026-07-15</dd>
+        <dt>Effective From</dt><dd>2026-07-15</dd>
+        <dt>Before</dt><dd>Official printed rules</dd>
+        <dt>After</dt><dd>Official corrected rules</dd>
+        <dt>Note</dt><dd>The corrected wording applies from the published date.</dd>
+      </dl>
+      <img src="https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png">
+    </article>
+  </main></html>`;
+  const context = {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("errata"),
+    requestId: "fusion-world-en:errata",
+  };
+  const [observation] = current.parseBytes(
+    new TextEncoder().encode(html),
+    context,
+  );
+  assert.deepEqual(
+    {
+      kind: observation.kind,
+      target: observation.target,
+      published_on: observation.published_on,
+      effective_from: observation.effective_from,
+      observed_printed_rules_text: observation.observed_printed_rules_text,
+      corrected_rules_text: observation.corrected_rules_text,
+    },
+    {
+      kind: "official_erratum",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: "FB99-001" },
+      },
+      published_on: "2026-07-15",
+      effective_from: "2026-07-15",
+      observed_printed_rules_text: "Official printed rules",
+      corrected_rules_text: "Official corrected rules",
+    },
+  );
+  const unparsed = html.replace(
+    "</main>",
+    "<p>This correction applies only at selected events.</p></main>",
+  );
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(unparsed), context),
+    /unparsed Fusion World Errata wording/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(unparsed),
+      { ...context, url: previous.requestUrlForSurface("errata") },
+    ),
+  );
+});
+
+test("active Fusion HTML Products require available and coming-soon tabs", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+    <nav>
+      <a data-product-status="available" href="/fw/en/products/?status=available">Available</a>
+      <a data-product-status="coming-soon" href="/fw/en/products/?status=coming-soon">Coming Soon</a>
+    </nav>
+    <article class="booster" data-product-status="available">
+      <a data-product-code="FB-LIVE-01" href="/fw/en/products/booster/live-01/">Live Product</a>
+    </article>
+    <article class="booster" data-product-status="coming-soon">
+      <a data-product-code="FB-SOON-02" href="/fw/en/products/booster/soon-02/">Future Product</a>
+      <span>Coming Soon</span>
+    </article>
+  </html>`;
+  const context = {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("products"),
+    requestId: "fusion-world-en:products",
+  };
+  assert.equal(current.parseBytes(new TextEncoder().encode(html), context).length, 2);
+  assert.deepEqual(
+    current.discoverRequests(new TextEncoder().encode(html), context)
+      .filter(({ url }) => new URL(url).searchParams.has("status"))
+      .map(({ url }) => new URL(url).searchParams.get("status"))
+      .sort(),
+    ["available", "coming-soon"],
+  );
+  const rootWithoutComingSoonEntry = html.replace(
+    /<article class="booster" data-product-status="coming-soon">[\s\S]*?<\/article>/u,
+    "",
+  );
+  assert.doesNotThrow(
+    () => current.parseBytes(
+      new TextEncoder().encode(rootWithoutComingSoonEntry),
+      context,
+    ),
+  );
+  const missingComingSoon = html.replace(
+    /<a data-product-status="coming-soon"[^>]*>Coming Soon<\/a>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingComingSoon),
+      context,
+    ),
+    /Product status tabs.*coming-soon/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(missingComingSoon),
+      { ...context, url: previous.requestUrlForSurface("products") },
+    ),
+  );
+
+  const emptyComingSoon = `<html>
+    <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+    <p>0 records</p>
+  </html>`;
+  const emptyContext = {
+    mediaType: "text/html",
+    url: `${current.requestUrlForSurface("products")}?status=coming-soon`,
+    requestId: `fusion-world-en:listing:${"e".repeat(64)}`,
+  };
+  const [emptyObservation] = current.parseBytes(
+    new TextEncoder().encode(emptyComingSoon),
+    emptyContext,
+  );
+  assert.deepEqual(emptyObservation.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
 });
 
 function rawSurfacePayload(lineage, surface) {
@@ -4721,6 +5124,22 @@ function rawSurfacePayload(lineage, surface) {
     };
   }
   return payload;
+}
+
+function withLegacyFusionCanonicalFields(payload) {
+  const legacy = structuredClone(payload);
+  for (const detail of legacy.detail_pages ?? []) {
+    Object.assign(detail, {
+      profile: "fusion-world@1",
+      artwork_fingerprint: "legacy-artwork",
+      printed_fields_digest: "legacy-printed-fields",
+    });
+    if (detail.printing !== undefined) {
+      detail.printing.normalized_rarity =
+        detail.printing.rarity?.toLowerCase() ?? null;
+    }
+  }
+  return legacy;
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {

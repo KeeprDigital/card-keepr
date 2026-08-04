@@ -221,6 +221,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           parserContract: `${definition.sourceLineage}-raw-surfaces@1`,
           legalityAware: false,
           expandedOnePieceCatalogue: false,
+          catalogueComplete: false,
         },
         {
           ...definition,
@@ -234,6 +235,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
             `${definition.sourceLineage}-raw-surfaces-with-legality@2`,
           legalityAware: true,
           expandedOnePieceCatalogue: false,
+          catalogueComplete: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -242,6 +244,22 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               parserContract: "one-piece-en-complete-catalogue@3",
               legalityAware: true,
               expandedOnePieceCatalogue: true,
+              catalogueComplete: false,
+            }]
+          : []),
+        ...(definition.sourceLineage === "fusion-world-en"
+          ? [{
+              ...definition,
+              adapterVersion: "fusion-world-en@4",
+              urls: activeBandaiSurfaceUrls(
+                definition.sourceLineage,
+                definition.urls,
+              ),
+              parserContract:
+                "fusion-world-en-raw-surfaces-with-legality-and-catalogue@3",
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete: true,
             }]
           : []),
       ];
@@ -272,6 +290,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.requiredSurfaces,
                 version.urls,
                 version.expandedOnePieceCatalogue,
+                version.catalogueComplete,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -286,6 +305,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.sourceLineage,
               version.requiredSurfaces,
               version.urls,
+              version.catalogueComplete,
             )
             : historicalBandaiRequestDiscoveryV1(
               version.format,
@@ -583,6 +603,7 @@ function bandaiRequestDiscovery(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  catalogueComplete = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -621,6 +642,16 @@ function bandaiRequestDiscovery(
           urls,
         )
       : null;
+    if (
+      catalogueComplete &&
+      format === "fusion-world" &&
+      (
+        dynamicRole === "listing" ||
+        initialSurface === "card-search"
+      )
+    ) {
+      fusionWorldHtmlListingEntries(discoveryHtml, context.url, sourceLineage);
+    }
     const current = new URL(context.url);
     const candidates: {
       role: "listing" | "detail" | "product_detail" | "image";
@@ -697,6 +728,7 @@ function bandaiRequestDiscovery(
               format,
               initialSurface,
               resolved,
+              catalogueComplete,
             );
       if (role === null) continue;
       if (!officialUrl(
@@ -803,6 +835,52 @@ function discoveredPartitionRequests(
   });
 }
 
+function fusionWorldHtmlListingEntries(
+  html: string,
+  requestUrl: string,
+  sourceLineage: string,
+): { locator: string; canonical: string }[] {
+  const claimed = new Map<string, string>();
+  for (const match of html.matchAll(
+    /<a\b([^>]*\bhref=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/giu,
+  )) {
+    const href = htmlAttribute(match[1]!, "href");
+    if (href === null) continue;
+    const url = new URL(decodeHtmlText(href), requestUrl);
+    if (!officialUrl(sourceLineage, url, "document")) continue;
+    if (!/(?:detail|card)/iu.test(url.pathname)) continue;
+    const locator = [...url.searchParams.entries()].find(([key]) =>
+      /^(?:card(?:id|no|number)?|detailSearch|popup)$/iu.test(key)
+    )?.[1];
+    if (locator === undefined) continue;
+    const identity = fusionWorldLocatorIdentity(locator);
+    const dataCardNumber = htmlAttribute(match[1]!, "data-card-number");
+    const label = htmlText(match[2]!);
+    const observedCardNumber = dataCardNumber ??
+      label.match(/\b[A-Z]{1,6}\d{0,3}-[A-Z0-9]{1,6}\b/u)?.[0] ??
+      identity.cardNumber;
+    if (observedCardNumber !== identity.cardNumber) {
+      throw new Error(
+        `Fusion World full locator ${locator} conflicts with Card number ${observedCardNumber}.`,
+      );
+    }
+    const canonical = JSON.stringify(stableValue({
+      card_number: observedCardNumber,
+      label,
+    }));
+    const prior = claimed.get(locator);
+    if (prior !== undefined && prior !== canonical) {
+      throw new Error(
+        `Fusion World full locator ${locator} has conflicting live listing payloads.`,
+      );
+    }
+    claimed.set(locator, canonical);
+  }
+  return [...claimed.entries()]
+    .map(([locator, canonical]) => ({ locator, canonical }))
+    .sort((left, right) => left.locator.localeCompare(right.locator));
+}
+
 function nextPartitionFacet(
   format: DiscoveryFormat,
   facets: readonly { key: string; options: string[] }[],
@@ -869,6 +947,7 @@ function discoveredHtmlRole(
   format: DiscoveryFormat,
   initialSurface: string | null,
   url: URL,
+  catalogueComplete = false,
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
@@ -885,6 +964,11 @@ function discoveredHtmlRole(
     /\/products?\//iu.test(target)
   ) {
     if (nonCardProductClassification(target) !== null) return null;
+    if (
+      catalogueComplete &&
+      format === "fusion-world" &&
+      url.searchParams.has("status")
+    ) return "listing";
     return /(?:detail|products?\/[^/?]+|products?\.php\?.*\bid=)/iu.test(
         target,
       )
@@ -1152,12 +1236,14 @@ function legalityAwareBandaiSnapshotDecoder(
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
   expandedOnePieceCatalogue = false,
+  catalogueComplete = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
     acceptPublisherDeclaredEmpty: true,
     acceptDiscoveryRoot: true,
     expandedOnePieceCatalogue,
+    catalogueComplete,
   });
 }
 
@@ -1172,6 +1258,7 @@ function bandaiSnapshotDecoder(
     acceptPublisherDeclaredEmpty: boolean;
     acceptDiscoveryRoot?: boolean;
     expandedOnePieceCatalogue?: boolean;
+    catalogueComplete?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -1287,6 +1374,7 @@ function bandaiSnapshotDecoder(
         structuredPayload,
         profile.parseLegality,
         profile.expandedOnePieceCatalogue === true,
+        profile.catalogueComplete === true,
       );
       if (
         profile.parseLegality &&
@@ -1343,12 +1431,18 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "detail") {
       return [
-        parseBandaiCardDetailV2(
+        profile.catalogueComplete === true && format === "fusion-world"
+          ? parseFusionWorldCardDetailV3(
+            html,
+            sourceLineage,
+            context.url,
+          )
+          : parseBandaiCardDetailV2(
           html,
           format,
           sourceLineage,
           context.url,
-        ),
+          ),
       ];
     }
     if (dynamicRole === "product_detail") {
@@ -1373,6 +1467,13 @@ function bandaiSnapshotDecoder(
       format === "one-piece" &&
       dynamicRole === "listing" &&
       /^\d+$/u.test(new URL(context.url).searchParams.get("recording") ?? "");
+    if (
+      profile.catalogueComplete === true &&
+      format === "fusion-world" &&
+      surface === "errata"
+    ) {
+      return parseFusionWorldOfficialErrataHtmlV3(html);
+    }
     const parsed =
       format === "one-piece" &&
           (surface === "card-list" || isOnePieceRecordingLeaf)
@@ -1385,10 +1486,16 @@ function bandaiSnapshotDecoder(
             html,
             format,
             sourceLineage,
-            surface,
+            profile.catalogueComplete === true &&
+                format === "fusion-world" &&
+                surface === "listing" &&
+                /\/products\//u.test(new URL(context.url).pathname)
+              ? "products"
+              : surface,
             context.url,
             profile.acceptPublisherDeclaredEmpty &&
               isLegalityPolicySurface(surface),
+            profile.catalogueComplete === true,
           );
     const liveLegalityDocument = liveLegality?.document ?? null;
     const legalityObservation = profile.parseLegality &&
@@ -2819,6 +2926,68 @@ function parseBandaiCardDetailV2(
   );
 }
 
+function parseFusionWorldCardDetailV3(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const pairs = htmlLabelPairs(html);
+  const cardNumber = firstLabelValue(
+    pairs,
+    ["Card Number", "Card No.", "Card No", "No."],
+  );
+  if (cardNumber === null) {
+    throw new Error("Fusion World Card detail is missing its Card Number.");
+  }
+  const request = new URL(requestUrl);
+  const requestedEntry = [...request.searchParams.entries()].find(([key]) =>
+    /^(?:card(?:id|no|number)?|detailSearch|popup)$/iu.test(key)
+  );
+  if (requestedEntry === undefined) {
+    throw new Error("Fusion World detail request has no full locator.");
+  }
+  const requestedLocator = requestedEntry[1].normalize("NFC").trim();
+  const identity = fusionWorldLocatorIdentity(requestedLocator);
+  if (identity.cardNumber !== cardNumber.normalize("NFC").trim()) {
+    throw new Error(
+      `Fusion World full locator ${requestedLocator} does not match Card number ${cardNumber}.`,
+    );
+  }
+  const dataCardId = htmlAttribute(
+    html.match(/<[^>]*\bdata-card-id=["'][^"']+["'][^>]*>/iu)?.[0] ?? "",
+    "data-card-id",
+  );
+  if (dataCardId !== requestedLocator) {
+    throw new Error(
+      `Fusion World full locator ${requestedLocator} and data-card-id must match exactly.`,
+    );
+  }
+  request.searchParams.set(requestedEntry[0], identity.cardNumber);
+  return parseBandaiCardDetailFrozenV1(
+    html,
+    "fusion-world",
+    sourceLineage,
+    request.href,
+    "path-v2",
+  );
+}
+
+function fusionWorldLocatorIdentity(value: string): {
+  cardNumber: string;
+  variant: string;
+} {
+  const match = value.match(
+    /^([A-Z]{1,6}\d{0,3}-[A-Z0-9]{1,6})(_[A-Za-z0-9-]+)?$/u,
+  );
+  if (match === null) {
+    throw new Error(`Fusion World full locator ${value} is invalid.`);
+  }
+  return {
+    cardNumber: match[1]!,
+    variant: match[2] ?? "base",
+  };
+}
+
 /**
  * Frozen V1 card-detail decoder foundation. Historical registrations always
  * select hostname-v1. Newer registrations may only layer stricter authority
@@ -3670,6 +3839,7 @@ function parseBandaiSurfaceCoverageV2(
   surface: string,
   url: string,
   acceptPublisherDeclaredEmpty: boolean,
+  catalogueComplete = false,
 ): ParsedBandaiSurface {
   return parseBandaiSurfaceCoverageByContract(
     html,
@@ -3678,6 +3848,7 @@ function parseBandaiSurfaceCoverageV2(
     surface,
     url,
     acceptPublisherDeclaredEmpty,
+    catalogueComplete,
   );
 }
 
@@ -3688,8 +3859,13 @@ function parseBandaiSurfaceCoverageByContract(
   surface: string,
   url: string,
   acceptPublisherDeclaredEmpty: boolean,
+  catalogueComplete: boolean,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
+  const fusionListingEntries = catalogueComplete &&
+      format === "fusion-world" && surface === "listing"
+    ? fusionWorldHtmlListingEntries(html, url, sourceLineage)
+    : [];
   if (
     surface === "listing" &&
     /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu
@@ -3739,7 +3915,14 @@ function parseBandaiSurfaceCoverageByContract(
   const declaredCountMatch = html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
   );
-  const publisherDeclaresEmpty = acceptPublisherDeclaredEmpty &&
+  const fusionComingSoonDeclaresEmpty =
+    catalogueComplete &&
+    format === "fusion-world" &&
+    surface === "products" &&
+    new URL(url).searchParams.get("status") === "coming-soon" &&
+    declaredCountMatch?.[1] === "0";
+  const publisherDeclaresEmpty =
+    (acceptPublisherDeclaredEmpty || fusionComingSoonDeclaresEmpty) &&
     declaredCountMatch?.[1] === "0";
   const publicationEntries = publicationEntryMatches
     .filter(
@@ -3759,6 +3942,9 @@ function parseBandaiSurfaceCoverageByContract(
       `Official Source ${surface} has no structural publication entries.`,
     );
   }
+  if (catalogueComplete && format === "fusion-world" && surface === "products") {
+    requireFusionWorldHtmlProductStatusCoverage(html, url);
+  }
   const labelPairs = htmlLabelPairs(html);
   const parsedPublicationCount =
     publicationEntries.length > 0
@@ -3777,7 +3963,17 @@ function parseBandaiSurfaceCoverageByContract(
       : [];
   return {
     observations:
-      productIndexObservations.length > 0
+      fusionListingEntries.length > 0
+        ? fusionListingEntries.map(({ locator, canonical }) => ({
+            completeness: completeObservation(),
+            listing_identity_evidence: { locator, canonical },
+            product_release_catalogue: {
+              products: [],
+              distribution_contexts: [],
+              relationships: [],
+            },
+          }))
+        : productIndexObservations.length > 0
         ? productIndexObservations
         : [{
             completeness: completeObservation(
@@ -3800,6 +3996,9 @@ function parseBandaiSurfaceCoverageByContract(
       publication_links: publicationLinks,
       discovered_options: discoveredOptions,
       publication_entries: publicationEntries,
+      ...(fusionListingEntries.length === 0
+        ? {}
+        : { listing_identity_evidence: fusionListingEntries }),
       ...(labelPairs.length === 0
         ? {}
         : {
@@ -3816,8 +4015,59 @@ function parseBandaiSurfaceCoverageByContract(
       "publication_links",
       "discovered_options",
       "publication_entries",
+      ...(fusionListingEntries.length === 0
+        ? []
+        : ["listing_identity_evidence"]),
     ],
   };
+}
+
+function requireFusionWorldHtmlProductStatusCoverage(
+  html: string,
+  requestUrl: string,
+): void {
+  const accepted = ["available", "coming-soon"];
+  const url = new URL(requestUrl);
+  const requestedStatus = url.searchParams.get("status");
+  const entryStatuses = [...html.matchAll(
+    /<(?:article|li|tr)\b([^>]*\bdata-product-status=["'][^"']+["'][^>]*)>/giu,
+  )].map((match) =>
+    htmlAttribute(match[1]!, "data-product-status")?.normalize("NFC").trim()
+  ).filter((status): status is string => status !== null && status !== undefined);
+  if (requestedStatus !== null) {
+    const explicitlyEmptyComingSoon =
+      requestedStatus === "coming-soon" &&
+      entryStatuses.length === 0 &&
+      />\s*0\s+(?:results?|records?|items?)\s*</iu.test(html);
+    if (explicitlyEmptyComingSoon) return;
+    if (
+      !accepted.includes(requestedStatus) ||
+      entryStatuses.length === 0 ||
+      entryStatuses.some((status) => status !== requestedStatus)
+    ) {
+      throw new Error(
+        `Fusion World Product status page ${requestedStatus} is incomplete.`,
+      );
+    }
+    return;
+  }
+  const tabStatuses = [...html.matchAll(
+    /<a\b([^>]*\bdata-product-status=["'][^"']+["'][^>]*)>[\s\S]*?<\/a>/giu,
+  )].map((match) =>
+    htmlAttribute(match[1]!, "data-product-status")?.normalize("NFC").trim()
+  ).filter((status): status is string => status !== null && status !== undefined);
+  const missingTabs = accepted.filter((status) => !tabStatuses.includes(status));
+  const unexpected = [...tabStatuses, ...entryStatuses].filter(
+    (status) => !accepted.includes(status),
+  );
+  if (
+    missingTabs.length > 0 ||
+    unexpected.length > 0
+  ) {
+    throw new Error(
+      `Fusion World Product status tabs are incomplete; missing tabs: ${missingTabs.join(", ") || "none"}; unexpected: ${[...new Set(unexpected)].join(", ") || "none"}.`,
+    );
+  }
 }
 
 function parseBandaiProductIndex(
@@ -4466,6 +4716,7 @@ function normalizedSurfaceObservationsV2(
   rawDocument: Record<string, unknown>,
   legalityAware: boolean,
   expandedOnePieceCatalogue = false,
+  catalogueComplete = false,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
@@ -4473,6 +4724,7 @@ function normalizedSurfaceObservationsV2(
     surface,
     rawDocument,
     expandedOnePieceCatalogue,
+    catalogueComplete,
   );
   const document = normalized.document;
   let observations: readonly unknown[];
@@ -4482,6 +4734,7 @@ function normalizedSurfaceObservationsV2(
       format,
       game,
       expandedOnePieceCatalogue,
+      catalogueComplete,
     );
   } else if (surface === "products") {
     observations = parseRawProductsSurfaceV2(document);
@@ -4505,6 +4758,9 @@ function normalizedSurfaceObservationsV2(
       ...(expandedOnePieceCatalogue && game === "one-piece" &&
           surface === "don-rules"
         ? [onePieceDonCardObservation(document.don_card)]
+        : []),
+      ...(catalogueComplete && format === "fusion-world" && surface === "errata"
+        ? fusionWorldOfficialErrataObservations(document)
         : []),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
@@ -4651,6 +4907,80 @@ function onePieceOfficialErrataObservations(value: unknown): unknown[] {
   });
 }
 
+function fusionWorldOfficialErrataObservations(
+  document: Record<string, unknown>,
+): readonly Record<string, unknown>[] {
+  const entries = requiredArray(
+    document.entries,
+    "Fusion World Errata entries",
+  );
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Fusion World Erratum");
+    const allowed = new Set([
+      "entry_id",
+      "card_number",
+      "published_on",
+      "effective_from",
+      "before",
+      "after",
+      "notice",
+      "image_url",
+    ]);
+    const unexpected = Object.keys(entry).find((field) => !allowed.has(field));
+    if (unexpected !== undefined) {
+      throw new Error(
+        `Fusion World Erratum contains unknown field ${unexpected}.`,
+      );
+    }
+    const entryId = requiredText(entry.entry_id, "Fusion World Erratum identity");
+    const cardNumber = requiredText(
+      entry.card_number,
+      "Fusion World Erratum Card Number",
+    );
+    const publishedOn = requiredText(
+      entry.published_on,
+      "Fusion World Erratum published date",
+    );
+    const effectiveFrom = entry.effective_from === null
+      ? null
+      : requiredText(
+          entry.effective_from,
+          "Fusion World Erratum effective date",
+        );
+    const before = requiredText(entry.before, "Fusion World Erratum Before text");
+    const after = requiredText(entry.after, "Fusion World Erratum After text");
+    const notice = requiredText(entry.notice, "Fusion World Erratum notice");
+    const imageUrl = requiredText(
+      entry.image_url,
+      "Fusion World Erratum image URL",
+    );
+    const image = new URL(imageUrl);
+    if (!officialUrl("fusion-world-en", image, "image")) {
+      throw new Error("Fusion World Erratum image provenance is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "fusion-world",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
+      applies_to_parallel_printings: true,
+      source: {
+        fragment: `#${entryId}`,
+        display_name: cardNumber,
+        image_url: image.href,
+      },
+      completeness: completeObservation(1, 1),
+    };
+  });
+}
+
 function exactOnePieceSourceDate(value: unknown, name: string): string {
   const date = requiredText(value, name);
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u.test(date)) {
@@ -4664,6 +4994,105 @@ function exactOnePieceSourceDate(value: unknown, name: string): string {
     throw new Error(`${name} is invalid.`);
   }
   return date;
+}
+
+function parseFusionWorldOfficialErrataHtmlV3(
+  html: string,
+): readonly Record<string, unknown>[] {
+  const titleMatch = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu);
+  const title = htmlText(titleMatch?.[1] ?? "");
+  if (!/(?:BANDAI|DRAGON BALL).*ERRATA/iu.test(title)) {
+    throw new Error("Fusion World Errata title authority is invalid.");
+  }
+  const matches = [...html.matchAll(
+    /<article\b([^>]*\bdata-erratum-id=["'][^"']+["'][^>]*)>([\s\S]*?)<\/article>/giu,
+  )];
+  if (matches.length === 0) {
+    throw new Error("Fusion World Errata has no exact correction entries.");
+  }
+  if ([...html.matchAll(/\bdata-erratum-id=["'][^"']+["']/giu)].length !==
+      matches.length) {
+    throw new Error("Fusion World Errata entry inventory is incomplete.");
+  }
+  const entries = matches.map((match) => {
+    const attributes = match[1]!;
+    const entryId = htmlAttribute(attributes, "data-erratum-id");
+    const className = htmlAttribute(attributes, "class");
+    if (entryId === null || className !== "erratum") {
+      throw new Error("Fusion World Errata entry authority is invalid.");
+    }
+    const unconsumedAttributes = attributes
+      .replace(/\bclass=["'][^"']*["']/iu, "")
+      .replace(/\bdata-erratum-id=["'][^"']*["']/iu, "")
+      .trim();
+    if (unconsumedAttributes.length > 0) {
+      throw new Error("Fusion World Errata entry has unsupported attributes.");
+    }
+    const body = match[2]!;
+    const definitionLists = [...body.matchAll(/<dl\b[^>]*>([\s\S]*?)<\/dl>/giu)];
+    if (definitionLists.length !== 1) {
+      throw new Error("Fusion World Errata entry requires one exact field list.");
+    }
+    const list = definitionLists[0]![1]!;
+    const pairs = htmlLabelPairs(`<dl>${list}</dl>`);
+    const expectedLabels = [
+      "Card Number",
+      "Published On",
+      "Effective From",
+      "Before",
+      "After",
+      "Note",
+    ];
+    if (
+      pairs.length !== expectedLabels.length ||
+      [...list.matchAll(/<dt\b/giu)].length !== expectedLabels.length ||
+      [...list.matchAll(/<dd\b/giu)].length !== expectedLabels.length ||
+      expectedLabels.some((label) =>
+        pairs.filter((pair) => pair.label === label).length !== 1
+      ) ||
+      pairs.some(({ label }) => !expectedLabels.includes(label))
+    ) {
+      throw new Error("Fusion World Errata fields are incomplete or unknown.");
+    }
+    const value = (label: string): string =>
+      requiredText(
+        pairs.find((pair) => pair.label === label)?.value,
+        `Fusion World Errata ${label}`,
+      );
+    const imageMatches = [...body.matchAll(
+      /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/giu,
+    )];
+    if (imageMatches.length !== 1) {
+      throw new Error("Fusion World Errata requires one correction image.");
+    }
+    const imageUrl = new URL(decodeHtmlText(imageMatches[0]![1]!));
+    if (!officialUrl("fusion-world-en", imageUrl, "image")) {
+      throw new Error("Fusion World Errata image provenance is invalid.");
+    }
+    const residualBody = body
+      .replace(definitionLists[0]![0], "")
+      .replace(imageMatches[0]![0], "");
+    if (htmlText(residualBody).length > 0) {
+      throw new Error("Official Source has unparsed Fusion World Errata wording.");
+    }
+    return {
+      entry_id: entryId,
+      card_number: value("Card Number"),
+      published_on: value("Published On"),
+      effective_from: value("Effective From"),
+      before: value("Before"),
+      after: value("After"),
+      notice: value("Note"),
+      image_url: imageUrl.href,
+    };
+  });
+  let residualPage = html.replace(titleMatch?.[0] ?? "", "");
+  for (const match of matches) residualPage = residualPage.replace(match[0], "");
+  residualPage = residualPage.replace(/<\/?(?:html|main)\b[^>]*>/giu, "");
+  if (htmlText(residualPage).length > 0) {
+    throw new Error("Official Source has unparsed Fusion World Errata wording.");
+  }
+  return fusionWorldOfficialErrataObservations({ entries });
 }
 
 function isLegalityPolicySurface(surface: string): boolean {
@@ -4684,6 +5113,7 @@ function normalizeLineageSurface(
   surface: string,
   raw: Record<string, unknown>,
   expandedOnePieceCatalogue = false,
+  catalogueComplete = false,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
@@ -4693,7 +5123,7 @@ function normalizeLineageSurface(
     format === "one-piece"
       ? normalizeOnePieceSurface(surface, raw, expandedOnePieceCatalogue)
       : format === "fusion-world"
-        ? normalizeFusionWorldSurface(surface, raw)
+        ? normalizeFusionWorldSurface(surface, raw, catalogueComplete)
         : format === "digimon"
           ? normalizeDigimonSurface(surface, raw)
           : normalizeGundamSurface(sourceLineage, surface, raw);
@@ -4829,6 +5259,7 @@ function normalizeOnePieceSurface(
 function normalizeFusionWorldSurface(
   surface: string,
   raw: Record<string, unknown>,
+  catalogueComplete = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-search") {
     if (raw.view !== "card-search") {
@@ -4842,7 +5273,7 @@ function normalizeFusionWorldSurface(
       normalizedDiscovery(
         Object.entries(facets).map(([name, values]) => ({ name, values })),
         raw.result,
-        normalizeFusionWorldDetails(raw.detail_pages),
+        normalizeFusionWorldDetails(raw.detail_pages, catalogueComplete),
         normalizeFusionWorldProducts(raw.products),
         normalizeFusionWorldReleases(raw.releases),
         "card_type=leader&colour=red&cost=1",
@@ -4858,6 +5289,9 @@ function normalizeFusionWorldSurface(
     const tabs = uniqueTextValues(raw.status_tabs, "Fusion World Product tabs");
     if (!tabs.includes("available") || !tabs.includes("coming-soon")) {
       throw new Error("Fusion World Product tabs are incomplete.");
+    }
+    if (catalogueComplete) {
+      requireFusionWorldProductStatusLeaves(raw.result, tabs);
     }
     return normalizedSurfaceBody(
       normalizedPartitions(
@@ -4883,6 +5317,34 @@ function normalizeFusionWorldSurface(
     normalizedPolicy(raw, `fusion-world-${surface}`),
     ["publication", "revision", "declared_record_count", "partition", "entries"],
   );
+}
+
+function requireFusionWorldProductStatusLeaves(
+  value: unknown,
+  statuses: readonly string[],
+): void {
+  const result = requiredRecord(
+    value,
+    "Fusion World Product partition result",
+  );
+  const leaves = new Set(
+    requiredArray(
+      result.partitions,
+      "Fusion World Product status leaves",
+    ).map((item) =>
+      requiredText(
+        requiredRecord(item, "Fusion World Product status leaf").bucket,
+        "Fusion World Product status leaf identity",
+      )
+    ),
+  );
+  const missing = statuses.filter((status) => !leaves.has(status));
+  const unexpected = [...leaves].filter((status) => !statuses.includes(status));
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `Fusion World Product status leaves do not match the discovered tabs; missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"}.`,
+    );
+  }
 }
 
 function normalizeDigimonSurface(
@@ -5298,9 +5760,13 @@ function normalizeOnePieceDetailsV2(value: unknown): unknown[] {
   });
 }
 
-function normalizeFusionWorldDetails(value: unknown): unknown[] {
+function normalizeFusionWorldDetails(
+  value: unknown,
+  validateIdentity = false,
+): unknown[] {
   return requiredArray(value, "Fusion World Card details").map((item) => {
     const card = requiredRecord(item, "Fusion World Card detail");
+    if (validateIdentity) validateFusionWorldDetailIdentity(card);
     const images = requiredArray(
       card.image_urls,
       "Fusion World Card images",
@@ -5324,27 +5790,123 @@ function normalizeFusionWorldDetails(value: unknown): unknown[] {
         "Fusion World Leader requires exact front and back image roles.",
       );
     }
-    return canonicalDetail(card, {
-      path: "detail_path",
-      number: "card_number",
-      title: "name",
-      rules: "skills_text",
-      attributes: {
-        card_type: card.card_type,
-        colours: card.color,
-        cost: card.cost,
-        specified_cost: card.specified_cost,
-        power: card.power,
-        combo_power: card.combo_power,
-        traits: card.special_traits,
-        skills: card.skills,
-        ...(card.leader_faces === undefined
-          ? {}
-          : { leader_faces: card.leader_faces }),
+    return canonicalDetail(
+      validateIdentity
+        ? fusionWorldPublisherDetailV3(card, images)
+        : card,
+      {
+        path: "detail_path",
+        number: "card_number",
+        title: "name",
+        rules: "skills_text",
+        attributes: {
+          card_type: card.card_type,
+          colours: card.color,
+          cost: card.cost,
+          specified_cost: card.specified_cost,
+          power: card.power,
+          combo_power: card.combo_power,
+          traits: card.special_traits,
+          skills: card.skills,
+          ...(card.leader_faces === undefined
+            ? {}
+            : { leader_faces: card.leader_faces }),
+        },
+        imageFields: images,
       },
-      imageFields: images,
-    });
+    );
   });
+}
+
+function fusionWorldPublisherDetailV3(
+  card: Record<string, unknown>,
+  images: readonly { role: string; value: unknown }[],
+): Record<string, unknown> {
+  const prohibited = [
+    "profile",
+    "artwork_fingerprint",
+    "printed_fields_digest",
+  ].find((field) => Object.hasOwn(card, field));
+  if (prohibited !== undefined) {
+    throw new Error(
+      `Fusion World detail contains caller-supplied canonical field ${prohibited}.`,
+    );
+  }
+  const printing = card.printing === undefined
+    ? undefined
+    : requiredRecord(card.printing, "Fusion World Printing fields");
+  if (printing !== undefined && Object.hasOwn(printing, "normalized_rarity")) {
+    throw new Error(
+      "Fusion World detail contains caller-supplied canonical field normalized_rarity.",
+    );
+  }
+  const cardNumber = requiredText(
+    card.card_number,
+    "Fusion World Card number",
+  );
+  const variant = requiredText(card.variant, "Fusion World variant suffix");
+  const rarity = printing === undefined
+    ? null
+    : nullableText(printing.rarity, "Fusion World Printing rarity");
+  const printedFields = {
+    card_number: cardNumber,
+    card_type: card.card_type,
+    color: card.color,
+    combo_power: card.combo_power,
+    cost: card.cost,
+    power: card.power,
+    printed_rules: card.printed_rules,
+    skills: card.skills,
+    special_traits: card.special_traits,
+    specified_cost: card.specified_cost,
+    rarity,
+    variant,
+  };
+  return {
+    ...card,
+    profile: "fusion-world@1",
+    ...(printing === undefined
+      ? {}
+      : {
+          printing: {
+            ...printing,
+            normalized_rarity: rarity?.toLowerCase() ?? null,
+          },
+          artwork_fingerprint: officialArtworkFingerprint(
+            cardNumber,
+            images.map(({ role }) => role),
+            variant,
+          ),
+          printed_fields_digest:
+            `printed-material:${JSON.stringify(stableValue(printedFields))}`,
+        }),
+  };
+}
+
+function validateFusionWorldDetailIdentity(
+  card: Record<string, unknown>,
+): void {
+  const locator = requiredText(
+    card.detail_path,
+    "Fusion World full locator",
+  );
+  const cardNumber = requiredText(
+    card.card_number,
+    "Fusion World Card number",
+  );
+  const variant = requiredText(
+    card.variant,
+    "Fusion World variant suffix",
+  );
+  const expectedLocatorTail = variant === "base"
+    ? cardNumber
+    : `${cardNumber}${variant}`;
+  const locatorTail = locator.split("/").filter(Boolean).at(-1);
+  if (locatorTail !== expectedLocatorTail) {
+    throw new Error(
+      `Fusion World full locator ${locator} does not match Card number ${cardNumber} and variant ${variant}.`,
+    );
+  }
 }
 
 function normalizeDigimonDetails(value: unknown): unknown[] {
@@ -5966,10 +6528,33 @@ function parseRawDiscoverySurfaceV2(
   format: DiscoveryFormat,
   game: ProductSourceGame,
   expandedOnePieceCatalogue = false,
+  catalogueComplete = false,
 ): readonly unknown[] {
-  return expandedOnePieceCatalogue && format === "one-piece"
-    ? parseRawDiscoverySurfaceCompleteOnePieceV3(surface, format, game)
-    : parseRawDiscoverySurfaceFrozenV1(surface, format, game);
+  if (expandedOnePieceCatalogue && format === "one-piece") {
+    return parseRawDiscoverySurfaceCompleteOnePieceV3(surface, format, game);
+  }
+  if (catalogueComplete && format === "fusion-world") {
+    const entries = completePartitionEntriesCatalogueV3(
+      surface.partitions,
+      fusionWorldFullLocatorIdentity,
+    );
+    return parseRawDiscoverySurfaceFrozenV1(
+      {
+        ...surface,
+        partitions: [{
+          bucket: "fusion-world-full-locator-deduplication",
+          page: 1,
+          pages: 1,
+          total: entries.length,
+          has_next: false,
+          entries,
+        }],
+      },
+      format,
+      game,
+    );
+  }
+  return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
 }
 
 function parseRawProductsSurfaceV2(
@@ -6005,6 +6590,117 @@ function rawCoverageObservationFrozenV1(
       relationships: [],
     },
   };
+}
+
+type PartitionEntryIdentityStrategy = {
+  label: string;
+  identity(entry: unknown, canonical: string): string;
+};
+
+const canonicalPartitionEntryIdentity: PartitionEntryIdentityStrategy = {
+  label: "canonical entry",
+  identity: (_entry, canonical) => canonical,
+};
+
+const fusionWorldFullLocatorIdentity: PartitionEntryIdentityStrategy = {
+  label: "full locator",
+  identity: (entry) =>
+    requiredText(
+      requiredRecord(entry, "Fusion World partition entry").detail,
+      "Fusion World full locator",
+    ),
+};
+
+function completePartitionEntriesCatalogueV3(
+  value: unknown,
+  identityStrategy: PartitionEntryIdentityStrategy,
+): unknown[] {
+  const pages = requiredArray(
+    value,
+    "Official Source discovery partitions",
+  ).map((item) =>
+    requiredRecord(item, "Official Source discovery partition page")
+  );
+  if (pages.length === 0) {
+    throw new Error("Official Source discovery partitions are incomplete.");
+  }
+  const byBucket = new Map<string, Record<string, unknown>[]>();
+  for (const page of pages) {
+    if (Object.hasOwn(page, "result_cap")) {
+      throw new Error(
+        "Official Source partition result-cap evidence does not prove complete coverage.",
+      );
+    }
+    const bucket = requiredText(
+      page.bucket,
+      "Official Source partition bucket",
+    );
+    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), page]);
+  }
+  const allEntries: unknown[] = [];
+  const claimedEntries = new Map<
+    string,
+    { bucket: string; canonical: string }
+  >();
+  for (const [bucket, bucketPages] of byBucket) {
+    bucketPages.sort(
+      (left, right) =>
+        requiredPositiveInteger(left.page, "Official Source page") -
+        requiredPositiveInteger(right.page, "Official Source page"),
+    );
+    const pageCount = requiredPositiveInteger(
+      bucketPages[0]!.pages,
+      "Official Source page count",
+    );
+    if (
+      bucketPages.length !== pageCount ||
+      bucketPages.some(
+        (page, index) =>
+          page.bucket !== bucket ||
+          page.page !== index + 1 ||
+          page.pages !== pageCount ||
+          page.has_next !== (index + 1 < pageCount),
+      )
+    ) {
+      throw new Error(
+        "Official Source pagination evidence does not prove complete partitions.",
+      );
+    }
+    const entries = bucketPages.flatMap((page) =>
+      requiredArray(page.entries, "Official Source partition entries")
+    );
+    const declaredTotal = requiredNonNegativeInteger(
+      bucketPages[0]!.total,
+      "Official Source partition total",
+    );
+    if (
+      entries.length !== declaredTotal ||
+      bucketPages.some((page) => page.total !== declaredTotal)
+    ) {
+      throw new Error(
+        "Official Source count evidence does not prove complete partitions.",
+      );
+    }
+    for (const entry of entries) {
+      const canonical = JSON.stringify(stableValue(entry));
+      const identity = identityStrategy.identity(entry, canonical);
+      const prior = claimedEntries.get(identity);
+      if (prior !== undefined) {
+        if (prior.canonical !== canonical) {
+          const location = prior.bucket === bucket
+            ? `within leaf partition ${bucket}`
+            : `between leaf partitions ${prior.bucket} and ${bucket}`;
+          throw new Error(
+            `Official Source ${identityStrategy.label} ${identity} conflicts ${location}.`,
+          );
+        }
+        continue;
+      }
+      claimedEntries.set(identity, { bucket, canonical });
+      allEntries.push(entry);
+    }
+  }
+  return allEntries;
 }
 
 function completePartitionEntriesFrozenV1(value: unknown): unknown[] {

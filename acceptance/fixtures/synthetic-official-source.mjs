@@ -873,7 +873,20 @@ export function officialRawSurfacePayload(pathname) {
       return {
         view: "products",
         status_tabs: ["available", "coming-soon"],
-        result,
+        result: {
+          ...result,
+          partitions: [
+            { ...result.partitions[0], bucket: "available" },
+            {
+              bucket: "coming-soon",
+              page: 1,
+              pages: 1,
+              total: 0,
+              has_next: false,
+              entries: [],
+            },
+          ],
+        },
       };
     }
     if (lineage === "digimon-en") {
@@ -1091,7 +1104,21 @@ function upstreamDetail(lineage, detail) {
             },
           ]
         : [{ role: "front", url: image }],
-      ...shared,
+      product_codes: detail.product_codes,
+      ...(detail.product_names === undefined
+        ? {}
+        : { product_names: detail.product_names }),
+      distribution: detail.distribution,
+      ...(detail.printing === undefined
+        ? {}
+        : {
+            printing: {
+              rarity: detail.printing.rarity ?? null,
+              attributes: detail.printing.attributes,
+            },
+            printed_rules: detail.printed_rules,
+            variant: detail.variant,
+          }),
     };
   }
   if (lineage === "digimon-en") {
