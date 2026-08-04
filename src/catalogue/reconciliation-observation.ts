@@ -89,7 +89,7 @@ export type ParsedOfficialErratumObservation = Readonly<{
   publishedOn: string;
   effectiveFrom: string | null;
   observedPrintedRulesText: string;
-  correctedRulesText: string;
+  correctedRulesText: string | null;
   officialWording: string;
   appliesToParallelPrintings: boolean;
   sourceFragment: string;
@@ -639,10 +639,12 @@ function parseOfficialErratumObservation(
       record.observed_printed_rules_text,
       "Official Erratum observed_printed_rules_text",
     ),
-    correctedRulesText: requiredString(
-      record.corrected_rules_text,
-      "Official Erratum corrected_rules_text",
-    ),
+    correctedRulesText: record.corrected_rules_text === null
+      ? null
+      : requiredString(
+          record.corrected_rules_text,
+          "Official Erratum corrected_rules_text",
+        ),
     officialWording: requiredString(
       record.official_wording,
       "Official Erratum official_wording",

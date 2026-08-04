@@ -5482,10 +5482,12 @@ function parseDigimonOfficialErrata(
         entry.observed_printed_rules_text,
         "Digimon Erratum observed Printed Rules Text",
       ),
-      corrected_rules_text: requiredText(
-        entry.corrected_rules_text,
-        "Digimon Erratum corrected Rules Text",
-      ),
+      corrected_rules_text: entry.corrected_rules_text === null
+        ? null
+        : requiredText(
+            entry.corrected_rules_text,
+            "Digimon Erratum corrected Rules Text",
+          ),
       official_wording: requiredText(
         entry.official_wording,
         "Digimon Erratum official wording",
@@ -5517,6 +5519,7 @@ function parseDigimonCardListPopupHtmlV4(
   html: string,
   requestUrl: string,
 ): Record<string, unknown>[] {
+  const declaredRecordCount = digimonDeclaredRecordCount(html);
   const recordStarts = [...html.matchAll(
     /<li\b[^>]*\bclass=["'][^"']*\bimage_lists_item\b[^"']*\bdata\b[^"']*["'][^>]*>/giu,
   )].map((match) => match.index);
@@ -5529,6 +5532,14 @@ function parseDigimonCardListPopupHtmlV4(
   if (popupCount !== recordStarts.length) {
     throw new Error(
       "Official Digimon Card List popup records are structurally incomplete.",
+    );
+  }
+  if (
+    declaredRecordCount !== null &&
+    declaredRecordCount !== recordStarts.length
+  ) {
+    throw new Error(
+      "Official Digimon Card List declared and parsed record counts differ.",
     );
   }
   const records = recordStarts.map((start, index) =>
@@ -5788,12 +5799,31 @@ function parseDigimonCardListPopupHtmlV4(
     );
     return attachRawSurfaceEvidenceV1({
       ...observation,
-      completeness: completeObservation(records.length, records.length),
+      completeness: completeObservation(
+        declaredRecordCount ?? records.length,
+        records.length,
+      ),
     }, "digimon-en", "card-list", {
       popup_id: locator,
       card_qa: retainedQa.entries,
     }, true, ["popup_id"]);
   });
+}
+
+function digimonDeclaredRecordCount(html: string): number | null {
+  const containers = [...html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
+  )];
+  if (containers.length > 1) {
+    throw new Error("Official Digimon Card List result count is duplicated.");
+  }
+  const container = containers[0];
+  if (container === undefined) return null;
+  const count = htmlText(container[1]!).match(/^Result\s+(\d+)\s+cards?$/iu)?.[1];
+  if (count === undefined) {
+    throw new Error("Official Digimon Card List result count is invalid.");
+  }
+  return Number.parseInt(count, 10);
 }
 
 function digimonCardQa(infoHtml: string): {
