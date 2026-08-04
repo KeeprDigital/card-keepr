@@ -4280,20 +4280,29 @@ function parseBandaiSurfaceCoverageByContract(
     format === "fusion-world" &&
     surface === "listing" &&
     fusionWorldCompleteListingLeaf(new URL(url));
-  const fusionListingDeclaredCountMatches = catalogueComplete &&
+  const fusionListingResultCountOpenings = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
     ? [...html.matchAll(
-        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>[\s\S]*?<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>\s*cards?\b[\s\S]*?<\/div>/giu,
+        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>/giu,
+      )]
+    : [];
+  const fusionListingResultCountContainers = catalogueComplete &&
+      format === "fusion-world" && surface === "listing"
+    ? [...html.matchAll(
+        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
       )]
     : [];
   const fusionListingDeclaredCountMatch =
-    fusionListingDeclaredCountMatches.length === 1
-      ? fusionListingDeclaredCountMatches[0]!
+    fusionListingResultCountOpenings.length === 1 &&
+      fusionListingResultCountContainers.length === 1
+      ? fusionListingResultCountContainers[0]![1]!.match(
+        /^\s*Result\s*<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>\s*cards?\s*$/iu,
+      )
       : null;
   const declaredCountMatch = fusionListingDeclaredCountMatch ?? html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
   );
-  if (completeFusionListingLeaf && fusionListingDeclaredCountMatches.length !== 1) {
+  if (completeFusionListingLeaf && fusionListingDeclaredCountMatch === null) {
     throw new Error(
       "Fusion World complete listing leaf must contain one exact publisher total.",
     );
