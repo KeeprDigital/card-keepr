@@ -243,7 +243,12 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     catalogue.data.last_successful_checks
       .filter(({ game }) => game === "fusion-world")
       .map(({ area }) => area),
-    ["cards-and-printings", "legality-rules", "products-and-releases"],
+    [
+      "cards-and-printings",
+      "errata",
+      "legality-rules",
+      "products-and-releases",
+    ],
   );
 
   const [

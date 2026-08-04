@@ -1194,7 +1194,9 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     assert.equal(adapter.reconciliationCapability, "catalogue");
     assert.deepEqual(
       adapter.reconciliationAreas,
-      adapter.adapterVersion === "digimon-en@4"
+      ["one-piece-en@3", "fusion-world-en@4", "digimon-en@4"].includes(
+        adapter.adapterVersion,
+      )
         ? ["catalogue", "errata"]
         : ["catalogue"],
     );

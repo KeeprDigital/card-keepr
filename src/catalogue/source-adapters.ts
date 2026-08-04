@@ -199,7 +199,11 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
         reconciliationCapability: "catalogue" as const,
-        reconciliationAreas: adapter.adapterVersion === "digimon-en@4"
+        reconciliationAreas: [
+          "one-piece-en@3",
+          "fusion-world-en@4",
+          "digimon-en@4",
+        ].includes(adapter.adapterVersion)
           ? ["catalogue", "errata"] as const
           : ["catalogue"] as const,
         inheritDiscoveryRequestHeaders:
