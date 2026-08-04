@@ -1,5 +1,16 @@
 -- Revision-pinned Card substring search stays inside D1. Normalized search
 -- chunks are indexed independently so matches cannot cross field boundaries.
+-- The relational chunks remain the exportable source of truth: recovery code
+-- temporarily removes this derived virtual index before D1 export, then
+-- reconstructs it after restore before marking it ready again.
+CREATE TABLE card_search_fts_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  state TEXT NOT NULL CHECK (state IN ('ready', 'reconstructing'))
+);
+
+INSERT INTO card_search_fts_state (singleton, state)
+VALUES (1, 'ready');
+
 CREATE TABLE revision_card_search_fts_rows (
   fts_rowid INTEGER PRIMARY KEY,
   catalogue_revision_id TEXT NOT NULL,
@@ -18,6 +29,7 @@ SELECT catalogue_revision_id, card_id, field_ordinal, chunk_ordinal
 FROM revision_card_search_chunks;
 
 CREATE VIRTUAL TABLE revision_card_search_fts USING fts5(
+  revision_token,
   catalogue_revision_id UNINDEXED,
   card_id UNINDEXED,
   field_ordinal UNINDEXED,
@@ -27,10 +39,11 @@ CREATE VIRTUAL TABLE revision_card_search_fts USING fts5(
 );
 
 INSERT INTO revision_card_search_fts (
-  rowid, catalogue_revision_id, card_id,
+  rowid, revision_token, catalogue_revision_id, card_id,
   field_ordinal, chunk_ordinal, search_text
 )
-SELECT indexed.fts_rowid, chunk.catalogue_revision_id, chunk.card_id,
+SELECT indexed.fts_rowid, '|' || chunk.catalogue_revision_id || '|',
+       chunk.catalogue_revision_id, chunk.card_id,
        chunk.field_ordinal, chunk.chunk_ordinal, chunk.search_text
 FROM revision_card_search_chunks AS chunk
 JOIN revision_card_search_fts_rows AS indexed
@@ -46,10 +59,11 @@ BEGIN
     NEW.chunk_ordinal
   );
   INSERT INTO revision_card_search_fts (
-    rowid, catalogue_revision_id, card_id,
+    rowid, revision_token, catalogue_revision_id, card_id,
     field_ordinal, chunk_ordinal, search_text
   ) VALUES (
-    last_insert_rowid(), NEW.catalogue_revision_id, NEW.card_id,
+    last_insert_rowid(), '|' || NEW.catalogue_revision_id || '|',
+    NEW.catalogue_revision_id, NEW.card_id,
     NEW.field_ordinal,
     NEW.chunk_ordinal, NEW.search_text
   );
@@ -103,10 +117,11 @@ BEGIN
     NEW.chunk_ordinal
   );
   INSERT INTO revision_card_search_fts (
-    rowid, catalogue_revision_id, card_id,
+    rowid, revision_token, catalogue_revision_id, card_id,
     field_ordinal, chunk_ordinal, search_text
   ) VALUES (
-    last_insert_rowid(), NEW.catalogue_revision_id, NEW.card_id,
+    last_insert_rowid(), '|' || NEW.catalogue_revision_id || '|',
+    NEW.catalogue_revision_id, NEW.card_id,
     NEW.field_ordinal,
     NEW.chunk_ordinal, NEW.search_text
   );

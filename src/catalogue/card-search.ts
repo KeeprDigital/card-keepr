@@ -83,10 +83,22 @@ export function cardSearchQuery(
   };
 }
 
-export function cardSearchFtsQuery(value: string): string | null {
+export function cardSearchFtsQuery(
+  value: string,
+  revisionId: string,
+): string | null {
   const text = normalizeSearchText(value);
   if ([...text].length < maximumGramLength) return null;
-  return `"${text.replaceAll('"', '""')}"`;
+  return `revision_token : ${ftsLiteral(revisionToken(revisionId))} AND ` +
+    `search_text : ${ftsLiteral(text)}`;
+}
+
+function revisionToken(revisionId: string): string {
+  return `|${revisionId}|`;
+}
+
+function ftsLiteral(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function searchFields(document: string): readonly string[] {

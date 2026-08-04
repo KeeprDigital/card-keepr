@@ -14,6 +14,10 @@ import {
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
+import { cardCollectionPageQuery } from "../../../src/catalogue/card-collection-read";
+import {
+  withCardSearchPreparedForD1Export,
+} from "../../../src/catalogue/card-search-recovery";
 import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
 import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
 import exportManifestSchemaV3 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
@@ -112,6 +116,49 @@ test("every Card collection shape returns the normative 503 while the current pr
       code: "catalogue_query_unavailable",
     });
   }
+});
+
+test("a supplied cursor for an unavailable current revision returns the cursor restart problem", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_current_cursor_unavailable",
+    runId: "run_current_cursor_unavailable",
+    cards: [
+      apiCard({
+        id: "card_current_cursor_unavailable",
+        cardNumber: "OP29-504",
+        name: "Unavailable Cursor Projection",
+      }),
+    ],
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions
+     SET state = 'pending'
+     WHERE catalogue_revision_id = 'catrev_current_cursor_unavailable'`,
+  ).run();
+  const cursor = encodeTestCardCursor({
+    revisionId: "catrev_current_cursor_unavailable",
+    route: "/v1/cards",
+    order: "game,official_identity.kind,official_identity.value,id",
+    q: "unavailable",
+    limit: 1,
+    after: {
+      game: "one-piece",
+      identityKind: "card_number",
+      identityValue: "OP29-504",
+      id: "card_current_cursor_unavailable",
+    },
+  });
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=" +
+      encodeURIComponent(cursor),
+    { headers: apiHeaders("203.0.113.104") },
+  ));
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/cards" },
+  });
 });
 
 test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifact", async () => {
@@ -1994,17 +2041,17 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     { name: "revision_card_search_fts" },
   ]);
 
-  const plan = await testEnv.CATALOGUE_DB.prepare(
-    `EXPLAIN QUERY PLAN
-     SELECT card_id
-     FROM revision_card_search_fts
-     WHERE revision_card_search_fts MATCH ?
-       AND catalogue_revision_id = ?`,
-  ).bind('"quartz"', "catrev_selective_trigrams").all<{ detail: string }>();
-  expect(plan.results.some(({ detail }) =>
-    detail.includes("VIRTUAL TABLE INDEX")
-  )).toBe(true);
-
+  await seedApiRevision({
+    revisionId: "catrev_fts_search_old",
+    runId: "run_fts_search_old",
+    cards: [
+      apiCard({
+        id: "card_fts_search_old",
+        cardNumber: "OP29-700",
+        name: "Quartz Vanguard",
+      }),
+    ],
+  });
   await seedApiRevision({
     revisionId: "catrev_fts_search",
     runId: "run_fts_search",
@@ -2017,6 +2064,36 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
       }),
     ],
   });
+  const productionQuery = cardCollectionPageQuery(
+    "catrev_fts_search",
+    { q: "quartz", game: null, cardNumber: null, limit: 50 },
+    null,
+  );
+  const plan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN ${productionQuery.sql}`,
+  ).bind(...productionQuery.bindings).all<{ detail: string }>();
+  const planDetails = plan.results.map(({ detail }) => detail);
+  expect(planDetails).toEqual([
+    "MATERIALIZE search_candidates",
+    "SCAN revision_card_search_fts VIRTUAL TABLE INDEX 0:M6",
+    "USE TEMP B-TREE FOR DISTINCT",
+    "SCAN candidate",
+    "SEARCH cards USING INDEX " +
+    "sqlite_autoindex_revision_card_query_documents_1 " +
+    "(catalogue_revision_id=? AND card_id=?)",
+    "USE TEMP B-TREE FOR ORDER BY",
+  ]);
+  const matchedRevisions = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT DISTINCT catalogue_revision_id
+     FROM revision_card_search_fts
+     WHERE revision_card_search_fts MATCH ?
+     ORDER BY catalogue_revision_id`,
+  ).bind(productionQuery.bindings[0]).all<{
+    catalogue_revision_id: string;
+  }>();
+  expect(matchedRevisions.results).toEqual([
+    { catalogue_revision_id: "catrev_fts_search" },
+  ]);
   await testEnv.CATALOGUE_DB.prepare(
     "DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?",
   ).bind("catrev_fts_search").run();
@@ -2037,6 +2114,97 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   await expect(quoted.json()).resolves.toMatchObject({
     data: [{ id: "card_fts_search" }],
   });
+});
+
+test("Card search FTS is reconstructible across the D1 export and restore boundary", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_fts_restore",
+    runId: "run_fts_restore",
+    cards: [
+      apiCard({
+        id: "card_fts_restore",
+        cardNumber: "OP29-704",
+        name: "Reconstructible Quartz",
+      }),
+    ],
+  });
+  const retainedChunks = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT catalogue_revision_id, card_id, field_ordinal,
+            chunk_ordinal, search_text
+     FROM revision_card_search_chunks
+     WHERE catalogue_revision_id = ?
+     ORDER BY card_id, field_ordinal, chunk_ordinal`,
+  ).bind("catrev_fts_restore").all();
+  expect(retainedChunks.results.length).toBeGreaterThan(0);
+
+  await withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    async () => {
+      const exportBoundary = await testEnv.CATALOGUE_DB.prepare(
+        `SELECT
+           (SELECT state FROM card_search_fts_state WHERE singleton = 1)
+             AS state,
+           (SELECT count(*) FROM sqlite_schema
+            WHERE type = 'table'
+              AND name LIKE 'revision_card%'
+              AND lower(sql) LIKE '%create virtual table%')
+             AS virtual_tables,
+           (SELECT count(*) FROM revision_card_search_chunks
+            WHERE catalogue_revision_id = ?) AS retained_chunks`,
+      ).bind("catrev_fts_restore").first();
+      expect(exportBoundary).toEqual({
+        state: "reconstructing",
+        virtual_tables: 0,
+        retained_chunks: retainedChunks.results.length,
+      });
+      const unavailable = await exports.default.fetch(new Request(
+        "https://card-keepr.invalid/v1/cards?q=quartz",
+        { headers: apiHeaders("203.0.113.105") },
+      ));
+      expect(unavailable.status).toBe(503);
+    },
+  );
+
+  const reconstructed = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT state FROM card_search_fts_state WHERE singleton = 1) AS state,
+       (SELECT count(*) FROM revision_card_search_fts_rows
+        WHERE catalogue_revision_id = ?) AS indexed_chunks`,
+  ).bind("catrev_fts_restore").first();
+  expect(reconstructed).toEqual({
+    state: "ready",
+    indexed_chunks: retainedChunks.results.length,
+  });
+  const restored = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=quartz",
+    { headers: apiHeaders("203.0.113.106") },
+  ));
+  expect(restored.status).toBe(200);
+  await expect(restored.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_restore" }],
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_card_search_chunks
+     SET search_text = 'trigger-rebuilt-quartz'
+     WHERE catalogue_revision_id = ? AND card_id = ? AND field_ordinal = 1`,
+  ).bind("catrev_fts_restore", "card_fts_restore").run();
+  const triggerMaintained = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=trigger-rebuilt-quartz",
+    { headers: apiHeaders("203.0.113.107") },
+  ));
+  expect(triggerMaintained.status).toBe(200);
+  await expect(triggerMaintained.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_restore" }],
+  });
+  await expect(withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    async () => {
+      throw new Error("simulated D1 export failure");
+    },
+  )).rejects.toThrow("simulated D1 export failure");
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT state FROM card_search_fts_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ state: "ready" });
 });
 
 test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {

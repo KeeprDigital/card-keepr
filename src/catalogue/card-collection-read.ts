@@ -64,13 +64,12 @@ export async function cardCollectionResponse(
     return invalidCursor(requestId);
   }
   const current = await currentRevision(database);
-  const requestedCurrent =
-    cursor === null || cursor.revision_id === current.id;
-  const revision = requestedCurrent
-    ? await availableRevision(database, current.id)
-    : await availableRevision(database, cursor.revision_id);
+  const revision = await availableRevision(
+    database,
+    cursor?.revision_id ?? current.id,
+  );
   if (revision === null) {
-    return requestedCurrent
+    return cursor === null
       ? catalogueQueryUnavailable(requestId)
       : cursorUnavailable(requestId);
   }
@@ -192,11 +191,16 @@ export function cardCollectionPageQuery(
   if (filters.q !== null && search === null) {
     throw new Error("The validated Card search query is unavailable.");
   }
-  const ftsQuery = search === null ? null : cardSearchFtsQuery(search.text);
+  const ftsQuery = search === null
+    ? null
+    : cardSearchFtsQuery(search.text, revisionId);
+  const ftsSearch = search !== null && ftsQuery !== null;
   const shortSearch = search !== null && ftsQuery === null;
   const orderTable = shortSearch ? "search" : "cards";
   const conditions = ["cards.catalogue_revision_id = ?"];
-  const bindings: (string | number)[] = [revisionId];
+  const bindings: (string | number)[] = ftsSearch
+    ? [ftsQuery, revisionId, search.text, revisionId]
+    : [revisionId];
   if (filters.game !== null) {
     conditions.push("cards.sort_game = ?");
     bindings.push(filters.game);
@@ -208,18 +212,7 @@ export function cardCollectionPageQuery(
     );
     bindings.push(filters.cardNumber);
   }
-  if (search !== null && ftsQuery !== null) {
-    conditions.push(
-      `cards.card_id IN (
-         SELECT card_id
-         FROM revision_card_search_fts
-         WHERE revision_card_search_fts MATCH ?
-           AND catalogue_revision_id = ?
-           AND instr(search_text, ?) > 0
-       )`,
-    );
-    bindings.push(ftsQuery, revisionId, search.text);
-  } else if (search !== null) {
+  if (shortSearch) {
     conditions.push(
       "search.term = ?",
       `EXISTS (
@@ -246,15 +239,31 @@ export function cardCollectionPageQuery(
     );
   }
   bindings.push(rowLimit);
+  const searchCandidates = ftsSearch
+    ? `WITH search_candidates AS MATERIALIZED (
+         SELECT DISTINCT catalogue_revision_id, card_id
+         FROM revision_card_search_fts
+         WHERE revision_card_search_fts MATCH ?
+           AND catalogue_revision_id = ?
+           AND instr(search_text, ?) > 0
+       )
+       `
+    : "";
   return {
     sql:
-      `SELECT cards.summary_json,
+      `${searchCandidates}SELECT cards.summary_json,
               ${orderTable}.sort_game,
               ${orderTable}.sort_identity_kind,
               ${orderTable}.sort_identity_value,
               ${orderTable}.sort_id
        FROM ${
-        shortSearch
+        ftsSearch
+          ? `search_candidates AS candidate
+             JOIN revision_card_query_documents AS cards
+               ON cards.catalogue_revision_id =
+                    candidate.catalogue_revision_id
+              AND cards.card_id = candidate.card_id`
+          : shortSearch
           ? `revision_card_search_terms AS search
              INDEXED BY revision_card_search_by_term
              JOIN revision_card_query_documents AS cards
@@ -379,6 +388,9 @@ async function availableRevision(database: D1Database, id: string) {
        JOIN catalogue_query_revisions AS query
          ON query.catalogue_revision_id = revision.id
         AND query.state = 'available'
+       JOIN card_search_fts_state AS search_index
+         ON search_index.singleton = 1
+        AND search_index.state = 'ready'
        WHERE revision.id = ?`,
     )
     .bind(id)
