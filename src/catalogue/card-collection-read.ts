@@ -1,6 +1,6 @@
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { problemResponse } from "../http/problem";
-import { cardSearchQuery } from "./card-search";
+import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 
 type CardRow = {
   summary_json: string;
@@ -17,6 +17,8 @@ const encoder = new TextEncoder();
 
 type CardCursor = {
   contract: "card-keepr-card-cursor@1";
+  route: "/v1/cards";
+  order: typeof cardCollectionOrder;
   revision_id: string;
   q: string | null;
   game: string | null;
@@ -29,6 +31,9 @@ type CardCursor = {
     id: string;
   };
 };
+
+const cardCollectionOrder =
+  "game,official_identity.kind,official_identity.value,id" as const;
 
 type CollectionFilters = {
   q: string | null;
@@ -49,7 +54,9 @@ export async function cardCollectionResponse(
   if (cursor === "invalid") return invalidCursor(requestId);
   if (
     cursor !== null &&
-    (cursor.q !== filters.q ||
+    (cursor.route !== url.pathname ||
+      cursor.order !== cardCollectionOrder ||
+      cursor.q !== filters.q ||
       cursor.game !== filters.game ||
       cursor.card_number !== filters.cardNumber ||
       cursor.limit !== filters.limit)
@@ -91,6 +98,8 @@ export async function cardCollectionResponse(
       (queried.hasMore || truncated) && pageRows.length > 0
         ? encodeCursor({
             contract: "card-keepr-card-cursor@1",
+            route: "/v1/cards",
+            order: cardCollectionOrder,
             revision_id: revision.id,
             q: filters.q,
             game: filters.game,
@@ -179,10 +188,14 @@ export function cardCollectionPageQuery(
   after: CardCursor["after"] | null,
   rowLimit = filters.limit + 1,
 ): { sql: string; bindings: (string | number)[] } {
-  const searched = filters.q !== null;
-  const conditions = [
-    `${searched ? "search" : "cards"}.catalogue_revision_id = ?`,
-  ];
+  const search = filters.q === null ? null : cardSearchQuery(filters.q);
+  if (filters.q !== null && search === null) {
+    throw new Error("The validated Card search query is unavailable.");
+  }
+  const ftsQuery = search === null ? null : cardSearchFtsQuery(search.text);
+  const shortSearch = search !== null && ftsQuery === null;
+  const orderTable = shortSearch ? "search" : "cards";
+  const conditions = ["cards.catalogue_revision_id = ?"];
   const bindings: (string | number)[] = [revisionId];
   if (filters.game !== null) {
     conditions.push("cards.sort_game = ?");
@@ -195,11 +208,18 @@ export function cardCollectionPageQuery(
     );
     bindings.push(filters.cardNumber);
   }
-  if (filters.q !== null) {
-    const search = cardSearchQuery(filters.q);
-    if (search === null) {
-      throw new Error("The validated Card search query is unavailable.");
-    }
+  if (search !== null && ftsQuery !== null) {
+    conditions.push(
+      `cards.card_id IN (
+         SELECT card_id
+         FROM revision_card_search_fts
+         WHERE revision_card_search_fts MATCH ?
+           AND catalogue_revision_id = ?
+           AND instr(search_text, ?) > 0
+       )`,
+    );
+    bindings.push(ftsQuery, revisionId, search.text);
+  } else if (search !== null) {
     conditions.push(
       "search.term = ?",
       `EXISTS (
@@ -213,10 +233,9 @@ export function cardCollectionPageQuery(
     bindings.push(search.anchorTerm, search.text);
   }
   if (after !== null) {
-    const order = searched ? "search" : "cards";
     conditions.push(
-      `(${order}.sort_game, ${order}.sort_identity_kind,
-        ${order}.sort_identity_value, ${order}.sort_id)
+      `(${orderTable}.sort_game, ${orderTable}.sort_identity_kind,
+        ${orderTable}.sort_identity_value, ${orderTable}.sort_id)
        > (?, ?, ?, ?)`,
     );
     bindings.push(
@@ -230,12 +249,12 @@ export function cardCollectionPageQuery(
   return {
     sql:
       `SELECT cards.summary_json,
-              ${searched ? "search" : "cards"}.sort_game,
-              ${searched ? "search" : "cards"}.sort_identity_kind,
-              ${searched ? "search" : "cards"}.sort_identity_value,
-              ${searched ? "search" : "cards"}.sort_id
+              ${orderTable}.sort_game,
+              ${orderTable}.sort_identity_kind,
+              ${orderTable}.sort_identity_value,
+              ${orderTable}.sort_id
        FROM ${
-        searched
+        shortSearch
           ? `revision_card_search_terms AS search
              INDEXED BY revision_card_search_by_term
              JOIN revision_card_query_documents AS cards
@@ -244,12 +263,12 @@ export function cardCollectionPageQuery(
               AND cards.card_id = search.card_id`
           : `revision_card_query_documents AS cards
              INDEXED BY revision_card_query_documents_by_order`
-      }
+       }
        WHERE ${conditions.join("\nAND ")}
-       ORDER BY ${searched ? "search" : "cards"}.sort_game,
-                ${searched ? "search" : "cards"}.sort_identity_kind,
-                ${searched ? "search" : "cards"}.sort_identity_value,
-                ${searched ? "search" : "cards"}.sort_id
+       ORDER BY ${orderTable}.sort_game,
+                ${orderTable}.sort_identity_kind,
+                ${orderTable}.sort_identity_value,
+                ${orderTable}.sort_id
        LIMIT ?`,
     bindings,
   };
@@ -410,7 +429,10 @@ function parseCursor(
     const after = value.after;
     if (
       value.contract !== "card-keepr-card-cursor@1" ||
+      value.route !== "/v1/cards" ||
+      value.order !== cardCollectionOrder ||
       typeof value.revision_id !== "string" ||
+      value.revision_id.length === 0 ||
       typeof value.limit !== "number" ||
       (value.q !== null && typeof value.q !== "string") ||
       (value.game !== null && typeof value.game !== "string") ||
@@ -419,9 +441,13 @@ function parseCursor(
       after === null ||
       typeof after !== "object" ||
       typeof after.game !== "string" ||
+      after.game.length === 0 ||
       typeof after.identity_kind !== "string" ||
+      after.identity_kind.length === 0 ||
       typeof after.identity_value !== "string" ||
-      typeof after.id !== "string"
+      after.identity_value.length === 0 ||
+      typeof after.id !== "string" ||
+      after.id.length === 0
     ) {
       throw new Error("invalid cursor");
     }

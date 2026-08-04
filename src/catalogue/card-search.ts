@@ -83,6 +83,12 @@ export function cardSearchQuery(
   };
 }
 
+export function cardSearchFtsQuery(value: string): string | null {
+  const text = normalizeSearchText(value);
+  if ([...text].length < maximumGramLength) return null;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
 function searchFields(document: string): readonly string[] {
   let parsed: unknown;
   try {

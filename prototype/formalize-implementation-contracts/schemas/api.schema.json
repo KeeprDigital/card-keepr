@@ -658,6 +658,9 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["data", "meta", "links"],
+      "dependentRequired": {
+        "provenance": ["included"]
+      },
       "properties": {
         "data": { "$ref": "#/$defs/CardDetail" },
         "included": {
