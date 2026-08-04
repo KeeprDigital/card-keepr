@@ -1,7 +1,10 @@
 import { canonicalJson, sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./catalogue-candidate";
-import { requiredSourceAdapter } from "./source-adapters";
+import {
+  adapterReconciliationAreas,
+  requiredSourceAdapter,
+} from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parseEvidencePlans,
@@ -489,9 +492,9 @@ export async function retainedReconciliationObservation(
         );
         assertObservationAuthority(
           parsed,
-          requiredSourceAdapter(row.adapter_version)
-            .reconciliationCapability,
-          row.adapter_version,
+          adapterReconciliationAreas(
+            requiredSourceAdapter(row.adapter_version),
+          ),
         );
         merged.push({
           ...parsed,
@@ -1280,18 +1283,13 @@ function base64(bytes: Uint8Array): string {
 
 function assertObservationAuthority(
   observation: ReturnType<typeof parseReconciliationObservation>,
-  coverage: ReturnType<
-    typeof requiredSourceAdapter
-  >["reconciliationCapability"],
-  adapterVersion: string,
+  coverage: readonly ("catalogue" | "errata")[],
 ): void {
   if (
     (observation.kind === "official_erratum" &&
-      coverage !== "errata" && adapterVersion !== "digimon-en@4") ||
-    (observation.kind === "card_printing" && coverage === "errata") ||
+      !coverage.includes("errata")) ||
     (observation.kind === "card_printing" &&
-      observation.errata.length > 0 &&
-      coverage !== "catalogue")
+      !coverage.includes("catalogue"))
   ) {
     throw new Error(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",

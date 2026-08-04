@@ -28,6 +28,8 @@ export type SourceAdapterRegistration = Readonly<{
     | Readonly<{ kind: "exact-url"; url: string }>
     | Readonly<{ kind: "synthetic-fixture" }>;
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
+  reconciliationAreas?: readonly ("catalogue" | "errata")[];
+  inheritDiscoveryRequestHeaders?: boolean;
   parse?: (
     document: unknown,
   ) => readonly unknown[] | Promise<readonly unknown[]>;
@@ -197,6 +199,11 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
         reconciliationCapability: "catalogue" as const,
+        reconciliationAreas: adapter.adapterVersion === "digimon-en@4"
+          ? ["catalogue", "errata"] as const
+          : ["catalogue"] as const,
+        inheritDiscoveryRequestHeaders:
+          adapter.adapterVersion === "digimon-en@4",
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
@@ -443,6 +450,17 @@ export function requiredSourceAdapter(
     );
   }
   return adapter;
+}
+
+export function adapterReconciliationAreas(
+  adapter: SourceAdapterRegistration,
+): readonly ("catalogue" | "errata")[] {
+  if (adapter.reconciliationAreas !== undefined) {
+    return adapter.reconciliationAreas;
+  }
+  return adapter.reconciliationCapability === "unavailable"
+    ? []
+    : [adapter.reconciliationCapability];
 }
 
 export function requiredActiveSourceAdapter(

@@ -462,6 +462,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     successfulChecks.map(({ game, area }) => `${game}:${area}`),
     [
       "digimon:cards-and-printings",
+      "digimon:errata",
       "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
@@ -1025,7 +1026,12 @@ function officialPlan(
   game,
   lineage,
   adapter,
-  headers = { accept: "text/html" },
+  headers = lineage === "digimon-en"
+    ? {
+        accept: "text/html",
+        "user-agent": "card-keepr-acceptance-product/default",
+      }
+    : { accept: "text/html" },
 ) {
   return {
     supported_game: game,

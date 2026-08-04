@@ -5139,7 +5139,7 @@ function normalizeFusionWorldDetails(value: unknown): unknown[] {
 
 function normalizeDigimonDetails(
   value: unknown,
-  preserveFuzzyProductLabels = false,
+  completeCatalogue = false,
 ): unknown[] {
   return requiredArray(value, "Digimon Card popups").map((item) => {
     const card = requiredRecord(item, "Digimon Card popup");
@@ -5165,7 +5165,8 @@ function normalizeDigimonDetails(
         link_dp: card["Link DP"],
       },
       imageFields: [{ role: "front", value: card.image_url }],
-      preserveFuzzyProductLabels,
+      preserveFuzzyProductLabels: completeCatalogue,
+      derivePrintingIdentity: completeCatalogue,
     });
   });
 }
@@ -5207,28 +5208,53 @@ function canonicalDetail(
     attributes: Record<string, unknown>;
     imageFields: readonly { role: string; value: unknown }[];
     preserveFuzzyProductLabels?: boolean;
+    derivePrintingIdentity?: boolean;
   },
 ): Record<string, unknown> {
   const printing =
     raw.printing === undefined
       ? undefined
       : requiredRecord(raw.printing, "Official Printing fields");
+  if (
+    mapping.derivePrintingIdentity === true &&
+    (
+      raw.artwork_fingerprint !== undefined ||
+      raw.printed_fields_digest !== undefined ||
+      printing?.normalized_rarity !== undefined
+    )
+  ) {
+    throw new Error(
+      "Official Source publisher data must not supply normalized rarity, artwork identity, or printed-fields digest.",
+    );
+  }
+  const path = requiredText(raw[mapping.path], "Official Card locator");
+  const number = requiredText(raw[mapping.number], "Official Card number");
+  const rules = requiredText(raw[mapping.rules], "Official Card rules");
+  const artworkFingerprint = printing === undefined
+    ? null
+    : mapping.derivePrintingIdentity === true
+      ? officialArtworkFingerprint(
+          number,
+          mapping.imageFields.map(({ role }) => role),
+          path,
+        )
+      : requiredText(
+          raw.artwork_fingerprint,
+          "Official artwork fingerprint",
+        );
   const images =
     printing === undefined
       ? []
       : mapping.imageFields.map(({ role, value }) => ({
           role,
           source_url: requiredText(value, "Official Printing image URL"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
+          artwork_fingerprint: artworkFingerprint!,
         }));
   return {
-    path: requiredText(raw[mapping.path], "Official Card locator"),
-    number: requiredText(raw[mapping.number], "Official Card number"),
+    path,
+    number,
     title: requiredText(raw[mapping.title], "Official Card name"),
-    rules: requiredText(raw[mapping.rules], "Official Card rules"),
+    rules,
     profile: requiredText(raw.profile, "Official Game Profile"),
     attributes: mapping.attributes,
     product_codes: requiredTextArray(
@@ -5261,7 +5287,9 @@ function canonicalDetail(
       : {
           printing: {
             rarity: printing.rarity ?? null,
-            normalizedRarity: printing.normalized_rarity ?? null,
+            normalizedRarity: mapping.derivePrintingIdentity === true
+              ? normalizedDigimonRarity(printing.rarity)
+              : printing.normalized_rarity ?? null,
             attributes: printing.attributes ?? {},
           },
           printed_rules: requiredText(
@@ -5269,18 +5297,47 @@ function canonicalDetail(
             "Official printed rules",
           ),
           variant: requiredText(raw.variant, "Official Printing variant"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
-          printed_fields_digest: requiredText(
-            raw.printed_fields_digest,
-            "Official printed fields digest",
-          ),
+          artwork_fingerprint: artworkFingerprint!,
+          printed_fields_digest: mapping.derivePrintingIdentity === true
+            ? `printed-material:${JSON.stringify(stableValue({
+                rules: requiredText(
+                  raw.printed_rules,
+                  "Official printed rules",
+                ),
+                rarity: printing.rarity ?? null,
+                attributes: printing.attributes ?? {},
+              }))}`
+            : requiredText(
+                raw.printed_fields_digest,
+                "Official printed fields digest",
+              ),
           image: images[0]!.source_url,
           images,
         }),
   };
+}
+
+function normalizedDigimonRarity(value: unknown): string | null {
+  if (value === null) return null;
+  const raw = requiredText(value, "Official Digimon rarity");
+  const normalized = new Map([
+    ["c", "common"],
+    ["common", "common"],
+    ["u", "uncommon"],
+    ["uncommon", "uncommon"],
+    ["r", "rare"],
+    ["rare", "rare"],
+    ["sr", "super-rare"],
+    ["super rare", "super-rare"],
+    ["sec", "secret-rare"],
+    ["secret rare", "secret-rare"],
+    ["p", "promo"],
+    ["promo", "promo"],
+  ]).get(raw.toLowerCase());
+  if (normalized === undefined) {
+    throw new Error("Official Digimon rarity vocabulary is unsupported.");
+  }
+  return normalized;
 }
 
 function normalizeOnePieceProducts(value: unknown): unknown[] {

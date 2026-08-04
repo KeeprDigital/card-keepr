@@ -180,6 +180,12 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
   const current = requiredSourceAdapter("digimon-en@4");
   const retained = requiredSourceAdapter("digimon-en@3");
   const payload = officialRawSurfacePayload("/digimon-en/card-list");
+  const publisherFacts = structuredClone(payload);
+  for (const detail of publisherFacts.card_popups) {
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    delete detail.printing.normalized_rarity;
+  }
   const document = (value) => Buffer.from(
     `<html>${officialPublisherPayloadScript("digimon-en", "card-list", value)}</html>`,
   );
@@ -189,6 +195,11 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
   const intermediate =
     "https://world.digimoncard.com/cards/index.php?search=true&category=all";
 
+  assert.ok(retained.parseBytes(document(payload), {
+    mediaType: "text/html",
+    url: retained.requestUrlForSurface("card-list"),
+    requestId: "digimon-en:card-list",
+  }).length > 0, "V3 must preserve acceptance of its pinned publisher shape");
   assert.throws(
     () => retained.parseBytes(document(payload), {
       mediaType: "text/html",
@@ -198,13 +209,31 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
     /listing|surface|publication|publisher|identity|contract/iu,
     "V3 must preserve its original dynamic-listing decoder behavior",
   );
-  assert.ok(current.parseBytes(document(payload), {
+  assert.throws(
+    () => current.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: exactLeaf,
+      requestId,
+    }),
+    /must not supply.*(?:artwork|digest|rarity)/iu,
+  );
+  const observations = current.parseBytes(document(publisherFacts), {
     mediaType: "text/html",
     url: exactLeaf,
     requestId,
-  }).length > 0);
+  });
+  assert.ok(observations.length > 0);
+  assert.equal(observations[0].printing.rarity.normalized, "rare");
+  assert.match(
+    observations[0].identity_evidence.artwork_fingerprint,
+    /^official-artwork:/u,
+  );
+  assert.match(
+    observations[0].identity_evidence.printed_fields_digest,
+    /^printed-material:/u,
+  );
   assert.throws(
-    () => current.parseBytes(document(payload), {
+    () => current.parseBytes(document(publisherFacts), {
       mediaType: "text/html",
       url: intermediate,
       requestId,
@@ -212,7 +241,7 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
     /complete Digimon leaf/iu,
   );
   assert.throws(
-    () => current.parseBytes(document(payload), {
+    () => current.parseBytes(document(publisherFacts), {
       mediaType: "text/html",
       url: current.requestUrlForDiscovery(),
       requestId: "digimon-en:discovery",
@@ -277,6 +306,43 @@ test("Digimon V4 normalizes exact standalone Official Errata", () => {
       },
     }],
   );
+});
+
+test("the synthetic Digimon Worker isolates sequential and concurrent request scenarios", async () => {
+  const rootUrl =
+    "https://world.digimoncard.com/cards/index.php?search=true";
+  const errataUrl = "https://world.digimoncard.com/rule/errata_card/";
+  const responseText = async (url, userAgent) =>
+    await (await syntheticOfficialSource.fetch(new Request(url, {
+      headers: { "user-agent": userAgent },
+    }))).text();
+
+  await responseText(
+    rootUrl,
+    "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=card-list",
+  );
+  const unmarked = await responseText(
+    errataUrl,
+    "card-keepr-official-source/1; request-role=surface; request-surface=errata",
+  );
+  assert.doesNotMatch(
+    unmarked,
+    /Corrected synthetic main effect/u,
+    "an unmarked request must not inherit an earlier request scenario",
+  );
+
+  const [complete, absent] = await Promise.all([
+    responseText(
+      errataUrl,
+      "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=errata",
+    ),
+    responseText(
+      errataUrl,
+      "card-keepr-acceptance-digimon/complete-no-errata; request-role=surface; request-surface=errata",
+    ),
+  ]);
+  assert.match(complete, /Corrected synthetic main effect/u);
+  assert.doesNotMatch(absent, /Corrected synthetic main effect/u);
 });
 
 function registeredProductionAdapters() {
@@ -1126,6 +1192,12 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.equal(adapter.origin, "production");
     assert.equal(adapter.reconciliationCapability, "catalogue");
+    assert.deepEqual(
+      adapter.reconciliationAreas,
+      adapter.adapterVersion === "digimon-en@4"
+        ? ["catalogue", "errata"]
+        : ["catalogue"],
+    );
     assert.equal(
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
@@ -4434,13 +4506,21 @@ function rawSurfacePayload(lineage, surface) {
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
     adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
+  const publisherPayload = structuredClone(payload);
+  if (completeDigimonLeaf) {
+    for (const detail of publisherPayload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      delete detail.printing.normalized_rarity;
+    }
+  }
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
        ${officialPublisherPayloadScript(
         adapter.sourceLineage,
         surface,
-        payload,
+        publisherPayload,
       )}`,
     ),
     {

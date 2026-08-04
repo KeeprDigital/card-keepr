@@ -23,8 +23,6 @@ import {
   productionSourceFixtureSurface,
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
-let retainedDigimonScenarioMarker = null;
-
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -84,16 +82,7 @@ export default {
         requestScenarioMarker === "card-keepr-official-source/1"
           ? null
           : requestScenarioMarker;
-      if (
-        officialLineage === "digimon-en" &&
-        meaningfulScenarioMarker !== null
-      ) {
-        retainedDigimonScenarioMarker = meaningfulScenarioMarker;
-      }
-      const officialScenarioMarker = meaningfulScenarioMarker ??
-        (officialLineage === "digimon-en"
-          ? retainedDigimonScenarioMarker
-          : null);
+      const officialScenarioMarker = meaningfulScenarioMarker;
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -444,6 +433,15 @@ function applyDigimonCompleteFixture(
   requestUrl,
 ) {
   if (lineage !== "digimon-en") return;
+  if (surface === "card-list") {
+    for (const detail of payload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      if (detail.printing !== null && typeof detail.printing === "object") {
+        delete detail.printing.normalized_rarity;
+      }
+    }
+  }
   const exactLeaf = requestUrl.searchParams.has("category") &&
     requestUrl.searchParams.has("cardcategory") &&
     requestUrl.searchParams.has("colour");
@@ -565,9 +563,6 @@ function applyDigimonCompleteFixture(
     Effect: "Synthetic main effect.",
     printed_rules: "Synthetic printed rules.",
     variant: "base",
-    artwork_fingerprint:
-      'official-artwork:{"official_card_identity":"BT99-001","roles":["front"],"artwork_id":"digimon-bt99-001-standard"}',
-    printed_fields_digest: "printed-material:digimon-bt99-001-v1",
     image_url:
       "https://world.digimoncard.com/images/BT99-001-standard.png",
     fuzzy_product_labels: ["Possible future Product name"],
@@ -576,7 +571,6 @@ function applyDigimonCompleteFixture(
   });
   base.printing = {
     rarity: "R",
-    normalized_rarity: "rare",
     attributes: { alternative_art: false },
   };
   const alternate = structuredClone(base);
@@ -584,8 +578,6 @@ function applyDigimonCompleteFixture(
     popup_id: "/cards/BT99-001_p1",
     name: "Synthetic Alternate-art Presentation",
     variant: "alternate-art-1",
-    artwork_fingerprint:
-      'official-artwork:{"official_card_identity":"BT99-001","roles":["front"],"artwork_id":"digimon-bt99-001-alternate-1"}',
     image_url:
       "https://world.digimoncard.com/images/BT99-001-alternate-1.png",
   });

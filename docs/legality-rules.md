@@ -13,7 +13,7 @@ request graphs:
 
 - `one-piece-en@2`
 - `fusion-world-en@3`
-- `digimon-en@3`
+- `digimon-en@4`
 - `gundam-en-asia@3`
 - `gundam-en-us@3`
 
@@ -33,13 +33,18 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
+`digimon-en@4` explicitly owns both Catalogue and standalone Official Errata
+reconciliation areas. A successful run records freshness independently for
+`cards-and-printings` and `errata`; neither area is inferred from the adapter
+version string.
+
 The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
-`digimon-en@2`, and both Gundam `@2` versions) remain registered with their
-original parser contracts only for explicit reprocessing of retained Source
-Snapshots. New production Evidence Plans accept only the active registrations
-listed above. Reprocessing retained bytes through an earlier identity cannot
-gain Legality Rule observations; a non-empty legality sidecar still fails
-closed. Synthetic fixture adapters follow the same
+`digimon-en@2`, `digimon-en@3`, and both Gundam `@2` versions) remain
+registered with their original parser contracts only for explicit reprocessing
+of retained Source Snapshots. New production Evidence Plans accept only the
+active registrations listed above. Reprocessing retained bytes through an
+earlier identity cannot gain Legality Rule observations; a non-empty legality
+sidecar still fails closed. Synthetic fixture adapters follow the same
 append-only rule: One Piece `@3` and the other games' `@2` versions are the
 legality-aware identities, while prior fixture versions retain their original
 behavior.

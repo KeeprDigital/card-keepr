@@ -214,25 +214,29 @@ export async function discoverSnapshotRequests(
       requestId: snapshot.request_id,
     });
     const inheritedHeaders: unknown = JSON.parse(snapshot.request_headers_json);
-    return discovered.map((request) => ({
-      ...request,
-      ...(request.discoveryKey === undefined || !isRecord(inheritedHeaders)
-        ? {}
-        : {
-            headers: discoveredRequestHeaders(
-              request,
-              {
-                ...request.headers,
-                ...Object.fromEntries(
-                  Object.entries(inheritedHeaders).filter(
-                    (entry): entry is [string, string] =>
-                      typeof entry[1] === "string",
-                  ),
-                ),
-              },
-            ),
-          }),
-    }));
+    return discovered.map((request) => {
+      if (
+        !isRecord(inheritedHeaders) ||
+        (request.discoveryKey === undefined &&
+          adapter.inheritDiscoveryRequestHeaders !== true)
+      ) {
+        return request;
+      }
+      const inherited = Object.fromEntries(
+        Object.entries(inheritedHeaders).filter(
+          (entry): entry is [string, string] =>
+          typeof entry[1] === "string",
+        ),
+      );
+      const headers = { ...request.headers, ...inherited };
+      if (request.headers.accept !== undefined) {
+        headers.accept = request.headers.accept;
+      }
+      return {
+        ...request,
+        headers: discoveredRequestHeaders(request, headers),
+      };
+    });
   } catch (error) {
     throw new AdministrationProblem(
       422,

@@ -296,6 +296,23 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     api,
   );
   const headers = { authorization: `Bearer ${apiKey}` };
+  const manifestResponse = await fetch(
+    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}`,
+    { headers },
+  );
+  assert.equal(manifestResponse.status, 200);
+  const manifest = await manifestResponse.json();
+  assert.deepEqual(
+    manifest.data.source_freshness
+      .filter(({ game, area }) =>
+        game === "digimon" &&
+        ["cards-and-printings", "errata"].includes(area)
+      )
+      .map(({ area }) => area)
+      .sort(),
+    ["cards-and-printings", "errata"],
+    "the combined adapter must refresh its catalogue and standalone Errata areas",
+  );
   const cardsResponse = await fetch(
     `http://127.0.0.1:${apiPort}/v1/cards?game=digimon&card_number=BT99-001`,
     { headers },
