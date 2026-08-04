@@ -3824,6 +3824,111 @@ test("the expanded One Piece adapter closes the nested DON Card policy schema", 
   );
 });
 
+test("active Fusion discovery preserves retained checkbox facet vocabulary", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const bytes = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ));
+  const requestsAt = (adapter, url) =>
+    adapter.discoverRequests(bytes, {
+      mediaType: "text/html; charset=UTF-8",
+      url,
+      requestId: url === adapter.requestUrlForSurface("card-search")
+        ? "fusion-world-en:card-search"
+        : `fusion-world-en:listing:${"f".repeat(64)}`,
+    }).filter(({ role }) => role === "listing");
+  const queryStrings = (requests) =>
+    requests.map(({ url }) => new URL(url).searchParams.toString());
+
+  assert.deepEqual(
+    queryStrings(requestsAt(current, current.requestUrlForSurface("card-search"))),
+    ["card_type%5B%5D=Battle", "card_type%5B%5D=Leader"],
+  );
+  const leader =
+    `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader`;
+  assert.deepEqual(queryStrings(requestsAt(current, leader)), [
+    "card_type%5B%5D=Leader&color%5B%5D=Blue",
+    "card_type%5B%5D=Leader&color%5B%5D=Red",
+  ]);
+  const red = `${leader}&color%5B%5D=Red`;
+  assert.deepEqual(queryStrings(requestsAt(current, red)), [
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=0",
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1",
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=2",
+  ]);
+  assert.deepEqual(
+    requestsAt(previous, previous.requestUrlForSurface("card-search")),
+    [],
+  );
+});
+
+test("active Fusion discovery derives full locators from retained data-src links", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+    requestId: `fusion-world-en:listing:${"e".repeat(64)}`,
+  };
+  const details = (adapter, document = html) =>
+    adapter.discoverRequests(new TextEncoder().encode(document), context)
+      .filter(({ role }) => role === "detail");
+  const locators = (document) =>
+    current.parseBytes(new TextEncoder().encode(document), context)
+      .flatMap(({ listing_identity_evidence }) =>
+        listing_identity_evidence === undefined
+          ? []
+          : [listing_identity_evidence.locator]
+      );
+
+  assert.deepEqual(details(current).map(({ url }) => url), [
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p1",
+  ]);
+  assert.deepEqual(locators(html), ["FB99-001", "FB99-001_p1"]);
+  assert.deepEqual(details(previous), []);
+
+  const variantAnchor = html.match(
+    /<a\b[^>]*\bdata-src="detail\.php\?card_no=FB99-001&amp;p=_p1"[^>]*>[\s\S]*?<\/a>/u,
+  )?.[0];
+  assert.ok(variantAnchor);
+  const duplicate = html.replace("</ul>", `${variantAnchor}</ul>`);
+  assert.equal(details(current, duplicate).length, 2);
+  assert.deepEqual(locators(duplicate), ["FB99-001", "FB99-001_p1"]);
+
+  const conflicting = html.replace(
+    "</ul>",
+    `${variantAnchor.replace(
+      'alt="FB99-001 Fusion Leader"',
+      'alt="FB99-999 Conflicting Leader"',
+    )}</ul>`,
+  );
+  assert.throws(
+    () => details(current, conflicting),
+    /full locator.*conflict/iu,
+  );
+  assert.throws(
+    () => locators(conflicting),
+    /full locator.*conflict/iu,
+  );
+
+  const unknownLocatorField = html.replace(
+    "&amp;p=_p1",
+    "&amp;p=_p1&amp;future_variant=_p2",
+  );
+  assert.throws(
+    () => details(current, unknownLocatorField),
+    /full locator.*unsupported.*query/iu,
+  );
+});
+
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
   const byLineage = (lineage) =>
     registeredProductionAdapters().find(
@@ -5382,6 +5487,25 @@ test("active Fusion HTML details bind base identity and variant to the full loca
   assert.equal(observation.card.official_identity.value, "FB99-001");
   assert.equal(observation.identity_evidence.locator, "FB99-001_p2");
   assert.equal(observation.identity_evidence.variant_key, "_p2");
+  const [liveObservation] = current.parseBytes(
+    new TextEncoder().encode(html),
+    {
+      ...context,
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p2",
+    },
+  );
+  assert.equal(liveObservation.card.official_identity.value, "FB99-001");
+  assert.equal(liveObservation.identity_evidence.locator, "FB99-001_p2");
+  assert.equal(liveObservation.identity_evidence.variant_key, "_p2");
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(html), {
+      ...context,
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p2&future_variant=_p3",
+    }),
+    /full locator.*unsupported.*query/iu,
+  );
   assert.throws(
     () => previous.parseBytes(new TextEncoder().encode(html), context),
     /requested Card identity does not match/iu,

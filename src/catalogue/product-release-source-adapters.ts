@@ -719,6 +719,7 @@ function bandaiRequestDiscovery(
           discoveryHtml,
           current,
           expandedOnePieceCatalogue,
+          catalogueComplete,
         ).map(
           (url) => ({
             role: "listing" as const,
@@ -733,23 +734,31 @@ function bandaiRequestDiscovery(
     )) {
       const tag = match[1]!.toLowerCase();
       const attributes = match[2]!;
+      const fusionWorldAnchor = tag === "a" && catalogueComplete &&
+          format === "fusion-world"
+        ? fusionWorldListingAnchor(attributes, context.url, sourceLineage)
+        : null;
       const rawUrl =
         tag === "a"
           ? htmlAttribute(attributes, "href")
           : htmlAttribute(attributes, "data-src") ??
             htmlAttribute(attributes, "src");
-      if (
-        rawUrl === null ||
-        rawUrl.startsWith("#") ||
-        /^(?:data|javascript|mailto|tel):/iu.test(rawUrl)
-      ) {
-        continue;
-      }
       let resolved: URL;
-      try {
-        resolved = new URL(decodeHtmlText(rawUrl), current);
-      } catch {
-        continue;
+      if (fusionWorldAnchor === null) {
+        if (
+          rawUrl === null ||
+          rawUrl.startsWith("#") ||
+          /^(?:data|javascript|mailto|tel):/iu.test(rawUrl)
+        ) {
+          continue;
+        }
+        try {
+          resolved = new URL(decodeHtmlText(rawUrl), current);
+        } catch {
+          continue;
+        }
+      } else {
+        resolved = fusionWorldAnchor.url;
       }
       resolved.hash = "";
       if (
@@ -839,8 +848,9 @@ function discoveredPartitionRequests(
   html: string,
   current: URL,
   expandedOnePieceCatalogue = false,
+  catalogueComplete = false,
 ): string[] {
-  const facets = [...html.matchAll(
+  const selectFacets = [...html.matchAll(
     /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
   )]
     .map((match) => {
@@ -866,6 +876,42 @@ function discoveredPartitionRequests(
     .filter(
       (entry): entry is { key: string; options: string[] } => entry !== null,
     );
+  const checkboxOptions = new Map<string, string[]>();
+  if (catalogueComplete && format === "fusion-world") {
+    for (const match of html.matchAll(/<input\b([^>]*)>/giu)) {
+      const attributes = match[1]!;
+      if (htmlAttribute(attributes, "type")?.toLowerCase() !== "checkbox") {
+        continue;
+      }
+      const key = htmlAttribute(attributes, "name")?.toLowerCase();
+      const value = htmlAttribute(attributes, "value");
+      if (
+        key === undefined ||
+        value === null ||
+        !/^(?:card_type|colou?r|cost)\[\]$/u.test(key)
+      ) {
+        continue;
+      }
+      const normalizedValue = decodeHtmlText(value).trim();
+      if (
+        normalizedValue.length === 0 ||
+        /^all$/iu.test(normalizedValue)
+      ) {
+        continue;
+      }
+      checkboxOptions.set(key, [
+        ...(checkboxOptions.get(key) ?? []),
+        normalizedValue,
+      ]);
+    }
+  }
+  const facets = [
+    ...selectFacets,
+    ...[...checkboxOptions.entries()].map(([key, options]) => ({
+      key,
+      options: [...new Set(options)].sort(),
+    })),
+  ];
   const stage = nextPartitionFacet(
     format,
     facets,
@@ -889,18 +935,21 @@ function fusionWorldHtmlListingEntries(
   for (const match of html.matchAll(
     /<a\b([^>]*\bhref=["'][^"']+["'][^>]*)>([\s\S]*?)<\/a>/giu,
   )) {
-    const href = htmlAttribute(match[1]!, "href");
-    if (href === null) continue;
-    const url = new URL(decodeHtmlText(href), requestUrl);
-    if (!officialUrl(sourceLineage, url, "document")) continue;
-    if (!/(?:detail|card)/iu.test(url.pathname)) continue;
-    const locator = [...url.searchParams.entries()].find(([key]) =>
-      /^(?:card(?:id|no|number)?|detailSearch|popup)$/iu.test(key)
-    )?.[1];
-    if (locator === undefined) continue;
+    const anchor = fusionWorldListingAnchor(
+      match[1]!,
+      requestUrl,
+      sourceLineage,
+    );
+    if (anchor === null) continue;
+    const locator = anchor.locator;
     const identity = fusionWorldLocatorIdentity(locator);
     const dataCardNumber = htmlAttribute(match[1]!, "data-card-number");
-    const label = htmlText(match[2]!);
+    const label = htmlText(match[2]!) || decodeHtmlText(
+      htmlAttribute(
+        match[2]!.match(/<img\b([^>]*)>/iu)?.[1] ?? "",
+        "alt",
+      ) ?? "",
+    ).trim();
     const observedCardNumber = dataCardNumber ??
       label.match(/\b[A-Z]{1,6}\d{0,3}-[A-Z0-9]{1,6}\b/u)?.[0] ??
       identity.cardNumber;
@@ -926,6 +975,72 @@ function fusionWorldHtmlListingEntries(
     .sort((left, right) => left.locator.localeCompare(right.locator));
 }
 
+function fusionWorldListingAnchor(
+  attributes: string,
+  requestUrl: string,
+  sourceLineage: string,
+): { url: URL; locator: string } | null {
+  const href = htmlAttribute(attributes, "href");
+  if (href === null) return null;
+  const decodedHref = decodeHtmlText(href).trim();
+  const javascriptTarget = /^javascript:void\(0\);?$/iu.test(decodedHref);
+  const rawTarget = javascriptTarget
+    ? htmlAttribute(attributes, "data-src")
+    : decodedHref;
+  if (rawTarget === null) return null;
+  let url: URL;
+  try {
+    url = new URL(decodeHtmlText(rawTarget), requestUrl);
+  } catch {
+    return null;
+  }
+  url.hash = "";
+  if (
+    !officialUrl(sourceLineage, url, "document") ||
+    !/(?:detail|card)/iu.test(url.pathname)
+  ) {
+    return null;
+  }
+  const locator = fusionWorldFullLocatorFromUrl(url, javascriptTarget);
+  return locator === null ? null : { url, locator };
+}
+
+function fusionWorldFullLocatorFromUrl(
+  url: URL,
+  exactLiveQuery: boolean,
+): string | null {
+  const entries = [...url.searchParams.entries()];
+  const identities = entries.filter(([key]) =>
+    /^(?:card(?:[_-]?(?:id|no|number))?|detailSearch|popup)$/iu.test(key)
+  );
+  if (identities.length === 0) return null;
+  if (identities.length !== 1) {
+    throw new Error("Fusion World full locator has conflicting query identities.");
+  }
+  const [identityKey, rawCardLocator] = identities[0]!;
+  const variantValues = url.searchParams.getAll("p");
+  if (variantValues.length > 1) {
+    throw new Error("Fusion World full locator has conflicting variant queries.");
+  }
+  if (
+    exactLiveQuery &&
+    (identityKey !== "card_no" ||
+      entries.some(([key]) => key !== "card_no" && key !== "p"))
+  ) {
+    throw new Error("Fusion World full locator has an unsupported live query field.");
+  }
+  const cardLocator = rawCardLocator.normalize("NFC").trim();
+  const baseIdentity = fusionWorldLocatorIdentity(cardLocator);
+  const variant = variantValues[0]?.normalize("NFC").trim();
+  if (variant === undefined) return cardLocator;
+  if (baseIdentity.variant !== "base" || !/^_[A-Za-z0-9-]+$/u.test(variant)) {
+    throw new Error("Fusion World full locator has a conflicting variant query.");
+  }
+  const locator = `${baseIdentity.cardNumber}${variant}`;
+  fusionWorldLocatorIdentity(locator);
+  return locator;
+}
+
 function nextPartitionFacet(
   format: DiscoveryFormat,
   facets: readonly { key: string; options: string[] }[],
@@ -933,7 +1048,11 @@ function nextPartitionFacet(
   expandedOnePieceCatalogue = false,
 ): { key: string; options: string[] } | null {
   const find = (keys: readonly string[]) =>
-    facets.find(({ key }) => keys.includes(key)) ?? null;
+    facets.find(({ key }) => keys.includes(key.replace(/\[\]$/u, ""))) ?? null;
+  const hasFacet = (keys: readonly string[]) =>
+    keys.some((key) =>
+      current.searchParams.has(key) || current.searchParams.has(`${key}[]`)
+    );
   if (format === "one-piece") {
     const recording = find([
       expandedOnePieceCatalogue ? "series" : "recording",
@@ -960,7 +1079,7 @@ function nextPartitionFacet(
     const facet = find(aliases);
     if (facet === null) continue;
     if (
-      aliases.some((key) => current.searchParams.has(key))
+      hasFacet(aliases)
     ) {
       continue;
     }
@@ -1018,6 +1137,14 @@ function discoveredHtmlRole(
     return "detail";
   }
   if (initialSurface === "legality") return null;
+  if (
+    catalogueComplete &&
+    format === "fusion-world" &&
+    /\/cardlist\/detail\.php$/iu.test(url.pathname) &&
+    fusionWorldFullLocatorFromUrl(url, false) !== null
+  ) {
+    return "detail";
+  }
   if (
     initialSurface === "products" ||
     initialSurface === "releases" ||
@@ -3127,13 +3254,13 @@ function parseFusionWorldCardDetailV3(
     throw new Error("Fusion World Card detail is missing its Card Number.");
   }
   const request = new URL(requestUrl);
-  const requestedEntry = [...request.searchParams.entries()].find(([key]) =>
-    /^(?:card(?:id|no|number)?|detailSearch|popup)$/iu.test(key)
+  const requestedLocator = fusionWorldFullLocatorFromUrl(
+    request,
+    request.searchParams.has("card_no"),
   );
-  if (requestedEntry === undefined) {
+  if (requestedLocator === null) {
     throw new Error("Fusion World detail request has no full locator.");
   }
-  const requestedLocator = requestedEntry[1].normalize("NFC").trim();
   const identity = fusionWorldLocatorIdentity(requestedLocator);
   if (identity.cardNumber !== cardNumber.normalize("NFC").trim()) {
     throw new Error(
@@ -3149,7 +3276,8 @@ function parseFusionWorldCardDetailV3(
       `Fusion World full locator ${requestedLocator} and data-card-id must match exactly.`,
     );
   }
-  request.searchParams.set(requestedEntry[0], identity.cardNumber);
+  request.search = "";
+  request.searchParams.set("cardId", identity.cardNumber);
   return parseBandaiCardDetailFrozenV1(
     html,
     "fusion-world",
@@ -4057,7 +4185,13 @@ function parseBandaiSurfaceCoverageByContract(
     surface === "listing" &&
     /(?:too many search results|more than 1,?000|results? (?:were )?capped)/iu
       .test(text) &&
-    discoveredPartitionRequests(format, html, new URL(url)).length === 0
+    discoveredPartitionRequests(
+      format,
+      html,
+      new URL(url),
+      false,
+      catalogueComplete,
+    ).length === 0
   ) {
     throw new Error(
       "Official Source leaf partition still displays its result-cap signal.",
@@ -4120,6 +4254,7 @@ function parseBandaiSurfaceCoverageByContract(
     .map((match) => htmlText(match[3]!))
     .filter((entry) => entry.length > 0);
   if (
+    fusionListingEntries.length === 0 &&
     publicationLinks.length === 0 &&
     discoveredOptions.length === 0 &&
     publicationEntries.length === 0 &&
