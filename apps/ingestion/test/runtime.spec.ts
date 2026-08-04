@@ -178,7 +178,7 @@ test.each([
     lineage: "gundam-en-us",
   },
 ])(
-  "the authenticated API reparses retained snapshots with $adapter",
+  "the authenticated API rejects cross-version reparsing from $fixture to $adapter",
   async ({ adapter, fixture, game, lineage }) => {
     const created = await fixtureEvidenceRequest({
       supported_game: game,
@@ -205,14 +205,112 @@ test.each([
       },
     );
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(422);
     await expect(response.json()).resolves.toMatchObject({
-      source_snapshot_id: snapshot.id,
-      adapter_version: adapter,
-      observation_count: 1,
+      code: "source_snapshot_adapter_mismatch",
     });
   },
 );
+
+test("authenticated reparse requires the exact Digimon snapshot capture version even when versions share URL authority", async () => {
+  const current = requiredSourceAdapter("digimon-en@3");
+  const historical = requiredSourceAdapter("digimon-en@2");
+  const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
+  const historicalCardListUrl = historical.requestUrlForSurface?.(
+    "card-list",
+  );
+  if (currentDiscoveryUrl === undefined || historicalCardListUrl === undefined) {
+    throw new Error("Digimon versioned URL contracts are unavailable");
+  }
+  expect(currentDiscoveryUrl).toBe(historicalCardListUrl);
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "digimon",
+      source_lineage: "digimon-en",
+      adapter_version: "digimon-en@3",
+      idempotency_key: "digimon-exact-capture-version-source",
+      requests: officialSourceDiscoveryRequests("digimon-en"),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  const accepted = await resumed.json<{ workflow: { id: string } }>();
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(
+    accepted.workflow.id,
+  );
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (currentRun) => currentRun.snapshots.some(({ request }) =>
+      request.url === currentDiscoveryUrl
+    ),
+    12_000,
+  );
+  const snapshot = completed.snapshots.find(({ request }) =>
+    request.url === currentDiscoveryUrl
+  );
+  if (snapshot === undefined) throw new Error("retained Digimon snapshot missing");
+  try {
+    expect(snapshot.adapter_version).toBe("digimon-en@3");
+
+    const mismatched = await administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: "digimon-en@2",
+        idempotency_key: "digimon-mismatched-capture-version-reparse",
+      },
+    );
+    expect(mismatched.status).toBe(422);
+    await expect(mismatched.json()).resolves.toMatchObject({
+      code: "source_snapshot_adapter_mismatch",
+    });
+
+    const exact = await administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: "digimon-en@3",
+        idempotency_key: "digimon-exact-capture-version-reparse",
+      },
+    );
+    expect(exact.status).toBe(201);
+    await expect(exact.json()).resolves.toMatchObject({
+      source_snapshot_id: snapshot.id,
+      adapter_version: "digimon-en@3",
+    });
+  } finally {
+    await waitForWorkflowStatus(
+      accepted.workflow.id,
+      () => parent.status(),
+      "complete",
+      90_000,
+    );
+    const candidateResponse = await administrationRequest(
+      `/v1/ingestion-runs/${run.id}/candidate`,
+      "GET",
+    );
+    expect(candidateResponse.status).toBe(200);
+    const candidate = await candidateResponse.json<{
+      candidate_digest: string;
+    }>();
+    const rejected = await administrationRequest(
+      `/v1/ingestion-runs/${run.id}/rejection`,
+      "POST",
+      {
+        candidate_digest: candidate.candidate_digest,
+        idempotency_key: "digimon-exact-capture-version-cleanup",
+      },
+    );
+    expect(rejected.status).toBe(200);
+  }
+}, 120_000);
 
 test("each request uses its owning Evidence Plan adapter capture cap", async () => {
   const started = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {

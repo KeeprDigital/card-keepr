@@ -50,6 +50,13 @@ export async function parseSnapshot(
     );
   }
   const adapter = requiredSourceAdapter(adapterVersion);
+  if (adapter.adapterVersion !== snapshot.adapter_version) {
+    throw new AdministrationProblem(
+      422,
+      "source_snapshot_adapter_mismatch",
+      "A Source Snapshot can only be parsed with its exact capturing adapter version.",
+    );
+  }
   assertAdapterBinding(adapter, {
     sourceLineage: snapshot.source_lineage,
     supportedGame: snapshot.supported_game,

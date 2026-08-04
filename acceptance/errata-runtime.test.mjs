@@ -91,8 +91,13 @@ test("the repository CLI rejects Official Errata authority outside the documente
     environment,
     runtime,
   );
-  const snapshotId = completed.snapshots?.[0]?.id;
-  assert.equal(typeof snapshotId, "string");
+  const capturedSnapshotId = completed.snapshots?.[0]?.id;
+  assert.equal(typeof capturedSnapshotId, "string");
+  const snapshotId = await representRetainedSnapshotAdapter(
+    capturedSnapshotId,
+    "one-piece-official-errata-html@1",
+    environment,
+  );
   const reparse = await runCli(
     [
       "snapshot",
@@ -903,6 +908,34 @@ async function collectFixtureSource(input, environment) {
   const document = await response.json();
   assert.equal(response.status, 201, JSON.stringify(document));
   return document;
+}
+
+async function representRetainedSnapshotAdapter(
+  sourceSnapshotId,
+  adapterVersion,
+  environment,
+) {
+  const response = await fetch(
+    new URL(
+      "/acceptance/retained-snapshot-adapter",
+      environment.KEEPR_INGESTION_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source_snapshot_id: sourceSnapshotId,
+        adapter_version: adapterVersion,
+      }),
+    },
+  );
+  const document = await response.json();
+  assert.equal(response.status, 201, JSON.stringify(document));
+  assert.equal(typeof document.source_snapshot_id, "string");
+  return document.source_snapshot_id;
 }
 
 async function resumeAndWait(runId, environment, runtime) {

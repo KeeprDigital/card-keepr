@@ -60,6 +60,20 @@ test("v3 Legality Rule export canonicalizes every set-valued effect operand", ()
       field: "eligible_blocks",
       expected: ["01", "02"],
     },
+    {
+      left: {
+        type: "membership",
+        attribute: "traits",
+        includes_any: ["Cafe\u0301", "Café"],
+      },
+      right: {
+        type: "membership",
+        attribute: "traits",
+        includes_any: ["Café"],
+      },
+      field: "includes_any",
+      expected: ["Café"],
+    },
   ];
 
   for (const { left, right, field, expected } of cases) {

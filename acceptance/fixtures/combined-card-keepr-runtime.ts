@@ -67,6 +67,77 @@ export default {
         { status: 201 },
       );
     }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/acceptance/retained-snapshot-adapter" &&
+      request.headers.get("authorization") ===
+        `Bearer ${env.ADMINISTRATION_KEY}`
+    ) {
+      const body = await request.json<{
+        source_snapshot_id: string;
+        adapter_version: string;
+      }>();
+      if (body.adapter_version !== "one-piece-official-errata-html@1") {
+        return Response.json({ code: "invalid_fixture_adapter" }, {
+          status: 422,
+        });
+      }
+      const suffix = crypto.randomUUID();
+      const snapshotId = `srcsnap_acceptance_${suffix}`;
+      const fetchAttemptId = `srcfetch_acceptance_${suffix}`;
+      const source = await env.CATALOGUE_DB.prepare(
+        "SELECT * FROM source_snapshots WHERE id = ?",
+      ).bind(body.source_snapshot_id).first<{
+        ingestion_run_id: string;
+        request_id: string;
+        fetch_attempt_id: string;
+      }>();
+      if (source === null) {
+        return Response.json({ code: "source_snapshot_not_found" }, {
+          status: 404,
+        });
+      }
+      await env.CATALOGUE_DB.batch([
+        env.CATALOGUE_DB.prepare(
+          `INSERT INTO source_fetch_attempts (
+             id, ingestion_run_id, request_id, attempt_number,
+             requested_at, completed_at, outcome, http_status,
+             response_headers_json, retry_after_ms, diagnostic
+           )
+           SELECT ?, ingestion_run_id, request_id, attempt_number + 100,
+                  requested_at, completed_at, outcome, http_status,
+                  response_headers_json, retry_after_ms, diagnostic
+           FROM source_fetch_attempts WHERE id = ?`,
+        ).bind(fetchAttemptId, source.fetch_attempt_id),
+        env.CATALOGUE_DB.prepare(
+          `INSERT INTO source_snapshots (
+             id, ingestion_run_id, request_id, fetch_attempt_id,
+             request_method, request_url, request_headers_json,
+             representation_fingerprint, response_vary_json, retrieved_at,
+             http_status, response_headers_json, media_type, content_digest,
+             content_byte_length, content_object_key, source_lineage,
+             supported_game, game_profile_version, adapter_version,
+             reused_source_snapshot_id
+           )
+           SELECT ?, ingestion_run_id, request_id, ?, request_method,
+                  request_url, request_headers_json,
+                  representation_fingerprint, response_vary_json,
+                  retrieved_at, http_status, response_headers_json,
+                  media_type, content_digest, content_byte_length,
+                  content_object_key, source_lineage, supported_game,
+                  game_profile_version, ?, id
+           FROM source_snapshots WHERE id = ?`,
+        ).bind(
+          snapshotId,
+          fetchAttemptId,
+          body.adapter_version,
+          body.source_snapshot_id,
+        ),
+      ]);
+      return Response.json({ source_snapshot_id: snapshotId }, {
+        status: 201,
+      });
+    }
     return (
       url.pathname.startsWith("/v1/ingestion-runs/") ||
       url.pathname.startsWith("/v1/source-snapshots/") ||

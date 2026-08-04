@@ -232,7 +232,8 @@ function requiredStrings(value: unknown, name: string, emptyAllowed: boolean): s
 }
 
 function canonicalStringSet(values: readonly string[]): string[] {
-  return [...new Set(values)].sort(compareUtf8);
+  return [...new Set(values.map((value) => value.normalize("NFC")))]
+    .sort(compareUtf8);
 }
 
 function requiredString(value: unknown, name: string): string {
