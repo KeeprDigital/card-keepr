@@ -14,6 +14,7 @@ import {
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
+import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
@@ -101,6 +102,13 @@ export async function main(arguments_, environment) {
   }
   if (arguments_[0] === "credential") {
     return runCredentialCommand(
+      arguments_.slice(1),
+      environment,
+      json,
+    );
+  }
+  if (arguments_[0] === "curated-revision") {
+    return runCuratedRevisionCommand(
       arguments_.slice(1),
       environment,
       json,
@@ -999,7 +1007,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

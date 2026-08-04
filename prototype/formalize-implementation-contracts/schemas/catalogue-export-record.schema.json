@@ -45,6 +45,24 @@
     "NullableText": {
       "oneOf": [{ "$ref": "#/$defs/Text" }, { "type": "null" }]
     },
+    "CuratedProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["curated_revision_id", "content_digest", "target", "rationale", "evidence", "author"],
+      "properties": {
+        "curated_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "content_digest": { "$ref": "#/$defs/Sha256" },
+        "target": { "type": "object" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+        "author": { "type": "string", "minLength": 1 }
+      }
+    },
+    "CuratedProvenanceCollection": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/CuratedProvenance" }
+    },
     "Lifecycle": {
       "type": "object",
       "additionalProperties": false,
@@ -224,6 +242,7 @@
         "name": { "type": "string", "minLength": 1 },
         "effective_rules_text": { "$ref": "#/$defs/NullableText" },
         "game_data": { "$ref": "#/$defs/GameData" },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
         "source_lineages": {
           "type": "array",
           "uniqueItems": true,
@@ -314,6 +333,7 @@
         "game_data": {
           "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
         },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
         "products": {
           "type": "array",
           "items": { "$ref": "#/$defs/PrintingProductProjection" }
@@ -374,6 +394,7 @@
         "game": { "$ref": "#/$defs/SupportedGame" },
         "official_code": { "$ref": "#/$defs/NullableText" },
         "name": { "$ref": "#/$defs/NullableText" },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
         "lifecycle": { "$ref": "#/$defs/Lifecycle" }
       }
     },
@@ -409,7 +430,8 @@
             { "enum": ["announced", "released"] },
             { "type": "null" }
           ]
-        }
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
       }
     },
     "DistributionContextRecord": {
@@ -424,7 +446,8 @@
         "label": { "type": "string", "minLength": 1 },
         "product_id": {
           "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
-        }
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
       }
     },
     "ErratumRecord": {
@@ -451,7 +474,8 @@
         "corrected_value": {
           "type": ["string", "null"],
           "minLength": 1
-        }
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
       }
     },
     "LegalityRegion": {
@@ -682,6 +706,7 @@
         "source_field_pointers": {
           "$ref": "#/$defs/LegalityRuleSourceFieldPointers"
         },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
         "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
       },
       "allOf": [

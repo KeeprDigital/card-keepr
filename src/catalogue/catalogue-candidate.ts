@@ -71,6 +71,7 @@ export type CatalogueCard = {
       | "gundam@1";
     attributes: Record<string, unknown>;
   };
+  curated_provenance?: readonly CuratedProvenance[];
 };
 
 export type CataloguePrinting = {
@@ -89,6 +90,16 @@ export type CataloguePrinting = {
       | "gundam@1";
     attributes: Record<string, unknown>;
   } | null;
+  curated_provenance?: readonly CuratedProvenance[];
+};
+
+export type CuratedProvenance = {
+  curated_revision_id: string;
+  content_digest: string;
+  target: Record<string, unknown>;
+  rationale: string;
+  evidence: readonly Record<string, unknown>[];
+  author: string;
 };
 
 export type CataloguePrintingImage = {

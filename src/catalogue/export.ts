@@ -547,6 +547,7 @@ async function exportRecordFactories(
       game: product.game,
       official_code: product.official_code,
       name: product.name,
+      ...curatedProvenanceProjection(product),
       lifecycle:
         lifecycles?.products?.[product.id] ?? defaultLifecycle,
     })),
@@ -577,6 +578,7 @@ async function exportRecordFactories(
         kind: context.kind,
         label: context.label,
         product_id: context.product_id,
+        ...curatedProvenanceProjection(context),
       })),
   ]);
   const legalityRelationships = await legalityRuleRelationshipRecords(
@@ -656,7 +658,10 @@ async function exportRecordFactories(
       .sort((left, right) => compareUtf8(left.id, right.id)),
     "distribution-contexts": () => distributionContexts,
     errata: () => (candidate.errata ?? [])
-      .map(exportErratum)
+      .map((erratum) => ({
+        ...exportErratum(erratum),
+        ...curatedProvenanceProjection(erratum),
+      }))
       .sort((left, right) => compareUtf8(left.id, right.id)),
     "legality-rules": () => legalityRuleExportRecords(candidate, revisionId),
     relationships: () => uniqueById([
@@ -757,6 +762,13 @@ async function exportRecordFactories(
       ...legalityRelationships,
     ]),
   };
+}
+
+function curatedProvenanceProjection(value: object): Record<string, unknown> {
+  return "curated_provenance" in value &&
+      Array.isArray(value.curated_provenance)
+    ? { curated_provenance: value.curated_provenance }
+    : {};
 }
 
 function inferredProductLifecycleKey(

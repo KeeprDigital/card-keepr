@@ -17,6 +17,10 @@ import {
   type SupportedGame,
 } from "./catalogue-candidate";
 import {
+  assertCuratedGamesUnblocked,
+  curatedRevisionSetForRun,
+} from "./curated-revisions";
+import {
   compareSourceFreshness,
   isCatalogueSourceCheck,
   sourceFreshnessFromStorage,
@@ -364,7 +368,17 @@ export async function showRun(
   );
   assertOpaqueId(runId, "run_id");
   const run = await requiredRun(database, runId);
-  return publicRun(run, await publicationCleanup(database, run.id));
+  const [cleanup, curatedSet] = await Promise.all([
+    publicationCleanup(database, run.id),
+    curatedRevisionSetForRun(database, run.id),
+  ]);
+  return {
+    ...publicRun(run, cleanup),
+    ...(curatedSet === null ? {} : {
+      curated_revision_ids: curatedSet.revision_ids,
+      curated_revision_set_digest: curatedSet.set_digest,
+    }),
+  };
 }
 
 export async function administrationStatus(
@@ -1149,6 +1163,10 @@ async function startPreparedRun(
       "Recovery blocks new Ingestion Runs.",
     );
   }
+  await assertCuratedGamesUnblocked(
+    database,
+    input.candidate.selected_games,
+  );
 
   const startedAt = input.observedAt;
   const approvalDeadline = new Date(
@@ -4843,13 +4861,21 @@ function isCatalogueCandidate(
   for (const card of cards) {
     if (
       !isRecord(card) ||
-      !hasOnlyKeys(card, [
+      !hasRequiredAndAllowedKeys(card, [
       "id",
       "game",
       "official_identity",
       "name",
       "effective_rules_text",
       "game_data",
+      ], [
+      "id",
+      "game",
+      "official_identity",
+      "name",
+      "effective_rules_text",
+      "game_data",
+      "curated_provenance",
       ]) ||
       typeof card.id !== "string" ||
       !isSupportedGame(card.game) ||
@@ -4859,6 +4885,9 @@ function isCatalogueCandidate(
       !isRecord(card.official_identity) ||
       !hasOnlyKeys(card.official_identity, ["kind", "value"]) ||
       !validOfficialIdentity(card.official_identity, card.game) ||
+      (card.curated_provenance !== undefined &&
+        (!Array.isArray(card.curated_provenance) ||
+          !card.curated_provenance.every(isCuratedProvenance))) ||
       !isRecord(card.game_data) ||
       !hasOnlyKeys(card.game_data, ["profile", "attributes"]) ||
       card.game_data.profile !== `${card.game}@1` ||
@@ -4871,18 +4900,28 @@ function isCatalogueCandidate(
   const printingsValid = value.printings.every((printing) => {
     if (
       !isRecord(printing) ||
-      !hasOnlyKeys(printing, [
+      !hasRequiredAndAllowedKeys(printing, [
         "id",
         "card_id",
         "rarity",
         "printed_rules_text",
         "game_data",
+      ], [
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+        "curated_provenance",
       ]) ||
       typeof printing.id !== "string" ||
       typeof printing.card_id !== "string" ||
       !cardIds.has(printing.card_id) ||
       (printing.printed_rules_text !== null &&
         typeof printing.printed_rules_text !== "string") ||
+      (printing.curated_provenance !== undefined &&
+        (!Array.isArray(printing.curated_provenance) ||
+          !printing.curated_provenance.every(isCuratedProvenance))) ||
       !isRecord(printing.rarity) ||
       !hasOnlyKeys(printing.rarity, ["normalized", "raw"]) ||
       (printing.rarity.normalized !== null &&
@@ -4961,6 +5000,27 @@ function isCatalogueErratum(value: unknown): boolean {
         typeof provenance.source_lineage === "string" &&
         typeof provenance.source_observation_id === "string",
     )
+  );
+}
+
+function isCuratedProvenance(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "curated_revision_id",
+      "content_digest",
+      "target",
+      "rationale",
+      "evidence",
+      "author",
+    ]) &&
+    typeof value.curated_revision_id === "string" &&
+    typeof value.content_digest === "string" &&
+    isRecord(value.target) &&
+    typeof value.rationale === "string" &&
+    Array.isArray(value.evidence) &&
+    value.evidence.every(isRecord) &&
+    typeof value.author === "string"
   );
 }
 

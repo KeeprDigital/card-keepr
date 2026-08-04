@@ -320,8 +320,13 @@ export async function failReconciliationWorkflow(
   observedAt: string,
   detail: string,
 ): Promise<Record<string, unknown>> {
+  const failureCode = detail.includes(
+      "curated_revision_reconfirmation_required",
+    )
+    ? "curated_revision_reconfirmation_required"
+    : "reconciliation_workflow_failed";
   const diagnostic = {
-    code: "reconciliation_workflow_failed",
+    code: failureCode,
     detail,
   };
   const result = terminalFailureResult(runId, [diagnostic]);
@@ -331,13 +336,13 @@ export async function failReconciliationWorkflow(
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
-             failure_code = 'reconciliation_workflow_failed',
+             failure_code = ?,
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
          WHERE id = ? AND state IN ('parsing', 'reconciling')`,
       )
-      .bind(observedAt, canonicalJson([diagnostic]), runId),
+      .bind(observedAt, failureCode, canonicalJson([diagnostic]), runId),
     database
       .prepare(
         `UPDATE operation_state
@@ -347,10 +352,10 @@ export async function failReconciliationWorkflow(
            AND EXISTS (
              SELECT 1 FROM ingestion_runs
              WHERE id = ? AND state = 'failed'
-               AND failure_code = 'reconciliation_workflow_failed'
+               AND failure_code = ?
            )`,
       )
-      .bind(runId, runId),
+      .bind(runId, runId, failureCode),
   ]);
   return requiredTerminalResult(database, runId);
 }

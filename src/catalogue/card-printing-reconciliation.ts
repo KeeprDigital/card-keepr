@@ -43,6 +43,7 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
+import { applyPinnedCuratedRevisions } from "./curated-revisions";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import {
   byteBoundedJsonArrays,
@@ -964,7 +965,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     })
     .sort((left, right) => left.id.localeCompare(right.id));
-  const candidate: CatalogueCandidate = {
+  let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
     selected_games: [
       ...new Set([
@@ -1105,7 +1106,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  const candidateCatalogueDigest = await catalogueDataDigest(
+  let candidateCatalogueDigest = await catalogueDataDigest(
     database,
     candidate,
     plans,
@@ -1174,6 +1175,18 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
+  candidate = await applyPinnedCuratedRevisions(
+    database,
+    runId,
+    candidate,
+    observedAt,
+  );
+  candidateCatalogueDigest = await catalogueDataDigest(
+    database,
+    candidate,
+    plans,
+    checkedSourceLineages,
+  );
   const digestPayloadJson = reconciliationDigestPayload({
     candidate,
     partitions: retained.partitions,

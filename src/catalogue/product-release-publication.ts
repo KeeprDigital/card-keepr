@@ -314,6 +314,10 @@ export function productReleasePublicationStatements(
       releases: product.releases.map(
         ({ product_id: _productId, ...release }) => release,
       ),
+      ...("curated_provenance" in product &&
+          Array.isArray(product.curated_provenance)
+        ? { curated_provenance: product.curated_provenance }
+        : {}),
       lifecycle,
       links: { self: `/v1/products/${product.id}` },
     };
