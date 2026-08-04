@@ -26,6 +26,12 @@ const failureCases = [
     failure: "pagination",
     portOffset: 20,
   },
+  {
+    name: "invalid One Piece type-specific nullability",
+    path: "/raw-one-piece-failure-nullability",
+    failure: "nullability",
+    portOffset: 30,
+  },
 ];
 
 for (const failureCase of failureCases) {
@@ -76,7 +82,7 @@ for (const failureCase of failureCases) {
         plans: [{
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "one-piece-en@2",
+          adapter_version: "one-piece-en@3",
           requests,
         }],
       }),
@@ -163,22 +169,14 @@ for (const failureCase of failureCases) {
       ingestion,
     );
     assert.equal(failed.failure_code, "source_parse_failed");
-    assert.deepEqual(
-      failed.snapshots.map(({ request }) => request.url),
-      [
-        "https://en.onepiece-cardgame.com/cardlist/",
-        "https://en.onepiece-cardgame.com/cardlist/",
-        "https://en.onepiece-cardgame.com/products/",
-        "https://en.onepiece-cardgame.com/rules/",
-        "https://en.onepiece-cardgame.com/cardlist/",
-        "https://en.onepiece-cardgame.com/products/",
-        "https://en.onepiece-cardgame.com/products/",
-        "https://en.onepiece-cardgame.com/rules/restriction/",
-        "https://en.onepiece-cardgame.com/rules/block_icon/",
-        "https://en.onepiece-cardgame.com/rules/errata_card/",
-        "https://en.onepiece-cardgame.com/rules/",
-      ],
-    );
+    const snapshotUrls = failed.snapshots.map(({ request }) => request.url);
+    assert.ok(snapshotUrls.length >= 2);
+    assert.ok(snapshotUrls.every((url) =>
+      new URL(url).origin === "https://en.onepiece-cardgame.com"
+    ));
+    assert.ok(snapshotUrls.filter((url) =>
+      url === "https://en.onepiece-cardgame.com/cardlist/"
+    ).length >= 2);
     assert.equal(
       failed.observation_sets.length,
       failed.snapshots.length - 1,

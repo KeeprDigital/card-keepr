@@ -11,7 +11,7 @@ The following production Catalogue adapters are installed for bounded,
 credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
-- `one-piece-en@2`
+- `one-piece-en@3`
 - `fusion-world-en@3`
 - `digimon-en@3`
 - `gundam-en-asia@3`
@@ -33,7 +33,8 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
+The earlier production versions (`one-piece-en@1`, `one-piece-en@2`,
+`fusion-world-en@2`,
 `digimon-en@2`, and both Gundam `@2` versions) remain registered with their
 original parser contracts only for explicit reprocessing of retained Source
 Snapshots. New production Evidence Plans accept only the active registrations
@@ -56,9 +57,12 @@ combined run to the first plan's lineage.
 
 The required legality scope is discovery, legality Card details, current
 Legality Rules, and Legality history. The One Piece adapter additionally
-requires block-policy, release-timing, and DON-rule surfaces. A surface may be
-split across multiple uniquely identified URLs. This contract does not claim
-complete Product, general Card catalogue, or Errata coverage. Planning rejects
+requires every Recording leaf, Product, Release, block-policy, release-timing,
+DON-rule, and Errata surface. Its `@3` contract claims complete One Piece Card,
+Printing, Product, Release, Legality Rule, and Errata coverage while making no
+comprehensive DON!! Printing claim. Other game adapters retain their narrower
+legality-oriented coverage. A surface may be split across multiple uniquely
+identified URLs. Planning rejects
 origins and locale paths outside the adapter's Official Source authority. Live
 discovery must enumerate the request identity, surface name, and exact URL of
 every collection request, and reconciliation verifies that graph against the
@@ -172,6 +176,6 @@ the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
-Migration `0008_legality_rules.sql` adds canonical provenance retention and
-the revision-scoped rule snapshot used by the API. Apply it before deploying
+Migration `0009_one_piece_complete_catalogue.sql` registers the complete One
+Piece adapter after `0008_legality_rules.sql`. Apply both before deploying
 either Worker.

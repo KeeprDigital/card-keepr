@@ -52,7 +52,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@2",
+            "one-piece-en@3",
           ),
           officialPlan(
             "fusion-world",
@@ -80,7 +80,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@2",
+            "one-piece-en@3",
             {
               accept: "text/html",
               "user-agent": "card-keepr-acceptance-product/codeless",
@@ -272,11 +272,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@2",
+        adapter_version: "one-piece-en@3",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-en@2",
+          "one-piece-en@3",
         ).requests.map(({ id }) => id),
       },
       {

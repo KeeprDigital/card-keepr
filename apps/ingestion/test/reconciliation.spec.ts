@@ -1175,6 +1175,45 @@ test("retained immutable evidence publishes stable identities and warns when ear
   });
 });
 
+test("parsed observation count warnings use the normative absolute threshold", async () => {
+  const firstRun = await collect(
+    "/reconciliation/observation-count-100",
+    "observation-count-first",
+  );
+  const first = await reconcile(firstRun.id);
+  expect(first.response.status).toBe(200);
+  expect((await approve(first.document)).response.status).toBe(200);
+
+  const secondRun = await collect(
+    "/reconciliation/observation-count-124",
+    "observation-count-second",
+  );
+  const second = await reconcile(secondRun.id);
+  expect(second.response.status).toBe(200);
+  expect(second.document.warnings).not.toContainEqual(
+    expect.objectContaining({
+      code: "source_observation_count_changed",
+    }),
+  );
+  expect((await approve(second.document)).response.status).toBe(200);
+
+  const thirdRun = await collect(
+    "/reconciliation/observation-count-149",
+    "observation-count-third",
+  );
+  const third = await reconcile(thirdRun.id);
+  expect(third.response.status).toBe(200);
+  expect(third.document.warnings).toContainEqual(expect.objectContaining({
+    code: "source_observation_count_changed",
+    source_lineage: "one-piece-en",
+    request_id: "cards",
+    previous_count: 124,
+    current_count: 149,
+    absolute_delta: 25,
+    warning_threshold: 25,
+  }));
+});
+
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {
   const run = await collectRequests(
     [

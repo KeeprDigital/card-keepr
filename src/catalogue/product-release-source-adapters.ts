@@ -16,6 +16,12 @@ import {
   officialLegalityRulesObservation,
 } from "./official-legality-source-adapters.mjs";
 import { liveOfficialLegalityDocument } from "./official-legality-live-html.mjs";
+import {
+  normalizeOnePieceCardPage,
+  normalizedOnePieceRarity,
+  onePieceDonCardObservation,
+  onePieceRecordingMemberships,
+} from "./one-piece-source-adapter.mjs";
 
 type ProductSourceGame =
   | "one-piece"
@@ -208,12 +214,13 @@ const legalityAwareAdapterVersions: Readonly<
 
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
-    rawContractDefinitions.flatMap((definition) =>
-      [
+    rawContractDefinitions.flatMap((definition) => {
+      const versions = [
         {
           ...definition,
           parserContract: `${definition.sourceLineage}-raw-surfaces@1`,
           legalityAware: false,
+          expandedOnePieceCatalogue: false,
         },
         {
           ...definition,
@@ -226,8 +233,19 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           parserContract:
             `${definition.sourceLineage}-raw-surfaces-with-legality@2`,
           legalityAware: true,
+          expandedOnePieceCatalogue: false,
         },
-      ].map((version) =>
+        ...(definition.sourceLineage === "one-piece-en"
+          ? [{
+              ...definition,
+              adapterVersion: "one-piece-en@3",
+              parserContract: "one-piece-en-complete-catalogue@3",
+              legalityAware: true,
+              expandedOnePieceCatalogue: true,
+            }]
+          : []),
+      ];
+      return versions.map((version) =>
         Object.freeze({
           ...version,
           requiredSurfaces: Object.freeze([...version.requiredSurfaces]),
@@ -253,6 +271,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.sourceLineage,
                 version.requiredSurfaces,
                 version.urls,
+                version.expandedOnePieceCatalogue,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -275,8 +294,8 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.urls,
             ),
         })
-      )
-    ),
+      );
+    }),
   );
 
 export function officialSourceDiscoveryRequests(
@@ -1132,11 +1151,13 @@ function legalityAwareBandaiSnapshotDecoder(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  expandedOnePieceCatalogue = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
     acceptPublisherDeclaredEmpty: true,
     acceptDiscoveryRoot: true,
+    expandedOnePieceCatalogue,
   });
 }
 
@@ -1150,6 +1171,7 @@ function bandaiSnapshotDecoder(
     parseLegality: boolean;
     acceptPublisherDeclaredEmpty: boolean;
     acceptDiscoveryRoot?: boolean;
+    expandedOnePieceCatalogue?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -1264,6 +1286,7 @@ function bandaiSnapshotDecoder(
         surface,
         structuredPayload,
         profile.parseLegality,
+        profile.expandedOnePieceCatalogue === true,
       );
       if (
         profile.parseLegality &&
@@ -1337,9 +1360,27 @@ function bandaiSnapshotDecoder(
         ),
       ];
     }
+    if (
+      profile.expandedOnePieceCatalogue === true &&
+      surface === "don-rules"
+    ) {
+      throw new Error(
+        "One Piece DON!! Card facts require explicit snapshot evidence.",
+      );
+    }
+    const isOnePieceRecordingLeaf =
+      profile.expandedOnePieceCatalogue === true &&
+      format === "one-piece" &&
+      dynamicRole === "listing" &&
+      /^\d+$/u.test(new URL(context.url).searchParams.get("recording") ?? "");
     const parsed =
-      format === "one-piece" && surface === "card-list"
-        ? parseOnePieceBandaiCardListV1(html, context.url)
+      format === "one-piece" &&
+          (surface === "card-list" || isOnePieceRecordingLeaf)
+        ? parseOnePieceBandaiCardListV1(
+            html,
+            context.url,
+            profile.expandedOnePieceCatalogue === true,
+          )
         : parseBandaiSurfaceCoverageV2(
             html,
             format,
@@ -2469,6 +2510,7 @@ type ParsedBandaiSurface = {
 function parseOnePieceBandaiCardListV1(
   html: string,
   requestUrl: string,
+  expandedOnePieceCatalogue = false,
 ): ParsedBandaiSurface {
   const recordingSelect = html.match(
     /<select\b[^>]*\b(?:id|name)=["']recording["'][^>]*>([\s\S]*?)<\/select>/iu,
@@ -2503,6 +2545,10 @@ function parseOnePieceBandaiCardListV1(
     );
   }
   const base = new URL(requestUrl);
+  const recording = base.searchParams.get("recording");
+  if (recording !== null && !/^\d+$/u.test(recording)) {
+    throw new Error("One Piece Card List Recording identity is invalid.");
+  }
   const schemaReviewValues: {
     locator: string;
     field: string;
@@ -2564,6 +2610,22 @@ function parseOnePieceBandaiCardListV1(
         value: rawTreatment,
       });
     }
+    const normalizedRarity = rarity.length === 0
+      ? null
+      : expandedOnePieceCatalogue
+        ? normalizedOnePieceRarity(rarity)
+        : rarity.toLowerCase();
+    if (expandedOnePieceCatalogue) {
+      for (const pair of pairs.filter(({ label }) =>
+        !onePieceKnownCardListLabel(label)
+      )) {
+        schemaReviewValues.push({
+          locator,
+          field: pair.label,
+          value: pair.value,
+        });
+      }
+    }
     const artworkFingerprint = officialArtworkFingerprint(
       cardNumber,
       ["front"],
@@ -2586,6 +2648,13 @@ function parseOnePieceBandaiCardListV1(
         trigger: field("Trigger"),
       }))
     }`;
+    const cost = integerOrNull(field("Cost"));
+    const life = expandedOnePieceCatalogue
+      ? integerOrNull(field("Life"))
+      : cardType === "leader" ? integerOrNull(field("Life")) : null;
+    if (expandedOnePieceCatalogue) {
+      assertOnePieceTypeNullability(cardType, cost, life);
+    }
     const detail = {
       path: locator,
       number: cardNumber,
@@ -2597,9 +2666,11 @@ function parseOnePieceBandaiCardListV1(
         colours: colour === null
           ? []
           : colour.split("/").map((value) => value.trim().toLowerCase()),
-        cost: integerOrNull(field("Cost")),
-        life: cardType === "leader" ? integerOrNull(field("Life")) : null,
-        battle_attributes: textValues(field("Attribute")),
+        cost,
+        life,
+        battle_attributes: textValues(field("Attribute")).map((value) =>
+          expandedOnePieceCatalogue ? value.toLocaleLowerCase() : value
+        ),
         power: integerOrNull(field("Power")),
         counter: integerOrNull(field("Counter")),
         traits: textValues(field("Type", "Traits")),
@@ -2618,10 +2689,10 @@ function parseOnePieceBandaiCardListV1(
       },
       printing: {
         rarity: rarity.length === 0 ? null : rarity,
-        normalizedRarity: rarity.length === 0
-          ? null
-          : rarity.toLowerCase(),
-        attributes: { illustration_types: [] },
+        normalizedRarity,
+        attributes: expandedOnePieceCatalogue
+          ? {}
+          : { illustration_types: [] },
       },
       treatment,
       printed_rules: effect ?? "",
@@ -2635,7 +2706,7 @@ function parseOnePieceBandaiCardListV1(
         artwork_fingerprint: artworkFingerprint,
       }],
     };
-    return cardObservation(
+    const observation = cardObservation(
       detail,
       [],
       new Map(),
@@ -2643,6 +2714,18 @@ function parseOnePieceBandaiCardListV1(
       { revision: "captured-by-policy-surface", entries: [] },
       "one-piece",
     );
+    return !expandedOnePieceCatalogue || recording === null
+      ? observation
+      : {
+          ...observation,
+          memberships: {
+            ...requiredRecord(
+              observation.memberships,
+              "One Piece Recording memberships",
+            ),
+            source_buckets: [`recording:${recording}`],
+          },
+        };
   });
   return {
     observations,
@@ -2651,6 +2734,17 @@ function parseOnePieceBandaiCardListV1(
       recording_options: recordings,
       declared_record_count: declaredCount,
       parsed_locators: modalMatches.map((match) => decodeHtmlText(match[1]!)),
+      ...(expandedOnePieceCatalogue
+        ? {
+            raw_label_pairs: modalMatches.flatMap((match) =>
+              htmlLabelPairs(match[2]!).map(({ label, value }) => ({
+                locator: decodeHtmlText(match[1]!),
+                label,
+                value,
+              }))
+            ),
+          }
+        : {}),
       ...(schemaReviewValues.length === 0
         ? {}
         : { schema_review_values: schemaReviewValues }),
@@ -2660,8 +2754,39 @@ function parseOnePieceBandaiCardListV1(
       "recording_options",
       "declared_record_count",
       "parsed_locators",
+      ...(expandedOnePieceCatalogue ? ["raw_label_pairs"] : []),
     ],
   };
+}
+
+function onePieceKnownCardListLabel(label: string): boolean {
+  return [
+    "Effect", "Card Text", "Text", "Card Set(s)", "Where to get it",
+    "Color", "Colour", "Cost", "Life", "Attribute", "Power", "Counter",
+    "Type", "Traits", "Block icon", "Block", "Trigger", "Artwork ID",
+    "Artwork Identifier", "Illustration ID", "Artwork Treatment", "Treatment",
+  ].some((known) =>
+    known.localeCompare(label, undefined, { sensitivity: "accent" }) === 0
+  );
+}
+
+function assertOnePieceTypeNullability(
+  cardType: string,
+  cost: number | null,
+  life: number | null,
+): void {
+  if (cardType === "leader" && cost !== null) {
+    throw new Error("One Piece Leader cost must be null.");
+  }
+  if (cardType !== "leader" && life !== null) {
+    throw new Error(`One Piece ${cardType} life must be null.`);
+  }
+  if (cardType !== "leader" && cost === null) {
+    throw new Error(`One Piece ${cardType} cost must be non-null.`);
+  }
+  if (cardType === "leader" && life === null) {
+    throw new Error("One Piece Leader life must be non-null.");
+  }
 }
 
 function parseBandaiCardDetailV1(
@@ -4054,6 +4179,39 @@ function normalizeLineageSurfaceV1(
   };
 }
 
+function onePieceUnmappedOptionalFields(
+  surface: string,
+  raw: Record<string, unknown>,
+): { path: string; value: unknown }[] {
+  if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
+  return raw.card_pages.flatMap((value, cardIndex) => {
+    if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
+    const printingAttributes = isPlainRecord(value.printing.attributes)
+      ? value.printing.attributes
+      : {};
+    const illustrationWarnings = Array.isArray(
+        printingAttributes.illustration_types,
+      )
+      ? printingAttributes.illustration_types.flatMap(
+      (illustration, illustrationIndex) =>
+        typeof illustration === "string" &&
+          ["comic", "animation", "original", "other"].includes(
+            illustration.toLocaleLowerCase(),
+          )
+          ? []
+          : [{
+              path:
+                "source_sidecar.raw.official_surfaces[0].document." +
+                `card_pages[${cardIndex}].printing.attributes.` +
+                `illustration_types[${illustrationIndex}]`,
+              value: illustration,
+            }],
+      )
+      : [];
+    return illustrationWarnings;
+  });
+}
+
 function normalizeOnePieceSurfaceV1(
   surface: string,
   raw: Record<string, unknown>,
@@ -4307,17 +4465,24 @@ function normalizedSurfaceObservationsV2(
   surface: string,
   rawDocument: Record<string, unknown>,
   legalityAware: boolean,
+  expandedOnePieceCatalogue = false,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
     sourceLineage,
     surface,
     rawDocument,
+    expandedOnePieceCatalogue,
   );
   const document = normalized.document;
   let observations: readonly unknown[];
   if (isDiscoverySurface(surface)) {
-    observations = parseRawDiscoverySurfaceV2(document, format, game);
+    observations = parseRawDiscoverySurfaceV2(
+      document,
+      format,
+      game,
+      expandedOnePieceCatalogue,
+    );
   } else if (surface === "products") {
     observations = parseRawProductsSurfaceV2(document);
   } else if (surface === "releases") {
@@ -4327,9 +4492,20 @@ function normalizedSurfaceObservationsV2(
         ? [officialLegalityRulesObservation(game, sourceLineage, document)]
         : []),
     ];
+  } else if (
+    expandedOnePieceCatalogue && game === "one-piece" && surface === "errata"
+  ) {
+    observations = [
+      rawCoverageObservationV2(document, surface),
+      ...onePieceOfficialErrataObservations(document.entries),
+    ];
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
+      ...(expandedOnePieceCatalogue && game === "one-piece" &&
+          surface === "don-rules"
+        ? [onePieceDonCardObservation(document.don_card)]
+        : []),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(
@@ -4341,16 +4517,153 @@ function normalizedSurfaceObservationsV2(
         : []),
     ];
   }
-  return observations.map((observation, index) =>
-    attachRawSurfaceEvidenceV1(
+  return observations.map((observation, index) => {
+    const record = requiredRecord(
       observation,
-      sourceLineage,
-      surface,
-      rawDocument,
-      index === 0,
-      normalized.consumedFields,
-    )
-  );
+      `Official Source ${surface} observation`,
+    );
+    return record.kind === "official_erratum"
+      ? record
+      : attachRawSurfaceEvidenceV1(
+          record,
+          sourceLineage,
+          surface,
+          rawDocument,
+          index === 0,
+          normalized.consumedFields,
+          normalized.unmappedOptionalFields,
+        );
+  });
+}
+
+function onePieceOfficialErrataObservations(value: unknown): unknown[] {
+  const fields = [
+    "notice_id",
+    "card_number",
+    "card_name",
+    "published_on",
+    "effective_from",
+    "before_text",
+    "after_text",
+    "note",
+    "applies_to_parallel_printings",
+    "image_url",
+  ];
+  return requiredArray(value, "One Piece Errata entries").map((item) => {
+    const entry = requiredRecord(item, "One Piece Erratum");
+    const undeclared = Object.keys(entry).filter((field) =>
+      !fields.includes(field)
+    );
+    const missing = fields.filter((field) => !Object.hasOwn(entry, field));
+    if (undeclared.length > 0 || missing.length > 0) {
+      throw new Error(
+        `One Piece Erratum has undeclared or missing fields: ${[
+          ...undeclared,
+          ...missing,
+        ].sort().join(", ")}.`,
+      );
+    }
+    const noticeId = requiredText(
+      entry.notice_id,
+      "One Piece Erratum notice id",
+    );
+    if (!/^[A-Za-z][A-Za-z0-9_-]+$/u.test(noticeId)) {
+      throw new Error("One Piece Erratum notice id is invalid.");
+    }
+    const cardNumber = requiredText(
+      entry.card_number,
+      "One Piece Erratum Card number",
+    );
+    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
+      throw new Error("One Piece Erratum Card number is invalid.");
+    }
+    const cardName = requiredText(
+      entry.card_name,
+      "One Piece Erratum Card name",
+    );
+    const publishedOn = exactOnePieceSourceDate(
+      entry.published_on,
+      "One Piece Erratum published_on",
+    );
+    const effectiveFrom = entry.effective_from === null
+      ? null
+      : exactOnePieceSourceDate(
+          entry.effective_from,
+          "One Piece Erratum effective_from",
+        );
+    const before = requiredText(
+      entry.before_text,
+      "One Piece Erratum Before text",
+    );
+    const after = requiredText(
+      entry.after_text,
+      "One Piece Erratum After text",
+    );
+    const note = nullableText(entry.note, "One Piece Erratum Note");
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new Error(
+        "One Piece Erratum parallel Printing applicability is invalid.",
+      );
+    }
+    const imageUrl = requiredText(
+      entry.image_url,
+      "One Piece Erratum image URL",
+    );
+    let parsedImageUrl: URL;
+    try {
+      parsedImageUrl = new URL(imageUrl);
+    } catch {
+      throw new Error("One Piece Erratum image URL is invalid.");
+    }
+    if (!officialUrl("one-piece-en", parsedImageUrl, "image")) {
+      throw new Error("One Piece Erratum image URL is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "one-piece",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: [
+        ...(note === null ? [] : [`Note: ${note}`]),
+        `Before: ${before}`,
+        `After: ${after}`,
+      ].join("\n"),
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: `#${noticeId}`,
+        display_name: `${cardNumber} ${cardName}`,
+        image_url: imageUrl,
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+  });
+}
+
+function exactOnePieceSourceDate(value: unknown, name: string): string {
+  const date = requiredText(value, name);
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u.test(date)) {
+    throw new Error(`${name} is invalid.`);
+  }
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  if (
+    Number.isNaN(instant.getTime()) ||
+    instant.toISOString().slice(0, 10) !== date
+  ) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return date;
 }
 
 function isLegalityPolicySurface(surface: string): boolean {
@@ -4370,13 +4683,15 @@ function normalizeLineageSurface(
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
+  expandedOnePieceCatalogue = false,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
+  unmappedOptionalFields: readonly { path: string; value: unknown }[];
 } {
   const normalized =
     format === "one-piece"
-      ? normalizeOnePieceSurface(surface, raw)
+      ? normalizeOnePieceSurface(surface, raw, expandedOnePieceCatalogue)
       : format === "fusion-world"
         ? normalizeFusionWorldSurface(surface, raw)
         : format === "digimon"
@@ -4390,6 +4705,10 @@ function normalizeLineageSurface(
       ...normalized.value,
     },
     consumedFields: normalized.consumedFields,
+    unmappedOptionalFields:
+      expandedOnePieceCatalogue && format === "one-piece"
+        ? onePieceUnmappedOptionalFields(surface, raw)
+        : [],
   };
 }
 
@@ -4408,6 +4727,7 @@ function normalizedSurfaceBody(
 function normalizeOnePieceSurface(
   surface: string,
   raw: Record<string, unknown>,
+  expandedOnePieceCatalogue = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.page !== "card-list") {
@@ -4417,7 +4737,9 @@ function normalizeOnePieceSurface(
       normalizedDiscovery(
         raw.series_options,
         raw.page_info,
-        normalizeOnePieceDetails(raw.card_pages),
+        expandedOnePieceCatalogue
+          ? normalizeOnePieceDetails(raw.card_pages)
+          : normalizeOnePieceDetailsV2(raw.card_pages),
         normalizeOnePieceProducts(raw.products),
         normalizeOnePieceReleases(raw.release_schedule),
         "recording",
@@ -4463,9 +4785,44 @@ function normalizeOnePieceSurface(
       ["publication", "events", "release_timing_entries"],
     );
   }
+  if (!expandedOnePieceCatalogue) {
+    return normalizedSurfaceBody(
+      normalizedPolicy(raw, `one-piece-${surface}`),
+      [
+        "publication",
+        "revision",
+        "declared_record_count",
+        "partition",
+        "entries",
+      ],
+    );
+  }
+  const policy = normalizedPolicy(
+    raw,
+    `one-piece-${surface}`,
+    surface === "don-rules" ? ["don_card"] : [],
+  );
+  const hasDonCard = surface === "don-rules";
   return normalizedSurfaceBody(
-    normalizedPolicy(raw, `one-piece-${surface}`),
-    ["publication", "revision", "declared_record_count", "partition", "entries"],
+    {
+      ...policy,
+      ...(hasDonCard
+        ? {
+            don_card: requiredRecord(
+              raw.don_card,
+              "One Piece DON!! rules Card",
+            ),
+          }
+        : {}),
+    },
+    [
+      "publication",
+      "revision",
+      "declared_record_count",
+      "partition",
+      "entries",
+      ...(hasDonCard ? ["don_card"] : []),
+    ],
   );
 }
 
@@ -4792,13 +5149,14 @@ function normalizedPartitions(
 function normalizedPolicy(
   raw: Record<string, unknown>,
   expectedPublication: string,
+  additionalFields: readonly string[] = [],
 ): Record<string, unknown> {
   if (raw.publication !== expectedPublication) {
     throw new Error("Official policy publication identity is invalid.");
   }
   const allowed = new Set([
     "publication", "locale", "revision", "declared_record_count",
-    "partition", "entries",
+    "partition", "entries", ...additionalFields,
   ]);
   const unknown = Object.keys(raw).find((field) => !allowed.has(field));
   if (unknown !== undefined) {
@@ -4861,6 +5219,60 @@ function normalizePartitionEntries(
 }
 
 function normalizeOnePieceDetails(value: unknown): unknown[] {
+  return requiredArray(value, "One Piece Card pages").map((item) => {
+    const card = requiredRecord(item, "One Piece Card page");
+    const printing = card.printing === undefined
+      ? null
+      : requiredRecord(card.printing, "One Piece Printing fields");
+    const forbiddenIdentityField = [
+      "artwork_fingerprint",
+      "printed_fields_digest",
+    ].find((field) =>
+      Object.hasOwn(card, field) ||
+      (printing !== null && Object.hasOwn(printing, field))
+    );
+    if (forbiddenIdentityField !== undefined) {
+      throw new Error(
+        `One Piece raw Card pages cannot supply identity digest ${forbiddenIdentityField}.`,
+      );
+    }
+    const normalized = normalizeOnePieceCardPage(card);
+    const cardNumber = requiredText(card.card_number, "One Piece Card number");
+    return canonicalDetail(card, {
+      path: "source_record_id",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: normalized.attributes,
+      printingAttributes: normalized.printingAttributes,
+      normalizedRarity: normalized.normalizedRarity,
+      artworkFingerprint: officialArtworkFingerprint(
+        cardNumber,
+        ["front"],
+        null,
+      ),
+      printedFieldsDigest: `printed-material:${JSON.stringify(stableValue({
+        card_number: cardNumber,
+        category: card.Category,
+        colour: card.Color,
+        cost: card.Cost,
+        life: card.Life,
+        attribute: card.Attribute,
+        power: card.Power,
+        counter: card.Counter,
+        type: card.Type,
+        block_icon: card["Block icon"],
+        effect: card.Effect,
+        trigger: card.Trigger,
+        rarity: printing?.rarity ?? null,
+        variant: card.variant ?? null,
+      }))}`,
+      imageFields: [{ role: "front", value: card.image_url }],
+    });
+  });
+}
+
+function normalizeOnePieceDetailsV2(value: unknown): unknown[] {
   return requiredArray(value, "One Piece Card pages").map((item) => {
     const card = requiredRecord(item, "One Piece Card page");
     return canonicalDetail(card, {
@@ -4999,6 +5411,10 @@ function canonicalDetail(
     title: string;
     rules: string;
     attributes: Record<string, unknown>;
+    printingAttributes?: Record<string, unknown>;
+    normalizedRarity?: string | null;
+    artworkFingerprint?: string;
+    printedFieldsDigest?: string;
     imageFields: readonly { role: string; value: unknown }[];
   },
 ): Record<string, unknown> {
@@ -5006,16 +5422,19 @@ function canonicalDetail(
     raw.printing === undefined
       ? undefined
       : requiredRecord(raw.printing, "Official Printing fields");
+  const artworkFingerprint = printing === undefined
+    ? null
+    : mapping.artworkFingerprint ?? requiredText(
+      raw.artwork_fingerprint,
+      "Official artwork fingerprint",
+    );
   const images =
     printing === undefined
       ? []
       : mapping.imageFields.map(({ role, value }) => ({
           role,
           source_url: requiredText(value, "Official Printing image URL"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
+          artwork_fingerprint: artworkFingerprint,
         }));
   return {
     path: requiredText(raw[mapping.path], "Official Card locator"),
@@ -5045,19 +5464,20 @@ function canonicalDetail(
       : {
           printing: {
             rarity: printing.rarity ?? null,
-            normalizedRarity: printing.normalized_rarity ?? null,
-            attributes: printing.attributes ?? {},
+            normalizedRarity: mapping.normalizedRarity !== undefined
+              ? mapping.normalizedRarity
+              : printing.normalized_rarity ?? null,
+            attributes: Object.hasOwn(mapping, "printingAttributes")
+              ? mapping.printingAttributes ?? {}
+              : printing.attributes ?? {},
           },
           printed_rules: requiredText(
             raw.printed_rules,
             "Official printed rules",
           ),
           variant: requiredText(raw.variant, "Official Printing variant"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
-          printed_fields_digest: requiredText(
+          artwork_fingerprint: artworkFingerprint,
+          printed_fields_digest: mapping.printedFieldsDigest ?? requiredText(
             raw.printed_fields_digest,
             "Official printed fields digest",
           ),
@@ -5258,6 +5678,7 @@ function attachRawSurfaceEvidenceV1(
   document: Record<string, unknown>,
   retainDocument: boolean,
   mappedRootFields: readonly string[],
+  explicitUnmappedFields: readonly { path: string; value: unknown }[] = [],
 ): Record<string, unknown> {
   const record = requiredRecord(
     observation,
@@ -5285,6 +5706,9 @@ function attachRawSurfaceEvidenceV1(
         )
       )
     : [];
+  const explicitlyUnmappedPaths = new Set(
+    explicitUnmappedFields.map(({ path }) => path),
+  );
   return {
     ...record,
     source_sidecar: {
@@ -5311,12 +5735,15 @@ function attachRawSurfaceEvidenceV1(
           ...consumed,
           "source_sidecar.raw.official_surfaces[].source_lineage",
           "source_sidecar.raw.official_surfaces[].surface",
-          ...retainedMappedLeaves.flatMap(({ consumed }) => consumed),
+          ...retainedMappedLeaves.flatMap(({ consumed }) =>
+            consumed.filter((path) => !explicitlyUnmappedPaths.has(path))
+          ),
         ]),
       ].sort(),
       unmapped_optional_fields: [
         ...unmapped,
         ...retainedMappedLeaves.flatMap(({ unmapped }) => unmapped),
+        ...(retainDocument ? explicitUnmappedFields : []),
         ...(retainDocument ? Object.entries(document) : [])
           .filter(([field]) => !mappedRootFields.includes(field))
           .flatMap(([field, value]) =>
@@ -5335,6 +5762,23 @@ function parseRawDiscoverySurfaceFrozenV1(
   format: DiscoveryFormat,
   game: ProductSourceGame,
 ): readonly unknown[] {
+  return parseRawDiscoverySurfaceByContract(surface, format, game, false);
+}
+
+function parseRawDiscoverySurfaceCompleteOnePieceV3(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+): readonly unknown[] {
+  return parseRawDiscoverySurfaceByContract(surface, format, game, true);
+}
+
+function parseRawDiscoverySurfaceByContract(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  expandedOnePieceCatalogue: boolean,
+): readonly unknown[] {
   const sourceBuckets = uniqueTextValues(
     surface.source_buckets,
     "Official Source discovery buckets",
@@ -5349,7 +5793,13 @@ function parseRawDiscoverySurfaceFrozenV1(
   if (facets.length === 0) {
     throw new Error("Official Source discovery facets are incomplete.");
   }
-  const entries = completePartitionEntriesFrozenV1(surface.partitions);
+  const entries = expandedOnePieceCatalogue && format === "one-piece"
+    ? completeCompatibleOnePiecePartitionEntries(surface.partitions)
+    : completePartitionEntriesFrozenV1(surface.partitions);
+  const recordingMemberships = expandedOnePieceCatalogue &&
+      format === "one-piece"
+    ? onePieceRecordingMemberships(surface.partitions)
+    : null;
   const details = requiredArray(
     surface.details,
     "Official Source Card details",
@@ -5419,11 +5869,22 @@ function parseRawDiscoverySurfaceFrozenV1(
             record.memberships,
             "Official discovery memberships",
           );
+    const identityEvidence = isPlainRecord(record.identity_evidence)
+      ? record.identity_evidence
+      : null;
+    const locator = typeof identityEvidence?.locator === "string"
+      ? identityEvidence.locator
+      : null;
+    const recordingSourceBuckets = locator === null
+      ? null
+      : recordingMemberships?.get(locator) ?? null;
     return {
       ...record,
       memberships: {
         ...memberships,
-        source_buckets: sourceBuckets,
+        source_buckets: expandedOnePieceCatalogue
+          ? recordingSourceBuckets ?? sourceBuckets
+          : sourceBuckets,
       },
     };
   });
@@ -5504,8 +5965,11 @@ function parseRawDiscoverySurfaceV2(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
   game: ProductSourceGame,
+  expandedOnePieceCatalogue = false,
 ): readonly unknown[] {
-  return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
+  return expandedOnePieceCatalogue && format === "one-piece"
+    ? parseRawDiscoverySurfaceCompleteOnePieceV3(surface, format, game)
+    : parseRawDiscoverySurfaceFrozenV1(surface, format, game);
 }
 
 function parseRawProductsSurfaceV2(
@@ -5544,6 +6008,17 @@ function rawCoverageObservationFrozenV1(
 }
 
 function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
+  return completePartitionEntriesByContract(value, false);
+}
+
+function completeCompatibleOnePiecePartitionEntries(value: unknown): unknown[] {
+  return completePartitionEntriesByContract(value, true);
+}
+
+function completePartitionEntriesByContract(
+  value: unknown,
+  allowCompatibleOverlap: boolean,
+): unknown[] {
   const pages = requiredArray(
     value,
     "Official Source discovery partitions",
@@ -5611,13 +6086,16 @@ function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
       const identity = JSON.stringify(stableValue(entry));
       const priorBucket = claimedEntries.get(identity);
       if (priorBucket !== undefined && priorBucket !== bucket) {
-        throw new Error(
-          `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
-        );
+        if (!allowCompatibleOverlap) {
+          throw new Error(
+            `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
+          );
+        }
+        continue;
       }
       claimedEntries.set(identity, bucket);
+      allEntries.push(entry);
     }
-    allEntries.push(...entries);
   }
   return allEntries;
 }

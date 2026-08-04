@@ -158,7 +158,9 @@ export async function reconcileRetainedCardPrintingEvidence(
     withdrawal: ProvenancedWithdrawal | null;
     sourceCardFactsJson: string | null;
   }[] = [];
-  const sourceWarnings: Record<string, unknown>[] = [];
+  const sourceWarnings: Record<string, unknown>[] = [
+    ...retained.countChangeWarnings,
+  ];
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();
   const targetedPrintingIds = new Set<string>();

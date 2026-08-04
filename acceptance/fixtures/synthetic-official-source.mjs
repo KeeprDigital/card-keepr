@@ -22,6 +22,9 @@ import {
   productionSourceFixtureRole,
   productionSourceFixtureSurface,
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
+import {
+  onePieceCompleteOfficialSourceResponse,
+} from "./one-piece-complete-official-source.mjs";
 
 export default {
   fetch(request) {
@@ -74,6 +77,8 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
+      const onePieceComplete = onePieceCompleteOfficialSourceResponse(request);
+      if (onePieceComplete !== null) return onePieceComplete;
       const officialScenarioMarker = productionSourceFixtureMarker(
         request.headers,
       );
@@ -316,6 +321,20 @@ function officialBandaiDataset(
     publisher: { "@type": "Organization", name: "Bandai" },
     hasPart: surface === null ? [] : [surface].map((surface) => {
       const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+      if (lineage === "one-piece-en" && surface === "card-list") {
+        payload.card_pages.forEach((card) => {
+          delete card.artwork_fingerprint;
+          delete card.printed_fields_digest;
+        });
+      }
+      if (lineage === "one-piece-en" && surface === "don-rules") {
+        payload.don_card = {
+          functional_designation: "DON!!",
+          name: "DON!! Card",
+          Category: "DON!! Card",
+          Effect: "A rules-level resource Card.",
+        };
+      }
       if (
         lineage === "one-piece-en" &&
         codeLessProduct
@@ -329,6 +348,9 @@ function officialBandaiDataset(
         if (parserSignal?.endsWith("/pagination")) {
           payload.page_info.partitions[0].pages = 2;
           payload.page_info.partitions[0].has_next = true;
+        }
+        if (parserSignal?.endsWith("/nullability")) {
+          payload.card_pages[0].Cost = "1";
         }
       }
       return {
@@ -1007,8 +1029,12 @@ function upstreamDetail(lineage, detail) {
       : {
           printing: {
             rarity: detail.printing.rarity ?? null,
-            normalized_rarity:
-              detail.printing.normalizedRarity ?? null,
+            ...(lineage === "one-piece-en"
+              ? {}
+              : {
+                  normalized_rarity:
+                    detail.printing.normalizedRarity ?? null,
+                }),
             attributes: detail.printing.attributes,
           },
           printed_rules: detail.printed_rules,

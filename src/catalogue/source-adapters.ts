@@ -400,13 +400,24 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     })),
   );
 
+const activeOfficialRawAdapterVersions = new Set(
+  [
+    ...new Map(
+      officialRawAdapterContracts.map((adapter) => [
+        adapter.sourceLineage,
+        adapter.adapterVersion,
+      ]),
+    ).values(),
+  ],
+);
+
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     installedSourceAdapterRegistrations.filter((adapter) =>
       adapter.origin !== "production" ||
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
-      adapter.parserContract.endsWith("-raw-surfaces-with-legality@2")
+      activeOfficialRawAdapterVersions.has(adapter.adapterVersion)
     ),
   );
 

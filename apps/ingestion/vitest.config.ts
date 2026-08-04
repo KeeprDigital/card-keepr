@@ -1538,6 +1538,25 @@ function reconciliationSourceDocument(
   surface: string,
   requestUrl: string,
 ) {
+  if (
+    /^observation-count-(?:100|124|149)$/u.test(scenario)
+  ) {
+    const count = Number(scenario.slice("observation-count-".length));
+    return {
+      cards: Array.from({ length: count }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP98-${String(index + 1).padStart(3, "0")}`,
+          name: `Observation count sentinel ${index + 1}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/count-sentinel-${index + 1}`,
+          lineageMarker: `count-sentinel-${index + 1}`,
+        })
+      ),
+    };
+  }
   if (scenario === "contextual-legality-one-piece-policy") {
     return onePiecePolicySourceDocument(surface, requestUrl);
   }
