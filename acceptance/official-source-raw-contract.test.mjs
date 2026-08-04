@@ -4469,6 +4469,61 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
   );
 });
 
+test("Fusion totals follow the HTML tree, not scanner-like markup", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"9".repeat(64)}`,
+  };
+  const total =
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>';
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const empty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      total,
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+  const parse = (markup) => current.parseBytes(
+    new TextEncoder().encode(empty.replace(total, markup)),
+    context,
+  );
+
+  for (const inertOnly of [
+    `<script><!--<script></script>${total}</script>`,
+    `<!bogus ${total}>`,
+  ]) {
+    assert.throws(
+      () => parse(inertOnly),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.equal(parse(`${inertOnly}${total}`)[0]
+      .completeness.declared_record_count, 0);
+  }
+  assert.throws(
+    () => parse(total.replace("<span", "<ſpan").replace("</span>", "</ſpan>")),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+
+  const rcdataWithInappropriateQuotedCandidate =
+    `<textarea></textareaX data='${total}</textarea>'>${total}</textarea>`;
+  assert.equal(
+    parse(rcdataWithInappropriateQuotedCandidate)[0]
+      .completeness.declared_record_count,
+    0,
+  );
+  assert.equal(
+    parse(total.replace("<span", "<SPAN").replace("</span>", "</SPAN>"))[0]
+      .completeness.declared_record_count,
+    0,
+  );
+});
+
 test("historical Fusion discovery does not learn bracketed facet names", () => {
   const previous = requiredSourceAdapter("fusion-world-en@3");
   const capped = `<html>

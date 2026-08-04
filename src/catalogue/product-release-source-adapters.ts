@@ -22,6 +22,7 @@ import {
   onePieceDonCardObservation,
   onePieceRecordingMemberships,
 } from "./one-piece-source-adapter.mjs";
+import { parse as parseHtml } from "parse5";
 
 type ProductSourceGame =
   | "one-piece"
@@ -1201,229 +1202,82 @@ function tokenizedHtmlAttributes(attributes: string): ReadonlyMap<string, string
   return tokens;
 }
 
-const htmlVoidElements = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr",
-]);
-const htmlTextModeElements = new Set([
+const fusionCountInertElements = new Set([
   "iframe",
   "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
   "style",
   "script",
+  "template",
   "textarea",
   "title",
   "xmp",
 ]);
 
-type ParsedHtmlTag = {
-  attributes: string;
-  closing: boolean;
-  tagName: string;
+type HtmlTreeNode = {
+  attrs?: readonly { name: string; value: string }[];
+  childNodes?: readonly HtmlTreeNode[];
+  nodeName: string;
+  tagName?: string;
+  value?: string;
 };
 
-function visibleFusionPublisherCountMarkup(html: string): string {
-  const output: string[] = [];
-  const stack: { hidden: boolean; tagName: string }[] = [];
-  let cursor = 0;
-  const currentlyHidden = () => stack.at(-1)?.hidden ?? false;
-
-  while (cursor < html.length) {
-    if (html.startsWith("<!--", cursor)) {
-      const commentEnd = html.indexOf("-->", cursor + 4);
-      if (commentEnd === -1) break;
-      cursor = commentEnd + 3;
-      continue;
+function visibleFusionPublisherCount(html: string): string | null {
+  const candidates: HtmlTreeNode[] = [];
+  const visit = (node: HtmlTreeNode, hiddenAncestor: boolean): void => {
+    const attributes = new Map(
+      (node.attrs ?? []).map(({ name, value }) => [name, value]),
+    );
+    const hidden = hiddenAncestor || attributes.has("hidden");
+    if (
+      !hidden && node.tagName === "div" &&
+      asciiClassTokens(attributes.get("class") ?? "").includes("resultTxt")
+    ) {
+      candidates.push(node);
     }
-    if (html[cursor] !== "<") {
-      const nextTag = html.indexOf("<", cursor);
-      const textEnd = nextTag === -1 ? html.length : nextTag;
-      if (!currentlyHidden()) output.push(html.slice(cursor, textEnd));
-      cursor = textEnd;
-      continue;
+    if (
+      node.tagName !== undefined &&
+      fusionCountInertElements.has(node.tagName)
+    ) {
+      return;
     }
-
-    const tagEnd = htmlTagEnd(html, cursor);
-    if (tagEnd === null) break;
-    const tag = html.slice(cursor, tagEnd + 1);
-    const parsedTag = parseHtmlTag(tag);
-    if (parsedTag === null) {
-      if (!currentlyHidden()) output.push(maskQuotedHtmlTagMarkup(tag));
-      cursor = tagEnd + 1;
-      continue;
-    }
-
-    const { attributes, closing, tagName } = parsedTag;
-    if (closing) {
-      let frameIndex = stack.length - 1;
-      while (frameIndex >= 0 && stack[frameIndex]!.tagName !== tagName) {
-        frameIndex -= 1;
-      }
-      const closingHidden = frameIndex >= 0
-        ? stack[frameIndex]!.hidden
-        : currentlyHidden();
-      if (!closingHidden) output.push(maskQuotedHtmlTagMarkup(tag));
-      if (frameIndex >= 0) stack.splice(frameIndex);
-      cursor = tagEnd + 1;
-      continue;
-    }
-
-    if (tagName === "plaintext") break;
-    if (htmlTextModeElements.has(tagName)) {
-      const textModeEnd = htmlTextModeElementEnd(html, tagName, tagEnd + 1);
-      if (textModeEnd === null) break;
-      cursor = textModeEnd;
-      continue;
-    }
-    if (tagName === "template") {
-      const templateEnd = htmlTemplateElementEnd(html, tagEnd + 1);
-      if (templateEnd === null) break;
-      cursor = templateEnd;
-      continue;
-    }
-    const hidden = currentlyHidden() ||
-      tokenizedHtmlAttributes(attributes).has("hidden");
-    if (!hidden) output.push(maskQuotedHtmlTagMarkup(tag));
-    if (!htmlVoidElements.has(tagName)) {
-      stack.push({ hidden, tagName });
-    }
-    cursor = tagEnd + 1;
-  }
-  return output.join("");
-}
-
-function htmlTagEnd(html: string, openingIndex: number): number | null {
-  let quote: "\"" | "'" | null = null;
-  for (let index = openingIndex + 1; index < html.length; index += 1) {
-    const character = html[index]!;
-    if (quote !== null) {
-      if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "\"" || character === "'") {
-      quote = character;
-      continue;
-    }
-    if (character === ">") return index;
-  }
-  return null;
-}
-
-function parseHtmlTag(tag: string): ParsedHtmlTag | null {
-  if (tag[0] !== "<" || tag.at(-1) !== ">") return null;
-  let cursor = 1;
-  const closing = tag[cursor] === "/";
-  if (closing) cursor += 1;
-  if (!/[a-z]/iu.test(tag[cursor] ?? "")) return null;
-  const nameStart = cursor;
-  while (
-    cursor < tag.length - 1 &&
-    !/[\t\n\f\r />]/u.test(tag[cursor]!)
-  ) {
-    cursor += 1;
-  }
-  return {
-    attributes: tag.slice(cursor, -1),
-    closing,
-    tagName: tag.slice(nameStart, cursor).toLowerCase(),
+    for (const child of node.childNodes ?? []) visit(child, hidden);
   };
+  visit(parseHtml(html) as unknown as HtmlTreeNode, false);
+  if (candidates.length !== 1) return null;
+
+  const children = candidates[0]!.childNodes ?? [];
+  if (children.length !== 3) return null;
+  const [prefix, countContainer, suffix] = children;
+  if (
+    prefix?.nodeName !== "#text" ||
+    !/^[\t\n\f\r ]*Result[\t\n\f\r ]*$/i.test(prefix.value ?? "") ||
+    countContainer?.tagName !== "span" ||
+    !asciiClassTokens(attributeValue(countContainer, "class")).includes(
+      "num",
+    ) ||
+    suffix?.nodeName !== "#text" ||
+    !/^[\t\n\f\r ]*cards?[\t\n\f\r ]*$/i.test(suffix.value ?? "")
+  ) {
+    return null;
+  }
+  const countChildren = countContainer.childNodes ?? [];
+  if (countChildren.length !== 1 || countChildren[0]!.nodeName !== "#text") {
+    return null;
+  }
+  return countChildren[0]!.value?.match(
+    /^[\t\n\f\r ]*(\d+)[\t\n\f\r ]*$/,
+  )?.[1] ?? null;
 }
 
-function maskQuotedHtmlTagMarkup(tag: string): string {
-  const output: string[] = [];
-  let quote: "\"" | "'" | null = null;
-  for (const character of tag) {
-    if (quote !== null) {
-      if (character === quote) {
-        quote = null;
-        output.push(character);
-      } else if (character === "<") {
-        output.push("&lt;");
-      } else if (character === ">") {
-        output.push("&gt;");
-      } else {
-        output.push(character);
-      }
-      continue;
-    }
-    if (character === "\"" || character === "'") quote = character;
-    output.push(character);
-  }
-  return output.join("");
+function asciiClassTokens(value: string): string[] {
+  return value.split(/[\t\n\f\r ]+/).filter(Boolean);
 }
 
-function htmlTextModeElementEnd(
-  html: string,
-  tagName: string,
-  contentStart: number,
-): number | null {
-  let cursor = contentStart;
-  while (cursor < html.length) {
-    const closingStart = html.indexOf("</", cursor);
-    if (closingStart === -1) return null;
-    const tagEnd = htmlTagEnd(html, closingStart);
-    if (tagEnd === null) return null;
-    const parsedTag = parseHtmlTag(html.slice(closingStart, tagEnd + 1));
-    if (parsedTag?.closing && parsedTag.tagName === tagName) {
-      return tagEnd + 1;
-    }
-    cursor = tagEnd + 1;
-  }
-  return null;
-}
-
-function htmlTemplateElementEnd(
-  html: string,
-  contentStart: number,
-): number | null {
-  let cursor = contentStart;
-  let depth = 1;
-  while (cursor < html.length) {
-    const nextTag = html.indexOf("<", cursor);
-    if (nextTag === -1) return null;
-    if (html.startsWith("<!--", nextTag)) {
-      const commentEnd = html.indexOf("-->", nextTag + 4);
-      if (commentEnd === -1) return null;
-      cursor = commentEnd + 3;
-      continue;
-    }
-    const tagEnd = htmlTagEnd(html, nextTag);
-    if (tagEnd === null) return null;
-    const parsedTag = parseHtmlTag(html.slice(nextTag, tagEnd + 1));
-    if (parsedTag === null) {
-      cursor = tagEnd + 1;
-      continue;
-    }
-    const { closing, tagName } = parsedTag;
-    if (!closing && tagName === "plaintext") return null;
-    if (!closing && htmlTextModeElements.has(tagName)) {
-      const textModeEnd = htmlTextModeElementEnd(
-        html,
-        tagName,
-        tagEnd + 1,
-      );
-      if (textModeEnd === null) return null;
-      cursor = textModeEnd;
-      continue;
-    }
-    if (tagName === "template") {
-      depth += closing ? -1 : 1;
-      if (depth === 0) return tagEnd + 1;
-    }
-    cursor = tagEnd + 1;
-  }
-  return null;
+function attributeValue(node: HtmlTreeNode, name: string): string {
+  return node.attrs?.find((attribute) => attribute.name === name)?.value ?? "";
 }
 
 function dynamicRequestRole(
@@ -4568,34 +4422,10 @@ function parseBandaiSurfaceCoverageByContract(
     format === "fusion-world" &&
     surface === "listing" &&
     fusionWorldCompleteListingLeaf(new URL(url));
-  const fusionListingCountMarkup = catalogueComplete &&
+  const fusionListingDeclaredCount = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
-    ? visibleFusionPublisherCountMarkup(html)
-    : "";
-  const fusionListingResultCountOpenings = catalogueComplete &&
-      format === "fusion-world" && surface === "listing"
-    ? [...fusionListingCountMarkup.matchAll(
-        /<div(?=[\t\n\f\r />])([^>]*)>/giu,
-      )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
-    : [];
-  const fusionListingResultCountContainers = catalogueComplete &&
-      format === "fusion-world" && surface === "listing"
-    ? [...fusionListingCountMarkup.matchAll(
-        /<div(?=[\t\n\f\r />])([^>]*)>([\s\S]*?)<\/div[\t\n\f\r ]*>/giu,
-      )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
-    : [];
-  const fusionListingDeclaredCountBody =
-    fusionListingResultCountOpenings.length === 1 &&
-      fusionListingResultCountContainers.length === 1
-      ? fusionListingResultCountContainers[0]![2]!.match(
-        /^[\t\n\f\r ]*Result[\t\n\f\r ]*<span(?=[\t\n\f\r />])([^>]*)>[\t\n\f\r ]*(\d+)[\t\n\f\r ]*<\/span[\t\n\f\r ]*>[\t\n\f\r ]*cards?[\t\n\f\r ]*$/iu,
-      )
-      : null;
-  const fusionListingDeclaredCount =
-    fusionListingDeclaredCountBody !== null &&
-      hasHtmlClassToken(fusionListingDeclaredCountBody[1]!, "num")
-      ? fusionListingDeclaredCountBody[2]!
-      : null;
+    ? visibleFusionPublisherCount(html)
+    : null;
   const declaredCount = fusionListingDeclaredCount ?? html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
   )?.[1] ?? null;
