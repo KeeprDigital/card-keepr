@@ -4996,6 +4996,43 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
     }
 
     const packageHtml = packageBytes.toString("utf8");
+    const nonterminalHtml = packageHtml
+      .replace('<span class="num">2</span>', '<span class="num">4</span>')
+      .replace(
+        '<div class="pager"></div>',
+        `<div class="pager"><a href="?package=${packageValue}&amp;page=2">2</a></div>`,
+      );
+    const [nonterminalCoverage] = adapter.parseBytes(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(nonterminalCoverage.completeness, {
+      declared_record_count: 4,
+      parsed_record_count: 2,
+      required_surfaces_complete: false,
+      partitions_complete: false,
+      structurally_complete: true,
+    });
+    const nonterminalRequests = adapter.discoverRequests(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(
+      nonterminalRequests
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001`,
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001_p1`,
+      ],
+    );
+    assert.equal(
+      nonterminalRequests.some(({ role, url }) =>
+        role === "listing" &&
+        url === `${rootUrl}?package=${packageValue}&page=2`
+      ),
+      true,
+    );
     assert.throws(
       () => adapter.parseBytes(
         new TextEncoder().encode(
@@ -5029,6 +5066,22 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
         url: `${packageContext.url}&page=3`,
       }),
       /selected page.*request/iu,
+    );
+    const partialTerminalBytes = new TextEncoder().encode(
+      packageHtml
+        .replace('<span class="num">2</span>', '<span class="num">4</span>')
+        .replace(
+          "</section>",
+          '<input type="hidden" name="page" value="2"></section>',
+        ),
+    );
+    const [partialTerminalCoverage] = adapter.parseBytes(
+      partialTerminalBytes,
+      { ...packageContext, url: `${packageContext.url}&page=2` },
+    );
+    assert.equal(
+      partialTerminalCoverage.completeness.required_surfaces_complete,
+      false,
     );
   }
 });
@@ -5129,7 +5182,7 @@ test("active Gundam Errata is typed from both locale publications without changi
     payload.declared_record_count = 1;
     payload.partition.total = 1;
     payload.entries = [{
-      entry_id: `${article}-gd04-067`,
+      entry_id: `gundam-${article}-gd04-067`,
       card_number: "GD04-067",
       published_on: "2026-04-10",
       effective_from: "2026-04-10",
@@ -5137,6 +5190,8 @@ test("active Gundam Errata is typed from both locale publications without changi
       after: "from any player's trash.",
       notice: "The corrected wording applies to the applicable cards.",
       applies_to_parallel_printings: true,
+      image_url:
+        `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
     }];
     const observations = parseRegisteredSurface(current, "errata", payload);
     assert.deepEqual(
@@ -5158,8 +5213,10 @@ test("active Gundam Errata is typed from both locale publications without changi
           "Note: The corrected wording applies to the applicable cards.",
         applies_to_parallel_printings: true,
         source: {
-          fragment: `#${article}-gd04-067`,
+          fragment: `#gundam-${article}-gd04-067`,
           display_name: "GD04-067",
+          image_url:
+            `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
         },
         completeness: {
           structurally_complete: true,
@@ -5241,6 +5298,7 @@ test("active Gundam discovers and parses ordinary official Errata articles", () 
       <h2>Apology for the errata and revision in card description of Phantom Aria [GD04]</h2></div>
       <div class="articleBody"><div class="blocks">${englishHeading}
       <div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>
+      <div class="card-image"><img src="/gcg/bccard/${locale}/news/2026/04/GD04-067.webp"></div>
       <div class="text-area"><h5><span>Before</span></h5></div>
       <div class="text-area"><p><span>from your trash.</span></p></div>
       <div class="text-area"><h5><span>After</span></h5></div>
@@ -5278,7 +5336,7 @@ test("active Gundam discovers and parses ordinary official Errata articles", () 
           "Before: from your trash.\n" +
           "After: from any player's trash.\n" +
           "Note: For the applicable cards, the above shall be regarded as the correct wording.",
-        applies_to_parallel_printings: false,
+        applies_to_parallel_printings: true,
       },
     );
     assert.throws(

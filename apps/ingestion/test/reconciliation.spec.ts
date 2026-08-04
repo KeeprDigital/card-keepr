@@ -23,6 +23,9 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import {
+  parseReconciliationObservation,
+} from "../../../src/catalogue/reconciliation-observation";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
   startOrObserveReconciliationWorkflow,
@@ -61,6 +64,37 @@ test("registered Source metadata rejects unowned stored Legality freshness scope
     region: "EN-ASIA",
     checked_at: "2026-08-02T00:00:00.000Z",
   })).toThrow(/registered ownership/);
+});
+
+test("retained Gundam Official Errata crosses the reconciliation boundary", () => {
+  expect(() => parseReconciliationObservation("srcobs_gundam_erratum", {
+    kind: "official_erratum",
+    game: "gundam",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "GD04-067" },
+    },
+    published_on: "2026-04-10",
+    effective_from: null,
+    observed_printed_rules_text: "from your trash.",
+    corrected_rules_text: "from any player's trash.",
+    official_wording:
+      "Before: from your trash.\nAfter: from any player's trash.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#gundam-02_157-gd04-067",
+      display_name: "GD04-067",
+      image_url:
+        "https://www.gundam-gcg.com/gcg/bccard/en/news/2026/04/GD04-067.webp",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  })).not.toThrow();
 });
 let requestSequence = 0;
 

@@ -296,8 +296,12 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                   ? [
                       ...definition.imagePathnamePrefixes,
                       "/jp/images/cards/card/",
+                      "/gcg/bccard/asia-en/",
                     ]
-                  : definition.imagePathnamePrefixes,
+                  : [
+                      ...definition.imagePathnamePrefixes,
+                      "/gcg/bccard/en/",
+                    ],
               adapterVersion: completeGundamAdapterVersions.get(
                 definition.sourceLineage,
               )!,
@@ -1580,6 +1584,7 @@ function parseCompleteGundamLiveListing(
   fullLocators: string[];
   selectedPackage: string | null;
   selectedPage: number;
+  terminalPage: boolean;
 } | null {
   const totals = [...html.matchAll(
     /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>[\s\S]*?<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>[\s\S]*?<\/div>/giu,
@@ -1682,20 +1687,17 @@ function parseCompleteGundamLiveListing(
     }
     return locator;
   });
+  const terminalPage =
+    /<div\b[^>]*\bclass=["'][^"']*\bpager\b[^"']*["'][^>]*>\s*<\/div>/iu
+      .test(html);
   if (
-    fullLocators.length !== declaredTotal ||
-    new Set(fullLocators).size !== declaredTotal
+    new Set(fullLocators).size !== fullLocators.length ||
+    fullLocators.length > declaredTotal ||
+    (terminalPage && requestedPage === "1" &&
+      fullLocators.length !== declaredTotal)
   ) {
     throw new Error(
       "Official Source Gundam publisher total does not match its unique full locators.",
-    );
-  }
-  if (
-    !/<div\b[^>]*\bclass=["'][^"']*\bpager\b[^"']*["'][^>]*>\s*<\/div>/iu
-      .test(html)
-  ) {
-    throw new Error(
-      "Official Source Gundam listing does not prove terminal publisher pagination.",
     );
   }
   return {
@@ -1703,6 +1705,7 @@ function parseCompleteGundamLiveListing(
     fullLocators,
     selectedPackage: requestedPackages[0] ?? null,
     selectedPage: Number.parseInt(requestedPage, 10),
+    terminalPage,
   };
 }
 
@@ -5097,6 +5100,7 @@ function completeGundamListingCoverage(
     fullLocators: string[];
     selectedPackage: string | null;
     selectedPage: number;
+    terminalPage: boolean;
   },
   sourceLineage: string,
   surface: string,
@@ -5104,10 +5108,19 @@ function completeGundamListingCoverage(
 ): ParsedBandaiSurface {
   return {
     observations: [{
-      completeness: completeObservation(
-        listing.declaredTotal,
-        listing.fullLocators.length,
-      ),
+      completeness: listing.terminalPage &&
+          listing.fullLocators.length === listing.declaredTotal
+        ? completeObservation(
+            listing.declaredTotal,
+            listing.fullLocators.length,
+          )
+        : {
+            structurally_complete: true,
+            required_surfaces_complete: false,
+            partitions_complete: false,
+            declared_record_count: listing.declaredTotal,
+            parsed_record_count: listing.fullLocators.length,
+          },
       product_release_catalogue: {
         products: [],
         distribution_contexts: [],
@@ -5122,7 +5135,7 @@ function completeGundamListingCoverage(
       selected_page: listing.selectedPage,
       declared_total: listing.declaredTotal,
       full_locators: listing.fullLocators,
-      terminal_page: true,
+      terminal_page: listing.terminalPage,
     },
     consumedFields: [
       "source_lineage",
@@ -6109,7 +6122,7 @@ function normalizedSurfaceObservationsV2(
         ? fusionWorldOfficialErrataObservations(document)
         : []),
       ...(catalogueComplete && format === "gundam" && surface === "errata"
-        ? gundamOfficialErrataObservations(document)
+        ? gundamOfficialErrataObservations(document, sourceLineage)
         : []),
       ...(
         completeDigimonCatalogue && game === "digimon" && surface === "errata"
@@ -6337,6 +6350,7 @@ function fusionWorldOfficialErrataObservations(
 
 function gundamOfficialErrataObservations(
   document: Record<string, unknown>,
+  sourceLineage: string,
 ): readonly Record<string, unknown>[] {
   const entries = requiredArray(document.entries, "Gundam Errata entries");
   return entries.map((value) => {
@@ -6350,6 +6364,7 @@ function gundamOfficialErrataObservations(
       "after",
       "notice",
       "applies_to_parallel_printings",
+      "image_url",
     ]);
     const unknown = Object.keys(entry).find((field) => !allowed.has(field));
     if (unknown !== undefined) {
@@ -6389,6 +6404,12 @@ function gundamOfficialErrataObservations(
         "Gundam Erratum parallel Printing applicability is invalid.",
       );
     }
+    const imageUrl = new URL(
+      requiredText(entry.image_url, "Gundam Erratum image URL"),
+    );
+    if (!officialUrl(sourceLineage, imageUrl, "image")) {
+      throw new Error("Gundam Erratum image provenance is invalid.");
+    }
     return {
       kind: "official_erratum",
       game: "gundam",
@@ -6405,6 +6426,7 @@ function gundamOfficialErrataObservations(
       source: {
         fragment: `#${entryId}`,
         display_name: cardNumber,
+        image_url: imageUrl.href,
       },
       completeness: completeObservation(1, 1),
     };
@@ -6468,7 +6490,27 @@ function parseGundamOfficialErrataHtmlV4(
     );
     const before = gundamErrataHtmlField(segment, "Before");
     const after = gundamErrataHtmlField(segment, "After");
-    return { cardNumber: heading.cardNumber, before, after };
+    const imageMatches = [...segment.matchAll(/<img\b([^>]*)>/giu)]
+      .flatMap((match) => {
+        const rawUrl = looseHtmlAttribute(match[1]!, "src");
+        if (rawUrl === null) return [];
+        const imageUrl = new URL(decodeHtmlText(rawUrl), requestUrl);
+        return imageUrl.pathname.includes(heading.cardNumber)
+          ? [imageUrl]
+          : [];
+      });
+    if (
+      imageMatches.length !== 1 ||
+      !officialUrl(sourceLineage, imageMatches[0]!, "image")
+    ) {
+      throw new Error("Gundam Errata correction image is incomplete.");
+    }
+    return {
+      cardNumber: heading.cardNumber,
+      before,
+      after,
+      imageUrl: imageMatches[0]!.href,
+    };
   });
   const qualifiers = [...body.matchAll(
     /<strong\b[^>]*>([\s\S]*?)<\/strong>/giu,
@@ -6482,10 +6524,11 @@ function parseGundamOfficialErrataHtmlV4(
     .replace(/\.html$/u, "");
   const notice = qualifiers[0]!;
   const appliesToParallelPrintings =
-    /\b(?:parallel|alternate(?:-|\s)?art) (?:cards|printings)\b/iu.test(notice);
+    /^For the applicable cards, the above shall be regarded as the correct wording\.?$/iu
+      .test(notice);
   return gundamOfficialErrataObservations({
     entries: entries.map((entry) => ({
-      entry_id: `${articleId}-${entry.cardNumber.toLowerCase()}`,
+      entry_id: `gundam-${articleId}-${entry.cardNumber.toLowerCase()}`,
       card_number: entry.cardNumber,
       published_on: publishedOn,
       effective_from: null,
@@ -6493,8 +6536,9 @@ function parseGundamOfficialErrataHtmlV4(
       after: entry.after,
       notice,
       applies_to_parallel_printings: appliesToParallelPrintings,
+      image_url: entry.imageUrl,
     })),
-  });
+  }, sourceLineage);
 }
 
 function gundamErrataHtmlField(
