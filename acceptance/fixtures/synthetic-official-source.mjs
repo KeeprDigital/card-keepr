@@ -504,9 +504,8 @@ function applyDigimonCompleteFixture(
       published_on: "2026-07-01",
       effective_from: "2026-07-01",
       observed_printed_rules_text: "Synthetic main effect.",
-      corrected_rules_text: "Corrected synthetic main effect.",
-      official_wording:
-        'Replace "Synthetic main effect." with "Corrected synthetic main effect."',
+      corrected_rules_text: null,
+      official_wording: "Remove the printed effect from this Card.",
       applies_to_parallel_printings: true,
       source_fragment: "#BT99-001",
       display_name: "BT99-001 Erratum",

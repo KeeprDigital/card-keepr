@@ -329,7 +329,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.equal(detail.data.name, "Synthetic Base Digimon");
   assert.equal(
     detail.data.effective_rules_text,
-    "Corrected synthetic main effect.",
+    null,
   );
   assert.deepEqual(detail.data.game_data, {
     profile: "digimon@1",
@@ -383,6 +383,12 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.equal(cards.length, 1);
   assert.equal(cards[0].game_data.profile, "digimon@1");
   assert.equal(printings.length, 2);
+  assert.ok(
+    printings.every(({ printed_rules_text }) =>
+      printed_rules_text === "Synthetic printed rules."
+    ),
+    "explicit removal changes Effective Rules Text without rewriting Printed Rules Text",
+  );
   assert.deepEqual(
     printings.map(({ game_data }) =>
       game_data.attributes.alternative_art
@@ -403,7 +409,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     [{
       target_type: "card",
       effective_from: "2026-07-01",
-      corrected_value: "Corrected synthetic main effect.",
+      corrected_value: null,
     }],
     "the standalone Official Errata surface must publish typed authority",
   );

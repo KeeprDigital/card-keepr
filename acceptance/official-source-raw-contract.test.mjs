@@ -385,6 +385,32 @@ test("Digimon V4 parses every retained live popup Card and Printing at an exact 
   );
 });
 
+test("Digimon V4 rejects a retained live leaf whose declared Card count exceeds its popup inventory", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const secondRecord = retained.indexOf(
+    '<li class="image_lists_item data page-1">',
+    1,
+  );
+  assert.notEqual(secondRecord, -1);
+  const incompleteLeaf = `<div class="resultTxt">Result<span class="num">2</span>cards</div>${
+    retained.slice(0, secondRecord)
+  }`;
+
+  assert.throws(
+    () => adapter.parseBytes(new TextEncoder().encode(incompleteLeaf), {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+      requestId: `digimon-en:listing:${"d".repeat(64)}`,
+    }),
+    /declared and parsed.*differ/iu,
+  );
+});
+
 test("Digimon V4 normalizes exact standalone Official Errata", () => {
   const adapter = requiredSourceAdapter("digimon-en@4");
   const payload = officialRawSurfacePayload("/digimon-en/errata");
@@ -458,6 +484,41 @@ test("Digimon V4 normalizes exact standalone Official Errata", () => {
   );
 });
 
+test("Digimon V4 preserves a standalone Official Erratum that explicitly removes Effective Rules Text", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const payload = officialRawSurfacePayload("/digimon-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    card_number: "BT99-001",
+    published_on: "2026-07-01",
+    effective_from: "2026-07-01",
+    observed_printed_rules_text: "Printed effect before removal.",
+    corrected_rules_text: null,
+    official_wording: "Remove the printed effect from this Card.",
+    applies_to_parallel_printings: true,
+    source_fragment: "#BT99-001",
+    display_name: "BT99-001 Erratum",
+    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+  }];
+
+  const observations = adapter.parseBytes(
+    Buffer.from(
+      `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
+    ),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "digimon-en:errata",
+    },
+  );
+  assert.deepEqual(
+    observations.filter(({ kind }) => kind === "official_erratum")
+      .map(({ corrected_rules_text }) => corrected_rules_text),
+    [null],
+  );
+});
+
 test("the synthetic Digimon Worker isolates sequential and concurrent request scenarios", async () => {
   const rootUrl =
     "https://world.digimoncard.com/cards/index.php?search=true";
@@ -477,7 +538,7 @@ test("the synthetic Digimon Worker isolates sequential and concurrent request sc
   );
   assert.doesNotMatch(
     unmarked,
-    /Corrected synthetic main effect/u,
+    /Remove the printed effect/u,
     "an unmarked request must not inherit an earlier request scenario",
   );
 
@@ -491,8 +552,8 @@ test("the synthetic Digimon Worker isolates sequential and concurrent request sc
       "card-keepr-acceptance-digimon/complete-no-errata; request-role=surface; request-surface=errata",
     ),
   ]);
-  assert.match(complete, /Corrected synthetic main effect/u);
-  assert.doesNotMatch(absent, /Corrected synthetic main effect/u);
+  assert.match(complete, /Remove the printed effect/u);
+  assert.doesNotMatch(absent, /Remove the printed effect/u);
 });
 
 function registeredProductionAdapters() {
