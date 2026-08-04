@@ -669,15 +669,42 @@ function bandaiRequestDiscovery(
           urls,
         )
       : null;
+    const current = new URL(context.url);
     if (
       catalogueComplete &&
       format === "fusion-world" &&
-      (
-        dynamicRole === "listing" ||
-        initialSurface === "card-search"
-      )
+      current.origin === new URL(urls["card-search"]!).origin &&
+      current.pathname === new URL(urls["card-search"]!).pathname
     ) {
+      const partitions = discoveredPartitionRequests(
+        format,
+        discoveryHtml,
+        current,
+        expandedOnePieceCatalogue,
+        catalogueComplete,
+      ).map((url) => ({
+        role: "listing" as const,
+        url,
+        headers: officialDiscoveredRequestHeaders("listing"),
+      }));
+      if (!fusionWorldCompleteListingLeaf(current)) return partitions;
       fusionWorldHtmlListingEntries(discoveryHtml, context.url, sourceLineage);
+      return [...new Map(
+        [...discoveryHtml.matchAll(/<a\b([^>]*)>/giu)].flatMap((match) => {
+          const anchor = fusionWorldListingAnchor(
+            match[1]!,
+            context.url,
+            sourceLineage,
+          );
+          return anchor === null
+            ? []
+            : [[anchor.url.href, {
+                role: "detail" as const,
+                url: anchor.url.href,
+                headers: officialDiscoveredRequestHeaders("detail"),
+              }] as const];
+        }),
+      ).values()].sort((left, right) => left.url.localeCompare(right.url));
     }
     const structuredSurface = dynamicStructuredSurface(
       dynamicRole,
@@ -685,7 +712,6 @@ function bandaiRequestDiscovery(
       requiredSurfaces,
       completeDigimonCatalogue,
     );
-    const current = new URL(context.url);
     const candidates: {
       role: "listing" | "detail" | "product_detail" | "image";
       url: string;
@@ -917,6 +943,7 @@ function discoveredPartitionRequests(
     facets,
     current,
     expandedOnePieceCatalogue,
+    catalogueComplete && format === "fusion-world",
   );
   if (stage === null) return [];
   return stage.options.map((value) => {
@@ -1041,17 +1068,33 @@ function fusionWorldFullLocatorFromUrl(
   return locator;
 }
 
+function fusionWorldCompleteListingLeaf(url: URL): boolean {
+  const accepted = new Set(["card_type[]", "color[]", "colour[]", "cost[]"]);
+  const entries = [...url.searchParams.entries()];
+  return entries.every(([key, value]) =>
+    accepted.has(key) && value.trim().length > 0
+  ) &&
+    url.searchParams.getAll("card_type[]").length === 1 &&
+    url.searchParams.getAll("cost[]").length === 1 &&
+    url.searchParams.getAll("color[]").length +
+        url.searchParams.getAll("colour[]").length === 1;
+}
+
 function nextPartitionFacet(
   format: DiscoveryFormat,
   facets: readonly { key: string; options: string[] }[],
   current: URL,
   expandedOnePieceCatalogue = false,
+  bracketedFusionFacets = false,
 ): { key: string; options: string[] } | null {
   const find = (keys: readonly string[]) =>
-    facets.find(({ key }) => keys.includes(key.replace(/\[\]$/u, ""))) ?? null;
+    facets.find(({ key }) =>
+      keys.includes(bracketedFusionFacets ? key.replace(/\[\]$/u, "") : key)
+    ) ?? null;
   const hasFacet = (keys: readonly string[]) =>
     keys.some((key) =>
-      current.searchParams.has(key) || current.searchParams.has(`${key}[]`)
+      current.searchParams.has(key) ||
+      (bracketedFusionFacets && current.searchParams.has(`${key}[]`))
     );
   if (format === "one-piece") {
     const recording = find([
@@ -4235,7 +4278,22 @@ function parseBandaiSurfaceCoverageByContract(
   )];
   const declaredCountMatch = html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
-  );
+  ) ?? (catalogueComplete && format === "fusion-world" && surface === "listing"
+    ? html.match(
+        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>[\s\S]*?<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>\s*cards?\b[\s\S]*?<\/div>/iu,
+      )
+    : null);
+  if (
+    catalogueComplete &&
+    format === "fusion-world" &&
+    surface === "listing" &&
+    declaredCountMatch !== null &&
+    Number.parseInt(declaredCountMatch[1]!, 10) !== fusionListingEntries.length
+  ) {
+    throw new Error(
+      `Fusion World listing declared ${declaredCountMatch[1]} Cards but yielded ${fusionListingEntries.length} unique full locators.`,
+    );
+  }
   const fusionComingSoonDeclaresEmpty =
     catalogueComplete &&
     format === "fusion-world" &&

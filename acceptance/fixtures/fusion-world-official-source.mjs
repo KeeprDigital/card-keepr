@@ -7,12 +7,36 @@ import {
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
 const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
+let activeScenarioMarker = fixtureMarker;
 
 export default {
   async fetch(request) {
     const response = await syntheticOfficialSource.fetch(request);
     const marker = productionSourceFixtureMarker(request.headers);
+    if (marker?.startsWith(fixtureMarker)) activeScenarioMarker = marker;
+    const scenarioMarker = marker?.startsWith(fixtureMarker)
+      ? marker
+      : activeScenarioMarker;
     const surface = productionSourceFixtureSurface(request.headers);
+    const requestRole = request.headers.get("user-agent")?.match(
+      /(?:^|;\s*)request-role=(surface|listing|detail|product_detail|image)(?:;|$)/u,
+    )?.[1] ?? null;
+    const requestUrl = new URL(request.url);
+    if (
+      requestUrl.pathname === "/fw/en/cardlist/" &&
+      (surface === "card-search" || requestRole === "listing")
+    ) {
+      return htmlResponse(
+        response,
+        fusionWorldCardSearchPage(requestUrl, scenarioMarker),
+      );
+    }
+    if (
+      requestUrl.pathname === "/fw/en/cardlist/detail.php" &&
+      requestRole === "detail"
+    ) {
+      return htmlResponse(response, fusionWorldCardDetailPage(scenarioMarker));
+    }
     if (
       !marker?.startsWith(fixtureMarker) ||
       ![
@@ -118,6 +142,80 @@ function completeCardSearchPayload(payload, marker) {
     payload.result.partitions[0].entries.push(conflicting);
     payload.result.partitions[0].total = 2;
   }
+}
+
+function fusionWorldCardSearchPage(url, marker) {
+  const facets = `<section class="searchColSet">
+    <input type="checkbox" name="card_type[]" value="Leader">
+    <input type="checkbox" name="color[]" value="Red">
+    <input type="checkbox" name="cost[]" value="1">
+  </section>`;
+  const completeLeaf =
+    url.searchParams.getAll("card_type[]").length === 1 &&
+    url.searchParams.getAll("color[]").length === 1 &&
+    url.searchParams.getAll("cost[]").length === 1;
+  if (!completeLeaf) {
+    return `<html><title>BANDAI DRAGON BALL CARD search</title>
+      ${facets}<main><article>Official card search filters.</article></main>
+    </html>`;
+  }
+  const entry = (number, label) => `<li class="cardItem">
+    <a href="javascript:void(0);" data-card-number="${number}"
+       data-src="detail.php?card_no=FB99-001&amp;p=_p2">
+      <img src="../../images/cards/card/noimage.webp"
+           data-src="../../images/cards/card/en/FB99-001_p2.webp"
+           alt="${number} ${label}">
+    </a>
+  </li>`;
+  const conflicting = marker === `${fixtureMarker}-conflicting-locator`
+    ? entry("FB99-999", "Conflicting Leader")
+    : "";
+  const cap = marker === `${fixtureMarker}-capped-leaf`
+    ? "<p>More than 1,000 results were capped</p>"
+    : "";
+  return `<html><title>BANDAI DRAGON BALL CARD search</title>${facets}
+    <main>${cap}<div class="resultTxt">Result<span class="num">1</span>cards</div>
+      <ul>${entry("FB99-001", "Fusion Leader")}${conflicting}</ul>
+    </main>
+  </html>`;
+}
+
+function fusionWorldCardDetailPage(marker) {
+  const cardNumber = marker === `${fixtureMarker}-mismatched-detail`
+    ? "FB99-999"
+    : "FB99-001";
+  const back = marker === `${fixtureMarker}-missing-leader-face`
+    ? ""
+    : `<section class="card-face" data-face="back">
+        <img src="/fw/images/cards/FB99-001_p2-back.png">
+        <dl><dt>Name</dt><dd>Fusion Leader Back</dd></dl>
+        <dl><dt>Power</dt><dd>15000</dd></dl>
+        <dl><dt>Special Trait</dt><dd>Test</dd></dl>
+        <dl><dt>Skill</dt><dd>Official back skill</dd></dl>
+      </section>`;
+  return `<html><main data-card-id="FB99-001_p2">
+    <h1>Fusion Leader</h1>
+    <dl><dt>Card Number</dt><dd>${cardNumber}</dd></dl>
+    <dl><dt>Card Type</dt><dd>Leader</dd></dl>
+    <dl><dt>Color</dt><dd>Red</dd></dl>
+    <dl><dt>Cost</dt><dd>1</dd></dl>
+    <dl><dt>Specified Cost</dt><dd>Red 1</dd></dl>
+    <dl><dt>Power</dt><dd>10000</dd></dl>
+    <dl><dt>Combo Power</dt><dd>5000</dd></dl>
+    <dl><dt>Special Trait</dt><dd>Test</dd></dl>
+    <dl><dt>Effect</dt><dd>Official printed rules</dd></dl>
+    <a href="/fw/en/products/" data-product-code="FB-RAW-01">
+      Fusion World Raw Product
+    </a>
+    <section class="card-face" data-face="front">
+      <img src="/fw/images/cards/FB99-001_p2-front.png">
+      <dl><dt>Name</dt><dd>Fusion Leader Front</dd></dl>
+      <dl><dt>Power</dt><dd>10000</dd></dl>
+      <dl><dt>Special Trait</dt><dd>Test</dd></dl>
+      <dl><dt>Skill</dt><dd>Official front skill</dd></dl>
+    </section>
+    ${back}
+  </main></html>`;
 }
 
 function comingSoonProduct() {
