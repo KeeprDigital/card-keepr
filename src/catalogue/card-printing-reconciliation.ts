@@ -61,6 +61,10 @@ import {
   normalizedLegalityRuleLifecycle,
   resolveLegalityRuleCards,
 } from "./legality-rule";
+import {
+  reconcileDigimonCardAuthority,
+  type DigimonCardAuthority,
+} from "./digimon-reconciliation";
 
 type ActiveRunRow = {
   id: string;
@@ -133,6 +137,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
   const localCardFacts = new Map<string, string>();
+  const localDigimonCardAuthorities = new Map<
+    string,
+    DigimonCardAuthority
+  >();
   const localPrintingFacts = new Map<
     string,
     Omit<CataloguePrinting, "id" | "card_id">
@@ -262,11 +270,36 @@ export async function reconcileRetainedCardPrintingEvidence(
     } catch {
       // Final candidate derivation below is the single diagnostic authority.
     }
+    let digimonAuthorityConflict: string | null = null;
+    if (proposedCard.game === "digimon") {
+      const priorAuthority = localDigimonCardAuthorities.get(cardId);
+      const proposedIsBaseRecord = observation.variantKey === "base";
+      if (priorAuthority === undefined) {
+        localDigimonCardAuthorities.set(cardId, {
+          card: acceptedCanonicalCard,
+          hasBaseRecord: proposedIsBaseRecord,
+        });
+      } else {
+        const resolution = reconcileDigimonCardAuthority(
+          priorAuthority,
+          acceptedCanonicalCard,
+          proposedIsBaseRecord,
+        );
+        if (resolution.kind === "conflict") {
+          digimonAuthorityConflict = resolution.detail;
+        } else {
+          acceptedCanonicalCard = resolution.authority.card;
+          localDigimonCardAuthorities.set(cardId, resolution.authority);
+        }
+      }
+    }
     const canonicalFacts = canonicalJson(acceptedCanonicalCard);
     const priorFacts = localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
-      (priorFacts !== undefined &&
+      digimonAuthorityConflict !== null ||
+      (proposedCard.game !== "digimon" &&
+        priorFacts !== undefined &&
         priorFacts !== canonicalFacts &&
         !retainAsiaAuthority)
     ) {
@@ -277,6 +310,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         candidate_printing_ids: [],
         detail:
           publishedConflict ??
+          digimonAuthorityConflict ??
           "Retained observations disagree on canonical Card facts and no deterministic authority rule resolves them.",
       });
     } else {

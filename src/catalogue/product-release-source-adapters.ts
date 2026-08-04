@@ -5028,6 +5028,14 @@ function canonicalDetail(
       raw.product_codes,
       "Official Product codes",
     ),
+    ...(raw.fuzzy_product_labels === undefined
+      ? {}
+      : {
+          fuzzy_product_labels: requiredTextArray(
+            raw.fuzzy_product_labels,
+            "Unresolved Official Product labels",
+          ),
+        }),
     ...(raw.product_names === undefined
       ? {}
       : {
