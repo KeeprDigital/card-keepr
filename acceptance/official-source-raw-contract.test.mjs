@@ -4385,10 +4385,17 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
   }
   for (const structurallyHiddenTotal of [
     `<template>${exactTotal}</template>`,
+    `<template><template></template>${exactTotal}</template>`,
+    `<template><!-- </template> -->${exactTotal}</template>`,
     `<section hidden>${exactTotal}</section>`,
+    `<section hidden/>${exactTotal}</section>`,
     exactTotal.replace(
       'class="resultTxt"',
       'class="resultTxt" hidden',
+    ),
+    exactTotal.replace(
+      'class="resultTxt"',
+      'class="resultTxt"hidden',
     ),
   ]) {
     const hiddenOnly = exactEmpty.replace(exactTotal, structurallyHiddenTotal);
@@ -4416,6 +4423,12 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     exactEmpty.replace('class="num"', 'class="num-extra"'),
     exactEmpty.replace('class="resultTxt"', 'data-class="resultTxt"'),
     exactEmpty.replace('class="num"', 'data-class="num"'),
+    exactEmpty.replace(
+      'class="resultTxt"',
+      'data-note=\'ignored class="resultTxt"\'',
+    ),
+    exactEmpty.replace('class="resultTxt"', 'class="summary\u00a0resultTxt"'),
+    exactEmpty.replace('class="num"', 'class="label\u00a0num"'),
   ]) {
     assert.throws(
       () => current.parseBytes(
@@ -4439,6 +4452,56 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     context,
   );
   assert.equal(multiClassObservation.completeness.declared_record_count, 0);
+  for (const htmlWhitespace of [" ", "\t", "\n", "\f", "\r"]) {
+    const asciiWhitespaceClasses = exactEmpty
+      .replace(
+        'class="resultTxt"',
+        `class="summary${htmlWhitespace}resultTxt"`,
+      )
+      .replace(
+        'class="num"',
+        `class="label${htmlWhitespace}num"`,
+      );
+    const [asciiWhitespaceObservation] = current.parseBytes(
+      new TextEncoder().encode(asciiWhitespaceClasses),
+      context,
+    );
+    assert.equal(
+      asciiWhitespaceObservation.completeness.declared_record_count,
+      0,
+    );
+  }
+  const visibleDataHidden = exactEmpty.replace(
+    'class="resultTxt"',
+    'class="resultTxt"data-hidden',
+  );
+  const [visibleDataHiddenObservation] = current.parseBytes(
+    new TextEncoder().encode(visibleDataHidden),
+    context,
+  );
+  assert.equal(
+    visibleDataHiddenObservation.completeness.declared_record_count,
+    0,
+  );
+  for (const visibleAttributeText of [
+    exactEmpty.replace(
+      'class="resultTxt"',
+      'class="resultTxt" data-note=\'ignored class="other"\'',
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<section data-note="not hidden here">${exactTotal}</section>`,
+    ),
+  ]) {
+    const [visibleAttributeObservation] = current.parseBytes(
+      new TextEncoder().encode(visibleAttributeText),
+      context,
+    );
+    assert.equal(
+      visibleAttributeObservation.completeness.declared_record_count,
+      0,
+    );
+  }
   for (const malformedDuplicate of [
     exactEmpty.replace(
       exactTotal,
