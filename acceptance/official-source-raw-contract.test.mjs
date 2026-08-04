@@ -4052,6 +4052,7 @@ test("active Fusion discovery derives full locators from retained data-src links
 
 test("active Fusion listings reconcile publisher totals to unique full locators", () => {
   const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
   const html = readFileSync(new URL(
     "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
     import.meta.url,
@@ -4077,6 +4078,87 @@ test("active Fusion listings reconcile publisher totals to unique full locators"
       context,
     ),
     /declared 2.*yielded 1 unique/iu,
+  );
+
+  const missingTotal = missingVariant.replace(
+    /\s*<div class="resultTxt">Result<span class="num">2<\/span>cards<\/div>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingTotal),
+      context,
+    ),
+    /complete.*leaf.*exact publisher total/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(missingTotal),
+      context,
+    ),
+  );
+});
+
+test("active Fusion listings retain exact empty leaves as truthful coverage", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"b".repeat(64)}`,
+  };
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const exactEmpty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+
+  const [observation] = current.parseBytes(
+    new TextEncoder().encode(exactEmpty),
+    context,
+  );
+  assert.deepEqual(observation.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
+  assert.equal(observation.listing_identity_evidence, undefined);
+
+  const ambiguousEmpty = exactEmpty.replace(
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    "<p>0 records</p>",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(ambiguousEmpty),
+      context,
+    ),
+    /complete.*leaf.*exact publisher total/iu,
+  );
+  const duplicatedTotal = exactEmpty.replace(
+    "</main>",
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div></main>',
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(duplicatedTotal),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(exactEmpty),
+      context,
+    ),
   );
 });
 
@@ -5600,6 +5682,7 @@ test("active Fusion HTML listings dedupe compatible locators and reject conflict
        href="/fw/en/cardlist/detail.php?cardId=FB99-001_p2">${name}</a>
   </article>`;
   const compatible = `<html><title>BANDAI DRAGON BALL CARD LIST</title>
+    <div class="resultTxt">Result<span class="num">1</span>cards</div>
     ${entry("FB99-001", "Fusion Leader")}
     ${entry("FB99-001", "Fusion Leader")}
   </html>`;
