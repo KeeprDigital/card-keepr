@@ -16,6 +16,8 @@ import {
 } from "../../../src/catalogue/card-search";
 import { cardCollectionPageQuery } from "../../../src/catalogue/card-collection-read";
 import {
+  prepareCardSearchForD1Export,
+  reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/card-search-recovery";
 import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
@@ -1787,7 +1789,7 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   });
 });
 
-test("Card search uses selective literal trigrams before exact substring filtering", async () => {
+test("Card search keeps a selective two-character relational fallback beside FTS", async () => {
   const ordinaryCards = Array.from({ length: 200 }, (_, index) =>
     apiCard({
       id: `card_selectivity_${String(index).padStart(3, "0")}`,
@@ -1810,8 +1812,8 @@ test("Card search uses selective literal trigrams before exact substring filteri
     cards: [...ordinaryCards, selected],
   });
 
-  const query = cardSearchQuery("quartz");
-  expect(query).toEqual({ text: "quartz", anchorTerm: "g3:qua" });
+  const query = cardSearchQuery("qu");
+  expect(query).toEqual({ text: "qu", anchorTerm: "g2:qu" });
   const candidates = await testEnv.CATALOGUE_DB.prepare(
     `SELECT COUNT(DISTINCT card_id) AS count
      FROM revision_card_search_terms
@@ -1845,7 +1847,7 @@ test("Card search uses selective literal trigrams before exact substring filteri
     name: "A".repeat(50_000),
     effective_rules_text: "A".repeat(50_000),
   }));
-  expect(repeated).toEqual(["g1:a", "g2:aa", "g3:aaa"]);
+  expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
 test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {
@@ -2075,14 +2077,58 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   const planDetails = plan.results.map(({ detail }) => detail);
   expect(planDetails).toEqual([
     "MATERIALIZE search_candidates",
-    "SCAN revision_card_search_fts VIRTUAL TABLE INDEX 0:M6",
-    "USE TEMP B-TREE FOR DISTINCT",
-    "SCAN candidate",
-    "SEARCH cards USING INDEX " +
+    "SCAN search VIRTUAL TABLE INDEX 0:M6",
+    "SEARCH filtered USING INDEX " +
     "sqlite_autoindex_revision_card_query_documents_1 " +
     "(catalogue_revision_id=? AND card_id=?)",
+    "USE TEMP B-TREE FOR GROUP BY",
     "USE TEMP B-TREE FOR ORDER BY",
+    "SCAN search_candidates",
   ]);
+  const filteredCursorQuery = cardCollectionPageQuery(
+    "catrev_fts_search",
+    {
+      q: "quartz",
+      game: "one-piece",
+      cardNumber: "OP29-702",
+      limit: 7,
+    },
+    {
+      game: "one-piece",
+      identity_kind: "card_number",
+      identity_value: "OP29-701",
+      id: "card_fts_search_before",
+    },
+  );
+  const materialization = filteredCursorQuery.sql.slice(
+    0,
+    filteredCursorQuery.sql.indexOf("\n       )\n       SELECT"),
+  );
+  expect(materialization).toContain("filtered.sort_game = ?");
+  expect(materialization).toContain("filtered.sort_identity_value = ?");
+  expect(materialization).toContain(
+    "(filtered.sort_game, filtered.sort_identity_kind,",
+  );
+  expect(materialization).toContain("LIMIT ?");
+  const filteredPlan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`,
+  ).bind(...filteredCursorQuery.bindings).all<{ detail: string }>();
+  expect(filteredPlan.results.map(({ detail }) => detail)).toEqual([
+    "MATERIALIZE search_candidates",
+    "SCAN search VIRTUAL TABLE INDEX 0:M6",
+    "SEARCH filtered USING INDEX " +
+    "sqlite_autoindex_revision_card_query_documents_1 " +
+    "(catalogue_revision_id=? AND card_id=?)",
+    "USE TEMP B-TREE FOR GROUP BY",
+    "USE TEMP B-TREE FOR ORDER BY",
+    "SCAN search_candidates",
+  ]);
+  const filteredRows = await testEnv.CATALOGUE_DB.prepare(
+    filteredCursorQuery.sql,
+  ).bind(...filteredCursorQuery.bindings).all<{ summary_json: string }>();
+  expect(filteredRows.results.map(({ summary_json }) =>
+    JSON.parse(summary_json).id
+  )).toEqual(["card_fts_search"]);
   const matchedRevisions = await testEnv.CATALOGUE_DB.prepare(
     `SELECT DISTINCT catalogue_revision_id
      FROM revision_card_search_fts
@@ -2094,6 +2140,12 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   expect(matchedRevisions.results).toEqual([
     { catalogue_revision_id: "catrev_fts_search" },
   ]);
+  const redundantRelationalTerms = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT count(*) AS count
+     FROM revision_card_search_terms
+     WHERE catalogue_revision_id = ? AND term LIKE 'g3:%'`,
+  ).bind("catrev_fts_search").first<{ count: number }>();
+  expect(redundantRelationalTerms?.count).toBe(0);
   await testEnv.CATALOGUE_DB.prepare(
     "DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?",
   ).bind("catrev_fts_search").run();
@@ -2139,6 +2191,11 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
 
   await withCardSearchPreparedForD1Export(
     testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-primary",
+      observedAt: "2026-08-05T00:00:00.000Z",
+      leaseExpiresAt: "2026-08-05T00:15:00.000Z",
+    },
     async () => {
       const exportBoundary = await testEnv.CATALOGUE_DB.prepare(
         `SELECT
@@ -2157,6 +2214,18 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
         virtual_tables: 0,
         retained_chunks: retainedChunks.results.length,
       });
+      await expect(prepareCardSearchForD1Export(
+        testEnv.CATALOGUE_DB,
+        {
+          ownerToken: "backup-owner-concurrent",
+          observedAt: "2026-08-05T00:01:00.000Z",
+          leaseExpiresAt: "2026-08-05T00:16:00.000Z",
+        },
+      )).rejects.toThrow("Card search FTS export lease is unavailable.");
+      await expect(reconstructCardSearchAfterD1Restore(
+        testEnv.CATALOGUE_DB,
+        "backup-owner-concurrent",
+      )).rejects.toThrow("Card search FTS export lease owner changed.");
       const unavailable = await exports.default.fetch(new Request(
         "https://card-keepr.invalid/v1/cards?q=quartz",
         { headers: apiHeaders("203.0.113.105") },
@@ -2198,6 +2267,11 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   });
   await expect(withCardSearchPreparedForD1Export(
     testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-failure",
+      observedAt: "2026-08-05T01:00:00.000Z",
+      leaseExpiresAt: "2026-08-05T01:15:00.000Z",
+    },
     async () => {
       throw new Error("simulated D1 export failure");
     },
@@ -2205,6 +2279,26 @@ test("Card search FTS is reconstructible across the D1 export and restore bounda
   await expect(testEnv.CATALOGUE_DB.prepare(
     "SELECT state FROM card_search_fts_state WHERE singleton = 1",
   ).first()).resolves.toEqual({ state: "ready" });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE card_search_fts_state
+     SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
+     WHERE singleton = 1 AND state = 'ready'`,
+  ).bind(
+    "backup-owner-abandoned",
+    "2026-08-05T02:00:00.000Z",
+  ).run();
+  await withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-takeover",
+      observedAt: "2026-08-05T02:01:00.000Z",
+      leaseExpiresAt: "2026-08-05T02:16:00.000Z",
+    },
+    async () => undefined,
+  );
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT state, owner_token FROM card_search_fts_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ state: "ready", owner_token: null });
 });
 
 test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {

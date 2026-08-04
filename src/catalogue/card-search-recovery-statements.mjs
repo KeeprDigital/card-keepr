@@ -1,7 +1,4 @@
 export const prepareCardSearchForD1ExportStatements = Object.freeze([
-  `UPDATE card_search_fts_state
-   SET state = 'reconstructing'
-   WHERE singleton = 1 AND state = 'ready'`,
   "DROP TRIGGER IF EXISTS revision_card_search_chunks_insert_fts",
   "DROP TRIGGER IF EXISTS revision_card_search_chunks_delete_fts",
   "DROP TRIGGER IF EXISTS revision_card_search_chunks_before_update_fts",
@@ -120,7 +117,4 @@ export const reconstructCardSearchAfterD1RestoreStatements = Object.freeze([
        NEW.chunk_ordinal, NEW.search_text
      );
    END`,
-  `UPDATE card_search_fts_state
-   SET state = 'ready'
-   WHERE singleton = 1 AND state = 'reconstructing'`,
 ]);

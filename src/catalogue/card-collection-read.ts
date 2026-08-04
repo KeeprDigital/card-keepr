@@ -141,9 +141,13 @@ async function queryCardPage(
   const rows: CardRow[] = [];
   let dataBytes = 2;
   let position = after;
+  const singleFtsRead = filters.q !== null &&
+    cardSearchFtsQuery(filters.q, revisionId) !== null;
   while (rows.length < filters.limit + 1) {
     const remaining = filters.limit + 1 - rows.length;
-    const rowLimit = Math.min(maximumRowsPerDatabaseRead, remaining);
+    const rowLimit = singleFtsRead
+      ? remaining
+      : Math.min(maximumRowsPerDatabaseRead, remaining);
     const query = cardCollectionPageQuery(
       revisionId,
       filters,
@@ -196,11 +200,19 @@ export function cardCollectionPageQuery(
     : cardSearchFtsQuery(search.text, revisionId);
   const ftsSearch = search !== null && ftsQuery !== null;
   const shortSearch = search !== null && ftsQuery === null;
+  if (ftsSearch) {
+    return ftsCardCollectionPageQuery(
+      revisionId,
+      filters,
+      search.text,
+      ftsQuery,
+      after,
+      rowLimit,
+    );
+  }
   const orderTable = shortSearch ? "search" : "cards";
   const conditions = ["cards.catalogue_revision_id = ?"];
-  const bindings: (string | number)[] = ftsSearch
-    ? [ftsQuery, revisionId, search.text, revisionId]
-    : [revisionId];
+  const bindings: (string | number)[] = [revisionId];
   if (filters.game !== null) {
     conditions.push("cards.sort_game = ?");
     bindings.push(filters.game);
@@ -239,31 +251,15 @@ export function cardCollectionPageQuery(
     );
   }
   bindings.push(rowLimit);
-  const searchCandidates = ftsSearch
-    ? `WITH search_candidates AS MATERIALIZED (
-         SELECT DISTINCT catalogue_revision_id, card_id
-         FROM revision_card_search_fts
-         WHERE revision_card_search_fts MATCH ?
-           AND catalogue_revision_id = ?
-           AND instr(search_text, ?) > 0
-       )
-       `
-    : "";
   return {
     sql:
-      `${searchCandidates}SELECT cards.summary_json,
+      `SELECT cards.summary_json,
               ${orderTable}.sort_game,
               ${orderTable}.sort_identity_kind,
               ${orderTable}.sort_identity_value,
               ${orderTable}.sort_id
        FROM ${
-        ftsSearch
-          ? `search_candidates AS candidate
-             JOIN revision_card_query_documents AS cards
-               ON cards.catalogue_revision_id =
-                    candidate.catalogue_revision_id
-              AND cards.card_id = candidate.card_id`
-          : shortSearch
+        shortSearch
           ? `revision_card_search_terms AS search
              INDEXED BY revision_card_search_by_term
              JOIN revision_card_query_documents AS cards
@@ -279,6 +275,80 @@ export function cardCollectionPageQuery(
                 ${orderTable}.sort_identity_value,
                 ${orderTable}.sort_id
        LIMIT ?`,
+    bindings,
+  };
+}
+
+function ftsCardCollectionPageQuery(
+  revisionId: string,
+  filters: CollectionFilters,
+  searchText: string,
+  ftsQuery: string,
+  after: CardCursor["after"] | null,
+  rowLimit: number,
+): { sql: string; bindings: (string | number)[] } {
+  const conditions = [
+    "revision_card_search_fts MATCH ?",
+    "search.catalogue_revision_id = ?",
+    "instr(search.search_text, ?) > 0",
+    "filtered.catalogue_revision_id = ?",
+  ];
+  const bindings: (string | number)[] = [
+    ftsQuery,
+    revisionId,
+    searchText,
+    revisionId,
+  ];
+  if (filters.game !== null) {
+    conditions.push("filtered.sort_game = ?");
+    bindings.push(filters.game);
+  }
+  if (filters.cardNumber !== null) {
+    conditions.push(
+      "filtered.sort_identity_kind = 'card_number'",
+      "filtered.sort_identity_value = ?",
+    );
+    bindings.push(filters.cardNumber);
+  }
+  if (after !== null) {
+    conditions.push(
+      `(filtered.sort_game, filtered.sort_identity_kind,
+        filtered.sort_identity_value, filtered.sort_id)
+       > (?, ?, ?, ?)`,
+    );
+    bindings.push(
+      after.game,
+      after.identity_kind,
+      after.identity_value,
+      after.id,
+    );
+  }
+  bindings.push(rowLimit);
+  return {
+    sql:
+      `WITH search_candidates AS MATERIALIZED (
+         SELECT filtered.summary_json,
+                filtered.sort_game,
+                filtered.sort_identity_kind,
+                filtered.sort_identity_value,
+                filtered.sort_id
+         FROM revision_card_search_fts AS search
+         JOIN revision_card_query_documents AS filtered
+           ON filtered.catalogue_revision_id =
+                search.catalogue_revision_id
+          AND filtered.card_id = search.card_id
+         WHERE ${conditions.join("\nAND ")}
+         GROUP BY search.catalogue_revision_id, search.card_id
+         ORDER BY filtered.sort_game,
+                  filtered.sort_identity_kind,
+                  filtered.sort_identity_value,
+                  filtered.sort_id
+         LIMIT ?
+       )
+       SELECT summary_json, sort_game, sort_identity_kind,
+              sort_identity_value, sort_id
+       FROM search_candidates
+       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id`,
     bindings,
   };
 }

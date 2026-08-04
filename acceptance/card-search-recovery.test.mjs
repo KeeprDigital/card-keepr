@@ -24,6 +24,16 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
     ).run("catrev_backup_restore", "card_backup_restore", "backup quartz");
     assert.equal(matchedRevision(source), "catrev_backup_restore");
 
+    const migratedDefinition = cardSearchSchema(source);
+
+    source.prepare(
+      `UPDATE card_search_fts_state
+       SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
+       WHERE singleton = 1 AND state = 'ready'`,
+    ).run(
+      "backup:acceptance-owner",
+      "2099-01-01T00:00:00.000Z",
+    );
     executeAtomically(source, prepareCardSearchForD1ExportStatements);
     assert.equal(
       source.prepare(
@@ -49,6 +59,11 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
       restored,
       reconstructCardSearchAfterD1RestoreStatements,
     );
+    restored.prepare(
+      `UPDATE card_search_fts_state
+       SET state = 'ready', owner_token = NULL, lease_expires_at = NULL
+       WHERE singleton = 1 AND owner_token = ?`,
+    ).run("backup:acceptance-owner");
 
     assert.equal(
       restored.prepare(
@@ -57,6 +72,7 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
       "ready",
     );
     assert.equal(matchedRevision(restored), "catrev_backup_restore");
+    assert.deepEqual(cardSearchSchema(restored), migratedDefinition);
     restored.prepare(
       `UPDATE revision_card_search_chunks
        SET search_text = 'restored trigger quartz'
@@ -100,4 +116,24 @@ function matchedRevision(database, text = "quartz") {
     `revision_token : "|catrev_backup_restore|" AND ` +
       `search_text : "${text}"`,
   )?.catalogue_revision_id;
+}
+
+function cardSearchSchema(database) {
+  return database.prepare(
+    `SELECT type, name, sql
+     FROM sqlite_schema
+     WHERE name IN (
+       'revision_card_search_fts_rows',
+       'revision_card_search_fts',
+       'revision_card_search_chunks_insert_fts',
+       'revision_card_search_chunks_delete_fts',
+       'revision_card_search_chunks_before_update_fts',
+       'revision_card_search_chunks_after_update_fts'
+     )
+     ORDER BY type, name`,
+  ).all().map(({ type, name, sql }) => ({
+    type,
+    name,
+    sql: sql.replaceAll(/\s+/gu, " ").trim(),
+  }));
 }

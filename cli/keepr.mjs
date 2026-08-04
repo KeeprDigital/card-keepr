@@ -70,6 +70,9 @@ export async function main(arguments_, environment) {
       json,
     );
   }
+  if (isCommand(arguments_, "backup", "create")) {
+    return createBackup(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -458,6 +461,65 @@ async function repairCatalogueSearch(arguments_, environment, json) {
   );
 }
 
+async function createBackup(arguments_, environment, json) {
+  const options = parseOptions(
+    arguments_,
+    [
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ],
+    ["--yes"],
+  );
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null ||
+    expectedCurrentRevision === undefined ||
+    idempotencyKey === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  ) {
+    return usageFailure(json);
+  }
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue backup requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/backups",
+    "POST",
+    {
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
 async function collectSource(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--game",
@@ -687,7 +749,9 @@ async function fetchAdministrationDocument(
           : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(
+        pathname === "/v1/backups" ? 15 * 60_000 : 10_000,
+      ),
     });
   } catch {
     return {
@@ -999,7 +1063,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | backup create | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

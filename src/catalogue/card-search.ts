@@ -13,7 +13,8 @@ export type CardSearchChunk = Readonly<{
 // Literal normalized grams keep the indexed candidate set selective. Exact
 // matching still happens against field-separated search chunks so a shared
 // trigram can never become a false-positive Card result.
-const maximumGramLength = 3;
+const maximumRelationalGramLength = 2;
+const minimumFtsQueryCodePoints = 3;
 // Unicode NFKC expands one scalar to at most 18 scalars in the runtime's
 // Unicode data. A 500-scalar query therefore remains below this overlap.
 const maximumNormalizedQueryCodePoints = 9 * 1024;
@@ -36,7 +37,8 @@ export function cardSearchTerms(searchDocument: string): string[] {
     for (let index = 0; index < points.length; index += 1) {
       for (
         let length = 1;
-        length <= maximumGramLength && index + length <= points.length;
+        length <= maximumRelationalGramLength &&
+        index + length <= points.length;
         length += 1
       ) {
         terms.add(literalGram(points.slice(index, index + length).join("")));
@@ -78,7 +80,7 @@ export function cardSearchQuery(
   return {
     text,
     anchorTerm: literalGram(
-      [...text].slice(0, maximumGramLength).join(""),
+      [...text].slice(0, minimumFtsQueryCodePoints).join(""),
     ),
   };
 }
@@ -88,7 +90,7 @@ export function cardSearchFtsQuery(
   revisionId: string,
 ): string | null {
   const text = normalizeSearchText(value);
-  if ([...text].length < maximumGramLength) return null;
+  if ([...text].length < minimumFtsQueryCodePoints) return null;
   return `revision_token : ${ftsLiteral(revisionToken(revisionId))} AND ` +
     `search_text : ${ftsLiteral(text)}`;
 }
