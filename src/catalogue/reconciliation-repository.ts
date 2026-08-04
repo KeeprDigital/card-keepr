@@ -184,17 +184,40 @@ export async function gundamCardLineages(
 ): Promise<{
   card_id: string;
   source_lineage: "gundam-en-asia" | "gundam-en-us";
+  current: number;
 }[]> {
   const rows = await database
     .prepare(
-      `SELECT DISTINCT card_id, source_lineage
+      `SELECT card_id, source_lineage, MAX(current) AS current
        FROM reconciled_card_observations
        WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       GROUP BY card_id, source_lineage
        ORDER BY card_id, source_lineage`,
     )
     .all<{
       card_id: string;
       source_lineage: "gundam-en-asia" | "gundam-en-us";
+      current: number;
+    }>();
+  return rows.results;
+}
+
+export async function gundamPrintingProductMemberships(
+  database: D1Database,
+): Promise<{
+  printing_id: string;
+  relationship_value: string;
+}[]> {
+  const rows = await database
+    .prepare(
+      `SELECT DISTINCT printing_id, relationship_value
+       FROM reconciled_printing_memberships
+       WHERE relationship_kind = 'product'
+       ORDER BY printing_id, relationship_value`,
+    )
+    .all<{
+      printing_id: string;
+      relationship_value: string;
     }>();
   return rows.results;
 }
@@ -265,7 +288,7 @@ export async function canonicalCardConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_card_observations
-       WHERE card_id = ?`,
+       WHERE card_id = ? AND current = 1`,
     )
     .bind(cardId)
     .all<{ source_lineage: string }>();

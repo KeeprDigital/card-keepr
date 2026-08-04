@@ -5159,6 +5159,43 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
       hp: 4,
       series_titles: ["Mobile Suit Gundam GQuuuuuuX"],
     });
+    const placeholderBytes = new TextEncoder().encode(
+      readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
+        import.meta.url,
+      )).toString("utf8")
+        .replace('<div class="blockIcon">1</div>', '<div class="blockIcon">-</div>')
+        .replace('<dt>Zone</dt><dd>Space Earth</dd>', '<dt>Zone</dt><dd>—</dd>')
+        .replace(
+          '<dt>Link</dt><dd>[Amate Yuzuriha (Machu)]</dd>',
+          '<dt>Link</dt><dd>–</dd>',
+        ),
+    );
+    const [placeholderObservation] = adapter.parseBytes(placeholderBytes, {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
+      requestId: `${lineage}:detail:${"3".repeat(64)}`,
+    });
+    assert.deepEqual(
+      {
+        block_icon: placeholderObservation.card.game_data.attributes.block_icon,
+        zone: placeholderObservation.card.game_data.attributes.zone,
+        link_condition:
+          placeholderObservation.card.game_data.attributes.link_condition,
+      },
+      { block_icon: null, zone: null, link_condition: null },
+    );
+    const [retainedSurface] =
+      placeholderObservation.source_sidecar.raw.official_surfaces;
+    assert.deepEqual(
+      {
+        block_icon: retainedSurface.document["Block icon"],
+        zone: retainedSurface.document.Zone,
+        link_condition: retainedSurface.document.Link,
+      },
+      { block_icon: "-", zone: "—", link_condition: "–" },
+    );
   }
 });
 

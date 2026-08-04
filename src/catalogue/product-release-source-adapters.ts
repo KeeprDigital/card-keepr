@@ -4158,11 +4158,11 @@ function parseGundamCardDetailHtmlV4(
         colours: colour === "-" ? [] : colourValues(colour),
         level: integerOrNull(field(["Lv.", "Lv", "Level"])),
         cost: integerOrNull(field(["COST", "Cost"])),
-        block_icon: blockIcon,
+        block_icon: gundamPublisherNullableText(blockIcon),
         effect_text: rules,
-        zone: field(["Zone"]),
+        zone: gundamPublisherNullableText(field(["Zone"])),
         traits: textValues(field(["Trait", "Traits"])),
-        link_condition: field(["Link"]),
+        link_condition: gundamPublisherNullableText(field(["Link"])),
         ap: integerOrNull(field(["AP"])),
         hp: integerOrNull(field(["HP"])),
         series_titles: textValues(field(["Source Title", "Title"])),
@@ -5599,6 +5599,13 @@ function integerOrNull(value: string | null): number | null {
     throw new Error(`Unrecognized official numeric token: ${value}`);
   }
   return Number.parseInt(normalized.replaceAll(",", ""), 10);
+}
+
+function gundamPublisherNullableText(value: unknown): unknown {
+  return typeof value === "string" &&
+      /^\s*[\p{Dash_Punctuation}\u2212]+\s*$/u.test(value)
+    ? null
+    : value;
 }
 
 function textValues(value: string | null): string[] {
@@ -8139,11 +8146,17 @@ function normalizeGundamDetails(
         colours: card.Color,
         level: card.Level,
         cost: card.Cost,
-        block_icon: card.Block,
+        block_icon: completeCatalogue
+          ? gundamPublisherNullableText(card.Block)
+          : card.Block,
         effect_text: card.Effect,
-        zone: card.Zone,
+        zone: completeCatalogue
+          ? gundamPublisherNullableText(card.Zone)
+          : card.Zone,
         traits: card.Trait,
-        link_condition: card.Link,
+        link_condition: completeCatalogue
+          ? gundamPublisherNullableText(card.Link)
+          : card.Link,
         ap: card.AP,
         hp: card.HP,
         series_titles: card.Title,

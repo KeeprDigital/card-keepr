@@ -86,6 +86,90 @@ function retainedProductionDiscoveryRoot(
     },
   });
 }
+
+function paginatedGundamCollectionResponse(
+  request: Request,
+  officialNavigation: string,
+): Response | null {
+  const url = new URL(request.url);
+  const retainedChild =
+    url.searchParams.get("package") === "619102" ||
+    /^GD02-00[1-4]$/u.test(url.searchParams.get("detailSearch") ?? "") ||
+    /^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname);
+  if (
+    (
+      productionSourceFixtureMarker(request.headers) !==
+        "card-keepr-gundam-pagination-v4" &&
+      !retainedChild
+    ) ||
+    !url.pathname.startsWith("/asia-en/") &&
+      !url.pathname.startsWith("/jp/images/cards/card/")
+  ) return null;
+  if (/^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname)) {
+    return new Response(new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    ]), { headers: { "content-type": "image/png" } });
+  }
+  if (url.pathname === "/asia-en/rules/") {
+    return new Response(`<html><title>BANDAI gundam CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
+      <main><h1>Restriction Rules</h1><p>0 records</p>
+      <article data-publication-empty="true">No restrictions are currently published.</article>
+      </main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  if (url.pathname === "/asia-en/cards/index.php") {
+    const selectedPackage = url.searchParams.get("package");
+    const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+    if (selectedPackage === null) {
+      return new Response(`<html><title>CARDS | GUNDAM CARD GAME</title>
+        ${officialNavigation}<main>
+        <a class="js-selectBtn-package" data-val="619102" href="javascript:void(0);">Dual Impact [GD02]</a>
+        </main></html>`, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    const locators = page === 1
+      ? ["GD02-001", "GD02-002"]
+      : ["GD02-002", "GD02-003", "GD02-004"];
+    const pageIdentity = page === 1
+      ? ""
+      : `<input type="hidden" name="page" value="${page}">`;
+    const pager = page === 1
+      ? '<div class="pager"><a href="?package=619102&amp;page=2">2</a></div>'
+      : '<div class="pager"></div>';
+    return new Response(`<html><title>CARDS | GUNDAM CARD GAME</title>
+      ${officialNavigation}<main><section>
+      <input type="hidden" name="package" value="619102">${pageIdentity}
+      <div class="resultTxt"><span class="num">4</span>cards found.</div>
+      <ul>${locators.map((locator) =>
+        `<li class="cardItem"><a data-src="detail.php?detailSearch=${locator}">Card</a></li>`
+      ).join("")}</ul>${pager}</section></main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  if (url.pathname === "/asia-en/cards/detail.php") {
+    const locator = url.searchParams.get("detailSearch");
+    if (locator === null || !/^GD02-00[1-4]$/u.test(locator)) return null;
+    return new Response(`<html><main><article class="article cardDetailPageCol">
+      <div class="cardNo">${locator}</div><div class="rarity">C</div><div class="blockIcon">-</div>
+      <h1 class="cardName">Paginated ${locator}</h1>
+      <div class="cardImage"><img src="../../jp/images/cards/card/${locator}.png"></div>
+      <dl><dt>Lv.</dt><dd>1</dd></dl><dl><dt>COST</dt><dd>1</dd></dl>
+      <dl><dt>COLOR</dt><dd>Blue</dd></dl><dl><dt>TYPE</dt><dd>UNIT</dd></dl>
+      <div class="cardDataRow overview"><div class="dataTxt isRegular">Official effect.</div></div>
+      <dl><dt>Zone</dt><dd>-</dd></dl><dl><dt>Trait</dt><dd>Test</dd></dl>
+      <dl><dt>Link</dt><dd>-</dd></dl><dl><dt>AP</dt><dd>1</dd></dl><dl><dt>HP</dt><dd>1</dd></dl>
+      <dl><dt>Source Title</dt><dd>Pagination Test</dd></dl>
+      <dl><dt>Where to get it</dt><dd>Dual Impact [GD02]</dd></dl>
+      </article></main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  return null;
+}
 let digimonArtworkVariant:
   | "base"
   | "base-reencoded"
@@ -416,6 +500,11 @@ export default defineConfig({
               request,
             );
             if (retainedDiscovery !== null) return retainedDiscovery;
+            const paginatedGundam = paginatedGundamCollectionResponse(
+              request,
+              officialNavigation,
+            );
+            if (paginatedGundam !== null) return paginatedGundam;
             const representableFusionLegality =
               productionRepresentableFusionLegalityResponse(request);
             if (representableFusionLegality !== null) {

@@ -22,6 +22,7 @@ import {
   canonicalCardConflict,
   canonicalPrintingConflict,
   gundamPrintingLineages,
+  gundamPrintingProductMemberships,
   gundamCardLineages,
   existingCard,
   printingFactsFormattingEquivalent,
@@ -122,9 +123,14 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   const diagnostics: Diagnostic[] = [];
-  const [storedGundamLineages, storedGundamCardLineages] = await Promise.all([
+  const [
+    storedGundamLineages,
+    storedGundamCardLineages,
+    storedGundamProducts,
+  ] = await Promise.all([
     gundamPrintingLineages(database),
     gundamCardLineages(database),
+    gundamPrintingProductMemberships(database),
   ]);
   const publishedGundamLineages = gundamLineagesByPrinting(
     storedGundamLineages.filter(({ current }) => current === 1),
@@ -133,7 +139,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     storedGundamLineages,
   );
   const publishedGundamCardLineages = gundamLineagesByCard(
-    storedGundamCardLineages,
+    storedGundamCardLineages.filter(({ current }) => current === 1),
+  );
+  const publishedGundamProducts = gundamProductsByPrinting(
+    storedGundamProducts,
   );
   const localGundamCardLineages = new Map<
     string,
@@ -142,6 +151,11 @@ export async function reconcileRetainedCardPrintingEvidence(
   const localGundamLineages = new Map<
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  const localGundamProducts = new Map<string, Set<string>>();
+  const localPrintingCompatibility = new Map<
+    string,
+    PrintingCompatibility
   >();
   const priorCandidate = await candidateAtRevision(
     database,
@@ -421,6 +435,45 @@ export async function reconcileRetainedCardPrintingEvidence(
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
+      for (const [candidateId, candidateCompatibility] of
+        localPrintingCompatibility) {
+        if (isCompatible(candidateCompatibility, compatibility)) {
+          matchIds.add(candidateId);
+        }
+      }
+      const crossLocaleCandidates = observation.supportedGame === "gundam"
+        ? [...matchIds].filter((candidateId) => {
+            const observedLineages = new Set([
+              ...(publishedGundamLineages.get(candidateId) ?? []),
+              ...(localGundamLineages.get(candidateId) ?? []),
+            ]);
+            return observedLineages.size > 0 &&
+              !observedLineages.has(observation.sourceLineage as
+                | "gundam-en-asia"
+                | "gundam-en-us");
+          })
+        : [];
+      const corroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
+        (candidateId) => {
+          const knownProducts = new Set([
+            ...(publishedGundamProducts.get(candidateId) ?? []),
+            ...(localGundamProducts.get(candidateId) ?? []),
+          ]);
+          return observation.memberships.products.some((product) =>
+            knownProducts.has(product)
+          );
+        },
+      );
+      const uncorroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
+        (candidateId) =>
+          !corroboratedCrossLocaleCandidates.includes(candidateId),
+      );
+      uncorroboratedCrossLocaleCandidates.forEach((candidateId) =>
+        matchIds.delete(candidateId)
+      );
+      const missingProductCorroboration =
+        uncorroboratedCrossLocaleCandidates.length > 0 &&
+        matchIds.size === 0;
       const locatedConflict =
         (located !== null && !isCompatible(located, compatibility)) ||
         (localLocated !== undefined &&
@@ -436,6 +489,17 @@ export async function reconcileRetainedCardPrintingEvidence(
             "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
         });
         printingId = locatedId;
+      } else if (missingProductCorroboration) {
+        printingId = [...uncorroboratedCrossLocaleCandidates].sort()[0]!;
+        diagnostics.push({
+          code: "printing_match_insufficient_evidence",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids:
+            [...uncorroboratedCrossLocaleCandidates].sort(),
+          detail:
+            "Cross-locale Gundam Printing evidence requires a corroborating Product membership before two locale observations can merge.",
+        });
       } else if (
         !observation.artworkIdentityExplicit &&
         located === null &&
@@ -494,6 +558,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         }
       }
       localCompatibility.set(compatibilityKey, printingId);
+      localPrintingCompatibility.set(printingId, compatibility);
       localLocators.set(locatorVariantKey, { compatibility, printingId });
       if (
         observation.sourceLineage === "gundam-en-asia" ||
@@ -503,6 +568,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           localGundamLineages,
           printingId,
           observation.sourceLineage,
+        );
+        addGundamProducts(
+          localGundamProducts,
+          printingId,
+          observation.memberships.products,
         );
       }
       const carriedPrinting = printings.get(printingId);
@@ -1942,6 +2012,7 @@ function gundamLineagesByCard(
   rows: readonly {
     card_id: string;
     source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current?: number;
   }[],
 ): Map<string, Set<"gundam-en-asia" | "gundam-en-us">> {
   const grouped = new Map<
@@ -1952,6 +2023,33 @@ function gundamLineagesByCard(
     addGundamLineage(grouped, row.card_id, row.source_lineage);
   }
   return grouped;
+}
+
+function gundamProductsByPrinting(
+  rows: readonly {
+    printing_id: string;
+    relationship_value: string;
+  }[],
+): Map<string, Set<string>> {
+  const grouped = new Map<string, Set<string>>();
+  for (const row of rows) {
+    addGundamProducts(
+      grouped,
+      row.printing_id,
+      [row.relationship_value],
+    );
+  }
+  return grouped;
+}
+
+function addGundamProducts(
+  grouped: Map<string, Set<string>>,
+  printingId: string,
+  products: readonly string[],
+): void {
+  const retained = grouped.get(printingId) ?? new Set<string>();
+  products.forEach((product) => retained.add(product));
+  grouped.set(printingId, retained);
 }
 
 function addGundamLineage(
