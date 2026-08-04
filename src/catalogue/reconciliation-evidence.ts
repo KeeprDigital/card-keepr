@@ -1,7 +1,10 @@
 import { canonicalJson, sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./catalogue-candidate";
-import { requiredSourceAdapter } from "./source-adapters";
+import {
+  adapterReconciliationAreas,
+  requiredSourceAdapter,
+} from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parseEvidencePlans,
@@ -1387,19 +1390,20 @@ function assertObservationAuthority(
   adapter: ReturnType<typeof requiredSourceAdapter>,
   sourceSurface: string | undefined,
 ): void {
-  const coverage = adapter.reconciliationCapability;
-  const errataOnly = coverage === "errata";
+  const coverage = adapterReconciliationAreas(adapter);
+  const errataOnly = adapter.reconciliationCapability === "errata";
   const catalogueErratum =
-    coverage === "catalogue" &&
+    adapter.reconciliationCapability === "catalogue" &&
     adapter.origin === "production" &&
-    sourceSurface === "errata";
+    sourceSurface === "errata" &&
+    (coverage.includes("errata") ||
+      adapter.reconciliationAreas === undefined);
   if (
     (observation.kind === "official_erratum"
       ? !errataOnly && !catalogueErratum
       : errataOnly) ||
     (observation.kind === "card_printing" &&
-      observation.errata.length > 0 &&
-      coverage !== "catalogue")
+      !coverage.includes("catalogue"))
   ) {
     throw new Error(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",

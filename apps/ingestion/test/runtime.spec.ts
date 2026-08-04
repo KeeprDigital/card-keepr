@@ -213,8 +213,8 @@ test.each([
 );
 
 test("authenticated reparse requires the exact Digimon snapshot capture version even when versions share URL authority", async () => {
-  const current = requiredSourceAdapter("digimon-en@3");
-  const historical = requiredSourceAdapter("digimon-en@2");
+  const current = requiredSourceAdapter("digimon-en@4");
+  const historical = requiredSourceAdapter("digimon-en@3");
   const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
   const historicalCardListUrl = historical.requestUrlForSurface?.(
     "card-list",
@@ -223,13 +223,28 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
     throw new Error("Digimon versioned URL contracts are unavailable");
   }
   expect(currentDiscoveryUrl).toBe(historicalCardListUrl);
-  const created = await administrationRequest(
+  const superseded = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: "digimon",
       source_lineage: "digimon-en",
       adapter_version: "digimon-en@3",
+      idempotency_key: "reject-superseded-digimon-v3-source",
+      requests: officialSourceDiscoveryRequests("digimon-en"),
+    },
+  );
+  expect(superseded.status).toBe(422);
+  await expect(superseded.json()).resolves.toMatchObject({
+    code: "adapter_not_supported",
+  });
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "digimon",
+      source_lineage: "digimon-en",
+      adapter_version: "digimon-en@4",
       idempotency_key: "digimon-exact-capture-version-source",
       requests: officialSourceDiscoveryRequests("digimon-en"),
     },
@@ -257,13 +272,13 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
   );
   if (snapshot === undefined) throw new Error("retained Digimon snapshot missing");
   try {
-    expect(snapshot.adapter_version).toBe("digimon-en@3");
+    expect(snapshot.adapter_version).toBe("digimon-en@4");
 
     const mismatched = await administrationRequest(
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@2",
+        adapter_version: "digimon-en@3",
         idempotency_key: "digimon-mismatched-capture-version-reparse",
       },
     );
@@ -276,14 +291,14 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         idempotency_key: "digimon-exact-capture-version-reparse",
       },
     );
     expect(exact.status).toBe(201);
     await expect(exact.json()).resolves.toMatchObject({
       source_snapshot_id: snapshot.id,
-      adapter_version: "digimon-en@3",
+      adapter_version: "digimon-en@4",
     });
   } finally {
     await waitForWorkflowStatus(
@@ -1820,6 +1835,18 @@ test.each([
       expect(created.status).toBe(201);
       const run = await created.json<{ id: string }>();
       const terminal = await resumeCollection(run.id, 20_000);
+      if (terminal.failure_code !== "source_parse_failed") {
+        const failures = await env.CATALOGUE_DB.prepare(
+          `SELECT request_id, state, failure_code
+           FROM source_requests
+           WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
+           ORDER BY sequence_number`,
+        ).bind(run.id).all();
+        throw new Error(JSON.stringify({
+          failure_code: terminal.failure_code,
+          source_failures: failures.results,
+        }));
+      }
       expect(terminal).toMatchObject({
         state: "failed",
         failure_code: "source_parse_failed",
@@ -2371,7 +2398,7 @@ function exactOnePiecePlan(idempotencyKey: string) {
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: idempotencyKey,
     requests: officialSourceDiscoveryRequests("one-piece-en").map(
       (request) => ({ ...request }),

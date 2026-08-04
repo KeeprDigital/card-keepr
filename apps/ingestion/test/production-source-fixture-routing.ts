@@ -107,6 +107,10 @@ export function productionOfficialStageResponse(
       url.pathname === "/fw/en/news/01_305.html" ||
         url.pathname === "/fw/en/news/01_399.html" ||
         (
+          url.hostname === "www.dbs-cardgame.com" &&
+          url.pathname === "/fw/en/rules/errata-card/"
+        ) ||
+        (
           url.hostname === "world.digimoncard.com" &&
           url.pathname === "/rule/restriction_card/"
         ) ||

@@ -75,7 +75,7 @@ export type ParsedCardPrintingObservation = Readonly<{
 export type ParsedOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   sourceObservationId: string;
-  game: "one-piece" | "fusion-world";
+  game: "one-piece" | "fusion-world" | "digimon";
   target:
     | Readonly<{
         type: "card";
@@ -538,7 +538,8 @@ function parseOfficialErratumObservation(
   assertOnlyFields(record, fields, "Official Erratum");
   if (
     record.game !== "one-piece" &&
-    record.game !== "fusion-world"
+    record.game !== "fusion-world" &&
+    record.game !== "digimon"
   ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
@@ -573,7 +574,9 @@ function parseOfficialErratumObservation(
   );
   const imageOrigin = game === "one-piece"
     ? "https://en.onepiece-cardgame.com/images/"
-    : "https://www.dbs-cardgame.com/fw/images/";
+    : game === "fusion-world"
+      ? "https://www.dbs-cardgame.com/fw/images/"
+      : "https://world.digimoncard.com/";
   if (!imageUrl.startsWith(imageOrigin)) {
     throw new Error("Official Erratum image provenance is invalid.");
   }

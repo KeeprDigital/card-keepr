@@ -212,6 +212,8 @@ const legalityAwareAdapterVersions: Readonly<
   "gundam-en-us": "gundam-en-us@3",
 };
 
+const completeDigimonAdapterVersion = "digimon-en@4";
+
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
     rawContractDefinitions.flatMap((definition) => {
@@ -222,6 +224,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           legalityAware: false,
           expandedOnePieceCatalogue: false,
           catalogueComplete: false,
+          completeDigimonCatalogue: false,
         },
         {
           ...definition,
@@ -236,6 +239,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           legalityAware: true,
           expandedOnePieceCatalogue: false,
           catalogueComplete: false,
+          completeDigimonCatalogue: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -245,6 +249,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               legalityAware: true,
               expandedOnePieceCatalogue: true,
               catalogueComplete: false,
+              completeDigimonCatalogue: false,
             }]
           : []),
         ...(definition.sourceLineage === "fusion-world-en"
@@ -260,6 +265,23 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               legalityAware: true,
               expandedOnePieceCatalogue: false,
               catalogueComplete: true,
+              completeDigimonCatalogue: false,
+            }]
+          : []),
+        ...(definition.sourceLineage === "digimon-en"
+          ? [{
+              ...definition,
+              adapterVersion: completeDigimonAdapterVersion,
+              urls: activeBandaiSurfaceUrls(
+                definition.sourceLineage,
+                definition.urls,
+              ),
+              parserContract:
+                "digimon-en-raw-surfaces-complete-catalogue@3",
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete: false,
+              completeDigimonCatalogue: true,
             }]
           : []),
       ];
@@ -291,6 +313,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.urls,
                 version.expandedOnePieceCatalogue,
                 version.catalogueComplete,
+                version.completeDigimonCatalogue,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -306,6 +329,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.requiredSurfaces,
               version.urls,
               version.catalogueComplete,
+              version.completeDigimonCatalogue,
             )
             : historicalBandaiRequestDiscoveryV1(
               version.format,
@@ -604,6 +628,7 @@ function bandaiRequestDiscovery(
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
   catalogueComplete = false,
+  completeDigimonCatalogue = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -652,17 +677,23 @@ function bandaiRequestDiscovery(
     ) {
       fusionWorldHtmlListingEntries(discoveryHtml, context.url, sourceLineage);
     }
+    const structuredSurface = dynamicStructuredSurface(
+      dynamicRole,
+      initialSurface,
+      requiredSurfaces,
+      completeDigimonCatalogue,
+    );
     const current = new URL(context.url);
     const candidates: {
       role: "listing" | "detail" | "product_detail" | "image";
       url: string;
       headers: Record<string, string>;
     }[] = [];
-    if (initialSurface !== null) {
+    if (structuredSurface !== null) {
       const structured = bandaiPublisherPayload(
         discoveryHtml,
         sourceLineage,
-        initialSurface,
+        structuredSurface,
       );
       if (structured !== null) {
         candidates.push(
@@ -729,6 +760,7 @@ function bandaiRequestDiscovery(
               initialSurface,
               resolved,
               catalogueComplete,
+              completeDigimonCatalogue,
             );
       if (role === null) continue;
       if (!officialUrl(
@@ -943,11 +975,23 @@ function discoveryStageKey(requestId: string | undefined): string | null {
   )?.[1] ?? null;
 }
 
+function dynamicStructuredSurface(
+  dynamicRole: ReturnType<typeof dynamicRequestRole>,
+  fallbackSurface: string | null,
+  requiredSurfaces: readonly string[],
+  completeDigimonCatalogue: boolean,
+): string | null {
+  return completeDigimonCatalogue && dynamicRole === "listing"
+    ? requiredSurfaces[0]!
+    : fallbackSurface;
+}
+
 function discoveredHtmlRole(
   format: DiscoveryFormat,
   initialSurface: string | null,
   url: URL,
   catalogueComplete = false,
+  completeDigimonCatalogue = false,
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
@@ -976,6 +1020,13 @@ function discoveredHtmlRole(
       : /(?:page|paged|offset)=\d+/iu.test(target)
         ? "listing"
         : null;
+  }
+  if (
+    completeDigimonCatalogue &&
+    format === "digimon" &&
+    /(?:category|cardcategory|colour|color|version)=/iu.test(target)
+  ) {
+    return "listing";
   }
   if (/(?:detailSearch|card[_-]?(?:detail|id)|popup)=/iu.test(target)) {
     return "detail";
@@ -1237,6 +1288,7 @@ function legalityAwareBandaiSnapshotDecoder(
   urls: Readonly<Record<string, string>>,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
+  completeDigimonCatalogue = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
@@ -1244,6 +1296,7 @@ function legalityAwareBandaiSnapshotDecoder(
     acceptDiscoveryRoot: true,
     expandedOnePieceCatalogue,
     catalogueComplete,
+    completeDigimonCatalogue,
   });
 }
 
@@ -1259,6 +1312,7 @@ function bandaiSnapshotDecoder(
     acceptDiscoveryRoot?: boolean;
     expandedOnePieceCatalogue?: boolean;
     catalogueComplete?: boolean;
+    completeDigimonCatalogue?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -1289,6 +1343,14 @@ function bandaiSnapshotDecoder(
       if (/\bdata-keepr-official-payload\b/iu.test(html)) {
         throw new Error(
           "Production Official Source parsing does not accept synthetic Keepr payload wrappers.",
+        );
+      }
+      if (profile.completeDigimonCatalogue === true) {
+        assertDigimonCatalogueFactsAtCompleteLeaf(
+          html,
+          sourceLineage,
+          requiredSurfaces[0]!,
+          context.url,
         );
       }
       const records = bandaiDiscoveryRecords(
@@ -1345,6 +1407,15 @@ function bandaiSnapshotDecoder(
         requiredSurfaces,
         urls,
       );
+    const structuredSurface = dynamicStructuredSurface(
+      dynamicRole,
+      surface,
+      requiredSurfaces,
+      profile.completeDigimonCatalogue === true,
+    );
+    if (structuredSurface === null) {
+      throw new Error("Official Source dynamic surface identity is invalid.");
+    }
     if (mediaType !== "text/html") {
       throw new Error(
         `Official Source ${surface} must be captured as text/html.`,
@@ -1363,18 +1434,25 @@ function bandaiSnapshotDecoder(
     const structuredPayload = bandaiPublisherPayload(
       html,
       sourceLineage,
-      surface,
+      structuredSurface,
     );
     if (structuredPayload !== null) {
+      if (
+        profile.completeDigimonCatalogue === true &&
+        structuredSurface === requiredSurfaces[0]
+      ) {
+        assertDigimonPayloadAtCompleteLeaf(structuredPayload, context.url);
+      }
       const observations = normalizedSurfaceObservationsV2(
         format,
         game,
         sourceLineage,
-        surface,
+        structuredSurface,
         structuredPayload,
         profile.parseLegality,
         profile.expandedOnePieceCatalogue === true,
         profile.catalogueComplete === true,
+        profile.completeDigimonCatalogue === true,
       );
       if (
         profile.parseLegality &&
@@ -1467,10 +1545,19 @@ function bandaiSnapshotDecoder(
       format === "one-piece" &&
       dynamicRole === "listing" &&
       /^\d+$/u.test(new URL(context.url).searchParams.get("recording") ?? "");
+    const isStructurallyEmptyFusionErrata =
+      profile.catalogueComplete === true &&
+      format === "fusion-world" &&
+      surface === "errata" &&
+      />\s*0\s+records?\s*</iu.test(html) &&
+      /<article\b[^>]*\bdata-publication-empty=["']true["'][^>]*>/iu.test(
+        html,
+      );
     if (
       profile.catalogueComplete === true &&
       format === "fusion-world" &&
-      surface === "errata"
+      surface === "errata" &&
+      !isStructurallyEmptyFusionErrata
     ) {
       return parseFusionWorldOfficialErrataHtmlV3(html);
     }
@@ -1494,7 +1581,8 @@ function bandaiSnapshotDecoder(
               : surface,
             context.url,
             profile.acceptPublisherDeclaredEmpty &&
-              isLegalityPolicySurface(surface),
+              (isLegalityPolicySurface(surface) ||
+                isStructurallyEmptyFusionErrata),
             profile.catalogueComplete === true,
           );
     const liveLegalityDocument = liveLegality?.document ?? null;
@@ -2496,6 +2584,55 @@ function bandaiPublisherPayload(
     throw new Error(`Official Source ${surface} publisher data is invalid JSON.`);
   }
   return requiredRecord(value, `Official Source ${surface} publisher data`);
+}
+
+function assertDigimonCatalogueFactsAtCompleteLeaf(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+): void {
+  const payload = bandaiPublisherPayload(html, sourceLineage, surface);
+  if (payload !== null) assertDigimonPayloadAtCompleteLeaf(payload, requestUrl);
+}
+
+function assertDigimonPayloadAtCompleteLeaf(
+  payload: Record<string, unknown>,
+  requestUrl: string,
+): void {
+  if (!digimonPayloadContainsCatalogueFacts(payload)) return;
+  const url = new URL(requestUrl);
+  const exactFacet = (name: string) =>
+    url.searchParams.getAll(name).length === 1 &&
+    url.searchParams.get(name)?.trim() !== "";
+  if (
+    url.pathname !== "/cards/index.php" ||
+    !exactFacet("category") ||
+    !exactFacet("cardcategory") ||
+    !exactFacet("colour")
+  ) {
+    throw new Error(
+      "Official Source Digimon catalogue facts require a complete Digimon leaf with exact category, cardcategory, and colour facets.",
+    );
+  }
+}
+
+function digimonPayloadContainsCatalogueFacts(
+  payload: Record<string, unknown>,
+): boolean {
+  const populated = (value: unknown) => Array.isArray(value) && value.length > 0;
+  if (
+    populated(payload.card_popups) ||
+    populated(payload.products) ||
+    populated(payload.release_calendar)
+  ) return true;
+  if (payload.result === null || typeof payload.result !== "object") return false;
+  const partitions = (payload.result as Record<string, unknown>).partitions;
+  return Array.isArray(partitions) && partitions.some((partition) =>
+    partition !== null &&
+    typeof partition === "object" &&
+    populated((partition as Record<string, unknown>).entries)
+  );
 }
 
 function publisherPayloadScriptId(
@@ -4717,6 +4854,7 @@ function normalizedSurfaceObservationsV2(
   legalityAware: boolean,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
+  completeDigimonCatalogue = false,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
@@ -4725,6 +4863,7 @@ function normalizedSurfaceObservationsV2(
     rawDocument,
     expandedOnePieceCatalogue,
     catalogueComplete,
+    completeDigimonCatalogue,
   );
   const document = normalized.document;
   let observations: readonly unknown[];
@@ -4762,6 +4901,11 @@ function normalizedSurfaceObservationsV2(
       ...(catalogueComplete && format === "fusion-world" && surface === "errata"
         ? fusionWorldOfficialErrataObservations(document)
         : []),
+      ...(
+        completeDigimonCatalogue && game === "digimon" && surface === "errata"
+           ? parseDigimonOfficialErrata(document)
+           : []
+      ),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(
@@ -5095,6 +5239,70 @@ function parseFusionWorldOfficialErrataHtmlV3(
   return fusionWorldOfficialErrataObservations({ entries });
 }
 
+function parseDigimonOfficialErrata(
+  document: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const entries = requiredArray(
+    document.entries,
+    "Digimon Official Errata entries",
+  );
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Digimon Official Erratum");
+    return {
+      kind: "official_erratum",
+      game: "digimon",
+      target: {
+        type: "card",
+        official_identity: {
+          kind: "card_number",
+          value: requiredText(entry.card_number, "Digimon Erratum Card Number"),
+        },
+      },
+      published_on: requiredText(
+        entry.published_on,
+        "Digimon Erratum published date",
+      ),
+      effective_from: entry.effective_from === null
+        ? null
+        : requiredText(
+            entry.effective_from,
+            "Digimon Erratum effective date",
+          ),
+      observed_printed_rules_text: requiredText(
+        entry.observed_printed_rules_text,
+        "Digimon Erratum observed Printed Rules Text",
+      ),
+      corrected_rules_text: requiredText(
+        entry.corrected_rules_text,
+        "Digimon Erratum corrected Rules Text",
+      ),
+      official_wording: requiredText(
+        entry.official_wording,
+        "Digimon Erratum official wording",
+      ),
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: requiredText(
+          entry.source_fragment,
+          "Digimon Erratum source fragment",
+        ),
+        display_name: requiredText(
+          entry.display_name,
+          "Digimon Erratum display name",
+        ),
+        image_url: requiredText(entry.image_url, "Digimon Erratum image URL"),
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+  });
+}
+
 function isLegalityPolicySurface(surface: string): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface);
 }
@@ -5114,6 +5322,7 @@ function normalizeLineageSurface(
   raw: Record<string, unknown>,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
+  completeDigimonCatalogue = false,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
@@ -5125,7 +5334,7 @@ function normalizeLineageSurface(
       : format === "fusion-world"
         ? normalizeFusionWorldSurface(surface, raw, catalogueComplete)
         : format === "digimon"
-          ? normalizeDigimonSurface(surface, raw)
+          ? normalizeDigimonSurface(surface, raw, completeDigimonCatalogue)
           : normalizeGundamSurface(sourceLineage, surface, raw);
   return {
     document: {
@@ -5350,6 +5559,7 @@ function requireFusionWorldProductStatusLeaves(
 function normalizeDigimonSurface(
   surface: string,
   raw: Record<string, unknown>,
+  completeDigimonCatalogue = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.view !== "card-list") {
@@ -5363,7 +5573,7 @@ function normalizeDigimonSurface(
       normalizedDiscovery(
         raw.version_options,
         raw.result,
-        normalizeDigimonDetails(raw.card_popups),
+        normalizeDigimonDetails(raw.card_popups, completeDigimonCatalogue),
         normalizeDigimonProducts(raw.products),
         normalizeDigimonReleases(raw.release_calendar),
         "category=all&cardcategory=digimon&colour=blue",
@@ -5909,7 +6119,10 @@ function validateFusionWorldDetailIdentity(
   }
 }
 
-function normalizeDigimonDetails(value: unknown): unknown[] {
+function normalizeDigimonDetails(
+  value: unknown,
+  completeCatalogue = false,
+): unknown[] {
   return requiredArray(value, "Digimon Card popups").map((item) => {
     const card = requiredRecord(item, "Digimon Card popup");
     return canonicalDetail(card, {
@@ -5934,6 +6147,8 @@ function normalizeDigimonDetails(value: unknown): unknown[] {
         link_dp: card["Link DP"],
       },
       imageFields: [{ role: "front", value: card.image_url }],
+      preserveFuzzyProductLabels: completeCatalogue,
+      derivePrintingIdentity: completeCatalogue,
     });
   });
 }
@@ -5978,18 +6193,42 @@ function canonicalDetail(
     artworkFingerprint?: string;
     printedFieldsDigest?: string;
     imageFields: readonly { role: string; value: unknown }[];
+    preserveFuzzyProductLabels?: boolean;
+    derivePrintingIdentity?: boolean;
   },
 ): Record<string, unknown> {
   const printing =
     raw.printing === undefined
       ? undefined
       : requiredRecord(raw.printing, "Official Printing fields");
+  if (
+    mapping.derivePrintingIdentity === true &&
+    (
+      raw.artwork_fingerprint !== undefined ||
+      raw.printed_fields_digest !== undefined ||
+      printing?.normalized_rarity !== undefined
+    )
+  ) {
+    throw new Error(
+      "Official Source publisher data must not supply normalized rarity, artwork identity, or printed-fields digest.",
+    );
+  }
+  const path = requiredText(raw[mapping.path], "Official Card locator");
+  const number = requiredText(raw[mapping.number], "Official Card number");
+  const rules = requiredText(raw[mapping.rules], "Official Card rules");
   const artworkFingerprint = printing === undefined
     ? null
-    : mapping.artworkFingerprint ?? requiredText(
-      raw.artwork_fingerprint,
-      "Official artwork fingerprint",
-    );
+    : mapping.artworkFingerprint ??
+      (mapping.derivePrintingIdentity === true
+        ? officialArtworkFingerprint(
+            number,
+            mapping.imageFields.map(({ role }) => role),
+            path,
+          )
+        : requiredText(
+            raw.artwork_fingerprint,
+            "Official artwork fingerprint",
+          ));
   const images =
     printing === undefined
       ? []
@@ -5999,16 +6238,25 @@ function canonicalDetail(
           artwork_fingerprint: artworkFingerprint,
         }));
   return {
-    path: requiredText(raw[mapping.path], "Official Card locator"),
-    number: requiredText(raw[mapping.number], "Official Card number"),
+    path,
+    number,
     title: requiredText(raw[mapping.title], "Official Card name"),
-    rules: requiredText(raw[mapping.rules], "Official Card rules"),
+    rules,
     profile: requiredText(raw.profile, "Official Game Profile"),
     attributes: mapping.attributes,
     product_codes: requiredTextArray(
       raw.product_codes,
       "Official Product codes",
     ),
+    ...(!mapping.preserveFuzzyProductLabels ||
+        raw.fuzzy_product_labels === undefined
+      ? {}
+      : {
+          fuzzy_product_labels: requiredTextArray(
+            raw.fuzzy_product_labels,
+            "Unresolved Official Product labels",
+          ),
+        }),
     ...(raw.product_names === undefined
       ? {}
       : {
@@ -6028,7 +6276,9 @@ function canonicalDetail(
             rarity: printing.rarity ?? null,
             normalizedRarity: mapping.normalizedRarity !== undefined
               ? mapping.normalizedRarity
-              : printing.normalized_rarity ?? null,
+              : mapping.derivePrintingIdentity === true
+                ? normalizedDigimonRarity(printing.rarity)
+                : printing.normalized_rarity ?? null,
             attributes: Object.hasOwn(mapping, "printingAttributes")
               ? mapping.printingAttributes ?? {}
               : printing.attributes ?? {},
@@ -6039,14 +6289,47 @@ function canonicalDetail(
           ),
           variant: requiredText(raw.variant, "Official Printing variant"),
           artwork_fingerprint: artworkFingerprint,
-          printed_fields_digest: mapping.printedFieldsDigest ?? requiredText(
-            raw.printed_fields_digest,
-            "Official printed fields digest",
-          ),
+          printed_fields_digest: mapping.printedFieldsDigest ??
+            (mapping.derivePrintingIdentity === true
+              ? `printed-material:${JSON.stringify(stableValue({
+                  rules: requiredText(
+                    raw.printed_rules,
+                    "Official printed rules",
+                  ),
+                  rarity: printing.rarity ?? null,
+                  attributes: printing.attributes ?? {},
+                }))}`
+              : requiredText(
+                  raw.printed_fields_digest,
+                  "Official printed fields digest",
+                )),
           image: images[0]!.source_url,
           images,
         }),
   };
+}
+
+function normalizedDigimonRarity(value: unknown): string | null {
+  if (value === null) return null;
+  const raw = requiredText(value, "Official Digimon rarity");
+  const normalized = new Map([
+    ["c", "common"],
+    ["common", "common"],
+    ["u", "uncommon"],
+    ["uncommon", "uncommon"],
+    ["r", "rare"],
+    ["rare", "rare"],
+    ["sr", "super-rare"],
+    ["super rare", "super-rare"],
+    ["sec", "secret-rare"],
+    ["secret rare", "secret-rare"],
+    ["p", "promo"],
+    ["promo", "promo"],
+  ]).get(raw.toLowerCase());
+  if (normalized === undefined) {
+    throw new Error("Official Digimon rarity vocabulary is unsupported.");
+  }
+  return normalized;
 }
 
 function normalizeOnePieceProducts(value: unknown): unknown[] {

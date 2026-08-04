@@ -79,9 +79,15 @@ export default {
     if (officialLineage !== null) {
       const onePieceComplete = onePieceCompleteOfficialSourceResponse(request);
       if (onePieceComplete !== null) return onePieceComplete;
-      const officialScenarioMarker = productionSourceFixtureMarker(
-        request.headers,
-      );
+      const requestScenarioMarker =
+        request.headers.get("accept")?.match(
+          /(?:^|;)\s*card-keepr-digimon-scenario=([^;]+)/u,
+        )?.[1] ?? productionSourceFixtureMarker(request.headers);
+      const meaningfulScenarioMarker =
+        requestScenarioMarker === "card-keepr-official-source/1"
+          ? null
+          : requestScenarioMarker;
+      const officialScenarioMarker = meaningfulScenarioMarker;
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -90,6 +96,11 @@ export default {
           },
         });
       }
+      const digimonPartition = digimonPartitionResponse(
+        url,
+        officialScenarioMarker,
+      );
+      if (digimonPartition !== null) return digimonPartition;
       const retainedDiscovery = retainedOfficialDiscovery(
         officialLineage,
         request,
@@ -243,6 +254,55 @@ function retainedOfficialDiscovery(lineage, request) {
   return retainedDiscoveryResponse(fixture);
 }
 
+function digimonPartitionResponse(url, marker) {
+  if (
+    url.hostname !== "world.digimoncard.com" ||
+    url.pathname !== "/cards/index.php" ||
+    !url.searchParams.has("category")
+  ) return null;
+  if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
+    return null;
+  }
+  if (
+    url.searchParams.get("category") === "booster" &&
+    url.searchParams.get("cardcategory") === "digimon" &&
+    url.searchParams.get("colour") === "blue" &&
+    marker?.startsWith("card-keepr-acceptance-digimon/complete")
+  ) {
+    const leafMarker = marker?.startsWith(
+        "card-keepr-acceptance-digimon/complete"
+      )
+      ? marker
+      : "card-keepr-acceptance-digimon/complete";
+    return new Response(
+      officialBandaiDataset(
+        "digimon-en",
+        leafMarker,
+        false,
+        url,
+        "card-list",
+      ),
+      {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          etag: `"digimon-complete-leaf-${url.searchParams.toString()}"`,
+        },
+      },
+    );
+  }
+  return new Response(
+    `<html><title>BANDAI DIGIMON CARD LIST</title>
+      <main><p>1 record</p><article data-publication-empty="true">No additional card records.</article></main>
+    </html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: `"digimon-partition-${url.searchParams.toString()}"`,
+      },
+    },
+  );
+}
+
 function retainedDiscoveryResponse(fixture) {
   return {
     body: Uint8Array.from(
@@ -335,6 +395,13 @@ function officialBandaiDataset(
           Effect: "A rules-level resource Card.",
         };
       }
+      applyDigimonCompleteFixture(
+        payload,
+        lineage,
+        surface,
+        parserSignal,
+        requestUrl,
+      );
       if (
         lineage === "one-piece-en" &&
         codeLessProduct
@@ -370,12 +437,223 @@ function officialBandaiDataset(
   return `<html><title>BANDAI ${supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>${
     officialBandaiNavigationHeader(lineage)
   }${officialBandaiStageNavigation(lineage, requestUrl)}${
+    digimonCompleteDiscoveryFacets(lineage, surface, parserSignal)
+  }${
     publication.hasPart.map((part) => officialPublisherPayloadScript(
       lineage,
       part.identifier.slice(`${lineage}:`.length),
       part.payload,
     )).join("")
   }</html>`;
+}
+
+function applyDigimonCompleteFixture(
+  payload,
+  lineage,
+  surface,
+  marker,
+  requestUrl,
+) {
+  if (lineage !== "digimon-en") return;
+  if (surface === "card-list") {
+    for (const detail of payload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      if (detail.printing !== null && typeof detail.printing === "object") {
+        delete detail.printing.normalized_rarity;
+      }
+    }
+  }
+  const exactLeaf = requestUrl.searchParams.has("category") &&
+    requestUrl.searchParams.has("cardcategory") &&
+    requestUrl.searchParams.has("colour");
+  if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
+    if (surface === "card-list" && !exactLeaf) {
+      payload.result = {
+        cap_signal: null,
+        partitions: [{
+          bucket: "category=all&cardcategory=digimon&colour=blue",
+          page: 1,
+          pages: 1,
+          total: 0,
+          has_next: false,
+          entries: [],
+        }],
+      };
+      payload.card_popups = [];
+      payload.products = [];
+      payload.release_calendar = [];
+    }
+    return;
+  }
+  if (
+    surface === "restrictions-current" &&
+    marker.endsWith("-unrepresentable-rules")
+  ) {
+    payload.future_rule_semantics = {
+      directive: "A player chooses a future publisher-defined action.",
+    };
+    return;
+  }
+  if (surface === "errata") {
+    if (marker.endsWith("-no-errata")) return;
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    payload.entries = [{
+      card_number: "BT99-001",
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Synthetic main effect.",
+      corrected_rules_text: "Corrected synthetic main effect.",
+      official_wording:
+        'Replace "Synthetic main effect." with "Corrected synthetic main effect."',
+      applies_to_parallel_printings: true,
+      source_fragment: "#BT99-001",
+      display_name: "BT99-001 Erratum",
+      image_url:
+        "https://world.digimoncard.com/images/BT99-001-standard.png",
+    }];
+    return;
+  }
+  if (surface !== "card-list") return;
+  if (!exactLeaf) {
+    if (marker.endsWith("-malicious-root")) return;
+    payload.version_options = [{ value: "booster", label: "Booster" }];
+    payload.filters = {
+      category: marker.endsWith("-missing-category")
+        ? ["booster", "starter"]
+        : ["booster"],
+      cardcategory: ["digimon"],
+      colour: ["blue"],
+    };
+    payload.result = {
+      cap_signal: null,
+      partitions: [{
+        bucket: "category=booster&cardcategory=digimon&colour=blue",
+        page: 1,
+        pages: 1,
+        total: 0,
+        has_next: false,
+        entries: [],
+      }],
+    };
+    payload.card_popups = [];
+    payload.products = [];
+    payload.release_calendar = [];
+    return;
+  }
+  const base = structuredClone(payload.card_popups[0]);
+  Object.assign(base, {
+    popup_id: "/cards/BT99-001",
+    card_number: "BT99-001",
+    name: "Synthetic Base Digimon",
+    cardcategory: "digimon",
+    Color: ["blue", "red"],
+    Lv: 6,
+    "Play Cost": 11,
+    "Use Cost": null,
+    DP: 12000,
+    Form: "Mega",
+    Attribute: "Vaccine",
+    Type: ["Synthetic Dragon"],
+    "Digivolution Cost": [{
+      index: 1,
+      from_level: 5,
+      colours: ["blue"],
+      cost: 4,
+      raw_condition: "Blue Lv.5: 4",
+    }],
+    text_sections: [
+      { kind: "effect", text: "Synthetic main effect." },
+      {
+        kind: "inherited_effect",
+        text: "Synthetic inherited effect.",
+      },
+      { kind: "security_effect", text: "Synthetic security effect." },
+      { kind: "dual_effect", text: "Synthetic dual effect." },
+      { kind: "dual_rule", text: "Synthetic dual rule." },
+      { kind: "link_condition", text: "Synthetic link condition." },
+      { kind: "link_effect", text: "Synthetic link effect." },
+      {
+        kind: "special_digivolution_condition",
+        text: "Synthetic special digivolution condition.",
+      },
+    ],
+    "DUAL Color": ["blue", "red"],
+    "DUAL Cost": 7,
+    "Link DP": 3000,
+    Effect: "Synthetic main effect.",
+    printed_rules: "Synthetic printed rules.",
+    variant: "base",
+    image_url:
+      "https://world.digimoncard.com/images/BT99-001-standard.png",
+    fuzzy_product_labels: ["Possible future Product name"],
+    "[Synthetic Future Mechanic]":
+      "Retain this future mechanic verbatim",
+  });
+  base.printing = {
+    rarity: "R",
+    attributes: { alternative_art: false },
+  };
+  const alternate = structuredClone(base);
+  Object.assign(alternate, {
+    popup_id: "/cards/BT99-001_p1",
+    name: "Synthetic Alternate-art Presentation",
+    variant: "alternate-art-1",
+    image_url:
+      "https://world.digimoncard.com/images/BT99-001-alternate-1.png",
+  });
+  alternate.Effect = "Corrected synthetic main effect.";
+  alternate.text_sections[0] = {
+    kind: "effect",
+    text: "Corrected synthetic main effect.",
+  };
+  alternate.printing.attributes.alternative_art = true;
+  if (marker.endsWith("-canonical-conflict")) alternate.DP = 11000;
+  payload.version_options = [{ value: "booster", label: "Booster" }];
+  payload.filters = {
+    category: marker.endsWith("-missing-category")
+      ? ["booster", "starter"]
+      : ["booster"],
+    cardcategory: ["digimon"],
+    colour: ["blue"],
+  };
+  payload.result = {
+    cap_signal: null,
+    partitions: [{
+      bucket: "category=booster&cardcategory=digimon&colour=blue",
+      page: 1,
+      pages: 1,
+      total: 2,
+      has_next: false,
+      entries: [
+        { number: "BT99-001", detail: "/cards/BT99-001" },
+        { number: "BT99-001", detail: "/cards/BT99-001_p1" },
+      ],
+    }],
+  };
+  payload.card_popups = [base, alternate];
+}
+
+function digimonCompleteDiscoveryFacets(lineage, surface, marker) {
+  if (
+    lineage !== "digimon-en" ||
+    surface !== "card-list" ||
+    marker === null
+  ) return "";
+  const category = marker.startsWith(
+      "card-keepr-acceptance-digimon/complete"
+    )
+    ? "booster"
+    : "all";
+  return `<form aria-label="Digimon Card List filters">
+    <select name="category"><option value="${category}">${category}</option></select>
+    <select name="cardcategory"><option value="digimon">Digimon</option></select>
+    <select name="colour"><option value="blue">Blue</option></select>
+  </form><nav aria-label="Complete Digimon leaf partitions">
+    <a href="/cards/index.php?search=true&amp;category=${category}&amp;cardcategory=digimon">Digimon type leaf</a>
+    <a href="/cards/index.php?search=true&amp;category=${category}&amp;cardcategory=digimon&amp;colour=blue">Blue Digimon leaf</a>
+  </nav>`;
 }
 
 function officialFixtureSurface(lineage, requestUrl, requestSurface) {

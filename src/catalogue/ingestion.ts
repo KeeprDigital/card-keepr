@@ -48,7 +48,10 @@ import {
 import {
   repairableCatalogueRevisionWindow,
 } from "./catalogue-revision-retention";
-import { requiredSourceAdapter } from "./source-adapters";
+import {
+  adapterReconciliationAreas,
+  requiredSourceAdapter,
+} from "./source-adapters";
 import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
 
@@ -4487,16 +4490,19 @@ async function checkedFreshnessAreasForRun(
   candidate: CatalogueCandidate,
   checkedAt: string,
 ): Promise<SourceFreshness[]> {
-  const area = await freshnessArea(database, runId);
-  if (area === null) return [];
-  if (area === "cards-and-printings") {
-    return checkedFreshnessAreas(games, candidate, checkedAt);
-  }
-  return games.map((game) => ({
-    game: game as SupportedGame,
-    area,
-    checked_at: checkedAt,
-  }));
+  const coverage = await freshnessCoverage(database, runId, games);
+  return [
+    ...checkedFreshnessAreas(
+      [...coverage.catalogue],
+      candidate,
+      checkedAt,
+    ),
+    ...[...coverage.errata].map((game) => ({
+      game,
+      area: "errata" as const,
+      checked_at: checkedAt,
+    })),
+  ];
 }
 
 function freshnessStatements(
@@ -4574,32 +4580,42 @@ function checkedFreshnessAreas(
   ];
 }
 
-async function freshnessArea(
+async function freshnessCoverage(
   database: D1Database,
   runId: string,
-): Promise<"cards-and-printings" | "errata" | null> {
-  const plans = await database
+  games: readonly string[],
+): Promise<Readonly<{
+  catalogue: ReadonlySet<SupportedGame>;
+  errata: ReadonlySet<SupportedGame>;
+}>> {
+  const observedAdapters = await database
     .prepare(
-      `SELECT DISTINCT adapter_version
-       FROM ingestion_evidence_plans
-       WHERE ingestion_run_id = ?
-       ORDER BY adapter_version`,
+      `SELECT DISTINCT
+         observation.adapter_version,
+         observation.supported_game
+       FROM source_observation_sets AS observation
+       JOIN source_snapshots AS snapshot
+         ON snapshot.id = observation.source_snapshot_id
+       WHERE snapshot.ingestion_run_id = ?
+       ORDER BY observation.supported_game, observation.adapter_version`,
     )
     .bind(runId)
-    .all<{ adapter_version: string }>();
-  if (plans.results.length === 0) return "cards-and-printings";
-  const coverage = new Set(
-    plans.results.map(({ adapter_version }) =>
-      requiredSourceAdapter(adapter_version).reconciliationCapability
-    ),
-  );
-  if (coverage.size !== 1) return null;
-  if (coverage.has("errata")) {
-    return "errata";
+    .all<{ adapter_version: string; supported_game: SupportedGame }>();
+  const selectedGames = new Set(games as readonly SupportedGame[]);
+  if (observedAdapters.results.length === 0) {
+    return { catalogue: selectedGames, errata: new Set() };
   }
-  return coverage.has("catalogue")
-    ? "cards-and-printings"
-    : null;
+  const catalogue = new Set<SupportedGame>();
+  const errata = new Set<SupportedGame>();
+  for (const observed of observedAdapters.results) {
+    if (!selectedGames.has(observed.supported_game)) continue;
+    const areas = adapterReconciliationAreas(
+      requiredSourceAdapter(observed.adapter_version),
+    );
+    if (areas.includes("catalogue")) catalogue.add(observed.supported_game);
+    if (areas.includes("errata")) errata.add(observed.supported_game);
+  }
+  return { catalogue, errata };
 }
 
 async function sourceFreshnessForExport(

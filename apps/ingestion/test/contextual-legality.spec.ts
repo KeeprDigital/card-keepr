@@ -1829,7 +1829,7 @@ test.each([
     },
   },
   {
-    adapterVersion: "digimon-en@3",
+    adapterVersion: "digimon-en@4",
     lineage: "digimon-en",
     game: "digimon",
     surface: "restrictions-current",

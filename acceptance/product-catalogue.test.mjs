@@ -3,12 +3,18 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import {
+  applyMigrations,
+  exportRecords,
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const ingestionPort = 22_788;
@@ -39,7 +45,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
         ],
       }),
       { mode: 0o600 },
@@ -48,7 +54,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
           officialPlan(
             "one-piece",
             "one-piece-en",
@@ -262,11 +268,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@3",
+          "digimon-en@4",
         ).requests.map(({ id }) => id),
       },
       {
@@ -456,6 +462,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     successfulChecks.map(({ game, area }) => `${game}:${area}`),
     [
       "digimon:cards-and-printings",
+      "digimon:errata",
       "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
@@ -886,82 +893,6 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
 });
 
-async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(
-    `http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`,
-    { headers: { authorization: `Bearer ${apiKey}` } },
-  );
-  assert.equal(response.status, 200);
-  return gunzipSync(Buffer.from(await response.arrayBuffer()))
-    .toString("utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-async function applyMigrations(statePath) {
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      "apps/ingestion/wrangler.jsonc",
-      "--persist-to",
-      statePath,
-    ],
-    {
-      ...processEnvironment(statePath),
-      CI: "1",
-    },
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      ...(envFile === undefined ? [] : ["--env-file", envFile]),
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: processEnvironment(statePath),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output, statePath };
-}
-
 async function waitForRunState(
   runId,
   expectedState,
@@ -1082,75 +1013,6 @@ async function sqliteFilesUnder(path) {
   return nested.flat();
 }
 
-async function waitForHealth(url, key, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
-    try {
-      const response = await fetch(url, {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // The local Worker has not started accepting requests yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return runProcess(
-    process.execPath,
-    [resolve(root, "cli/keepr.mjs"), ...arguments_],
-    {
-      ...process.env,
-      ...environment,
-    },
-  );
-}
-
-function runProcess(command, arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(command, arguments_, {
-      cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function processEnvironment(statePath) {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return {
-    ...environment,
-    WRANGLER_LOG_PATH: join(statePath, "logs"),
-  };
-}
-
 const officialDiscoveryUrls = {
   "one-piece-en": "https://en.onepiece-cardgame.com/cardlist/",
   "fusion-world-en": "https://www.dbs-cardgame.com/fw/en/cardlist/",
@@ -1164,7 +1026,12 @@ function officialPlan(
   game,
   lineage,
   adapter,
-  headers = { accept: "text/html" },
+  headers = lineage === "digimon-en"
+    ? {
+        accept: "text/html",
+        "user-agent": "card-keepr-acceptance-product/default",
+      }
+    : { accept: "text/html" },
 ) {
   return {
     supported_game: game,

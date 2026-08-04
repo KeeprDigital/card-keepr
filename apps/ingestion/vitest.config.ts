@@ -17,6 +17,9 @@ import {
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
+import {
+  onePieceCompleteOfficialSourceResponse,
+} from "../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import digimonDiscovery from "../../acceptance/fixtures/retained-official-source/digimon-en-discovery.json";
 import fusionWorldDiscovery from "../../acceptance/fixtures/retained-official-source/fusion-world-en-discovery.json";
 import gundamAsiaDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-asia-discovery.json";
@@ -461,6 +464,26 @@ export default defineConfig({
                   },
                 );
               }
+            }
+            if (
+              artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
+              officialLineage === "one-piece-en"
+            ) {
+              const headers = new Headers(request.headers);
+              headers.set(
+                "user-agent",
+                (headers.get("user-agent") ?? "").replace(
+                  /^card-keepr-runtime-parser\/[^;]+/u,
+                  "card-keepr-one-piece-complete-v1",
+                ),
+              );
+              const completeResponse = onePieceCompleteOfficialSourceResponse(
+                new Request(request.url, {
+                  method: request.method,
+                  headers,
+                }),
+              );
+              if (completeResponse !== null) return completeResponse;
             }
             if (
               artworkMarker === "card-keepr-staged-discovery-gap-v3" &&

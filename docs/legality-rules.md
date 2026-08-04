@@ -13,7 +13,7 @@ request graphs:
 
 - `one-piece-en@3`
 - `fusion-world-en@4`
-- `digimon-en@3`
+- `digimon-en@4`
 - `gundam-en-asia@3`
 - `gundam-en-us@3`
 
@@ -33,14 +33,19 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
+`digimon-en@4` explicitly owns both Catalogue and standalone Official Errata
+reconciliation areas. A successful run records freshness independently for
+`cards-and-printings` and `errata`; neither area is inferred from the adapter
+version string.
+
 The earlier production versions (`one-piece-en@1`, `one-piece-en@2`,
 `fusion-world-en@2`, `fusion-world-en@3`,
-`digimon-en@2`, and both Gundam `@2` versions) remain registered with their
-original parser contracts only for explicit reprocessing of retained Source
-Snapshots. New production Evidence Plans accept only the active registrations
-listed above. Reprocessing retained bytes through an earlier identity cannot
-gain Legality Rule observations; a non-empty legality sidecar still fails
-closed. Synthetic fixture adapters follow the same
+`digimon-en@2`, `digimon-en@3`, and both Gundam `@2` versions) remain
+registered with their original parser contracts only for explicit reprocessing
+of retained Source Snapshots. New production Evidence Plans accept only the
+active registrations listed above. Reprocessing retained bytes through an
+earlier identity cannot gain Legality Rule observations; a non-empty legality
+sidecar still fails closed. Synthetic fixture adapters follow the same
 append-only rule: One Piece `@3` and the other games' `@2` versions are the
 legality-aware identities, while prior fixture versions retain their original
 behavior.
@@ -176,7 +181,8 @@ the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
-Migrations `0009_one_piece_complete_catalogue.sql` and
-`0010_fusion_world_complete_catalogue.sql` register the complete One Piece and
-Fusion World adapters after `0008_legality_rules.sql`. Apply all three before
-deploying either Worker.
+Migrations `0009_one_piece_complete_catalogue.sql`,
+`0010_fusion_world_complete_catalogue.sql`, and
+`0011_digimon_complete_catalogue.sql` register the complete One Piece, Fusion
+World, and Digimon adapters after `0008_legality_rules.sql`. Apply all four
+before deploying either Worker.

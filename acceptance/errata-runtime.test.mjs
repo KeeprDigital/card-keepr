@@ -841,7 +841,7 @@ function digimonOfficialPlan() {
   return {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@3",
+    adapter_version: "digimon-en@4",
     requests: [{
       id: "digimon-en:discovery",
       url: "https://world.digimoncard.com/cards/index.php?search=true",
