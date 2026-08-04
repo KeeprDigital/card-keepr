@@ -1702,6 +1702,7 @@ function bandaiSnapshotDecoder(
       profile.catalogueComplete === true &&
       format === "fusion-world" &&
       dynamicRole === "listing" &&
+      fusionWorldCompleteListingLeaf(new URL(context.url)) &&
       bytes.byteLength > maximumFusionCompleteListingHtmlBytes
     ) {
       throw new Error(
