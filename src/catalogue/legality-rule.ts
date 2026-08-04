@@ -21,6 +21,7 @@ export {
 } from "./legality-effect-policy";
 import type { LegalityRuleEffect } from "./legality-effect-policy";
 import { registeredLegalitySourceScope } from "./source-adapters";
+import type { CuratedProvenanceBearing } from "./curated-provenance";
 export {
   legalityRulesForCandidate,
   normalizedLegalityRuleLifecycle,
@@ -45,7 +46,7 @@ export type UnresolvedLegalityScope = Readonly<{
   dimensions: readonly ("effective_interval" | "event_tier")[];
 }>;
 
-export type LegalityRule = {
+export type LegalityRule = CuratedProvenanceBearing & {
   id: string;
   official_id: string;
   game: SupportedGame;

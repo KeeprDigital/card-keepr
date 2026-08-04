@@ -43,7 +43,11 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
-import { applyPinnedCuratedRevisions } from "./curated-revisions";
+import {
+  applyPinnedCuratedRevisions,
+  stripCuratedRevisionEffects,
+} from "./curated-revisions";
+import type { CuratedProvenance } from "./curated-provenance";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import {
   byteBoundedJsonArrays,
@@ -982,9 +986,23 @@ export async function reconcileRetainedCardPrintingEvidence(
     printing_images: [...printingImages.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
-    products: productCatalogue.products,
-    distribution_contexts: productCatalogue.distribution_contexts,
-    product_relationships: productCatalogue.product_relationships,
+    products: productCatalogue.products.map((product) => ({
+      ...omitUndefinedCuratedProvenance(product),
+      releases: product.releases.map(omitUndefinedCuratedProvenance),
+    })),
+    distribution_contexts: productCatalogue.distribution_contexts.map(
+      omitUndefinedCuratedProvenance,
+    ),
+    product_relationships: productCatalogue.product_relationships.map(
+      (relationship) => {
+        const sanitized = omitUndefinedCuratedProvenance(relationship);
+        const { source_lineage: lineage, ...facts } = sanitized;
+        return {
+          ...facts,
+          ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        };
+      },
+    ),
     card_observed_games: [
       ...new Set(
         cardSurfaceObservations.map(
@@ -1020,6 +1038,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     errata,
     legality_rules: candidateLegalityRules,
   };
+  candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   const cardPrintingPlans = plans.filter(
     (plan) => plan.observationKind === "card_printing",
   );
@@ -1340,14 +1359,14 @@ async function candidateAtRevision(
     .bind(revisionId)
     .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) return null;
-  const candidate = JSON.parse(
+  const candidate = stripCuratedRevisionEffects(JSON.parse(
     await retainedPayload(
       database,
       row.ingestion_run_id,
       "candidate",
       row.candidate_json,
     ),
-  ) as CatalogueCandidate;
+  ) as CatalogueCandidate);
   const errata = candidate.errata ?? [];
   const provenanceByErratum = new Map<
     string,
@@ -1600,7 +1619,16 @@ function semanticCatalogueCandidate(
       game: product.game,
       official_code: product.official_code,
       name: product.name,
-      releases: product.releases,
+      releases: product.releases.map((release) => {
+        const { curated_provenance: provenance, ...facts } = release;
+        return {
+          ...facts,
+          ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+        };
+      }),
+      ...(Array.isArray(product.curated_provenance)
+        ? { curated_provenance: product.curated_provenance }
+        : {}),
       withdrawal:
         product.withdrawal === null
           ? null
@@ -1616,14 +1644,22 @@ function semanticCatalogueCandidate(
       })),
     })),
     distribution_contexts: (candidate.distribution_contexts ?? []).map(
-      ({ source_lineages: _lineages, ...context }) =>
-        context,
+      ({ source_lineages: _lineages, curated_provenance: provenance, ...context }) => ({
+        ...context,
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     product_relationships: (candidate.product_relationships ?? []).map(
       ({
         source_observation_ids: _observationIds,
+        source_lineage: lineage,
+        curated_provenance: provenance,
         ...relationship
-      }) => relationship,
+      }) => ({
+        ...relationship,
+        ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     errata: (candidate.errata ?? []).map((erratum) =>
       JSON.parse(canonicalErratum(erratum))
@@ -1644,6 +1680,30 @@ function semanticCatalogueCandidate(
       return semanticRule;
     }),
   };
+}
+
+function omitUndefinedCuratedProvenance<T extends {
+  curated_provenance?: readonly CuratedProvenance[];
+}>(
+  value: T,
+): T {
+  const { curated_provenance: provenance, ...facts } = value;
+  return {
+    ...facts,
+    ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+  } as T;
+}
+
+function omitUndefinedValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitUndefinedValues);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, omitUndefinedValues(item)]),
+    );
+  }
+  return value;
 }
 
 function latestCapture(

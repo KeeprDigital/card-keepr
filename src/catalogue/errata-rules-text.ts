@@ -3,8 +3,9 @@ import type {
   SupportedGame,
 } from "./catalogue-candidate";
 import { canonicalJson, sha256Text } from "./serialization";
+import type { CuratedProvenanceBearing } from "./curated-provenance";
 
-export type CatalogueErratum = Readonly<{
+export type CatalogueErratum = Readonly<CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   target_type: "card" | "printing";

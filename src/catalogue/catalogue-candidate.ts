@@ -5,6 +5,7 @@ import type {
 } from "./product-release-catalogue";
 import type { CatalogueErratum } from "./errata-rules-text";
 import type { LegalityRegion, LegalityRule } from "./legality-rule";
+import type { CuratedProvenanceBearing } from "./curated-provenance";
 
 export const catalogueCandidateContract =
   "card-keepr-catalogue-candidate@1" as const;
@@ -49,7 +50,7 @@ export type CatalogueSourceCheck =
       checked_at: string;
     };
 
-export type CatalogueCard = {
+export type CatalogueCard = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   official_identity:
@@ -71,10 +72,9 @@ export type CatalogueCard = {
       | "gundam@1";
     attributes: Record<string, unknown>;
   };
-  curated_provenance?: readonly CuratedProvenance[];
 };
 
-export type CataloguePrinting = {
+export type CataloguePrinting = CuratedProvenanceBearing & {
   id: string;
   card_id: string;
   rarity: {
@@ -90,16 +90,6 @@ export type CataloguePrinting = {
       | "gundam@1";
     attributes: Record<string, unknown>;
   } | null;
-  curated_provenance?: readonly CuratedProvenance[];
-};
-
-export type CuratedProvenance = {
-  curated_revision_id: string;
-  content_digest: string;
-  target: Record<string, unknown>;
-  rationale: string;
-  evidence: readonly Record<string, unknown>[];
-  author: string;
 };
 
 export type CataloguePrintingImage = {

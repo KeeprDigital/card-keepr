@@ -13,7 +13,11 @@ import {
 } from "./source-evidence-model";
 import type { SourceAdapterRegistration } from "./source-adapters";
 import { evidenceRunIdentity } from "./idempotent-identities";
-import { curatedRevisionSetForRun } from "./curated-revisions";
+import {
+  curatedRevisionSetForRun,
+  curatedRevisionPinStatementsForNewRun,
+  pinCuratedRevisionsForRun,
+} from "./curated-revisions";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -162,6 +166,12 @@ export async function startEvidenceRun(
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
     }),
+    ...(await curatedRevisionPinStatementsForNewRun(
+      database,
+      runId,
+      [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+      startedAt,
+    )),
     database
       .prepare(
         `INSERT INTO ingestion_evidence_plans (
@@ -231,6 +241,7 @@ export async function startEvidenceRun(
     }
     throw error;
   }
+  await pinCuratedRevisionsForRun(database, runId, startedAt);
   return showEvidenceRun(database, runId);
 }
 
@@ -288,6 +299,12 @@ export async function retryEvidenceRun(
         linkedRunId: source.id,
         idempotencyKey,
       }),
+      ...(await curatedRevisionPinStatementsForNewRun(
+        database,
+        runId,
+        [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+        startedAt,
+      )),
       database
         .prepare(
           `INSERT INTO ingestion_evidence_plans (
@@ -345,6 +362,7 @@ export async function retryEvidenceRun(
     }
     throw error;
   }
+  await pinCuratedRevisionsForRun(database, runId, startedAt);
   return showEvidenceRun(database, runId);
 }
 

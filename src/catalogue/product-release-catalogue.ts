@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupportedGame } from "./catalogue-candidate";
+import type { CuratedProvenanceBearing } from "./curated-provenance";
 import { canonicalJson, sha256Text } from "./serialization";
 
 export type EvidenceCategory = "explicit" | "derived" | "curated";
@@ -54,7 +55,7 @@ export type ProductWithdrawal = {
   };
 };
 
-export type CatalogueProduct = {
+export type CatalogueProduct = CuratedProvenanceBearing & {
   reference: ProductReference;
   id: string;
   game: SupportedGame;
@@ -69,7 +70,7 @@ export type CatalogueProduct = {
   source_observations?: ProductSourceObservation[];
 };
 
-export type CatalogueRelease = {
+export type CatalogueRelease = CuratedProvenanceBearing & {
   id: string;
   event_key: string;
   product_id: string;
@@ -81,7 +82,7 @@ export type CatalogueRelease = {
   status: ReleaseStatus | null;
 };
 
-export type CatalogueDistributionContext = {
+export type CatalogueDistributionContext = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   key: string;
@@ -103,7 +104,7 @@ export type ProductEntityReference = {
   id: string;
 };
 
-export type ProductRelationship = {
+export type ProductRelationship = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   kind:
@@ -115,7 +116,7 @@ export type ProductRelationship = {
   to: ProductEntityReference;
   evidence_category: EvidenceCategory;
   resolution: "canonical";
-  source_lineage: string;
+  source_lineage?: string;
   source_observation_ids: string[];
   relationship_value: string;
   observed: boolean;
@@ -290,16 +291,19 @@ export async function reconcileProductReleaseCatalogue(
     ...(prior?.product_relationships ?? [])
       .filter(
         (relationship) =>
-          relationship.game !== game ||
-          !observedSurface ||
-          !checkedLineages.has(relationship.source_lineage) ||
-          !observedRelationshipIds.has(relationship.id),
+          relationship.evidence_category !== "curated" &&
+          (relationship.game !== game ||
+            !observedSurface ||
+            relationship.source_lineage === undefined ||
+            !checkedLineages.has(relationship.source_lineage) ||
+            !observedRelationshipIds.has(relationship.id)),
       )
       .map((relationship) => ({
         ...relationship,
         observed:
           relationship.game === game &&
           observedSurface &&
+          relationship.source_lineage !== undefined &&
           checkedLineages.has(relationship.source_lineage)
             ? false
             : relationship.observed,
@@ -448,7 +452,7 @@ async function preservePublishedProductIdentity(
           relationship.kind,
           from,
           to,
-          relationship.source_lineage,
+          relationship.source_lineage!,
         ),
         from,
         to,

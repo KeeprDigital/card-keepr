@@ -18,7 +18,8 @@ import {
 } from "./catalogue-candidate";
 import {
   assertCuratedGamesUnblocked,
-  curatedRevisionSetForRun,
+  curatedRevisionPinStatementsForNewRun,
+  pinCuratedRevisionsForRun,
 } from "./curated-revisions";
 import {
   compareSourceFreshness,
@@ -368,17 +369,7 @@ export async function showRun(
   );
   assertOpaqueId(runId, "run_id");
   const run = await requiredRun(database, runId);
-  const [cleanup, curatedSet] = await Promise.all([
-    publicationCleanup(database, run.id),
-    curatedRevisionSetForRun(database, run.id),
-  ]);
-  return {
-    ...publicRun(run, cleanup),
-    ...(curatedSet === null ? {} : {
-      curated_revision_ids: curatedSet.revision_ids,
-      curated_revision_set_digest: curatedSet.set_digest,
-    }),
-  };
+  return publicRun(run, await publicationCleanup(database, run.id));
 }
 
 export async function administrationStatus(
@@ -1205,6 +1196,12 @@ async function startPreparedRun(
     publication_manifest_digest: null,
     publication_writer_token: null,
   });
+  const curatedPinStatements = await curatedRevisionPinStatementsForNewRun(
+    database,
+    runId,
+    input.candidate.selected_games,
+    startedAt,
+  );
 
   try {
     await database.batch([
@@ -1251,6 +1248,7 @@ async function startPreparedRun(
           candidateJson,
           JSON.stringify(progressFor("planning")),
         ),
+      ...curatedPinStatements,
       database
         .prepare(
           `UPDATE operation_state
@@ -1331,6 +1329,7 @@ async function startPreparedRun(
     }
     throw error;
   }
+  await pinCuratedRevisionsForRun(database, runId, startedAt);
   return resultingRun;
 }
 
@@ -5013,6 +5012,7 @@ function isCuratedProvenance(value: unknown): boolean {
       "rationale",
       "evidence",
       "author",
+      "reviewed_source_value",
     ]) &&
     typeof value.curated_revision_id === "string" &&
     typeof value.content_digest === "string" &&
@@ -5020,7 +5020,8 @@ function isCuratedProvenance(value: unknown): boolean {
     typeof value.rationale === "string" &&
     Array.isArray(value.evidence) &&
     value.evidence.every(isRecord) &&
-    typeof value.author === "string"
+    typeof value.author === "string" &&
+    Object.hasOwn(value, "reviewed_source_value")
   );
 }
 

@@ -24,25 +24,29 @@ test("CLI validates a proposal file against an explicit Catalogue Revision", asy
 
   const result = await runCli([
     "curated-revision", "validate", "--proposal", file,
-    "--expected-current-revision", "catrev_123", "--json",
-  ], server.environment);
+    "--expected-current-revision", "catrev_123",
+    "--secrets-stdin-fd", "3", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), expected);
   assert.deepEqual(observed, [{
     method: "POST",
     path: "/admin/v1/curated-revisions/validate",
     authorization: "Bearer cli-admin-key",
-    body: { proposal, expected_current_revision_id: "catrev_123" },
+    body: { proposal, catalogue_revision_id: "catrev_123" },
   }]);
 });
 
 test("CLI creates a production Curated Revision with all mutation bindings", async (t) => {
   const proposal = fixtureProposal();
   const expected = {
-    contract: "card-keepr-curated-revision@1",
-    id: "currev_123",
-    game: "one-piece",
+    operation_id: "curop_123",
+    curated_revision_id: "currev_123",
     status: "active",
+    event_version: 1,
+    content_digest: "b".repeat(64),
+    current_catalogue_revision_id: "catrev_123",
+    code: "curated_revision_created",
   };
   const observed = [];
   const server = await jsonServer(t, observed, expected, 201);
@@ -51,15 +55,29 @@ test("CLI creates a production Curated Revision with all mutation bindings", asy
   const file = join(directory, "proposal.json");
   await writeFile(file, JSON.stringify(proposal));
 
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    operation: "create",
+    current_catalogue_revision_id: "catrev_123",
+    affected_supported_game: "one-piece",
+    target: proposal.target,
+    content_digest: "b".repeat(64),
+  });
   const result = await runCli([
     "curated-revision", "create", "--proposal", file,
     "--proposal-digest", "b".repeat(64),
     "--expected-current-revision", "catrev_123",
-    "--idempotency-key", "create-123", "--yes", "--json",
-  ], server.environment);
+    "--idempotency-key", "create-123", "--environment", "production",
+    "--confirm", confirmation, "--secrets-stdin-fd", "3", "--yes", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), expected);
   assert.deepEqual(observed[0], {
+    method: "GET",
+    path: "/v1/status",
+    authorization: "Bearer cli-admin-key",
+  });
+  assert.deepEqual(observed[1], {
     method: "POST",
     path: "/admin/v1/curated-revisions",
     authorization: "Bearer cli-admin-key",
@@ -80,14 +98,77 @@ test("CLI list/show have stable query paths and validation failures exit 8", asy
     detail: "invalid proposal",
   }, 422);
   const result = await runCli([
-    "curated-revision", "show", "--revision-id", "currev_123", "--json",
-  ], server.environment);
+    "curated-revision", "show", "--revision-id", "currev_123",
+    "--secrets-stdin-fd", "3", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
   assert.equal(result.code, 8);
   assert.deepEqual(JSON.parse(result.stdout), {
     contract: "card-keepr-cli-problem@1",
     status: "error",
     code: "curated_revision_schema_invalid",
     detail: "invalid proposal",
+  });
+});
+
+test("CLI retirement resolves the exact revision and production identities before mutation", async (t) => {
+  const observed = [];
+  const revision = {
+    id: "currev_123",
+    content: { game: "one-piece", target: fixtureProposal().target },
+    content_digest: "d".repeat(64),
+    pending_conflict: null,
+  };
+  const resultDocument = {
+    operation_id: "curop_retire",
+    curated_revision_id: revision.id,
+    status: "retired",
+    event_version: 2,
+    content_digest: revision.content_digest,
+    current_catalogue_revision_id: "catrev_123",
+    code: "curated_revision_retired",
+  };
+  const server = await jsonServer(t, observed, (request) =>
+    request.method === "GET"
+      ? { revision, events: [] }
+      : resultDocument
+  );
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    operation: "retire",
+    current_catalogue_revision_id: "catrev_123",
+    curated_revision_id: revision.id,
+    conflict_digest: null,
+    affected_supported_game: "one-piece",
+    current_content_digest: revision.content_digest,
+    target: revision.content.target,
+  });
+  const result = await runCli([
+    "curated-revision", "retire",
+    "--revision-id", revision.id,
+    "--event-version", "1",
+    "--rationale", "No longer required",
+    "--expected-current-revision", "catrev_123",
+    "--idempotency-key", "retire-123",
+    "--environment", "production",
+    "--confirm", confirmation,
+    "--secrets-stdin-fd", "3",
+    "--yes", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), resultDocument);
+  assert.deepEqual(observed.map(({ method, path }) => ({ method, path })), [
+    { method: "GET", path: "/v1/status" },
+    { method: "GET", path: "/admin/v1/curated-revisions/currev_123" },
+    { method: "POST", path: "/admin/v1/curated-revisions/currev_123/retire" },
+  ]);
+  assert.equal(observed[2].authorization, "Bearer cli-admin-key");
+  assert.deepEqual(observed[2].body, {
+    environment: "production",
+    expected_current_revision_id: "catrev_123",
+    expected_event_version: 1,
+    conflict_digest: null,
+    rationale: "No longer required",
+    idempotency_key: "retire-123",
   });
 });
 
@@ -103,9 +184,16 @@ async function jsonServer(t, observed, document, status = 200) {
         authorization: request.headers.authorization,
         ...(body === "" ? {} : { body: JSON.parse(body) }),
       });
-      response.statusCode = status;
+      const statusRequest = request.url === "/v1/status";
+      response.statusCode = statusRequest ? 200 : status;
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify(document));
+      const responseDocument = typeof document === "function"
+        ? document(request)
+        : document;
+      response.end(JSON.stringify(statusRequest ? {
+        safe_state: { current_revision_id: "catrev_123" },
+        production_target: productionTarget,
+      } : responseDocument));
     });
   });
   await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
@@ -120,12 +208,12 @@ async function jsonServer(t, observed, document, status = 200) {
   };
 }
 
-function runCli(arguments_, environment) {
+function runCli(arguments_, environment, secrets) {
   return new Promise((resolveExit) => {
     const child = spawn(process.execPath, [resolve(root, "cli/keepr.mjs"), ...arguments_], {
       cwd: root,
       env: { ...process.env, ...environment },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", secrets === undefined ? "ignore" : "pipe"],
     });
     let stdout = "";
     let stderr = "";
@@ -133,9 +221,25 @@ function runCli(arguments_, environment) {
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
+    if (secrets !== undefined) child.stdio[3].end(JSON.stringify(secrets));
     child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
   });
 }
+
+const productionTarget = {
+  cloudflare_account_id: "a".repeat(32),
+  worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+  d1_databases: [
+    { name: "card-keepr-catalogue", id: "11111111-1111-4111-8111-111111111111" },
+    { name: "card-keepr-disposable-verification", id: "22222222-2222-4222-8222-222222222222" },
+  ],
+  r2_buckets: [
+    "card-keepr-evidence",
+    "card-keepr-printing-images",
+    "card-keepr-catalogue-exports",
+    "card-keepr-backups",
+  ],
+};
 
 function fixtureProposal() {
   return {

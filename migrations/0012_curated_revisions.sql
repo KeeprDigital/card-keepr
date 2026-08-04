@@ -11,10 +11,10 @@ CREATE TABLE curated_revisions (
   effective_to TEXT,
   proposal_json TEXT NOT NULL CHECK (json_valid(proposal_json)),
   content_digest TEXT NOT NULL CHECK (
-    length(content_digest) = 64 AND content_digest GLOB '[0-9a-f]*'
+    length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
   ),
   reviewed_source_digest TEXT NOT NULL CHECK (
-    length(reviewed_source_digest) = 64 AND reviewed_source_digest GLOB '[0-9a-f]*'
+    length(reviewed_source_digest) = 64 AND reviewed_source_digest NOT GLOB '*[^0-9a-f]*'
   ),
   schema_binding_json TEXT NOT NULL CHECK (json_valid(schema_binding_json)),
   author TEXT NOT NULL CHECK (length(author) > 0),
@@ -81,6 +81,17 @@ CREATE TABLE curated_revision_events (
   PRIMARY KEY (revision_id, event_version)
 );
 
+CREATE TRIGGER curated_revision_owner_event_operation_guard
+BEFORE INSERT ON curated_revision_events
+WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired') AND EXISTS (
+  SELECT 1 FROM operation_state
+  WHERE singleton = 1
+    AND (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_operation_not_idle');
+END;
+
 CREATE TRIGGER curated_revision_events_are_immutable_on_update
 BEFORE UPDATE ON curated_revision_events
 BEGIN
@@ -95,7 +106,9 @@ END;
 
 CREATE TABLE curated_revision_idempotency (
   idempotency_key TEXT PRIMARY KEY,
-  request_digest TEXT NOT NULL,
+  request_digest TEXT NOT NULL CHECK (
+    length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'
+  ),
   response_json TEXT NOT NULL CHECK (json_valid(response_json)),
   response_status INTEGER NOT NULL,
   created_at TEXT NOT NULL
@@ -105,8 +118,12 @@ CREATE TABLE ingestion_run_curated_revisions (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id) ON DELETE CASCADE,
   ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
   revision_id TEXT NOT NULL REFERENCES curated_revisions(id),
-  content_digest TEXT NOT NULL,
-  reviewed_source_digest TEXT NOT NULL,
+  content_digest TEXT NOT NULL CHECK (
+    length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
+  ),
+  reviewed_source_digest TEXT NOT NULL CHECK (
+    length(reviewed_source_digest) = 64 AND reviewed_source_digest NOT GLOB '*[^0-9a-f]*'
+  ),
   PRIMARY KEY (ingestion_run_id, ordinal),
   UNIQUE (ingestion_run_id, revision_id)
 );
@@ -114,7 +131,9 @@ CREATE TABLE ingestion_run_curated_revisions (
 CREATE TABLE ingestion_run_curated_revision_sets (
   ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id) ON DELETE CASCADE,
   revision_ids_json TEXT NOT NULL CHECK (json_valid(revision_ids_json)),
-  set_digest TEXT NOT NULL CHECK (length(set_digest) = 64),
+  set_digest TEXT NOT NULL CHECK (
+    length(set_digest) = 64 AND set_digest NOT GLOB '*[^0-9a-f]*'
+  ),
   pinned_at TEXT NOT NULL
 );
 
@@ -135,7 +154,9 @@ CREATE TABLE catalogue_curated_provenance (
   catalogue_revision_id TEXT NOT NULL REFERENCES catalogue_revisions(id),
   curated_revision_id TEXT NOT NULL REFERENCES curated_revisions(id),
   target_key TEXT NOT NULL,
-  content_digest TEXT NOT NULL,
+  content_digest TEXT NOT NULL CHECK (
+    length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
+  ),
   provenance_json TEXT NOT NULL CHECK (json_valid(provenance_json)),
   PRIMARY KEY (catalogue_revision_id, curated_revision_id)
 );
