@@ -156,48 +156,27 @@ export async function printingsAtLocator(
   return rows.results;
 }
 
-export async function hasOtherGundamLocaleEvidence(
+export async function gundamPrintingLineages(
   database: D1Database,
-  printingId: string,
-  sourceLineage: string,
-): Promise<boolean> {
-  const counterpart =
-    sourceLineage === "gundam-en-asia"
-      ? "gundam-en-us"
-      : sourceLineage === "gundam-en-us"
-        ? "gundam-en-asia"
-        : null;
-  if (counterpart === null) return true;
-  const row = await database
-    .prepare(
-      `SELECT printing_id
-       FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       LIMIT 1`,
-    )
-    .bind(printingId, counterpart)
-    .first<{ printing_id: string }>();
-  return row !== null;
-}
-
-export async function currentPrintingProductsForLineage(
-  database: D1Database,
-  printingId: string,
-  sourceLineage: string,
-): Promise<string[]> {
+): Promise<{
+  printing_id: string;
+  source_lineage: "gundam-en-asia" | "gundam-en-us";
+  current: number;
+}[]> {
   const rows = await database
     .prepare(
-      `SELECT DISTINCT relationship_value
-       FROM reconciled_printing_memberships
-       WHERE printing_id = ?
-         AND source_lineage = ?
-         AND relationship_kind = 'product'
-         AND current = 1
-       ORDER BY relationship_value`,
+      `SELECT printing_id, source_lineage, MAX(current) AS current
+       FROM reconciled_printing_locators
+       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       GROUP BY printing_id, source_lineage
+       ORDER BY printing_id, source_lineage`,
     )
-    .bind(printingId, sourceLineage)
-    .all<{ relationship_value: string }>();
-  return rows.results.map(({ relationship_value }) => relationship_value);
+    .all<{
+      printing_id: string;
+      source_lineage: "gundam-en-asia" | "gundam-en-us";
+      current: number;
+    }>();
+  return rows.results;
 }
 
 export async function hasCardObservationFromLineage(
@@ -226,7 +205,7 @@ export async function hasPrintingLocatorFromLineage(
     .prepare(
       `SELECT printing_id
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ?
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
        LIMIT 1`,
     )
     .bind(printingId, sourceLineage)

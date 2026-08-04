@@ -203,6 +203,8 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           "one-piece-en@3",
           "fusion-world-en@4",
           "digimon-en@4",
+          "gundam-en-asia@4",
+          "gundam-en-us@4",
         ].includes(adapter.adapterVersion)
           ? ["catalogue", "errata"] as const
           : ["catalogue"] as const,

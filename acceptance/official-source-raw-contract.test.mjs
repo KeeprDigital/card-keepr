@@ -212,7 +212,7 @@ test("Gundam V4 keeps locale lineages immutable and closes package leaves by ful
       "the same full locator is deterministically deduplicated across packages",
     );
     assert.equal(observations[0].printing.rarity.raw, "R");
-    assert.equal(observations[0].printing.rarity.normalized, null);
+    assert.equal(observations[0].printing.rarity.normalized, "rare");
     assert.match(
       observations[0].identity_evidence.artwork_fingerprint,
       /^official-artwork:/u,
@@ -244,6 +244,12 @@ test("Gundam V4 keeps locale lineages immutable and closes package leaves by ful
     assert.throws(
       () => parseRegisteredSurface(current, "packages", conflicting),
       /full locator.*conflict/iu,
+    );
+    const unknownRarity = structuredClone(complete);
+    unknownRarity.card_details[0].printing.rarity = "Experimental Rare";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", unknownRarity),
+      /Gundam rarity.*Experimental Rare/iu,
     );
   }
 });
@@ -1715,7 +1721,13 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     assert.equal(adapter.reconciliationCapability, "catalogue");
     assert.deepEqual(
       adapter.reconciliationAreas,
-      ["one-piece-en@3", "fusion-world-en@4", "digimon-en@4"].includes(
+      [
+        "one-piece-en@3",
+        "fusion-world-en@4",
+        "digimon-en@4",
+        "gundam-en-asia@4",
+        "gundam-en-us@4",
+      ].includes(
         adapter.adapterVersion,
       )
         ? ["catalogue", "errata"]
@@ -4857,6 +4869,7 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
 test("Gundam V4 visits every package option and schedules Card details only at a package leaf", () => {
   for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
     const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
     const rootUrl = adapter.requestUrlForSurface("packages");
     const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
     const rootHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
@@ -4911,6 +4924,267 @@ test("Gundam V4 visits every package option and schedules Card details only at a
     );
     assert.doesNotThrow(() =>
       adapter.parseBytes(new TextEncoder().encode(leafHtml), leafContext)
+    );
+    assert.equal(
+      previous.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).find(({ url }) => new URL(url).searchParams.has("page"))?.role,
+      "detail",
+      "V3 preserves its historical link classification",
+    );
+  }
+});
+
+test("retained Gundam package snapshots close publisher totals and dedupe full locators across the request plan", () => {
+  for (const { lineage, packageValue } of [
+    { lineage: "gundam-en-asia", packageValue: "619102" },
+    { lineage: "gundam-en-us", packageValue: "616102" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const fixturePrefix = `./fixtures/retained-official-source/${lineage}-card-list`;
+    const rootBytes = readFileSync(new URL(
+      `${fixturePrefix}-root-live-fragment.html`,
+      import.meta.url,
+    ));
+    const packageBytes = readFileSync(new URL(
+      `${fixturePrefix}-package-live-fragment.html`,
+      import.meta.url,
+    ));
+    const rootContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: rootUrl,
+      requestId: `${lineage}:packages`,
+    };
+    const packageContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: `${rootUrl}?package=${packageValue}`,
+      requestId: `${lineage}:listing:${"b".repeat(64)}`,
+    };
+
+    const rootRequests = adapter.discoverRequests(rootBytes, rootContext);
+    assert.deepEqual(
+      rootRequests.filter(({ role }) => role === "listing")
+        .map(({ url }) => new URL(url).searchParams.get("package")),
+      lineage === "gundam-en-asia"
+        ? ["619101", "619102"]
+        : ["616101", "616102"],
+    );
+    const packageRequests = adapter.discoverRequests(
+      packageBytes,
+      packageContext,
+    );
+    const allDetailUrls = [...rootRequests, ...packageRequests]
+      .filter(({ role }) => role === "detail")
+      .map(({ url }) => url);
+    assert.equal(allDetailUrls.length, 4);
+    assert.equal(new Set(allDetailUrls).size, 2);
+
+    for (const [bytes, context] of [
+      [rootBytes, rootContext],
+      [packageBytes, packageContext],
+    ]) {
+      const [coverage] = adapter.parseBytes(bytes, context);
+      assert.deepEqual(coverage.completeness, {
+        declared_record_count: 2,
+        parsed_record_count: 2,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        structurally_complete: true,
+      });
+    }
+
+    const packageHtml = packageBytes.toString("utf8");
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('value="' + packageValue + '"', 'value="wrong"'),
+        ),
+        packageContext,
+      ),
+      /selected package.*request/iu,
+    );
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('<span class="num">2</span>', '<span class="num">3</span>'),
+        ),
+        packageContext,
+      ),
+      /publisher total.*full locators/iu,
+    );
+    assert.throws(
+      () => adapter.parseBytes(packageBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=2`,
+      }),
+      /selected page/iu,
+    );
+  }
+});
+
+test("active Gundam Errata is typed from both locale publications without changing V3", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    assert.equal(
+      current.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=news`,
+    );
+    assert.equal(
+      previous.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=rules`,
+    );
+
+    const payload = rawSurfacePayload(lineage, "errata");
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    payload.entries = [{
+      entry_id: `${article}-gd04-067`,
+      card_number: "GD04-067",
+      published_on: "2026-04-10",
+      effective_from: "2026-04-10",
+      before: "from your trash.",
+      after: "from any player's trash.",
+      notice: "The corrected wording applies to the applicable cards.",
+      applies_to_parallel_printings: true,
+    }];
+    const observations = parseRegisteredSurface(current, "errata", payload);
+    assert.deepEqual(
+      observations.find(({ kind }) => kind === "official_erratum"),
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        effective_from: "2026-04-10",
+        observed_printed_rules_text: "from your trash.",
+        corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: The corrected wording applies to the applicable cards.",
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: `#${article}-gd04-067`,
+          display_name: "GD04-067",
+        },
+        completeness: {
+          structurally_complete: true,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          declared_record_count: 1,
+          parsed_record_count: 1,
+        },
+      },
+    );
+
+    const unknown = structuredClone(payload);
+    unknown.entries[0].publisher_note = "unmodeled";
+    assert.throws(
+      () => parseRegisteredSurface(current, "errata", unknown),
+      /Gundam Erratum contains unknown field publisher_note/iu,
+    );
+    assert.doesNotThrow(() =>
+      parseRegisteredSurface(previous, "errata", unknown)
+    );
+  }
+});
+
+test("active Gundam discovers and parses ordinary official Errata articles", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    const listing = `<html><main>
+      <a href="/${locale}/news/ordinary.html"><span>Ordinary announcement</span></a>
+      <a href="/${locale}/news/${article}.html"><span>Apology for the errata and revision in card description of Phantom Aria [GD04]</span></a>
+      <a href="/${locale}/news/?subcategory=all&amp;tag=RULES&amp;page=1">Rules filter</a>
+      <a href="/${locale}/news/?subcategory=news&amp;page=2">Next NEWS page</a>
+    </main></html>`;
+    const context = {
+      mediaType: "text/html; charset=UTF-8",
+      url: current.requestUrlForSurface("errata"),
+      requestId: `${lineage}:errata`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "listing")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`],
+    );
+    const pageContext = {
+      ...context,
+      url: `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`,
+      requestId: `${lineage}:listing:${"f".repeat(64)}`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(
+        new TextEncoder().encode(listing),
+        pageContext,
+      ).filter(({ role }) => role === "detail").map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.equal(
+      previous.discoverRequests(new TextEncoder().encode(listing), {
+        ...context,
+        url: previous.requestUrlForSurface("errata"),
+      }).some(({ url }) => url.endsWith(`/${article}.html`)),
+      false,
+    );
+
+    const englishHeading = lineage === "gundam-en-asia"
+      ? "<div class=\"text-area\"><h6>English Version</h6></div>"
+      : "";
+    const detail = `<html><main><div class="article"><section class="articleInner">
+      <div class="articleHead"><div class="articleDetail"><div class="date">April 10, 2026</div></div>
+      <h2>Apology for the errata and revision in card description of Phantom Aria [GD04]</h2></div>
+      <div class="articleBody"><div class="blocks">${englishHeading}
+      <div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>
+      <div class="text-area"><h5><span>Before</span></h5></div>
+      <div class="text-area"><p><span>from your trash.</span></p></div>
+      <div class="text-area"><h5><span>After</span></h5></div>
+      <div class="text-area"><p><span>from any player's trash.</span></p></div>
+      <div class="text-area"><p><strong>For the applicable cards, the above shall be regarded as the correct wording.</strong></p></div>
+      </div></div></section></div></main></html>`;
+    const [erratum] = current.parseBytes(new TextEncoder().encode(detail), {
+      mediaType: "text/html; charset=UTF-8",
+      url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+      requestId: `${lineage}:detail:${"e".repeat(64)}`,
+    });
+    assert.deepEqual(
+      {
+        kind: erratum.kind,
+        game: erratum.game,
+        target: erratum.target,
+        published_on: erratum.published_on,
+        corrected_rules_text: erratum.corrected_rules_text,
+      },
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        corrected_rules_text: "from any player's trash.",
+      },
     );
   }
 });
@@ -5394,8 +5668,7 @@ test("real Digimon and Gundam details close every known profile field and reject
   );
 
   const gundam = byLineage("gundam-en-asia");
-  const gundamObservation = gundam.parseBytes(
-    new TextEncoder().encode(`
+  const gundamHtml = `
       <h1>Test Gundam Unit</h1>
       <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
       <dl><dt>Type</dt><dd>Unit</dd></dl>
@@ -5409,10 +5682,14 @@ test("real Digimon and Gundam details close every known profile field and reject
       <dl><dt>HP</dt><dd>5,000</dd></dl>
       <dl><dt>Alternate Art</dt><dd>Yes</dd></dl>
       <img class="card-image" src="/asia-en/images/cards/GD99-001.png">
-    `),
+    `;
+  const gundamDetailUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001";
+  const gundamObservation = gundam.parseBytes(
+    new TextEncoder().encode(gundamHtml),
     {
       mediaType: "text/html",
-      url: "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001",
+      url: gundamDetailUrl,
       requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
     },
   )[0];
@@ -5427,8 +5704,19 @@ test("real Digimon and Gundam details close every known profile field and reject
   );
   assert.deepEqual(gundamObservation.printing.rarity, {
     raw: "R★",
-    normalized: null,
+    normalized: "rare",
   });
+  assert.throws(
+    () => gundam.parseBytes(
+      new TextEncoder().encode(gundamHtml.replace("R★", "Experimental Rare")),
+      {
+        mediaType: "text/html",
+        url: gundamDetailUrl,
+        requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
+      },
+    ),
+    /Gundam rarity.*Experimental Rare/iu,
+  );
 });
 
 test("every production lineage preserves its synthetic publisher-contract examples", () => {

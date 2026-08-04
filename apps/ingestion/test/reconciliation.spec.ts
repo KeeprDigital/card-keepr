@@ -2408,6 +2408,15 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     requiredFirst(asia.document, "printings"),
     "id",
   );
+  expect(asia.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   await approve(asia.document);
 
   const usRun = await collect(
@@ -2423,6 +2432,14 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   expect(requiredFirst(us.document, "printings")).toMatchObject({
     id: printingId,
   });
+  expect(us.document.warnings).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+      }),
+    ]),
+  );
   await approve(us.document);
   const lifecycle = await get(
     `/v1/reconciliation/printings/${printingId}`,
@@ -2572,16 +2589,11 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     },
   );
   const productMismatch = await reconcile(productMismatchRun.id);
-  expect(productMismatch.response.status).toBe(409);
-  expect(productMismatch.document).toMatchObject({
-    diagnostics: [
-      expect.objectContaining({
-        code: "printing_match_contradictory",
-        candidate_printing_ids: [printingId],
-        detail: expect.stringContaining("Product corroboration"),
-      }),
-    ],
+  expect(productMismatch.response.status).toBe(200);
+  expect(requiredFirst(productMismatch.document, "printings")).toMatchObject({
+    id: printingId,
   });
+  await approve(productMismatch.document);
 
   const variantMismatchRun = await collect(
     "/reconciliation/gundam-cross-variant-conflict",

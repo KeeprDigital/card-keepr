@@ -19,13 +19,11 @@ import {
 } from "./catalogue-candidate";
 import {
   compatiblePrintings,
-  currentPrintingProductsForLineage,
   canonicalCardConflict,
   canonicalPrintingConflict,
+  gundamPrintingLineages,
   existingCard,
   hasCardObservationFromLineage,
-  hasOtherGundamLocaleEvidence,
-  hasPrintingLocatorFromLineage,
   printingFactsFormattingEquivalent,
   printingAtLocatorVariant,
   printingsAtLocator,
@@ -124,6 +122,17 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   const diagnostics: Diagnostic[] = [];
+  const storedGundamLineages = await gundamPrintingLineages(database);
+  const publishedGundamLineages = gundamLineagesByPrinting(
+    storedGundamLineages.filter(({ current }) => current === 1),
+  );
+  const historicalGundamLineages = gundamLineagesByPrinting(
+    storedGundamLineages,
+  );
+  const localGundamLineages = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
   const priorCandidate = await candidateAtRevision(
     database,
     run.expected_current_revision_id,
@@ -468,6 +477,16 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
       localCompatibility.set(compatibilityKey, printingId);
       localLocators.set(locatorVariantKey, { compatibility, printingId });
+      if (
+        observation.sourceLineage === "gundam-en-asia" ||
+        observation.sourceLineage === "gundam-en-us"
+      ) {
+        addGundamLineage(
+          localGundamLineages,
+          printingId,
+          observation.sourceLineage,
+        );
+      }
       const carriedPrinting = printings.get(printingId);
       const publishedPrintingConflict = await canonicalPrintingConflict(
         database,
@@ -479,11 +498,9 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.supportedGame === "gundam" &&
         observation.sourceLineage === "gundam-en-us" &&
         carriedPrinting !== undefined &&
-        (await hasPrintingLocatorFromLineage(
-          database,
-          printingId,
-          "gundam-en-asia",
-        ));
+        (historicalGundamLineages.get(printingId)?.has("gundam-en-asia") ===
+            true ||
+          localGundamLineages.get(printingId)?.has("gundam-en-asia") === true);
       let acceptedPrinting = proposedPrinting;
       if (retainAsiaPrintingAuthority) {
         const {
@@ -562,22 +579,6 @@ export async function reconcileRetainedCardPrintingEvidence(
                 },
           );
         }
-      }
-      if (
-        observation.supportedGame === "gundam" &&
-        !(await hasOtherGundamLocaleEvidence(
-          database,
-          printingId,
-          observation.sourceLineage,
-        ))
-      ) {
-        sourceWarnings.push({
-          code: "single_locale_gundam_printing",
-          printing_id: printingId,
-          source_lineage: observation.sourceLineage,
-          detail:
-            "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
-        });
       }
     } else if (!observation.structurallyComplete) {
       diagnostics.push({
@@ -776,7 +777,6 @@ export async function reconcileRetainedCardPrintingEvidence(
   diagnostics.push(
     ...withdrawalConflictDiagnostics(plans),
     ...(await publishedWithdrawalConflictDiagnostics(database, plans)),
-    ...(await gundamProductCorroborationDiagnostics(database, plans)),
   );
 
   let productCatalogue: Awaited<
@@ -1047,6 +1047,54 @@ export async function reconcileRetainedCardPrintingEvidence(
           retained.partitions.map(({ sourceLineage }) => sourceLineage),
         ),
       ].sort();
+  const resultingGundamLineages = new Map(
+    [...publishedGundamLineages].map(([printingId, lineages]) =>
+      [printingId, new Set(lineages)] as const
+    ),
+  );
+  for (const sourceLineage of checkedSourceLineages) {
+    if (
+      sourceLineage !== "gundam-en-asia" &&
+      sourceLineage !== "gundam-en-us"
+    ) continue;
+    for (const lineages of resultingGundamLineages.values()) {
+      lineages.delete(sourceLineage);
+    }
+  }
+  for (const plan of cardPrintingPlans) {
+    if (
+      plan.printingId === null ||
+      (plan.sourceLineage !== "gundam-en-asia" &&
+        plan.sourceLineage !== "gundam-en-us")
+    ) continue;
+    addGundamLineage(
+      resultingGundamLineages,
+      plan.printingId,
+      plan.sourceLineage,
+    );
+  }
+  const observedGundamPrintingIds = new Set(
+    cardPrintingPlans.flatMap((plan) =>
+      plan.printingId !== null &&
+        (plan.sourceLineage === "gundam-en-asia" ||
+          plan.sourceLineage === "gundam-en-us")
+        ? [plan.printingId]
+        : []
+    ),
+  );
+  const gundamLineageWarnings = [...observedGundamPrintingIds].flatMap(
+    (printingId) => {
+      const lineages = resultingGundamLineages.get(printingId);
+      if (lineages?.size !== 1) return [];
+      return [{
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: [...lineages][0]!,
+        detail:
+          "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
+      }];
+    },
+  );
   const plansByLineage = checkedSourceLineages.map(
     (sourceLineage) =>
       [
@@ -1097,6 +1145,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...new Map(
       [
         ...sourceWarnings,
+        ...gundamLineageWarnings,
         ...relationshipWarnings,
         ...disappearanceWarnings,
         ...cardWarnings,
@@ -1859,100 +1908,31 @@ function mergedPlanMemberships(
   }));
 }
 
-async function gundamProductCorroborationDiagnostics(
-  database: D1Database,
-  plans: readonly {
-    sourceObservationId: string;
-    sourceLineage: string;
-    supportedGame: SupportedGame;
-    observationKind: "card_printing" | "official_erratum";
-    printingId: string | null;
-    locator: string | null;
-    memberships: Memberships;
+function gundamLineagesByPrinting(
+  rows: readonly {
+    printing_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current?: number;
   }[],
-): Promise<Diagnostic[]> {
-  type Evidence = {
-    printingId: string;
-    sourceLineage: "gundam-en-asia" | "gundam-en-us";
-    sourceObservationIds: string[];
-    locators: string[];
-    products: Set<string>;
-  };
-  const grouped = new Map<string, Evidence>();
-  for (const plan of plans) {
-    if (
-      plan.supportedGame !== "gundam" ||
-      plan.observationKind !== "card_printing" ||
-      plan.printingId === null ||
-      (plan.sourceLineage !== "gundam-en-asia" &&
-        plan.sourceLineage !== "gundam-en-us")
-    ) {
-      continue;
-    }
-    const key = canonicalJson([plan.printingId, plan.sourceLineage]);
-    const evidence = grouped.get(key) ?? {
-      printingId: plan.printingId,
-      sourceLineage: plan.sourceLineage,
-      sourceObservationIds: [],
-      locators: [],
-      products: new Set<string>(),
-    };
-    evidence.sourceObservationIds.push(plan.sourceObservationId);
-    if (plan.locator !== null) evidence.locators.push(plan.locator);
-    plan.memberships.products.forEach((product) =>
-      evidence.products.add(product),
-    );
-    grouped.set(key, evidence);
+): Map<string, Set<"gundam-en-asia" | "gundam-en-us">> {
+  const grouped = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  for (const row of rows) {
+    addGundamLineage(grouped, row.printing_id, row.source_lineage);
   }
+  return grouped;
+}
 
-  const diagnostics: Diagnostic[] = [];
-  for (const evidence of grouped.values()) {
-    const counterpart = evidence.sourceLineage === "gundam-en-asia"
-      ? "gundam-en-us"
-      : "gundam-en-asia";
-    const counterpartKey = canonicalJson([
-      evidence.printingId,
-      counterpart,
-    ]);
-    const localCounterpart = grouped.get(counterpartKey);
-    if (
-      localCounterpart !== undefined &&
-      evidence.sourceLineage.localeCompare(counterpart) > 0
-    ) {
-      continue;
-    }
-    let counterpartProducts: readonly string[];
-    if (localCounterpart !== undefined) {
-      counterpartProducts = [...localCounterpart.products];
-    } else {
-      const hasPublishedCounterpart = await hasPrintingLocatorFromLineage(
-        database,
-        evidence.printingId,
-        counterpart,
-      );
-      if (!hasPublishedCounterpart) continue;
-      counterpartProducts = await currentPrintingProductsForLineage(
-        database,
-        evidence.printingId,
-        counterpart,
-      );
-    }
-    if (
-      counterpartProducts.some((product) => evidence.products.has(product))
-    ) {
-      continue;
-    }
-    diagnostics.push({
-      code: "printing_match_contradictory",
-      source_observation_id:
-        [...evidence.sourceObservationIds].sort()[0] ?? null,
-      locator: [...evidence.locators].sort()[0] ?? null,
-      candidate_printing_ids: [evidence.printingId],
-      detail:
-        "Cross-locale Gundam Printing evidence lacks shared Product corroboration.",
-    });
-  }
-  return diagnostics;
+function addGundamLineage(
+  grouped: Map<string, Set<"gundam-en-asia" | "gundam-en-us">>,
+  printingId: string,
+  sourceLineage: "gundam-en-asia" | "gundam-en-us",
+): void {
+  const lineages = grouped.get(printingId) ?? new Set();
+  lineages.add(sourceLineage);
+  grouped.set(printingId, lineages);
 }
 
 async function blockedResult(
