@@ -4583,6 +4583,7 @@ function normalizeFusionWorldSurface(
     if (!tabs.includes("available") || !tabs.includes("coming-soon")) {
       throw new Error("Fusion World Product tabs are incomplete.");
     }
+    requireFusionWorldProductStatusLeaves(raw.result, tabs);
     return normalizedSurfaceBody(
       normalizedPartitions(
         normalizePartitionEntries(raw.result, normalizeFusionWorldProduct),
@@ -4607,6 +4608,34 @@ function normalizeFusionWorldSurface(
     normalizedPolicy(raw, `fusion-world-${surface}`),
     ["publication", "revision", "declared_record_count", "partition", "entries"],
   );
+}
+
+function requireFusionWorldProductStatusLeaves(
+  value: unknown,
+  statuses: readonly string[],
+): void {
+  const result = requiredRecord(
+    value,
+    "Fusion World Product partition result",
+  );
+  const leaves = new Set(
+    requiredArray(
+      result.partitions,
+      "Fusion World Product status leaves",
+    ).map((item) =>
+      requiredText(
+        requiredRecord(item, "Fusion World Product status leaf").bucket,
+        "Fusion World Product status leaf identity",
+      )
+    ),
+  );
+  const missing = statuses.filter((status) => !leaves.has(status));
+  const unexpected = [...leaves].filter((status) => !statuses.includes(status));
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `Fusion World Product status leaves do not match the discovered tabs; missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"}.`,
+    );
+  }
 }
 
 function normalizeDigimonSurface(
@@ -4970,6 +4999,7 @@ function normalizeOnePieceDetails(value: unknown): unknown[] {
 function normalizeFusionWorldDetails(value: unknown): unknown[] {
   return requiredArray(value, "Fusion World Card details").map((item) => {
     const card = requiredRecord(item, "Fusion World Card detail");
+    validateFusionWorldDetailIdentity(card);
     const images = requiredArray(
       card.image_urls,
       "Fusion World Card images",
@@ -5014,6 +5044,32 @@ function normalizeFusionWorldDetails(value: unknown): unknown[] {
       imageFields: images,
     });
   });
+}
+
+function validateFusionWorldDetailIdentity(
+  card: Record<string, unknown>,
+): void {
+  const locator = requiredText(
+    card.detail_path,
+    "Fusion World full locator",
+  );
+  const cardNumber = requiredText(
+    card.card_number,
+    "Fusion World Card number",
+  );
+  const variant = requiredText(
+    card.variant,
+    "Fusion World variant suffix",
+  );
+  const expectedLocatorTail = variant === "base"
+    ? cardNumber
+    : `${cardNumber}${variant}`;
+  const locatorTail = locator.split("/").filter(Boolean).at(-1);
+  if (locatorTail !== expectedLocatorTail) {
+    throw new Error(
+      `Fusion World full locator ${locator} does not match Card number ${cardNumber} and variant ${variant}.`,
+    );
+  }
 }
 
 function normalizeDigimonDetails(value: unknown): unknown[] {
@@ -5432,7 +5488,9 @@ function parseRawDiscoverySurfaceFrozenV1(
   }
   const entries = completePartitionEntriesFrozenV1(
     surface.partitions,
-    format === "fusion-world" ? "detail" : null,
+    format === "fusion-world"
+      ? fusionWorldFullLocatorIdentity
+      : canonicalPartitionEntryIdentity,
   );
   const details = requiredArray(
     surface.details,
@@ -5627,9 +5685,29 @@ function rawCoverageObservationFrozenV1(
   };
 }
 
+type PartitionEntryIdentityStrategy = {
+  label: string;
+  identity(entry: unknown, canonical: string): string;
+};
+
+const canonicalPartitionEntryIdentity: PartitionEntryIdentityStrategy = {
+  label: "canonical entry",
+  identity: (_entry, canonical) => canonical,
+};
+
+const fusionWorldFullLocatorIdentity: PartitionEntryIdentityStrategy = {
+  label: "full locator",
+  identity: (entry) =>
+    requiredText(
+      requiredRecord(entry, "Fusion World partition entry").detail,
+      "Fusion World full locator",
+    ),
+};
+
 function completePartitionEntriesFrozenV1(
   value: unknown,
-  fullLocatorField: string | null = null,
+  identityStrategy: PartitionEntryIdentityStrategy =
+    canonicalPartitionEntryIdentity,
 ): unknown[] {
   const pages = requiredArray(
     value,
@@ -5699,20 +5777,15 @@ function completePartitionEntriesFrozenV1(
     }
     for (const entry of entries) {
       const canonical = JSON.stringify(stableValue(entry));
-      const identity = fullLocatorField === null
-        ? canonical
-        : requiredText(
-            requiredRecord(
-              entry,
-              "Official Source partition entry",
-            )[fullLocatorField],
-            "Official Source full locator",
-          );
+      const identity = identityStrategy.identity(entry, canonical);
       const prior = claimedEntries.get(identity);
       if (prior !== undefined) {
-        if (prior.bucket !== bucket && prior.canonical !== canonical) {
+        if (prior.canonical !== canonical) {
+          const location = prior.bucket === bucket
+            ? `within leaf partition ${bucket}`
+            : `between leaf partitions ${prior.bucket} and ${bucket}`;
           throw new Error(
-            `Official Source locator ${identity} conflicts between leaf partitions ${prior.bucket} and ${bucket}.`,
+            `Official Source ${identityStrategy.label} ${identity} conflicts ${location}.`,
           );
         }
         continue;

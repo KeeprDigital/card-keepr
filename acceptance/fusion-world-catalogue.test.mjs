@@ -3,14 +3,27 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
+import {
+  applyMigrations,
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const ingestionPort = 24_788;
 const apiPort = 24_789;
 const sourcePort = 24_790;
+const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
+const failClosedCases = [
+  "capped-leaf",
+  "mismatched-detail",
+  "missing-leader-face",
+  "conflicting-locator",
+];
 
 test("the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-fusion-world-"));
@@ -40,7 +53,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
             url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
             headers: {
               accept: "text/html",
-              "user-agent": "card-keepr-acceptance-fusion-world-issue-32",
+              "user-agent": fixtureMarker,
             },
           }],
         }],
@@ -95,6 +108,28 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
+  for (const [index, failureCase] of failClosedCases.entries()) {
+    await setPlanMarker(planPath, `${fixtureMarker}-${failureCase}`);
+    const rejectedCollection = await runCli([
+      "source", "collect", "--plan-file", planPath,
+      "--idempotency-key", `fusion-world-issue-32-reject-${index}`, "--json",
+    ], cliEnvironment);
+    assert.equal(rejectedCollection.code, 0, rejectedCollection.stderr);
+    const rejectedRunId = JSON.parse(rejectedCollection.stdout).id;
+    const rejectedResume = await runCli(
+      ["source", "resume", "--run-id", rejectedRunId, "--json"],
+      cliEnvironment,
+    );
+    assert.equal(rejectedResume.code, 0, rejectedResume.stderr);
+    const rejected = await waitForRunState(
+      rejectedRunId,
+      "failed",
+      cliEnvironment,
+      ingestion,
+    );
+    assert.equal(rejected.failure_code, "source_parse_failed", failureCase);
+  }
+  await setPlanMarker(planPath, fixtureMarker);
   const collected = await runCli([
     "source",
     "collect",
@@ -139,8 +174,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const firstRevisionId = JSON.parse(approved.stdout).resulting_revision_id;
 
   const errataPlan = JSON.parse(await readFile(planPath, "utf8"));
-  errataPlan.plans[0].requests[0].headers["user-agent"] =
-    "card-keepr-acceptance-fusion-world-issue-32-errata";
+  errataPlan.plans[0].requests[0].headers["user-agent"] = `${fixtureMarker}-errata`;
   await writeFile(planPath, JSON.stringify(errataPlan), { mode: 0o600 });
   const errataCollected = await runCli([
     "source", "collect", "--plan-file", planPath,
@@ -212,7 +246,17 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     ["cards-and-printings", "legality-rules", "products-and-releases"],
   );
 
-  const [cards, printings, images, products, releases, errata] =
+  const [
+    cards,
+    printings,
+    images,
+    products,
+    releases,
+    errata,
+    legalityRules,
+    distributionContexts,
+    relationships,
+  ] =
     await Promise.all([
       "cards",
       "printings",
@@ -220,14 +264,19 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "products",
       "releases",
       "errata",
+      "legality-rules",
+      "distribution-contexts",
+      "relationships",
     ].map((component) =>
       exportRecords(apiPort, apiKey, revisionId, component)
     ));
   assert.equal(cards.length, 1);
   assert.equal(printings.length, 1);
-  assert.equal(products.length, 1);
-  assert.equal(releases.length, 1);
+  assert.equal(products.length, 2);
+  assert.equal(releases.length, 2);
   assert.equal(errata.length, 1);
+  assert.equal(legalityRules.length, 2);
+  assert.equal(distributionContexts.length, 2);
 
   const card = cards[0];
   assert.equal(card.official_identity.value, "FB99-001");
@@ -268,15 +317,61 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     ["FB99-001_p2"],
   );
   assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "front"]);
-  assert.equal(products[0].official_code, "FB-RAW-01");
-  assert.equal(products[0].name, "Fusion World Raw Product");
-  assert.equal(releases[0].product_id, products[0].id);
-  assert.equal(releases[0].region, "EN-US");
-  assert.equal(releases[0].status, "released");
+  const availableProduct = products.find(
+    ({ official_code }) => official_code === "FB-RAW-01",
+  );
+  const comingSoonProduct = products.find(
+    ({ official_code }) => official_code === "FB-COMING-02",
+  );
+  assert.equal(availableProduct.name, "Fusion World Raw Product");
+  assert.equal(
+    comingSoonProduct.name,
+    "Fusion World Coming Soon Product",
+  );
+  assert.ok(releases.some(
+    ({ product_id, region, status }) =>
+      product_id === availableProduct.id &&
+      region === "EN-US" &&
+      status === "released",
+  ));
+  assert.ok(releases.some(
+    ({ product_id, region, status }) =>
+      product_id === comingSoonProduct.id &&
+      region === "EN-US" &&
+      status === "announced",
+  ));
+  assert.deepEqual(
+    legalityRules.map(({ official_id }) => official_id).sort(),
+    [
+      "fusion-world-current-fb99-001",
+      "fusion-world-history-fb99-001",
+    ],
+  );
+  assert.ok(legalityRules.every(({ card_ids }) =>
+    card_ids.length === 1 && card_ids[0] === card.id
+  ));
+  assert.ok(distributionContexts.some(
+    ({ product_id }) => product_id === comingSoonProduct.id,
+  ));
+  for (const kind of [
+    "printing-product",
+    "product-card",
+    "printing-distribution-context",
+    "distribution-context-product",
+    "legality-rule-card",
+  ]) {
+    assert.ok(relationships.some((relationship) => relationship.kind === kind));
+  }
   assert.equal(errata[0].target_id, card.id);
   assert.equal(errata[0].effective_from, "2026-07-15");
   assert.equal(errata[0].corrected_value, "Official corrected rules");
 });
+
+async function setPlanMarker(planPath, marker) {
+  const plan = JSON.parse(await readFile(planPath, "utf8"));
+  plan.plans[0].requests[0].headers["user-agent"] = marker;
+  await writeFile(planPath, JSON.stringify(plan), { mode: 0o600 });
+}
 
 async function exportRecords(port, apiKey, revisionId, component) {
   const response = await fetch(
@@ -290,38 +385,6 @@ async function exportRecords(port, apiKey, revisionId, component) {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
-}
-
-async function applyMigrations(statePath) {
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", "apps/ingestion/wrangler.jsonc", "--persist-to", statePath,
-    ],
-    { ...processEnvironment(statePath), CI: "1" },
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  let output = "";
-  const child = spawn(resolve(root, "node_modules/.bin/wrangler"), [
-    "dev", "--config", config,
-    ...(envFile === undefined ? [] : ["--env-file", envFile]),
-    "--local", "--ip", "127.0.0.1", "--port", String(port),
-    "--inspector-port", String(inspectorPort), "--persist-to", statePath,
-    "--log-level", "error", "--show-interactive-dev-session", "false",
-  ], {
-    cwd: root,
-    env: processEnvironment(statePath),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => output += chunk);
-  child.stderr.on("data", (chunk) => output += chunk);
-  return { process: child, getOutput: () => output };
 }
 
 async function waitForRunState(runId, expectedState, environment, worker) {
@@ -342,63 +405,4 @@ async function waitForRunState(runId, expectedState, environment, worker) {
   throw new Error(
     `Run did not reach ${expectedState}: ${JSON.stringify(last)}\n${worker.getOutput()}`,
   );
-}
-
-async function waitForHealth(url, key, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
-    try {
-      const response = await fetch(url, {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // The local Worker has not started accepting requests yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return runProcess(
-    process.execPath,
-    [resolve(root, "cli/keepr.mjs"), ...arguments_],
-    { ...processEnvironment("/tmp"), ...environment },
-  );
-}
-
-function runProcess(command, arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(command, arguments_, {
-      cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => stdout += chunk);
-    child.stderr.on("data", (chunk) => stderr += chunk);
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function processEnvironment(statePath) {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return { ...environment, WRANGLER_LOG_PATH: join(statePath, "logs") };
 }

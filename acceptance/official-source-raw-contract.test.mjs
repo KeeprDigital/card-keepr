@@ -1296,6 +1296,15 @@ test("historical production identities preserve their original JSON-LD observati
   for (const [adapterVersion, sourceLineage, digest] of golden) {
     const adapter = requiredSourceAdapter(adapterVersion);
     const surface = "products";
+    const payload = officialRawSurfacePayload(`/${sourceLineage}/${surface}`);
+    if (adapterVersion === "fusion-world-en@2") {
+      payload.result.partitions = [{
+        ...payload.result.partitions.find(
+          ({ bucket }) => bucket === "available",
+        ),
+        bucket: "all-products",
+      }];
+    }
     const publication = {
       "@context": "https://schema.org",
       "@type": "Dataset",
@@ -1303,7 +1312,7 @@ test("historical production identities preserve their original JSON-LD observati
       hasPart: [{
         "@type": "Dataset",
         identifier: `${sourceLineage}:${surface}`,
-        payload: officialRawSurfacePayload(`/${sourceLineage}/${surface}`),
+        payload,
       }],
     };
     const bytes = Buffer.from(
@@ -4298,6 +4307,63 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     () => parseRegisteredSurface(adapter, "card-search", overlapping),
     /locator.*conflicts between leaf partitions/iu,
   );
+
+  const conflictingWithinLeaf = rawSurfacePayload(
+    "fusion-world-en",
+    "card-search",
+  );
+  const conflictingEntry = structuredClone(
+    conflictingWithinLeaf.result.partitions[0].entries[0],
+  );
+  conflictingEntry.number = "FB99-999";
+  conflictingWithinLeaf.result.partitions[0].entries.push(conflictingEntry);
+  conflictingWithinLeaf.result.partitions[0].total = 2;
+  assert.throws(
+    () =>
+      parseRegisteredSurface(
+        adapter,
+        "card-search",
+        conflictingWithinLeaf,
+      ),
+    /full locator.*conflicts within leaf partition/iu,
+  );
+});
+
+test("Fusion World detail identity must match its exact requested locator", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const mismatched = rawSurfacePayload("fusion-world-en", "card-search");
+  mismatched.detail_pages[0].card_number = "FB99-999";
+
+  assert.throws(
+    () => parseRegisteredSurface(adapter, "card-search", mismatched),
+    /full locator.*card number.*FB99-999/iu,
+  );
+});
+
+test("Fusion World Products prove every available and coming-soon status leaf", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const complete = rawSurfacePayload("fusion-world-en", "products");
+  const available = complete.result.partitions[0];
+  available.bucket = "available";
+  const comingSoon = structuredClone(available);
+  comingSoon.bucket = "coming-soon";
+  comingSoon.total = 0;
+  comingSoon.entries = [];
+  complete.result.partitions = [available, comingSoon];
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(adapter, "products", complete),
+  );
+
+  for (const missingStatus of ["available", "coming-soon"]) {
+    const incomplete = structuredClone(complete);
+    incomplete.result.partitions = incomplete.result.partitions.filter(
+      ({ bucket }) => bucket !== missingStatus,
+    );
+    assert.throws(
+      () => parseRegisteredSurface(adapter, "products", incomplete),
+      new RegExp(`Product status leaves.*${missingStatus}`, "iu"),
+    );
+  }
 });
 
 function rawSurfacePayload(lineage, surface) {

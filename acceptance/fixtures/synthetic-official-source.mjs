@@ -851,7 +851,20 @@ export function officialRawSurfacePayload(pathname) {
       return {
         view: "products",
         status_tabs: ["available", "coming-soon"],
-        result,
+        result: {
+          ...result,
+          partitions: [
+            { ...result.partitions[0], bucket: "available" },
+            {
+              bucket: "coming-soon",
+              page: 1,
+              pages: 1,
+              total: 0,
+              has_next: false,
+              entries: [],
+            },
+          ],
+        },
       };
     }
     if (lineage === "digimon-en") {
