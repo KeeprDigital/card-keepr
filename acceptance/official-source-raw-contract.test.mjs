@@ -252,10 +252,14 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
 
 test("Digimon V4 parses every retained live popup Card and Printing at an exact leaf", () => {
   const adapter = requiredSourceAdapter("digimon-en@4");
-  const bytes = readFileSync(new URL(
+  const retained = readFileSync(new URL(
     "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
     import.meta.url,
-  ));
+  ), "utf8");
+  const bytes = Buffer.from(
+    '<div class="resultTxt">Result<span class="num">2</span>cards</div>' +
+      retained,
+  );
   const observations = adapter.parseBytes(bytes, {
     mediaType: "text/html; charset=UTF-8",
     url:
@@ -280,8 +284,8 @@ test("Digimon V4 parses every retained live popup Card and Printing at an exact 
         structurally_complete: true,
         required_surfaces_complete: true,
         partitions_complete: true,
-        declared_record_count: 2,
-        parsed_record_count: 2,
+        declared_record_count: 1,
+        parsed_record_count: 1,
       },
       card: {
         game: "digimon",
@@ -408,6 +412,166 @@ test("Digimon V4 rejects a retained live leaf whose declared Card count exceeds 
       requestId: `digimon-en:listing:${"d".repeat(64)}`,
     }),
     /declared and parsed.*differ/iu,
+  );
+});
+
+test("Digimon V4 requires an exact result count for every complete live leaf", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Option&color=Blue",
+    requestId: `digimon-en:listing:${"e".repeat(64)}`,
+  };
+
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode("<html><main>No cards found.</main></html>"),
+      context,
+    ),
+    /result count.*(?:missing|required|unavailable)/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        '<div class="resultTxt">Result<span class="num">1</span>card</div>',
+      ),
+      context,
+    ),
+    /declared and parsed.*differ/iu,
+  );
+  const [emptyLeaf] = adapter.parseBytes(
+    new TextEncoder().encode(
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    ),
+    context,
+  );
+  assert.deepEqual(emptyLeaf.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
+});
+
+test("Digimon V4 maps exact publisher Card Types with type-specific level nullability", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const secondRecord = retained.indexOf(
+    '<li class="image_lists_item data page-1">',
+    1,
+  );
+  assert.notEqual(secondRecord, -1);
+  const singleRecord = retained.slice(0, secondRecord);
+  const parseType = (
+    publisherType,
+    { level = true, leafType = publisherType } = {},
+  ) => {
+    let popup = singleRecord.replace(
+      /<li class="cardType">\s*Digimon\s*<\/li>/u,
+      `<li class="cardType">${publisherType}</li>`,
+    );
+    if (!level) {
+      popup = popup.replace(
+        /\s*<li class="cardLv">\s*Lv\.3\s*<\/li>/u,
+        "",
+      );
+    }
+    const query = new URLSearchParams({
+      search: "true",
+      category: "522037",
+      cardcategory: leafType,
+      color: "Blue",
+    });
+    return adapter.parseBytes(
+      new TextEncoder().encode(
+        '<div class="resultTxt">Result<span class="num">1</span>card</div>' +
+          popup,
+      ),
+      {
+        mediaType: "text/html; charset=UTF-8",
+        url: `https://world.digimoncard.com/cards/index.php?${query}`,
+        requestId: `digimon-en:listing:${"f".repeat(64)}`,
+      },
+    )[0];
+  };
+
+  assert.deepEqual(
+    [
+      ["Digi-Egg", true],
+      ["Digimon", true],
+      ["Tamer", false],
+      ["Option", false],
+      ["Digimon/Option", true],
+    ].map(([publisherType, level]) => {
+      const observation = parseType(publisherType, { level });
+      return [
+        observation.card.game_data.attributes.card_type,
+        observation.card.game_data.attributes.level,
+      ];
+    }),
+    [
+      ["digi_egg", 3],
+      ["digimon", 3],
+      ["tamer", null],
+      ["option", null],
+      ["digimon_option", 3],
+    ],
+  );
+  assert.throws(
+    () => parseType("Future Card", { leafType: "Digimon" }),
+    /Card type.*unknown/iu,
+  );
+  assert.equal(
+    parseType("Option", { level: true }).card.game_data.attributes.level,
+    3,
+  );
+  assert.equal(
+    parseType("Digimon", { level: false }).card.game_data.attributes.level,
+    null,
+  );
+  const normalizedObservation = parseType("  dIgImOn/OpTiOn  ", {
+    leafType: " DIGIMON/OPTION ",
+  });
+  const normalizedType = normalizedObservation.card.game_data.attributes;
+  assert.deepEqual(
+    [normalizedType.card_type, normalizedType.level],
+    ["digimon_option", 3],
+  );
+  assert.deepEqual(
+    normalizedObservation.source_sidecar.raw.official_surfaces[0].document,
+    {
+      popup_id: "EX12-021",
+      publisher_card_type: "dIgImOn/OpTiOn",
+      publisher_level: "Lv.3",
+      leaf_cardcategory: " DIGIMON/OPTION ",
+      card_qa: [],
+    },
+  );
+  assert.throws(
+    () => {
+      const mismatched = singleRecord.replace(
+        /<li class="cardType">\s*Digimon\s*<\/li>/u,
+        '<li class="cardType">Option</li>',
+      ).replace(/\s*<li class="cardLv">\s*Lv\.3\s*<\/li>/u, "");
+      adapter.parseBytes(
+        new TextEncoder().encode(
+          '<div class="resultTxt">Result<span class="num">1</span>card</div>' +
+            mismatched,
+        ),
+        {
+          mediaType: "text/html; charset=UTF-8",
+          url:
+            "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+          requestId: `digimon-en:listing:${"0".repeat(64)}`,
+        },
+      );
+    },
+    /Card Type.*leaf.*cardcategory/iu,
   );
 });
 
