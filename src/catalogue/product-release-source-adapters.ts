@@ -1139,10 +1139,118 @@ function htmlAttribute(attributes: string, name: string): string | null {
 }
 
 function hasHtmlClassToken(attributes: string, token: string): boolean {
-  return (htmlAttribute(attributes, "class") ?? "")
+  return (attributes.match(
+    /(?:^|\s)class\s*=\s*["']([^"']+)["']/iu,
+  )?.[1] ?? "")
     .trim()
     .split(/\s+/u)
     .includes(token);
+}
+
+const htmlVoidElements = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function visibleFusionPublisherCountMarkup(html: string): string {
+  const output: string[] = [];
+  const stack: { hidden: boolean; tagName: string }[] = [];
+  let cursor = 0;
+  const currentlyHidden = () => stack.at(-1)?.hidden ?? false;
+
+  while (cursor < html.length) {
+    if (html.startsWith("<!--", cursor)) {
+      const commentEnd = html.indexOf("-->", cursor + 4);
+      if (commentEnd === -1) break;
+      cursor = commentEnd + 3;
+      continue;
+    }
+    if (html[cursor] !== "<") {
+      const nextTag = html.indexOf("<", cursor);
+      const textEnd = nextTag === -1 ? html.length : nextTag;
+      if (!currentlyHidden()) output.push(html.slice(cursor, textEnd));
+      cursor = textEnd;
+      continue;
+    }
+
+    const tagEnd = htmlTagEnd(html, cursor);
+    if (tagEnd === null) break;
+    const tag = html.slice(cursor, tagEnd + 1);
+    const parsedTag = tag.match(
+      /^<\s*(\/?)\s*([a-z][a-z0-9:-]*)([\s\S]*?)(\/?)\s*>$/iu,
+    );
+    if (parsedTag === null) {
+      if (!currentlyHidden()) output.push(tag);
+      cursor = tagEnd + 1;
+      continue;
+    }
+
+    const closing = parsedTag[1] === "/";
+    const tagName = parsedTag[2]!.toLowerCase();
+    if (closing) {
+      let frameIndex = stack.length - 1;
+      while (frameIndex >= 0 && stack[frameIndex]!.tagName !== tagName) {
+        frameIndex -= 1;
+      }
+      const closingHidden = frameIndex >= 0
+        ? stack[frameIndex]!.hidden
+        : currentlyHidden();
+      if (!closingHidden) output.push(tag);
+      if (frameIndex >= 0) stack.splice(frameIndex);
+      cursor = tagEnd + 1;
+      continue;
+    }
+
+    const attributes = parsedTag[3]!;
+    const inert = tagName === "script" || tagName === "style" ||
+      tagName === "template";
+    if (inert) {
+      const closingTag = new RegExp(`</${tagName}\\s*>`, "giu");
+      closingTag.lastIndex = tagEnd + 1;
+      const inertEnd = closingTag.exec(html);
+      if (inertEnd === null) break;
+      cursor = inertEnd.index + inertEnd[0].length;
+      continue;
+    }
+    const hidden = currentlyHidden() ||
+      /(?:^|\s)hidden(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?(?=\s|$)/iu
+        .test(attributes);
+    if (!hidden) output.push(tag);
+    if (parsedTag[4] !== "/" && !htmlVoidElements.has(tagName)) {
+      stack.push({ hidden, tagName });
+    }
+    cursor = tagEnd + 1;
+  }
+  return output.join("");
+}
+
+function htmlTagEnd(html: string, openingIndex: number): number | null {
+  let quote: "\"" | "'" | null = null;
+  for (let index = openingIndex + 1; index < html.length; index += 1) {
+    const character = html[index]!;
+    if (quote !== null) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ">") return index;
+  }
+  return null;
 }
 
 function dynamicRequestRole(
@@ -4289,9 +4397,7 @@ function parseBandaiSurfaceCoverageByContract(
     fusionWorldCompleteListingLeaf(new URL(url));
   const fusionListingCountMarkup = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
-    ? html
-      .replace(/<!--[\s\S]*?-->/gu, "")
-      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/giu, "")
+    ? visibleFusionPublisherCountMarkup(html)
     : "";
   const fusionListingResultCountOpenings = catalogueComplete &&
       format === "fusion-world" && surface === "listing"

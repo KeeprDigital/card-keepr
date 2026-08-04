@@ -4196,11 +4196,62 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
       ),
     );
   }
+  for (const unterminatedHiddenTotal of [
+    `<!--${exactTotal}`,
+    `<script type="text/template">${exactTotal}`,
+    `<style>${exactTotal}`,
+  ]) {
+    const hiddenThroughEof = exactEmpty.replace(
+      exactTotal,
+      unterminatedHiddenTotal,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenThroughEof),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenThroughEof),
+        context,
+      ),
+    );
+  }
+  for (const structurallyHiddenTotal of [
+    `<template>${exactTotal}</template>`,
+    `<section hidden>${exactTotal}</section>`,
+    exactTotal.replace(
+      'class="resultTxt"',
+      'class="resultTxt" hidden',
+    ),
+  ]) {
+    const hiddenOnly = exactEmpty.replace(exactTotal, structurallyHiddenTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${structurallyHiddenTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+  }
   for (const inexactClass of [
     exactEmpty.replace('class="resultTxt"', 'class="not-resultTxt"'),
     exactEmpty.replace('class="resultTxt"', 'class="resultTxt-extra"'),
     exactEmpty.replace('class="num"', 'class="not-num"'),
     exactEmpty.replace('class="num"', 'class="num-extra"'),
+    exactEmpty.replace('class="resultTxt"', 'data-class="resultTxt"'),
+    exactEmpty.replace('class="num"', 'data-class="num"'),
   ]) {
     assert.throws(
       () => current.parseBytes(
