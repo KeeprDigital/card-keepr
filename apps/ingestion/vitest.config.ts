@@ -2313,8 +2313,10 @@ function reconciliationSourceDocument(
   if (
     scenario === "dedicated-printing-erratum" ||
     scenario === "dedicated-printing-erratum-ambiguous" ||
-    scenario === "dedicated-printing-erratum-missing"
+    scenario === "dedicated-printing-erratum-missing" ||
+    scenario === "dedicated-card-nonparallel-erratum"
   ) {
+    const nonParallelCard = scenario === "dedicated-card-nonparallel-erratum";
     const locator = scenario === "dedicated-printing-erratum"
       ? "/official/dedicated-multi/base"
       : scenario === "dedicated-printing-erratum-ambiguous"
@@ -2324,16 +2326,24 @@ function reconciliationSourceDocument(
       cards: [{
         kind: "official_erratum",
         game: "one-piece",
-        target: {
-          type: "printing",
-          official_identity: {
-            kind: "card_number",
-            value: scenario === "dedicated-printing-erratum"
-              ? "OP05-006"
-              : "OP05-005",
-          },
-          locator,
-        },
+        target: nonParallelCard
+          ? {
+              type: "card",
+              official_identity: {
+                kind: "card_number",
+                value: "OP05-006",
+              },
+            }
+          : {
+              type: "printing",
+              official_identity: {
+                kind: "card_number",
+                value: scenario === "dedicated-printing-erratum"
+                  ? "OP05-006"
+                  : "OP05-005",
+              },
+              locator,
+            },
         published_on: "2026-07-31",
         effective_from: null,
         observed_printed_rules_text: "Official printed rules",
@@ -2343,12 +2353,13 @@ function reconciliationSourceDocument(
         applies_to_parallel_printings: false,
         source: {
           fragment: "#errata_fixture_printing",
-          display_name: scenario === "dedicated-printing-erratum"
+          display_name: scenario === "dedicated-printing-erratum" ||
+              nonParallelCard
             ? "OP05-006 Dedicated Printing Erratum Card"
             : "OP05-005 Multiple Printing Card",
           image_url:
             `https://en.onepiece-cardgame.com/images/rules/cards/${
-              scenario === "dedicated-printing-erratum"
+              scenario === "dedicated-printing-erratum" || nonParallelCard
                 ? "OP05-006"
                 : "OP05-005"
             }.png`,

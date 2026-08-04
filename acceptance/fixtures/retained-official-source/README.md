@@ -1,7 +1,7 @@
 # Retained Bandai Official Source bytes
 
 These fixtures were captured from the public URLs recorded in each JSON file
-on 2026-08-03 Australia/Melbourne time. `body_base64` is either the complete
+through 2026-08-04 Australia/Melbourne time. `body_base64` is either the complete
 unchanged HTTP response body (`range_start = 0` and
 `range_end_exclusive = full_body_size`) or an unchanged byte range containing
 the complete publisher `<header>`. Range fixtures record their offsets, the
@@ -14,6 +14,11 @@ returns 404. Its complete response is retained as explicit negative evidence;
 the current publisher-linked Rules page is retained separately. These files
 are evidence snapshots, not synthetic success envelopes and not rewritten
 HTML examples.
+
+`one-piece-en-card-list.json` retains the complete live one-result Card List
+response for the publisher's `series=569001&freewords=ST01-001` query. It
+preserves the literal `<select name="series" id="series">` vocabulary, the
+inline Card detail, and its discoverable Printing image.
 
 `digimon-en-card-list-popup-fragment.html` retains the two complete adjacent
 `EX12-021` and `EX12-021_P1` publisher popup records captured on 2026-08-04

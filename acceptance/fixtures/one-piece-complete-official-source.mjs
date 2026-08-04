@@ -12,7 +12,7 @@ export function onePieceCompleteOfficialSourceResponse(request) {
   const role = request.headers.get("user-agent")?.match(
     /(?:^|;\s*)request-role=([a-z_]+)(?:;|$)/u,
   )?.[1] ?? null;
-  const recording = url.searchParams.get("recording");
+  const recording = url.searchParams.get("series");
   const isCompleteRecordingLeaf = role === "listing" &&
     ["2201", "2202"].includes(recording);
 
@@ -61,7 +61,7 @@ function recordingLeaf(recording) {
     : [liveCard("OP31-001"), liveCard("OP31-002")];
   return new Response(
     `<html><title>BANDAI ONE PIECE CARD LIST</title>
-      <select id="recording"><option value="${recording}">Recording ${recording}</option></select>
+      <select name="series" id="series"><option value="${recording}">Recording ${recording}</option></select>
       <div class="countCol">${cards.length} results</div>${cards.join("")}
     </html>`,
     {
@@ -76,7 +76,7 @@ function recordingLeaf(recording) {
 function cardListRoot() {
   return new Response(
     `<html><title>BANDAI ONE PIECE CARD LIST</title>
-      <select id="recording">
+      <select name="series" id="series">
         <option value="2201">Starter Recording</option>
         <option value="2202">Booster Recording</option>
       </select>
@@ -284,7 +284,7 @@ function cardList() {
 
 function visibleCardListVocabulary(surface) {
   if (surface !== "card-list") return "";
-  return `<select id="recording">
+  return `<select name="series" id="series">
     <option value="2201">Starter Recording</option>
     <option value="2202">Booster Recording</option>
   </select>`;

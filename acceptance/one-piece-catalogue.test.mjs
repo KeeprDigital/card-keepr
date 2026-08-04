@@ -116,17 +116,17 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   );
   assert.ok(
     ready.snapshots.some(({ request }) =>
-      new URL(request.url).searchParams.get("recording") === "2201"
+      new URL(request.url).searchParams.get("series") === "2201"
     ),
   );
   assert.ok(
     ready.snapshots.some(({ request }) =>
-      new URL(request.url).searchParams.get("recording") === "2202"
+      new URL(request.url).searchParams.get("series") === "2202"
     ),
   );
   for (const [recording, expectedCount] of [["2201", 1], ["2202", 2]]) {
     const snapshot = ready.snapshots.find(({ request }) =>
-      new URL(request.url).searchParams.get("recording") === recording
+      new URL(request.url).searchParams.get("series") === recording
     );
     const observationSet = ready.observation_sets.find(
       ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,

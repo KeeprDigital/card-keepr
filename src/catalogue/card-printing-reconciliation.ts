@@ -179,7 +179,8 @@ export async function reconcileRetainedCardPrintingEvidence(
       { kind: "official_erratum" }
     > =>
       observation.kind === "official_erratum" &&
-      observation.target.type === "card",
+      observation.target.type === "card" &&
+      observation.appliesToParallelPrintings,
   );
 
   for (const observation of retained.observations) {
@@ -645,6 +646,20 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     if (observation.kind !== "official_erratum") continue;
+    if (
+      observation.target.type === "card" &&
+      !observation.appliesToParallelPrintings
+    ) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.sourceFragment,
+        candidate_printing_ids: [],
+        detail:
+          "A non-parallel Official Erratum must target exactly one Printing.",
+      });
+      continue;
+    }
     const matchingCards = [...new Map(
       [...cards.values(), ...(priorCandidate?.cards ?? [])]
         .filter(

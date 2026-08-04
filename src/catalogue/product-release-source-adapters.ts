@@ -328,6 +328,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.sourceLineage,
               version.requiredSurfaces,
               version.urls,
+              version.expandedOnePieceCatalogue,
               version.catalogueComplete,
               version.completeDigimonCatalogue,
             )
@@ -627,6 +628,7 @@ function bandaiRequestDiscovery(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
@@ -712,7 +714,12 @@ function bandaiRequestDiscovery(
       dynamicRole === "listing"
     ) {
       candidates.push(
-        ...discoveredPartitionRequests(format, discoveryHtml, current).map(
+        ...discoveredPartitionRequests(
+          format,
+          discoveryHtml,
+          current,
+          expandedOnePieceCatalogue,
+        ).map(
           (url) => ({
             role: "listing" as const,
             url,
@@ -831,6 +838,7 @@ function discoveredPartitionRequests(
   format: DiscoveryFormat,
   html: string,
   current: URL,
+  expandedOnePieceCatalogue = false,
 ): string[] {
   const facets = [...html.matchAll(
     /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
@@ -858,7 +866,12 @@ function discoveredPartitionRequests(
     .filter(
       (entry): entry is { key: string; options: string[] } => entry !== null,
     );
-  const stage = nextPartitionFacet(format, facets, current);
+  const stage = nextPartitionFacet(
+    format,
+    facets,
+    current,
+    expandedOnePieceCatalogue,
+  );
   if (stage === null) return [];
   return stage.options.map((value) => {
     const url = new URL(current);
@@ -917,11 +930,14 @@ function nextPartitionFacet(
   format: DiscoveryFormat,
   facets: readonly { key: string; options: string[] }[],
   current: URL,
+  expandedOnePieceCatalogue = false,
 ): { key: string; options: string[] } | null {
   const find = (keys: readonly string[]) =>
     facets.find(({ key }) => keys.includes(key)) ?? null;
   if (format === "one-piece") {
-    const recording = find(["recording"]);
+    const recording = find([
+      expandedOnePieceCatalogue ? "series" : "recording",
+    ]);
     if (recording === null || current.searchParams.has(recording.key)) {
       return null;
     }
@@ -1544,7 +1560,7 @@ function bandaiSnapshotDecoder(
       profile.expandedOnePieceCatalogue === true &&
       format === "one-piece" &&
       dynamicRole === "listing" &&
-      /^\d+$/u.test(new URL(context.url).searchParams.get("recording") ?? "");
+      /^\d+$/u.test(new URL(context.url).searchParams.get("series") ?? "");
     const isStructurallyEmptyFusionErrata =
       profile.catalogueComplete === true &&
       format === "fusion-world" &&
@@ -2781,9 +2797,13 @@ function parseOnePieceBandaiCardListV1(
   requestUrl: string,
   expandedOnePieceCatalogue = false,
 ): ParsedBandaiSurface {
-  const recordingSelect = html.match(
-    /<select\b[^>]*\b(?:id|name)=["']recording["'][^>]*>([\s\S]*?)<\/select>/iu,
-  );
+  const recordingSelect = expandedOnePieceCatalogue
+    ? html.match(
+        /<select\b[^>]*\b(?:id|name)=["']series["'][^>]*>([\s\S]*?)<\/select>/iu,
+      )
+    : html.match(
+        /<select\b[^>]*\b(?:id|name)=["']recording["'][^>]*>([\s\S]*?)<\/select>/iu,
+      );
   if (recordingSelect === null) {
     throw new Error("One Piece Card List Recording discovery is unavailable.");
   }
@@ -2814,7 +2834,12 @@ function parseOnePieceBandaiCardListV1(
     );
   }
   const base = new URL(requestUrl);
-  const recording = base.searchParams.get("recording");
+  const recordingKey = expandedOnePieceCatalogue ? "series" : "recording";
+  const recordingValues = base.searchParams.getAll(recordingKey);
+  if (expandedOnePieceCatalogue && recordingValues.length > 1) {
+    throw new Error("One Piece Card List Recording identity is duplicated.");
+  }
+  const recording = recordingValues[0] ?? null;
   if (recording !== null && !/^\d+$/u.test(recording)) {
     throw new Error("One Piece Card List Recording identity is invalid.");
   }

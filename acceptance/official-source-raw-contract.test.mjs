@@ -521,7 +521,7 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[23]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[234]T/u);
   return { bytes, metadata };
 }
 
@@ -580,6 +580,80 @@ test("retained live One Piece policy bytes publish the complete current active l
         effective_from: "2026-04-10",
       },
     ],
+  );
+});
+
+test("retained live One Piece Card List series maps exactly once into Recording vocabulary", () => {
+  const current = requiredSourceAdapter("one-piece-en@3");
+  const historical = requiredSourceAdapter("one-piece-en@2");
+  const fixture = retainedOfficialSourceFixture("one-piece-en-card-list");
+  const rootUrl = current.requestUrlForSurface("card-list");
+  const rootContext = {
+    mediaType: fixture.metadata.content_type,
+    url: rootUrl,
+    requestId: "one-piece-en:card-list",
+  };
+  const rootObservations = current.parseBytes(fixture.bytes, rootContext);
+  const recordingOptions = rootObservations[0].source_sidecar.raw
+    .official_surfaces[0].document.recording_options;
+  const listings = current.discoverRequests(fixture.bytes, rootContext)
+    .filter(({ role }) => role === "listing");
+  const discoveredSeries = listings.map(({ url }) => {
+    const discovered = new URL(url);
+    assert.deepEqual([...discovered.searchParams.keys()], ["series"]);
+    return discovered.searchParams.get("series");
+  });
+  assert.deepEqual(
+    discoveredSeries,
+    recordingOptions.map(({ value }) => value).sort(),
+  );
+  assert.equal(new Set(discoveredSeries).size, discoveredSeries.length);
+  assert.equal(discoveredSeries.filter((value) => value === "569001").length, 1);
+
+  const leafContext = {
+    ...rootContext,
+    url: fixture.metadata.effective_url,
+    requestId: `one-piece-en:listing:${"c".repeat(64)}`,
+  };
+  const leaf = current.parseBytes(fixture.bytes, leafContext);
+  assert.equal(leaf.length, 1);
+  assert.equal(leaf[0].card.official_identity.value, "ST01-001");
+  assert.deepEqual(leaf[0].memberships.source_buckets, ["recording:569001"]);
+  assert.deepEqual(leaf[0].completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 1,
+    parsed_record_count: 1,
+  });
+  const leafRequests = current.discoverRequests(fixture.bytes, leafContext);
+  assert.equal(leafRequests.filter(({ role }) => role === "listing").length, 0);
+  assert.deepEqual(
+    leafRequests.filter(({ role, url }) =>
+      role === "image" && new URL(url).pathname.includes("/cardlist/card/")
+    ).map(({ url }) => url),
+    [
+      "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-001.png?260731",
+    ],
+  );
+
+  assert.throws(
+    () => historical.parseBytes(fixture.bytes, rootContext),
+    /Card List Recording discovery is unavailable/iu,
+  );
+  const unknownVocabulary = Buffer.from(
+    fixture.bytes.toString("utf8")
+      .replace('name="series"', 'name="edition"')
+      .replace('id="series"', 'id="edition"'),
+  );
+  assert.throws(
+    () => current.parseBytes(unknownVocabulary, rootContext),
+    /Card List Recording discovery is unavailable/iu,
+  );
+  assert.equal(
+    current.discoverRequests(unknownVocabulary, rootContext)
+      .filter(({ role }) => role === "listing").length,
+    0,
   );
 });
 
@@ -3338,7 +3412,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   ]);
   const expandedRecording = adapter.parseBytes(bytes, {
     mediaType: "text/html; charset=utf-8",
-    url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
+    url: "https://en.onepiece-cardgame.com/cardlist/?series=569114",
     requestId: `one-piece-en:listing:${"b".repeat(64)}`,
   });
   assert.deepEqual(expandedRecording[0].memberships.source_buckets, [
@@ -3351,7 +3425,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       requestId: "one-piece-en:card-list",
     }).some(({ role, url }) =>
       role === "listing" &&
-      new URL(url).searchParams.get("recording") === "569114"
+      new URL(url).searchParams.get("series") === "569114"
     ),
   );
 });
@@ -3761,9 +3835,6 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   const onePieceRequests = onePiece.discoverRequests(
     encode(`
       <select id="series">
-        <option value="set-a">A</option><option value="set-b">B</option>
-      </select>
-      <select id="recording">
         <option value="101">A</option><option value="102">B</option>
       </select>
     `),
@@ -3775,7 +3846,7 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   ).filter(({ role }) => role === "listing");
   assert.deepEqual(
     onePieceRequests.map(({ url }) => new URL(url).searchParams.toString()),
-    ["recording=101", "recording=102"],
+    ["series=101", "series=102"],
   );
 
   const fusion = byLineage("fusion-world-en");
