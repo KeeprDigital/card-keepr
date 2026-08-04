@@ -1815,7 +1815,7 @@ test("complete image evidence publishes an unidentified artwork once without col
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@3",
+      adapter_version: "digimon-en@4",
       idempotency_key: `digimon-artwork-digest-${variant}`,
       requests,
     });
@@ -5140,7 +5140,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@3",
+    adapter_version: "digimon-en@4",
     idempotency_key: `registered-product-fuzzy-${crypto.randomUUID()}`,
     requests,
   });

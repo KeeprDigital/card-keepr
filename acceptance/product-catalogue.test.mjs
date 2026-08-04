@@ -45,7 +45,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
         ],
       }),
       { mode: 0o600 },
@@ -54,7 +54,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
           officialPlan(
             "one-piece",
             "one-piece-en",
@@ -268,11 +268,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@3",
+          "digimon-en@4",
         ).requests.map(({ id }) => id),
       },
       {

@@ -491,6 +491,7 @@ export async function retainedReconciliationObservation(
           parsed,
           requiredSourceAdapter(row.adapter_version)
             .reconciliationCapability,
+          row.adapter_version,
         );
         merged.push({
           ...parsed,
@@ -1282,10 +1283,12 @@ function assertObservationAuthority(
   coverage: ReturnType<
     typeof requiredSourceAdapter
   >["reconciliationCapability"],
+  adapterVersion: string,
 ): void {
-  const errataOnly = coverage === "errata";
   if (
-    (observation.kind === "official_erratum") !== errataOnly ||
+    (observation.kind === "official_erratum" &&
+      coverage !== "errata" && adapterVersion !== "digimon-en@4") ||
+    (observation.kind === "card_printing" && coverage === "errata") ||
     (observation.kind === "card_printing" &&
       observation.errata.length > 0 &&
       coverage !== "catalogue")

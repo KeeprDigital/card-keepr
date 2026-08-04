@@ -169,12 +169,115 @@ const productionAdapterVersions = sourceAdapterRegistrations
   .map(({ adapterVersion }) => adapterVersion);
 
 const expectedProductionAdapterVersions = [
-  "digimon-en@3",
+  "digimon-en@4",
   "fusion-world-en@3",
   "gundam-en-asia@3",
   "gundam-en-us@3",
   "one-piece-en@2",
 ];
+
+test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue facts above a leaf", () => {
+  const current = requiredSourceAdapter("digimon-en@4");
+  const retained = requiredSourceAdapter("digimon-en@3");
+  const payload = officialRawSurfacePayload("/digimon-en/card-list");
+  const document = (value) => Buffer.from(
+    `<html>${officialPublisherPayloadScript("digimon-en", "card-list", value)}</html>`,
+  );
+  const requestId = `digimon-en:listing:${"a".repeat(64)}`;
+  const exactLeaf =
+    "https://world.digimoncard.com/cards/index.php?search=true&category=all&cardcategory=digimon&colour=blue";
+  const intermediate =
+    "https://world.digimoncard.com/cards/index.php?search=true&category=all";
+
+  assert.throws(
+    () => retained.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: exactLeaf,
+      requestId,
+    }),
+    /listing|surface|publication|publisher|identity|contract/iu,
+    "V3 must preserve its original dynamic-listing decoder behavior",
+  );
+  assert.ok(current.parseBytes(document(payload), {
+    mediaType: "text/html",
+    url: exactLeaf,
+    requestId,
+  }).length > 0);
+  assert.throws(
+    () => current.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: intermediate,
+      requestId,
+    }),
+    /complete Digimon leaf/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: current.requestUrlForDiscovery(),
+      requestId: "digimon-en:discovery",
+    }),
+    /complete Digimon leaf/iu,
+  );
+});
+
+test("Digimon V4 normalizes exact standalone Official Errata", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const payload = officialRawSurfacePayload("/digimon-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    card_number: "BT99-001",
+    published_on: "2026-07-01",
+    effective_from: "2026-07-01",
+    observed_printed_rules_text: "Printed effect before correction.",
+    corrected_rules_text: "Corrected official effect.",
+    official_wording:
+      'Replace "Printed effect before correction." with "Corrected official effect."',
+    applies_to_parallel_printings: true,
+    source_fragment: "#BT99-001",
+    display_name: "BT99-001 Erratum",
+    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+  }];
+  const observations = adapter.parseBytes(
+    Buffer.from(`<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "digimon-en:errata",
+    },
+  );
+  assert.deepEqual(
+    observations.filter(({ kind }) => kind === "official_erratum"),
+    [{
+      kind: "official_erratum",
+      game: "digimon",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: "BT99-001" },
+      },
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Printed effect before correction.",
+      corrected_rules_text: "Corrected official effect.",
+      official_wording:
+        'Replace "Printed effect before correction." with "Corrected official effect."',
+      applies_to_parallel_printings: true,
+      source: {
+        fragment: "#BT99-001",
+        display_name: "BT99-001 Erratum",
+        image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    }],
+  );
+});
 
 function registeredProductionAdapters() {
   return productionAdapterVersions.map((adapterVersion) =>
@@ -1029,7 +1132,9 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.match(
       adapter.parserContract,
-      /-raw-surfaces-with-legality@2$/u,
+      adapter.adapterVersion === "digimon-en@4"
+        ? /-raw-surfaces-complete-catalogue@3$/u
+        : /-raw-surfaces-with-legality@2$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -1283,6 +1388,31 @@ test("historical production adapter identities remain exact lookup-only contract
     assert.equal(typeof adapter.parseBytes, "function");
     assert.ok(!productionAdapterVersions.includes(adapterVersion));
   }
+});
+
+test("Digimon V3 remains installed with its immutable parser digest for retained reparses", () => {
+  const adapter = requiredSourceAdapter("digimon-en@3");
+  assert.equal(adapter.parserContract, "digimon-en-raw-surfaces-with-legality@2");
+  assert.ok(!productionAdapterVersions.includes(adapter.adapterVersion));
+  const surface = "products";
+  const observations = adapter.parseBytes(
+    Buffer.from(
+      `<html>${officialPublisherPayloadScript(
+        "digimon-en",
+        surface,
+        officialRawSurfacePayload(`/digimon-en/${surface}`),
+      )}</html>`,
+    ),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface(surface),
+      requestId: `digimon-en:${surface}`,
+    },
+  );
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(observations)).digest("hex"),
+    "a57968449b6be5a130d46424893680d38b1066eaa326d9ed82a51b422aefbee2",
+  );
 });
 
 test("historical production identities preserve their original JSON-LD observation bytes", () => {
@@ -4302,6 +4432,8 @@ function rawSurfacePayload(lineage, surface) {
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {
+  const completeDigimonLeaf =
+    adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
@@ -4313,8 +4445,12 @@ function parseRegisteredSurface(adapter, surface, payload) {
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: adapter.requestUrlForSurface(surface),
-      requestId: `${adapter.sourceLineage}:${surface}`,
+      url: completeDigimonLeaf
+        ? `${adapter.requestUrlForSurface(surface)}&category=all&cardcategory=digimon&colour=blue`
+        : adapter.requestUrlForSurface(surface),
+      requestId: completeDigimonLeaf
+        ? `digimon-en:listing:${"f".repeat(64)}`
+        : `${adapter.sourceLineage}:${surface}`,
     },
   );
 }

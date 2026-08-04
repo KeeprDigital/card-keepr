@@ -170,6 +170,15 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();
   const targetedPrintingIds = new Set<string>();
+  type RetainedObservation = (typeof retained.observations)[number];
+  const standaloneCardErrata = retained.observations.filter(
+    (observation): observation is Extract<
+      RetainedObservation,
+      { kind: "official_erratum" }
+    > =>
+      observation.kind === "official_erratum" &&
+      observation.target.type === "card",
+  );
 
   for (const observation of retained.observations) {
     if (observation.kind !== "card_printing") continue;
@@ -195,16 +204,39 @@ export async function reconcileRetainedCardPrintingEvidence(
       identityValue: proposedCard.official_identity.value,
     });
     const cardId = existing?.id ?? (await cardIdFor(proposedCard));
-    const currentCardErrata = await identifyRulesTextErrata({
-      game: proposedCard.game,
-      cardId,
-      printingId: null,
-      sourceLineage: observation.sourceLineage,
-      sourceObservationId: observation.sourceObservationId,
-      errata: observation.errata.filter(
-        (erratum) => erratum.targetType === "card",
+    const matchingStandaloneErrata = standaloneCardErrata.filter(
+      (erratum) =>
+        erratum.game === proposedCard.game &&
+        canonicalJson(erratum.target.officialIdentity) ===
+          canonicalJson(proposedCard.official_identity),
+    );
+    const currentCardErrata = (await Promise.all([
+      identifyRulesTextErrata({
+        game: proposedCard.game,
+        cardId,
+        printingId: null,
+        sourceLineage: observation.sourceLineage,
+        sourceObservationId: observation.sourceObservationId,
+        errata: observation.errata.filter(
+          (erratum) => erratum.targetType === "card",
+        ),
+      }),
+      ...matchingStandaloneErrata.map((erratum) =>
+        identifyRulesTextErrata({
+          game: proposedCard.game,
+          cardId,
+          printingId: null,
+          sourceLineage: erratum.sourceLineage,
+          sourceObservationId: erratum.sourceObservationId,
+          errata: [{
+            targetType: "card" as const,
+            effectiveFrom: erratum.effectiveFrom,
+            officialWording: erratum.officialWording,
+            correctedValue: erratum.correctedRulesText,
+          }],
+        })
       ),
-    });
+    ])).flat();
     observedErrata.push(...currentCardErrata);
     const currentEffectiveAuthority = currentCardErrata.some(
       (erratum) =>
@@ -611,12 +643,16 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     if (observation.kind !== "official_erratum") continue;
-    const matchingCards = priorCandidate?.cards.filter(
-      (card) =>
-        card.game === observation.game &&
-        canonicalJson(card.official_identity) ===
-          canonicalJson(observation.target.officialIdentity),
-    ) ?? [];
+    const matchingCards = [...new Map(
+      [...cards.values(), ...(priorCandidate?.cards ?? [])]
+        .filter(
+          (card) =>
+            card.game === observation.game &&
+            canonicalJson(card.official_identity) ===
+              canonicalJson(observation.target.officialIdentity),
+        )
+        .map((card) => [card.id, card] as const),
+    ).values()];
     if (matchingCards.length !== 1) {
       diagnostics.push({
         code: "retained_evidence_invalid",

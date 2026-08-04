@@ -38,7 +38,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
     writeFile(
       planPath,
-      JSON.stringify(digimonPlan("complete")),
+      JSON.stringify(digimonPlan("complete-malicious-root")),
       { mode: 0o600 },
     ),
   ]);
@@ -94,6 +94,85 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
+
+  const maliciousCollected = await runCli(
+    [
+      "source",
+      "collect",
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "digimon-malicious-root-collect",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(maliciousCollected.code, 0, maliciousCollected.stderr);
+  const maliciousRun = JSON.parse(maliciousCollected.stdout);
+  const maliciousResumed = await runCli(
+    ["source", "resume", "--run-id", maliciousRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(maliciousResumed.code, 0, maliciousResumed.stderr);
+  const failed = await waitForRunState(
+    maliciousRun.id,
+    "failed",
+    cliEnvironment,
+    ingestion,
+  );
+  assert.equal(failed.failure_code, "source_parse_failed");
+  assert.ok(
+    failed.snapshots.some((snapshot) =>
+      snapshot.request.url ===
+        "https://world.digimoncard.com/cards/index.php?search=true" &&
+      !failed.observation_sets.some(
+        ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
+      )
+    ),
+    "malicious root catalogue facts must leave their snapshot unparsed and block approval",
+  );
+  await writeFile(
+    planPath,
+    JSON.stringify(digimonPlan("complete-no-errata")),
+    { mode: 0o600 },
+  );
+  const noErrataCollected = await runCli(
+    [
+      "source",
+      "collect",
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "digimon-no-errata-collect",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(noErrataCollected.code, 0, noErrataCollected.stderr);
+  const noErrataRun = JSON.parse(noErrataCollected.stdout);
+  const noErrataResumed = await runCli(
+    ["source", "resume", "--run-id", noErrataRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(noErrataResumed.code, 0, noErrataResumed.stderr);
+  const noErrataFailed = await waitForRunState(
+    noErrataRun.id,
+    "failed",
+    cliEnvironment,
+    ingestion,
+  );
+  assert.equal(
+    noErrataFailed.failure_code,
+    "printing_reconciliation_blocked",
+    JSON.stringify(noErrataFailed.snapshots.filter((snapshot) =>
+      !noErrataFailed.observation_sets.some(
+        ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
+      )
+    ).map(({ request }) => request.url)),
+  );
+  await writeFile(planPath, JSON.stringify(digimonPlan("complete")), {
+    mode: 0o600,
+  });
 
   const collected = await runCli(
     [
@@ -231,6 +310,10 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.equal(detailResponse.status, 200);
   const detail = await detailResponse.json();
   assert.equal(detail.data.name, "Synthetic Base Digimon");
+  assert.equal(
+    detail.data.effective_rules_text,
+    "Corrected synthetic main effect.",
+  );
   assert.deepEqual(detail.data.game_data, {
     profile: "digimon@1",
     attributes: {
@@ -275,8 +358,8 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     [false, true],
   );
 
-  const [cards, printings, relationships] = await Promise.all(
-    ["cards", "printings", "relationships"].map((component) =>
+  const [cards, printings, relationships, errata] = await Promise.all(
+    ["cards", "printings", "relationships", "errata"].map((component) =>
       exportRecords(apiPort, apiKey, revisionId, component)
     ),
   );
@@ -294,6 +377,19 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     2,
     "only the explicit Product evidence should publish",
   );
+  assert.deepEqual(
+    errata.map(({ target_type, effective_from, corrected_value }) => ({
+      target_type,
+      effective_from,
+      corrected_value,
+    })),
+    [{
+      target_type: "card",
+      effective_from: "2026-07-01",
+      corrected_value: "Corrected synthetic main effect.",
+    }],
+    "the standalone Official Errata surface must publish typed authority",
+  );
 });
 
 function digimonPlan(marker) {
@@ -301,7 +397,7 @@ function digimonPlan(marker) {
     plans: [{
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@3",
+      adapter_version: "digimon-en@4",
       requests: [{
         id: "digimon-en:discovery",
         url: "https://world.digimoncard.com/cards/index.php?search=true",

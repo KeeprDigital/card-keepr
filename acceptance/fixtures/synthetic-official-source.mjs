@@ -23,6 +23,8 @@ import {
   productionSourceFixtureSurface,
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
+let retainedDigimonScenarioMarker = null;
+
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -74,10 +76,24 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
-      const officialScenarioMarker =
+      const requestScenarioMarker =
         request.headers.get("accept")?.match(
           /(?:^|;)\s*card-keepr-digimon-scenario=([^;]+)/u,
         )?.[1] ?? productionSourceFixtureMarker(request.headers);
+      const meaningfulScenarioMarker =
+        requestScenarioMarker === "card-keepr-official-source/1"
+          ? null
+          : requestScenarioMarker;
+      if (
+        officialLineage === "digimon-en" &&
+        meaningfulScenarioMarker !== null
+      ) {
+        retainedDigimonScenarioMarker = meaningfulScenarioMarker;
+      }
+      const officialScenarioMarker = meaningfulScenarioMarker ??
+        (officialLineage === "digimon-en"
+          ? retainedDigimonScenarioMarker
+          : null);
       if (url.pathname.includes("/images/")) {
         return new Response(onePixelPng(), {
           headers: {
@@ -250,10 +266,14 @@ function digimonPartitionResponse(url, marker) {
     url.pathname !== "/cards/index.php" ||
     !url.searchParams.has("category")
   ) return null;
+  if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
+    return null;
+  }
   if (
     url.searchParams.get("category") === "booster" &&
     url.searchParams.get("cardcategory") === "digimon" &&
-    url.searchParams.get("colour") === "blue"
+    url.searchParams.get("colour") === "blue" &&
+    marker?.startsWith("card-keepr-acceptance-digimon/complete")
   ) {
     const leafMarker = marker?.startsWith(
         "card-keepr-acceptance-digimon/complete"
@@ -423,10 +443,29 @@ function applyDigimonCompleteFixture(
   marker,
   requestUrl,
 ) {
-  if (
-    lineage !== "digimon-en" ||
-    !marker?.startsWith("card-keepr-acceptance-digimon/complete")
-  ) return;
+  if (lineage !== "digimon-en") return;
+  const exactLeaf = requestUrl.searchParams.has("category") &&
+    requestUrl.searchParams.has("cardcategory") &&
+    requestUrl.searchParams.has("colour");
+  if (!marker?.startsWith("card-keepr-acceptance-digimon/complete")) {
+    if (surface === "card-list" && !exactLeaf) {
+      payload.result = {
+        cap_signal: null,
+        partitions: [{
+          bucket: "category=all&cardcategory=digimon&colour=blue",
+          page: 1,
+          pages: 1,
+          total: 0,
+          has_next: false,
+          entries: [],
+        }],
+      };
+      payload.card_popups = [];
+      payload.products = [];
+      payload.release_calendar = [];
+    }
+    return;
+  }
   if (
     surface === "restrictions-current" &&
     marker.endsWith("-unrepresentable-rules")
@@ -436,11 +475,29 @@ function applyDigimonCompleteFixture(
     };
     return;
   }
+  if (surface === "errata") {
+    if (marker.endsWith("-no-errata")) return;
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    payload.entries = [{
+      card_number: "BT99-001",
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Synthetic main effect.",
+      corrected_rules_text: "Corrected synthetic main effect.",
+      official_wording:
+        'Replace "Synthetic main effect." with "Corrected synthetic main effect."',
+      applies_to_parallel_printings: true,
+      source_fragment: "#BT99-001",
+      display_name: "BT99-001 Erratum",
+      image_url:
+        "https://world.digimoncard.com/images/BT99-001-standard.png",
+    }];
+    return;
+  }
   if (surface !== "card-list") return;
-  const exactLeaf = requestUrl.searchParams.has("category") &&
-    requestUrl.searchParams.has("cardcategory") &&
-    requestUrl.searchParams.has("colour");
   if (!exactLeaf) {
+    if (marker.endsWith("-malicious-root")) return;
     payload.version_options = [{ value: "booster", label: "Booster" }];
     payload.filters = {
       category: marker.endsWith("-missing-category")
@@ -532,6 +589,11 @@ function applyDigimonCompleteFixture(
     image_url:
       "https://world.digimoncard.com/images/BT99-001-alternate-1.png",
   });
+  alternate.Effect = "Corrected synthetic main effect.";
+  alternate.text_sections[0] = {
+    kind: "effect",
+    text: "Corrected synthetic main effect.",
+  };
   alternate.printing.attributes.alternative_art = true;
   if (marker.endsWith("-canonical-conflict")) alternate.DP = 11000;
   payload.version_options = [{ value: "booster", label: "Booster" }];
@@ -563,15 +625,20 @@ function digimonCompleteDiscoveryFacets(lineage, surface, marker) {
   if (
     lineage !== "digimon-en" ||
     surface !== "card-list" ||
-    !marker?.startsWith("card-keepr-acceptance-digimon/complete")
+    marker === null
   ) return "";
+  const category = marker.startsWith(
+      "card-keepr-acceptance-digimon/complete"
+    )
+    ? "booster"
+    : "all";
   return `<form aria-label="Digimon Card List filters">
-    <select name="category"><option value="booster">Booster</option></select>
+    <select name="category"><option value="${category}">${category}</option></select>
     <select name="cardcategory"><option value="digimon">Digimon</option></select>
     <select name="colour"><option value="blue">Blue</option></select>
   </form><nav aria-label="Complete Digimon leaf partitions">
-    <a href="/cards/index.php?search=true&amp;category=booster&amp;cardcategory=digimon">Digimon type leaf</a>
-    <a href="/cards/index.php?search=true&amp;category=booster&amp;cardcategory=digimon&amp;colour=blue">Blue Digimon leaf</a>
+    <a href="/cards/index.php?search=true&amp;category=${category}&amp;cardcategory=digimon">Digimon type leaf</a>
+    <a href="/cards/index.php?search=true&amp;category=${category}&amp;cardcategory=digimon&amp;colour=blue">Blue Digimon leaf</a>
   </nav>`;
 }
 
