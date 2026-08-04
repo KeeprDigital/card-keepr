@@ -18,6 +18,7 @@ import {
 import { liveOfficialLegalityDocument } from "./official-legality-live-html.mjs";
 import {
   normalizeOnePieceCardPage,
+  normalizedOnePieceRarity,
   onePieceDonCardObservation,
   onePieceRecordingMemberships,
 } from "./one-piece-source-adapter.mjs";
@@ -213,12 +214,13 @@ const legalityAwareAdapterVersions: Readonly<
 
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
-    rawContractDefinitions.flatMap((definition) =>
-      [
+    rawContractDefinitions.flatMap((definition) => {
+      const versions = [
         {
           ...definition,
           parserContract: `${definition.sourceLineage}-raw-surfaces@1`,
           legalityAware: false,
+          expandedOnePieceCatalogue: false,
         },
         {
           ...definition,
@@ -231,8 +233,19 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           parserContract:
             `${definition.sourceLineage}-raw-surfaces-with-legality@2`,
           legalityAware: true,
+          expandedOnePieceCatalogue: false,
         },
-      ].map((version) =>
+        ...(definition.sourceLineage === "one-piece-en"
+          ? [{
+              ...definition,
+              adapterVersion: "one-piece-en@3",
+              parserContract: "one-piece-en-complete-catalogue@3",
+              legalityAware: true,
+              expandedOnePieceCatalogue: true,
+            }]
+          : []),
+      ];
+      return versions.map((version) =>
         Object.freeze({
           ...version,
           requiredSurfaces: Object.freeze([...version.requiredSurfaces]),
@@ -258,6 +271,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.sourceLineage,
                 version.requiredSurfaces,
                 version.urls,
+                version.expandedOnePieceCatalogue,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -280,8 +294,8 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.urls,
             ),
         })
-      )
-    ),
+      );
+    }),
   );
 
 export function officialSourceDiscoveryRequests(
@@ -1137,11 +1151,13 @@ function legalityAwareBandaiSnapshotDecoder(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  expandedOnePieceCatalogue = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
     acceptPublisherDeclaredEmpty: true,
     acceptDiscoveryRoot: true,
+    expandedOnePieceCatalogue,
   });
 }
 
@@ -1155,6 +1171,7 @@ function bandaiSnapshotDecoder(
     parseLegality: boolean;
     acceptPublisherDeclaredEmpty: boolean;
     acceptDiscoveryRoot?: boolean;
+    expandedOnePieceCatalogue?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -1269,6 +1286,7 @@ function bandaiSnapshotDecoder(
         surface,
         structuredPayload,
         profile.parseLegality,
+        profile.expandedOnePieceCatalogue === true,
       );
       if (
         profile.parseLegality &&
@@ -1342,9 +1360,27 @@ function bandaiSnapshotDecoder(
         ),
       ];
     }
+    if (
+      profile.expandedOnePieceCatalogue === true &&
+      surface === "don-rules"
+    ) {
+      throw new Error(
+        "One Piece DON!! Card facts require explicit snapshot evidence.",
+      );
+    }
+    const isOnePieceRecordingLeaf =
+      profile.expandedOnePieceCatalogue === true &&
+      format === "one-piece" &&
+      dynamicRole === "listing" &&
+      /^\d+$/u.test(new URL(context.url).searchParams.get("recording") ?? "");
     const parsed =
-      format === "one-piece" && surface === "card-list"
-        ? parseOnePieceBandaiCardListV1(html, context.url)
+      format === "one-piece" &&
+          (surface === "card-list" || isOnePieceRecordingLeaf)
+        ? parseOnePieceBandaiCardListV1(
+            html,
+            context.url,
+            profile.expandedOnePieceCatalogue === true,
+          )
         : parseBandaiSurfaceCoverageV2(
             html,
             format,
@@ -2474,6 +2510,7 @@ type ParsedBandaiSurface = {
 function parseOnePieceBandaiCardListV1(
   html: string,
   requestUrl: string,
+  expandedOnePieceCatalogue = false,
 ): ParsedBandaiSurface {
   const recordingSelect = html.match(
     /<select\b[^>]*\b(?:id|name)=["']recording["'][^>]*>([\s\S]*?)<\/select>/iu,
@@ -2508,6 +2545,10 @@ function parseOnePieceBandaiCardListV1(
     );
   }
   const base = new URL(requestUrl);
+  const recording = base.searchParams.get("recording");
+  if (recording !== null && !/^\d+$/u.test(recording)) {
+    throw new Error("One Piece Card List Recording identity is invalid.");
+  }
   const schemaReviewValues: {
     locator: string;
     field: string;
@@ -2604,7 +2645,9 @@ function parseOnePieceBandaiCardListV1(
           : colour.split("/").map((value) => value.trim().toLowerCase()),
         cost: integerOrNull(field("Cost")),
         life: cardType === "leader" ? integerOrNull(field("Life")) : null,
-        battle_attributes: textValues(field("Attribute")),
+        battle_attributes: textValues(field("Attribute")).map((value) =>
+          expandedOnePieceCatalogue ? value.toLocaleLowerCase() : value
+        ),
         power: integerOrNull(field("Power")),
         counter: integerOrNull(field("Counter")),
         traits: textValues(field("Type", "Traits")),
@@ -2625,7 +2668,9 @@ function parseOnePieceBandaiCardListV1(
         rarity: rarity.length === 0 ? null : rarity,
         normalizedRarity: rarity.length === 0
           ? null
-          : rarity.toLowerCase(),
+          : expandedOnePieceCatalogue
+            ? normalizedOnePieceRarity(rarity)
+            : rarity.toLowerCase(),
         attributes: { illustration_types: [] },
       },
       treatment,
@@ -2640,7 +2685,7 @@ function parseOnePieceBandaiCardListV1(
         artwork_fingerprint: artworkFingerprint,
       }],
     };
-    return cardObservation(
+    const observation = cardObservation(
       detail,
       [],
       new Map(),
@@ -2648,6 +2693,18 @@ function parseOnePieceBandaiCardListV1(
       { revision: "captured-by-policy-surface", entries: [] },
       "one-piece",
     );
+    return recording === null
+      ? observation
+      : {
+          ...observation,
+          memberships: {
+            ...requiredRecord(
+              observation.memberships,
+              "One Piece Recording memberships",
+            ),
+            source_buckets: [`recording:${recording}`],
+          },
+        };
   });
   return {
     observations,
@@ -4059,6 +4116,33 @@ function normalizeLineageSurfaceV1(
   };
 }
 
+function onePieceUnmappedOptionalFields(
+  surface: string,
+  raw: Record<string, unknown>,
+): { path: string; value: unknown }[] {
+  if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
+  return raw.card_pages.flatMap((value, cardIndex) => {
+    if (!isPlainRecord(value) || !isPlainRecord(value.printing) ||
+        !isPlainRecord(value.printing.attributes) ||
+        !Array.isArray(value.printing.attributes.illustration_types)) return [];
+    return value.printing.attributes.illustration_types.flatMap(
+      (illustration, illustrationIndex) =>
+        typeof illustration === "string" &&
+          ["comic", "animation", "original", "other"].includes(
+            illustration.toLocaleLowerCase(),
+          )
+          ? []
+          : [{
+              path:
+                "source_sidecar.raw.official_surfaces[0].document." +
+                `card_pages[${cardIndex}].printing.attributes.` +
+                `illustration_types[${illustrationIndex}]`,
+              value: illustration,
+            }],
+    );
+  });
+}
+
 function normalizeOnePieceSurfaceV1(
   surface: string,
   raw: Record<string, unknown>,
@@ -4312,17 +4396,24 @@ function normalizedSurfaceObservationsV2(
   surface: string,
   rawDocument: Record<string, unknown>,
   legalityAware: boolean,
+  expandedOnePieceCatalogue = false,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
     sourceLineage,
     surface,
     rawDocument,
+    expandedOnePieceCatalogue,
   );
   const document = normalized.document;
   let observations: readonly unknown[];
   if (isDiscoverySurface(surface)) {
-    observations = parseRawDiscoverySurfaceV2(document, format, game);
+    observations = parseRawDiscoverySurfaceV2(
+      document,
+      format,
+      game,
+      expandedOnePieceCatalogue,
+    );
   } else if (surface === "products") {
     observations = parseRawProductsSurfaceV2(document);
   } else if (surface === "releases") {
@@ -4335,7 +4426,8 @@ function normalizedSurfaceObservationsV2(
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
-      ...(game === "one-piece" && surface === "don-rules"
+      ...(expandedOnePieceCatalogue && game === "one-piece" &&
+          surface === "don-rules"
         ? [onePieceDonCardObservation(document.don_card)]
         : []),
       ...(legalityAware && isLegalityPolicySurface(surface)
@@ -4357,6 +4449,7 @@ function normalizedSurfaceObservationsV2(
       rawDocument,
       index === 0,
       normalized.consumedFields,
+      normalized.unmappedOptionalFields,
     )
   );
 }
@@ -4378,13 +4471,15 @@ function normalizeLineageSurface(
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
+  expandedOnePieceCatalogue = false,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
+  unmappedOptionalFields: readonly { path: string; value: unknown }[];
 } {
   const normalized =
     format === "one-piece"
-      ? normalizeOnePieceSurface(surface, raw)
+      ? normalizeOnePieceSurface(surface, raw, expandedOnePieceCatalogue)
       : format === "fusion-world"
         ? normalizeFusionWorldSurface(surface, raw)
         : format === "digimon"
@@ -4398,6 +4493,10 @@ function normalizeLineageSurface(
       ...normalized.value,
     },
     consumedFields: normalized.consumedFields,
+    unmappedOptionalFields:
+      expandedOnePieceCatalogue && format === "one-piece"
+        ? onePieceUnmappedOptionalFields(surface, raw)
+        : [],
   };
 }
 
@@ -4416,6 +4515,7 @@ function normalizedSurfaceBody(
 function normalizeOnePieceSurface(
   surface: string,
   raw: Record<string, unknown>,
+  expandedOnePieceCatalogue = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.page !== "card-list") {
@@ -4425,7 +4525,9 @@ function normalizeOnePieceSurface(
       normalizedDiscovery(
         raw.series_options,
         raw.page_info,
-        normalizeOnePieceDetails(raw.card_pages),
+        expandedOnePieceCatalogue
+          ? normalizeOnePieceDetails(raw.card_pages)
+          : normalizeOnePieceDetailsV2(raw.card_pages),
         normalizeOnePieceProducts(raw.products),
         normalizeOnePieceReleases(raw.release_schedule),
         "recording",
@@ -4471,12 +4573,25 @@ function normalizeOnePieceSurface(
       ["publication", "events", "release_timing_entries"],
     );
   }
+  if (!expandedOnePieceCatalogue) {
+    return normalizedSurfaceBody(
+      normalizedPolicy(raw, `one-piece-${surface}`),
+      [
+        "publication",
+        "revision",
+        "declared_record_count",
+        "partition",
+        "entries",
+      ],
+    );
+  }
   const policy = normalizedPolicy(
     raw,
     `one-piece-${surface}`,
     surface === "don-rules" ? ["don_card"] : [],
+    true,
   );
-  const hasDonCard = surface === "don-rules" && raw.don_card !== undefined;
+  const hasDonCard = surface === "don-rules";
   return normalizedSurfaceBody(
     {
       ...policy,
@@ -4824,6 +4939,7 @@ function normalizedPolicy(
   raw: Record<string, unknown>,
   expectedPublication: string,
   additionalFields: readonly string[] = [],
+  allowUnknownOptional = false,
 ): Record<string, unknown> {
   if (raw.publication !== expectedPublication) {
     throw new Error("Official policy publication identity is invalid.");
@@ -4833,7 +4949,7 @@ function normalizedPolicy(
     "partition", "entries", ...additionalFields,
   ]);
   const unknown = Object.keys(raw).find((field) => !allowed.has(field));
-  if (unknown !== undefined) {
+  if (unknown !== undefined && !allowUnknownOptional) {
     throw new Error(`Official policy contains unknown field ${unknown}.`);
   }
   const entries = requiredArray(raw.entries, "Official policy entries");
@@ -4903,6 +5019,33 @@ function normalizeOnePieceDetails(value: unknown): unknown[] {
       rules: "Effect",
       attributes: normalized.attributes,
       printingAttributes: normalized.printingAttributes,
+      normalizedRarity: normalized.normalizedRarity,
+      imageFields: [{ role: "front", value: card.image_url }],
+    });
+  });
+}
+
+function normalizeOnePieceDetailsV2(value: unknown): unknown[] {
+  return requiredArray(value, "One Piece Card pages").map((item) => {
+    const card = requiredRecord(item, "One Piece Card page");
+    return canonicalDetail(card, {
+      path: "source_record_id",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: card.Category,
+        colours: card.Color,
+        cost: card.Cost,
+        life: card.Life,
+        battle_attributes: card.Attribute,
+        power: card.Power,
+        counter: card.Counter,
+        traits: card.Type,
+        block_icons: card["Block icon"],
+        effect_text: card.Effect,
+        trigger_text: card.Trigger,
+      },
       imageFields: [{ role: "front", value: card.image_url }],
     });
   });
@@ -5022,6 +5165,7 @@ function canonicalDetail(
     rules: string;
     attributes: Record<string, unknown>;
     printingAttributes?: Record<string, unknown>;
+    normalizedRarity?: string | null;
     imageFields: readonly { role: string; value: unknown }[];
   },
 ): Record<string, unknown> {
@@ -5068,7 +5212,9 @@ function canonicalDetail(
       : {
           printing: {
             rarity: printing.rarity ?? null,
-            normalizedRarity: printing.normalized_rarity ?? null,
+            normalizedRarity: mapping.normalizedRarity !== undefined
+              ? mapping.normalizedRarity
+              : printing.normalized_rarity ?? null,
             attributes: mapping.printingAttributes ?? printing.attributes ?? {},
           },
           printed_rules: requiredText(
@@ -5281,6 +5427,7 @@ function attachRawSurfaceEvidenceV1(
   document: Record<string, unknown>,
   retainDocument: boolean,
   mappedRootFields: readonly string[],
+  explicitUnmappedFields: readonly { path: string; value: unknown }[] = [],
 ): Record<string, unknown> {
   const record = requiredRecord(
     observation,
@@ -5308,6 +5455,9 @@ function attachRawSurfaceEvidenceV1(
         )
       )
     : [];
+  const explicitlyUnmappedPaths = new Set(
+    explicitUnmappedFields.map(({ path }) => path),
+  );
   return {
     ...record,
     source_sidecar: {
@@ -5334,12 +5484,15 @@ function attachRawSurfaceEvidenceV1(
           ...consumed,
           "source_sidecar.raw.official_surfaces[].source_lineage",
           "source_sidecar.raw.official_surfaces[].surface",
-          ...retainedMappedLeaves.flatMap(({ consumed }) => consumed),
+          ...retainedMappedLeaves.flatMap(({ consumed }) =>
+            consumed.filter((path) => !explicitlyUnmappedPaths.has(path))
+          ),
         ]),
       ].sort(),
       unmapped_optional_fields: [
         ...unmapped,
         ...retainedMappedLeaves.flatMap(({ unmapped }) => unmapped),
+        ...(retainDocument ? explicitUnmappedFields : []),
         ...(retainDocument ? Object.entries(document) : [])
           .filter(([field]) => !mappedRootFields.includes(field))
           .flatMap(([field, value]) =>
@@ -5358,6 +5511,23 @@ function parseRawDiscoverySurfaceFrozenV1(
   format: DiscoveryFormat,
   game: ProductSourceGame,
 ): readonly unknown[] {
+  return parseRawDiscoverySurfaceByContract(surface, format, game, false);
+}
+
+function parseRawDiscoverySurfaceCompleteOnePieceV3(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+): readonly unknown[] {
+  return parseRawDiscoverySurfaceByContract(surface, format, game, true);
+}
+
+function parseRawDiscoverySurfaceByContract(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+  expandedOnePieceCatalogue: boolean,
+): readonly unknown[] {
   const sourceBuckets = uniqueTextValues(
     surface.source_buckets,
     "Official Source discovery buckets",
@@ -5372,11 +5542,11 @@ function parseRawDiscoverySurfaceFrozenV1(
   if (facets.length === 0) {
     throw new Error("Official Source discovery facets are incomplete.");
   }
-  const entries = completePartitionEntriesFrozenV1(
-    surface.partitions,
-    format === "one-piece",
-  );
-  const recordingMemberships = format === "one-piece"
+  const entries = expandedOnePieceCatalogue && format === "one-piece"
+    ? completeCompatibleOnePiecePartitionEntries(surface.partitions)
+    : completePartitionEntriesFrozenV1(surface.partitions);
+  const recordingMemberships = expandedOnePieceCatalogue &&
+      format === "one-piece"
     ? onePieceRecordingMemberships(surface.partitions)
     : null;
   const details = requiredArray(
@@ -5461,7 +5631,9 @@ function parseRawDiscoverySurfaceFrozenV1(
       ...record,
       memberships: {
         ...memberships,
-        source_buckets: recordingSourceBuckets ?? sourceBuckets,
+        source_buckets: expandedOnePieceCatalogue
+          ? recordingSourceBuckets ?? sourceBuckets
+          : sourceBuckets,
       },
     };
   });
@@ -5542,8 +5714,11 @@ function parseRawDiscoverySurfaceV2(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
   game: ProductSourceGame,
+  expandedOnePieceCatalogue = false,
 ): readonly unknown[] {
-  return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
+  return expandedOnePieceCatalogue && format === "one-piece"
+    ? parseRawDiscoverySurfaceCompleteOnePieceV3(surface, format, game)
+    : parseRawDiscoverySurfaceFrozenV1(surface, format, game);
 }
 
 function parseRawProductsSurfaceV2(
@@ -5581,9 +5756,17 @@ function rawCoverageObservationFrozenV1(
   };
 }
 
-function completePartitionEntriesFrozenV1(
+function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
+  return completePartitionEntriesByContract(value, false);
+}
+
+function completeCompatibleOnePiecePartitionEntries(value: unknown): unknown[] {
+  return completePartitionEntriesByContract(value, true);
+}
+
+function completePartitionEntriesByContract(
   value: unknown,
-  allowCompatibleOverlap = false,
+  allowCompatibleOverlap: boolean,
 ): unknown[] {
   const pages = requiredArray(
     value,

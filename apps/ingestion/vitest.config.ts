@@ -1538,6 +1538,29 @@ function reconciliationSourceDocument(
   surface: string,
   requestUrl: string,
 ) {
+  if (
+    scenario === "observation-count-one" ||
+    scenario === "observation-count-two"
+  ) {
+    const base = reconciliationSourceDocument("base", surface, requestUrl);
+    if (scenario === "observation-count-one") return base;
+    return {
+      ...base,
+      cards: [
+        ...base.cards,
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP99-002",
+          name: "Observation count sentinel",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/count-sentinel",
+          lineageMarker: "count-sentinel",
+        }),
+      ],
+    };
+  }
   if (scenario === "contextual-legality-one-piece-policy") {
     return onePiecePolicySourceDocument(surface, requestUrl);
   }

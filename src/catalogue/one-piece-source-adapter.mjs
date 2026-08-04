@@ -23,6 +23,18 @@ const illustrationTypes = new Map([
   ["other", "other"],
 ]);
 
+const rarities = new Map([
+  ["l", "leader"],
+  ["c", "common"],
+  ["uc", "uncommon"],
+  ["r", "rare"],
+  ["sr", "super-rare"],
+  ["sec", "secret-rare"],
+  ["p", "promo"],
+  ["sp", "special"],
+  ["tr", "treasure-rare"],
+]);
+
 export function normalizeOnePieceCardPage(value) {
   const cardType = controlledValue(
     value.Category,
@@ -44,11 +56,19 @@ export function normalizeOnePieceCardPage(value) {
     throw new Error("One Piece Color is required.");
   }
   const printing = optionalRecord(value.printing, "One Piece Printing");
+  if (printing?.normalized_rarity !== undefined) {
+    throw new Error(
+      "One Piece raw Printing fields cannot supply normalized rarity.",
+    );
+  }
   const rawIllustrationTypes = optionalRecord(
     printing?.attributes,
     "One Piece Printing attributes",
   )?.illustration_types;
   return {
+    normalizedRarity: printing === null
+      ? null
+      : normalizedOnePieceRarity(printing.rarity),
     attributes: {
       card_type: cardType,
       colours,
@@ -73,27 +93,15 @@ export function normalizeOnePieceCardPage(value) {
       illustration_types: uniqueValues(
         rawIllustrationTypes ?? [],
         "One Piece illustration filter membership",
-      ).map((item) =>
-        controlledValue(
-          item,
-          illustrationTypes,
-          "One Piece illustration filter membership",
-        )
-      ).sort(),
+      ).map((item) => illustrationTypes.get(normalizedToken(item)))
+        .filter((item) => item !== undefined)
+        .sort(),
     },
   };
 }
 
 export function onePieceDonCardObservation(value) {
-  const card = value === undefined
-    ? {
-        functional_designation: "DON!!",
-        name: "DON!! Card",
-        Category: "DON!! Card",
-        Effect:
-          "A rules-level resource Card used to pay costs and increase power.",
-      }
-    : requiredRecord(value, "One Piece DON!! rules Card");
+  const card = requiredRecord(value, "One Piece DON!! rules Card evidence");
   if (
     normalizedText(card.functional_designation) !== "DON!!" ||
     normalizedToken(card.Category) !== "don!! card"
@@ -161,6 +169,12 @@ export function onePieceDonCardObservation(value) {
       unmapped_optional_fields: [],
     },
   };
+}
+
+export function normalizedOnePieceRarity(value) {
+  const raw = nullableText(value, "One Piece Printing rarity");
+  if (raw === null) return null;
+  return rarities.get(normalizedToken(raw)) ?? null;
 }
 
 export function onePieceRecordingMemberships(value) {

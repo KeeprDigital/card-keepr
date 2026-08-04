@@ -321,6 +321,14 @@ function officialBandaiDataset(
     publisher: { "@type": "Organization", name: "Bandai" },
     hasPart: surface === null ? [] : [surface].map((surface) => {
       const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+      if (lineage === "one-piece-en" && surface === "don-rules") {
+        payload.don_card = {
+          functional_designation: "DON!!",
+          name: "DON!! Card",
+          Category: "DON!! Card",
+          Effect: "A rules-level resource Card.",
+        };
+      }
       if (
         lineage === "one-piece-en" &&
         codeLessProduct
@@ -1012,8 +1020,12 @@ function upstreamDetail(lineage, detail) {
       : {
           printing: {
             rarity: detail.printing.rarity ?? null,
-            normalized_rarity:
-              detail.printing.normalizedRarity ?? null,
+            ...(lineage === "one-piece-en"
+              ? {}
+              : {
+                  normalized_rarity:
+                    detail.printing.normalizedRarity ?? null,
+                }),
             attributes: detail.printing.attributes,
           },
           printed_rules: detail.printed_rules,

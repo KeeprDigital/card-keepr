@@ -1175,6 +1175,32 @@ test("retained immutable evidence publishes stable identities and warns when ear
   });
 });
 
+test("a changed parsed observation count warns at the authenticated reconciliation seam", async () => {
+  const firstRun = await collect(
+    "/reconciliation/observation-count-one",
+    "observation-count-first",
+  );
+  const first = await reconcile(firstRun.id);
+  expect(first.response.status).toBe(200);
+  expect((await approve(first.document)).response.status).toBe(200);
+
+  const secondRun = await collect(
+    "/reconciliation/observation-count-two",
+    "observation-count-second",
+  );
+  const second = await reconcile(secondRun.id);
+  expect(second.response.status).toBe(200);
+  expect(second.document.warnings).toContainEqual(
+    expect.objectContaining({
+      code: "source_observation_count_changed",
+      source_lineage: "one-piece-en",
+      request_id: "cards",
+      previous_count: 1,
+      current_count: 2,
+    }),
+  );
+});
+
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {
   const run = await collectRequests(
     [

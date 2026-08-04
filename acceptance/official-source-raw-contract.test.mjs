@@ -173,7 +173,7 @@ const expectedProductionAdapterVersions = [
   "fusion-world-en@3",
   "gundam-en-asia@3",
   "gundam-en-us@3",
-  "one-piece-en@2",
+  "one-piece-en@3",
 ];
 
 function registeredProductionAdapters() {
@@ -1029,7 +1029,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.match(
       adapter.parserContract,
-      /-raw-surfaces-with-legality@2$/u,
+      /-(?:raw-surfaces-with-legality@2|complete-catalogue@3)$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -2967,6 +2967,81 @@ test("One Piece publisher data retains an explicit first Printing identity", () 
   assert.equal(observation.identity_evidence.treatment, null);
 });
 
+test("the expanded One Piece adapter requires evidence and derives optional vocabulary", () => {
+  const historical = requiredSourceAdapter("one-piece-en@2");
+  const expanded = requiredSourceAdapter("one-piece-en@3");
+  assert.match(historical.parserContract, /raw-surfaces-with-legality@2$/u);
+  assert.match(expanded.parserContract, /complete-catalogue@3$/u);
+
+  const don = officialRawSurfacePayload("/one-piece-en/don-rules");
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        don,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /DON.*evidence|DON.*Card/iu,
+  );
+
+  const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  delete payload.card_pages[0].printing.normalized_rarity;
+  payload.card_pages[0].printing.attributes.illustration_types = [
+    "Experimental foil vocabulary",
+  ];
+  const observations = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      payload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  );
+  const card = observations.find((observation) => observation.printing);
+  assert.equal(card.printing.rarity.raw, "L");
+  assert.equal(card.printing.rarity.normalized, "leader");
+  assert.deepEqual(card.printing.game_data.attributes.illustration_types, []);
+  assert.ok(card.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Experimental foil vocabulary",
+  ));
+
+  const policy = officialRawSurfacePayload("/one-piece-en/don-rules");
+  policy.don_card = {
+    functional_designation: "DON!!",
+    name: "DON!! Card",
+    Category: "DON!! Card",
+    Effect: "A rules-level resource Card.",
+  };
+  policy.publisher_note = "Optional policy vocabulary";
+  const policyObservations = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "don-rules",
+      policy,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("don-rules"),
+      requestId: "one-piece-en:don-rules",
+    },
+  );
+  assert.ok(policyObservations.some(({ source_sidecar }) =>
+    source_sidecar?.unmapped_optional_fields?.some(
+      ({ value }) => value === "Optional policy vocabulary",
+    )
+  ));
+});
+
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
   const byLineage = (lineage) =>
     registeredProductionAdapters().find(
@@ -4296,9 +4371,18 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
 });
 
 function rawSurfacePayload(lineage, surface) {
-  return structuredClone(
+  const payload = structuredClone(
     officialRawSurfacePayload(`/${lineage}/${surface}`),
   );
+  if (lineage === "one-piece-en" && surface === "don-rules") {
+    payload.don_card = {
+      functional_designation: "DON!!",
+      name: "DON!! Card",
+      Category: "DON!! Card",
+      Effect: "A rules-level resource Card used to pay costs and increase power.",
+    };
+  }
+  return payload;
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {

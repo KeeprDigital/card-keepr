@@ -72,6 +72,12 @@ type EvidencePlanRow = {
   request_plan_json: string;
 };
 
+type PriorObservationCountRow = {
+  request_id: string;
+  source_lineage: string;
+  observation_count: number;
+};
+
 export type RetainedLegalityScope = {
   sourceLineage: string;
   supportedGame: SupportedGame;
@@ -542,6 +548,11 @@ export async function retainedReconciliationObservation(
     gameProfileVersion: row.game_profile_version,
     adapterVersion: row.adapter_version,
   }));
+  const countChangeWarnings = await sourceObservationCountChangeWarnings(
+    database,
+    runId,
+    orderedRows,
+  );
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -550,6 +561,7 @@ export async function retainedReconciliationObservation(
     reconciliationCapability:
       requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
+    countChangeWarnings,
     partitions,
     evidencePlans: evidencePlans.map((plan) => {
       return {
@@ -570,6 +582,53 @@ export async function retainedReconciliationObservation(
       left.sourceLineage.localeCompare(right.sourceLineage)
     ),
   };
+}
+
+async function sourceObservationCountChangeWarnings(
+  database: D1Database,
+  runId: string,
+  currentRows: readonly EvidenceRow[],
+): Promise<Record<string, unknown>[]> {
+  const prior = await database
+    .prepare(
+      `SELECT snapshots.request_id, snapshots.source_lineage,
+              observations.observation_count
+       FROM catalogue_revisions AS prior_revision
+       JOIN source_snapshots AS snapshots
+         ON snapshots.ingestion_run_id = prior_revision.ingestion_run_id
+       JOIN source_observation_sets AS observations
+         ON observations.source_snapshot_id = snapshots.id
+       JOIN source_parse_operations AS parse
+         ON parse.id = observations.parse_operation_id
+       WHERE parse.intent = 'collection'
+         AND snapshots.ingestion_run_id <> ?
+       ORDER BY prior_revision.published_at DESC, prior_revision.id DESC,
+                snapshots.source_lineage, snapshots.request_id`,
+    )
+    .bind(runId)
+    .all<PriorObservationCountRow>();
+  const priorCounts = new Map<string, number>();
+  for (const row of prior.results) {
+    const key = `${row.source_lineage}\u0000${row.request_id}`;
+    if (!priorCounts.has(key)) priorCounts.set(key, row.observation_count);
+  }
+  return currentRows.flatMap((row) => {
+    const previousCount = priorCounts.get(
+      `${row.source_lineage}\u0000${row.request_id}`,
+    );
+    return previousCount === undefined ||
+        previousCount === row.observation_count
+      ? []
+      : [{
+          code: "source_observation_count_changed",
+          source_lineage: row.source_lineage,
+          request_id: row.request_id,
+          previous_count: previousCount,
+          current_count: row.observation_count,
+          detail:
+            `Official Source request ${row.request_id} changed from ${previousCount} to ${row.observation_count} parsed observations since the prior published snapshot.`,
+        }];
+  });
 }
 
 function assertRetainedLegalityPublicationIdentity(
@@ -776,7 +835,9 @@ function isLegalitySurface(
   surface: string,
 ): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    (adapter.adapterVersion === "one-piece-en@2" && surface === "releases");
+    (["one-piece-en@2", "one-piece-en@3"].includes(
+      adapter.adapterVersion,
+    ) && surface === "releases");
 }
 
 function rawOfficialSurfaceRecords(
@@ -907,7 +968,10 @@ function assertClosedRequestGraph(
 ): void {
   const byId = new Map(requests.map((request) => [request.request_id, request]));
   const rootSurfaces = new Map<string, Set<string>>();
-  const listingLocators = new Map<string, string>();
+  const listingLocators = new Map<string, {
+    requestId: string;
+    semantic: string;
+  }>();
   const listingPages = new Map<string, Set<number>>();
   requests.forEach((request, index) => {
     const row = rows[index]!;
@@ -987,13 +1051,25 @@ function assertClosedRequestGraph(
         if (!isRecord(identity) || typeof identity.locator !== "string") {
           continue;
         }
-        const prior = listingLocators.get(identity.locator);
-        if (prior !== undefined && prior !== request.request_id) {
-          throw new Error(
-            `Official Source leaf partitions overlap at locator ${identity.locator}.`,
-          );
+        const locatorKey = `${row.source_lineage}:${identity.locator}`;
+        const semantic = compatibleListingObservationSemantic(
+          observation.value,
+        );
+        const prior = listingLocators.get(locatorKey);
+        if (prior !== undefined && prior.requestId !== request.request_id) {
+          if (
+            adapter.adapterVersion !== "one-piece-en@3" ||
+            prior.semantic !== semantic
+          ) {
+            throw new Error(
+              `Official Source leaf partitions overlap at locator ${identity.locator}.`,
+            );
+          }
         }
-        listingLocators.set(identity.locator, request.request_id);
+        listingLocators.set(locatorKey, {
+          requestId: request.request_id,
+          semantic,
+        });
       }
       const url = new URL(request.url);
       const pageEntry = [...url.searchParams.entries()].find(([key]) =>
@@ -1046,6 +1122,17 @@ function assertClosedRequestGraph(
       );
     }
   }
+}
+
+function compatibleListingObservationSemantic(
+  observation: Record<string, unknown>,
+): string {
+  const {
+    memberships: _memberships,
+    source_sidecar: _sourceSidecar,
+    ...semantic
+  } = observation;
+  return canonicalJson(semantic);
 }
 
 async function attachRetainedPrintingImages(

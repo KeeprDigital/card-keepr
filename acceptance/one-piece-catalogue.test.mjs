@@ -29,7 +29,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       plans: [{
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@2",
+        adapter_version: "one-piece-en@3",
         requests: [{
           id: "one-piece-en:discovery",
           url: "https://en.onepiece-cardgame.com/cardlist/",
@@ -96,7 +96,11 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
     "one-piece-complete-collect",
     "--json",
   ], cliEnvironment);
-  assert.equal(collected.code, 0, collected.stderr);
+  assert.equal(
+    collected.code,
+    0,
+    `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`,
+  );
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(
     ["source", "resume", "--run-id", run.id, "--json"],
@@ -130,6 +134,15 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       new URL(request.url).searchParams.get("recording") === "2202"
     ),
   );
+  for (const [recording, expectedCount] of [["2201", 1], ["2202", 2]]) {
+    const snapshot = ready.snapshots.find(({ request }) =>
+      new URL(request.url).searchParams.get("recording") === recording
+    );
+    const observationSet = ready.observation_sets.find(
+      ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
+    );
+    assert.equal(observationSet.observation_count, expectedCount);
+  }
 
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", run.id, "--json"],
@@ -142,7 +155,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   assert.ok(candidate.diff.warnings.some(
     ({ code, raw_value }) =>
       code === "unknown_source_field" &&
-      raw_value === "New optional publisher vocabulary",
+      raw_value === "Optional DON publication note",
   ));
   const approved = await runCli([
     "run",
@@ -233,7 +246,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   const printingDocument = await printingResponse.json();
   assert.deepEqual(
     printingDocument.data.locator_evidence.current.map(({ locator }) => locator),
-    ["/cards/OP31-001_p1"],
+    ["OP31-001_p1"],
     "repeated Recording evidence aggregates onto one Printing locator",
   );
 });

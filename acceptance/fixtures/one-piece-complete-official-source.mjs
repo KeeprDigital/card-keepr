@@ -32,6 +32,7 @@ export function onePieceCompleteOfficialSourceResponse(request) {
     });
   }
   if (surface === null) return discoveryStage(url);
+  if (surface === "card-list") return cardListRoot();
   const document = surfaceDocument(surface);
   return new Response(
     `<html><title>${surfaceTitle(surface)}</title>
@@ -51,10 +52,14 @@ export function onePieceCompleteOfficialSourceResponse(request) {
 }
 
 function recordingLeaf(recording) {
+  const cards = recording === "2201"
+    ? [liveCard("OP31-001")]
+    : [liveCard("OP31-001"), liveCard("OP31-002")];
   return new Response(
-    `<html><title>BANDAI ONE PIECE CARD LIST</title><main>
-      <p>1 record</p><article>Recording ${recording} Card publication</article>
-    </main></html>`,
+    `<html><title>BANDAI ONE PIECE CARD LIST</title>
+      <select id="recording"><option value="${recording}">Recording ${recording}</option></select>
+      <div class="countCol">${cards.length} results</div>${cards.join("")}
+    </html>`,
     {
       headers: {
         "content-type": "text/html; charset=utf-8",
@@ -62,6 +67,52 @@ function recordingLeaf(recording) {
       },
     },
   );
+}
+
+function cardListRoot() {
+  return new Response(
+    `<html><title>BANDAI ONE PIECE CARD LIST</title>
+      <select id="recording">
+        <option value="2201">Starter Recording</option>
+        <option value="2202">Booster Recording</option>
+      </select>
+      <div class="countCol">0 results</div>
+    </html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: '"one-piece-complete-card-list-root"',
+      },
+    },
+  );
+}
+
+function liveCard(number) {
+  const leader = number === "OP31-001";
+  const rarity = leader ? "L" : "R";
+  const category = leader ? "LEADER" : "CHARACTER";
+  const name = leader ? "Straw Hat Captain" : "Synthetic Navigator";
+  const effect = leader
+    ? "Give up to 1 rested DON!! card to this Leader."
+    : "Draw 1 card.";
+  return `<dl class="modalCol" id="${number}_p1" data-artwork-id="${number.toLowerCase()}-base">
+    <dt><div class="infoCol"><span>${number}</span> | <span>${rarity}</span> | <span>${category}</span></div>
+      <div class="cardName">${name}</div></dt>
+    <dd><div class="frontCol"><img data-src="/images/cardlist/card/${number}.png"></div>
+      <div class="backCol">
+        <div><h3>${leader ? "Life" : "Cost"}</h3>${leader ? "5" : "3"}</div>
+        <div><h3>Color</h3>${leader ? "Red/Green" : "Blue"}</div>
+        <div><h3>Attribute</h3>${leader ? "Strike" : "Special"}</div>
+        <div><h3>Power</h3>${leader ? "5000" : "4000"}</div>
+        <div><h3>Counter</h3>${leader ? "-" : "1000"}</div>
+        <div><h3>Type</h3>${leader ? "Straw Hat Crew" : "Straw Hat Crew/Navigator"}</div>
+        <div><h3>Block icon</h3>${leader ? "1" : "2"}</div>
+        <div><h3>Effect</h3>${effect}</div>
+        ${leader ? "" : "<div><h3>Trigger</h3>Play this card.</div>"}
+        <div class="getInfo"><h3>Card Set(s)</h3>Complete One Piece Product</div>
+      </div>
+    </dd>
+  </dl>`;
 }
 
 function discoveryStage(url) {
@@ -128,6 +179,7 @@ function surfaceDocument(surface) {
   if (surface === "don-rules") {
     return {
       ...policy(surface, []),
+      publisher_note: "Optional DON publication note",
       don_card: {
         functional_designation: "DON!!",
         name: "DON!! Card",
@@ -176,7 +228,6 @@ function cardList() {
         image_url:
           "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
         rarity: "L",
-        normalizedRarity: "leader",
         illustrationTypes: ["Animation"],
         productCodes: ["OP-COMPLETE-01"],
       }),
@@ -198,8 +249,7 @@ function cardList() {
         image_url:
           "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-002.png",
         rarity: "R",
-        normalizedRarity: "rare",
-        illustrationTypes: [],
+        illustrationTypes: ["Experimental foil vocabulary"],
         productCodes: ["OP-COMPLETE-01"],
         Notes: "New optional publisher vocabulary",
       }),
@@ -220,7 +270,6 @@ function visibleCardListVocabulary(surface) {
 function card(input) {
   const {
     rarity,
-    normalizedRarity,
     illustrationTypes,
     productCodes,
     ...fields
@@ -240,7 +289,6 @@ function card(input) {
     },
     printing: {
       rarity,
-      normalized_rarity: normalizedRarity,
       attributes: { illustration_types: illustrationTypes },
     },
     printed_rules: fields.Effect,
