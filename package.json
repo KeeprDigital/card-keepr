@@ -37,8 +37,14 @@
     "wrangler": "^4.114.0"
   },
   "dependencies": {
+    "entities": "8.0.0",
     "libsodium-wrappers": "^0.7.15",
     "pako": "3.0.1",
-    "parse5": "^8.0.1"
+    "parse5": "8.0.1"
+  },
+  "overrides": {
+    "parse5": {
+      "entities": "8.0.0"
+    }
   }
 }

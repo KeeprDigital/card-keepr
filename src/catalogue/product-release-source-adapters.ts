@@ -36,6 +36,11 @@ type DiscoveryFormat =
   | "digimon"
   | "gundam";
 
+// The retained publisher leaf is about 3 KiB. One MiB leaves more than 300x
+// headroom while preventing an otherwise valid 16 MiB snapshot from being
+// expanded into a substantially larger HTML tree solely to read its total.
+const maximumFusionCompleteListingHtmlBytes = 1024 * 1024;
+
 export type OfficialRawAdapterContract = {
   adapterVersion: string;
   parserContract: string;
@@ -1139,69 +1144,6 @@ function htmlAttribute(attributes: string, name: string): string | null {
   return match?.[1] ?? null;
 }
 
-function hasHtmlClassToken(attributes: string, token: string): boolean {
-  return (tokenizedHtmlAttributes(attributes).get("class") ?? "")
-    .split(/[\t\n\f\r ]+/u)
-    .filter(Boolean)
-    .includes(token);
-}
-
-function tokenizedHtmlAttributes(attributes: string): ReadonlyMap<string, string> {
-  const tokens = new Map<string, string>();
-  let cursor = 0;
-  const isWhitespace = (character: string | undefined) =>
-    character !== undefined && /[\t\n\f\r ]/u.test(character);
-
-  while (cursor < attributes.length) {
-    while (isWhitespace(attributes[cursor])) cursor += 1;
-    if (cursor >= attributes.length) break;
-    if (attributes[cursor] === "/") {
-      cursor += 1;
-      continue;
-    }
-    const nameStart = cursor;
-    while (
-      cursor < attributes.length &&
-      !isWhitespace(attributes[cursor]) &&
-      attributes[cursor] !== "=" &&
-      attributes[cursor] !== "/"
-    ) {
-      cursor += 1;
-    }
-    if (cursor === nameStart) {
-      cursor += 1;
-      continue;
-    }
-    const name = attributes.slice(nameStart, cursor).toLowerCase();
-    while (isWhitespace(attributes[cursor])) cursor += 1;
-    let value = "";
-    if (attributes[cursor] === "=") {
-      cursor += 1;
-      while (isWhitespace(attributes[cursor])) cursor += 1;
-      const quote = attributes[cursor];
-      if (quote === "\"" || quote === "'") {
-        cursor += 1;
-        const valueStart = cursor;
-        while (cursor < attributes.length && attributes[cursor] !== quote) {
-          cursor += 1;
-        }
-        value = attributes.slice(valueStart, cursor);
-        if (attributes[cursor] === quote) cursor += 1;
-      } else {
-        const valueStart = cursor;
-        while (
-          cursor < attributes.length && !isWhitespace(attributes[cursor])
-        ) {
-          cursor += 1;
-        }
-        value = attributes.slice(valueStart, cursor);
-      }
-    }
-    if (!tokens.has(name)) tokens.set(name, value);
-  }
-  return tokens;
-}
-
 const fusionCountInertElements = new Set([
   "iframe",
   "noembed",
@@ -1226,7 +1168,12 @@ type HtmlTreeNode = {
 
 function visibleFusionPublisherCount(html: string): string | null {
   const candidates: HtmlTreeNode[] = [];
-  const visit = (node: HtmlTreeNode, hiddenAncestor: boolean): void => {
+  const stack: { hiddenAncestor: boolean; node: HtmlTreeNode }[] = [{
+    hiddenAncestor: false,
+    node: parseHtml(html) as unknown as HtmlTreeNode,
+  }];
+  while (stack.length > 0) {
+    const { hiddenAncestor, node } = stack.pop()!;
     const attributes = new Map(
       (node.attrs ?? []).map(({ name, value }) => [name, value]),
     );
@@ -1241,11 +1188,13 @@ function visibleFusionPublisherCount(html: string): string | null {
       node.tagName !== undefined &&
       fusionCountInertElements.has(node.tagName)
     ) {
-      return;
+      continue;
     }
-    for (const child of node.childNodes ?? []) visit(child, hidden);
-  };
-  visit(parseHtml(html) as unknown as HtmlTreeNode, false);
+    const children = node.childNodes ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ hiddenAncestor: hidden, node: children[index]! });
+    }
+  }
   if (candidates.length !== 1) return null;
 
   const children = candidates[0]!.childNodes ?? [];
@@ -1747,6 +1696,16 @@ function bandaiSnapshotDecoder(
     if (mediaType !== "text/html") {
       throw new Error(
         `Official Source ${surface} must be captured as text/html.`,
+      );
+    }
+    if (
+      profile.catalogueComplete === true &&
+      format === "fusion-world" &&
+      dynamicRole === "listing" &&
+      bytes.byteLength > maximumFusionCompleteListingHtmlBytes
+    ) {
+      throw new Error(
+        `Fusion World complete listing HTML exceeds the ${maximumFusionCompleteListingHtmlBytes}-byte parser limit.`,
       );
     }
     const html = stripKnownPublisherNavigation(

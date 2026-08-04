@@ -4688,6 +4688,42 @@ test("Fusion totals follow the HTML tree, not scanner-like markup", () => {
   );
 });
 
+test("Fusion complete listing DOM parsing is bounded below the snapshot maximum", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"8".repeat(64)}`,
+  };
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const empty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+  const maximumListingBytes = 1024 * 1024;
+  const atBoundary = empty + " ".repeat(
+    maximumListingBytes - Buffer.byteLength(empty),
+  );
+
+  assert.equal(Buffer.byteLength(atBoundary), maximumListingBytes);
+  assert.doesNotThrow(() =>
+    current.parseBytes(new TextEncoder().encode(atBoundary), context)
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(`${atBoundary}x`),
+      context,
+    ),
+    /complete listing HTML exceeds.*1048576-byte/iu,
+  );
+});
+
 test("historical Fusion discovery does not learn bracketed facet names", () => {
   const previous = requiredSourceAdapter("fusion-world-en@3");
   const capped = `<html>
