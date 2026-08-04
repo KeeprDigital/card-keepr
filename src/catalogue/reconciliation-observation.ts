@@ -199,12 +199,30 @@ export function parseReconciliationObservation(
       record,
       new Set([
         "completeness",
+        "listing_identity_evidence",
         "product_release_catalogue",
         "source_sidecar",
       ]),
       "",
       warnings,
     );
+    if (record.listing_identity_evidence !== undefined) {
+      const listingIdentity = requiredRecord(
+        record.listing_identity_evidence,
+        "listing_identity_evidence",
+      );
+      if (
+        Object.keys(listingIdentity).some(
+          (field) => field !== "locator" && field !== "canonical",
+        ) ||
+        typeof listingIdentity.locator !== "string" ||
+        listingIdentity.locator.length === 0 ||
+        typeof listingIdentity.canonical !== "string" ||
+        listingIdentity.canonical.length === 0
+      ) {
+        throw new Error("listing_identity_evidence is invalid.");
+      }
+    }
     inspectSourceSidecar(
       sourceObservationId,
       "products-and-releases@1",

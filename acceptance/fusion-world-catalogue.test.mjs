@@ -47,7 +47,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
         plans: [{
           supported_game: "fusion-world",
           source_lineage: "fusion-world-en",
-          adapter_version: "fusion-world-en@3",
+          adapter_version: "fusion-world-en@4",
           requests: [{
             id: "fusion-world-en:discovery",
             url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
@@ -323,6 +323,43 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const comingSoonProduct = products.find(
     ({ official_code }) => official_code === "FB-COMING-02",
   );
+  const [cardCollection, printingCollection, productCollection, legalityStatus] =
+    await Promise.all([
+      authenticatedApiJson(apiPort, apiKey, "/v1/cards"),
+      authenticatedApiJson(apiPort, apiKey, "/v1/printings"),
+      authenticatedApiJson(apiPort, apiKey, "/v1/products"),
+      authenticatedApiJson(
+        apiPort,
+        apiKey,
+        `/v1/legality-status?card_id=${encodeURIComponent(card.id)}` +
+          "&on=2026-08-04&format=standard&region=EN-OCEANIA",
+      ),
+    ]);
+  assert.deepEqual(cardCollection.data.map(({ id }) => id), [card.id]);
+  assert.deepEqual(
+    printingCollection.data.map(({ id }) => id),
+    [printings[0].id],
+  );
+  assert.deepEqual(
+    productCollection.data.map(({ id }) => id).sort(),
+    products.map(({ id }) => id).sort(),
+  );
+  assert.deepEqual(
+    legalityStatus.data.map(({ card_id, region, status, rule_ids }) => ({
+      card_id,
+      region,
+      status,
+      rule_ids,
+    })),
+    [{
+      card_id: card.id,
+      region: "EN-OCEANIA",
+      status: "legal",
+      rule_ids: [legalityRules.find(
+        ({ official_id }) => official_id === "fusion-world-current-fb99-001",
+      ).id],
+    }],
+  );
   assert.equal(availableProduct.name, "Fusion World Raw Product");
   assert.equal(
     comingSoonProduct.name,
@@ -385,6 +422,16 @@ async function exportRecords(port, apiKey, revisionId, component) {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+async function authenticatedApiJson(port, apiKey, path) {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
+  if (response.status !== 200) {
+    assert.fail(`${path}: ${response.status} ${await response.text()}`);
+  }
+  return response.json();
 }
 
 async function waitForRunState(runId, expectedState, environment, worker) {

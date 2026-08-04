@@ -393,7 +393,7 @@ function fusionWorldDiscoveryRecords() {
 }
 
 test("final Official Source requests keep discovery evidence immutable while exposing a deterministic fixture role", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
@@ -419,7 +419,7 @@ test("final Official Source requests keep discovery evidence immutable while exp
 });
 
 test("final Official Source requests canonicalize injected reserved routing metadata", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -437,7 +437,7 @@ test("final Official Source requests canonicalize injected reserved routing meta
 });
 
 test("the exact live Fusion final request selects and parses the representable legality fixture", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -496,7 +496,7 @@ test("the exact live Fusion final request selects and parses the representable l
 });
 
 test("final Official Source collection identities enforce the URL byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const withFirstUrl = (url: string) => records.map((record, index) =>
     index === 0
@@ -522,7 +522,7 @@ test("final Official Source collection identities enforce the URL byte bound", a
 });
 
 test("final Official Source collection identities enforce the merged-header byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const headerBase = utf8(canonicalJson({
     accept: "text/html",
@@ -720,7 +720,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_auto_reconcile_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },
@@ -787,7 +787,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   expect(retainedObservation.status).toBe(200);
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     observations: [{
       value: {
         observation_type: "official_surface_evidence",
@@ -833,7 +833,7 @@ test("incomplete retained production discovery blocks collection and publication
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_incomplete_discovery_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -869,7 +869,7 @@ test("notice-link-only production legality evidence fails closed before stale ru
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_notice_only_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -901,7 +901,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_large_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({

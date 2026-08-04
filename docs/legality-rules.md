@@ -12,7 +12,7 @@ credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
 - `one-piece-en@2`
-- `fusion-world-en@3`
+- `fusion-world-en@4`
 - `digimon-en@3`
 - `gundam-en-asia@3`
 - `gundam-en-us@3`
@@ -34,6 +34,7 @@ contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
 The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
+`fusion-world-en@3`,
 `digimon-en@2`, and both Gundam `@2` versions) remain registered with their
 original parser contracts only for explicit reprocessing of retained Source
 Snapshots. New production Evidence Plans accept only the active registrations

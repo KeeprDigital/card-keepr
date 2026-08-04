@@ -905,7 +905,10 @@ function assertClosedRequestGraph(
 ): void {
   const byId = new Map(requests.map((request) => [request.request_id, request]));
   const rootSurfaces = new Map<string, Set<string>>();
-  const listingLocators = new Map<string, string>();
+  const listingLocators = new Map<
+    string,
+    { requestId: string; canonical: string | null }
+  >();
   const listingPages = new Map<string, Set<number>>();
   requests.forEach((request, index) => {
     const row = rows[index]!;
@@ -981,17 +984,35 @@ function assertClosedRequestGraph(
     if (request.request_role === "listing") {
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
-        const identity = observation.value.identity_evidence;
+        const strictFusionIdentity = row.adapter_version ===
+            "fusion-world-en@4"
+          ? observation.value.listing_identity_evidence
+          : undefined;
+        const identity = strictFusionIdentity ??
+          observation.value.identity_evidence;
         if (!isRecord(identity) || typeof identity.locator !== "string") {
           continue;
         }
         const prior = listingLocators.get(identity.locator);
-        if (prior !== undefined && prior !== request.request_id) {
+        const canonical = typeof identity.canonical === "string"
+          ? identity.canonical
+          : null;
+        if (
+          prior !== undefined &&
+          prior.requestId !== request.request_id &&
+          (
+            row.adapter_version !== "fusion-world-en@4" ||
+            prior.canonical !== canonical
+          )
+        ) {
           throw new Error(
             `Official Source leaf partitions overlap at locator ${identity.locator}.`,
           );
         }
-        listingLocators.set(identity.locator, request.request_id);
+        listingLocators.set(identity.locator, {
+          requestId: prior?.requestId ?? request.request_id,
+          canonical,
+        });
       }
       const url = new URL(request.url);
       const pageEntry = [...url.searchParams.entries()].find(([key]) =>

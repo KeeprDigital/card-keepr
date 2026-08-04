@@ -57,7 +57,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "fusion-world",
             "fusion-world-en",
-            "fusion-world-en@3",
+            "fusion-world-en@4",
           ),
           officialPlan(
             "gundam",
@@ -282,11 +282,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@3",
+        adapter_version: "fusion-world-en@4",
         request_ids: officialPlan(
           "fusion-world",
           "fusion-world-en",
-          "fusion-world-en@3",
+          "fusion-world-en@4",
         ).requests.map(({ id }) => id),
       },
       {
