@@ -15,6 +15,14 @@ the current publisher-linked Rules page is retained separately. These files
 are evidence snapshots, not synthetic success envelopes and not rewritten
 HTML examples.
 
+`digimon-en-card-list-popup-fragment.html` retains the two complete adjacent
+`EX12-021` and `EX12-021_P1` publisher popup records captured on 2026-08-04
+from the exact live leaf
+`/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue`.
+It is a focused publisher HTML fragment used to prove that the registered
+adapter consumes both the base and alternate-art Printing markup; line endings
+and trailing whitespace are normalized for the repository fixture.
+
 The live policy expectations intentionally follow the published scope rather
 than capture time or article recency:
 

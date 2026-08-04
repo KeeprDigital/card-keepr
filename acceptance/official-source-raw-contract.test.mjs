@@ -250,6 +250,141 @@ test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue fac
   );
 });
 
+test("Digimon V4 parses every retained live popup Card and Printing at an exact leaf", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const bytes = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ));
+  const observations = adapter.parseBytes(bytes, {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+    requestId: `digimon-en:listing:${"a".repeat(64)}`,
+  });
+
+  assert.equal(observations.length, 2);
+  assert.deepEqual(
+    observations.map(({ completeness, card, printing, identity_evidence, appearance_evidence }) => ({
+      completeness,
+      card,
+      printing,
+      identity_evidence: {
+        locator: identity_evidence.locator,
+        variant_key: identity_evidence.variant_key,
+      },
+      appearance_evidence,
+    })),
+    [false, true].map((alternativeArt, index) => ({
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 2,
+        parsed_record_count: 2,
+      },
+      card: {
+        game: "digimon",
+        official_identity: { kind: "card_number", value: "EX12-021" },
+        name: "Gabumon",
+        effective_rules_text:
+          "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+        game_data: {
+          profile: "digimon@1",
+          attributes: {
+            card_type: "digimon",
+            colours: ["blue"],
+            level: 3,
+            play_cost: 3,
+            use_cost: null,
+            dp: 2000,
+            form: "Rookie",
+            attribute: "Data",
+            traits: ["Reptile", "VB"],
+            digivolution_requirements: [{
+              index: 1,
+              from_level: 2,
+              colours: ["blue"],
+              cost: 0,
+              raw_condition: "Blue 0 from Lv.2",
+            }],
+            text_sections: [
+              {
+                kind: "special_digivolution_condition",
+                text: "[Digivolve] [Tsunomon]/Lv.2 w/[VB] trait: Cost 0",
+              },
+              {
+                kind: "effect",
+                text:
+                  "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+              },
+              {
+                kind: "inherited_effect",
+                text:
+                  "[When Attacking] [Once Per Turn] If your hand has 7 or fewer cards, ＜Draw 1＞.",
+              },
+            ],
+            dual_colours: [],
+            dual_cost: null,
+            link_dp: null,
+          },
+        },
+      },
+      printing: {
+        rarity: { raw: "U", normalized: "uncommon" },
+        printed_rules_text:
+          "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+        game_data: {
+          profile: "digimon@1",
+          attributes: { alternative_art: alternativeArt },
+        },
+      },
+      identity_evidence: {
+        locator: index === 0 ? "EX12-021" : "EX12-021_P1",
+        variant_key: index === 0 ? "base" : "alternate-art-1",
+      },
+      appearance_evidence: {
+        images: [{
+          role: "front",
+          source_url: index === 0
+            ? "https://world.digimoncard.com/images/cardlist/card/EX12-021.png?260529"
+            : "https://world.digimoncard.com/images/cardlist/card/EX12-021_P1.png?260529",
+          artwork_fingerprint: index === 0
+            ? 'official-artwork:{"official_card_identity":"EX12-021","roles":["front"],"artwork_id":"ex12-021"}'
+            : 'official-artwork:{"official_card_identity":"EX12-021","roles":["front"],"artwork_id":"ex12-021_p1"}',
+        }],
+      },
+    })),
+  );
+
+  assert.throws(
+    () => adapter.parseBytes(
+      Buffer.from(
+        bytes.toString("utf8").replace(
+          '<dt class="cardInfoTit">Notes</dt>',
+          '<dt class="cardInfoTit">Future Target Scope</dt><dd class="cardInfoData">Alternate printings only</dd><dt class="cardInfoTit">Notes</dt>',
+        ),
+      ),
+      {
+        mediaType: "text/html; charset=UTF-8",
+        url:
+          "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+        requestId: `digimon-en:listing:${"b".repeat(64)}`,
+      },
+    ),
+    /Digimon Card List contains unknown field Future Target Scope/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(bytes, {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon",
+      requestId: `digimon-en:listing:${"c".repeat(64)}`,
+    }),
+    /complete Digimon leaf.*color facets/iu,
+  );
+});
+
 test("Digimon V4 normalizes exact standalone Official Errata", () => {
   const adapter = requiredSourceAdapter("digimon-en@4");
   const payload = officialRawSurfacePayload("/digimon-en/errata");
@@ -305,6 +440,21 @@ test("Digimon V4 normalizes exact standalone Official Errata", () => {
         parsed_record_count: 1,
       },
     }],
+  );
+
+  payload.entries[0].future_target_scope = "Only alternate-art printings";
+  assert.throws(
+    () => adapter.parseBytes(
+      Buffer.from(
+        `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
+      ),
+      {
+        mediaType: "text/html",
+        url: adapter.requestUrlForSurface("errata"),
+        requestId: "digimon-en:errata",
+      },
+    ),
+    /Digimon Official Erratum.*unknown field future_target_scope/iu,
   );
 });
 

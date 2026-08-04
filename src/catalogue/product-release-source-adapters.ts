@@ -1561,6 +1561,16 @@ function bandaiSnapshotDecoder(
     ) {
       return parseFusionWorldOfficialErrataHtmlV3(html);
     }
+    if (
+      profile.completeDigimonCatalogue === true &&
+      format === "digimon" &&
+      dynamicRole === "listing" &&
+      structuredSurface === requiredSurfaces[0] &&
+      digimonPopupRecordCount(html) > 0
+    ) {
+      assertCompleteDigimonLeafUrl(context.url);
+      return parseDigimonCardListPopupHtmlV4(html, context.url);
+    }
     const parsed =
       format === "one-piece" &&
           (surface === "card-list" || isOnePieceRecordingLeaf)
@@ -2594,6 +2604,9 @@ function assertDigimonCatalogueFactsAtCompleteLeaf(
 ): void {
   const payload = bandaiPublisherPayload(html, sourceLineage, surface);
   if (payload !== null) assertDigimonPayloadAtCompleteLeaf(payload, requestUrl);
+  if (digimonPopupRecordCount(html) > 0) {
+    assertCompleteDigimonLeafUrl(requestUrl);
+  }
 }
 
 function assertDigimonPayloadAtCompleteLeaf(
@@ -2601,20 +2614,32 @@ function assertDigimonPayloadAtCompleteLeaf(
   requestUrl: string,
 ): void {
   if (!digimonPayloadContainsCatalogueFacts(payload)) return;
+  assertCompleteDigimonLeafUrl(requestUrl);
+}
+
+function assertCompleteDigimonLeafUrl(requestUrl: string): void {
   const url = new URL(requestUrl);
   const exactFacet = (name: string) =>
     url.searchParams.getAll(name).length === 1 &&
     url.searchParams.get(name)?.trim() !== "";
+  const exactColourFacet =
+    Number(exactFacet("color")) + Number(exactFacet("colour")) === 1;
   if (
     url.pathname !== "/cards/index.php" ||
     !exactFacet("category") ||
     !exactFacet("cardcategory") ||
-    !exactFacet("colour")
+    !exactColourFacet
   ) {
     throw new Error(
-      "Official Source Digimon catalogue facts require a complete Digimon leaf with exact category, cardcategory, and colour facets.",
+      "Official Source Digimon catalogue facts require a complete Digimon leaf with exact category, cardcategory, and color facets.",
     );
   }
+}
+
+function digimonPopupRecordCount(html: string): number {
+  return [...html.matchAll(
+    /<li\b[^>]*\bclass=["'][^"']*\bimage_lists_item\b[^"']*\bdata\b[^"']*["'][^>]*>/giu,
+  )].length;
 }
 
 function digimonPayloadContainsCatalogueFacts(
@@ -5248,6 +5273,31 @@ function parseDigimonOfficialErrata(
   );
   return entries.map((value) => {
     const entry = requiredRecord(value, "Digimon Official Erratum");
+    const allowedFields = new Set([
+      "card_number",
+      "published_on",
+      "effective_from",
+      "observed_printed_rules_text",
+      "corrected_rules_text",
+      "official_wording",
+      "applies_to_parallel_printings",
+      "source_fragment",
+      "display_name",
+      "image_url",
+    ]);
+    const unknownField = Object.keys(entry).find(
+      (field) => !allowedFields.has(field),
+    );
+    if (unknownField !== undefined) {
+      throw new Error(
+        `Digimon Official Erratum contains unknown field ${unknownField}.`,
+      );
+    }
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new Error(
+        "Digimon Official Erratum applies-to-parallel-printings flag is invalid.",
+      );
+    }
     return {
       kind: "official_erratum",
       game: "digimon",
@@ -5301,6 +5351,397 @@ function parseDigimonOfficialErrata(
       },
     };
   });
+}
+
+function parseDigimonCardListPopupHtmlV4(
+  html: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  const recordStarts = [...html.matchAll(
+    /<li\b[^>]*\bclass=["'][^"']*\bimage_lists_item\b[^"']*\bdata\b[^"']*["'][^>]*>/giu,
+  )].map((match) => match.index);
+  if (recordStarts.length === 0) {
+    throw new Error("Official Digimon Card List has no popup records.");
+  }
+  const popupCount = [...html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bpopupCol\b[^"']*["'][^>]*>/giu,
+  )].length;
+  if (popupCount !== recordStarts.length) {
+    throw new Error(
+      "Official Digimon Card List popup records are structurally incomplete.",
+    );
+  }
+  const records = recordStarts.map((start, index) =>
+    html.slice(start, recordStarts[index + 1] ?? html.length)
+  );
+  return records.map((record, index) => {
+    const popupMatches = [...record.matchAll(
+      /<div\b([^>]*\bclass=["'][^"']*\bpopupCol\b[^"']*["'][^>]*)>/giu,
+    )];
+    if (popupMatches.length !== 1) {
+      throw new Error(
+        "Official Digimon Card List record requires one exact popup.",
+      );
+    }
+    const locator = requiredText(
+      htmlAttribute(popupMatches[0]![1]!, "id"),
+      "Official Digimon popup locator",
+    );
+    const locatorIdentity = locator.match(
+      /^([A-Z]{1,6}\d{0,3}-\d{2,5})(?:_P(\d+))?$/u,
+    );
+    if (locatorIdentity === null) {
+      throw new Error("Official Digimon popup locator is invalid.");
+    }
+    const cardAnchorMatches = [...record.matchAll(
+      /<a\b([^>]*\bclass=["'][^"']*\bcard_img\b[^"']*["'][^>]*)>/giu,
+    )];
+    if (
+      cardAnchorMatches.length !== 1 ||
+      htmlAttribute(cardAnchorMatches[0]![1]!, "data-src") !== `#${locator}`
+    ) {
+      throw new Error(
+        "Official Digimon Card List anchor does not match its popup locator.",
+      );
+    }
+    const titleList = exactDigimonClassBody(
+      record,
+      "ul",
+      "cardTitleList",
+      "Official Digimon Card title fields",
+    );
+    const titleFields = [...titleList.matchAll(
+      /<li\b([^>]*)>([\s\S]*?)<\/li>/giu,
+    )].map((match) => ({
+      name: exactHtmlClassName(match[1]!),
+      value: htmlText(match[2]!),
+    }));
+    const allowedTitleFields = new Set([
+      "cardNo", "cardRarity", "cardType", "cardLv", "cardParallel",
+    ]);
+    const unknownTitleField = titleFields.find(
+      ({ name }) => name === null || !allowedTitleFields.has(name),
+    );
+    if (unknownTitleField !== undefined) {
+      throw new Error(
+        `Official Digimon Card List contains unknown title field ${unknownTitleField.name ?? "without an exact class"}.`,
+      );
+    }
+    const titleField = (name: string): string | null => {
+      const matches = titleFields.filter((field) => field.name === name);
+      if (matches.length > 1) {
+        throw new Error(`Official Digimon Card List duplicates ${name}.`);
+      }
+      return matches[0]?.value ?? null;
+    };
+    const cardNumber = requiredText(
+      titleField("cardNo"),
+      "Official Digimon Card number",
+    );
+    if (cardNumber !== locatorIdentity[1]) {
+      throw new Error(
+        "Official Digimon Card number does not match its popup locator.",
+      );
+    }
+    const alternativeArtNumber = locatorIdentity[2];
+    const alternativeArtLabel = titleField("cardParallel");
+    if (
+      (alternativeArtNumber === undefined && alternativeArtLabel !== null) ||
+      (alternativeArtNumber !== undefined &&
+        alternativeArtLabel !== "Alternative Art")
+    ) {
+      throw new Error(
+        "Official Digimon alternate-art marker does not match its popup locator.",
+      );
+    }
+    const levelValue = requiredText(
+      titleField("cardLv"),
+      "Official Digimon Card level",
+    );
+    const level = levelValue.match(/^Lv\.(\d+)$/u)?.[1];
+    if (level === undefined) {
+      throw new Error("Official Digimon Card level is invalid.");
+    }
+    const info = exactDigimonClassBody(
+      record,
+      "div",
+      "cardInfoCol",
+      "Official Digimon Card information",
+      /<\/div>\s*<!--\s*InfoCol\s*-->/iu,
+    );
+    const retainedQa = digimonCardQa(info);
+    const pairs = htmlLabelPairs(retainedQa.remainingHtml);
+    const allowedLabels = new Set([
+      "Color", "Cost", "Play Cost", "Use Cost", "DP", "Form",
+      "Attribute", "Type", "[Special Digivolution Condition]", "[Effect]",
+      "Effect", "[Inherited Effect]", "Inherited Effect", "[Security Effect]",
+      "Security Effect", "DUAL Color", "DUAL Cost", "[DUAL Effect]",
+      "[DUAL Rule]", "[Link Condition]", "[Link DP]", "[Link Effect]",
+      "Notes",
+    ]);
+    const unknownLabel = pairs.find(({ label }) =>
+      !allowedLabels.has(label) && !/^Digivolve Cost \d+$/u.test(label)
+    );
+    if (unknownLabel !== undefined) {
+      throw new Error(
+        `Official Digimon Card List contains unknown field ${unknownLabel.label}.`,
+      );
+    }
+    const duplicatedLabel = pairs.find(({ label }, pairIndex) =>
+      pairs.findIndex((pair) => pair.label === label) !== pairIndex
+    );
+    if (duplicatedLabel !== undefined) {
+      throw new Error(
+        `Official Digimon Card List duplicates field ${duplicatedLabel.label}.`,
+      );
+    }
+    const mediumHeadings = [...info.matchAll(
+      /<div\b[^>]*\bclass=["'][^"']*\bcardInfoTitMedium\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
+    )].map((match) => htmlText(match[1]!));
+    if (mediumHeadings.some((heading) => !/^Card Text \d+$/u.test(heading))) {
+      throw new Error(
+        "Official Digimon Card List contains unrecognized Card text framing.",
+      );
+    }
+    const field = (...names: string[]): string | null =>
+      firstLabelValue(pairs, names);
+    const digivolutionRequirements = pairs
+      .filter(({ label }) => /^Digivolve Cost \d+$/u.test(label))
+      .sort((left, right) => left.label.localeCompare(right.label, "en", {
+        numeric: true,
+      }))
+      .map(({ value }, requirementIndex) => {
+        const match = value.match(
+          /^((?:Red|Blue|Green|Yellow|Black|Purple|White)(?:\s*\/\s*(?:Red|Blue|Green|Yellow|Black|Purple|White))*)\s+(\d+)\s+from\s+Lv\.?(\d+)$/iu,
+        );
+        if (match === null) {
+          throw new Error(
+            `Unrecognized official Digimon digivolution requirement: ${value}`,
+          );
+        }
+        return {
+          index: requirementIndex + 1,
+          from_level: Number.parseInt(match[3]!, 10),
+          colours: colourValues(match[1]!),
+          cost: Number.parseInt(match[2]!, 10),
+          raw_condition: value,
+        };
+      });
+    const effect = requiredText(
+      field("[Effect]", "Effect"),
+      "Official Digimon Card effect",
+    );
+    const textSectionPairs = pairs.map(({ label, value }) => ({
+      label: new Map([
+        ["[Effect]", "Effect"],
+        ["[Inherited Effect]", "Inherited Effect"],
+        ["[Security Effect]", "Security Effect"],
+      ]).get(label) ?? label,
+      value,
+    }));
+    const imageContainer = exactDigimonClassBody(
+      record,
+      "div",
+      "cardImgInner",
+      "Official Digimon Printing image",
+    );
+    const imageMatches = [...imageContainer.matchAll(/<img\b([^>]*)>/giu)];
+    if (imageMatches.length !== 1) {
+      throw new Error(
+        "Official Digimon Printing requires one exact front image.",
+      );
+    }
+    const rawImageUrl = htmlAttribute(imageMatches[0]![1]!, "data-src") ??
+      htmlAttribute(imageMatches[0]![1]!, "src");
+    const imageUrl = new URL(
+      requiredText(rawImageUrl, "Official Digimon Printing image URL"),
+      requestUrl,
+    );
+    if (!officialUrl("digimon-en", imageUrl, "image")) {
+      throw new Error("Official Digimon Printing image URL is not authoritative.");
+    }
+    const detail = canonicalDetail({
+      popup_id: locator,
+      card_number: cardNumber,
+      name: exactDigimonClassText(
+        record,
+        "div",
+        "cardTitle",
+        "Official Digimon Card name",
+      ),
+      Effect: effect,
+      profile: "digimon@1",
+      product_codes: [],
+      fuzzy_product_labels: [],
+      distribution: {
+        code: `listing:${new URL(requestUrl).search}`,
+        kind: "source_bucket",
+        label: field("Notes") ?? "Digimon Card List leaf",
+      },
+      printing: {
+        rarity: requiredText(
+          titleField("cardRarity"),
+          "Official Digimon Printing rarity",
+        ),
+        attributes: { alternative_art: alternativeArtNumber !== undefined },
+      },
+      printed_rules: effect,
+      variant: alternativeArtNumber === undefined
+        ? "base"
+        : `alternate-art-${Number.parseInt(alternativeArtNumber, 10)}`,
+      image_url: imageUrl.href,
+    }, {
+      path: "popup_id",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: requiredText(
+          titleField("cardType"),
+          "Official Digimon Card type",
+        ).toLocaleLowerCase(),
+        colours: colourValues(field("Color")),
+        level: Number.parseInt(level, 10),
+        play_cost: integerOrNull(field("Play Cost", "Cost")),
+        use_cost: integerOrNull(field("Use Cost")),
+        dp: integerOrNull(field("DP")),
+        form: field("Form"),
+        attribute: field("Attribute"),
+        traits: textValues(field("Type")),
+        digivolution_requirements: digivolutionRequirements,
+        text_sections: digimonTextSections(textSectionPairs),
+        dual_colours: colourValues(field("DUAL Color")),
+        dual_cost: integerOrNull(field("DUAL Cost")),
+        link_dp: integerOrNull(field("[Link DP]")),
+      },
+      imageFields: [{ role: "front", value: imageUrl.href }],
+      preserveFuzzyProductLabels: true,
+      derivePrintingIdentity: true,
+    });
+    const observation = cardObservation(
+      detail,
+      [],
+      new Map(),
+      { revision: "captured-by-policy-surface", entries: [] },
+      { revision: "captured-by-policy-surface", entries: [] },
+      "digimon",
+    );
+    return attachRawSurfaceEvidenceV1({
+      ...observation,
+      completeness: completeObservation(records.length, records.length),
+    }, "digimon-en", "card-list", {
+      popup_id: locator,
+      card_qa: retainedQa.entries,
+    }, true, ["popup_id"]);
+  });
+}
+
+function digimonCardQa(infoHtml: string): {
+  remainingHtml: string;
+  entries: Record<string, unknown>[];
+} {
+  const listMatches = [...infoHtml.matchAll(
+    /<ul\b[^>]*\bclass=["'][^"']*\bcardFaqList\b[^"']*["'][^>]*>([\s\S]*?)<\/ul>/giu,
+  )];
+  if (listMatches.length > 1) {
+    throw new Error("Official Digimon Card Q&A list is duplicated.");
+  }
+  const match = listMatches[0];
+  if (match === undefined) return { remainingHtml: infoHtml, entries: [] };
+  const body = match[1]!;
+  const starts = [...body.matchAll(
+    /<li\b[^>]*\bclass=["'][^"']*\bcardFaqListItem\b[^"']*["'][^>]*>/giu,
+  )].map((item) => item.index);
+  if (starts.length === 0) {
+    throw new Error("Official Digimon Card Q&A list is structurally empty.");
+  }
+  const entries = starts.map((start, index) => {
+    const entry = body.slice(start, starts[index + 1] ?? body.length);
+    return {
+      number: exactDigimonClassText(
+        entry,
+        "p",
+        "cardFaqNum",
+        "Official Digimon Card Q&A number",
+      ),
+      date: digimonOptionalClassText(entry, "p", "cardFaqDate"),
+      question: exactDigimonClassText(
+        entry,
+        "dt",
+        "cardFaqQuestion",
+        "Official Digimon Card Q&A question",
+      ),
+      answer: exactDigimonClassText(
+        entry,
+        "dd",
+        "cardFaqAnswer",
+        "Official Digimon Card Q&A answer",
+      ),
+    };
+  });
+  return {
+    remainingHtml: infoHtml.replace(match[0], ""),
+    entries,
+  };
+}
+
+function exactHtmlClassName(attributes: string): string | null {
+  const value = htmlAttribute(attributes, "class");
+  if (value === null) return null;
+  const names = value.trim().split(/\s+/u).filter(Boolean);
+  return names.length === 1 ? names[0]! : null;
+}
+
+function exactDigimonClassBody(
+  html: string,
+  tag: string,
+  className: string,
+  label: string,
+  closingPattern?: RegExp,
+): string {
+  const opening = new RegExp(
+    `<${tag}\\b([^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*)>`,
+    "giu",
+  );
+  const matches = [...html.matchAll(opening)];
+  if (matches.length !== 1) {
+    throw new Error(`${label} requires one exact ${className} container.`);
+  }
+  const bodyStart = matches[0]!.index + matches[0]![0].length;
+  const tail = html.slice(bodyStart);
+  const closing = closingPattern ?? new RegExp(`</${tag}>`, "iu");
+  const close = tail.match(closing);
+  if (close?.index === undefined) {
+    throw new Error(`${label} is structurally incomplete.`);
+  }
+  return tail.slice(0, close.index);
+}
+
+function exactDigimonClassText(
+  html: string,
+  tag: string,
+  className: string,
+  label: string,
+): string {
+  return requiredText(
+    htmlText(exactDigimonClassBody(html, tag, className, label)),
+    label,
+  );
+}
+
+function digimonOptionalClassText(
+  html: string,
+  tag: string,
+  className: string,
+): string | null {
+  const matches = [...html.matchAll(new RegExp(
+    `<${tag}\\b[^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>([\\s\\S]*?)</${tag}>`,
+    "giu",
+  ))];
+  if (matches.length > 1) {
+    throw new Error(`Official Digimon Card Q&A duplicates ${className}.`);
+  }
+  return matches[0] === undefined ? null : htmlText(matches[0]![1]!);
 }
 
 function isLegalityPolicySurface(surface: string): boolean {
