@@ -31,34 +31,21 @@ export default {
 
     const html = await response.text();
     if (surface === "errata" && marker === `${fixtureMarker}-errata`) {
-      const script = html.match(
-        /<script type="application\/json" id="fusion-world-card-game-errata-data">([\s\S]*?)<\/script>/u,
-      );
-      if (script === null) return response;
-      const payload = JSON.parse(script[1]);
-      payload.declared_record_count = 1;
-      payload.partition.total = 1;
-      payload.entries = [{
-        entry_id: "fusion-world-erratum-fb99-001",
-        card_number: "FB99-001",
-        published_on: "2026-07-15",
-        effective_from: "2026-07-15",
-        before: "Official printed rules",
-        after: "Official corrected rules",
-        notice: "The corrected wording applies from the published date.",
-        image_url:
-          "https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png",
-      }];
       return htmlResponse(
         response,
-        html.replace(
-          script[0],
-          officialPublisherPayloadScript(
-            "fusion-world-en",
-            "errata",
-            payload,
-          ),
-        ),
+        `<html><title>BANDAI DRAGON BALL CARD ERRATA</title><main>
+          <article class="erratum" data-erratum-id="fusion-world-erratum-fb99-001">
+            <dl>
+              <dt>Card Number</dt><dd>FB99-001</dd>
+              <dt>Published On</dt><dd>2026-07-15</dd>
+              <dt>Effective From</dt><dd>2026-07-15</dd>
+              <dt>Before</dt><dd>Official printed rules</dd>
+              <dt>After</dt><dd>Official corrected rules</dd>
+              <dt>Note</dt><dd>The corrected wording applies from the published date.</dd>
+            </dl>
+            <img src="https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png">
+          </article>
+        </main></html>`,
       );
     }
     const script = html.match(new RegExp(

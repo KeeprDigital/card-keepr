@@ -1078,7 +1078,21 @@ function upstreamDetail(lineage, detail) {
             },
           ]
         : [{ role: "front", url: image }],
-      ...shared,
+      product_codes: detail.product_codes,
+      ...(detail.product_names === undefined
+        ? {}
+        : { product_names: detail.product_names }),
+      distribution: detail.distribution,
+      ...(detail.printing === undefined
+        ? {}
+        : {
+            printing: {
+              rarity: detail.printing.rarity ?? null,
+              attributes: detail.printing.attributes,
+            },
+            printed_rules: detail.printed_rules,
+            variant: detail.variant,
+          }),
     };
   }
   if (lineage === "digimon-en") {

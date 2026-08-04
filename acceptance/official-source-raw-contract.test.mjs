@@ -3952,7 +3952,7 @@ test("code-less structured Products and Releases retain name identity with valid
 });
 
 test("code-less named Products and Releases survive registered discovery surfaces", () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const payload = structuredClone(
     officialRawSurfacePayload("/fusion-world-en/card-search"),
   );
@@ -4315,7 +4315,11 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     () => parseRegisteredSurface(adapter, "card-search", overlapping),
   );
   assert.throws(
-    () => parseRegisteredSurface(previous, "card-search", overlapping),
+    () => parseRegisteredSurface(
+      previous,
+      "card-search",
+      withLegacyFusionCanonicalFields(overlapping),
+    ),
     /leaf partitions overlap/iu,
   );
 
@@ -4349,7 +4353,7 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
       parseRegisteredSurface(
         previous,
         "card-search",
-        conflictingWithinLeaf,
+        withLegacyFusionCanonicalFields(conflictingWithinLeaf),
       ),
     /do not prove complete coverage/iu,
   );
@@ -4365,8 +4369,62 @@ test("Fusion World detail identity must match its exact requested locator", () =
     () => parseRegisteredSurface(adapter, "card-search", mismatched),
     /full locator.*card number.*FB99-999/iu,
   );
+  Object.assign(mismatched.detail_pages[0], {
+    profile: "fusion-world@1",
+    artwork_fingerprint: "legacy-artwork",
+    printed_fields_digest: "legacy-printed-fields",
+  });
+  mismatched.detail_pages[0].printing.normalized_rarity = null;
   assert.doesNotThrow(
     () => parseRegisteredSurface(previous, "card-search", mismatched),
+  );
+});
+
+test("active Fusion structured details derive canonical fields from publisher facts", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const supplied = rawSurfacePayload("fusion-world-en", "card-search");
+  const suppliedDetail = supplied.detail_pages[0];
+  suppliedDetail.profile = "attacker-profile@9";
+  suppliedDetail.printing.normalized_rarity = "attacker-rarity";
+  suppliedDetail.artwork_fingerprint = "attacker-artwork";
+  suppliedDetail.printed_fields_digest = "attacker-printed-fields";
+  assert.throws(
+    () => parseRegisteredSurface(current, "card-search", supplied),
+    /caller-supplied canonical field.*profile/iu,
+  );
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(previous, "card-search", supplied),
+  );
+
+  const publisherOnly = structuredClone(supplied);
+  const publisherDetail = publisherOnly.detail_pages[0];
+  delete publisherDetail.profile;
+  delete publisherDetail.printing.normalized_rarity;
+  publisherDetail.printing.rarity = "Leader";
+  delete publisherDetail.artwork_fingerprint;
+  delete publisherDetail.printed_fields_digest;
+  const [observation] = parseRegisteredSurface(
+    current,
+    "card-search",
+    publisherOnly,
+  );
+  assert.equal(observation.card.game_data.profile, "fusion-world@1");
+  assert.equal(
+    observation.printing.rarity.normalized,
+    observation.printing.rarity.raw.toLowerCase(),
+  );
+  assert.match(
+    observation.identity_evidence.artwork_fingerprint,
+    /^official-artwork:.*"official_card_identity":"FB99-001"/u,
+  );
+  assert.match(
+    observation.identity_evidence.printed_fields_digest,
+    /^printed-material:.*"card_number":"FB99-001"/u,
+  );
+  assert.equal(
+    JSON.stringify(observation).includes("attacker-"),
+    false,
   );
 });
 
@@ -4497,6 +4555,68 @@ test("active Fusion HTML details bind base identity and variant to the full loca
   );
 });
 
+test("active Fusion ordinary Errata emits exact typed correction authority", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><title>BANDAI DRAGON BALL CARD ERRATA</title><main>
+    <article class="erratum" data-erratum-id="fusion-world-erratum-fb99-001">
+      <dl>
+        <dt>Card Number</dt><dd>FB99-001</dd>
+        <dt>Published On</dt><dd>2026-07-15</dd>
+        <dt>Effective From</dt><dd>2026-07-15</dd>
+        <dt>Before</dt><dd>Official printed rules</dd>
+        <dt>After</dt><dd>Official corrected rules</dd>
+        <dt>Note</dt><dd>The corrected wording applies from the published date.</dd>
+      </dl>
+      <img src="https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png">
+    </article>
+  </main></html>`;
+  const context = {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("errata"),
+    requestId: "fusion-world-en:errata",
+  };
+  const [observation] = current.parseBytes(
+    new TextEncoder().encode(html),
+    context,
+  );
+  assert.deepEqual(
+    {
+      kind: observation.kind,
+      target: observation.target,
+      published_on: observation.published_on,
+      effective_from: observation.effective_from,
+      observed_printed_rules_text: observation.observed_printed_rules_text,
+      corrected_rules_text: observation.corrected_rules_text,
+    },
+    {
+      kind: "official_erratum",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: "FB99-001" },
+      },
+      published_on: "2026-07-15",
+      effective_from: "2026-07-15",
+      observed_printed_rules_text: "Official printed rules",
+      corrected_rules_text: "Official corrected rules",
+    },
+  );
+  const unparsed = html.replace(
+    "</main>",
+    "<p>This correction applies only at selected events.</p></main>",
+  );
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(unparsed), context),
+    /unparsed Fusion World Errata wording/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(unparsed),
+      { ...context, url: previous.requestUrlForSurface("errata") },
+    ),
+  );
+});
+
 test("active Fusion HTML Products require available and coming-soon tabs", () => {
   const current = requiredSourceAdapter("fusion-world-en@4");
   const previous = requiredSourceAdapter("fusion-world-en@3");
@@ -4519,6 +4639,23 @@ test("active Fusion HTML Products require available and coming-soon tabs", () =>
     requestId: "fusion-world-en:products",
   };
   assert.equal(current.parseBytes(new TextEncoder().encode(html), context).length, 2);
+  assert.deepEqual(
+    current.discoverRequests(new TextEncoder().encode(html), context)
+      .filter(({ url }) => new URL(url).searchParams.has("status"))
+      .map(({ url }) => new URL(url).searchParams.get("status"))
+      .sort(),
+    ["available", "coming-soon"],
+  );
+  const rootWithoutComingSoonEntry = html.replace(
+    /<article class="booster" data-product-status="coming-soon">[\s\S]*?<\/article>/u,
+    "",
+  );
+  assert.doesNotThrow(
+    () => current.parseBytes(
+      new TextEncoder().encode(rootWithoutComingSoonEntry),
+      context,
+    ),
+  );
   const missingComingSoon = html.replace(
     /<a data-product-status="coming-soon"[^>]*>Coming Soon<\/a>/u,
     "",
@@ -4536,12 +4673,49 @@ test("active Fusion HTML Products require available and coming-soon tabs", () =>
       { ...context, url: previous.requestUrlForSurface("products") },
     ),
   );
+
+  const emptyComingSoon = `<html>
+    <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+    <p>0 records</p>
+  </html>`;
+  const emptyContext = {
+    mediaType: "text/html",
+    url: `${current.requestUrlForSurface("products")}?status=coming-soon`,
+    requestId: `fusion-world-en:listing:${"e".repeat(64)}`,
+  };
+  const [emptyObservation] = current.parseBytes(
+    new TextEncoder().encode(emptyComingSoon),
+    emptyContext,
+  );
+  assert.deepEqual(emptyObservation.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
 });
 
 function rawSurfacePayload(lineage, surface) {
   return structuredClone(
     officialRawSurfacePayload(`/${lineage}/${surface}`),
   );
+}
+
+function withLegacyFusionCanonicalFields(payload) {
+  const legacy = structuredClone(payload);
+  for (const detail of legacy.detail_pages ?? []) {
+    Object.assign(detail, {
+      profile: "fusion-world@1",
+      artwork_fingerprint: "legacy-artwork",
+      printed_fields_digest: "legacy-printed-fields",
+    });
+    if (detail.printing !== undefined) {
+      detail.printing.normalized_rarity =
+        detail.printing.rarity?.toLowerCase() ?? null;
+    }
+  }
+  return legacy;
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {
