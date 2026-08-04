@@ -16,6 +16,11 @@ import {
   officialLegalityRulesObservation,
 } from "./official-legality-source-adapters.mjs";
 import { liveOfficialLegalityDocument } from "./official-legality-live-html.mjs";
+import {
+  normalizeOnePieceCardPage,
+  onePieceDonCardObservation,
+  onePieceRecordingMemberships,
+} from "./one-piece-source-adapter.mjs";
 
 type ProductSourceGame =
   | "one-piece"
@@ -4330,6 +4335,9 @@ function normalizedSurfaceObservationsV2(
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
+      ...(game === "one-piece" && surface === "don-rules"
+        ? [onePieceDonCardObservation(document.don_card)]
+        : []),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(
@@ -4463,9 +4471,32 @@ function normalizeOnePieceSurface(
       ["publication", "events", "release_timing_entries"],
     );
   }
+  const policy = normalizedPolicy(
+    raw,
+    `one-piece-${surface}`,
+    surface === "don-rules" ? ["don_card"] : [],
+  );
+  const hasDonCard = surface === "don-rules" && raw.don_card !== undefined;
   return normalizedSurfaceBody(
-    normalizedPolicy(raw, `one-piece-${surface}`),
-    ["publication", "revision", "declared_record_count", "partition", "entries"],
+    {
+      ...policy,
+      ...(hasDonCard
+        ? {
+            don_card: requiredRecord(
+              raw.don_card,
+              "One Piece DON!! rules Card",
+            ),
+          }
+        : {}),
+    },
+    [
+      "publication",
+      "revision",
+      "declared_record_count",
+      "partition",
+      "entries",
+      ...(hasDonCard ? ["don_card"] : []),
+    ],
   );
 }
 
@@ -4792,13 +4823,14 @@ function normalizedPartitions(
 function normalizedPolicy(
   raw: Record<string, unknown>,
   expectedPublication: string,
+  additionalFields: readonly string[] = [],
 ): Record<string, unknown> {
   if (raw.publication !== expectedPublication) {
     throw new Error("Official policy publication identity is invalid.");
   }
   const allowed = new Set([
     "publication", "locale", "revision", "declared_record_count",
-    "partition", "entries",
+    "partition", "entries", ...additionalFields,
   ]);
   const unknown = Object.keys(raw).find((field) => !allowed.has(field));
   if (unknown !== undefined) {
@@ -4863,24 +4895,14 @@ function normalizePartitionEntries(
 function normalizeOnePieceDetails(value: unknown): unknown[] {
   return requiredArray(value, "One Piece Card pages").map((item) => {
     const card = requiredRecord(item, "One Piece Card page");
+    const normalized = normalizeOnePieceCardPage(card);
     return canonicalDetail(card, {
       path: "source_record_id",
       number: "card_number",
       title: "name",
       rules: "Effect",
-      attributes: {
-        card_type: card.Category,
-        colours: card.Color,
-        cost: card.Cost,
-        life: card.Life,
-        battle_attributes: card.Attribute,
-        power: card.Power,
-        counter: card.Counter,
-        traits: card.Type,
-        block_icons: card["Block icon"],
-        effect_text: card.Effect,
-        trigger_text: card.Trigger,
-      },
+      attributes: normalized.attributes,
+      printingAttributes: normalized.printingAttributes,
       imageFields: [{ role: "front", value: card.image_url }],
     });
   });
@@ -4999,6 +5021,7 @@ function canonicalDetail(
     title: string;
     rules: string;
     attributes: Record<string, unknown>;
+    printingAttributes?: Record<string, unknown>;
     imageFields: readonly { role: string; value: unknown }[];
   },
 ): Record<string, unknown> {
@@ -5046,7 +5069,7 @@ function canonicalDetail(
           printing: {
             rarity: printing.rarity ?? null,
             normalizedRarity: printing.normalized_rarity ?? null,
-            attributes: printing.attributes ?? {},
+            attributes: mapping.printingAttributes ?? printing.attributes ?? {},
           },
           printed_rules: requiredText(
             raw.printed_rules,
@@ -5349,7 +5372,13 @@ function parseRawDiscoverySurfaceFrozenV1(
   if (facets.length === 0) {
     throw new Error("Official Source discovery facets are incomplete.");
   }
-  const entries = completePartitionEntriesFrozenV1(surface.partitions);
+  const entries = completePartitionEntriesFrozenV1(
+    surface.partitions,
+    format === "one-piece",
+  );
+  const recordingMemberships = format === "one-piece"
+    ? onePieceRecordingMemberships(surface.partitions)
+    : null;
   const details = requiredArray(
     surface.details,
     "Official Source Card details",
@@ -5419,11 +5448,20 @@ function parseRawDiscoverySurfaceFrozenV1(
             record.memberships,
             "Official discovery memberships",
           );
+    const identityEvidence = isPlainRecord(record.identity_evidence)
+      ? record.identity_evidence
+      : null;
+    const locator = typeof identityEvidence?.locator === "string"
+      ? identityEvidence.locator
+      : null;
+    const recordingSourceBuckets = locator === null
+      ? null
+      : recordingMemberships?.get(locator) ?? null;
     return {
       ...record,
       memberships: {
         ...memberships,
-        source_buckets: sourceBuckets,
+        source_buckets: recordingSourceBuckets ?? sourceBuckets,
       },
     };
   });
@@ -5543,7 +5581,10 @@ function rawCoverageObservationFrozenV1(
   };
 }
 
-function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
+function completePartitionEntriesFrozenV1(
+  value: unknown,
+  allowCompatibleOverlap = false,
+): unknown[] {
   const pages = requiredArray(
     value,
     "Official Source discovery partitions",
@@ -5611,13 +5652,16 @@ function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
       const identity = JSON.stringify(stableValue(entry));
       const priorBucket = claimedEntries.get(identity);
       if (priorBucket !== undefined && priorBucket !== bucket) {
-        throw new Error(
-          `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
-        );
+        if (!allowCompatibleOverlap) {
+          throw new Error(
+            `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
+          );
+        }
+        continue;
       }
       claimedEntries.set(identity, bucket);
+      allEntries.push(entry);
     }
-    allEntries.push(...entries);
   }
   return allEntries;
 }

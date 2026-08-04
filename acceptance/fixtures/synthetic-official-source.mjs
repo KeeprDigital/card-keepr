@@ -22,6 +22,9 @@ import {
   productionSourceFixtureRole,
   productionSourceFixtureSurface,
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
+import {
+  onePieceCompleteOfficialSourceResponse,
+} from "./one-piece-complete-official-source.mjs";
 
 export default {
   fetch(request) {
@@ -74,6 +77,8 @@ export default {
     }
     const officialLineage = officialLineageForUrl(url);
     if (officialLineage !== null) {
+      const onePieceComplete = onePieceCompleteOfficialSourceResponse(request);
+      if (onePieceComplete !== null) return onePieceComplete;
       const officialScenarioMarker = productionSourceFixtureMarker(
         request.headers,
       );
