@@ -1752,7 +1752,8 @@ function bandaiSnapshotDecoder(
       format === "digimon" &&
       dynamicRole === "listing" &&
       structuredSurface === requiredSurfaces[0] &&
-      digimonPopupRecordCount(html) > 0
+      (isCompleteDigimonLeafUrl(context.url) ||
+        digimonPopupRecordCount(html) > 0)
     ) {
       assertCompleteDigimonLeafUrl(context.url);
       return parseDigimonCardListPopupHtmlV4(html, context.url);
@@ -2804,22 +2805,24 @@ function assertDigimonPayloadAtCompleteLeaf(
 }
 
 function assertCompleteDigimonLeafUrl(requestUrl: string): void {
+  if (!isCompleteDigimonLeafUrl(requestUrl)) {
+    throw new Error(
+      "Official Source Digimon catalogue facts require a complete Digimon leaf with exact category, cardcategory, and color facets.",
+    );
+  }
+}
+
+function isCompleteDigimonLeafUrl(requestUrl: string): boolean {
   const url = new URL(requestUrl);
   const exactFacet = (name: string) =>
     url.searchParams.getAll(name).length === 1 &&
     url.searchParams.get(name)?.trim() !== "";
   const exactColourFacet =
     Number(exactFacet("color")) + Number(exactFacet("colour")) === 1;
-  if (
-    url.pathname !== "/cards/index.php" ||
-    !exactFacet("category") ||
-    !exactFacet("cardcategory") ||
-    !exactColourFacet
-  ) {
-    throw new Error(
-      "Official Source Digimon catalogue facts require a complete Digimon leaf with exact category, cardcategory, and color facets.",
-    );
-  }
+  return url.pathname === "/cards/index.php" &&
+    exactFacet("category") &&
+    exactFacet("cardcategory") &&
+    exactColourFacet;
 }
 
 function digimonPopupRecordCount(html: string): number {
@@ -5598,12 +5601,17 @@ function parseDigimonCardListPopupHtmlV4(
   requestUrl: string,
 ): Record<string, unknown>[] {
   const declaredRecordCount = digimonDeclaredRecordCount(html);
+  const leafPublisherCardType = requiredText(
+    new URL(requestUrl).searchParams.get("cardcategory"),
+    "Official Digimon leaf cardcategory",
+  );
+  const leafCardType = digimonProfileCardType(
+    leafPublisherCardType,
+    "Official Digimon leaf cardcategory",
+  );
   const recordStarts = [...html.matchAll(
     /<li\b[^>]*\bclass=["'][^"']*\bimage_lists_item\b[^"']*\bdata\b[^"']*["'][^>]*>/giu,
   )].map((match) => match.index);
-  if (recordStarts.length === 0) {
-    throw new Error("Official Digimon Card List has no popup records.");
-  }
   const popupCount = [...html.matchAll(
     /<div\b[^>]*\bclass=["'][^"']*\bpopupCol\b[^"']*["'][^>]*>/giu,
   )].length;
@@ -5613,17 +5621,29 @@ function parseDigimonCardListPopupHtmlV4(
     );
   }
   if (
-    declaredRecordCount !== null &&
     declaredRecordCount !== recordStarts.length
   ) {
     throw new Error(
       "Official Digimon Card List declared and parsed record counts differ.",
     );
   }
+  if (recordStarts.length === 0) {
+    return [attachRawSurfaceEvidenceV1({
+      completeness: completeObservation(0, 0),
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    }, "digimon-en", "card-list", {
+      declared_record_count: declaredRecordCount,
+      leaf_cardcategory: leafPublisherCardType,
+    }, true, ["declared_record_count", "leaf_cardcategory"])];
+  }
   const records = recordStarts.map((start, index) =>
     html.slice(start, recordStarts[index + 1] ?? html.length)
   );
-  return records.map((record, index) => {
+  return records.map((record) => {
     const popupMatches = [...record.matchAll(
       /<div\b([^>]*\bclass=["'][^"']*\bpopupCol\b[^"']*["'][^>]*)>/giu,
     )];
@@ -5703,14 +5723,21 @@ function parseDigimonCardListPopupHtmlV4(
         "Official Digimon alternate-art marker does not match its popup locator.",
       );
     }
-    const levelValue = requiredText(
-      titleField("cardLv"),
-      "Official Digimon Card level",
+    const publisherCardType = requiredText(
+      titleField("cardType"),
+      "Official Digimon Card type",
     );
-    const level = levelValue.match(/^Lv\.(\d+)$/u)?.[1];
-    if (level === undefined) {
-      throw new Error("Official Digimon Card level is invalid.");
+    const cardType = digimonProfileCardType(
+      publisherCardType,
+      "Official Digimon Card type",
+    );
+    if (cardType !== leafCardType) {
+      throw new Error(
+        "Official Digimon Card Type does not match the leaf cardcategory.",
+      );
     }
+    const levelValue = titleField("cardLv");
+    const level = digimonCardLevel(levelValue, cardType);
     const info = exactDigimonClassBody(
       record,
       "div",
@@ -5845,12 +5872,9 @@ function parseDigimonCardListPopupHtmlV4(
       title: "name",
       rules: "Effect",
       attributes: {
-        card_type: requiredText(
-          titleField("cardType"),
-          "Official Digimon Card type",
-        ).toLocaleLowerCase(),
+        card_type: cardType,
         colours: colourValues(field("Color")),
-        level: Number.parseInt(level, 10),
+        level,
         play_cost: integerOrNull(field("Play Cost", "Cost")),
         use_cost: integerOrNull(field("Use Cost")),
         dp: integerOrNull(field("DP")),
@@ -5877,18 +5901,57 @@ function parseDigimonCardListPopupHtmlV4(
     );
     return attachRawSurfaceEvidenceV1({
       ...observation,
-      completeness: completeObservation(
-        declaredRecordCount ?? records.length,
-        records.length,
-      ),
+      completeness: completeObservation(1, 1),
     }, "digimon-en", "card-list", {
       popup_id: locator,
+      publisher_card_type: publisherCardType,
+      publisher_level: levelValue,
+      leaf_cardcategory: leafPublisherCardType,
       card_qa: retainedQa.entries,
-    }, true, ["popup_id"]);
+    }, true, [
+      "popup_id",
+      "publisher_card_type",
+      "publisher_level",
+      "leaf_cardcategory",
+    ]);
   });
 }
 
-function digimonDeclaredRecordCount(html: string): number | null {
+const digimonProfileCardTypes = new Map([
+  ["digi-egg", "digi_egg"],
+  ["digimon", "digimon"],
+  ["tamer", "tamer"],
+  ["option", "option"],
+  ["digimon/option", "digimon_option"],
+]);
+
+function digimonProfileCardType(value: unknown, name: string): string {
+  const publisherType = requiredText(value, name);
+  const normalizedPublisherType = publisherType.normalize("NFKC")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("en");
+  const profileType = digimonProfileCardTypes.get(normalizedPublisherType);
+  if (profileType === undefined) {
+    throw new Error(`${name} is unknown.`);
+  }
+  return profileType;
+}
+
+function digimonCardLevel(value: string | null, cardType: string): number | null {
+  if (value === null) return null;
+  const normalized = value.normalize("NFKC").trim();
+  if (/^(?:|-|—|n\/a|not available|unavailable)$/iu.test(normalized)) {
+    return null;
+  }
+  const level = normalized.match(/^Lv\.(\d+)$/u)?.[1];
+  if (level === undefined) {
+    throw new Error(`Official Digimon ${cardType} level is invalid.`);
+  }
+  return Number.parseInt(level, 10);
+}
+
+function digimonDeclaredRecordCount(html: string): number {
   const containers = [...html.matchAll(
     /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
   )];
@@ -5896,7 +5959,9 @@ function digimonDeclaredRecordCount(html: string): number | null {
     throw new Error("Official Digimon Card List result count is duplicated.");
   }
   const container = containers[0];
-  if (container === undefined) return null;
+  if (container === undefined) {
+    throw new Error("Official Digimon Card List result count is unavailable.");
+  }
   const count = htmlText(container[1]!).match(/^Result\s+(\d+)\s+cards?$/iu)?.[1];
   if (count === undefined) {
     throw new Error("Official Digimon Card List result count is invalid.");

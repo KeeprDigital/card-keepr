@@ -222,6 +222,26 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     [1, 0, 1, 1, 3],
     "only the exact Colour leaf may supply catalogue records, including both required popups",
   );
+  const exactLeafSnapshot = cardListSnapshots.at(-1);
+  assert.notEqual(exactLeafSnapshot, undefined);
+  const exactLeafObservationSet = completed.observation_sets.find(
+    ({ source_snapshot_id }) => source_snapshot_id === exactLeafSnapshot.id,
+  );
+  assert.notEqual(exactLeafObservationSet, undefined);
+  const exactLeafEvidenceResponse = await fetch(
+    `http://127.0.0.1:${ingestionPort}/v1/source-observation-sets/${exactLeafObservationSet.id}/content`,
+    { headers: { authorization: `Bearer ${administrationKey}` } },
+  );
+  assert.equal(exactLeafEvidenceResponse.status, 200);
+  const exactLeafEvidence = await exactLeafEvidenceResponse.json();
+  assert.deepEqual(exactLeafEvidence.evidence_summary, {
+    observation_count: 3,
+    declared_record_count: 3,
+    parsed_record_count: 3,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    structurally_complete: true,
+  }, "the exact leaf summary must count each retained observation once");
 
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", run.id, "--json"],
