@@ -155,6 +155,11 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   assert.ok(candidate.diff.warnings.some(
     ({ code, raw_value }) =>
       code === "unknown_source_field" &&
+      raw_value === "New optional publisher vocabulary",
+  ));
+  assert.ok(candidate.diff.warnings.some(
+    ({ code, raw_value }) =>
+      code === "unknown_source_field" &&
       raw_value === "Optional DON publication note",
   ));
   const approved = await runCli([

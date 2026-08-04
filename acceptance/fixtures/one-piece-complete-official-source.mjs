@@ -109,6 +109,7 @@ function liveCard(number) {
         <div><h3>Block icon</h3>${leader ? "1" : "2"}</div>
         <div><h3>Effect</h3>${effect}</div>
         ${leader ? "" : "<div><h3>Trigger</h3>Play this card.</div>"}
+        ${leader ? "" : "<div><h3>New Optional Label</h3>New optional publisher vocabulary</div>"}
         <div class="getInfo"><h3>Card Set(s)</h3>Complete One Piece Product</div>
       </div>
     </dd>

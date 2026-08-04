@@ -2610,6 +2610,32 @@ function parseOnePieceBandaiCardListV1(
         value: rawTreatment,
       });
     }
+    const normalizedRarity = rarity.length === 0
+      ? null
+      : expandedOnePieceCatalogue
+        ? normalizedOnePieceRarity(rarity)
+        : rarity.toLowerCase();
+    if (
+      expandedOnePieceCatalogue && rarity.length > 0 &&
+      normalizedRarity === null
+    ) {
+      schemaReviewValues.push({
+        locator,
+        field: "One Piece rarity",
+        value: rarity,
+      });
+    }
+    if (expandedOnePieceCatalogue) {
+      for (const pair of pairs.filter(({ label }) =>
+        !onePieceKnownCardListLabel(label)
+      )) {
+        schemaReviewValues.push({
+          locator,
+          field: pair.label,
+          value: pair.value,
+        });
+      }
+    }
     const artworkFingerprint = officialArtworkFingerprint(
       cardNumber,
       ["front"],
@@ -2666,12 +2692,10 @@ function parseOnePieceBandaiCardListV1(
       },
       printing: {
         rarity: rarity.length === 0 ? null : rarity,
-        normalizedRarity: rarity.length === 0
-          ? null
-          : expandedOnePieceCatalogue
-            ? normalizedOnePieceRarity(rarity)
-            : rarity.toLowerCase(),
-        attributes: { illustration_types: [] },
+        normalizedRarity,
+        attributes: expandedOnePieceCatalogue
+          ? {}
+          : { illustration_types: [] },
       },
       treatment,
       printed_rules: effect ?? "",
@@ -2713,6 +2737,17 @@ function parseOnePieceBandaiCardListV1(
       recording_options: recordings,
       declared_record_count: declaredCount,
       parsed_locators: modalMatches.map((match) => decodeHtmlText(match[1]!)),
+      ...(expandedOnePieceCatalogue
+        ? {
+            raw_label_pairs: modalMatches.flatMap((match) =>
+              htmlLabelPairs(match[2]!).map(({ label, value }) => ({
+                locator: decodeHtmlText(match[1]!),
+                label,
+                value,
+              }))
+            ),
+          }
+        : {}),
       ...(schemaReviewValues.length === 0
         ? {}
         : { schema_review_values: schemaReviewValues }),
@@ -2722,8 +2757,20 @@ function parseOnePieceBandaiCardListV1(
       "recording_options",
       "declared_record_count",
       "parsed_locators",
+      ...(expandedOnePieceCatalogue ? ["raw_label_pairs"] : []),
     ],
   };
+}
+
+function onePieceKnownCardListLabel(label: string): boolean {
+  return [
+    "Effect", "Card Text", "Text", "Card Set(s)", "Where to get it",
+    "Color", "Colour", "Cost", "Life", "Attribute", "Power", "Counter",
+    "Type", "Traits", "Block icon", "Block", "Trigger", "Artwork ID",
+    "Artwork Identifier", "Illustration ID", "Artwork Treatment", "Treatment",
+  ].some((known) =>
+    known.localeCompare(label, undefined, { sensitivity: "accent" }) === 0
+  );
 }
 
 function parseBandaiCardDetailV1(
@@ -4122,10 +4169,14 @@ function onePieceUnmappedOptionalFields(
 ): { path: string; value: unknown }[] {
   if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
   return raw.card_pages.flatMap((value, cardIndex) => {
-    if (!isPlainRecord(value) || !isPlainRecord(value.printing) ||
-        !isPlainRecord(value.printing.attributes) ||
-        !Array.isArray(value.printing.attributes.illustration_types)) return [];
-    return value.printing.attributes.illustration_types.flatMap(
+    if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
+    const printingAttributes = isPlainRecord(value.printing.attributes)
+      ? value.printing.attributes
+      : {};
+    const illustrationWarnings = Array.isArray(
+        printingAttributes.illustration_types,
+      )
+      ? printingAttributes.illustration_types.flatMap(
       (illustration, illustrationIndex) =>
         typeof illustration === "string" &&
           ["comic", "animation", "original", "other"].includes(
@@ -4139,7 +4190,20 @@ function onePieceUnmappedOptionalFields(
                 `illustration_types[${illustrationIndex}]`,
               value: illustration,
             }],
-    );
+      )
+      : [];
+    const rarity = value.printing.rarity;
+    const rarityWarnings =
+      typeof rarity === "string" && rarity.trim().length > 0 &&
+        normalizedOnePieceRarity(rarity) === null
+        ? [{
+            path:
+              "source_sidecar.raw.official_surfaces[0].document." +
+              `card_pages[${cardIndex}].printing.rarity`,
+            value: rarity,
+          }]
+        : [];
+    return [...illustrationWarnings, ...rarityWarnings];
   });
 }
 
@@ -5215,7 +5279,9 @@ function canonicalDetail(
             normalizedRarity: mapping.normalizedRarity !== undefined
               ? mapping.normalizedRarity
               : printing.normalized_rarity ?? null,
-            attributes: mapping.printingAttributes ?? printing.attributes ?? {},
+            attributes: Object.hasOwn(mapping, "printingAttributes")
+              ? mapping.printingAttributes ?? {}
+              : printing.attributes ?? {},
           },
           printed_rules: requiredText(
             raw.printed_rules,

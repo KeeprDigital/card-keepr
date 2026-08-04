@@ -65,6 +65,14 @@ export function normalizeOnePieceCardPage(value) {
     printing?.attributes,
     "One Piece Printing attributes",
   )?.illustration_types;
+  const normalizedIllustrationTypes = rawIllustrationTypes === undefined
+    ? []
+    : uniqueValues(
+        rawIllustrationTypes,
+        "One Piece illustration filter membership",
+      ).map((item) => illustrationTypes.get(normalizedToken(item)))
+      .filter((item) => item !== undefined)
+      .sort();
   return {
     normalizedRarity: printing === null
       ? null
@@ -89,14 +97,9 @@ export function normalizeOnePieceCardPage(value) {
       effect_text: nullableText(value.Effect, "One Piece Effect"),
       trigger_text: nullableText(value.Trigger, "One Piece Trigger"),
     },
-    printingAttributes: {
-      illustration_types: uniqueValues(
-        rawIllustrationTypes ?? [],
-        "One Piece illustration filter membership",
-      ).map((item) => illustrationTypes.get(normalizedToken(item)))
-        .filter((item) => item !== undefined)
-        .sort(),
-    },
+    printingAttributes: normalizedIllustrationTypes.length === 0
+      ? undefined
+      : { illustration_types: normalizedIllustrationTypes },
   };
 }
 

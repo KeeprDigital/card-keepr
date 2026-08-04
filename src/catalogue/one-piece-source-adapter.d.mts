@@ -2,7 +2,7 @@ export function normalizeOnePieceCardPage(
   value: Readonly<Record<string, unknown>>,
 ): {
   attributes: Record<string, unknown>;
-  printingAttributes: Record<string, unknown>;
+  printingAttributes?: Record<string, unknown>;
   normalizedRarity: string | null;
 };
 

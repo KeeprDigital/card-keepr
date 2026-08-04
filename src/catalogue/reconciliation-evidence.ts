@@ -616,8 +616,14 @@ async function sourceObservationCountChangeWarnings(
     const previousCount = priorCounts.get(
       `${row.source_lineage}\u0000${row.request_id}`,
     );
-    return previousCount === undefined ||
-        previousCount === row.observation_count
+    const threshold = previousCount === undefined
+      ? null
+      : Math.max(25, Math.ceil(previousCount * 0.2));
+    const absoluteDelta = previousCount === undefined
+      ? null
+      : Math.abs(row.observation_count - previousCount);
+    return previousCount === undefined || threshold === null ||
+        absoluteDelta === null || absoluteDelta < threshold
       ? []
       : [{
           code: "source_observation_count_changed",
@@ -625,8 +631,10 @@ async function sourceObservationCountChangeWarnings(
           request_id: row.request_id,
           previous_count: previousCount,
           current_count: row.observation_count,
+          absolute_delta: absoluteDelta,
+          warning_threshold: threshold,
           detail:
-            `Official Source request ${row.request_id} changed from ${previousCount} to ${row.observation_count} parsed observations since the prior published snapshot.`,
+            `Official Source request ${row.request_id} changed by ${absoluteDelta} parsed observations since the prior published snapshot, meeting the review threshold of ${threshold}.`,
         }];
   });
 }

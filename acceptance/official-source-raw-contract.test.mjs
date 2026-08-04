@@ -2823,6 +2823,13 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
   assert.equal(observations[0].identity_evidence.treatment, null);
   assert.equal(
+    Object.hasOwn(
+      observations[0].printing.game_data.attributes,
+      "illustration_types",
+    ),
+    false,
+  );
+  assert.equal(
     observations[0].identity_evidence.demonstrably_novel,
     false,
     "raw parser output cannot prove an appearance is novel before its image bytes are retained and verified",
@@ -2897,6 +2904,47 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       ({ value }) => value === "Textured Foil",
     ),
   );
+  const unfamiliarLabel = adapter.parseBytes(
+    new TextEncoder().encode(
+      html.replace(
+        '<div class="getInfo"><h3>Card Set(s)</h3>',
+        '<div><h3>New Optional Label</h3>Preserve me</div>' +
+          '<div class="getInfo"><h3>Card Set(s)</h3>',
+      ),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  )[0];
+  assert.ok(
+    unfamiliarLabel.source_sidecar.raw.official_surfaces[0].document
+      .raw_label_pairs.some(({ label, value }) =>
+        label === "New Optional Label" && value === "Preserve me"
+      ),
+  );
+  assert.ok(unfamiliarLabel.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Preserve me"
+  ));
+  const unfamiliarRarity = adapter.parseBytes(
+    new TextEncoder().encode(
+      html.replace(
+        "| <span>L</span> |",
+        "| <span>Experimental Rare</span> |",
+      ),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  )[0];
+  assert.deepEqual(unfamiliarRarity.printing.rarity, {
+    raw: "Experimental Rare",
+    normalized: null,
+  });
+  assert.ok(unfamiliarRarity.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Experimental Rare",
+  ));
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -3010,9 +3058,83 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
   const card = observations.find((observation) => observation.printing);
   assert.equal(card.printing.rarity.raw, "L");
   assert.equal(card.printing.rarity.normalized, "leader");
-  assert.deepEqual(card.printing.game_data.attributes.illustration_types, []);
+  assert.equal(
+    Object.hasOwn(card.printing.game_data.attributes, "illustration_types"),
+    false,
+  );
   assert.ok(card.source_sidecar.unmapped_optional_fields.some(
     ({ value }) => value === "Experimental foil vocabulary",
+  ));
+
+  const absentIllustrationPayload = officialRawSurfacePayload(
+    "/one-piece-en/card-list",
+  );
+  delete absentIllustrationPayload.card_pages[0].printing.attributes
+    .illustration_types;
+  const absentIllustration = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      absentIllustrationPayload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  ).find((observation) => observation.printing);
+  assert.equal(
+    Object.hasOwn(
+      absentIllustration.printing.game_data.attributes,
+      "illustration_types",
+    ),
+    false,
+  );
+
+  const explicitIllustrationPayload = officialRawSurfacePayload(
+    "/one-piece-en/card-list",
+  );
+  explicitIllustrationPayload.card_pages[0].printing.attributes
+    .illustration_types = ["Animation"];
+  const explicitIllustration = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      explicitIllustrationPayload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  ).find((observation) => observation.printing);
+  assert.deepEqual(
+    explicitIllustration.printing.game_data.attributes.illustration_types,
+    ["animation"],
+  );
+
+  const unknownRarityPayload = officialRawSurfacePayload(
+    "/one-piece-en/card-list",
+  );
+  unknownRarityPayload.card_pages[0].printing.rarity = "Experimental Rare";
+  const unknownRarity = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      unknownRarityPayload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  ).find((observation) => observation.printing);
+  assert.deepEqual(unknownRarity.printing.rarity, {
+    raw: "Experimental Rare",
+    normalized: null,
+  });
+  assert.ok(unknownRarity.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Experimental Rare"
   ));
 
   const policy = officialRawSurfacePayload("/one-piece-en/don-rules");
