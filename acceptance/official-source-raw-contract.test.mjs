@@ -4331,6 +4331,63 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
   );
   const exactTotal =
     '<div class="resultTxt">Result<span class="num">0</span>cards</div>';
+  for (const hiddenTotal of [
+    `<!--${exactTotal}-->`,
+    `<script type="text/template">${exactTotal}</script>`,
+    `<style>${exactTotal}</style>`,
+  ]) {
+    const hiddenOnly = exactEmpty.replace(exactTotal, hiddenTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${hiddenTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+    );
+  }
+  for (const inexactClass of [
+    exactEmpty.replace('class="resultTxt"', 'class="not-resultTxt"'),
+    exactEmpty.replace('class="resultTxt"', 'class="resultTxt-extra"'),
+    exactEmpty.replace('class="num"', 'class="not-num"'),
+    exactEmpty.replace('class="num"', 'class="num-extra"'),
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(inexactClass),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(inexactClass),
+        context,
+      ),
+    );
+  }
+  const multiClassTotal = exactEmpty
+    .replace('class="resultTxt"', 'class="summary resultTxt active"')
+    .replace('class="num"', 'class="label num total"');
+  const [multiClassObservation] = current.parseBytes(
+    new TextEncoder().encode(multiClassTotal),
+    context,
+  );
+  assert.equal(multiClassObservation.completeness.declared_record_count, 0);
   for (const malformedDuplicate of [
     exactEmpty.replace(
       exactTotal,

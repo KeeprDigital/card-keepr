@@ -1138,6 +1138,13 @@ function htmlAttribute(attributes: string, name: string): string | null {
   return match?.[1] ?? null;
 }
 
+function hasHtmlClassToken(attributes: string, token: string): boolean {
+  return (htmlAttribute(attributes, "class") ?? "")
+    .trim()
+    .split(/\s+/u)
+    .includes(token);
+}
+
 function dynamicRequestRole(
   requestId: string | undefined,
 ): "listing" | "detail" | "product_detail" | "image" | null {
@@ -4283,29 +4290,40 @@ function parseBandaiSurfaceCoverageByContract(
     format === "fusion-world" &&
     surface === "listing" &&
     fusionWorldCompleteListingLeaf(new URL(url));
+  const fusionListingCountMarkup = catalogueComplete &&
+      format === "fusion-world" && surface === "listing"
+    ? html
+      .replace(/<!--[\s\S]*?-->/gu, "")
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/giu, "")
+    : "";
   const fusionListingResultCountOpenings = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
-    ? [...html.matchAll(
-        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>/giu,
-      )]
+    ? [...fusionListingCountMarkup.matchAll(
+        /<div\b([^>]*)>/giu,
+      )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
     : [];
   const fusionListingResultCountContainers = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
-    ? [...html.matchAll(
-        /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
-      )]
+    ? [...fusionListingCountMarkup.matchAll(
+        /<div\b([^>]*)>([\s\S]*?)<\/div>/giu,
+      )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
     : [];
-  const fusionListingDeclaredCountMatch =
+  const fusionListingDeclaredCountBody =
     fusionListingResultCountOpenings.length === 1 &&
       fusionListingResultCountContainers.length === 1
-      ? fusionListingResultCountContainers[0]![1]!.match(
-        /^\s*Result\s*<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>\s*cards?\s*$/iu,
+      ? fusionListingResultCountContainers[0]![2]!.match(
+        /^\s*Result\s*<span\b([^>]*)>\s*(\d+)\s*<\/span>\s*cards?\s*$/iu,
       )
       : null;
-  const declaredCountMatch = fusionListingDeclaredCountMatch ?? html.match(
+  const fusionListingDeclaredCount =
+    fusionListingDeclaredCountBody !== null &&
+      hasHtmlClassToken(fusionListingDeclaredCountBody[1]!, "num")
+      ? fusionListingDeclaredCountBody[2]!
+      : null;
+  const declaredCount = fusionListingDeclaredCount ?? html.match(
     />\s*(\d+)\s+(?:results?|records?|items?)\s*</iu,
-  );
-  if (completeFusionListingLeaf && fusionListingDeclaredCountMatch === null) {
+  )?.[1] ?? null;
+  if (completeFusionListingLeaf && fusionListingDeclaredCount === null) {
     throw new Error(
       "Fusion World complete listing leaf must contain one exact publisher total.",
     );
@@ -4314,11 +4332,11 @@ function parseBandaiSurfaceCoverageByContract(
     catalogueComplete &&
     format === "fusion-world" &&
     surface === "listing" &&
-    declaredCountMatch !== null &&
-    Number.parseInt(declaredCountMatch[1]!, 10) !== fusionListingEntries.length
+    declaredCount !== null &&
+    Number.parseInt(declaredCount, 10) !== fusionListingEntries.length
   ) {
     throw new Error(
-      `Fusion World listing declared ${declaredCountMatch[1]} Cards but yielded ${fusionListingEntries.length} unique full locators.`,
+      `Fusion World listing declared ${declaredCount} Cards but yielded ${fusionListingEntries.length} unique full locators.`,
     );
   }
   const fusionComingSoonDeclaresEmpty =
@@ -4326,13 +4344,13 @@ function parseBandaiSurfaceCoverageByContract(
     format === "fusion-world" &&
     surface === "products" &&
     new URL(url).searchParams.get("status") === "coming-soon" &&
-    declaredCountMatch?.[1] === "0";
+    declaredCount === "0";
   const fusionListingDeclaresEmpty = completeFusionListingLeaf &&
-    fusionListingDeclaredCountMatch?.[1] === "0";
+    fusionListingDeclaredCount === "0";
   const publisherDeclaresEmpty =
     (acceptPublisherDeclaredEmpty || fusionComingSoonDeclaresEmpty ||
       fusionListingDeclaresEmpty) &&
-    declaredCountMatch?.[1] === "0";
+    declaredCount === "0";
   const publicationEntries = publicationEntryMatches
     .filter(
       (match) =>
@@ -4365,8 +4383,7 @@ function parseBandaiSurfaceCoverageByContract(
           ? publicationLinks.length
           : discoveredOptions.length;
   const declaredPublicationCount = Number.parseInt(
-    declaredCountMatch?.[1] ??
-      String(parsedPublicationCount),
+    declaredCount ?? String(parsedPublicationCount),
     10,
   );
   const productIndexObservations =
