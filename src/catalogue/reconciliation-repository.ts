@@ -180,6 +180,26 @@ export async function hasOtherGundamLocaleEvidence(
   return row !== null;
 }
 
+export async function currentPrintingProductsForLineage(
+  database: D1Database,
+  printingId: string,
+  sourceLineage: string,
+): Promise<string[]> {
+  const rows = await database
+    .prepare(
+      `SELECT DISTINCT relationship_value
+       FROM reconciled_printing_memberships
+       WHERE printing_id = ?
+         AND source_lineage = ?
+         AND relationship_kind = 'product'
+         AND current = 1
+       ORDER BY relationship_value`,
+    )
+    .bind(printingId, sourceLineage)
+    .all<{ relationship_value: string }>();
+  return rows.results.map(({ relationship_value }) => relationship_value);
+}
+
 export async function hasCardObservationFromLineage(
   database: D1Database,
   cardId: string,

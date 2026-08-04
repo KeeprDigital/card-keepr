@@ -171,10 +171,82 @@ const productionAdapterVersions = sourceAdapterRegistrations
 const expectedProductionAdapterVersions = [
   "digimon-en@4",
   "fusion-world-en@4",
-  "gundam-en-asia@3",
-  "gundam-en-us@3",
+  "gundam-en-asia@4",
+  "gundam-en-us@4",
   "one-piece-en@3",
 ];
+
+test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const retained = requiredSourceAdapter(`${lineage}@3`);
+    const payload = rawSurfacePayload(lineage, "packages");
+    assert.ok(
+      parseRegisteredSurface(retained, "packages", payload).length > 0,
+      "V3 remains available for retained snapshot replay",
+    );
+
+    const complete = structuredClone(payload);
+    const detail = complete.card_details[0];
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    delete detail.printing.normalized_rarity;
+    complete.package_options = [
+      { value: "gd01", label: "GD01" },
+      { value: "starter", label: "Starter decks" },
+    ];
+    const entry = complete.result.partitions[0].entries[0];
+    complete.result.partitions = ["gd01", "starter"].map((name) => ({
+      bucket: `package=${name}`,
+      page: 1,
+      pages: 1,
+      total: 1,
+      has_next: false,
+      entries: [structuredClone(entry)],
+    }));
+
+    const observations = parseRegisteredSurface(current, "packages", complete);
+    assert.equal(
+      observations.filter(({ card }) => card !== undefined).length,
+      1,
+      "the same full locator is deterministically deduplicated across packages",
+    );
+    assert.equal(observations[0].printing.rarity.raw, "R");
+    assert.equal(observations[0].printing.rarity.normalized, null);
+    assert.match(
+      observations[0].identity_evidence.artwork_fingerprint,
+      /^official-artwork:/u,
+    );
+    assert.match(
+      observations[0].identity_evidence.printed_fields_digest,
+      /^printed-material:/u,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html>${officialPublisherPayloadScript(
+            lineage,
+            "packages",
+            complete,
+          )}</html>`,
+        ),
+        {
+          mediaType: "text/html",
+          url: current.requestUrlForSurface("packages"),
+          requestId: `${lineage}:packages`,
+        },
+      ),
+      /Gundam catalogue facts require an exact package leaf/iu,
+    );
+
+    const conflicting = structuredClone(complete);
+    conflicting.result.partitions[1].entries[0].number = "GD99-999";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", conflicting),
+      /full locator.*conflict/iu,
+    );
+  }
+});
 
 test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue facts above a leaf", () => {
   const current = requiredSourceAdapter("digimon-en@4");
@@ -1661,7 +1733,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
           ? /-raw-surfaces-with-legality-and-catalogue@3$/u
           : adapter.sourceLineage === "digimon-en"
             ? /-raw-surfaces-complete-catalogue@3$/u
-            : /-raw-surfaces-with-legality@2$/u,
+            : /-raw-surfaces-complete-catalogue@3$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -1775,8 +1847,11 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
         ? hostilePath.pathname.replace("/en/", "/asia-en/")
         : `/outside-lineage${hostilePath.pathname}`;
     const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
+    const gundamLeaf = adapter.sourceLineage.startsWith("gundam-en-");
     const discoveryUrl = fusionLeaf
       ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`
+      : gundamLeaf
+        ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?package=GD01`
       : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(`
@@ -1787,8 +1862,8 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       {
         mediaType: "text/html; charset=utf-8",
         url: discoveryUrl,
-        requestId: fusionLeaf
-          ? `fusion-world-en:listing:${"6".repeat(64)}`
+        requestId: fusionLeaf || gundamLeaf
+          ? `${adapter.sourceLineage}:listing:${"6".repeat(64)}`
           : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
       },
     );
@@ -4779,6 +4854,67 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   );
 });
 
+test("Gundam V4 visits every package option and schedules Card details only at a package leaf", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
+    const rootHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <select name="package">
+        <option value="all">All</option>
+        <option value="GD01">GD01</option>
+        <option value="ST01">ST01</option>
+      </select>
+      <a href="/${locale}/cards/index.php?detailSearch=GD01-001">Not a leaf</a>
+    </html>`;
+    const rootRequests = adapter.discoverRequests(
+      new TextEncoder().encode(rootHtml),
+      {
+        mediaType: "text/html",
+        url: rootUrl,
+        requestId: `${lineage}:packages`,
+      },
+    );
+    assert.deepEqual(
+      rootRequests.map(({ role, url }) => ({
+        role,
+        package: new URL(url).searchParams.get("package"),
+      })),
+      ["all", "GD01", "ST01"].map((packageValue) => ({
+        role: "listing",
+        package: packageValue,
+      })),
+    );
+
+    const leafUrl = `${rootUrl}?package=GD01`;
+    const leafHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <a href="?package=GD01&page=2">Next</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Card</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Duplicate</a>
+    </html>`;
+    const leafContext = {
+      mediaType: "text/html",
+      url: leafUrl,
+      requestId: `${lineage}:listing:${"a".repeat(64)}`,
+    };
+    assert.deepEqual(
+      adapter.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).map(({ role, url }) => ({ role, url })),
+      [
+        { role: "detail", url: `${rootUrl}?detailSearch=GD01-001` },
+        { role: "listing", url: `${rootUrl}?package=GD01&page=2` },
+      ],
+    );
+    assert.doesNotThrow(() =>
+      adapter.parseBytes(new TextEncoder().encode(leafHtml), leafContext)
+    );
+  }
+});
+
 test("Digimon staged discovery ignores only the known global header and retains one literal local Card List link", () => {
   const adapter = requiredSourceAdapter("digimon-en@3");
   const stageUrl = "https://world.digimoncard.com/cardlist/";
@@ -5263,9 +5399,11 @@ test("real Digimon and Gundam details close every known profile field and reject
       <h1>Test Gundam Unit</h1>
       <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
       <dl><dt>Type</dt><dd>Unit</dd></dl>
-      <dl><dt>Color</dt><dd>Blue</dd></dl>
+      <dl><dt>Color</dt><dd>-</dd></dl>
       <dl><dt>Level</dt><dd>5</dd></dl>
       <dl><dt>Cost</dt><dd>1,000</dd></dl>
+      <dl><dt>Block</dt><dd>03</dd></dl>
+      <dl><dt>Rarity</dt><dd>R★</dd></dl>
       <dl><dt>Effect</dt><dd>Unit effect</dd></dl>
       <dl><dt>AP</dt><dd>4,000</dd></dl>
       <dl><dt>HP</dt><dd>5,000</dd></dl>
@@ -5279,12 +5417,18 @@ test("real Digimon and Gundam details close every known profile field and reject
     },
   )[0];
   assert.equal(gundamObservation.card.game_data.attributes.cost, 1000);
+  assert.deepEqual(gundamObservation.card.game_data.attributes.colours, []);
+  assert.equal(gundamObservation.card.game_data.attributes.block_icon, "03");
   assert.equal(gundamObservation.card.game_data.attributes.ap, 4000);
   assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
   assert.deepEqual(
     gundamObservation.printing.game_data.attributes,
     { alternate_art: true },
   );
+  assert.deepEqual(gundamObservation.printing.rarity, {
+    raw: "R★",
+    normalized: null,
+  });
 });
 
 test("every production lineage preserves its synthetic publisher-contract examples", () => {
@@ -6431,6 +6575,9 @@ function withLegacyFusionCanonicalFields(payload) {
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
     adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
+  const completeGundamLeaf =
+    (adapter.adapterVersion === "gundam-en-asia@4" ||
+      adapter.adapterVersion === "gundam-en-us@4") && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
     adapter.adapterVersion === "one-piece-en@3" &&
@@ -6443,6 +6590,13 @@ function parseRegisteredSurface(adapter, surface, payload) {
   }
   if (completeDigimonLeaf) {
     for (const detail of publisherPayload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      delete detail.printing.normalized_rarity;
+    }
+  }
+  if (completeGundamLeaf) {
+    for (const detail of publisherPayload.card_details ?? []) {
       delete detail.artwork_fingerprint;
       delete detail.printed_fields_digest;
       delete detail.printing.normalized_rarity;
@@ -6461,9 +6615,11 @@ function parseRegisteredSurface(adapter, surface, payload) {
       mediaType: "text/html; charset=utf-8",
       url: completeDigimonLeaf
         ? `${adapter.requestUrlForSurface(surface)}&category=all&cardcategory=digimon&colour=blue`
+        : completeGundamLeaf
+          ? `${adapter.requestUrlForSurface(surface)}?package=all`
         : adapter.requestUrlForSurface(surface),
-      requestId: completeDigimonLeaf
-        ? `digimon-en:listing:${"f".repeat(64)}`
+      requestId: completeDigimonLeaf || completeGundamLeaf
+        ? `${adapter.sourceLineage}:listing:${"f".repeat(64)}`
         : `${adapter.sourceLineage}:${surface}`,
     },
   );

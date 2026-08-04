@@ -14,8 +14,8 @@ request graphs:
 - `one-piece-en@3`
 - `fusion-world-en@4`
 - `digimon-en@4`
-- `gundam-en-asia@3`
-- `gundam-en-us@3`
+- `gundam-en-asia@4`
+- `gundam-en-us@4`
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
@@ -40,7 +40,7 @@ version string.
 
 The earlier production versions (`one-piece-en@1`, `one-piece-en@2`,
 `fusion-world-en@2`, `fusion-world-en@3`,
-`digimon-en@2`, `digimon-en@3`, and both Gundam `@2` versions) remain
+`digimon-en@2`, `digimon-en@3`, and both Gundam `@2` and `@3` versions) remain
 registered with their original parser contracts only for explicit reprocessing
 of retained Source Snapshots. New production Evidence Plans accept only the
 active registrations listed above. Reprocessing retained bytes through an

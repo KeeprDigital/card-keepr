@@ -402,6 +402,12 @@ function officialBandaiDataset(
         parserSignal,
         requestUrl,
       );
+      applyGundamCompleteFixture(
+        payload,
+        lineage,
+        surface,
+        requestUrl,
+      );
       if (
         lineage === "one-piece-en" &&
         codeLessProduct
@@ -439,12 +445,58 @@ function officialBandaiDataset(
   }${officialBandaiStageNavigation(lineage, requestUrl)}${
     digimonCompleteDiscoveryFacets(lineage, surface, parserSignal)
   }${
+    gundamCompleteDiscoveryFacets(lineage, surface, requestUrl)
+  }${
     publication.hasPart.map((part) => officialPublisherPayloadScript(
       lineage,
       part.identifier.slice(`${lineage}:`.length),
       part.payload,
     )).join("")
   }</html>`;
+}
+
+function applyGundamCompleteFixture(
+  payload,
+  lineage,
+  surface,
+  requestUrl,
+) {
+  if (!lineage.startsWith("gundam-") || surface !== "packages") return;
+  payload.package_options = [{ value: "all", label: "All packages" }];
+  if (!requestUrl.searchParams.has("package")) {
+    payload.result = {
+      cap_signal: null,
+      partitions: [{
+        bucket: "package=all",
+        page: 1,
+        pages: 1,
+        total: 0,
+        has_next: false,
+        entries: [],
+      }],
+    };
+    payload.card_details = [];
+    payload.products = [];
+    payload.releases = [];
+    return;
+  }
+  for (const detail of payload.card_details ?? []) {
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    if (detail.printing !== null && typeof detail.printing === "object") {
+      delete detail.printing.normalized_rarity;
+    }
+  }
+}
+
+function gundamCompleteDiscoveryFacets(lineage, surface, requestUrl) {
+  if (!lineage.startsWith("gundam-") || surface !== "packages") return "";
+  const selected = requestUrl.searchParams.has("package") ? " selected" : "";
+  return `<form aria-label="Gundam Card package filter">
+    <select name="package">
+      <option value="all"${selected}>All packages</option>
+    </select>
+  </form>`;
 }
 
 function applyDigimonCompleteFixture(

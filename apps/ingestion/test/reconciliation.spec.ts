@@ -2562,32 +2562,42 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     ],
   });
 
-  for (const [scenario, key] of [
-    [
-      "gundam-cross-product-conflict",
-      "reconcile-gundam-product-conflict",
+  const productMismatchRun = await collect(
+    "/reconciliation/gundam-cross-product-conflict",
+    "reconcile-gundam-product-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const productMismatch = await reconcile(productMismatchRun.id);
+  expect(productMismatch.response.status).toBe(409);
+  expect(productMismatch.document).toMatchObject({
+    diagnostics: [
+      expect.objectContaining({
+        code: "printing_match_contradictory",
+        candidate_printing_ids: [printingId],
+        detail: expect.stringContaining("Product corroboration"),
+      }),
     ],
-    [
-      "gundam-cross-variant-conflict",
-      "reconcile-gundam-variant-conflict",
-    ],
-  ] as const) {
-    const mismatchRun = await collect(
-      `/reconciliation/${scenario}`,
-      key,
-      {
-        game: "gundam",
-        lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
-      },
-    );
-    const mismatch = await reconcile(mismatchRun.id);
-    expect(mismatch.response.status).toBe(200);
-    expect(requiredFirst(mismatch.document, "printings")).toMatchObject({
-      id: printingId,
-    });
-    await approve(mismatch.document);
-  }
+  });
+
+  const variantMismatchRun = await collect(
+    "/reconciliation/gundam-cross-variant-conflict",
+    "reconcile-gundam-variant-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const variantMismatch = await reconcile(variantMismatchRun.id);
+  expect(variantMismatch.response.status).toBe(200);
+  expect(requiredFirst(variantMismatch.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  await approve(variantMismatch.document);
 }, 30_000);
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
@@ -4702,7 +4712,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
 
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";
-  const adapterVersion = "gundam-en-asia@3";
+  const adapterVersion = "gundam-en-asia@4";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
     plans: [{
       supported_game: "gundam",

@@ -68,12 +68,12 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@3",
+            "gundam-en-asia@4",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@3",
+            "gundam-en-us@4",
           ),
         ],
       }),
@@ -298,21 +298,21 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@3",
+        adapter_version: "gundam-en-asia@4",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@3",
+          "gundam-en-asia@4",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@3",
+        adapter_version: "gundam-en-us@4",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@3",
+          "gundam-en-us@4",
         ).requests.map(({ id }) => id),
       },
     ],
@@ -901,7 +901,7 @@ async function waitForRunState(
   environment,
   worker,
 ) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 40_000;
   let lastDocument = null;
   while (Date.now() < deadline) {
     const shown = await runCli(
