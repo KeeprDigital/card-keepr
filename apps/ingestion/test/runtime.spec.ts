@@ -31,6 +31,7 @@ import {
   fusionWorldProductionCollectionRequests,
 } from "./production-collection-request-goldens";
 import {
+  productionRepresentableFusionLegalityResponse,
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
   productionSourceFixtureSurface,
@@ -317,6 +318,83 @@ test("final Official Source requests keep discovery evidence immutable while exp
         `card-keepr-representable-legality-v3; request-role=surface; request-surface=${surface}`,
     },
   })));
+});
+
+test("final Official Source requests canonicalize injected reserved routing metadata", async () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const requests = await officialCollectionRequestsFromDiscovery(
+    adapter,
+    fusionWorldDiscoveryRecords(),
+    {
+      "user-agent":
+        "caller-agent; request-surface=releases; request-role=detail; request-surface=products",
+    },
+  );
+
+  for (const { surface, headers } of requests) {
+    expect(headers["user-agent"]).toBe(
+      `caller-agent; request-role=surface; request-surface=${surface}`,
+    );
+  }
+});
+
+test("the exact live Fusion final request selects and parses the representable legality fixture", async () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const requests = await officialCollectionRequestsFromDiscovery(
+    adapter,
+    fusionWorldDiscoveryRecords(),
+    { "user-agent": "card-keepr-representable-legality-v3" },
+  );
+  const current = requests.find(({ surface }) =>
+    surface === "legality-current"
+  );
+  if (current === undefined) throw new Error("current Legality request missing");
+  expect(current.url).toBe(
+    "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+  );
+  expect(current.headers["user-agent"]).toBe(
+    "card-keepr-representable-legality-v3; request-role=surface; request-surface=legality-current",
+  );
+
+  const response = productionRepresentableFusionLegalityResponse(
+    new Request(current.url, { headers: current.headers }),
+  );
+  expect(response).not.toBeNull();
+  const bytes = new Uint8Array(await response!.arrayBuffer());
+  const html = new TextDecoder().decode(bytes);
+  expect(html).toContain("fusion-world-card-game-legality-current-data");
+  expect(html).toContain('class="restriction-card"');
+  const observations = await adapter.parseBytes?.(bytes, {
+    mediaType: response!.headers.get("content-type"),
+    url: current.url,
+    requestId: current.id,
+  });
+  const legality = observations?.find((observation) =>
+    typeof observation === "object" && observation !== null &&
+    (observation as Record<string, unknown>).observation_type ===
+      "legality_rules"
+  ) as Record<string, unknown> | undefined;
+  expect(legality?.completeness).toEqual({
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 1,
+    parsed_record_count: 1,
+  });
+  expect(legality?.legality_rules).toEqual([
+    expect.objectContaining({
+      id: "fw_production_eligible",
+      official_wording:
+        "FB01-001 is eligible 'as printed' – publisher–confirmed &#39;literal&#39;.",
+      card_numbers: ["FB01-001"],
+      effect: { type: "eligible" },
+    }),
+  ]);
+
+  expect(productionRepresentableFusionLegalityResponse(new Request(
+    "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    { headers: current.headers },
+  ))).toBeNull();
 });
 
 test("final Official Source collection identities enforce the URL byte bound", async () => {

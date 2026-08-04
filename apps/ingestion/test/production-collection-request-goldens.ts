@@ -28,14 +28,14 @@ export const fusionWorldProductionCollectionRequests = [
     id: "fusion-world-en:legality-current",
     method: "GET",
     url:
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+      "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
     headers: { accept: "text/html" },
   },
   {
     id: "fusion-world-en:legality-history",
     method: "GET",
     url:
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
+      "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
     headers: { accept: "text/html" },
   },
   {

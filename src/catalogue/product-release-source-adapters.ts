@@ -219,6 +219,10 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           ...definition,
           adapterVersion:
             legalityAwareAdapterVersions[definition.sourceLineage],
+          urls: activeBandaiSurfaceUrls(
+            definition.sourceLineage,
+            definition.urls,
+          ),
           parserContract:
             `${definition.sourceLineage}-raw-surfaces-with-legality@2`,
           legalityAware: true,
@@ -257,12 +261,19 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.requiredSurfaces,
                 version.urls,
               ),
-          discoverRequests: bandaiRequestDiscovery(
-            version.format,
-            version.sourceLineage,
-            version.requiredSurfaces,
-            version.urls,
-          ),
+          discoverRequests: version.legalityAware
+            ? bandaiRequestDiscovery(
+              version.format,
+              version.sourceLineage,
+              version.requiredSurfaces,
+              version.urls,
+            )
+            : historicalBandaiRequestDiscoveryV1(
+              version.format,
+              version.sourceLineage,
+              version.requiredSurfaces,
+              version.urls,
+            ),
         })
       )
     ),
@@ -291,6 +302,261 @@ export function officialSourceDiscoveryRequests(
     url: contract.requestUrlForDiscovery(),
     headers: { accept: "text/html" },
   }];
+}
+
+function historicalBandaiRequestDiscoveryV1(
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+  urls: Readonly<Record<string, string>>,
+): OfficialRawAdapterContract["discoverRequests"] {
+  return (bytes, context) => {
+    if (context.requestId?.includes(":image:")) return [];
+    const mediaType = context.mediaType?.split(";", 1)[0]?.trim()
+      .toLowerCase();
+    if (mediaType !== "text/html") return [];
+    const html = decodeUtf8(bytes, "historical request discovery V1");
+    const dynamicRole = dynamicRequestRole(context.requestId);
+    const initialSurface = dynamicRole === null
+      ? historicalSurfaceFromContextV1(
+        context,
+        sourceLineage,
+        requiredSurfaces,
+        urls,
+      )
+      : null;
+    const discoveryHtml = stripKnownPublisherNavigation(
+      html,
+      sourceLineage,
+      context.url,
+    );
+    const current = new URL(context.url);
+    const candidates: Array<{
+      role: "listing" | "detail" | "product_detail" | "image";
+      url: string;
+      headers: Record<string, string>;
+    }> = [];
+    if (initialSurface !== null) {
+      const structured = bandaiPublisherPayload(
+        discoveryHtml,
+        sourceLineage,
+        initialSurface,
+      );
+      if (structured !== null) {
+        candidates.push(
+          ...historicalStructuredImageUrlsV1(
+            structured,
+            current,
+            sourceLineage,
+          ).map((url) => ({
+            role: "image" as const,
+            url,
+            headers: historicalDiscoveredRequestHeadersV1("image"),
+          })),
+        );
+      }
+    }
+    if (
+      (initialSurface !== null && isDiscoverySurface(initialSurface)) ||
+      dynamicRole === "listing"
+    ) {
+      candidates.push(
+        ...historicalPartitionRequestsV1(format, discoveryHtml, current).map((url) => ({
+          role: "listing" as const,
+          url,
+          headers: historicalDiscoveredRequestHeadersV1("listing"),
+        })),
+      );
+    }
+    for (const match of discoveryHtml.matchAll(
+      /<(a|img|source)\b([^>]*?)>/giu,
+    )) {
+      const tag = match[1]!.toLowerCase();
+      const attributes = match[2]!;
+      const rawUrl = tag === "a"
+        ? htmlAttribute(attributes, "href")
+        : htmlAttribute(attributes, "data-src") ??
+          htmlAttribute(attributes, "src");
+      if (
+        rawUrl === null || rawUrl.startsWith("#") ||
+        /^(?:data|javascript|mailto|tel):/iu.test(rawUrl)
+      ) continue;
+      let resolved: URL;
+      try {
+        resolved = new URL(decodeHtmlText(rawUrl), current);
+      } catch {
+        continue;
+      }
+      resolved.hash = "";
+      if (resolved.protocol !== "https:" || resolved.href === current.href) {
+        continue;
+      }
+      const role = tag === "img" || tag === "source" ||
+          /\.(?:avif|gif|jpe?g|png|webp)(?:$|\?)/iu.test(resolved.href)
+        ? "image"
+        : historicalDiscoveredHtmlRoleV1(format, initialSurface, resolved);
+      if (
+        role === null ||
+        !historicalOfficialUrlV1(sourceLineage, resolved, role === "image")
+      ) continue;
+      candidates.push({
+        role,
+        url: resolved.href,
+        headers: historicalDiscoveredRequestHeadersV1(role),
+      });
+    }
+    return [...new Map(candidates.map((candidate) => [
+      `${candidate.role}:${candidate.url}`,
+      candidate,
+    ])).values()].sort((left, right) =>
+      `${left.role}:${left.url}`.localeCompare(`${right.role}:${right.url}`)
+    );
+  };
+}
+
+function historicalDiscoveredRequestHeadersV1(
+  role: "listing" | "detail" | "product_detail" | "image",
+): Record<string, string> {
+  return {
+    accept: role === "image"
+      ? "image/avif,image/webp,image/png,image/jpeg,image/gif"
+      : "text/html",
+    "user-agent": `card-keepr-official-source/1; request-role=${role}`,
+  };
+}
+
+function historicalStructuredImageUrlsV1(
+  value: unknown,
+  base: URL,
+  sourceLineage: string,
+): string[] {
+  const discovered: string[] = [];
+  const visit = (item: unknown): void => {
+    if (typeof item === "string") {
+      if (/\.(?:avif|gif|jpe?g|png|webp)(?:$|\?)/iu.test(item)) {
+        const url = new URL(item, base);
+        if (
+          url.protocol === "https:" &&
+          historicalOfficialUrlV1(sourceLineage, url, true)
+        ) {
+          discovered.push(url.href);
+        }
+      }
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (isPlainRecord(item)) Object.values(item).forEach(visit);
+  };
+  visit(value);
+  return [...new Set(discovered)].sort();
+}
+
+function historicalPartitionRequestsV1(
+  format: DiscoveryFormat,
+  html: string,
+  current: URL,
+): string[] {
+  const facets = [...html.matchAll(
+    /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
+  )].flatMap((match) => {
+    const key = htmlAttribute(match[1]!, "name") ??
+      htmlAttribute(match[1]!, "id");
+    if (key === null) return [];
+    const options = [...match[2]!.matchAll(
+      /<option\b[^>]*\bvalue=["']([^"']+)["'][^>]*>/giu,
+    )].map((option) => decodeHtmlText(option[1]!).trim())
+      .filter((value) => value.length > 0 && !/^(?:all|0|-)$/iu.test(value));
+    return options.length === 0
+      ? []
+      : [{ key: key.toLowerCase(), options: [...new Set(options)].sort() }];
+  });
+  const hierarchy = format === "one-piece"
+    ? [["recording"]]
+    : format === "fusion-world"
+      ? [["card_type"], ["colour", "color"], ["cost"]]
+      : format === "digimon"
+        ? [["category"], ["cardcategory", "card_type"], ["colour", "color"]]
+        : [["package"]];
+  const facet = hierarchy.flatMap((aliases) =>
+    facets.filter(({ key }) =>
+      aliases.includes(key) && !aliases.some((name) =>
+        current.searchParams.has(name)
+      )
+    )
+  )[0];
+  if (facet === undefined) return [];
+  return facet.options
+    .filter((value) => format !== "one-piece" || /^\d+$/u.test(value))
+    .map((value) => {
+      const url = new URL(current);
+      url.searchParams.set(facet.key, value);
+      return url.href;
+    });
+}
+
+function historicalDiscoveredHtmlRoleV1(
+  format: DiscoveryFormat,
+  initialSurface: string | null,
+  url: URL,
+): "listing" | "detail" | "product_detail" | null {
+  const target = `${url.pathname}${url.search}`;
+  if (
+    format === "gundam" && initialSurface === "legality" &&
+    /\/(?:asia-en|en)\/news\/01_279\.html$/u.test(url.pathname)
+  ) return "detail";
+  if (initialSurface === "legality") return null;
+  if (
+    initialSurface === "products" || initialSurface === "releases" ||
+    /\/products?\//iu.test(target)
+  ) {
+    if (nonCardProductClassification(target) !== null) return null;
+    return /(?:detail|products?\/[^/?]+|products?\.php\?.*\bid=)/iu.test(target)
+      ? "product_detail"
+      : /(?:page|paged|offset)=\d+/iu.test(target) ? "listing" : null;
+  }
+  if (
+    /(?:detailSearch|card[_-]?(?:detail|id)|popup)=/iu.test(target) ||
+    /\/cards?\/[^/?]+|\/cardlist\/card\//iu.test(target)
+  ) return "detail";
+  return /(?:page|paged|offset)=\d+/iu.test(target) ||
+      (format === "fusion-world" && /(?:card_type|colour|color|cost)=/iu.test(target)) ||
+      (format === "digimon" && /(?:category|cardcategory|colour|color|version)=/iu.test(target)) ||
+      (format === "gundam" && /(?:package|page)=/iu.test(target))
+    ? "listing"
+    : null;
+}
+
+function historicalOfficialUrlV1(
+  sourceLineage: string,
+  url: URL,
+  image: boolean,
+): boolean {
+  const origin = sourceLineage === "one-piece-en"
+    ? "https://en.onepiece-cardgame.com"
+    : sourceLineage === "fusion-world-en"
+      ? "https://www.dbs-cardgame.com"
+      : sourceLineage === "digimon-en"
+        ? "https://world.digimoncard.com"
+        : "https://www.gundam-gcg.com";
+  const prefixes = image
+    ? sourceLineage === "fusion-world-en"
+      ? ["/fw/images/"]
+      : sourceLineage === "gundam-en-asia"
+        ? ["/asia-en/"]
+        : sourceLineage === "gundam-en-us" ? ["/en/"] : ["/images/"]
+    : sourceLineage === "one-piece-en"
+      ? ["/cardlist/", "/products/", "/rules/"]
+      : sourceLineage === "fusion-world-en"
+        ? ["/fw/en/"]
+        : sourceLineage === "digimon-en"
+          ? ["/cards/", "/cardlist/", "/products/", "/rule/"]
+          : sourceLineage === "gundam-en-asia" ? ["/asia-en/"] : ["/en/"];
+  return url.origin === origin && prefixes.some((prefix) =>
+    url.pathname.startsWith(prefix)
+  ) && url.username === "" && url.password === "" && url.hash === "";
 }
 
 function bandaiRequestDiscovery(
@@ -754,7 +1020,11 @@ function historicalBandaiSnapshotDecoderV1(
       )];
     }
     if (dynamicRole === "product_detail") {
-      return [parseBandaiProductDetailV1(html, sourceLineage, context.url)];
+      return [parseBandaiProductDetailFrozenV1(
+        html,
+        sourceLineage,
+        context.url,
+      )];
     }
     const parsed = format === "one-piece" && surface === "card-list"
       ? parseOnePieceBandaiCardListV1(html, context.url)
@@ -834,9 +1104,17 @@ function historicalSurfaceFromContextV1(
   const prefix = `${sourceLineage}:`;
   if (context.requestId?.startsWith(prefix)) {
     const surface = context.requestId.slice(prefix.length);
+    const contextUrl = new URL(context.url).href;
     if (
       requiredSurfaces.includes(surface) &&
-      new URL(context.url).href === new URL(urls[surface]!).href
+      (
+        contextUrl === new URL(urls[surface]!).href ||
+        historicalRetainedSurfaceUrlV1(
+          sourceLineage,
+          surface,
+          contextUrl,
+        )
+      )
     ) {
       return surface;
     }
@@ -853,6 +1131,21 @@ function historicalSurfaceFromContextV1(
     );
   }
   return matches[0]!;
+}
+
+function historicalRetainedSurfaceUrlV1(
+  sourceLineage: string,
+  surface: string,
+  url: string,
+): boolean {
+  if (sourceLineage !== "fusion-world-en") return false;
+  const exactRetainedPolicyUrls: Readonly<Record<string, string>> = {
+    "legality-current":
+      "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+    "legality-history":
+      "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+  };
+  return exactRetainedPolicyUrls[surface] === url;
 }
 
 function legalityAwareBandaiSnapshotDecoder(
@@ -986,16 +1279,7 @@ function bandaiSnapshotDecoder(
       surface,
     );
     if (structuredPayload !== null) {
-      if (
-        profile.parseLegality &&
-        isLegalityRuleSurface(game, surface) &&
-        containsUnmodeledDedicatedPolicyContent(html, sourceLineage, surface)
-      ) {
-        throw new Error(
-          `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
-        );
-      }
-      return normalizedSurfaceObservationsV2(
+      const observations = normalizedSurfaceObservationsV2(
         format,
         game,
         sourceLineage,
@@ -1003,6 +1287,28 @@ function bandaiSnapshotDecoder(
         structuredPayload,
         profile.parseLegality,
       );
+      if (
+        profile.parseLegality &&
+        isLegalityRuleSurface(game, surface)
+      ) {
+        assertStructuredAndVisibleLegalityMatch(
+          html,
+          game,
+          sourceLineage,
+          surface,
+          observations,
+        );
+        if (containsUnmodeledDedicatedPolicyContent(
+          html,
+          sourceLineage,
+          surface,
+        )) {
+          throw new Error(
+            `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
+          );
+        }
+      }
+      return observations;
     }
     const liveLegality = profile.parseLegality
       ? liveOfficialLegalityDocument(
@@ -1039,7 +1345,7 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "product_detail") {
       return [
-        parseBandaiProductDetailV1(
+        parseBandaiProductDetailV2(
           html,
           sourceLineage,
           context.url,
@@ -1160,8 +1466,8 @@ function containsUnmodeledDedicatedPolicyContent(
     /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
     (article, attributes: string) =>
       /(?:^|\s)restriction-card(?:\s|$)/u.test(
-          htmlAttribute(attributes, "class") ?? "",
-        )
+        htmlAttribute(attributes, "class") ?? "",
+      )
         ? ""
         : article,
   );
@@ -1210,6 +1516,75 @@ function containsUnmodeledDedicatedPolicyContent(
           : article,
     );
   return htmlText(residual).length > 0;
+}
+
+function assertStructuredAndVisibleLegalityMatch(
+  html: string,
+  game: ProductSourceGame,
+  sourceLineage: string,
+  surface: string,
+  structuredObservations: readonly unknown[],
+): void {
+  const hasVisibleArticles = [...html.matchAll(
+    /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
+  )].some((match) =>
+    /(?:^|\s)restriction-card(?:\s|$)/u.test(
+      htmlAttribute(match[1]!, "class") ?? "",
+    )
+  );
+  const hasVisibleTotal = />\s*\d+\s+(?:records?|results?|items?)\s*</iu
+    .test(html);
+  if (!hasVisibleArticles && !hasVisibleTotal) return;
+
+  let visibleObservation: Record<string, unknown> | null;
+  try {
+    visibleObservation = officialLegalityRulesHtmlObservation(
+      game,
+      sourceLineage,
+      html,
+    );
+  } catch {
+    throwStructuredVisibleLegalityMismatch(surface);
+  }
+  if (visibleObservation === null) {
+    throwStructuredVisibleLegalityMismatch(surface);
+  }
+  const structuredObservation = structuredObservations.find((observation) =>
+    isPlainRecord(observation) &&
+    observation.observation_type === "legality_rules"
+  );
+  if (!isPlainRecord(structuredObservation)) {
+    throwStructuredVisibleLegalityMismatch(surface);
+  }
+  const canonicalPublication = (
+    observation: Record<string, unknown>,
+  ): unknown => ({
+    completeness: requiredRecord(
+      observation.completeness,
+      "Official Legality completeness",
+    ),
+    rules: requiredArray(
+      observation.legality_rules,
+      "Official Legality rules",
+    ).map((rule) => requiredRecord(rule, "Official Legality rule"))
+      .sort((left, right) =>
+        requiredText(left.id, "Official Legality identity").localeCompare(
+          requiredText(right.id, "Official Legality identity"),
+        )
+      ),
+  });
+  if (
+    JSON.stringify(stableValue(canonicalPublication(structuredObservation))) !==
+      JSON.stringify(stableValue(canonicalPublication(visibleObservation)))
+  ) {
+    throwStructuredVisibleLegalityMismatch(surface);
+  }
+}
+
+function throwStructuredVisibleLegalityMismatch(surface: string): never {
+  throw new Error(
+    `Official Source ${surface} retained non-empty Legality data without an exact, complete Legality Rule parser.`,
+  );
 }
 
 function isKnownLegalityPublisherTitle(title: string): boolean {
@@ -2065,16 +2440,28 @@ function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
   const exact = surface === "legality-current"
     ? [
       "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
     ]
     : surface === "legality-history"
       ? [
         "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
-        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-        "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
       ]
       : [];
   return exact.includes(url.href);
+}
+
+function activeBandaiSurfaceUrls(
+  sourceLineage: string,
+  urls: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  return sourceLineage === "fusion-world-en"
+    ? {
+      ...urls,
+      "legality-current":
+        "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      "legality-history":
+        "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+    }
+    : urls;
 }
 
 function decodeUtf8(bytes: Uint8Array, surface: string): string {
@@ -2298,7 +2685,7 @@ function parseBandaiCardDetailV1(
   sourceLineage: string,
   requestUrl: string,
 ): Record<string, unknown> {
-  return parseBandaiCardDetailByContract(
+  return parseBandaiCardDetailFrozenV1(
     html,
     format,
     sourceLineage,
@@ -2313,7 +2700,7 @@ function parseBandaiCardDetailV2(
   sourceLineage: string,
   requestUrl: string,
 ): Record<string, unknown> {
-  return parseBandaiCardDetailByContract(
+  return parseBandaiCardDetailFrozenV1(
     html,
     format,
     sourceLineage,
@@ -2322,7 +2709,12 @@ function parseBandaiCardDetailV2(
   );
 }
 
-function parseBandaiCardDetailByContract(
+/**
+ * Frozen V1 card-detail decoder foundation. Historical registrations always
+ * select hostname-v1. Newer registrations may only layer stricter authority
+ * through their versioned entry point above.
+ */
+function parseBandaiCardDetailFrozenV1(
   html: string,
   format: DiscoveryFormat,
   sourceLineage: string,
@@ -2829,7 +3221,7 @@ function productLinksFromHtml(
   };
 }
 
-function parseBandaiProductDetailV1(
+function parseBandaiProductDetailFrozenV1(
   html: string,
   sourceLineage: string,
   requestUrl: string,
@@ -2932,6 +3324,14 @@ function parseBandaiProductDetailV1(
         : ["Status"]),
     ],
   );
+}
+
+function parseBandaiProductDetailV2(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  return parseBandaiProductDetailFrozenV1(html, sourceLineage, requestUrl);
 }
 
 function normalizedOfficialRegion(
@@ -3624,12 +4024,12 @@ function normalizedSurfaceObservationsV1(
   );
   const document = normalized.document;
   const observations = isDiscoverySurface(surface)
-    ? parseRawDiscoverySurface(document, format, game)
+    ? parseRawDiscoverySurfaceFrozenV1(document, format, game)
     : surface === "products"
-      ? parseRawProductsSurface(document)
+      ? parseRawProductsSurfaceFrozenV1(document)
       : surface === "releases"
-        ? parseRawReleasesSurface(document)
-        : [rawCoverageObservation(document, surface)];
+        ? parseRawReleasesSurfaceFrozenV1(document)
+        : [rawCoverageObservationFrozenV1(document, surface)];
   return observations.map((observation, index) =>
     attachRawSurfaceEvidenceV1(
       observation,
@@ -3932,19 +4332,19 @@ function normalizedSurfaceObservationsV2(
   const document = normalized.document;
   let observations: readonly unknown[];
   if (isDiscoverySurface(surface)) {
-    observations = parseRawDiscoverySurface(document, format, game);
+    observations = parseRawDiscoverySurfaceV2(document, format, game);
   } else if (surface === "products") {
-    observations = parseRawProductsSurface(document);
+    observations = parseRawProductsSurfaceV2(document);
   } else if (surface === "releases") {
     observations = [
-      ...parseRawReleasesSurface(document),
+      ...parseRawReleasesSurfaceV2(document),
       ...(legalityAware && isLegalityRuleSurface(game, surface)
         ? [officialLegalityRulesObservation(game, sourceLineage, document)]
         : []),
     ];
   } else {
     observations = [
-      rawCoverageObservation(document, surface),
+      rawCoverageObservationV2(document, surface),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(
@@ -4945,7 +5345,7 @@ function attachRawSurfaceEvidenceV1(
   };
 }
 
-function parseRawDiscoverySurface(
+function parseRawDiscoverySurfaceFrozenV1(
   surface: Record<string, unknown>,
   format: DiscoveryFormat,
   game: ProductSourceGame,
@@ -4964,7 +5364,7 @@ function parseRawDiscoverySurface(
   if (facets.length === 0) {
     throw new Error("Official Source discovery facets are incomplete.");
   }
-  const entries = completePartitionEntries(surface.partitions);
+  const entries = completePartitionEntriesFrozenV1(surface.partitions);
   const details = requiredArray(
     surface.details,
     "Official Source Card details",
@@ -4988,7 +5388,7 @@ function parseRawDiscoverySurface(
   );
   const keys = surfaceKeys[format];
   return [
-    ...parseOfficialDiscovery(
+    ...parseOfficialDiscoveryFrozenV1(
       {
         [keys.listing]: {
           page: 1,
@@ -5044,10 +5444,10 @@ function parseRawDiscoverySurface(
   });
 }
 
-function parseRawProductsSurface(
+function parseRawProductsSurfaceFrozenV1(
   surface: Record<string, unknown>,
 ): readonly unknown[] {
-  const products = completePartitionEntries(surface.partitions)
+  const products = completePartitionEntriesFrozenV1(surface.partitions)
     .map((value) => requiredRecord(value, "Official Source Product"));
   const releasesByCode = new Map<string, Record<string, unknown>[]>();
   const policy = {
@@ -5062,10 +5462,10 @@ function parseRawProductsSurface(
   });
 }
 
-function parseRawReleasesSurface(
+function parseRawReleasesSurfaceFrozenV1(
   surface: Record<string, unknown>,
 ): readonly unknown[] {
-  const entries = completePartitionEntries(surface.partitions)
+  const entries = completePartitionEntriesFrozenV1(surface.partitions)
     .map((value) => requiredRecord(value, "Official Source Release entry"));
   const products = new Map<string, Record<string, unknown>>();
   const releases = new Map<string, Record<string, unknown>[]>();
@@ -5115,7 +5515,34 @@ function parseRawReleasesSurface(
   ];
 }
 
-function rawCoverageObservation(
+function parseRawDiscoverySurfaceV2(
+  surface: Record<string, unknown>,
+  format: DiscoveryFormat,
+  game: ProductSourceGame,
+): readonly unknown[] {
+  return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
+}
+
+function parseRawProductsSurfaceV2(
+  surface: Record<string, unknown>,
+): readonly unknown[] {
+  return parseRawProductsSurfaceFrozenV1(surface);
+}
+
+function parseRawReleasesSurfaceV2(
+  surface: Record<string, unknown>,
+): readonly unknown[] {
+  return parseRawReleasesSurfaceFrozenV1(surface);
+}
+
+function rawCoverageObservationV2(
+  surface: Record<string, unknown>,
+  name: string,
+): Record<string, unknown> {
+  return rawCoverageObservationFrozenV1(surface, name);
+}
+
+function rawCoverageObservationFrozenV1(
   surface: Record<string, unknown>,
   name: string,
 ): Record<string, unknown> {
@@ -5131,7 +5558,7 @@ function rawCoverageObservation(
   };
 }
 
-function completePartitionEntries(value: unknown): unknown[] {
+function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
   const pages = requiredArray(
     value,
     "Official Source discovery partitions",
@@ -5290,7 +5717,7 @@ const surfaceKeys = {
   },
 } as const;
 
-function parseOfficialDiscovery(
+function parseOfficialDiscoveryFrozenV1(
   document: unknown,
   keys: (typeof surfaceKeys)[DiscoveryFormat],
   game: ProductSourceGame,

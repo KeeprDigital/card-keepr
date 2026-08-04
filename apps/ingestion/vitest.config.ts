@@ -34,6 +34,7 @@ import {
 } from "./test/contextual-legality-fixture";
 import {
   productionOfficialStageResponse,
+  productionRepresentableFusionLegalityResponse,
   productionSourceFixtureMarker,
   productionSourceFixtureRole,
   productionSourceFixtureSurface,
@@ -412,6 +413,11 @@ export default defineConfig({
               request,
             );
             if (retainedDiscovery !== null) return retainedDiscovery;
+            const representableFusionLegality =
+              productionRepresentableFusionLegalityResponse(request);
+            if (representableFusionLegality !== null) {
+              return representableFusionLegality;
+            }
             if (
               artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
               officialLineage === "one-piece-en" &&
@@ -681,7 +687,7 @@ export default defineConfig({
             if (
               artworkMarker === "card-keepr-notice-link-only-legality-v3" &&
               url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/rules/banned-limited-cards/"
+              url.pathname === "/fw/en/news/01_305.html"
             ) {
               return new Response(
                 `<html>
@@ -701,7 +707,7 @@ export default defineConfig({
             if (
               artworkMarker === "card-keepr-nonempty-legality-sidecar" &&
               url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/rules/banned-limited-cards/"
+              url.pathname === "/fw/en/news/01_305.html"
             ) {
               return new Response(
                 `<html>
@@ -721,8 +727,7 @@ export default defineConfig({
               request.headers.get("accept-language") ===
                 "card-keepr-conflicting-shared-legality-v3" &&
               url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/rules/banned-limited-cards/" &&
-              url.searchParams.get("view") === "history"
+              url.pathname === "/fw/en/news/01_399.html"
             ) {
               const publication = (surface: string, directive: string) => ({
                 publication: `fusion-world-${surface}`,
@@ -795,9 +800,12 @@ export default defineConfig({
                 "card-keepr-large-legality-workflow-v3",
               ].includes(artworkMarker ?? "") &&
               url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/rules/banned-limited-cards/"
+              (
+                url.pathname === "/fw/en/news/01_305.html" ||
+                url.pathname === "/fw/en/news/01_399.html"
+              )
             ) {
-              if (url.searchParams.get("view") === "history") {
+              if (url.pathname === "/fw/en/news/01_399.html") {
                 return new Response(
                   `<html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION HISTORY</title>
                     <main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>

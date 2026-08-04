@@ -143,7 +143,12 @@ export async function validateEvidencePlan(
           `Official Source request header ${name} is not permitted.`,
         );
       }
-      headers[normalizedName] = value;
+      if (normalizedName === "user-agent") {
+        const canonical = canonicalOfficialSourceUserAgent(value);
+        if (canonical.length > 0) headers[normalizedName] = canonical;
+      } else {
+        headers[normalizedName] = value;
+      }
     }
     assertBoundedOfficialSourceRequest(url.href, headers, false);
     requests.push({
@@ -386,15 +391,23 @@ function officialCollectionRequestHeaders(
 ): Record<string, string> {
   const baseUserAgent = (
     headers["user-agent"] ?? "card-keepr-official-source/1"
-  ).replace(
-    /;\s*request-role=(?:surface|listing|detail|product_detail|image)(?=;|$)/gu,
-    "",
   );
+  const canonicalUserAgent = canonicalOfficialSourceUserAgent(baseUserAgent) ||
+    "card-keepr-official-source/1";
   return {
     ...headers,
     "user-agent":
-      `${baseUserAgent}; request-role=surface; request-surface=${surface}`,
+      `${canonicalUserAgent}; request-role=surface; request-surface=${surface}`,
   };
+}
+
+function canonicalOfficialSourceUserAgent(value: string): string {
+  return value.split(";")
+    .map((token) => token.trim())
+    .filter((token) =>
+      token.length > 0 && !/^request-(?:role|surface)=/iu.test(token)
+    )
+    .join("; ");
 }
 
 export async function completeOfficialCollectionRequestsFromDiscovery(

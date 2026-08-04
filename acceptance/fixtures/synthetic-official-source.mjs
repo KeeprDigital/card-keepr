@@ -427,8 +427,8 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
   }
   if (lineage === "fusion-world-en" && path === "/fw/en/news/01_31.html") {
     return `<main>
-      <a href="/fw/en/rules/banned-limited-cards/">Current banned and limited cards</a>
-      <a href="/fw/en/rules/banned-limited-cards/?view=history">Previous restriction history</a>
+      <a href="/fw/en/news/01_305.html">Current banned and limited cards</a>
+      <a href="/fw/en/news/01_399.html">Previous restriction history</a>
       <a href="/fw/en/rules/errata-card/">Errata Cards</a>
     </main>`;
   }

@@ -458,7 +458,7 @@ test("retained historical Fusion policy 404 cannot establish a successful surfac
       url: fixture.metadata.source_url,
       requestId: "fusion-world-en:legality-history",
     }),
-    /unavailable|unparsed|exact|coverage|publication|publisher|surface/iu,
+    /unavailable|unparsed|exact|coverage|publication|publisher|surface|identity|contract/iu,
   );
 });
 
@@ -877,6 +877,47 @@ test("Fusion final policy parsing rejects a sibling news URL", () => {
   );
 });
 
+test("active Fusion policy identities reject retired rule URLs retained only by V2", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const historical = requiredSourceAdapter("fusion-world-en@2");
+  const stale = {
+    "legality-current":
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
+    "legality-history":
+      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/?view=history",
+  };
+  assert.equal(
+    current.requestUrlForSurface("legality-current"),
+    "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+  );
+  assert.equal(
+    current.requestUrlForSurface("legality-history"),
+    "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+  );
+  for (const [surface, url] of Object.entries(stale)) {
+    const payload = officialRawSurfacePayload(`/fusion-world-en/${surface}`);
+    assert.throws(
+      () => current.parseBytes(Buffer.from(`<html>
+        <title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+        ${officialPublisherPayloadScript("fusion-world-en", surface, payload)}
+      </html>`), {
+        mediaType: "text/html",
+        url,
+        requestId: `fusion-world-en:${surface}`,
+      }),
+      /exact|identity|URL contract/iu,
+    );
+  }
+  assert.equal(
+    historical.requestUrlForSurface("legality-current"),
+    stale["legality-current"],
+  );
+  assert.equal(
+    historical.requestUrlForSurface("legality-history"),
+    stale["legality-current"],
+  );
+});
+
 test("every production lineage owns an exact raw decoder and discovery plan", () => {
   const production = registeredProductionAdapters();
   assert.deepEqual(
@@ -1218,6 +1259,79 @@ test("historical V1 coverage retains its original Showing-count grammar", () => 
   });
 });
 
+test("historical V1 discovery stays frozen while decoder authority diverges from current adapters", () => {
+  const historical = requiredSourceAdapter("one-piece-en@1");
+  const current = requiredSourceAdapter("one-piece-en@2");
+  const listing = Buffer.from(`
+    <html><body>
+      <a href="/cardlist/?detailSearch=OP99-001">Legacy Leader</a>
+    </body></html>
+  `);
+  const historicalDetail = historical.discoverRequests(listing, {
+    mediaType: "text/html",
+    url: historical.requestUrlForSurface("card-list"),
+    requestId: "one-piece-en:card-list",
+  }).find(({ role }) => role === "detail");
+  const currentDetail = current.discoverRequests(listing, {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("card-list"),
+    requestId: "one-piece-en:card-list",
+  }).find(({ role }) => role === "detail");
+
+  const frozenDetailHeaders = {
+    accept: "text/html",
+    "user-agent": "card-keepr-official-source/1; request-role=detail",
+  };
+  assert.deepEqual(historicalDetail?.headers, frozenDetailHeaders);
+  assert.deepEqual(currentDetail?.headers, frozenDetailHeaders);
+
+  const legacyDetail = Buffer.from(`
+    <h1>Legacy Leader</h1>
+    <dl><dt>Card Number</dt><dd>OP99-001</dd></dl>
+    <dl><dt>Card Type</dt><dd>Leader</dd></dl>
+    <dl><dt>Color</dt><dd>Red</dd></dl>
+    <img class="card-image" src="/legacy-media/OP99-001.png">
+  `);
+  const context = {
+    mediaType: "text/html",
+    url: "https://en.onepiece-cardgame.com/cardlist/?detailSearch=OP99-001",
+    requestId: `one-piece-en:detail:${"3".repeat(64)}`,
+  };
+  assert.equal(historical.parseBytes(legacyDetail, context).length, 1);
+  assert.throws(
+    () => current.parseBytes(legacyDetail, context),
+    /Printing Image URL/u,
+  );
+});
+
+test("historical Fusion V1 reparses snapshots retained at exact live policy URLs", () => {
+  const historical = requiredSourceAdapter("fusion-world-en@2");
+  const retainedEmptyPolicy = new TextEncoder().encode(`
+    <html><title>BANDAI DRAGON BALL CARD RULE RESTRICTION</title>
+      <main><p>0 records</p>
+        <article data-publication-empty="true">No published entries.</article>
+      </main>
+    </html>
+  `);
+  for (const [surface, url] of [
+    [
+      "legality-current",
+      "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+    ],
+    [
+      "legality-history",
+      "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+    ],
+  ]) {
+    const observations = historical.parseBytes(retainedEmptyPolicy, {
+      mediaType: "text/html; charset=utf-8",
+      url,
+      requestId: `fusion-world-en:${surface}`,
+    });
+    assert.equal(observations.length, 1, surface);
+  }
+});
+
 test("historical production identities freeze every original decoder path", () => {
   const digest = (observations) =>
     createHash("sha256").update(JSON.stringify(observations)).digest("hex");
@@ -1472,7 +1586,29 @@ test("structured legality publisher data cannot hide unmodeled sibling HTML", ()
   }];
   nonempty.declared_record_count = 1;
   nonempty.partition.total = 1;
+  const eligible = structuredClone(nonempty);
+  eligible.entries[0].notice =
+    "FB30-001 is legal for Standard play.";
+  eligible.entries[0].directive = "eligible";
   const empty = rawSurfacePayload("fusion-world-en", "legality-current");
+  const eligibleArticle = fusionLegalityRuleHtml({
+    id: "FW-2026-SCRIPT-SIBLING",
+    wording: "FB30-001 is legal for Standard play.",
+    cards: ["FB30-001"],
+    directive: "eligible",
+  });
+  const conflictingArticle = fusionLegalityRuleHtml({
+    id: "FW-2026-SCRIPT-SIBLING",
+    wording: "FB30-001 is banned from standard tournament decks.",
+    cards: ["FB30-001"],
+    directive: "ban",
+  });
+  const extraArticle = fusionLegalityRuleHtml({
+    id: "FW-2026-EXTRA",
+    wording: "FB30-002 is legal for Standard play.",
+    cards: ["FB30-002"],
+    directive: "eligible",
+  });
 
   for (const [name, payload, sibling] of [
     [
@@ -1489,6 +1625,21 @@ test("structured legality publisher data cannot hide unmodeled sibling HTML", ()
       "nonzero unknown sibling",
       nonempty,
       "<em>Additional tournament restriction applies.</em>",
+    ],
+    [
+      "structured eligible plus conflicting visible ban",
+      eligible,
+      `<p>1 record</p>${conflictingArticle}`,
+    ],
+    [
+      "structured eligible plus extra visible rule",
+      eligible,
+      `<p>2 records</p>${eligibleArticle}${extraArticle}`,
+    ],
+    [
+      "structured eligible missing its visible rule",
+      eligible,
+      "<p>1 record</p>",
     ],
   ]) {
     assert.throws(
@@ -1507,6 +1658,46 @@ test("structured legality publisher data cannot hide unmodeled sibling HTML", ()
       name,
     );
   }
+});
+
+test("structured legality reconciles an exact visible publication", () => {
+  const current = requiredSourceAdapter("fusion-world-en@3");
+  const payload = rawSurfacePayload("fusion-world-en", "legality-current");
+  payload.entries = [{
+    rule_ref: "FW-2026-STRUCTURED-VISIBLE",
+    notice: "FB30-001 is legal for Standard play.",
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: "2026-07-01",
+    expires_on: null,
+    cards: ["FB30-001"],
+    directive: "eligible",
+  }];
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  const article = fusionLegalityRuleHtml({
+    id: "FW-2026-STRUCTURED-VISIBLE",
+    wording: "FB30-001 is legal for Standard play.",
+    cards: ["FB30-001"],
+    directive: "eligible",
+  });
+  const observations = current.parseBytes(
+    new TextEncoder().encode(
+      `<html><title>BANDAI Official publication</title>
+       ${officialPublisherPayloadScript(
+         "fusion-world-en",
+         "legality-current",
+         payload,
+       )}<main><p>1 record</p>${article}</main></html>`,
+    ),
+    fusionLegalityContext(current),
+  );
+  const legality = observations.find(
+    ({ observation_type }) => observation_type === "legality_rules",
+  );
+  assert.equal(legality.legality_rules[0].id, "FW-2026-STRUCTURED-VISIBLE");
+  assert.deepEqual(legality.legality_rules[0].effect, { type: "eligible" });
 });
 
 test("structured legality consumes only the exact lineage and surface publisher script", () => {
