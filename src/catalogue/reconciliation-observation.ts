@@ -75,7 +75,7 @@ export type ParsedCardPrintingObservation = Readonly<{
 export type ParsedOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   sourceObservationId: string;
-  game: "one-piece";
+  game: "one-piece" | "fusion-world";
   target:
     | Readonly<{
         type: "card";
@@ -518,9 +518,13 @@ function parseOfficialErratumObservation(
     "completeness",
   ];
   assertOnlyFields(record, fields, "Official Erratum");
-  if (record.game !== "one-piece") {
+  if (
+    record.game !== "one-piece" &&
+    record.game !== "fusion-world"
+  ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
+  const game = record.game;
   const target = requiredRecord(record.target, "Official Erratum target");
   if (target.type !== "card" && target.type !== "printing") {
     throw new Error(
@@ -534,7 +538,7 @@ function parseOfficialErratumObservation(
       : ["type", "official_identity", "locator"],
     "Official Erratum target",
   );
-  const identity = parseOfficialIdentity(target.official_identity, "one-piece");
+  const identity = parseOfficialIdentity(target.official_identity, game);
   const targetLocator = target.type === "printing"
     ? requiredString(target.locator, "Official Erratum target locator")
     : null;
@@ -549,7 +553,10 @@ function parseOfficialErratumObservation(
     source.image_url,
     "Official Erratum source image_url",
   );
-  if (!imageUrl.startsWith("https://en.onepiece-cardgame.com/")) {
+  const imageOrigin = game === "one-piece"
+    ? "https://en.onepiece-cardgame.com/images/"
+    : "https://www.dbs-cardgame.com/fw/images/";
+  if (!imageUrl.startsWith(imageOrigin)) {
     throw new Error("Official Erratum image provenance is invalid.");
   }
   const fragment = requiredString(
@@ -591,7 +598,7 @@ function parseOfficialErratumObservation(
   return {
     kind: "official_erratum",
     sourceObservationId,
-    game: "one-piece",
+    game,
     target: targetLocator === null
       ? {
           type: "card",

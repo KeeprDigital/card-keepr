@@ -4289,9 +4289,14 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     structuredClone(overlapping.result.partitions[0].entries[0]),
   );
   overlapping.result.partitions[1].total = 1;
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(adapter, "card-search", overlapping),
+  );
+
+  overlapping.result.partitions[1].entries[0].number = "FB99-999";
   assert.throws(
     () => parseRegisteredSurface(adapter, "card-search", overlapping),
-    /leaf partitions overlap/iu,
+    /locator.*conflicts between leaf partitions/iu,
   );
 });
 

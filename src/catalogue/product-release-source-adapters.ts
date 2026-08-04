@@ -4330,6 +4330,9 @@ function normalizedSurfaceObservationsV2(
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
+      ...(format === "fusion-world" && surface === "errata"
+        ? fusionWorldOfficialErrataObservations(document)
+        : []),
       ...(legalityAware && isLegalityPolicySurface(surface)
         ? [
             officialLegalityRulesObservation(
@@ -4341,16 +4344,94 @@ function normalizedSurfaceObservationsV2(
         : []),
     ];
   }
-  return observations.map((observation, index) =>
-    attachRawSurfaceEvidenceV1(
+  return observations.map((observation, index) => {
+    if (
+      isPlainRecord(observation) &&
+      observation.kind === "official_erratum"
+    ) return observation;
+    return attachRawSurfaceEvidenceV1(
       observation,
       sourceLineage,
       surface,
       rawDocument,
       index === 0,
       normalized.consumedFields,
-    )
+    );
+  });
+}
+
+function fusionWorldOfficialErrataObservations(
+  document: Record<string, unknown>,
+): readonly Record<string, unknown>[] {
+  const entries = requiredArray(
+    document.entries,
+    "Fusion World Errata entries",
   );
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Fusion World Erratum");
+    const allowed = new Set([
+      "entry_id",
+      "card_number",
+      "published_on",
+      "effective_from",
+      "before",
+      "after",
+      "notice",
+      "image_url",
+    ]);
+    const unexpected = Object.keys(entry).find((field) => !allowed.has(field));
+    if (unexpected !== undefined) {
+      throw new Error(
+        `Fusion World Erratum contains unknown field ${unexpected}.`,
+      );
+    }
+    const entryId = requiredText(entry.entry_id, "Fusion World Erratum identity");
+    const cardNumber = requiredText(
+      entry.card_number,
+      "Fusion World Erratum Card Number",
+    );
+    const publishedOn = requiredText(
+      entry.published_on,
+      "Fusion World Erratum published date",
+    );
+    const effectiveFrom = entry.effective_from === null
+      ? null
+      : requiredText(
+          entry.effective_from,
+          "Fusion World Erratum effective date",
+        );
+    const before = requiredText(entry.before, "Fusion World Erratum Before text");
+    const after = requiredText(entry.after, "Fusion World Erratum After text");
+    const notice = requiredText(entry.notice, "Fusion World Erratum notice");
+    const imageUrl = requiredText(
+      entry.image_url,
+      "Fusion World Erratum image URL",
+    );
+    const image = new URL(imageUrl);
+    if (!officialUrl("fusion-world-en", image, "image")) {
+      throw new Error("Fusion World Erratum image provenance is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "fusion-world",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
+      applies_to_parallel_printings: true,
+      source: {
+        fragment: `#${entryId}`,
+        display_name: cardNumber,
+        image_url: image.href,
+      },
+      completeness: completeObservation(1, 1),
+    };
+  });
 }
 
 function isLegalityPolicySurface(surface: string): boolean {
@@ -5349,7 +5430,10 @@ function parseRawDiscoverySurfaceFrozenV1(
   if (facets.length === 0) {
     throw new Error("Official Source discovery facets are incomplete.");
   }
-  const entries = completePartitionEntriesFrozenV1(surface.partitions);
+  const entries = completePartitionEntriesFrozenV1(
+    surface.partitions,
+    format === "fusion-world" ? "detail" : null,
+  );
   const details = requiredArray(
     surface.details,
     "Official Source Card details",
@@ -5543,7 +5627,10 @@ function rawCoverageObservationFrozenV1(
   };
 }
 
-function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
+function completePartitionEntriesFrozenV1(
+  value: unknown,
+  fullLocatorField: string | null = null,
+): unknown[] {
   const pages = requiredArray(
     value,
     "Official Source discovery partitions",
@@ -5567,7 +5654,10 @@ function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
     byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), page]);
   }
   const allEntries: unknown[] = [];
-  const claimedEntries = new Map<string, string>();
+  const claimedEntries = new Map<
+    string,
+    { bucket: string; canonical: string }
+  >();
   for (const [bucket, bucketPages] of byBucket) {
     bucketPages.sort(
       (left, right) =>
@@ -5608,16 +5698,28 @@ function completePartitionEntriesFrozenV1(value: unknown): unknown[] {
       );
     }
     for (const entry of entries) {
-      const identity = JSON.stringify(stableValue(entry));
-      const priorBucket = claimedEntries.get(identity);
-      if (priorBucket !== undefined && priorBucket !== bucket) {
-        throw new Error(
-          `Official Source leaf partitions overlap between ${priorBucket} and ${bucket}.`,
-        );
+      const canonical = JSON.stringify(stableValue(entry));
+      const identity = fullLocatorField === null
+        ? canonical
+        : requiredText(
+            requiredRecord(
+              entry,
+              "Official Source partition entry",
+            )[fullLocatorField],
+            "Official Source full locator",
+          );
+      const prior = claimedEntries.get(identity);
+      if (prior !== undefined) {
+        if (prior.bucket !== bucket && prior.canonical !== canonical) {
+          throw new Error(
+            `Official Source locator ${identity} conflicts between leaf partitions ${prior.bucket} and ${bucket}.`,
+          );
+        }
+        continue;
       }
-      claimedEntries.set(identity, bucket);
+      claimedEntries.set(identity, { bucket, canonical });
+      allEntries.push(entry);
     }
-    allEntries.push(...entries);
   }
   return allEntries;
 }

@@ -487,11 +487,13 @@ export async function retainedReconciliationObservation(
             row.plan_origin === "production",
           ),
         );
-        assertObservationAuthority(
-          parsed,
-          requiredSourceAdapter(row.adapter_version)
-            .reconciliationCapability,
+        const adapter = requiredSourceAdapter(row.adapter_version);
+        const sourceSurface = sourceSurfaceForRequest(
+          request,
+          requestsById,
+          row,
         );
+        assertObservationAuthority(parsed, adapter, sourceSurface);
         merged.push({
           ...parsed,
           sourceObservationSetId: row.observation_set_id,
@@ -499,11 +501,7 @@ export async function retainedReconciliationObservation(
           sourceCapturedAt: row.retrieved_at,
           sourceLineage: row.source_lineage,
           sourceRequestRole: request.request_role,
-          sourceSurface: sourceSurfaceForRequest(
-            request,
-            requestsById,
-            row,
-          ),
+          sourceSurface,
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
         });
@@ -1279,13 +1277,19 @@ function base64(bytes: Uint8Array): string {
 
 function assertObservationAuthority(
   observation: ReturnType<typeof parseReconciliationObservation>,
-  coverage: ReturnType<
-    typeof requiredSourceAdapter
-  >["reconciliationCapability"],
+  adapter: ReturnType<typeof requiredSourceAdapter>,
+  sourceSurface: string | undefined,
 ): void {
+  const coverage = adapter.reconciliationCapability;
   const errataOnly = coverage === "errata";
+  const catalogueErratum =
+    coverage === "catalogue" &&
+    adapter.origin === "production" &&
+    sourceSurface === "errata";
   if (
-    (observation.kind === "official_erratum") !== errataOnly ||
+    (observation.kind === "official_erratum"
+      ? !errataOnly && !catalogueErratum
+      : errataOnly) ||
     (observation.kind === "card_printing" &&
       observation.errata.length > 0 &&
       coverage !== "catalogue")
