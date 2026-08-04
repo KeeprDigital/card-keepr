@@ -1,7 +1,11 @@
 const marker = "card-keepr-one-piece-complete-v1";
+const errataMarker = "card-keepr-one-piece-complete-errata-v1";
 
 export function onePieceCompleteOfficialSourceResponse(request) {
   const url = new URL(request.url);
+  const requestedMarker = request.headers.get("user-agent")
+    ?.split(";", 1)[0];
+  const withErrata = requestedMarker === errataMarker;
   const surface = request.headers.get("user-agent")?.match(
     /(?:^|;\s*)request-surface=([a-z0-9]+(?:-[a-z0-9]+)*)(?:;|$)/u,
   )?.[1] ?? null;
@@ -13,7 +17,7 @@ export function onePieceCompleteOfficialSourceResponse(request) {
     ["2201", "2202"].includes(recording);
 
   if (
-    request.headers.get("user-agent")?.split(";", 1)[0] !== marker &&
+    requestedMarker !== marker && !withErrata &&
     !isCompleteRecordingLeaf
   ) {
     return null;
@@ -33,7 +37,7 @@ export function onePieceCompleteOfficialSourceResponse(request) {
   }
   if (surface === null) return discoveryStage(url);
   if (surface === "card-list") return cardListRoot();
-  const document = surfaceDocument(surface);
+  const document = surfaceDocument(surface, withErrata);
   return new Response(
     `<html><title>${surfaceTitle(surface)}</title>
       <script id="one-piece-card-game-${surface}-data" type="application/json">${
@@ -145,7 +149,7 @@ function surfaceTitle(surface) {
   return "Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication";
 }
 
-function surfaceDocument(surface) {
+function surfaceDocument(surface, withErrata = false) {
   if (surface === "card-list") return cardList();
   if (surface === "products") {
     return {
@@ -188,7 +192,26 @@ function surfaceDocument(surface) {
       },
     };
   }
+  if (surface === "errata" && withErrata) {
+    return policy(surface, [erratum()]);
+  }
   return policy(surface, []);
+}
+
+function erratum() {
+  return {
+    notice_id: "errata-op31-001",
+    card_number: "OP31-001",
+    card_name: "Straw Hat Captain",
+    published_on: "2026-08-01",
+    effective_from: null,
+    before_text: "Give up to 1 rested DON!! card to this Leader.",
+    after_text: "Give up to 2 rested DON!! cards to this Leader.",
+    note: "This correction applies in every game format.",
+    applies_to_parallel_printings: true,
+    image_url:
+      "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
+  };
 }
 
 function cardList() {
@@ -360,7 +383,9 @@ function visiblePolicy(surface, document) {
     </dl></article></main>`;
   }
   if (["block-policy", "errata", "don-rules"].includes(surface)) {
-    return "<main><p>0 records</p><article data-publication-empty=\"true\">No published entries.</article></main>";
+    return document.entries.length === 0
+      ? "<main><p>0 records</p><article data-publication-empty=\"true\">No published entries.</article></main>"
+      : `<main><p>${document.entries.length} records</p></main>`;
   }
   return "";
 }

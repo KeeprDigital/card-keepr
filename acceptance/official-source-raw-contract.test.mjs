@@ -3243,6 +3243,143 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
   );
 });
 
+test("the expanded One Piece adapter emits exact typed Errata and rejects unrepresentable entries", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  const payload = officialRawSurfacePayload("/one-piece-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    notice_id: "errata-op31-001",
+    card_number: "OP31-001",
+    card_name: "Complete One Piece Leader",
+    published_on: "2026-08-01",
+    effective_from: null,
+    before_text: "Give up to 1 rested DON!! card to this Leader.",
+    after_text: "Give up to 2 rested DON!! cards to this Leader.",
+    note: "This correction applies in every game format.",
+    applies_to_parallel_printings: true,
+    image_url:
+      "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
+  }];
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "errata",
+      payload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "one-piece-en:errata",
+    },
+  );
+  const erratum = observations.find(({ kind }) => kind === "official_erratum");
+  assert.deepEqual(erratum, {
+    kind: "official_erratum",
+    game: "one-piece",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "OP31-001" },
+    },
+    published_on: "2026-08-01",
+    effective_from: null,
+    observed_printed_rules_text:
+      "Give up to 1 rested DON!! card to this Leader.",
+    corrected_rules_text:
+      "Give up to 2 rested DON!! cards to this Leader.",
+    official_wording:
+      "Note: This correction applies in every game format.\n" +
+      "Before: Give up to 1 rested DON!! card to this Leader.\n" +
+      "After: Give up to 2 rested DON!! cards to this Leader.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#errata-op31-001",
+      display_name: "OP31-001 Complete One Piece Leader",
+      image_url:
+        "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  });
+
+  const arbitrary = structuredClone(payload);
+  arbitrary.entries = [{ publisher_note: "Apply an unknown correction." }];
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "errata",
+        arbitrary,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("errata"),
+        requestId: "one-piece-en:errata",
+      },
+    ),
+    /Erratum.*undeclared field|Erratum.*publisher_note/iu,
+  );
+});
+
+test("the expanded One Piece adapter rejects identity digests nested under Printing", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  for (const field of ["artwork_fingerprint", "printed_fields_digest"]) {
+    const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+    for (const card of payload.card_pages) {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    }
+    payload.card_pages[0].printing[field] = `publisher-supplied-${field}`;
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+          "one-piece-en",
+          "card-list",
+          payload,
+        )}</html>`),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: adapter.requestUrlForSurface("card-list"),
+          requestId: "one-piece-en:card-list",
+        },
+      ),
+      new RegExp(`identity digest|${field}`, "iu"),
+    );
+  }
+});
+
+test("the expanded One Piece adapter closes the nested DON Card policy schema", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  const payload = officialRawSurfacePayload("/one-piece-en/don-rules");
+  payload.don_card = {
+    functional_designation: "DON!!",
+    name: "DON!! Card",
+    Category: "DON!! Card",
+    Effect: "A rules-level resource Card.",
+    publisher_note: "Apply an unknown DON rule.",
+  };
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        payload,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /DON.*undeclared field|DON.*publisher_note/iu,
+  );
+});
+
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
   const byLineage = (lineage) =>
     registeredProductionAdapters().find(

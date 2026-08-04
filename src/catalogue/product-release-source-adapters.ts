@@ -4492,6 +4492,13 @@ function normalizedSurfaceObservationsV2(
         ? [officialLegalityRulesObservation(game, sourceLineage, document)]
         : []),
     ];
+  } else if (
+    expandedOnePieceCatalogue && game === "one-piece" && surface === "errata"
+  ) {
+    observations = [
+      rawCoverageObservationV2(document, surface),
+      ...onePieceOfficialErrataObservations(document.entries),
+    ];
   } else {
     observations = [
       rawCoverageObservationV2(document, surface),
@@ -4510,17 +4517,153 @@ function normalizedSurfaceObservationsV2(
         : []),
     ];
   }
-  return observations.map((observation, index) =>
-    attachRawSurfaceEvidenceV1(
+  return observations.map((observation, index) => {
+    const record = requiredRecord(
       observation,
-      sourceLineage,
-      surface,
-      rawDocument,
-      index === 0,
-      normalized.consumedFields,
-      normalized.unmappedOptionalFields,
-    )
-  );
+      `Official Source ${surface} observation`,
+    );
+    return record.kind === "official_erratum"
+      ? record
+      : attachRawSurfaceEvidenceV1(
+          record,
+          sourceLineage,
+          surface,
+          rawDocument,
+          index === 0,
+          normalized.consumedFields,
+          normalized.unmappedOptionalFields,
+        );
+  });
+}
+
+function onePieceOfficialErrataObservations(value: unknown): unknown[] {
+  const fields = [
+    "notice_id",
+    "card_number",
+    "card_name",
+    "published_on",
+    "effective_from",
+    "before_text",
+    "after_text",
+    "note",
+    "applies_to_parallel_printings",
+    "image_url",
+  ];
+  return requiredArray(value, "One Piece Errata entries").map((item) => {
+    const entry = requiredRecord(item, "One Piece Erratum");
+    const undeclared = Object.keys(entry).filter((field) =>
+      !fields.includes(field)
+    );
+    const missing = fields.filter((field) => !Object.hasOwn(entry, field));
+    if (undeclared.length > 0 || missing.length > 0) {
+      throw new Error(
+        `One Piece Erratum has undeclared or missing fields: ${[
+          ...undeclared,
+          ...missing,
+        ].sort().join(", ")}.`,
+      );
+    }
+    const noticeId = requiredText(
+      entry.notice_id,
+      "One Piece Erratum notice id",
+    );
+    if (!/^[A-Za-z][A-Za-z0-9_-]+$/u.test(noticeId)) {
+      throw new Error("One Piece Erratum notice id is invalid.");
+    }
+    const cardNumber = requiredText(
+      entry.card_number,
+      "One Piece Erratum Card number",
+    );
+    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
+      throw new Error("One Piece Erratum Card number is invalid.");
+    }
+    const cardName = requiredText(
+      entry.card_name,
+      "One Piece Erratum Card name",
+    );
+    const publishedOn = exactOnePieceSourceDate(
+      entry.published_on,
+      "One Piece Erratum published_on",
+    );
+    const effectiveFrom = entry.effective_from === null
+      ? null
+      : exactOnePieceSourceDate(
+          entry.effective_from,
+          "One Piece Erratum effective_from",
+        );
+    const before = requiredText(
+      entry.before_text,
+      "One Piece Erratum Before text",
+    );
+    const after = requiredText(
+      entry.after_text,
+      "One Piece Erratum After text",
+    );
+    const note = nullableText(entry.note, "One Piece Erratum Note");
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new Error(
+        "One Piece Erratum parallel Printing applicability is invalid.",
+      );
+    }
+    const imageUrl = requiredText(
+      entry.image_url,
+      "One Piece Erratum image URL",
+    );
+    let parsedImageUrl: URL;
+    try {
+      parsedImageUrl = new URL(imageUrl);
+    } catch {
+      throw new Error("One Piece Erratum image URL is invalid.");
+    }
+    if (!officialUrl("one-piece-en", parsedImageUrl, "image")) {
+      throw new Error("One Piece Erratum image URL is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "one-piece",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: [
+        ...(note === null ? [] : [`Note: ${note}`]),
+        `Before: ${before}`,
+        `After: ${after}`,
+      ].join("\n"),
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: `#${noticeId}`,
+        display_name: `${cardNumber} ${cardName}`,
+        image_url: imageUrl,
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+  });
+}
+
+function exactOnePieceSourceDate(value: unknown, name: string): string {
+  const date = requiredText(value, name);
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u.test(date)) {
+    throw new Error(`${name} is invalid.`);
+  }
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  if (
+    Number.isNaN(instant.getTime()) ||
+    instant.toISOString().slice(0, 10) !== date
+  ) {
+    throw new Error(`${name} is invalid.`);
+  }
+  return date;
 }
 
 function isLegalityPolicySurface(surface: string): boolean {
@@ -5078,18 +5221,22 @@ function normalizePartitionEntries(
 function normalizeOnePieceDetails(value: unknown): unknown[] {
   return requiredArray(value, "One Piece Card pages").map((item) => {
     const card = requiredRecord(item, "One Piece Card page");
-    if (
-      Object.hasOwn(card, "artwork_fingerprint") ||
-      Object.hasOwn(card, "printed_fields_digest")
-    ) {
-      throw new Error(
-        "One Piece raw Card pages cannot supply an identity digest (artwork_fingerprint or printed_fields_digest).",
-      );
-    }
-    const normalized = normalizeOnePieceCardPage(card);
     const printing = card.printing === undefined
       ? null
       : requiredRecord(card.printing, "One Piece Printing fields");
+    const forbiddenIdentityField = [
+      "artwork_fingerprint",
+      "printed_fields_digest",
+    ].find((field) =>
+      Object.hasOwn(card, field) ||
+      (printing !== null && Object.hasOwn(printing, field))
+    );
+    if (forbiddenIdentityField !== undefined) {
+      throw new Error(
+        `One Piece raw Card pages cannot supply identity digest ${forbiddenIdentityField}.`,
+      );
+    }
+    const normalized = normalizeOnePieceCardPage(card);
     const cardNumber = requiredText(card.card_number, "One Piece Card number");
     return canonicalDetail(card, {
       path: "source_record_id",

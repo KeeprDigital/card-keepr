@@ -1380,7 +1380,9 @@ function assertObservationAuthority(
 ): void {
   const errataOnly = coverage === "errata";
   if (
-    (observation.kind === "official_erratum") !== errataOnly ||
+    (errataOnly && observation.kind !== "official_erratum") ||
+    (observation.kind === "official_erratum" &&
+      coverage !== "errata" && coverage !== "catalogue") ||
     (observation.kind === "card_printing" &&
       observation.errata.length > 0 &&
       coverage !== "catalogue")

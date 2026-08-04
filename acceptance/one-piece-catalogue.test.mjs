@@ -25,21 +25,11 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       { mode: 0o600 },
     ),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
-    writeFile(planPath, JSON.stringify({
-      plans: [{
-        supported_game: "one-piece",
-        source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@3",
-        requests: [{
-          id: "one-piece-en:discovery",
-          url: "https://en.onepiece-cardgame.com/cardlist/",
-          headers: {
-            accept: "text/html",
-            "user-agent": "card-keepr-one-piece-complete-v1",
-          },
-        }],
-      }],
-    }), { mode: 0o600 }),
+    writeFile(
+      planPath,
+      JSON.stringify(completePlan("card-keepr-one-piece-complete-v1")),
+      { mode: 0o600 },
+    ),
   ]);
   await applyMigrations(statePath);
   const config = JSON.parse(
@@ -176,7 +166,64 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
     0,
     `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`,
   );
-  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  const catalogueRevisionId = JSON.parse(approved.stdout)
+    .resulting_revision_id;
+
+  await writeFile(
+    planPath,
+    JSON.stringify(
+      completePlan("card-keepr-one-piece-complete-errata-v1"),
+    ),
+    { mode: 0o600 },
+  );
+  const errataCollected = await runCli([
+    "source",
+    "collect",
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "one-piece-complete-errata-collect",
+    "--json",
+  ], cliEnvironment);
+  assert.equal(errataCollected.code, 0, errataCollected.stderr);
+  const errataRun = JSON.parse(errataCollected.stdout);
+  const errataResumed = await runCli(
+    ["source", "resume", "--run-id", errataRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(errataResumed.code, 0, errataResumed.stderr);
+  await waitForRunState(
+    errataRun.id,
+    "awaiting_approval",
+    cliEnvironment,
+    { getOutput: () => `${ingestion.getOutput()}\n${source.getOutput()}` },
+  );
+  const errataInspected = await runCli(
+    ["candidate", "inspect", "--run-id", errataRun.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(errataInspected.code, 0, errataInspected.stderr);
+  const errataCandidate = JSON.parse(errataInspected.stdout);
+  const errataApproved = await runCli([
+    "run",
+    "approve",
+    "--run-id",
+    errataRun.id,
+    "--candidate-digest",
+    errataCandidate.candidate_digest,
+    "--expected-current-revision",
+    catalogueRevisionId,
+    "--idempotency-key",
+    "one-piece-complete-errata-approve",
+    "--yes",
+    "--json",
+  ], cliEnvironment);
+  assert.equal(
+    errataApproved.code,
+    0,
+    `${errataApproved.stdout}\n${errataApproved.stderr}\n${ingestion.getOutput()}`,
+  );
+  const revisionId = JSON.parse(errataApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
   const api = startWorker({
@@ -188,7 +235,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   });
   t.after(() => stopWorker(api));
   await waitForHealth("http://127.0.0.1:27789/health", apiKey, api);
-  const [cards, printings, images, products, releases, legality] =
+  const [cards, printings, images, products, releases, legality, errata] =
     await Promise.all([
       "cards",
       "printings",
@@ -196,6 +243,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       "products",
       "releases",
       "legality-rules",
+      "errata",
     ].map((component) => exportRecords(27_789, apiKey, revisionId, component)));
   assert.equal(cards.length, 3);
   assert.equal(printings.length, 2);
@@ -203,6 +251,7 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   assert.equal(products.length, 1);
   assert.equal(releases.length, 1);
   assert.equal(legality.length, 1);
+  assert.equal(errata.length, 1);
 
   const leader = cards.find(
     ({ official_identity }) => official_identity.value === "OP31-001",
@@ -223,6 +272,15 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
       trigger_text: null,
     },
   });
+  assert.equal(
+    leader.effective_rules_text,
+    "Give up to 2 rested DON!! cards to this Leader.",
+  );
+  assert.equal(errata[0].target_id, leader.id);
+  assert.equal(
+    errata[0].corrected_value,
+    "Give up to 2 rested DON!! cards to this Leader.",
+  );
   const don = cards.find(
     ({ official_identity }) => official_identity.kind === "functional_designation",
   );
@@ -238,6 +296,19 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
   );
 
   const leaderPrinting = printings.find(({ card_id }) => card_id === leader.id);
+  assert.equal(
+    leaderPrinting.printed_rules_text,
+    "Give up to 1 rested DON!! card to this Leader.",
+  );
+  const cardResponse = await fetch(
+    `http://127.0.0.1:27789/v1/cards/${leader.id}`,
+    { headers: { authorization: `Bearer ${apiKey}` } },
+  );
+  assert.equal(cardResponse.status, 200);
+  assert.equal(
+    (await cardResponse.json()).data.effective_rules_text,
+    "Give up to 2 rested DON!! cards to this Leader.",
+  );
   const printingResponse = await fetch(
     `http://127.0.0.1:27789/v1/printings/${leaderPrinting.id}?include=evidence`,
     { headers: { authorization: `Bearer ${apiKey}` } },
@@ -250,6 +321,21 @@ test("the owner publishes a complete One Piece catalogue for authenticated consu
     "repeated Recording evidence aggregates onto one Printing locator",
   );
 });
+
+function completePlan(userAgent) {
+  return {
+    plans: [{
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      requests: [{
+        id: "one-piece-en:discovery",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+        headers: { accept: "text/html", "user-agent": userAgent },
+      }],
+    }],
+  };
+}
 
 async function exportRecords(port, apiKey, revisionId, component) {
   const response = await fetch(

@@ -108,6 +108,15 @@ export function normalizeOnePieceCardPage(value) {
 
 export function onePieceDonCardObservation(value) {
   const card = requiredRecord(value, "One Piece DON!! rules Card evidence");
+  const fields = ["functional_designation", "name", "Category", "Effect"];
+  const undeclared = Object.keys(card).filter((field) =>
+    !fields.includes(field)
+  );
+  if (undeclared.length > 0) {
+    throw new Error(
+      `One Piece DON!! Card contains undeclared fields: ${undeclared.sort().join(", ")}.`,
+    );
+  }
   if (
     normalizedText(card.functional_designation) !== "DON!!" ||
     normalizedToken(card.Category) !== "don!! card"
