@@ -179,21 +179,24 @@ export async function gundamPrintingLineages(
   return rows.results;
 }
 
-export async function hasCardObservationFromLineage(
+export async function gundamCardLineages(
   database: D1Database,
-  cardId: string,
-  sourceLineage: string,
-): Promise<boolean> {
-  const row = await database
+): Promise<{
+  card_id: string;
+  source_lineage: "gundam-en-asia" | "gundam-en-us";
+}[]> {
+  const rows = await database
     .prepare(
-      `SELECT card_id
+      `SELECT DISTINCT card_id, source_lineage
        FROM reconciled_card_observations
-       WHERE card_id = ? AND source_lineage = ?
-       LIMIT 1`,
+       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       ORDER BY card_id, source_lineage`,
     )
-    .bind(cardId, sourceLineage)
-    .first<{ card_id: string }>();
-  return row !== null;
+    .all<{
+      card_id: string;
+      source_lineage: "gundam-en-asia" | "gundam-en-us";
+    }>();
+  return rows.results;
 }
 
 export async function hasPrintingLocatorFromLineage(

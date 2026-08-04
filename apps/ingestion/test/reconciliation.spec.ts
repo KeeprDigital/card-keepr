@@ -2484,6 +2484,15 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     },
   );
   const usMissing = await reconcile(usMissingRun.id);
+  expect(usMissing.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   const inspected = await get(
     `/v1/ingestion-runs/${usMissingRun.id}/candidate`,
   );

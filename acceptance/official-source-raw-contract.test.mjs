@@ -5014,13 +5014,98 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
       ),
       /publisher total.*full locators/iu,
     );
-    assert.throws(
-      () => adapter.parseBytes(packageBytes, {
+    const pagedBytes = new TextEncoder().encode(packageHtml.replace(
+      "</section>", '<input type="hidden" name="page" value="2"></section>',
+    ));
+    assert.doesNotThrow(
+      () => adapter.parseBytes(pagedBytes, {
         ...packageContext,
         url: `${packageContext.url}&page=2`,
       }),
-      /selected page/iu,
     );
+    assert.throws(
+      () => adapter.parseBytes(pagedBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=3`,
+      }),
+      /selected page.*request/iu,
+    );
+  }
+});
+
+test("retained Gundam detail snapshots bind base and alternate art to full locators", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const observations = ["base", "p2"].map((variant) => {
+      const suffix = variant === "base" ? "" : "_p2";
+      const bytes = readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-${variant}-live-fragment.html`,
+        import.meta.url,
+      ));
+      const detailContext = {
+        mediaType: "text/html; charset=UTF-8",
+        url:
+          `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038${suffix}`,
+        requestId:
+          `${lineage}:detail:${(variant === "base" ? "1" : "2").repeat(64)}`,
+      };
+      assert.equal(
+        adapter.discoverRequests(bytes, detailContext)
+          .filter(({ role }) => role === "image").length,
+        1,
+      );
+      return adapter.parseBytes(bytes, detailContext)[0];
+    });
+    assert.deepEqual(
+      observations.map((observation) => ({
+        card_number: observation.card.official_identity.value,
+        locator: observation.identity_evidence.locator,
+        variant: observation.identity_evidence.variant_key,
+        treatment: observation.identity_evidence.treatment,
+        rarity: observation.printing.rarity,
+        alternate_art:
+          observation.printing.game_data.attributes.alternate_art,
+      })),
+      [
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038",
+          variant: "base",
+          treatment: "standard",
+          rarity: { raw: "LR", normalized: "legend-rare" },
+          alternate_art: false,
+        },
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038_p2",
+          variant: "_p2",
+          treatment: "alternate",
+          rarity: { raw: "LR ++", normalized: "legend-rare" },
+          alternate_art: true,
+        },
+      ],
+    );
+    assert.notEqual(
+      observations[0].identity_evidence.artwork_fingerprint,
+      observations[1].identity_evidence.artwork_fingerprint,
+    );
+    assert.deepEqual(observations[1].card.game_data.attributes, {
+      card_type: "unit",
+      colours: ["red"],
+      level: 7,
+      cost: 5,
+      block_icon: "1",
+      effect_text: "【Deploy】Official alternate effect.",
+      zone: "Space Earth",
+      traits: ["(Clan)"],
+      link_condition: "[Amate Yuzuriha (Machu)]",
+      ap: 5,
+      hp: 4,
+      series_titles: ["Mobile Suit Gundam GQuuuuuuX"],
+    });
   }
 });
 
@@ -5173,7 +5258,11 @@ test("active Gundam discovers and parses ordinary official Errata articles", () 
         game: erratum.game,
         target: erratum.target,
         published_on: erratum.published_on,
+        effective_from: erratum.effective_from,
         corrected_rules_text: erratum.corrected_rules_text,
+        official_wording: erratum.official_wording,
+        applies_to_parallel_printings:
+          erratum.applies_to_parallel_printings,
       },
       {
         kind: "official_erratum",
@@ -5183,8 +5272,29 @@ test("active Gundam discovers and parses ordinary official Errata articles", () 
           official_identity: { kind: "card_number", value: "GD04-067" },
         },
         published_on: "2026-04-10",
+        effective_from: null,
         corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: For the applicable cards, the above shall be regarded as the correct wording.",
+        applies_to_parallel_printings: false,
       },
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(detail.replace(
+          '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+          '<div class="text-area"><span style="font-size:1.25em;">GD01-001 Decoy</span></div>' +
+            '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+        )),
+        {
+          mediaType: "text/html; charset=UTF-8",
+          url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+          requestId: `${lineage}:detail:${"d".repeat(64)}`,
+        },
+      ),
+      /correction inventory is incomplete/iu,
     );
   }
 });
@@ -5669,22 +5779,25 @@ test("real Digimon and Gundam details close every known profile field and reject
 
   const gundam = byLineage("gundam-en-asia");
   const gundamHtml = `
-      <h1>Test Gundam Unit</h1>
-      <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
-      <dl><dt>Type</dt><dd>Unit</dd></dl>
-      <dl><dt>Color</dt><dd>-</dd></dl>
-      <dl><dt>Level</dt><dd>5</dd></dl>
-      <dl><dt>Cost</dt><dd>1,000</dd></dl>
-      <dl><dt>Block</dt><dd>03</dd></dl>
-      <dl><dt>Rarity</dt><dd>R★</dd></dl>
-      <dl><dt>Effect</dt><dd>Unit effect</dd></dl>
+      <div class="cardNo">GD99-001</div>
+      <div class="rarity">R★</div>
+      <div class="blockIcon">03</div>
+      <h1 class="cardName">Test Gundam Unit</h1>
+      <div class="cardImage"><img src= "../../jp/images/cards/card/GD99-001.webp"></div>
+      <dl><dt>TYPE</dt><dd>Unit</dd></dl>
+      <dl><dt>COLOR</dt><dd>-</dd></dl>
+      <dl><dt>Lv.</dt><dd>5</dd></dl>
+      <dl><dt>COST</dt><dd>1,000</dd></dl>
+      <div class="cardDataRow overview"><div class="dataTxt">Unit effect</div></div>
       <dl><dt>AP</dt><dd>4,000</dd></dl>
       <dl><dt>HP</dt><dd>5,000</dd></dl>
-      <dl><dt>Alternate Art</dt><dd>Yes</dd></dl>
-      <img class="card-image" src="/asia-en/images/cards/GD99-001.png">
+      <dl><dt>Zone</dt><dd>-</dd></dl>
+      <dl><dt>Trait</dt><dd>-</dd></dl>
+      <dl><dt>Link</dt><dd>-</dd></dl>
+      <dl><dt>Source Title</dt><dd>Test Series</dd></dl>
     `;
   const gundamDetailUrl =
-    "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001";
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD99-001";
   const gundamObservation = gundam.parseBytes(
     new TextEncoder().encode(gundamHtml),
     {
@@ -5700,7 +5813,7 @@ test("real Digimon and Gundam details close every known profile field and reject
   assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
   assert.deepEqual(
     gundamObservation.printing.game_data.attributes,
-    { alternate_art: true },
+    { alternate_art: false },
   );
   assert.deepEqual(gundamObservation.printing.rarity, {
     raw: "R★",

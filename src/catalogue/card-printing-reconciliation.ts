@@ -22,8 +22,8 @@ import {
   canonicalCardConflict,
   canonicalPrintingConflict,
   gundamPrintingLineages,
+  gundamCardLineages,
   existingCard,
-  hasCardObservationFromLineage,
   printingFactsFormattingEquivalent,
   printingAtLocatorVariant,
   printingsAtLocator,
@@ -122,13 +122,23 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   const diagnostics: Diagnostic[] = [];
-  const storedGundamLineages = await gundamPrintingLineages(database);
+  const [storedGundamLineages, storedGundamCardLineages] = await Promise.all([
+    gundamPrintingLineages(database),
+    gundamCardLineages(database),
+  ]);
   const publishedGundamLineages = gundamLineagesByPrinting(
     storedGundamLineages.filter(({ current }) => current === 1),
   );
   const historicalGundamLineages = gundamLineagesByPrinting(
     storedGundamLineages,
   );
+  const publishedGundamCardLineages = gundamLineagesByCard(
+    storedGundamCardLineages,
+  );
+  const localGundamCardLineages = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
   const localGundamLineages = new Map<
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
@@ -268,15 +278,23 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     }
     const carriedCard = cards.get(cardId);
+    if (
+      observation.sourceLineage === "gundam-en-asia" ||
+      observation.sourceLineage === "gundam-en-us"
+    ) {
+      addGundamLineage(
+        localGundamCardLineages,
+        cardId,
+        observation.sourceLineage,
+      );
+    }
     const retainAsiaAuthority =
       proposedCard.game === "gundam" &&
       observation.sourceLineage === "gundam-en-us" &&
       carriedCard !== undefined &&
-      (await hasCardObservationFromLineage(
-        database,
-        cardId,
-        "gundam-en-asia",
-      ));
+      (publishedGundamCardLineages.get(cardId)?.has("gundam-en-asia") ===
+          true ||
+        localGundamCardLineages.get(cardId)?.has("gundam-en-asia") === true);
     let acceptedCard = proposedCard;
     if (retainAsiaAuthority) {
       const { id: _carriedId, ...authoritativeCard } = carriedCard;
@@ -1052,13 +1070,16 @@ export async function reconcileRetainedCardPrintingEvidence(
       [printingId, new Set(lineages)] as const
     ),
   );
+  const affectedGundamPrintingIds = new Set<string>();
   for (const sourceLineage of checkedSourceLineages) {
     if (
       sourceLineage !== "gundam-en-asia" &&
       sourceLineage !== "gundam-en-us"
     ) continue;
-    for (const lineages of resultingGundamLineages.values()) {
-      lineages.delete(sourceLineage);
+    for (const [printingId, lineages] of resultingGundamLineages) {
+      if (lineages.delete(sourceLineage)) {
+        affectedGundamPrintingIds.add(printingId);
+      }
     }
   }
   for (const plan of cardPrintingPlans) {
@@ -1072,17 +1093,9 @@ export async function reconcileRetainedCardPrintingEvidence(
       plan.printingId,
       plan.sourceLineage,
     );
+    affectedGundamPrintingIds.add(plan.printingId);
   }
-  const observedGundamPrintingIds = new Set(
-    cardPrintingPlans.flatMap((plan) =>
-      plan.printingId !== null &&
-        (plan.sourceLineage === "gundam-en-asia" ||
-          plan.sourceLineage === "gundam-en-us")
-        ? [plan.printingId]
-        : []
-    ),
-  );
-  const gundamLineageWarnings = [...observedGundamPrintingIds].flatMap(
+  const gundamLineageWarnings = [...affectedGundamPrintingIds].flatMap(
     (printingId) => {
       const lineages = resultingGundamLineages.get(printingId);
       if (lineages?.size !== 1) return [];
@@ -1921,6 +1934,22 @@ function gundamLineagesByPrinting(
   >();
   for (const row of rows) {
     addGundamLineage(grouped, row.printing_id, row.source_lineage);
+  }
+  return grouped;
+}
+
+function gundamLineagesByCard(
+  rows: readonly {
+    card_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+  }[],
+): Map<string, Set<"gundam-en-asia" | "gundam-en-us">> {
+  const grouped = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  for (const row of rows) {
+    addGundamLineage(grouped, row.card_id, row.source_lineage);
   }
   return grouped;
 }

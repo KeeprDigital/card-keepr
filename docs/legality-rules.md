@@ -182,7 +182,8 @@ status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
 Migrations `0009_one_piece_complete_catalogue.sql`,
-`0010_fusion_world_complete_catalogue.sql`, and
-`0011_digimon_complete_catalogue.sql` register the complete One Piece, Fusion
-World, and Digimon adapters after `0008_legality_rules.sql`. Apply all four
-before deploying either Worker.
+`0010_fusion_world_complete_catalogue.sql`,
+`0011_digimon_complete_catalogue.sql`, and
+`0012_gundam_dual_lineage_complete_catalogue.sql` register the complete One
+Piece, Fusion World, Digimon, and Gundam adapters after
+`0008_legality_rules.sql`. Apply all five before deploying either Worker.
