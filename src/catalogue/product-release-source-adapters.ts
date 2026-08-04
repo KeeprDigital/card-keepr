@@ -1139,12 +1139,66 @@ function htmlAttribute(attributes: string, name: string): string | null {
 }
 
 function hasHtmlClassToken(attributes: string, token: string): boolean {
-  return (attributes.match(
-    /(?:^|\s)class\s*=\s*["']([^"']+)["']/iu,
-  )?.[1] ?? "")
-    .trim()
-    .split(/\s+/u)
+  return (tokenizedHtmlAttributes(attributes).get("class") ?? "")
+    .split(/[\t\n\f\r ]+/u)
+    .filter(Boolean)
     .includes(token);
+}
+
+function tokenizedHtmlAttributes(attributes: string): ReadonlyMap<string, string> {
+  const tokens = new Map<string, string>();
+  let cursor = 0;
+  const isWhitespace = (character: string | undefined) =>
+    character !== undefined && /[\t\n\f\r ]/u.test(character);
+
+  while (cursor < attributes.length) {
+    while (isWhitespace(attributes[cursor])) cursor += 1;
+    if (cursor >= attributes.length) break;
+    if (attributes[cursor] === "/") {
+      cursor += 1;
+      continue;
+    }
+    const nameStart = cursor;
+    while (
+      cursor < attributes.length &&
+      !isWhitespace(attributes[cursor]) &&
+      attributes[cursor] !== "=" &&
+      attributes[cursor] !== "/"
+    ) {
+      cursor += 1;
+    }
+    if (cursor === nameStart) {
+      cursor += 1;
+      continue;
+    }
+    const name = attributes.slice(nameStart, cursor).toLowerCase();
+    while (isWhitespace(attributes[cursor])) cursor += 1;
+    let value = "";
+    if (attributes[cursor] === "=") {
+      cursor += 1;
+      while (isWhitespace(attributes[cursor])) cursor += 1;
+      const quote = attributes[cursor];
+      if (quote === "\"" || quote === "'") {
+        cursor += 1;
+        const valueStart = cursor;
+        while (cursor < attributes.length && attributes[cursor] !== quote) {
+          cursor += 1;
+        }
+        value = attributes.slice(valueStart, cursor);
+        if (attributes[cursor] === quote) cursor += 1;
+      } else {
+        const valueStart = cursor;
+        while (
+          cursor < attributes.length && !isWhitespace(attributes[cursor])
+        ) {
+          cursor += 1;
+        }
+        value = attributes.slice(valueStart, cursor);
+      }
+    }
+    if (!tokens.has(name)) tokens.set(name, value);
+  }
+  return tokens;
 }
 
 const htmlVoidElements = new Set([
@@ -1214,21 +1268,22 @@ function visibleFusionPublisherCountMarkup(html: string): string {
     }
 
     const attributes = parsedTag[3]!;
-    const inert = tagName === "script" || tagName === "style" ||
-      tagName === "template";
-    if (inert) {
-      const closingTag = new RegExp(`</${tagName}\\s*>`, "giu");
-      closingTag.lastIndex = tagEnd + 1;
-      const inertEnd = closingTag.exec(html);
-      if (inertEnd === null) break;
-      cursor = inertEnd.index + inertEnd[0].length;
+    if (tagName === "script" || tagName === "style") {
+      const rawTextEnd = htmlRawTextElementEnd(html, tagName, tagEnd + 1);
+      if (rawTextEnd === null) break;
+      cursor = rawTextEnd;
+      continue;
+    }
+    if (tagName === "template") {
+      const templateEnd = htmlTemplateElementEnd(html, tagEnd + 1);
+      if (templateEnd === null) break;
+      cursor = templateEnd;
       continue;
     }
     const hidden = currentlyHidden() ||
-      /(?:^|\s)hidden(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?(?=\s|$)/iu
-        .test(attributes);
+      tokenizedHtmlAttributes(attributes).has("hidden");
     if (!hidden) output.push(tag);
-    if (parsedTag[4] !== "/" && !htmlVoidElements.has(tagName)) {
+    if (!htmlVoidElements.has(tagName)) {
       stack.push({ hidden, tagName });
     }
     cursor = tagEnd + 1;
@@ -1249,6 +1304,62 @@ function htmlTagEnd(html: string, openingIndex: number): number | null {
       continue;
     }
     if (character === ">") return index;
+  }
+  return null;
+}
+
+function htmlRawTextElementEnd(
+  html: string,
+  tagName: "script" | "style",
+  contentStart: number,
+): number | null {
+  const closingTag = new RegExp(`</${tagName}\\s*>`, "giu");
+  closingTag.lastIndex = contentStart;
+  const match = closingTag.exec(html);
+  return match === null ? null : match.index + match[0].length;
+}
+
+function htmlTemplateElementEnd(
+  html: string,
+  contentStart: number,
+): number | null {
+  let cursor = contentStart;
+  let depth = 1;
+  while (cursor < html.length) {
+    const nextTag = html.indexOf("<", cursor);
+    if (nextTag === -1) return null;
+    if (html.startsWith("<!--", nextTag)) {
+      const commentEnd = html.indexOf("-->", nextTag + 4);
+      if (commentEnd === -1) return null;
+      cursor = commentEnd + 3;
+      continue;
+    }
+    const tagEnd = htmlTagEnd(html, nextTag);
+    if (tagEnd === null) return null;
+    const parsedTag = html.slice(nextTag, tagEnd + 1).match(
+      /^<\s*(\/?)\s*([a-z][a-z0-9:-]*)([\s\S]*?)(\/?)\s*>$/iu,
+    );
+    if (parsedTag === null) {
+      cursor = tagEnd + 1;
+      continue;
+    }
+    const closing = parsedTag[1] === "/";
+    const tagName = parsedTag[2]!.toLowerCase();
+    if (!closing && (tagName === "script" || tagName === "style")) {
+      const rawTextEnd = htmlRawTextElementEnd(
+        html,
+        tagName,
+        tagEnd + 1,
+      );
+      if (rawTextEnd === null) return null;
+      cursor = rawTextEnd;
+      continue;
+    }
+    if (tagName === "template") {
+      depth += closing ? -1 : 1;
+      if (depth === 0) return tagEnd + 1;
+    }
+    cursor = tagEnd + 1;
   }
   return null;
 }
