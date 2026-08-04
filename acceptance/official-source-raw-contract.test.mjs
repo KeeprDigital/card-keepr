@@ -4387,6 +4387,9 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     `<template>${exactTotal}</template>`,
     `<template><template></template>${exactTotal}</template>`,
     `<template><!-- </template> -->${exactTotal}</template>`,
+    `<template><textarea></template></textarea>${exactTotal}</template>`,
+    `<script>ignored</script\u00a0>${exactTotal}</script>`,
+    `<template>ignored</template\u00a0>${exactTotal}</template>`,
     `<section hidden>${exactTotal}</section>`,
     `<section hidden/>${exactTotal}</section>`,
     exactTotal.replace(
@@ -4416,6 +4419,80 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     );
     assert.equal(visibleObservation.completeness.declared_record_count, 0);
   }
+  for (const textModeElement of [
+    "textarea",
+    "title",
+    "xmp",
+    "iframe",
+    "noembed",
+  ]) {
+    const inertTotal =
+      `<${textModeElement}>${exactTotal}</${textModeElement}>`;
+    const hiddenOnly = exactEmpty.replace(exactTotal, inertTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${inertTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+    );
+  }
+  const plaintextTotal = exactEmpty.replace(
+    exactTotal,
+    `<plaintext>${exactTotal}`,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(plaintextTotal),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(plaintextTotal),
+      context,
+    ),
+  );
+  const quotedAttributeTotal =
+    `<section data-note='ignored > ${exactTotal}'>framing</section>`;
+  const quotedAttributeOnly = exactEmpty.replace(
+    exactTotal,
+    quotedAttributeTotal,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(quotedAttributeOnly),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  const [quotedAttributeAndRealObservation] = current.parseBytes(
+    new TextEncoder().encode(exactEmpty.replace(
+      exactTotal,
+      `${quotedAttributeTotal}${exactTotal}`,
+    )),
+    context,
+  );
+  assert.equal(
+    quotedAttributeAndRealObservation.completeness.declared_record_count,
+    0,
+  );
   for (const inexactClass of [
     exactEmpty.replace('class="resultTxt"', 'class="not-resultTxt"'),
     exactEmpty.replace('class="resultTxt"', 'class="resultTxt-extra"'),
@@ -4491,6 +4568,22 @@ test("active Fusion listings retain exact empty leaves as truthful coverage", ()
     exactEmpty.replace(
       exactTotal,
       `<section data-note="not hidden here">${exactTotal}</section>`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<script>ignored</script \t>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<template>ignored</template \t>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<script>ignored</script/>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<style>ignored</style/>${exactTotal}`,
     ),
   ]) {
     const [visibleAttributeObservation] = current.parseBytes(

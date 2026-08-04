@@ -1217,6 +1217,21 @@ const htmlVoidElements = new Set([
   "track",
   "wbr",
 ]);
+const htmlTextModeElements = new Set([
+  "iframe",
+  "noembed",
+  "style",
+  "script",
+  "textarea",
+  "title",
+  "xmp",
+]);
+
+type ParsedHtmlTag = {
+  attributes: string;
+  closing: boolean;
+  tagName: string;
+};
 
 function visibleFusionPublisherCountMarkup(html: string): string {
   const output: string[] = [];
@@ -1242,17 +1257,14 @@ function visibleFusionPublisherCountMarkup(html: string): string {
     const tagEnd = htmlTagEnd(html, cursor);
     if (tagEnd === null) break;
     const tag = html.slice(cursor, tagEnd + 1);
-    const parsedTag = tag.match(
-      /^<\s*(\/?)\s*([a-z][a-z0-9:-]*)([\s\S]*?)(\/?)\s*>$/iu,
-    );
+    const parsedTag = parseHtmlTag(tag);
     if (parsedTag === null) {
-      if (!currentlyHidden()) output.push(tag);
+      if (!currentlyHidden()) output.push(maskQuotedHtmlTagMarkup(tag));
       cursor = tagEnd + 1;
       continue;
     }
 
-    const closing = parsedTag[1] === "/";
-    const tagName = parsedTag[2]!.toLowerCase();
+    const { attributes, closing, tagName } = parsedTag;
     if (closing) {
       let frameIndex = stack.length - 1;
       while (frameIndex >= 0 && stack[frameIndex]!.tagName !== tagName) {
@@ -1261,17 +1273,17 @@ function visibleFusionPublisherCountMarkup(html: string): string {
       const closingHidden = frameIndex >= 0
         ? stack[frameIndex]!.hidden
         : currentlyHidden();
-      if (!closingHidden) output.push(tag);
+      if (!closingHidden) output.push(maskQuotedHtmlTagMarkup(tag));
       if (frameIndex >= 0) stack.splice(frameIndex);
       cursor = tagEnd + 1;
       continue;
     }
 
-    const attributes = parsedTag[3]!;
-    if (tagName === "script" || tagName === "style") {
-      const rawTextEnd = htmlRawTextElementEnd(html, tagName, tagEnd + 1);
-      if (rawTextEnd === null) break;
-      cursor = rawTextEnd;
+    if (tagName === "plaintext") break;
+    if (htmlTextModeElements.has(tagName)) {
+      const textModeEnd = htmlTextModeElementEnd(html, tagName, tagEnd + 1);
+      if (textModeEnd === null) break;
+      cursor = textModeEnd;
       continue;
     }
     if (tagName === "template") {
@@ -1282,7 +1294,7 @@ function visibleFusionPublisherCountMarkup(html: string): string {
     }
     const hidden = currentlyHidden() ||
       tokenizedHtmlAttributes(attributes).has("hidden");
-    if (!hidden) output.push(tag);
+    if (!hidden) output.push(maskQuotedHtmlTagMarkup(tag));
     if (!htmlVoidElements.has(tagName)) {
       stack.push({ hidden, tagName });
     }
@@ -1308,15 +1320,67 @@ function htmlTagEnd(html: string, openingIndex: number): number | null {
   return null;
 }
 
-function htmlRawTextElementEnd(
+function parseHtmlTag(tag: string): ParsedHtmlTag | null {
+  if (tag[0] !== "<" || tag.at(-1) !== ">") return null;
+  let cursor = 1;
+  const closing = tag[cursor] === "/";
+  if (closing) cursor += 1;
+  if (!/[a-z]/iu.test(tag[cursor] ?? "")) return null;
+  const nameStart = cursor;
+  while (
+    cursor < tag.length - 1 &&
+    !/[\t\n\f\r />]/u.test(tag[cursor]!)
+  ) {
+    cursor += 1;
+  }
+  return {
+    attributes: tag.slice(cursor, -1),
+    closing,
+    tagName: tag.slice(nameStart, cursor).toLowerCase(),
+  };
+}
+
+function maskQuotedHtmlTagMarkup(tag: string): string {
+  const output: string[] = [];
+  let quote: "\"" | "'" | null = null;
+  for (const character of tag) {
+    if (quote !== null) {
+      if (character === quote) {
+        quote = null;
+        output.push(character);
+      } else if (character === "<") {
+        output.push("&lt;");
+      } else if (character === ">") {
+        output.push("&gt;");
+      } else {
+        output.push(character);
+      }
+      continue;
+    }
+    if (character === "\"" || character === "'") quote = character;
+    output.push(character);
+  }
+  return output.join("");
+}
+
+function htmlTextModeElementEnd(
   html: string,
-  tagName: "script" | "style",
+  tagName: string,
   contentStart: number,
 ): number | null {
-  const closingTag = new RegExp(`</${tagName}\\s*>`, "giu");
-  closingTag.lastIndex = contentStart;
-  const match = closingTag.exec(html);
-  return match === null ? null : match.index + match[0].length;
+  let cursor = contentStart;
+  while (cursor < html.length) {
+    const closingStart = html.indexOf("</", cursor);
+    if (closingStart === -1) return null;
+    const tagEnd = htmlTagEnd(html, closingStart);
+    if (tagEnd === null) return null;
+    const parsedTag = parseHtmlTag(html.slice(closingStart, tagEnd + 1));
+    if (parsedTag?.closing && parsedTag.tagName === tagName) {
+      return tagEnd + 1;
+    }
+    cursor = tagEnd + 1;
+  }
+  return null;
 }
 
 function htmlTemplateElementEnd(
@@ -1336,23 +1400,21 @@ function htmlTemplateElementEnd(
     }
     const tagEnd = htmlTagEnd(html, nextTag);
     if (tagEnd === null) return null;
-    const parsedTag = html.slice(nextTag, tagEnd + 1).match(
-      /^<\s*(\/?)\s*([a-z][a-z0-9:-]*)([\s\S]*?)(\/?)\s*>$/iu,
-    );
+    const parsedTag = parseHtmlTag(html.slice(nextTag, tagEnd + 1));
     if (parsedTag === null) {
       cursor = tagEnd + 1;
       continue;
     }
-    const closing = parsedTag[1] === "/";
-    const tagName = parsedTag[2]!.toLowerCase();
-    if (!closing && (tagName === "script" || tagName === "style")) {
-      const rawTextEnd = htmlRawTextElementEnd(
+    const { closing, tagName } = parsedTag;
+    if (!closing && tagName === "plaintext") return null;
+    if (!closing && htmlTextModeElements.has(tagName)) {
+      const textModeEnd = htmlTextModeElementEnd(
         html,
         tagName,
         tagEnd + 1,
       );
-      if (rawTextEnd === null) return null;
-      cursor = rawTextEnd;
+      if (textModeEnd === null) return null;
+      cursor = textModeEnd;
       continue;
     }
     if (tagName === "template") {
@@ -4516,20 +4578,20 @@ function parseBandaiSurfaceCoverageByContract(
   const fusionListingResultCountOpenings = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
     ? [...fusionListingCountMarkup.matchAll(
-        /<div\b([^>]*)>/giu,
+        /<div(?=[\t\n\f\r />])([^>]*)>/giu,
       )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
     : [];
   const fusionListingResultCountContainers = catalogueComplete &&
       format === "fusion-world" && surface === "listing"
     ? [...fusionListingCountMarkup.matchAll(
-        /<div\b([^>]*)>([\s\S]*?)<\/div>/giu,
+        /<div(?=[\t\n\f\r />])([^>]*)>([\s\S]*?)<\/div[\t\n\f\r ]*>/giu,
       )].filter((match) => hasHtmlClassToken(match[1]!, "resultTxt"))
     : [];
   const fusionListingDeclaredCountBody =
     fusionListingResultCountOpenings.length === 1 &&
       fusionListingResultCountContainers.length === 1
       ? fusionListingResultCountContainers[0]![2]!.match(
-        /^\s*Result\s*<span\b([^>]*)>\s*(\d+)\s*<\/span>\s*cards?\s*$/iu,
+        /^[\t\n\f\r ]*Result[\t\n\f\r ]*<span(?=[\t\n\f\r />])([^>]*)>[\t\n\f\r ]*(\d+)[\t\n\f\r ]*<\/span[\t\n\f\r ]*>[\t\n\f\r ]*cards?[\t\n\f\r ]*$/iu,
       )
       : null;
   const fusionListingDeclaredCount =
