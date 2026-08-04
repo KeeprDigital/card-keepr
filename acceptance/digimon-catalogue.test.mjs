@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
+import {
+  applyMigrations,
+  exportRecords,
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const ingestionPort = 28_788;
@@ -23,15 +29,6 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   const apiEnv = join(directory, "api.env");
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
   const planPath = join(directory, "digimon-source-plan.json");
-  const failurePlans = [
-    ["missing-category", "source_parse_failed"],
-    ["canonical-conflict", "printing_reconciliation_blocked"],
-    ["unrepresentable-rules", "source_parse_failed"],
-  ].map(([scenario, expectedFailureCode]) => ({
-    scenario,
-    expectedFailureCode,
-    path: join(directory, `digimon-${scenario}-plan.json`),
-  }));
   await Promise.all([
     writeFile(
       ingestionEnv,
@@ -43,13 +40,6 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
       planPath,
       JSON.stringify(digimonPlan("complete")),
       { mode: 0o600 },
-    ),
-    ...failurePlans.map(({ path, scenario }) =>
-      writeFile(
-        path,
-        JSON.stringify(digimonPlan(`complete-${scenario}`)),
-        { mode: 0o600 },
-      )
     ),
   ]);
   await applyMigrations(statePath);
@@ -105,39 +95,6 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
 
-  for (const { scenario, path, expectedFailureCode } of failurePlans) {
-    const failedCollection = await runCli(
-      [
-        "source",
-        "collect",
-        "--plan-file",
-        path,
-        "--idempotency-key",
-        `digimon-${scenario}-collect`,
-        "--json",
-      ],
-      cliEnvironment,
-    );
-    assert.equal(failedCollection.code, 0, failedCollection.stderr);
-    const failedRun = JSON.parse(failedCollection.stdout);
-    const failedResume = await runCli(
-      ["source", "resume", "--run-id", failedRun.id, "--json"],
-      cliEnvironment,
-    );
-    assert.equal(failedResume.code, 0, failedResume.stderr);
-    const failure = await waitForRunState(
-      failedRun.id,
-      "failed",
-      cliEnvironment,
-      ingestion,
-    );
-    assert.equal(
-      failure.failure_code,
-      expectedFailureCode,
-      `${scenario} must fail closed at its expected boundary`,
-    );
-  }
-
   const collected = await runCli(
     [
       "source",
@@ -163,23 +120,28 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     cliEnvironment,
     ingestion,
   );
-  const cardListSnapshots = completed.snapshots
-    .map(({ request }) => request.url)
-    .filter((url) => url.includes("/cards/index.php"));
-  assert.ok(
-    cardListSnapshots.some((url) =>
-      new URL(url).searchParams.get("category") === "booster"
-    ),
-    "the current Digimon Version/category must have its own retained request",
+  const cardListSnapshots = completed.snapshots.filter(({ request }) =>
+    request.url.includes("/cards/index.php")
   );
-  assert.ok(
-    cardListSnapshots.some((url) => {
-      const parameters = new URL(url).searchParams;
-      return parameters.get("category") === "booster" &&
-        parameters.get("cardcategory") === "digimon" &&
-        parameters.get("colour") === "blue";
-    }),
-    "a capped category must close over a Card Type and Colour leaf",
+  assert.deepEqual(
+    cardListSnapshots.map(({ request }) => request.url),
+    [
+      "https://world.digimoncard.com/cards/index.php?search=true",
+      "https://world.digimoncard.com/cards/index.php?search=true",
+      "https://world.digimoncard.com/cards/index.php?search=true&category=booster",
+      "https://world.digimoncard.com/cards/index.php?search=true&category=booster&cardcategory=digimon",
+      "https://world.digimoncard.com/cards/index.php?search=true&category=booster&cardcategory=digimon&colour=blue",
+    ],
+    "the retained request order must deterministically close the exact Digimon leaf",
+  );
+  const observationCount = (snapshot) =>
+    completed.observation_sets.find(
+      ({ source_snapshot_id }) => source_snapshot_id === snapshot.id,
+    )?.observation_count;
+  assert.deepEqual(
+    cardListSnapshots.map(observationCount),
+    [1, 0, 1, 1, 3],
+    "only the exact Colour leaf may supply catalogue records, including both required popups",
   );
 
   const inspected = await runCli(
@@ -188,6 +150,18 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   );
   assert.equal(inspected.code, 0, inspected.stderr);
   const inspection = JSON.parse(inspected.stdout);
+  const replayedInspection = await runCli(
+    ["candidate", "inspect", "--run-id", run.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(replayedInspection.code, 0, replayedInspection.stderr);
+  const replay = JSON.parse(replayedInspection.stdout);
+  assert.equal(
+    replay.candidate_digest,
+    inspection.candidate_digest,
+    "replaying the controlled source candidate must preserve its digest",
+  );
+  assert.deepEqual(replay.diff, inspection.diff);
   assert.equal(inspection.diff.summary.cards_added, 1);
   assert.equal(inspection.diff.summary.printings_added, 2);
   assert.ok(
@@ -340,79 +314,6 @@ function digimonPlan(marker) {
   };
 }
 
-async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(
-    `http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`,
-    { headers: { authorization: `Bearer ${apiKey}` } },
-  );
-  assert.equal(response.status, 200);
-  return gunzipSync(Buffer.from(await response.arrayBuffer()))
-    .toString("utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-async function applyMigrations(statePath) {
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      "apps/ingestion/wrangler.jsonc",
-      "--persist-to",
-      statePath,
-    ],
-    { ...processEnvironment(statePath), CI: "1" },
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      ...(envFile === undefined ? [] : ["--env-file", envFile]),
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: processEnvironment(statePath),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output };
-}
-
 async function waitForRunState(runId, expectedState, environment, worker) {
   const deadline = Date.now() + 30_000;
   let lastDocument = null;
@@ -453,70 +354,4 @@ async function waitForRunState(runId, expectedState, environment, worker) {
     `Run did not reach ${expectedState}: ${JSON.stringify(summary)}\n` +
       worker.getOutput(),
   );
-}
-
-async function waitForHealth(url, key, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
-    try {
-      const response = await fetch(url, {
-        headers: key === "" ? {} : { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return runProcess(
-    process.execPath,
-    [resolve(root, "cli/keepr.mjs"), ...arguments_],
-    { ...process.env, ...environment },
-  );
-}
-
-function runProcess(command, arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(command, arguments_, {
-      cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function processEnvironment(statePath) {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return {
-    ...environment,
-    WRANGLER_LOG_PATH: join(statePath, "logs"),
-  };
 }

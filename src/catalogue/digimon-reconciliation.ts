@@ -12,12 +12,15 @@ export function reconcileDigimonCardAuthority(
   current: DigimonCardAuthority,
   proposed: CardFacts,
   proposedIsBaseRecord: boolean,
+  authority: Readonly<{
+    effectiveRulesText: "source_consensus" | "official_errata";
+  }> = { effectiveRulesText: "source_consensus" },
 ):
   | Readonly<{ kind: "accepted"; authority: DigimonCardAuthority }>
   | Readonly<{ kind: "conflict"; detail: string }> {
   if (
-    canonicalJson(rulesRelevantFacts(current.card)) !==
-      canonicalJson(rulesRelevantFacts(proposed))
+    canonicalJson(rulesRelevantFacts(current.card, authority)) !==
+      canonicalJson(rulesRelevantFacts(proposed, authority))
   ) {
     return {
       kind: "conflict",
@@ -54,11 +57,23 @@ export function reconcileDigimonCardAuthority(
       };
 }
 
-function rulesRelevantFacts(card: CardFacts): unknown {
+function rulesRelevantFacts(
+  card: CardFacts,
+  authority: Readonly<{
+    effectiveRulesText: "source_consensus" | "official_errata";
+  }>,
+): unknown {
+  const attributes = card.game_data.attributes;
+  const { text_sections: _typedText, ...nonTextAttributes } = attributes;
   return {
     game: card.game,
     official_identity: card.official_identity,
     effective_rules_text: card.effective_rules_text,
-    game_data: card.game_data,
+    game_data: {
+      profile: card.game_data.profile,
+      attributes: authority.effectiveRulesText === "official_errata"
+        ? nonTextAttributes
+        : attributes,
+    },
   };
 }

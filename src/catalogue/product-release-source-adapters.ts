@@ -602,17 +602,20 @@ function bandaiRequestDiscovery(
           urls,
         )
       : null;
+    const structuredSurface = dynamicRole === "listing"
+      ? requiredSurfaces[0]!
+      : initialSurface;
     const current = new URL(context.url);
     const candidates: {
       role: "listing" | "detail" | "product_detail" | "image";
       url: string;
       headers: Record<string, string>;
     }[] = [];
-    if (initialSurface !== null) {
+    if (structuredSurface !== null) {
       const structured = bandaiPublisherPayload(
         discoveryHtml,
         sourceLineage,
-        initialSurface,
+        structuredSurface,
       );
       if (structured !== null) {
         candidates.push(
@@ -874,6 +877,15 @@ function discoveredHtmlRole(
         ? "listing"
         : null;
   }
+  if (
+    (format === "fusion-world" &&
+      /(?:card_type|colour|color|cost)=/iu.test(target)) ||
+    (format === "digimon" &&
+      /(?:category|cardcategory|colour|color|version)=/iu.test(target)) ||
+    (format === "gundam" && /(?:package|page)=/iu.test(target))
+  ) {
+    return "listing";
+  }
   if (/(?:detailSearch|card[_-]?(?:detail|id)|popup)=/iu.test(target)) {
     return "detail";
   }
@@ -884,12 +896,7 @@ function discoveredHtmlRole(
     return "detail";
   }
   if (
-    /(?:page|paged|offset)=\d+/iu.test(target) ||
-    (format === "fusion-world" &&
-      /(?:card_type|colour|color|cost)=/iu.test(target)) ||
-    (format === "digimon" &&
-      /(?:category|cardcategory|colour|color|version)=/iu.test(target)) ||
-    (format === "gundam" && /(?:package|page)=/iu.test(target))
+    /(?:page|paged|offset)=\d+/iu.test(target)
   ) {
     return "listing";
   }
@@ -1236,6 +1243,9 @@ function bandaiSnapshotDecoder(
         requiredSurfaces,
         urls,
       );
+    const structuredSurface = dynamicRole === "listing"
+      ? requiredSurfaces[0]!
+      : surface;
     if (mediaType !== "text/html") {
       throw new Error(
         `Official Source ${surface} must be captured as text/html.`,
@@ -1254,14 +1264,14 @@ function bandaiSnapshotDecoder(
     const structuredPayload = bandaiPublisherPayload(
       html,
       sourceLineage,
-      surface,
+      structuredSurface,
     );
     if (structuredPayload !== null) {
       const observations = normalizedSurfaceObservationsV2(
         format,
         game,
         sourceLineage,
-        surface,
+        structuredSurface,
         structuredPayload,
         profile.parseLegality,
       );

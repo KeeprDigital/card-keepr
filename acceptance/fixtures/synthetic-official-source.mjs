@@ -86,7 +86,10 @@ export default {
           },
         });
       }
-      const digimonPartition = digimonPartitionResponse(url);
+      const digimonPartition = digimonPartitionResponse(
+        url,
+        officialScenarioMarker,
+      );
       if (digimonPartition !== null) return digimonPartition;
       const retainedDiscovery = retainedOfficialDiscovery(
         officialLineage,
@@ -241,19 +244,40 @@ function retainedOfficialDiscovery(lineage, request) {
   return retainedDiscoveryResponse(fixture);
 }
 
-function digimonPartitionResponse(url) {
+function digimonPartitionResponse(url, marker) {
   if (
     url.hostname !== "world.digimoncard.com" ||
     url.pathname !== "/cards/index.php" ||
     !url.searchParams.has("category")
   ) return null;
+  if (
+    url.searchParams.get("category") === "booster" &&
+    url.searchParams.get("cardcategory") === "digimon" &&
+    url.searchParams.get("colour") === "blue"
+  ) {
+    const leafMarker = marker?.startsWith(
+        "card-keepr-acceptance-digimon/complete"
+      )
+      ? marker
+      : "card-keepr-acceptance-digimon/complete";
+    return new Response(
+      officialBandaiDataset(
+        "digimon-en",
+        leafMarker,
+        false,
+        url,
+        "card-list",
+      ),
+      {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          etag: `"digimon-complete-leaf-${url.searchParams.toString()}"`,
+        },
+      },
+    );
+  }
   return new Response(
     `<html><title>BANDAI DIGIMON CARD LIST</title>
-      <form aria-label="Digimon Card List filters">
-        <select name="category"><option value="booster">Booster</option></select>
-        <select name="cardcategory"><option value="digimon">Digimon</option></select>
-        <select name="colour"><option value="blue">Blue</option></select>
-      </form>
       <main><p>1 record</p><article data-publication-empty="true">No additional card records.</article></main>
     </html>`,
     {
@@ -348,6 +372,7 @@ function officialBandaiDataset(
         lineage,
         surface,
         parserSignal,
+        requestUrl,
       );
       if (
         lineage === "one-piece-en" &&
@@ -391,7 +416,13 @@ function officialBandaiDataset(
   }</html>`;
 }
 
-function applyDigimonCompleteFixture(payload, lineage, surface, marker) {
+function applyDigimonCompleteFixture(
+  payload,
+  lineage,
+  surface,
+  marker,
+  requestUrl,
+) {
   if (
     lineage !== "digimon-en" ||
     !marker?.startsWith("card-keepr-acceptance-digimon/complete")
@@ -406,6 +437,34 @@ function applyDigimonCompleteFixture(payload, lineage, surface, marker) {
     return;
   }
   if (surface !== "card-list") return;
+  const exactLeaf = requestUrl.searchParams.has("category") &&
+    requestUrl.searchParams.has("cardcategory") &&
+    requestUrl.searchParams.has("colour");
+  if (!exactLeaf) {
+    payload.version_options = [{ value: "booster", label: "Booster" }];
+    payload.filters = {
+      category: marker.endsWith("-missing-category")
+        ? ["booster", "starter"]
+        : ["booster"],
+      cardcategory: ["digimon"],
+      colour: ["blue"],
+    };
+    payload.result = {
+      cap_signal: null,
+      partitions: [{
+        bucket: "category=booster&cardcategory=digimon&colour=blue",
+        page: 1,
+        pages: 1,
+        total: 0,
+        has_next: false,
+        entries: [],
+      }],
+    };
+    payload.card_popups = [];
+    payload.products = [];
+    payload.release_calendar = [];
+    return;
+  }
   const base = structuredClone(payload.card_popups[0]);
   Object.assign(base, {
     popup_id: "/cards/BT99-001",
@@ -510,7 +569,10 @@ function digimonCompleteDiscoveryFacets(lineage, surface, marker) {
     <select name="category"><option value="booster">Booster</option></select>
     <select name="cardcategory"><option value="digimon">Digimon</option></select>
     <select name="colour"><option value="blue">Blue</option></select>
-  </form>`;
+  </form><nav aria-label="Complete Digimon leaf partitions">
+    <a href="/cards/index.php?search=true&amp;category=booster&amp;cardcategory=digimon">Digimon type leaf</a>
+    <a href="/cards/index.php?search=true&amp;category=booster&amp;cardcategory=digimon&amp;colour=blue">Blue Digimon leaf</a>
+  </nav>`;
 }
 
 function officialFixtureSurface(lineage, requestUrl, requestSurface) {

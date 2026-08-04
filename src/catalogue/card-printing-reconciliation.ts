@@ -284,6 +284,11 @@ export async function reconcileRetainedCardPrintingEvidence(
           priorAuthority,
           acceptedCanonicalCard,
           proposedIsBaseRecord,
+          {
+            effectiveRulesText: currentEffectiveAuthority
+              ? "official_errata"
+              : "source_consensus",
+          },
         );
         if (resolution.kind === "conflict") {
           digimonAuthorityConflict = resolution.detail;
