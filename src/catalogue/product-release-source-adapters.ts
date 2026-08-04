@@ -2615,16 +2615,6 @@ function parseOnePieceBandaiCardListV1(
       : expandedOnePieceCatalogue
         ? normalizedOnePieceRarity(rarity)
         : rarity.toLowerCase();
-    if (
-      expandedOnePieceCatalogue && rarity.length > 0 &&
-      normalizedRarity === null
-    ) {
-      schemaReviewValues.push({
-        locator,
-        field: "One Piece rarity",
-        value: rarity,
-      });
-    }
     if (expandedOnePieceCatalogue) {
       for (const pair of pairs.filter(({ label }) =>
         !onePieceKnownCardListLabel(label)
@@ -2658,6 +2648,13 @@ function parseOnePieceBandaiCardListV1(
         trigger: field("Trigger"),
       }))
     }`;
+    const cost = integerOrNull(field("Cost"));
+    const life = expandedOnePieceCatalogue
+      ? integerOrNull(field("Life"))
+      : cardType === "leader" ? integerOrNull(field("Life")) : null;
+    if (expandedOnePieceCatalogue) {
+      assertOnePieceTypeNullability(cardType, cost, life);
+    }
     const detail = {
       path: locator,
       number: cardNumber,
@@ -2669,8 +2666,8 @@ function parseOnePieceBandaiCardListV1(
         colours: colour === null
           ? []
           : colour.split("/").map((value) => value.trim().toLowerCase()),
-        cost: integerOrNull(field("Cost")),
-        life: cardType === "leader" ? integerOrNull(field("Life")) : null,
+        cost,
+        life,
         battle_attributes: textValues(field("Attribute")).map((value) =>
           expandedOnePieceCatalogue ? value.toLocaleLowerCase() : value
         ),
@@ -2717,7 +2714,7 @@ function parseOnePieceBandaiCardListV1(
       { revision: "captured-by-policy-surface", entries: [] },
       "one-piece",
     );
-    return recording === null
+    return !expandedOnePieceCatalogue || recording === null
       ? observation
       : {
           ...observation,
@@ -2771,6 +2768,25 @@ function onePieceKnownCardListLabel(label: string): boolean {
   ].some((known) =>
     known.localeCompare(label, undefined, { sensitivity: "accent" }) === 0
   );
+}
+
+function assertOnePieceTypeNullability(
+  cardType: string,
+  cost: number | null,
+  life: number | null,
+): void {
+  if (cardType === "leader" && cost !== null) {
+    throw new Error("One Piece Leader cost must be null.");
+  }
+  if (cardType !== "leader" && life !== null) {
+    throw new Error(`One Piece ${cardType} life must be null.`);
+  }
+  if (cardType !== "leader" && cost === null) {
+    throw new Error(`One Piece ${cardType} cost must be non-null.`);
+  }
+  if (cardType === "leader" && life === null) {
+    throw new Error("One Piece Leader life must be non-null.");
+  }
 }
 
 function parseBandaiCardDetailV1(
@@ -4192,18 +4208,7 @@ function onePieceUnmappedOptionalFields(
             }],
       )
       : [];
-    const rarity = value.printing.rarity;
-    const rarityWarnings =
-      typeof rarity === "string" && rarity.trim().length > 0 &&
-        normalizedOnePieceRarity(rarity) === null
-        ? [{
-            path:
-              "source_sidecar.raw.official_surfaces[0].document." +
-              `card_pages[${cardIndex}].printing.rarity`,
-            value: rarity,
-          }]
-        : [];
-    return [...illustrationWarnings, ...rarityWarnings];
+    return illustrationWarnings;
   });
 }
 
@@ -4653,7 +4658,6 @@ function normalizeOnePieceSurface(
     raw,
     `one-piece-${surface}`,
     surface === "don-rules" ? ["don_card"] : [],
-    true,
   );
   const hasDonCard = surface === "don-rules";
   return normalizedSurfaceBody(
@@ -5003,7 +5007,6 @@ function normalizedPolicy(
   raw: Record<string, unknown>,
   expectedPublication: string,
   additionalFields: readonly string[] = [],
-  allowUnknownOptional = false,
 ): Record<string, unknown> {
   if (raw.publication !== expectedPublication) {
     throw new Error("Official policy publication identity is invalid.");
@@ -5013,7 +5016,7 @@ function normalizedPolicy(
     "partition", "entries", ...additionalFields,
   ]);
   const unknown = Object.keys(raw).find((field) => !allowed.has(field));
-  if (unknown !== undefined && !allowUnknownOptional) {
+  if (unknown !== undefined) {
     throw new Error(`Official policy contains unknown field ${unknown}.`);
   }
   const entries = requiredArray(raw.entries, "Official policy entries");
@@ -5075,7 +5078,19 @@ function normalizePartitionEntries(
 function normalizeOnePieceDetails(value: unknown): unknown[] {
   return requiredArray(value, "One Piece Card pages").map((item) => {
     const card = requiredRecord(item, "One Piece Card page");
+    if (
+      Object.hasOwn(card, "artwork_fingerprint") ||
+      Object.hasOwn(card, "printed_fields_digest")
+    ) {
+      throw new Error(
+        "One Piece raw Card pages cannot supply an identity digest (artwork_fingerprint or printed_fields_digest).",
+      );
+    }
     const normalized = normalizeOnePieceCardPage(card);
+    const printing = card.printing === undefined
+      ? null
+      : requiredRecord(card.printing, "One Piece Printing fields");
+    const cardNumber = requiredText(card.card_number, "One Piece Card number");
     return canonicalDetail(card, {
       path: "source_record_id",
       number: "card_number",
@@ -5084,6 +5099,27 @@ function normalizeOnePieceDetails(value: unknown): unknown[] {
       attributes: normalized.attributes,
       printingAttributes: normalized.printingAttributes,
       normalizedRarity: normalized.normalizedRarity,
+      artworkFingerprint: officialArtworkFingerprint(
+        cardNumber,
+        ["front"],
+        null,
+      ),
+      printedFieldsDigest: `printed-material:${JSON.stringify(stableValue({
+        card_number: cardNumber,
+        category: card.Category,
+        colour: card.Color,
+        cost: card.Cost,
+        life: card.Life,
+        attribute: card.Attribute,
+        power: card.Power,
+        counter: card.Counter,
+        type: card.Type,
+        block_icon: card["Block icon"],
+        effect: card.Effect,
+        trigger: card.Trigger,
+        rarity: printing?.rarity ?? null,
+        variant: card.variant ?? null,
+      }))}`,
       imageFields: [{ role: "front", value: card.image_url }],
     });
   });
@@ -5230,6 +5266,8 @@ function canonicalDetail(
     attributes: Record<string, unknown>;
     printingAttributes?: Record<string, unknown>;
     normalizedRarity?: string | null;
+    artworkFingerprint?: string;
+    printedFieldsDigest?: string;
     imageFields: readonly { role: string; value: unknown }[];
   },
 ): Record<string, unknown> {
@@ -5237,16 +5275,19 @@ function canonicalDetail(
     raw.printing === undefined
       ? undefined
       : requiredRecord(raw.printing, "Official Printing fields");
+  const artworkFingerprint = printing === undefined
+    ? null
+    : mapping.artworkFingerprint ?? requiredText(
+      raw.artwork_fingerprint,
+      "Official artwork fingerprint",
+    );
   const images =
     printing === undefined
       ? []
       : mapping.imageFields.map(({ role, value }) => ({
           role,
           source_url: requiredText(value, "Official Printing image URL"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
+          artwork_fingerprint: artworkFingerprint,
         }));
   return {
     path: requiredText(raw[mapping.path], "Official Card locator"),
@@ -5288,11 +5329,8 @@ function canonicalDetail(
             "Official printed rules",
           ),
           variant: requiredText(raw.variant, "Official Printing variant"),
-          artwork_fingerprint: requiredText(
-            raw.artwork_fingerprint,
-            "Official artwork fingerprint",
-          ),
-          printed_fields_digest: requiredText(
+          artwork_fingerprint: artworkFingerprint,
+          printed_fields_digest: mapping.printedFieldsDigest ?? requiredText(
             raw.printed_fields_digest,
             "Official printed fields digest",
           ),

@@ -180,7 +180,6 @@ function surfaceDocument(surface) {
   if (surface === "don-rules") {
     return {
       ...policy(surface, []),
-      publisher_note: "Optional DON publication note",
       don_card: {
         functional_designation: "DON!!",
         name: "DON!! Card",
@@ -294,13 +293,6 @@ function card(input) {
     },
     printed_rules: fields.Effect,
     variant: "base",
-    artwork_fingerprint:
-      `official-artwork:${JSON.stringify({
-        official_card_identity: fields.card_number,
-        roles: ["front"],
-        artwork_id: `${fields.card_number.toLowerCase()}-base`,
-      })}`,
-    printed_fields_digest: `printed-material:${fields.card_number}:v1`,
   };
 }
 

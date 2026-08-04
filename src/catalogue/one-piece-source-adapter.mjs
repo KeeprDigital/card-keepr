@@ -73,6 +73,9 @@ export function normalizeOnePieceCardPage(value) {
       ).map((item) => illustrationTypes.get(normalizedToken(item)))
       .filter((item) => item !== undefined)
       .sort();
+  const cost = nonNegativeIntegerOrNull(value.Cost, "One Piece Cost");
+  const life = nonNegativeIntegerOrNull(value.Life, "One Piece Life");
+  assertOnePieceTypeNullability(cardType, cost, life);
   return {
     normalizedRarity: printing === null
       ? null
@@ -80,8 +83,8 @@ export function normalizeOnePieceCardPage(value) {
     attributes: {
       card_type: cardType,
       colours,
-      cost: nonNegativeIntegerOrNull(value.Cost, "One Piece Cost"),
-      life: nonNegativeIntegerOrNull(value.Life, "One Piece Life"),
+      cost,
+      life,
       battle_attributes: uniqueValues(
         value.Attribute,
         "One Piece Attribute",
@@ -177,7 +180,26 @@ export function onePieceDonCardObservation(value) {
 export function normalizedOnePieceRarity(value) {
   const raw = nullableText(value, "One Piece Printing rarity");
   if (raw === null) return null;
-  return rarities.get(normalizedToken(raw)) ?? null;
+  const normalized = rarities.get(normalizedToken(raw));
+  if (normalized === undefined) {
+    throw new Error(`One Piece rarity has unrecognized value ${raw}.`);
+  }
+  return normalized;
+}
+
+function assertOnePieceTypeNullability(cardType, cost, life) {
+  if (cardType === "leader" && cost !== null) {
+    throw new Error("One Piece Leader cost must be null.");
+  }
+  if (cardType !== "leader" && life !== null) {
+    throw new Error(`One Piece ${cardType} life must be null.`);
+  }
+  if (cardType !== "leader" && cost === null) {
+    throw new Error(`One Piece ${cardType} cost must be non-null.`);
+  }
+  if (cardType === "leader" && life === null) {
+    throw new Error("One Piece Leader life must be non-null.");
+  }
 }
 
 export function onePieceRecordingMemberships(value) {

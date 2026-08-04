@@ -26,6 +26,12 @@ const failureCases = [
     failure: "pagination",
     portOffset: 20,
   },
+  {
+    name: "invalid One Piece type-specific nullability",
+    path: "/raw-one-piece-failure-nullability",
+    failure: "nullability",
+    portOffset: 30,
+  },
 ];
 
 for (const failureCase of failureCases) {

@@ -321,6 +321,12 @@ function officialBandaiDataset(
     publisher: { "@type": "Organization", name: "Bandai" },
     hasPart: surface === null ? [] : [surface].map((surface) => {
       const payload = officialRawSurfacePayload(`/${lineage}/${surface}`);
+      if (lineage === "one-piece-en" && surface === "card-list") {
+        payload.card_pages.forEach((card) => {
+          delete card.artwork_fingerprint;
+          delete card.printed_fields_digest;
+        });
+      }
       if (lineage === "one-piece-en" && surface === "don-rules") {
         payload.don_card = {
           functional_designation: "DON!!",
@@ -342,6 +348,9 @@ function officialBandaiDataset(
         if (parserSignal?.endsWith("/pagination")) {
           payload.page_info.partitions[0].pages = 2;
           payload.page_info.partitions[0].has_next = true;
+        }
+        if (parserSignal?.endsWith("/nullability")) {
+          payload.card_pages[0].Cost = "1";
         }
       }
       return {

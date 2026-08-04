@@ -807,7 +807,7 @@ test("registered Fusion policy collection identities parse their retained curren
 });
 
 test("One Piece parser-failure markers survive retained discovery, staged listing, and final surface transport", async () => {
-  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const adapter = requiredSourceAdapter("one-piece-en@3");
   const url = "https://en.onepiece-cardgame.com/cardlist/";
   for (const failure of ["cap", "pagination"]) {
     const marker = `card-keepr-acceptance-parser/${failure}`;
@@ -2926,25 +2926,54 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   assert.ok(unfamiliarLabel.source_sidecar.unmapped_optional_fields.some(
     ({ value }) => value === "Preserve me"
   ));
-  const unfamiliarRarity = adapter.parseBytes(
-    new TextEncoder().encode(
-      html.replace(
-        "| <span>L</span> |",
-        "| <span>Experimental Rare</span> |",
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        html.replace(
+          "| <span>L</span> |",
+          "| <span>Experimental Rare</span> |",
+        ),
       ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+      },
     ),
-    {
+    /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        html.replace(
+          '<div class="cost"><h3>Life</h3>5</div>',
+          '<div class="cost"><h3>Life</h3>5</div>' +
+            '<div><h3>Cost</h3>1</div>',
+        ),
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+      },
+    ),
+    /Leader.*cost.*null/iu,
+  );
+  const historicalRecording = requiredSourceAdapter("one-piece-en@2")
+    .parseBytes(bytes, {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
-    },
-  )[0];
-  assert.deepEqual(unfamiliarRarity.printing.rarity, {
-    raw: "Experimental Rare",
-    normalized: null,
+      url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
+      requestId: "one-piece-en:card-list",
+    });
+  assert.deepEqual(historicalRecording[0].memberships.source_buckets, [
+    "card-set:Test Set [OP99]",
+  ]);
+  const expandedRecording = adapter.parseBytes(bytes, {
+    mediaType: "text/html; charset=utf-8",
+    url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
+    requestId: `one-piece-en:listing:${"b".repeat(64)}`,
   });
-  assert.ok(unfamiliarRarity.source_sidecar.unmapped_optional_fields.some(
-    ({ value }) => value === "Experimental Rare",
-  ));
+  assert.deepEqual(expandedRecording[0].memberships.source_buckets, [
+    "recording:569114",
+  ]);
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -2989,6 +3018,10 @@ test("One Piece publisher data retains an explicit first Printing identity", () 
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  payload.card_pages.forEach((card) => {
+    delete card.artwork_fingerprint;
+    delete card.printed_fields_digest;
+  });
   const observations = adapter.parseBytes(
     new TextEncoder().encode(
       `<html>${officialPublisherPayloadScript(
@@ -3013,6 +3046,10 @@ test("One Piece publisher data retains an explicit first Printing identity", () 
   );
   assert.equal(observation.identity_evidence.locator, "/cards/OP99-001");
   assert.equal(observation.identity_evidence.treatment, null);
+  assert.match(
+    observation.identity_evidence.printed_fields_digest,
+    /printed-material:.*OP99-001/u,
+  );
 });
 
 test("the expanded One Piece adapter requires evidence and derives optional vocabulary", () => {
@@ -3020,6 +3057,14 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
   const expanded = requiredSourceAdapter("one-piece-en@3");
   assert.match(historical.parserContract, /raw-surfaces-with-legality@2$/u);
   assert.match(expanded.parserContract, /complete-catalogue@3$/u);
+  const expandedCardListPayload = () => {
+    const value = officialRawSurfacePayload("/one-piece-en/card-list");
+    for (const card of value.card_pages) {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    }
+    return value;
+  };
 
   const don = officialRawSurfacePayload("/one-piece-en/don-rules");
   assert.throws(
@@ -3038,7 +3083,26 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
     /DON.*evidence|DON.*Card/iu,
   );
 
-  const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  const suppliedIdentity = officialRawSurfacePayload(
+    "/one-piece-en/card-list",
+  );
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "card-list",
+        suppliedIdentity,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    ),
+    /identity digest|artwork_fingerprint|printed_fields_digest/iu,
+  );
+
+  const payload = expandedCardListPayload();
   delete payload.card_pages[0].printing.normalized_rarity;
   payload.card_pages[0].printing.attributes.illustration_types = [
     "Experimental foil vocabulary",
@@ -3066,9 +3130,7 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
     ({ value }) => value === "Experimental foil vocabulary",
   ));
 
-  const absentIllustrationPayload = officialRawSurfacePayload(
-    "/one-piece-en/card-list",
-  );
+  const absentIllustrationPayload = expandedCardListPayload();
   delete absentIllustrationPayload.card_pages[0].printing.attributes
     .illustration_types;
   const absentIllustration = expanded.parseBytes(
@@ -3091,9 +3153,7 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
     false,
   );
 
-  const explicitIllustrationPayload = officialRawSurfacePayload(
-    "/one-piece-en/card-list",
-  );
+  const explicitIllustrationPayload = expandedCardListPayload();
   explicitIllustrationPayload.card_pages[0].printing.attributes
     .illustration_types = ["Animation"];
   const explicitIllustration = expanded.parseBytes(
@@ -3113,29 +3173,50 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
     ["animation"],
   );
 
-  const unknownRarityPayload = officialRawSurfacePayload(
-    "/one-piece-en/card-list",
-  );
+  const unknownRarityPayload = expandedCardListPayload();
   unknownRarityPayload.card_pages[0].printing.rarity = "Experimental Rare";
-  const unknownRarity = expanded.parseBytes(
-    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
-      "one-piece-en",
-      "card-list",
-      unknownRarityPayload,
-    )}</html>`),
-    {
-      mediaType: "text/html; charset=utf-8",
-      url: expanded.requestUrlForSurface("card-list"),
-      requestId: "one-piece-en:card-list",
-    },
-  ).find((observation) => observation.printing);
-  assert.deepEqual(unknownRarity.printing.rarity, {
-    raw: "Experimental Rare",
-    normalized: null,
-  });
-  assert.ok(unknownRarity.source_sidecar.unmapped_optional_fields.some(
-    ({ value }) => value === "Experimental Rare"
-  ));
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "card-list",
+        unknownRarityPayload,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    ),
+    /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
+  );
+
+  for (const [category, cost, life, message] of [
+    ["Leader", "1", "5", /Leader.*cost.*null/iu],
+    ["Character", "1", "2", /Character.*life.*null/iu],
+  ]) {
+    const invalid = expandedCardListPayload();
+    Object.assign(invalid.card_pages[0], {
+      Category: category,
+      Cost: cost,
+      Life: life,
+    });
+    assert.throws(
+      () => expanded.parseBytes(
+        new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+          "one-piece-en",
+          "card-list",
+          invalid,
+        )}</html>`),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: expanded.requestUrlForSurface("card-list"),
+          requestId: "one-piece-en:card-list",
+        },
+      ),
+      message,
+    );
+  }
 
   const policy = officialRawSurfacePayload("/one-piece-en/don-rules");
   policy.don_card = {
@@ -3145,23 +3226,21 @@ test("the expanded One Piece adapter requires evidence and derives optional voca
     Effect: "A rules-level resource Card.",
   };
   policy.publisher_note = "Optional policy vocabulary";
-  const policyObservations = expanded.parseBytes(
-    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
-      "one-piece-en",
-      "don-rules",
-      policy,
-    )}</html>`),
-    {
-      mediaType: "text/html; charset=utf-8",
-      url: expanded.requestUrlForSurface("don-rules"),
-      requestId: "one-piece-en:don-rules",
-    },
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        policy,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /unknown field publisher_note/iu,
   );
-  assert.ok(policyObservations.some(({ source_sidecar }) =>
-    source_sidecar?.unmapped_optional_fields?.some(
-      ({ value }) => value === "Optional policy vocabulary",
-    )
-  ));
 });
 
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
@@ -4508,13 +4587,23 @@ function rawSurfacePayload(lineage, surface) {
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {
+  const parsedPayload = structuredClone(payload);
+  if (
+    adapter.adapterVersion === "one-piece-en@3" &&
+    surface === "card-list"
+  ) {
+    parsedPayload.card_pages.forEach((card) => {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    });
+  }
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
        ${officialPublisherPayloadScript(
         adapter.sourceLineage,
         surface,
-        payload,
+        parsedPayload,
       )}`,
     ),
     {
