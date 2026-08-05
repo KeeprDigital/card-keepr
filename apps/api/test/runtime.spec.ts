@@ -274,7 +274,6 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     componentKey,
     compressedLegalityBytes,
     {
-      sha256: compressedLegalityDigest,
       httpMetadata: {
         contentType: "application/x-ndjson",
         contentEncoding: "gzip",
@@ -492,9 +491,7 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
   const tamperedBytes = compressedLegalityBytes.slice();
   const tamperedIndex = tamperedBytes.length - 1;
   tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
-  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes, {
-    sha256: await sha256(tamperedBytes),
-  });
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
   const tampered = await exports.default.fetch(new Request(
     `https://card-keepr.invalid${componentPath}`,
     {
@@ -505,9 +502,12 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     },
   ));
   expect(tampered.status).toBe(404);
-  await expect(tampered.json()).resolves.toMatchObject({
-    code: "not_found",
-  });
+  const tamperedProblem = await tampered.json();
+  expect(tamperedProblem).toMatchObject({ code: "not_found" });
+  expect(
+    validateProblem(tamperedProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
 
   await testEnv.CATALOGUE_EXPORTS.put(
     manifestKey,

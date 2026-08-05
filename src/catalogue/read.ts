@@ -672,12 +672,13 @@ export async function catalogueExportComponentResponse(
     "x-catalogue-revision": revisionId,
   });
   const key = `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`;
-  const stored = await bucket.head(key);
-  if (!exportComponentObjectMatches(
-    stored,
+  const verifiedObject = await verifyExportComponentObject(
+    bucket,
+    key,
     component.compressed_bytes,
     component.compressed_sha256,
-  )) {
+  );
+  if (verifiedObject === null) {
     return unavailableCatalogueExportComponent(requestId);
   }
   if (ifNoneMatch(request, etag)) {
@@ -710,13 +711,17 @@ export async function catalogueExportComponentResponse(
   }
   const object =
     request.method === "HEAD"
-      ? stored
+      ? null
       : await bucket.get(key, range === null ? {} : { range });
-  if (!exportComponentObjectMatches(
-    object,
-    component.compressed_bytes,
-    component.compressed_sha256,
-  )) {
+  if (
+    request.method !== "HEAD" &&
+    !exportComponentReadMatches(
+      object,
+      verifiedObject.etag,
+      component.compressed_bytes,
+      component.compressed_sha256,
+    )
+  ) {
     return unavailableCatalogueExportComponent(requestId);
   }
 
@@ -745,14 +750,60 @@ export async function catalogueExportComponentResponse(
   );
 }
 
-function exportComponentObjectMatches(
-  object: R2Object | null,
+async function verifyExportComponentObject(
+  bucket: R2Bucket,
+  key: string,
   expectedBytes: number,
   expectedSha256: string,
-): object is R2Object {
+): Promise<{ etag: string } | null> {
+  const metadata = await bucket.head(key);
+  if (metadata === null || metadata.size !== expectedBytes) return null;
+  const metadataChecksum = metadata.checksums.toJSON().sha256;
+  if (metadataChecksum !== undefined) {
+    return metadataChecksum === expectedSha256
+      ? { etag: metadata.etag }
+      : null;
+  }
+  const object = await bucket.get(key);
+  if (
+    object === null ||
+    object.size !== expectedBytes ||
+    object.etag !== metadata.etag
+  ) {
+    return null;
+  }
+  const objectChecksum = object.checksums.toJSON().sha256;
+  if (objectChecksum !== undefined) {
+    return objectChecksum === expectedSha256
+      ? { etag: object.etag }
+      : null;
+  }
+  return await readableSha256(object.body) === expectedSha256
+    ? { etag: object.etag }
+    : null;
+}
+
+function exportComponentReadMatches(
+  object: R2Object | null,
+  verifiedEtag: string,
+  expectedBytes: number,
+  expectedSha256: string,
+): object is R2ObjectBody {
   if (object === null || object.size !== expectedBytes) return false;
   const checksum = object.checksums.toJSON().sha256;
-  return checksum === expectedSha256;
+  return checksum === undefined
+    ? object.etag === verifiedEtag
+    : checksum === expectedSha256;
+}
+
+async function readableSha256(
+  readable: ReadableStream<Uint8Array>,
+): Promise<string> {
+  const digest = new crypto.DigestStream("SHA-256");
+  await readable.pipeTo(digest);
+  return [...new Uint8Array(await digest.digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function unavailableCatalogueExportComponent(requestId: string): Response {
