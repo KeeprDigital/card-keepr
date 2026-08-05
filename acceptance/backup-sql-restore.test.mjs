@@ -25,6 +25,10 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   for (const migration of migrations) {
     source.exec(await readFile(join(root, "migrations", migration), "utf8"));
   }
+  const expectedSchemaMigrationLevel = source.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).get().migration_level;
+  assert.equal(expectedSchemaMigrationLevel, 19);
   seedRepresentativeCatalogue(source);
 
   const vite = await createServer({
@@ -74,7 +78,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   const database = d1Adapter(restored);
   await assert.doesNotReject(recovery.verifyRestoredCatalogue(database, {
     expectedRevisionId: "catrev_restore_acceptance",
-    expectedSchemaMigrationLevel: 16,
+    expectedSchemaMigrationLevel,
     expected,
   }));
 
@@ -84,7 +88,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   await assert.rejects(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
-      expectedSchemaMigrationLevel: 16,
+      expectedSchemaMigrationLevel,
       expected,
     }),
     /Restored D1 verification failed/u,
@@ -109,7 +113,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   await assert.rejects(
     recovery.verifyRestoredCatalogue(database, {
       expectedRevisionId: "catrev_restore_acceptance",
-      expectedSchemaMigrationLevel: 16,
+      expectedSchemaMigrationLevel,
       expected,
     }),
     /Restored D1 verification failed/u,
