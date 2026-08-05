@@ -192,6 +192,9 @@ export async function confirmCatalogueExportDeletion(
     if (replay.request_json !== requestJson) {
       throw problem(409, "idempotency_key_reused", "The idempotency key is bound to another deletion request.");
     }
+    if (replay.confirmation_response_json !== null) {
+      return JSON.parse(replay.confirmation_response_json) as Record<string, unknown>;
+    }
     if (replay.state === "deleting") {
       const replayPlan = await loadPlan(database, replay.plan_id);
       if (replayPlan === null) {
@@ -212,10 +215,7 @@ export async function confirmCatalogueExportDeletion(
         observedAt,
       );
     }
-    if (replay.confirmation_response_json === null) {
-      throw new Error("Confirmation replay evidence is unavailable");
-    }
-    return JSON.parse(replay.confirmation_response_json) as Record<string, unknown>;
+    throw new Error("Confirmation replay evidence is unavailable");
   }
 
   const plan = await loadPlan(database, request.plan_id);
@@ -328,6 +328,15 @@ export async function retryCatalogueExportDeletion(
   if (row === null) {
     throw problem(404, "export_deletion_not_found", "The Catalogue Export deletion is not known.");
   }
+  if (replay !== null && row.state !== "deleting") {
+    const document = deletionDocument(row);
+    await persistRetryResponse(
+      database,
+      request.idempotency_key,
+      document,
+    );
+    return document;
+  }
   if (replay === null && row.state !== "failed") {
     throw problem(409, "export_deletion_not_failed", "Only a failed deletion can be retried.");
   }
@@ -370,11 +379,19 @@ export async function retryCatalogueExportDeletion(
     manifestKey,
     observedAt,
   );
+  await persistRetryResponse(database, request.idempotency_key, document);
+  return document;
+}
+
+async function persistRetryResponse(
+  database: D1Database,
+  idempotencyKey: string,
+  document: Record<string, unknown>,
+): Promise<void> {
   await database.prepare(
     `UPDATE catalogue_export_deletion_retries SET response_json = ?
      WHERE idempotency_key = ? AND response_json IS NULL`,
-  ).bind(canonicalJson(document), request.idempotency_key).run();
-  return document;
+  ).bind(canonicalJson(document), idempotencyKey).run();
 }
 
 async function executeDeletion(

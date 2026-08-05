@@ -2557,13 +2557,40 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
     "/v1/catalogue-export-deletions/export-deletion-partial",
   );
   expect(status.document).toEqual(failed.document);
-  const retried = await administrationRequest(
+  const retryEntered = deferred<void>();
+  const releaseRetry = deferred<void>();
+  const pausedRetryBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      retryEntered.resolve(undefined);
+      await releaseRetry.promise;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const retryPromise = administrationRequestWithEnv(
     "/v1/catalogue-export-deletions/export-deletion-partial/retry",
     {
       object_set_digest: prepared.document.object_set_digest,
       idempotency_key: "export-deletion-partial-retry-key",
     },
+    { ...testEnv, CATALOGUE_EXPORTS: pausedRetryBucket },
   );
+  await retryEntered.promise;
+  const confirmationDuringRetry = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+  );
+  expect(confirmationDuringRetry.document).toEqual(failed.document);
+  releaseRetry.resolve(undefined);
+  const retried = await retryPromise;
   expect(retried.document).toMatchObject({
     state: "deleted",
     object_set_digest: prepared.document.object_set_digest,
@@ -2664,6 +2691,134 @@ test("an exact confirmation replay resumes an interrupted deleting operation", a
   await expect(testEnv.CATALOGUE_EXPORTS.list({
     prefix: `catalogue-exports/${oldRevision}/`,
   })).resolves.toMatchObject({ objects: [] });
+});
+
+test("an exact retry reconciles durable failed and deleted outcomes after response persistence is interrupted", async () => {
+  const oldRevision = "catrev_delete_retry_crash";
+  const currentRevision = "catrev_delete_retry_crash_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_retry_crash",
+    "2026-08-05T06:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_retry_crash_current",
+    "2026-08-05T06:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T07:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-retry-crash",
+    },
+  );
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      if (key === manifestKey) throw new Error("injected deletion failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-retry-crash",
+      idempotency_key: "export-deletion-retry-crash-confirm",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.document).toMatchObject({ state: "failed" });
+
+  const crashDatabase = crashBeforeRetryResponseDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  const failedCrash = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-failed-key",
+    },
+    {
+      ...testEnv,
+      CATALOGUE_DB: crashDatabase,
+      CATALOGUE_EXPORTS: failingBucket,
+    },
+  );
+  expect(failedCrash.response.status).toBe(500);
+  let failedReplayR2Calls = 0;
+  const observingFailedBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const reconciledFailure = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-failed-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: observingFailedBucket },
+  );
+  expect(reconciledFailure.document).toEqual(failed.document);
+  expect(failedReplayR2Calls).toBe(0);
+  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
+
+  const successCrash = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-success-key",
+    },
+    { ...testEnv, CATALOGUE_DB: crashDatabase },
+  );
+  expect(successCrash.response.status).toBe(500);
+  let successReplayR2Calls = 0;
+  const observingSuccessBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      successReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      successReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      successReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const reconciledSuccess = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-success-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: observingSuccessBucket },
+  );
+  expect(reconciledSuccess.document).toMatchObject({
+    state: "deleted",
+    failure_code: null,
+  });
+  expect(successReplayR2Calls).toBe(0);
 });
 
 async function administrationRequest(
@@ -2968,6 +3123,9 @@ function deferred<T>(): {
 function proxyR2Bucket(
   bucket: R2Bucket,
   overrides: {
+    head?: (
+      ...arguments_: Parameters<R2Bucket["head"]>
+    ) => ReturnType<R2Bucket["head"]>;
     get?: (
       ...arguments_: Parameters<R2Bucket["get"]>
     ) => ReturnType<R2Bucket["get"]>;
@@ -2985,7 +3143,9 @@ function proxyR2Bucket(
   return new Proxy(bucket, {
     get(target, property) {
       const override =
-        property === "get"
+        property === "head"
+          ? overrides.head
+          : property === "get"
           ? overrides.get
           : property === "put"
           ? overrides.put
@@ -2995,6 +3155,44 @@ function proxyR2Bucket(
               ? overrides.list
             : undefined;
       if (override !== undefined) return override;
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+function crashBeforeRetryResponseDatabase(
+  database: D1Database,
+): D1Database {
+  const crashingStatement = (
+    statement: D1PreparedStatement,
+  ): D1PreparedStatement => new Proxy(statement, {
+    get(target, property) {
+      if (property === "bind") {
+        return (...values: Parameters<D1PreparedStatement["bind"]>) =>
+          crashingStatement(target.bind(...values));
+      }
+      if (property === "run") {
+        return async () => {
+          throw new Error("injected termination before retry response persistence");
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === "prepare") {
+        return (query: string) => {
+          const statement = target.prepare(query);
+          return query.includes(
+              "UPDATE catalogue_export_deletion_retries SET response_json",
+            )
+            ? crashingStatement(statement)
+            : statement;
+        };
+      }
       const value = Reflect.get(target, property);
       return typeof value === "function" ? value.bind(target) : value;
     },
