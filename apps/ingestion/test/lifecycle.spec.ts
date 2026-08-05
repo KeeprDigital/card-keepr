@@ -2498,6 +2498,84 @@ test("Catalogue Export deletion plans bind an exact immutable set and delete an 
   expect(replayed.document).toEqual(confirmed.document);
 });
 
+test("concurrent exact deletion confirmation executes R2 once and replays one response", async () => {
+  const oldRevision = "catrev_delete_concurrent_confirm";
+  const currentRevision = "catrev_delete_concurrent_confirm_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_concurrent_confirm",
+    "2026-08-05T01:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_concurrent_confirm_current",
+    "2026-08-05T01:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T01:30:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-concurrent-confirm",
+    },
+  );
+  const request = {
+    plan_id: prepared.document.id,
+    plan_digest: prepared.document.plan_digest,
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    confirmation_revision_id: oldRevision,
+    deletion_id: "export-deletion-concurrent-confirm",
+    idempotency_key: "export-deletion-concurrent-confirm-key",
+  };
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  const pausedBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      entered.resolve(undefined);
+      await release.promise;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const firstPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    request,
+    { ...testEnv, CATALOGUE_EXPORTS: pausedBucket },
+  );
+  await entered.promise;
+  let replayR2Calls = 0;
+  const replayBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const replayPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    request,
+    { ...testEnv, CATALOGUE_EXPORTS: replayBucket },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(replayR2Calls).toBe(0);
+  release.resolve(undefined);
+  const first = await firstPromise;
+  const replay = await replayPromise;
+  expect(first.document).toMatchObject({ state: "deleted" });
+  expect(replay.document).toEqual(first.document);
+  expect(replayR2Calls).toBe(0);
+});
+
 test("a partial Catalogue Export deletion stays unavailable and retries only its original object set", async () => {
   const oldRevision = "catrev_delete_partial";
   const currentRevision = "catrev_delete_partial_current";
@@ -2589,6 +2667,31 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
     },
   );
   expect(confirmationDuringRetry.document).toEqual(failed.document);
+  let exactRetryReplayR2Calls = 0;
+  const exactRetryReplayBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const exactRetryReplayPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: exactRetryReplayBucket },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(exactRetryReplayR2Calls).toBe(0);
   let losingRetryR2Calls = 0;
   const losingRetryBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
     async head(key) {
@@ -2619,6 +2722,9 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
   expect(losingRetryR2Calls).toBe(0);
   releaseRetry.resolve(undefined);
   const retried = await retryPromise;
+  const concurrentExactRetry = await exactRetryReplayPromise;
+  expect(concurrentExactRetry.document).toEqual(retried.document);
+  expect(exactRetryReplayR2Calls).toBe(0);
   expect(retried.document).toMatchObject({
     state: "deleted",
     object_set_digest: prepared.document.object_set_digest,
@@ -3168,13 +3274,23 @@ function crashAfterRetryTerminalDatabase(
   database: D1Database,
 ): D1Database {
   let batchCount = 0;
+  let terminated = false;
   return new Proxy(database, {
     get(target, property) {
+      if (property === "prepare") {
+        return (query: string) => {
+          if (terminated) {
+            throw new Error("injected termination after retry terminal commit");
+          }
+          return target.prepare(query);
+        };
+      }
       if (property === "batch") {
         return async (statements: D1PreparedStatement[]) => {
           batchCount += 1;
           const result = await target.batch(statements);
           if (batchCount === 2) {
+            terminated = true;
             throw new Error("injected termination after retry terminal commit");
           }
           return result;

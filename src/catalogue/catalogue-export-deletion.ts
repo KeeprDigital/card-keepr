@@ -5,6 +5,9 @@ import {
 } from "./serialization";
 
 const PLAN_TTL_MS = 15 * 60 * 1_000;
+const EXECUTION_LEASE_MS = 5 * 60 * 1_000;
+const REPLAY_WAIT_ATTEMPTS = 1_200;
+const REPLAY_WAIT_INTERVAL_MS = 25;
 
 type ExportRow = {
   catalogue_revision_id: string;
@@ -41,6 +44,8 @@ type DeletionRow = {
   completed_at: string | null;
   failure_code: string | null;
   retry_owner_idempotency_key: string | null;
+  execution_owner_token: string | null;
+  execution_lease_expires_at: string | null;
   confirmation_response_json: string | null;
 };
 
@@ -186,6 +191,8 @@ export async function confirmCatalogueExportDeletion(
   observedAt: string,
 ): Promise<Record<string, unknown>> {
   const requestJson = canonicalJson(request);
+  const executionOwnerToken = crypto.randomUUID();
+  const executionLeaseExpiresAt = leaseExpiresAt(observedAt);
   const replay = await database.prepare(
     "SELECT * FROM catalogue_export_deletions WHERE idempotency_key = ?",
   ).bind(request.idempotency_key).first<DeletionRow>();
@@ -197,6 +204,17 @@ export async function confirmCatalogueExportDeletion(
       return JSON.parse(replay.confirmation_response_json) as Record<string, unknown>;
     }
     if (replay.state === "deleting") {
+      const claimed = await claimDeletionExecutionLease(
+        database,
+        replay.id,
+        null,
+        executionOwnerToken,
+        executionLeaseExpiresAt,
+        observedAt,
+      );
+      if (!claimed) {
+        return waitForDeletionResponse(database, replay.id, null);
+      }
       const replayPlan = await loadPlan(database, replay.plan_id);
       if (replayPlan === null) {
         throw new Error("Deletion plan evidence is unavailable");
@@ -214,6 +232,8 @@ export async function confirmCatalogueExportDeletion(
         replayPlan,
         manifestKey,
         observedAt,
+        null,
+        executionOwnerToken,
       );
     }
     throw new Error("Confirmation replay evidence is unavailable");
@@ -257,32 +277,59 @@ export async function confirmCatalogueExportDeletion(
   if (existingIdentity !== null) {
     throw problem(409, "identity_conflict", "The deletion identity is already in use.");
   }
-  await database.batch([
-    database.prepare(
-      `INSERT INTO catalogue_export_deletions (
-         id, plan_id, state, catalogue_revision_id, manifest_digest,
-         expected_current_revision_id, object_set_digest, idempotency_key,
-         request_json, requested_at, completed_at, failure_code,
-         confirmation_response_json
-       ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
-    ).bind(
-      request.deletion_id,
-      plan.id,
-      plan.catalogue_revision_id,
-      plan.manifest_digest,
-      plan.expected_current_revision_id,
-      plan.object_set_digest,
-      request.idempotency_key,
-      requestJson,
-      observedAt,
-    ),
-    database.prepare(
-      `UPDATE catalogue_exports
-       SET maintenance_state = 'deleting', deletion_operation_id = ?
-       WHERE catalogue_revision_id = ? AND maintenance_state = 'available'`,
-    ).bind(request.deletion_id, plan.catalogue_revision_id),
-  ]);
-  return executeDeletion(database, bucket, request.deletion_id, plan, catalogueExport.manifest_key, observedAt);
+  try {
+    await database.batch([
+      database.prepare(
+        `INSERT INTO catalogue_export_deletions (
+           id, plan_id, state, catalogue_revision_id, manifest_digest,
+           expected_current_revision_id, object_set_digest, idempotency_key,
+           request_json, requested_at, completed_at, failure_code,
+           retry_owner_idempotency_key, execution_owner_token,
+           execution_lease_expires_at, confirmation_response_json
+         ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL,
+           NULL, ?, ?, NULL)`,
+      ).bind(
+        request.deletion_id,
+        plan.id,
+        plan.catalogue_revision_id,
+        plan.manifest_digest,
+        plan.expected_current_revision_id,
+        plan.object_set_digest,
+        request.idempotency_key,
+        requestJson,
+        observedAt,
+        executionOwnerToken,
+        executionLeaseExpiresAt,
+      ),
+      database.prepare(
+        `UPDATE catalogue_exports
+         SET maintenance_state = 'deleting', deletion_operation_id = ?
+         WHERE catalogue_revision_id = ? AND maintenance_state = 'available'`,
+      ).bind(request.deletion_id, plan.catalogue_revision_id),
+    ]);
+  } catch (error) {
+    const concurrent = await database.prepare(
+      "SELECT request_json, confirmation_response_json FROM catalogue_export_deletions WHERE idempotency_key = ?",
+    ).bind(request.idempotency_key).first<{
+      request_json: string;
+      confirmation_response_json: string | null;
+    }>();
+    if (concurrent === null || concurrent.request_json !== requestJson) throw error;
+    if (concurrent.confirmation_response_json !== null) {
+      return JSON.parse(concurrent.confirmation_response_json) as Record<string, unknown>;
+    }
+    return waitForDeletionResponse(database, request.deletion_id, null);
+  }
+  return executeDeletion(
+    database,
+    bucket,
+    request.deletion_id,
+    plan,
+    catalogueExport.manifest_key,
+    observedAt,
+    null,
+    executionOwnerToken,
+  );
 }
 
 export async function catalogueExportDeletionStatus(
@@ -306,6 +353,8 @@ export async function retryCatalogueExportDeletion(
   observedAt: string,
 ): Promise<Record<string, unknown>> {
   const requestJson = canonicalJson(request);
+  const executionOwnerToken = crypto.randomUUID();
+  const executionLeaseExpiresAt = leaseExpiresAt(observedAt);
   const replay = await database.prepare(
     `SELECT deletion_id, object_set_digest, request_json, response_json
      FROM catalogue_export_deletion_retries WHERE idempotency_key = ?`,
@@ -354,6 +403,23 @@ export async function retryCatalogueExportDeletion(
   if (row.object_set_digest !== request.object_set_digest) {
     throw problem(409, "deleted_object_set_mismatch", "Retry must use the original object-set digest.");
   }
+  if (replay !== null) {
+    const claimed = await claimDeletionExecutionLease(
+      database,
+      deletionId,
+      request.idempotency_key,
+      executionOwnerToken,
+      executionLeaseExpiresAt,
+      observedAt,
+    );
+    if (!claimed) {
+      return waitForDeletionResponse(
+        database,
+        deletionId,
+        request.idempotency_key,
+      );
+    }
+  }
   const plan = await loadPlan(database, row.plan_id);
   if (plan === null) throw new Error("Deletion plan evidence is unavailable");
   await assertMaintenanceIdle(database, plan.expected_current_revision_id, observedAt);
@@ -375,16 +441,27 @@ export async function retryCatalogueExportDeletion(
         database.prepare(
           `UPDATE catalogue_export_deletions
            SET state = 'deleting', failure_code = NULL,
-               retry_owner_idempotency_key = ?
+               retry_owner_idempotency_key = ?, execution_owner_token = ?,
+               execution_lease_expires_at = ?
            WHERE id = ? AND state = 'failed'`,
-        ).bind(request.idempotency_key, deletionId),
+        ).bind(
+          request.idempotency_key,
+          executionOwnerToken,
+          executionLeaseExpiresAt,
+          deletionId,
+        ),
         database.prepare(
           `SELECT CASE WHEN EXISTS (
              SELECT 1 FROM catalogue_export_deletions
              WHERE id = ? AND state = 'deleting'
                AND retry_owner_idempotency_key = ?
+               AND execution_owner_token = ?
            ) THEN 1 ELSE json_extract('invalid', '$') END`,
-        ).bind(deletionId, request.idempotency_key),
+        ).bind(
+          deletionId,
+          request.idempotency_key,
+          executionOwnerToken,
+        ),
       ]);
     } catch {
       const concurrent = await database.prepare(
@@ -398,7 +475,11 @@ export async function retryCatalogueExportDeletion(
         if (concurrent.response_json !== null) {
           return JSON.parse(concurrent.response_json) as Record<string, unknown>;
         }
-        return catalogueExportDeletionStatus(database, deletionId);
+        return waitForDeletionResponse(
+          database,
+          deletionId,
+          request.idempotency_key,
+        );
       }
       throw problem(
         409,
@@ -419,6 +500,7 @@ export async function retryCatalogueExportDeletion(
     manifestKey,
     observedAt,
     request.idempotency_key,
+    executionOwnerToken,
   );
   return document;
 }
@@ -441,7 +523,8 @@ async function executeDeletion(
   plan: PlanRow,
   manifestKey: string,
   observedAt: string,
-  retryIdempotencyKey: string | null = null,
+  retryIdempotencyKey: string | null,
+  executionOwnerToken: string,
 ): Promise<Record<string, unknown>> {
   const operation = await database.prepare(
     "SELECT * FROM catalogue_export_deletions WHERE id = ?",
@@ -481,18 +564,21 @@ async function executeDeletion(
         database,
         deletionId,
         retryIdempotencyKey,
+        executionOwnerToken,
       ),
       database.prepare(
         `UPDATE catalogue_export_deletions
          SET state = 'deleted', completed_at = ?, failure_code = NULL,
              confirmation_response_json = COALESCE(confirmation_response_json, ?)
          WHERE id = ? AND state = 'deleting'
-           AND retry_owner_idempotency_key IS ?`,
+           AND retry_owner_idempotency_key IS ?
+           AND execution_owner_token = ?`,
       ).bind(
         observedAt,
         responseJson,
         deletionId,
         retryIdempotencyKey,
+        executionOwnerToken,
       ),
       database.prepare(
         `UPDATE catalogue_exports
@@ -519,7 +605,7 @@ async function executeDeletion(
            WHERE idempotency_key = ? AND response_json IS NULL`,
         ).bind(responseJson, retryIdempotencyKey)]),
     ]);
-  } catch {
+  } catch (error) {
     const snapshot = deletionDocument({
       ...operation,
       state: "failed",
@@ -532,37 +618,140 @@ async function executeDeletion(
         database,
         deletionId,
         retryIdempotencyKey,
+        executionOwnerToken,
       ),
       database.prepare(
         `UPDATE catalogue_export_deletions
          SET state = 'failed', failure_code = 'deleted_object_set_mismatch',
              confirmation_response_json = COALESCE(confirmation_response_json, ?)
          WHERE id = ? AND state = 'deleting'
-           AND retry_owner_idempotency_key IS ?`,
-      ).bind(responseJson, deletionId, retryIdempotencyKey),
+           AND retry_owner_idempotency_key IS ?
+           AND execution_owner_token = ?`,
+      ).bind(
+        responseJson,
+        deletionId,
+        retryIdempotencyKey,
+        executionOwnerToken,
+      ),
       ...(retryIdempotencyKey === null
         ? []
         : [database.prepare(
           `UPDATE catalogue_export_deletion_retries SET response_json = ?
            WHERE idempotency_key = ? AND response_json IS NULL`,
         ).bind(responseJson, retryIdempotencyKey)]),
-    ]);
+    ]).catch(async (terminalError: unknown) => {
+      const reconciled = await loadDeletionResponse(
+        database,
+        deletionId,
+        retryIdempotencyKey,
+      );
+      if (reconciled !== null) return;
+      throw terminalError ?? error;
+    });
   }
-  return catalogueExportDeletionStatus(database, deletionId);
+  const response = await loadDeletionResponse(
+    database,
+    deletionId,
+    retryIdempotencyKey,
+  );
+  return response ?? catalogueExportDeletionStatus(database, deletionId);
 }
 
 function deletionExecutionOwnerAssertion(
   database: D1Database,
   deletionId: string,
   retryIdempotencyKey: string | null,
+  executionOwnerToken: string,
 ): D1PreparedStatement {
   return database.prepare(
     `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM catalogue_export_deletions
        WHERE id = ? AND state = 'deleting'
          AND retry_owner_idempotency_key IS ?
+         AND execution_owner_token = ?
      ) THEN 1 ELSE json_extract('invalid', '$') END`,
-  ).bind(deletionId, retryIdempotencyKey);
+  ).bind(deletionId, retryIdempotencyKey, executionOwnerToken);
+}
+
+function leaseExpiresAt(observedAt: string): string {
+  return new Date(
+    new Date(observedAt).valueOf() + EXECUTION_LEASE_MS,
+  ).toISOString();
+}
+
+async function claimDeletionExecutionLease(
+  database: D1Database,
+  deletionId: string,
+  retryIdempotencyKey: string | null,
+  executionOwnerToken: string,
+  executionLeaseExpiresAt: string,
+  observedAt: string,
+): Promise<boolean> {
+  try {
+    await database.batch([
+      database.prepare(
+        `UPDATE catalogue_export_deletions
+         SET execution_owner_token = ?, execution_lease_expires_at = ?
+         WHERE id = ? AND state = 'deleting'
+           AND retry_owner_idempotency_key IS ?
+           AND (execution_owner_token IS NULL
+             OR execution_lease_expires_at <= ?)`,
+      ).bind(
+        executionOwnerToken,
+        executionLeaseExpiresAt,
+        deletionId,
+        retryIdempotencyKey,
+        observedAt,
+      ),
+      deletionExecutionOwnerAssertion(
+        database,
+        deletionId,
+        retryIdempotencyKey,
+        executionOwnerToken,
+      ),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDeletionResponse(
+  database: D1Database,
+  deletionId: string,
+  retryIdempotencyKey: string | null,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < REPLAY_WAIT_ATTEMPTS; attempt += 1) {
+    const response = await loadDeletionResponse(
+      database,
+      deletionId,
+      retryIdempotencyKey,
+    );
+    if (response !== null) return response;
+    await new Promise((resolve) => setTimeout(resolve, REPLAY_WAIT_INTERVAL_MS));
+  }
+  throw problem(
+    409,
+    "export_deletion_in_progress",
+    "The active deletion attempt has not finished.",
+  );
+}
+
+async function loadDeletionResponse(
+  database: D1Database,
+  deletionId: string,
+  retryIdempotencyKey: string | null,
+): Promise<Record<string, unknown> | null> {
+  const responseJson = retryIdempotencyKey === null
+    ? await database.prepare(
+      "SELECT confirmation_response_json FROM catalogue_export_deletions WHERE id = ?",
+    ).bind(deletionId).first<string>("confirmation_response_json")
+    : await database.prepare(
+      "SELECT response_json FROM catalogue_export_deletion_retries WHERE idempotency_key = ? AND deletion_id = ?",
+    ).bind(retryIdempotencyKey, deletionId).first<string>("response_json");
+  return responseJson === null
+    ? null
+    : JSON.parse(responseJson) as Record<string, unknown>;
 }
 
 async function assertMutationGuards(

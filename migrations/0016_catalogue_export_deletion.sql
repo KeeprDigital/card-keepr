@@ -51,6 +51,8 @@ CREATE TABLE catalogue_export_deletions (
   completed_at TEXT,
   failure_code TEXT,
   retry_owner_idempotency_key TEXT,
+  execution_owner_token TEXT,
+  execution_lease_expires_at TEXT,
   confirmation_response_json TEXT CHECK (
     confirmation_response_json IS NULL OR json_valid(confirmation_response_json)
   ),
@@ -174,9 +176,17 @@ CREATE TRIGGER catalogue_export_deletion_operation_transition_guard
 BEFORE UPDATE ON catalogue_export_deletions
 WHEN NOT (
   (OLD.state = 'deleting' AND NEW.state IN ('deleted', 'failed')
-    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key) OR
+    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key
+    AND NEW.execution_owner_token IS OLD.execution_owner_token
+    AND NEW.execution_lease_expires_at IS OLD.execution_lease_expires_at) OR
   (OLD.state = 'failed' AND NEW.state = 'deleting'
-    AND NEW.retry_owner_idempotency_key IS NOT NULL)
+    AND NEW.retry_owner_idempotency_key IS NOT NULL
+    AND NEW.execution_owner_token IS NOT NULL
+    AND NEW.execution_lease_expires_at IS NOT NULL) OR
+  (OLD.state = 'deleting' AND NEW.state = 'deleting'
+    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key
+    AND NEW.execution_owner_token IS NOT NULL
+    AND NEW.execution_lease_expires_at IS NOT NULL)
 )
 OR (
   OLD.state = 'failed' AND NEW.state = 'deleting' AND NOT EXISTS (
