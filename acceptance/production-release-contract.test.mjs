@@ -4,6 +4,7 @@ import test from "node:test";
 
 test("production release is manual, serialized, versioned, and owns all production mutation", () => {
   const release = readFileSync(".github/workflows/production-release.yml", "utf8");
+  const failure = readFileSync("scripts/production-release-failure.sh", "utf8");
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
   assert.match(release, /workflow_dispatch:/u);
   assert.match(release, /group: production-release/u);
@@ -13,7 +14,8 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /production-smoke\.mjs/u);
   assert.match(release, /replacement_database_id/u);
   assert.match(release, /retained_database_id/u);
-  assert.match(release, /failed\.sql/u);
+  assert.match(failure, /failed\.sql/u);
+  assert.match(failure, /set \+e[\s\S]*failed_command_status[\s\S]*cleanup_result/u);
   assert.match(release, /deploy-production:\s*\n\s*if: inputs\.operation == 'credential_probe'/u);
   assert.match(release, /guarded-release:\s*\n\s*if: inputs\.operation == 'production_release'/u);
   assert.match(release, /Observe the binding while recovery remains blocked/u);
@@ -29,6 +31,9 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /production-release-provider\.mjs observe-bindings/u);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
+  assert.match(release, /trap release_migration_exit EXIT[\s\S]*migration-started\.sql[\s\S]*d1 migrations apply/u);
+  assert.match(release, /original_status=\$\?[\s\S]*exit "\$\{original_status\}"/u);
+  assert.match(release, /production-release-failure\.sh/u);
   assert.doesNotMatch(release, /touch .*migrat|test -f .*migrated/u);
   assert.match(release, /changed_rows[\s\S]*transition_rows[\s\S]*changed_rows/u);
   assert.doesNotMatch(release, /d1 delete|databases\/\$\{RETAINED_DATABASE_ID\}/u);

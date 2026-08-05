@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -52,11 +52,47 @@ test("a durable pre-command marker conservatively terminalizes partial migration
   database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency WHERE operation='production_release_migration_started'").get().count, 1);
   database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
+  database.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
   database.exec(await readFile(join(directory, "failed.sql"), "utf8"));
   assert.deepEqual(
     { ...database.prepare("SELECT state,roll_forward_required FROM production_releases WHERE id='release-47'").get() },
     { state: "failed", roll_forward_required: 1 },
   );
+});
+
+test("failure evidence and cleanup survive both 0018 and 0019 schemas", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-schema-boundary-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = releaseEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  for (const post0019 of [false, true]) {
+    const database = await realDatabaseThrough0018();
+    seedRealReleaseBoundary(database, environment, await readFile(join(directory, "migration-started.sql"), "utf8"));
+    database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
+    if (post0019) database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
+    database.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
+    const failure = JSON.parse(database.prepare(
+      "SELECT response_json FROM administration_idempotency WHERE operation='production_release_migration_failed'",
+    ).get().response_json);
+    assert.equal(failure.release_id, environment.RELEASE_ID);
+    assert.equal(failure.roll_forward_required, true);
+    if (post0019) {
+      database.exec(await readFile(join(directory, "failed.sql"), "utf8"));
+      assert.deepEqual(
+        { ...database.prepare("SELECT state,roll_forward_required FROM production_releases").get() },
+        { state: "failed", roll_forward_required: 1 },
+      );
+    } else {
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE name='production_releases'").get().count, 0);
+    }
+    database.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
+    assert.deepEqual(
+      { ...database.prepare("SELECT active_ingestion_run_id,active_release_id FROM operation_state WHERE singleton=1").get() },
+      { active_ingestion_run_id: null, active_release_id: null },
+    );
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%'").get().count, 0);
+    database.close();
+  }
 });
 
 test("zero-row phase transitions are observable and cannot release the fence", async (t) => {
@@ -148,6 +184,55 @@ function liveGateDatabase(environment) {
     stableJson({ contract: "card-keepr-production-release-request@1", release_id: environment.RELEASE_ID, state: "requested", dispatch_digest: environment.DISPATCH_DIGEST }),
   );
   return db;
+}
+
+async function realDatabaseThrough0018() {
+  const database = new DatabaseSync(":memory:");
+  for (const migration of (await readdir("migrations")).sort().filter((name) => name < "0019_")) {
+    database.exec(await readFile(join("migrations", migration), "utf8"));
+  }
+  return database;
+}
+
+function seedRealReleaseBoundary(database, environment, migrationStartedSql) {
+  const bootstrap = /active_ingestion_run_id='([^']+)'/u.exec(migrationStartedSql)?.[1];
+  assert.ok(bootstrap);
+  database.prepare(
+    "INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (?,?,?,?,201,'success','2026-08-05T00:00:00.000Z')",
+  ).run(
+    environment.IDEMPOTENCY_KEY,
+    "prepare_production_release",
+    environment.PREPARED_PLAN_JSON,
+    stableJson({ contract: "card-keepr-production-release-request@1", release_id: environment.RELEASE_ID, state: "requested", dispatch_digest: environment.DISPATCH_DIGEST }),
+  );
+  database.prepare(
+    "INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (?,?,?,?,201,'success','2026-08-05T00:00:01.000Z')",
+  ).run(
+    `release-dispatch:${environment.DISPATCH_DIGEST}`,
+    "claim_production_release",
+    environment.PREPARED_PLAN_JSON,
+    stableJson({ release_id: environment.RELEASE_ID, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }),
+  );
+  database.prepare(
+    `INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,
+     expected_current_revision_id,idempotency_key,candidate_json)
+     VALUES (?,'planning','[]','2026-08-05T00:00:01.000Z',?,?,
+     '{"production_release_bootstrap":true}')`,
+  ).run(bootstrap, environment.EXPECTED_CURRENT_REVISION, bootstrap);
+  database.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id=? WHERE singleton=1",
+  ).run(bootstrap);
+  database.prepare(
+    `INSERT INTO catalogue_backup_attempts
+     (idempotency_key,request_json,owner_token,catalogue_revision_id,state,
+      object_key,d1_bookmark,failure_code,failure_detail,started_at,completed_at)
+     VALUES (?,'{}','release-backup-owner',?,'pending',?,NULL,NULL,NULL,
+     '2026-08-05T00:00:00.000Z',NULL)`,
+  ).run(
+    environment.RECOVERY_BACKUP_ATTEMPT_ID,
+    environment.EXPECTED_CURRENT_REVISION,
+    "backups/release.sql",
+  );
 }
 
 function smokeTargets() {

@@ -211,10 +211,23 @@ jobs:
       - name: Apply compatible forward migrations
         run: |
           set -euo pipefail
+          release_migration_exit() {
+            original_status=$?
+            trap - EXIT
+            if test "${original_status}" -ne 0; then
+              set +e
+              bash scripts/production-release-failure.sh /tmp/production-release
+              handler_status=$?
+              printf 'Production Release failure handler status: %s\n' "${handler_status}"
+              exit "${original_status}"
+            fi
+          }
+          trap release_migration_exit EXIT
           marker="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${marker}")" = 1
           test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
           npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+          trap - EXIT
       - name: Transfer bootstrap evidence to the durable Production Release
         run: |
           set -euo pipefail
@@ -269,19 +282,7 @@ jobs:
       - name: Record compatible roll-forward requirement on failure
         if: failure()
         run: |
-          set -euo pipefail
-          migration_started=0
-          if test -f /tmp/production-release/migration-status.sql; then
-            migration="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-status.sql)"
-            migration_started="$(jq -r '.[-1].results[0].migration_started' <<<"${migration}")"
-          fi
-          if test "${migration_started}" = 1; then
-            failed="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/failed.sql)"
-            test "$(jq -r '.[-2].results[0].inserted_rows' <<<"${failed}")" -le 1
-            test "$(jq -r '.[-1].results[0].transitioned_rows' <<<"${failed}")" = 1
-            test "$(jq -r '.[-1].results[0].failed' <<<"${failed}")" = 1
-          fi
-          if test -f /tmp/production-release/cleanup.sql; then
-            cleanup="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/cleanup.sql)"
-            test "$(jq -r '.[-1].results[0].fence_released' <<<"${cleanup}")" = 1
-          fi
+          set +e
+          bash scripts/production-release-failure.sh /tmp/production-release
+          handler_status=$?
+          exit "${handler_status}"
