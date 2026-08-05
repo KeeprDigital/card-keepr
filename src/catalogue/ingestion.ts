@@ -47,6 +47,7 @@ import { productReleasePublicationStatements } from "./product-release-publicati
 import { typedPrintingProjections } from "./product-release-projection";
 import {
   cardSearchChunks,
+  cardSearchFtsQuery,
   cardSearchTerms,
   cardSearchText,
 } from "./card-search";
@@ -654,7 +655,7 @@ export async function inspectCandidate(
   };
 }
 
-async function productionReleaseSmokeTargets(
+export async function productionReleaseSmokeTargets(
   database: D1Database,
   revisionIds: readonly string[],
 ): Promise<Record<string, unknown> | null> {
@@ -663,10 +664,15 @@ async function productionReleaseSmokeTargets(
   for (const revisionId of revisionIds) {
     const [cards, printings] = await Promise.all([
       database.prepare(
-        `SELECT card_id,sort_game,sort_identity_kind,sort_identity_value,sort_id
-         FROM revision_card_query_documents WHERE catalogue_revision_id=?
+        `SELECT query.card_id,query.sort_game,query.sort_identity_kind,
+                query.sort_identity_value,query.sort_id,card.document_json
+         FROM revision_card_query_documents AS query
+         JOIN revision_cards AS card
+           ON card.catalogue_revision_id=query.catalogue_revision_id
+          AND card.card_id=query.card_id
+         WHERE query.catalogue_revision_id=?
          ORDER BY sort_game,sort_identity_kind,sort_identity_value,sort_id LIMIT 2`,
-      ).bind(revisionId).all<{ card_id: string; sort_game: string; sort_identity_kind: string; sort_identity_value: string; sort_id: string }>(),
+      ).bind(revisionId).all<{ card_id: string; sort_game: string; sort_identity_kind: string; sort_identity_value: string; sort_id: string; document_json: string }>(),
       database.prepare(
         `SELECT printing_id,card_id FROM revision_printings
          WHERE catalogue_revision_id=? ORDER BY card_id,printing_id LIMIT 2`,
@@ -683,11 +689,29 @@ async function productionReleaseSmokeTargets(
       identity_value: firstCard.sort_identity_value,
       id: firstCard.sort_id,
     };
+    const searchQuery = releaseSmokeSearchQuery(
+      representativeCard.document_json,
+    );
+    if (searchQuery === null) return null;
+    const ftsQuery = cardSearchFtsQuery(searchQuery, revisionId);
+    if (ftsQuery === null) return null;
+    const indexed = await database.prepare(
+      `SELECT 1 AS present FROM revision_card_search_fts
+       WHERE revision_card_search_fts MATCH ?
+         AND catalogue_revision_id=? AND card_id=?
+         AND instr(search_text,?)>0 LIMIT 1`,
+    ).bind(
+      ftsQuery,
+      revisionId,
+      representativeCard.card_id,
+      searchQuery,
+    ).first<{ present: number }>();
+    if (indexed?.present !== 1) return null;
     revisions.push({
       revision_id: revisionId,
       card_id: representativeCard.card_id,
       printing_id: representativePrinting.printing_id,
-      search_query: representativeCard.card_id,
+      search_query: searchQuery,
       card_cursor: encodeReleaseCursor({
         contract: "card-keepr-card-cursor@1", route: "/v1/cards",
         order: "game,official_identity.kind,official_identity.value,id",
@@ -697,7 +721,7 @@ async function productionReleaseSmokeTargets(
       search_cursor: encodeReleaseCursor({
         contract: "card-keepr-card-cursor@1", route: "/v1/cards",
         order: "game,official_identity.kind,official_identity.value,id",
-        revision_id: revisionId, q: representativeCard.card_id,
+        revision_id: revisionId, q: searchQuery,
         game: null, card_number: null, limit: 50, after: cardAfter,
       }),
       printing_cursor: encodeReleaseCursor({
@@ -731,6 +755,27 @@ async function productionReleaseSmokeTargets(
     stale_cursor: encodeReleaseCursor({ ...decoded, revision_id: unavailable.catalogue_revision_id }),
     stale_revision_id: unavailable.catalogue_revision_id,
   };
+}
+
+export function releaseSmokeSearchQuery(documentJson: string): string | null {
+  try {
+    const envelope = JSON.parse(documentJson) as Record<string, unknown>;
+    const card = isRecord(envelope.data) ? envelope.data : envelope;
+    if (!isRecord(card.official_identity) ||
+        typeof card.official_identity.value !== "string" ||
+        typeof card.name !== "string" ||
+        (card.effective_rules_text !== null && card.effective_rules_text !== undefined &&
+          typeof card.effective_rules_text !== "string")) return null;
+    const fields = JSON.parse(cardSearchText({
+      official_identity: { value: card.official_identity.value },
+      name: card.name,
+      effective_rules_text: card.effective_rules_text as string | null | undefined,
+    })) as string[];
+    const field = fields.find((item) => [...item].length >= 3);
+    return field === undefined ? null : [...field].slice(0, 64).join("");
+  } catch {
+    return null;
+  }
 }
 
 function encodeReleaseCursor(value: unknown): string {

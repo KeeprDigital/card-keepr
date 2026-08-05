@@ -210,8 +210,11 @@ jobs:
           test "$(jq -r '.[-1].results[0].claimed' <<<"${result}")" = 1
       - name: Apply compatible forward migrations
         run: |
+          set -euo pipefail
+          marker="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${marker}")" = 1
+          test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
           npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
-          touch /tmp/production-release/migrated
       - name: Transfer bootstrap evidence to the durable Production Release
         run: |
           set -euo pipefail
@@ -266,7 +269,13 @@ jobs:
       - name: Record compatible roll-forward requirement on failure
         if: failure()
         run: |
-          if test -f /tmp/production-release/migrated; then
+          set -euo pipefail
+          migration_started=0
+          if test -f /tmp/production-release/migration-status.sql; then
+            migration="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-status.sql)"
+            migration_started="$(jq -r '.[-1].results[0].migration_started' <<<"${migration}")"
+          fi
+          if test "${migration_started}" = 1; then
             failed="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/failed.sql)"
             test "$(jq -r '.[-2].results[0].inserted_rows' <<<"${failed}")" -le 1
             test "$(jq -r '.[-1].results[0].transitioned_rows' <<<"${failed}")" = 1

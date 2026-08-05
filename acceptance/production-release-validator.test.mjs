@@ -15,12 +15,14 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   const preflight = await readFile(join(directory, "live-preflight.sql"), "utf8");
   const claim = await readFile(join(directory, "claim.sql"), "utf8");
   const materialize = await readFile(join(directory, "materialize.sql"), "utf8");
+  const migrationStarted = await readFile(join(directory, "migration-started.sql"), "utf8");
   assert.match(preflight, /prepare_production_release/u);
   assert.match(preflight, /catalogue_schema_state/u);
   assert.match(preflight, /catalogue_backup_attempts/u);
   assert.match(claim, /production_release_bootstrap/u);
   assert.match(materialize, /'requested'[\s\S]*state='preflight'[\s\S]*state='migrating'/u);
   assert.match(materialize, /transition_rows/u);
+  assert.match(migrationStarted, /production_release_migration_started/u);
 
   const database = liveGateDatabase(environment);
   assert.equal(database.prepare(preflight).get().ready, 1);
@@ -37,6 +39,23 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   await assert.rejects(
     validateDispatchAndWriteSql({ ...environment, DISPATCH_DIGEST: "f".repeat(64) }, join(directory, "direct-ui")),
     /dispatch_digest_mismatch/u,
+  );
+});
+
+test("a durable pre-command marker conservatively terminalizes partial migration failure", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-migration-marker-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = releaseEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  const database = liveGateDatabase(environment);
+  database.exec(await readFile(join(directory, "claim.sql"), "utf8"));
+  database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency WHERE operation='production_release_migration_started'").get().count, 1);
+  database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
+  database.exec(await readFile(join(directory, "failed.sql"), "utf8"));
+  assert.deepEqual(
+    { ...database.prepare("SELECT state,roll_forward_required FROM production_releases WHERE id='release-47'").get() },
+    { state: "failed", roll_forward_required: 1 },
   );
 });
 
