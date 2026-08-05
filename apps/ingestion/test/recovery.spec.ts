@@ -247,6 +247,98 @@ test("replacement recovery validates a fresh database and retains the old databa
   expect(accepted).toMatchObject({ state: "accepted" });
 });
 
+test("recovery rejects a pre-guard backup before any provider restore call", async () => {
+  await retainVerifiedBackup("recovery-pre-guard", "bookmark-pre-guard", 15);
+  let providerCalls = 0;
+  const provider = recoveryProvider({
+    currentBookmark: async () => {
+      providerCalls += 1;
+      return "bookmark-current";
+    },
+    timeTravelRestore: async () => {
+      providerCalls += 1;
+      return { bookmark: "unexpected", previousBookmark: "unexpected" };
+    },
+  });
+  await expect(beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      ...recoveryInput("recovery-pre-guard", "begin-pre-guard"),
+      targetBookmark: "bookmark-pre-guard",
+      backupAttemptId: "recovery-pre-guard",
+    },
+    provider,
+  )).rejects.toMatchObject({
+    code: "recovery_backup_schema_incompatible",
+  });
+  expect(providerCalls).toBe(0);
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT recovery_health, active_recovery_id, recovery_restore_guard
+     FROM operation_state WHERE singleton = 1`,
+  ).first()).resolves.toEqual({
+    recovery_health: "healthy",
+    active_recovery_id: null,
+    recovery_restore_guard: "clear",
+  });
+});
+
+test("concurrent acceptance keys produce one retained acceptance", async () => {
+  const provider = recoveryProvider();
+  await beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-concurrent-accept", "begin-concurrent-accept"),
+    provider,
+  );
+  await verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-concurrent-accept",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-concurrent-accept",
+      observedAt: "2026-08-05T09:30:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  const accept = (idempotencyKey: string) => acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-concurrent-accept",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-concurrent-accept",
+      idempotencyKey,
+      observedAt: "2026-08-05T09:31:00.000Z",
+      boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    },
+  );
+  const outcomes = await Promise.allSettled([
+    accept("accept-concurrent-a"),
+    accept("accept-concurrent-b"),
+  ]);
+  expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+  const rejected = outcomes.find(({ status }) => status === "rejected");
+  expect(rejected).toMatchObject({
+    status: "rejected",
+    reason: { code: "idempotency_key_reused" },
+  });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, acceptance_idempotency_key
+     FROM catalogue_recovery_operations
+     WHERE id = 'recovery-concurrent-accept'`,
+  ).first()).resolves.toMatchObject({
+    state: "accepted",
+    acceptance_idempotency_key: expect.stringMatching(
+      /^accept-concurrent-[ab]$/,
+    ),
+  });
+});
+
 test("a race during external prework cannot acquire the block or begin restore", async () => {
   let restoreCalls = 0;
   const provider = recoveryProvider({
@@ -478,6 +570,7 @@ function recoveryProvider(
 async function retainVerifiedBackup(
   attemptId: string,
   bookmark: string,
+  schemaMigrationLevel = 16,
 ): Promise<void> {
   const objectKey = `d1-backups/catrev_spine_000/${attemptId}/catalogue.sql`;
   const manifestKey = `d1-backups/catrev_spine_000/${attemptId}/manifest.json`;
@@ -493,7 +586,7 @@ async function retainVerifiedBackup(
     exported_at: "2026-08-05T07:00:00.000Z",
     object_key: objectKey,
     producing_workflow_identity: attemptId,
-    schema_migration_level: 16,
+    schema_migration_level: schemaMigrationLevel,
     expected_evidence: {
       cards: 1,
       printings: 1,
@@ -527,7 +620,7 @@ async function retainVerifiedBackup(
        manifest_key, content_sha256, manifest_sha256, export_bytes,
        schema_migration_level, disposable_database_id, restore_generation,
        restore_phase
-     ) VALUES (?, ?, ?, 'catrev_spine_000', 'verified', ?, ?, ?, ?, ?, ?, ?, ?, 16, ?, 1, 'verified')`,
+     ) VALUES (?, ?, ?, 'catrev_spine_000', 'verified', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'verified')`,
   ).bind(
     attemptId,
     JSON.stringify({ expected_current_revision_id: "catrev_spine_000" }),
@@ -540,6 +633,7 @@ async function retainVerifiedBackup(
     contentDigest,
     digest,
     sql.byteLength,
+    schemaMigrationLevel,
     "disposable-recovery-source",
   ).run();
 }

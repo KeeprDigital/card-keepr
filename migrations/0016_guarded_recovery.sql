@@ -18,8 +18,6 @@ WHEN EXISTS (
   SELECT 1 FROM operation_state
   WHERE singleton = 1 AND (
     active_ingestion_run_id IS NOT NULL
-    OR recovery_health = 'blocked'
-    OR recovery_restore_guard = 'blocked'
     OR (
       active_release_id IS NOT NULL
       AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -27,7 +25,23 @@ WHEN EXISTS (
   )
 )
 BEGIN
-  SELECT RAISE(ABORT, 'active_ingestion_run_release_or_recovery');
+  SELECT RAISE(ABORT, 'active_ingestion_run_or_release');
+END;
+
+CREATE TRIGGER require_recovery_idle_ingestion
+BEFORE INSERT ON ingestion_runs
+WHEN EXISTS (
+  SELECT 1 FROM operation_state
+  WHERE singleton = 1
+    AND (recovery_health = 'blocked' OR recovery_restore_guard = 'blocked')
+    AND active_ingestion_run_id IS NULL
+    AND NOT (
+      active_release_id IS NOT NULL
+      AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'recovery_in_progress');
 END;
 
 CREATE TABLE catalogue_recovery_operations (

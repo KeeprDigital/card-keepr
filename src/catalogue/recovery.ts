@@ -594,6 +594,19 @@ export async function acceptCatalogueRecovery(
   try {
     await database.batch([
       database.prepare(
+        `SELECT CASE WHEN EXISTS (
+           SELECT 1 FROM catalogue_recovery_operations AS recovery
+           JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+           JOIN operation_state AS operation ON operation.singleton = 1
+           WHERE recovery.id = ? AND recovery.state = 'awaiting_acceptance'
+             AND recovery.acceptance_idempotency_key IS NULL
+             AND recovery.target_revision_id = ?
+             AND catalogue.current_revision_id = recovery.target_revision_id
+             AND operation.recovery_health = 'blocked'
+             AND operation.active_recovery_id = recovery.id
+         ) THEN 1 ELSE json_extract('invalid', '$') END`,
+      ).bind(recoveryId, row.target_revision_id),
+      database.prepare(
         `UPDATE catalogue_recovery_operations
          SET state = 'accepted', acceptance_idempotency_key = ?,
              acceptance_request_digest = ?, accepted_at = ?
@@ -614,8 +627,32 @@ export async function acceptCatalogueRecovery(
          WHERE singleton = 1 AND recovery_health = 'blocked'
            AND active_recovery_id = ?`,
       ).bind(recoveryId),
+      database.prepare(
+        `SELECT CASE WHEN EXISTS (
+           SELECT 1 FROM catalogue_recovery_operations AS recovery
+           JOIN catalogue_state AS catalogue ON catalogue.singleton = 1
+           JOIN operation_state AS operation ON operation.singleton = 1
+           WHERE recovery.id = ? AND recovery.state = 'accepted'
+             AND recovery.acceptance_idempotency_key = ?
+             AND recovery.acceptance_request_digest = ?
+             AND catalogue.current_revision_id = recovery.target_revision_id
+             AND operation.recovery_health = 'healthy'
+             AND operation.active_recovery_id IS NULL
+             AND operation.recovery_restore_guard = 'clear'
+         ) THEN 1 ELSE json_extract('invalid', '$') END`,
+      ).bind(recoveryId, input.idempotencyKey, requestDigest),
     ]);
   } catch {
+    const winner = await requiredRecovery(database, recoveryId);
+    if (winner.acceptance_idempotency_key !== null) {
+      if (
+        winner.acceptance_idempotency_key !== input.idempotencyKey ||
+        winner.acceptance_request_digest !== requestDigest
+      ) throw idempotencyReused();
+      const retained = await requiredRecoveryJournal(backups, recoveryId);
+      await persistRecoveryJournal(backups, winner, retained.backup);
+      return recoveryDocument(winner);
+    }
     throw new AdministrationProblem(
       409,
       "recovery_state_changed",
@@ -645,6 +682,16 @@ async function exactVerifiedBackup(
       404,
       "verified_backup_not_found",
       "The exact verified Backup Attempt was not found.",
+    );
+  }
+  if (
+    !Number.isSafeInteger(row.schema_migration_level) ||
+    row.schema_migration_level < 16
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_backup_schema_incompatible",
+      "The verified Backup Attempt predates guarded recovery state.",
     );
   }
   if (
