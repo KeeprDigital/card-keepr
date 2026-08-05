@@ -132,6 +132,85 @@ test("CLI human list renders the Supported Game from immutable content", async (
   );
 });
 
+test("CLI reaffirmation binds the inspected source conflict before mutation", async (t) => {
+  const observed = [];
+  const revision = {
+    id: "currev_reaffirm",
+    content: { game: "one-piece", target: fixtureProposal().target },
+    content_digest: "d".repeat(64),
+    status: "reconfirmation_required",
+    event_version: 2,
+    pending_conflict: {
+      id: "crconf_reaffirm",
+      digest: "e".repeat(64),
+      run_id: "run_source_changed",
+      previous_source_digest: "a".repeat(64),
+      observed_source_digest: "b".repeat(64),
+    },
+  };
+  const resultDocument = {
+    operation_id: "curop_reaffirm",
+    curated_revision_id: revision.id,
+    status: "active",
+    event_version: 3,
+    content_digest: revision.content_digest,
+    current_catalogue_revision_id: "catrev_123",
+    code: "curated_revision_reaffirmed",
+  };
+  const server = await jsonServer(t, observed, (request) =>
+    request.method === "GET"
+      ? { revision, events: [] }
+      : resultDocument
+  );
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    operation: "reaffirm",
+    current_catalogue_revision_id: "catrev_123",
+    curated_revision_id: revision.id,
+    expected_event_version: 2,
+    conflict_digest: revision.pending_conflict.digest,
+    idempotency_key: "reaffirm-123",
+    affected_supported_game: "one-piece",
+    current_content_digest: revision.content_digest,
+    target: revision.content.target,
+    conflict_id: revision.pending_conflict.id,
+  });
+  const result = await runCli([
+    "curated-revision", "reaffirm",
+    "--revision-id", revision.id,
+    "--event-version", "2",
+    "--conflict-digest", revision.pending_conflict.digest,
+    "--rationale", "The exception remains necessary after source review.",
+    "--expected-current-revision", "catrev_123",
+    "--idempotency-key", "reaffirm-123",
+    "--environment", "production",
+    "--confirm", confirmation,
+    "--secrets-stdin-fd", "3",
+    "--yes", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), resultDocument);
+  assert.deepEqual(observed.map(({ method, path }) => ({ method, path })), [
+    { method: "GET", path: "/v1/status" },
+    {
+      method: "GET",
+      path: "/admin/v1/curated-revisions/currev_reaffirm",
+    },
+    {
+      method: "POST",
+      path: "/admin/v1/curated-revisions/currev_reaffirm/reaffirm",
+    },
+  ]);
+  assert.deepEqual(observed[2].body, {
+    environment: "production",
+    expected_current_revision_id: "catrev_123",
+    expected_event_version: 2,
+    conflict_digest: revision.pending_conflict.digest,
+    rationale: "The exception remains necessary after source review.",
+    idempotency_key: "reaffirm-123",
+  });
+});
+
 test("CLI retirement resolves the exact revision and production identities before mutation", async (t) => {
   const observed = [];
   const revision = {

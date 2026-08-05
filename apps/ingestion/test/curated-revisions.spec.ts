@@ -1697,6 +1697,283 @@ test("a prepared retry persists its failed run and every source-change conflict"
   });
 });
 
+test("the Worker binds source-change reaffirmation to the exact public conflict", async () => {
+  const authored = await proposal("/name", "Curated Name");
+  const createdResponse = await adminRequest(
+    "/admin/v1/curated-revisions",
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: authored,
+      proposal_digest: await sha256Text(canonicalJson(authored)),
+      idempotency_key: `public-conflict-create-${sequence}`,
+    },
+  );
+  expect(createdResponse.status).toBe(201);
+  const created = await createdResponse.json() as {
+    curated_revision_id: string;
+    content_digest: string;
+  };
+  const sourceRunId = `run_public_conflict_source_${sequence}`;
+  const sourceCandidate = {
+    contract: "card-keepr-catalogue-candidate@1" as const,
+    selected_games: ["one-piece" as const],
+    cards: [{
+      ...card,
+      name: "Curated Name",
+      curated_provenance: [{
+        curated_revision_id: created.curated_revision_id,
+        content_digest: created.content_digest,
+        target: authored.target,
+        rationale: authored.rationale,
+        evidence: authored.evidence,
+        author: "owner",
+        reviewed_source_value: "Changed Official Name",
+      }],
+    }],
+    printings: [],
+  };
+  const sourceDigest = await sha256Text(canonicalJson(sourceCandidate));
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at,
+       expected_current_revision_id, idempotency_key, candidate_digest,
+       candidate_catalogue_digest, candidate_created_at, terminal_at,
+       candidate_json, failure_code, progress_json, warnings_json,
+       approval_history_json
+     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
+       'test_source_changed',
+       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+       '[]', '[]')`,
+  ).bind(
+    sourceRunId,
+    now,
+    currentRevision,
+    `public-conflict-source-${sequence}`,
+    sourceDigest,
+    sourceDigest,
+    now,
+    now,
+    canonicalJson(sourceCandidate),
+  ).run();
+
+  const retriedResponse = await adminRequest(
+    `/v1/ingestion-runs/${sourceRunId}/retry`,
+    { idempotency_key: `public-conflict-run-${sequence}` },
+  );
+  expect(retriedResponse.status).toBe(201);
+  const retried = await retriedResponse.json() as {
+    id: string;
+    state: string;
+    failure_code: string;
+    warnings: Array<Record<string, unknown>>;
+  };
+  expect(retried).toMatchObject({
+    state: "failed",
+    failure_code: "curated_revision_reconfirmation_required",
+    warnings: [expect.objectContaining({
+      code: "curated_revision_reconfirmation_required",
+      curated_revision_id: created.curated_revision_id,
+    })],
+  });
+
+  const shownResponse = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+  );
+  expect(shownResponse.status).toBe(200);
+  const shown = await shownResponse.json() as {
+    revision: {
+      status: string;
+      event_version: number;
+      pending_conflict: {
+        id: string;
+        digest: string;
+        run_id: string;
+        previous_source_digest: string;
+        observed_source_digest: string;
+      };
+    };
+    events: Array<{ type: string; details: Record<string, unknown> }>;
+  };
+  expect(shown.revision).toMatchObject({
+    status: "reconfirmation_required",
+    event_version: 2,
+    pending_conflict: {
+      run_id: retried.id,
+      previous_source_digest: authored.reviewed_source_digest,
+      observed_source_digest: await sha256Text(
+        canonicalJson("Changed Official Name"),
+      ),
+    },
+  });
+  const conflict = shown.revision.pending_conflict;
+  expect(conflict.digest).toBe(await sha256Text(canonicalJson({
+    conflict_id: conflict.id,
+    run_id: retried.id,
+    revision_id: created.curated_revision_id,
+    previous_source_digest: conflict.previous_source_digest,
+    observed_source_digest: conflict.observed_source_digest,
+  })));
+  expect(shown.events.at(-1)).toMatchObject({
+    type: "source_change_detected",
+    details: { conflict_digest: conflict.digest },
+  });
+
+  const freshRunKey = `public-conflict-fresh-run-${sequence}`;
+  const blockedRun = await adminRequest(
+    `/v1/ingestion-runs/${sourceRunId}/retry`,
+    { idempotency_key: freshRunKey },
+  );
+  expect(blockedRun.status).toBe(409);
+  const blockedProblem = await blockedRun.json() as Record<string, unknown>;
+  expect(blockedProblem).toMatchObject({
+    code: "curated_revision_reconfirmation_required",
+  });
+
+  const unaffectedSourceRunId = `run_public_unaffected_source_${sequence}`;
+  const unaffectedCandidate = {
+    contract: "card-keepr-catalogue-candidate@1" as const,
+    selected_games: ["digimon" as const],
+    cards: [],
+    printings: [],
+  };
+  const unaffectedDigest = await sha256Text(
+    canonicalJson(unaffectedCandidate),
+  );
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at,
+       expected_current_revision_id, idempotency_key, candidate_digest,
+       candidate_catalogue_digest, candidate_created_at, terminal_at,
+       candidate_json, failure_code, progress_json, warnings_json,
+       approval_history_json
+     ) VALUES (?, 'failed', '["digimon"]', ?, ?, ?, ?, ?, ?, ?, ?,
+       'test_unaffected_game',
+       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+       '[]', '[]')`,
+  ).bind(
+    unaffectedSourceRunId,
+    now,
+    currentRevision,
+    `public-unaffected-source-${sequence}`,
+    unaffectedDigest,
+    unaffectedDigest,
+    now,
+    now,
+    canonicalJson(unaffectedCandidate),
+  ).run();
+  const unaffectedResponse = await adminRequest(
+    `/v1/ingestion-runs/${unaffectedSourceRunId}/retry`,
+    { idempotency_key: `public-unaffected-run-${sequence}` },
+  );
+  expect(unaffectedResponse.status).toBe(201);
+  const unaffected = await unaffectedResponse.json() as {
+    id: string;
+    state: string;
+    candidate_digest: string;
+  };
+  expect(unaffected).toMatchObject({
+    state: "awaiting_approval",
+    linked_run_id: unaffectedSourceRunId,
+  });
+  const rejectedUnaffected = await adminRequest(
+    `/v1/ingestion-runs/${unaffected.id}/rejection`,
+    {
+      candidate_digest: unaffected.candidate_digest,
+      idempotency_key: `public-unaffected-reject-${sequence}`,
+    },
+  );
+  expect(rejectedUnaffected.status).toBe(200);
+
+  const stale = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/reaffirm`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: 2,
+      conflict_digest: "f".repeat(64),
+      rationale: "Review the changed Official Source value.",
+      idempotency_key: `public-conflict-stale-${sequence}`,
+    },
+  );
+  expect(stale.status).toBe(409);
+  await expect(stale.json()).resolves.toMatchObject({
+    code: "curated_revision_conflict_digest_mismatch",
+  });
+
+  const reaffirmInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    expected_event_version: 2,
+    conflict_digest: conflict.digest,
+    rationale: "The exception remains necessary after source review.",
+    idempotency_key: `public-conflict-reaffirm-${sequence}`,
+  };
+  const reaffirmedResponse = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/reaffirm`,
+    reaffirmInput,
+  );
+  expect(reaffirmedResponse.status).toBe(200);
+  const reaffirmed = await reaffirmedResponse.json();
+  expect(reaffirmed).toMatchObject({
+    curated_revision_id: created.curated_revision_id,
+    content_digest: created.content_digest,
+    status: "active",
+    event_version: 3,
+    code: "curated_revision_reaffirmed",
+  });
+  const replay = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/reaffirm`,
+    reaffirmInput,
+  );
+  expect(replay.status).toBe(200);
+  await expect(replay.json()).resolves.toEqual(reaffirmed);
+  const changedReuse = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/reaffirm`,
+    { ...reaffirmInput, rationale: "Changed idempotent request." },
+  );
+  expect(changedReuse.status).toBe(409);
+  await expect(changedReuse.json()).resolves.toMatchObject({
+    code: "idempotency_conflict",
+  });
+
+  const blockedReplay = await adminRequest(
+    `/v1/ingestion-runs/${sourceRunId}/retry`,
+    { idempotency_key: freshRunKey },
+  );
+  expect(blockedReplay.status).toBe(409);
+  await expect(blockedReplay.json()).resolves.toEqual({
+    ...blockedProblem,
+    request_id: expect.stringMatching(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+  });
+  const freshRunResponse = await adminRequest(
+    `/v1/ingestion-runs/${sourceRunId}/retry`,
+    { idempotency_key: `public-conflict-after-reaffirm-${sequence}` },
+  );
+  expect(freshRunResponse.status).toBe(201);
+  const freshRun = await freshRunResponse.json() as {
+    id: string;
+    candidate_digest: string;
+  };
+  expect(freshRun).toMatchObject({
+    state: "awaiting_approval",
+    linked_run_id: sourceRunId,
+  });
+  const inspectedFresh = await adminRequest(
+    `/v1/ingestion-runs/${freshRun.id}/candidate`,
+  );
+  expect(inspectedFresh.status).toBe(200);
+  await expect(inspectedFresh.json()).resolves.toMatchObject({
+    curated_revision_ids: [created.curated_revision_id],
+    diff: {
+      curated_effects: [expect.objectContaining({
+        revision_id: created.curated_revision_id,
+        assertion: { kind: "field", value: "Curated Name" },
+      })],
+    },
+  });
+});
+
 test("a changed official value requires reconfirmation instead of silently applying", async () => {
   const authoredProposal = await proposal("/name", "Curated Name");
   const created = await adminRequest("/admin/v1/curated-revisions", {
@@ -2079,6 +2356,292 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
     status: "retired",
     event_version: 2,
     code: "curated_revision_retired",
+  });
+});
+
+test("the Worker lifecycle endpoints fail closed on every mutation guard", async () => {
+  const authored = await proposal("/name", "Guarded Name");
+  const createdResponse = await adminRequest(
+    "/admin/v1/curated-revisions",
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: authored,
+      proposal_digest: await sha256Text(canonicalJson(authored)),
+      idempotency_key: `public-guards-create-${sequence}`,
+    },
+  );
+  const created = await createdResponse.json() as {
+    curated_revision_id: string;
+    content_digest: string;
+  };
+  const retirePath =
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/retire`;
+  const retireInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    expected_event_version: 1,
+    conflict_digest: null,
+    rationale: "The exception is no longer required.",
+    idempotency_key: "",
+  };
+  for (const [name, body, code] of [
+    ["current", {
+      ...retireInput,
+      expected_current_revision_id: "catrev_stale",
+      idempotency_key: `public-guards-current-${sequence}`,
+    }, "current_revision_mismatch"],
+    ["event", {
+      ...retireInput,
+      expected_event_version: 2,
+      idempotency_key: `public-guards-event-${sequence}`,
+    }, "curated_revision_event_version_mismatch"],
+    ["conflict", {
+      ...retireInput,
+      conflict_digest: "f".repeat(64),
+      idempotency_key: `public-guards-conflict-${sequence}`,
+    }, "curated_revision_has_no_pending_conflict"],
+  ] as const) {
+    const response = await adminRequest(retirePath, body);
+    expect(response.status, name).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code });
+  }
+
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'blocked' WHERE singleton = 1",
+  ).run();
+  const recovery = await adminRequest(retirePath, {
+    ...retireInput,
+    idempotency_key: `public-guards-recovery-${sequence}`,
+  });
+  expect(recovery.status).toBe(409);
+  await expect(recovery.json()).resolves.toMatchObject({
+    code: "recovery_in_progress",
+  });
+
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET recovery_health = 'healthy', active_release_id = 'release_guard',
+         active_release_expires_at = '2099-01-01T00:00:00.000Z'
+     WHERE singleton = 1`,
+  ).run();
+  const release = await adminRequest(retirePath, {
+    ...retireInput,
+    idempotency_key: `public-guards-release-${sequence}`,
+  });
+  expect(release.status).toBe(409);
+  await expect(release.json()).resolves.toMatchObject({
+    code: "release_not_idle",
+  });
+
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_release_id = NULL, active_release_expires_at = NULL
+     WHERE singleton = 1`,
+  ).run();
+  const activeRunId = `run_public_guard_active_${sequence}`;
+  await insertParsingRun(activeRunId);
+  const activeRun = await adminRequest(retirePath, {
+    ...retireInput,
+    idempotency_key: `public-guards-run-${sequence}`,
+  });
+  expect(activeRun.status).toBe(409);
+  await expect(activeRun.json()).resolves.toMatchObject({
+    code: "active_ingestion_run",
+  });
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs SET state = 'failed', terminal_at = ?,
+       failure_code = 'test_complete'
+       WHERE id = ?`,
+    ).bind(now, activeRunId),
+    env.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = NULL
+       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+    ).bind(activeRunId),
+  ]);
+
+  const replacement = {
+    ...authored,
+    assertion: { kind: "field" as const, value: "Replacement Name" },
+    supersedes_revision_id: created.curated_revision_id,
+  };
+  const wrongProposalDigest = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: 1,
+      conflict_digest: null,
+      proposal: replacement,
+      proposal_digest: "f".repeat(64),
+      rationale: "Replace the assertion.",
+      idempotency_key: `public-guards-proposal-${sequence}`,
+    },
+  );
+  expect(wrongProposalDigest.status).toBe(409);
+  await expect(wrongProposalDigest.json()).resolves.toMatchObject({
+    code: "curated_revision_content_digest_mismatch",
+  });
+
+  const supersededResponse = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: 1,
+      conflict_digest: null,
+      proposal: replacement,
+      proposal_digest: await sha256Text(canonicalJson(replacement)),
+      rationale: "Replace the assertion.",
+      idempotency_key: `public-guards-supersede-${sequence}`,
+    },
+  );
+  expect(supersededResponse.status).toBe(201);
+  const superseded = await supersededResponse.json() as {
+    curated_revision_id: string;
+  };
+  const oldResponse = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+  );
+  await expect(oldResponse.json()).resolves.toMatchObject({
+    revision: { status: "superseded", event_version: 2 },
+    events: [{ type: "authored" }, { type: "superseded" }],
+  });
+
+  const finalRetireInput = {
+    ...retireInput,
+    expected_event_version: 1,
+    idempotency_key: `public-guards-retire-${sequence}`,
+  };
+  const retiredResponse = await adminRequest(
+    `/admin/v1/curated-revisions/${superseded.curated_revision_id}/retire`,
+    finalRetireInput,
+  );
+  expect(retiredResponse.status).toBe(200);
+  const retired = await retiredResponse.json();
+  const retiredReplay = await adminRequest(
+    `/admin/v1/curated-revisions/${superseded.curated_revision_id}/retire`,
+    finalRetireInput,
+  );
+  expect(retiredReplay.status).toBe(200);
+  await expect(retiredReplay.json()).resolves.toEqual(retired);
+  const changedReuse = await adminRequest(
+    `/admin/v1/curated-revisions/${superseded.curated_revision_id}/retire`,
+    { ...finalRetireInput, rationale: "Changed reuse." },
+  );
+  expect(changedReuse.status).toBe(409);
+  await expect(changedReuse.json()).resolves.toMatchObject({
+    code: "idempotency_conflict",
+  });
+  const retiredShown = await adminRequest(
+    `/admin/v1/curated-revisions/${superseded.curated_revision_id}`,
+  );
+  await expect(retiredShown.json()).resolves.toMatchObject({
+    revision: { status: "retired", event_version: 2 },
+    events: [{ type: "authored" }, { type: "retired" }],
+  });
+});
+
+test("supersession rolls back both lifecycle sides when replacement persistence fails", async () => {
+  const authored = await proposal("/name", "Atomic Prior Name");
+  const createdResponse = await adminRequest(
+    "/admin/v1/curated-revisions",
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: authored,
+      proposal_digest: await sha256Text(canonicalJson(authored)),
+      idempotency_key: `atomic-supersession-create-${sequence}`,
+    },
+  );
+  expect(createdResponse.status).toBe(201);
+  const created = await createdResponse.json() as {
+    curated_revision_id: string;
+  };
+  const replacement = {
+    ...authored,
+    assertion: { kind: "field" as const, value: "Atomic Replacement Name" },
+    supersedes_revision_id: created.curated_revision_id,
+  };
+  const supersedeInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    expected_event_version: 1,
+    conflict_digest: null,
+    proposal: replacement,
+    proposal_digest: await sha256Text(canonicalJson(replacement)),
+    rationale: "Replace both lifecycle sides atomically.",
+    idempotency_key: `atomic-supersession-${sequence}`,
+  };
+  await env.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER inject_curated_replacement_failure
+     BEFORE INSERT ON curated_revisions
+     BEGIN
+       SELECT RAISE(ABORT, 'injected_replacement_failure');
+     END`,
+  ).run();
+  const failed = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    supersedeInput,
+  );
+  await env.CATALOGUE_DB.prepare(
+    "DROP TRIGGER inject_curated_replacement_failure",
+  ).run();
+  expect(failed.status).toBe(500);
+  await expect(failed.json()).resolves.toMatchObject({ code: "internal_error" });
+
+  const unchanged = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+  );
+  await expect(unchanged.json()).resolves.toMatchObject({
+    revision: {
+      status: "active",
+      event_version: 1,
+      content: authored,
+    },
+    events: [{ type: "authored", event_version: 1 }],
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM curated_revision_idempotency
+     WHERE idempotency_key = ?`,
+  ).bind(supersedeInput.idempotency_key).first()).resolves.toEqual({
+    count: 0,
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM curated_revisions
+     WHERE json_extract(proposal_json, '$.supersedes_revision_id') = ?`,
+  ).bind(created.curated_revision_id).first()).resolves.toEqual({ count: 0 });
+
+  const committed = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    supersedeInput,
+  );
+  expect(committed.status).toBe(201);
+  const committedDocument = await committed.clone().json() as {
+    curated_revision_id?: unknown;
+  };
+  if (typeof committedDocument.curated_revision_id !== "string") {
+    throw new Error("The replacement Curated Revision identity is absent");
+  }
+  const replacementId = committedDocument.curated_revision_id;
+  const [prior, replacementShown] = await Promise.all([
+    adminRequest(
+      `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+    ),
+    adminRequest(`/admin/v1/curated-revisions/${replacementId}`),
+  ]);
+  await expect(prior.json()).resolves.toMatchObject({
+    revision: { status: "superseded", event_version: 2 },
+  });
+  await expect(replacementShown.json()).resolves.toMatchObject({
+    revision: {
+      status: "active",
+      event_version: 1,
+      content: replacement,
+    },
   });
 });
 
