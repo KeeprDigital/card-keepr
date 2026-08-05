@@ -5,6 +5,7 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import ingestionWorker from "../src/index";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
@@ -2316,6 +2317,268 @@ test("an unchanged successful retry advances freshness without another revision 
   });
 });
 
+test("Catalogue Export deletion plans bind an exact immutable set and delete an older export manifest last", async () => {
+  const oldRevision = "catrev_delete_old";
+  const currentRevision = "catrev_delete_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_old",
+    "2026-08-05T00:00:00.000Z",
+  );
+  const current = await seedDeletionExport(
+    currentRevision,
+    "run_delete_current",
+    "2026-08-05T00:01:00.000Z",
+  );
+  await testEnv.CATALOGUE_EXPORTS.put(
+    "catalogue-exports/catrev_unrelated/retained.bin",
+    "retained",
+  );
+  await testEnv.EVIDENCE_OBJECTS.put(
+    "source-snapshots/export-deletion-retained.json",
+    "retained evidence",
+  );
+  await testEnv.BACKUPS.put(
+    "d1-backups/export-deletion-retained.sql",
+    "retained backup",
+  );
+  const unexpectedKey = `catalogue-exports/${oldRevision}/unexpected.bin`;
+  await testEnv.CATALOGUE_EXPORTS.put(unexpectedKey, "not in manifest");
+
+  testObservedAt = "2026-08-05T01:00:00.000Z";
+  const unsafe = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-unsafe",
+    },
+  );
+  expect(unsafe.response.status).toBe(409);
+  expect(unsafe.document).toMatchObject({ code: "unsafe_export_object_scope" });
+  await testEnv.CATALOGUE_EXPORTS.delete(unexpectedKey);
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-old",
+    },
+  );
+  expect(prepared.response.status).toBe(201);
+  expect(prepared.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion-plan@1",
+    id: "export-delete-plan-old",
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    object_keys: old.objectKeys,
+    object_set_digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    plan_digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    created_at: "2026-08-05T01:00:00.000Z",
+    expires_at: "2026-08-05T01:15:00.000Z",
+    dependencies: expect.arrayContaining([
+      expect.objectContaining({
+        code: "catalogue_consumers_may_depend",
+        severity: "warning",
+      }),
+      expect.objectContaining({
+        code: "authenticated_urls_will_return_410",
+        severity: "warning",
+      }),
+    ]),
+  });
+
+  const currentPlan = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: currentRevision,
+      manifest_digest: current.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-current",
+    },
+  );
+  expect(currentPlan.response.status).toBe(201);
+  expect(currentPlan.document).toMatchObject({
+    dependencies: expect.arrayContaining([
+      expect.objectContaining({
+        code: "current_catalogue_revision",
+        severity: "blocking",
+      }),
+    ]),
+  });
+  const blockedCurrent = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: currentPlan.document.id,
+      plan_digest: currentPlan.document.plan_digest,
+      catalogue_revision_id: currentRevision,
+      manifest_digest: current.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: currentRevision,
+      deletion_id: "export-deletion-current",
+      idempotency_key: "export-deletion-current-key",
+    },
+  );
+  expect(blockedCurrent.response.status).toBe(409);
+  expect(blockedCurrent.document).toMatchObject({ code: "current_export_required" });
+
+  testObservedAt = "2026-08-05T01:15:00.000Z";
+  const expired = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-expired",
+      idempotency_key: "export-deletion-expired-key",
+    },
+  );
+  expect(expired.response.status).toBe(409);
+  expect(expired.document).toMatchObject({ code: "deletion_plan_expired" });
+  testObservedAt = "2026-08-05T01:01:00.000Z";
+
+  const confirmed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-old",
+      idempotency_key: "export-deletion-old-key",
+    },
+  );
+  expect(confirmed.response.status).toBe(200);
+  expect(confirmed.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "export-deletion-old",
+    plan_id: "export-delete-plan-old",
+    state: "deleted",
+    catalogue_revision_id: oldRevision,
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: null,
+    completed_at: expect.any(String),
+  });
+  await expect(
+    testEnv.CATALOGUE_EXPORTS.list({ prefix: `catalogue-exports/${oldRevision}/` }),
+  ).resolves.toMatchObject({ objects: [] });
+  await expect(
+    testEnv.CATALOGUE_EXPORTS.get(
+      "catalogue-exports/catrev_unrelated/retained.bin",
+    ),
+  ).resolves.not.toBeNull();
+  await expect(testEnv.EVIDENCE_OBJECTS.get(
+    "source-snapshots/export-deletion-retained.json",
+  )).resolves.not.toBeNull();
+  await expect(testEnv.BACKUPS.get(
+    "d1-backups/export-deletion-retained.sql",
+  )).resolves.not.toBeNull();
+  const replayed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-old",
+      idempotency_key: "export-deletion-old-key",
+    },
+  );
+  expect(replayed.response.status).toBe(200);
+  expect(replayed.document).toEqual(confirmed.document);
+});
+
+test("a partial Catalogue Export deletion stays unavailable and retries only its original object set", async () => {
+  const oldRevision = "catrev_delete_partial";
+  const currentRevision = "catrev_delete_partial_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_partial",
+    "2026-08-05T02:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_partial_current",
+    "2026-08-05T02:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T03:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-partial",
+    },
+  );
+  const deletedKeys: string[] = [];
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      deletedKeys.push(String(key));
+      if (key === manifestKey) throw new Error("injected manifest delete failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.response.status).toBe(200);
+  expect(failed.document).toMatchObject({
+    state: "failed",
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: "deleted_object_set_mismatch",
+  });
+  expect(deletedKeys.at(-1)).toBe(manifestKey);
+  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
+
+  const status = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial",
+  );
+  expect(status.document).toEqual(failed.document);
+  const retried = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+  );
+  expect(retried.document).toMatchObject({
+    state: "deleted",
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: null,
+  });
+  const retryReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+  );
+  expect(retryReplay.document).toEqual(retried.document);
+});
+
 async function administrationRequest(
   pathname: string,
   body?: Record<string, unknown>,
@@ -2392,6 +2655,133 @@ async function administrationRequest(
     response,
     document: (await response.json()) as Record<string, unknown>,
   };
+}
+
+async function administrationRequestWithEnv(
+  pathname: string,
+  body: Record<string, unknown>,
+  requestEnv: Env,
+): Promise<{ response: Response; document: Record<string, unknown> }> {
+  const response = await ingestionWorker.fetch(
+    new Request(`https://card-keepr.invalid${pathname}`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "cf-connecting-ip": `192.0.2.${(requestSequence++ % 250) + 1}`,
+        "content-type": "application/json",
+        ...(testObservedAt === null
+          ? {}
+          : { "x-keepr-test-now": testObservedAt }),
+      },
+      body: JSON.stringify(body),
+    }),
+    requestEnv,
+  );
+  return {
+    response,
+    document: (await response.json()) as Record<string, unknown>,
+  };
+}
+
+async function seedDeletionExport(
+  revisionId: string,
+  runId: string,
+  publishedAt: string,
+): Promise<{ manifestDigest: string; objectKeys: string[] }> {
+  const candidate = await fixtureCandidate("first-catalogue", ["one-piece"]);
+  const digest = candidate.digest;
+  const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<string>("current_revision_id");
+  if (previousRevisionId === null) throw new Error("missing catalogue state");
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key
+       ) VALUES (
+         ?, 'publishing', '["one-piece"]', ?, ?, NULL, ?, ?, ?,
+         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, ?, NULL
+       )`,
+    ).bind(
+      runId,
+      publishedAt,
+      previousRevisionId,
+      `${runId}-seed`,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: previousRevisionId,
+        approved_at: publishedAt,
+      }),
+      JSON.stringify(candidate.candidate),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+    ).bind(runId),
+  ]);
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_revisions (
+       id, ingestion_run_id, published_at, content_digest,
+       expected_previous_revision_id, approved_candidate_digest
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    revisionId,
+    runId,
+    publishedAt,
+    digest,
+    previousRevisionId,
+    digest,
+  ).run();
+  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+  const componentKey = `catalogue-exports/${revisionId}/components/${digest}.ndjson.gz`;
+  const manifestWithPlaceholder = {
+    export_schema_major: 4,
+    catalogue_revision: { id: revisionId, content_sha256: digest },
+    components: [{
+      name: "cards",
+      compressed_sha256: digest,
+      compressed_bytes: revisionId.length,
+    }],
+    manifest_sha256: "0".repeat(64),
+  };
+  const manifestDigest = await sha256Text(
+    `${canonicalJson(manifestWithPlaceholder)}\n`,
+  );
+  const manifest = {
+    ...manifestWithPlaceholder,
+    manifest_sha256: manifestDigest,
+  };
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, revisionId);
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson(manifest)}\n`,
+  );
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_exports (
+         catalogue_revision_id, manifest_key, manifest_digest, verified
+       ) VALUES (?, ?, ?, 1)`,
+    ).bind(revisionId, manifestKey, manifestDigest),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs SET state = 'published', published_revision_id = ?,
+         resulting_revision_id = ?, publication_outcome = 'revision', terminal_at = ?
+       WHERE id = ?`,
+    ).bind(revisionId, revisionId, publishedAt, runId),
+    testEnv.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE active_ingestion_run_id = ?",
+    ).bind(runId),
+  ]);
+  return { manifestDigest, objectKeys: [componentKey, manifestKey] };
 }
 
 function startRun(

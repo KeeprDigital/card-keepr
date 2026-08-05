@@ -379,6 +379,8 @@ const apiWorker = {
             code: error.code,
             title: error.status === 409
               ? "Cursor revision unavailable"
+              : error.status === 410
+                ? "Catalogue Export deleted"
               : error.code === "invalid_cursor"
                 ? "Invalid Catalogue Export cursor"
                 : "Invalid Catalogue Export request",

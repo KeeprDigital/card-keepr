@@ -393,6 +393,134 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
   });
 });
 
+test("CLI Catalogue Export deletion preserves the prepared bindings and typed revision confirmation", async (t) => {
+  const requests = [];
+  const plan = {
+    contract: "card-keepr-catalogue-export-deletion-plan@1",
+    id: "plan-cli-export-delete",
+    catalogue_revision_id: "catrev_cli_previous",
+    manifest_digest: "a".repeat(64),
+    expected_current_revision_id: "catrev_cli_demo",
+    object_keys: [
+      "catalogue-exports/catrev_cli_previous/components/a.ndjson.gz",
+      "catalogue-exports/catrev_cli_previous/manifest.json",
+    ],
+    object_set_digest: "b".repeat(64),
+    dependencies: [],
+    plan_digest: "c".repeat(64),
+    created_at: "2026-08-05T00:00:00.000Z",
+    expires_at: "2026-08-05T00:15:00.000Z",
+  };
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+        repairable_catalogue_revision_ids: [
+          "catrev_cli_demo",
+          "catrev_cli_previous",
+        ],
+      }));
+      return;
+    }
+    if (request.url === "/v1/catalogue-export-deletion-plans") {
+      response.statusCode = 201;
+      response.end(JSON.stringify(plan));
+      return;
+    }
+    response.end(JSON.stringify({
+      contract: "card-keepr-catalogue-export-deletion@1",
+      id: "deletion-cli-export",
+      plan_id: plan.id,
+      state: "deleted",
+      catalogue_revision_id: plan.catalogue_revision_id,
+      object_set_digest: plan.object_set_digest,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+
+  const prepared = await runCli([
+    "catalogue-export", "deletion", "prepare",
+    "--catalogue-revision", plan.catalogue_revision_id,
+    "--manifest-digest", plan.manifest_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--plan-id", plan.id,
+    "--json",
+  ], environment);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  assert.deepEqual(JSON.parse(prepared.stdout), plan);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletion-plans",
+    body: {
+      catalogue_revision_id: plan.catalogue_revision_id,
+      manifest_digest: plan.manifest_digest,
+      expected_current_revision_id: plan.expected_current_revision_id,
+      plan_id: plan.id,
+    },
+  });
+
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    plan_id: plan.id,
+    plan_digest: plan.plan_digest,
+    catalogue_revision_id: plan.catalogue_revision_id,
+    manifest_digest: plan.manifest_digest,
+    expected_current_revision_id: plan.expected_current_revision_id,
+    deletion_id: "deletion-cli-export",
+    idempotency_key: "deletion-cli-export-key",
+  });
+  const confirmed = await runCli([
+    "catalogue-export", "deletion", "confirm",
+    "--plan-id", plan.id,
+    "--plan-digest", plan.plan_digest,
+    "--catalogue-revision", plan.catalogue_revision_id,
+    "--manifest-digest", plan.manifest_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--confirm-revision", plan.catalogue_revision_id,
+    "--deletion-id", "deletion-cli-export",
+    "--idempotency-key", "deletion-cli-export-key",
+    "--environment", "production",
+    "--confirm", confirmation,
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(confirmed.code, 0, confirmed.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletions",
+    body: {
+      plan_id: plan.id,
+      plan_digest: plan.plan_digest,
+      catalogue_revision_id: plan.catalogue_revision_id,
+      manifest_digest: plan.manifest_digest,
+      expected_current_revision_id: plan.expected_current_revision_id,
+      confirmation_revision_id: plan.catalogue_revision_id,
+      deletion_id: "deletion-cli-export",
+      idempotency_key: "deletion-cli-export-key",
+    },
+  });
+});
+
 test("CLI backup create confirms the exact target before the operation", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {

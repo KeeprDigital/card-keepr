@@ -754,6 +754,104 @@ test("Catalogue Export listing ETags change when a retained package disappears",
   });
 });
 
+test("a known deleting or deleted Catalogue Export is immediately 410 while an unknown revision remains 404", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_deleted_old",
+    "run_export_deleted_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_deleted_current",
+    "run_export_deleted_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const oldExport = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key, manifest_digest FROM catalogue_exports
+     WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
+  ).first<{ manifest_key: string; manifest_digest: string }>();
+  if (oldExport === null) throw new Error("missing API deletion fixture");
+  const planId = "export-deletion-api-plan";
+  const deletionId = "export-deletion-api-test";
+  const idempotencyKey = "export-deletion-api-key";
+  const planDigest = "c".repeat(64);
+  const objectSetDigest = "d".repeat(64);
+  const requestJson = canonicalJson({
+    plan_id: planId,
+    plan_digest: planDigest,
+    catalogue_revision_id: "catrev_export_deleted_old",
+    manifest_digest: oldExport.manifest_digest,
+    expected_current_revision_id: "catrev_export_deleted_current",
+    confirmation_revision_id: "catrev_export_deleted_old",
+    deletion_id: deletionId,
+    idempotency_key: idempotencyKey,
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_export_deletion_plans (
+       id, catalogue_revision_id, manifest_digest,
+       expected_current_revision_id, object_keys_json, object_set_digest,
+       dependencies_json, plan_digest, created_at, expires_at
+     ) VALUES (?, 'catrev_export_deleted_old', ?,
+       'catrev_export_deleted_current', ?, ?, '[]', ?,
+       '2026-07-20T00:00:00.000Z', '2099-01-01T00:00:00.000Z')`,
+  ).bind(
+    planId,
+    oldExport.manifest_digest,
+    canonicalJson([oldExport.manifest_key]),
+    objectSetDigest,
+    planDigest,
+  ).run();
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_export_deletions (
+         id, plan_id, state, catalogue_revision_id, manifest_digest,
+         expected_current_revision_id, object_set_digest, idempotency_key,
+         request_json, requested_at, completed_at, failure_code
+       ) VALUES (?, ?, 'deleting', 'catrev_export_deleted_old', ?,
+         'catrev_export_deleted_current', ?, ?, ?,
+         '2026-07-20T00:01:00.000Z', NULL, NULL)`,
+    ).bind(
+      deletionId,
+      planId,
+      oldExport.manifest_digest,
+      objectSetDigest,
+      idempotencyKey,
+      requestJson,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_exports
+       SET maintenance_state = 'deleting', deletion_operation_id = ?
+       WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
+    ).bind(deletionId),
+  ]);
+
+  const request = (path: string) => exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    { headers: apiHeaders("203.0.113.111") },
+  ));
+  for (const path of [
+    "/v1/catalogue-exports/catrev_export_deleted_old",
+    "/v1/catalogue-exports/catrev_export_deleted_old/components/cards",
+  ]) {
+    const deleted = await request(path);
+    expect(deleted.status, path).toBe(410);
+    await expect(deleted.json(), path).resolves.toMatchObject({
+      status: 410,
+      code: "catalogue_export_deleted",
+    });
+  }
+  const unknown = await request(
+    "/v1/catalogue-exports/catrev_export_never_known",
+  );
+  expect(unknown.status).toBe(404);
+  await expect(unknown.json()).resolves.toMatchObject({ code: "not_found" });
+
+  const listed = await request("/v1/catalogue-exports");
+  expect(listed.status).toBe(200);
+  const document = await listed.json<{ data: { catalogue_revision_id: string }[] }>();
+  expect(document.data.map(({ catalogue_revision_id }) => catalogue_revision_id))
+    .not.toContain("catrev_export_deleted_old");
+});
+
 test("Legality Status rejects a malformed Card identity before lookup", async () => {
   for (const cardId of [
     "card id with spaces",

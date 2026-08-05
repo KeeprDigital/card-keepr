@@ -63,6 +63,13 @@ import {
   supersedeCuratedRevision,
   validateCuratedRevision,
 } from "../../../src/catalogue/curated-revisions";
+import {
+  CatalogueExportDeletionProblem,
+  catalogueExportDeletionStatus,
+  confirmCatalogueExportDeletion,
+  prepareCatalogueExportDeletion,
+  retryCatalogueExportDeletion,
+} from "../../../src/catalogue/catalogue-export-deletion";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -169,6 +176,89 @@ const ingestionWorker = {
         });
       }
       const observedAt = administrationObservedAt(request, env);
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/catalogue-export-deletion-plans"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "catalogue_revision_id",
+          "manifest_digest",
+          "expected_current_revision_id",
+          "plan_id",
+        ]);
+        const document = await prepareCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          {
+            catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
+            manifest_digest: requiredString(body, "manifest_digest"),
+            expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
+            plan_id: requiredString(body, "plan_id"),
+          },
+          observedAt,
+        );
+        return Response.json(document, { status: 201 });
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/catalogue-export-deletions"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "plan_id",
+          "plan_digest",
+          "catalogue_revision_id",
+          "manifest_digest",
+          "expected_current_revision_id",
+          "confirmation_revision_id",
+          "deletion_id",
+          "idempotency_key",
+        ]);
+        return Response.json(await confirmCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          {
+            plan_id: requiredString(body, "plan_id"),
+            plan_digest: requiredString(body, "plan_digest"),
+            catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
+            manifest_digest: requiredString(body, "manifest_digest"),
+            expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
+            confirmation_revision_id: requiredString(body, "confirmation_revision_id"),
+            deletion_id: requiredString(body, "deletion_id"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        ));
+      }
+
+      const exportDeletionRetryMatch =
+        /^\/v1\/catalogue-export-deletions\/([^/]+)\/retry$/.exec(url.pathname);
+      if (request.method === "POST" && exportDeletionRetryMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
+        return Response.json(await retryCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(exportDeletionRetryMatch[1]!),
+          {
+            object_set_digest: requiredString(body, "object_set_digest"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        ));
+      }
+
+      const exportDeletionMatch =
+        /^\/v1\/catalogue-export-deletions\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && exportDeletionMatch !== null) {
+        return Response.json(await catalogueExportDeletionStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(exportDeletionMatch[1]!),
+        ));
+      }
 
       const credentialResponse = await handleCredentialAdministration(
         request,
@@ -761,7 +851,8 @@ const ingestionWorker = {
     } catch (error) {
       if (
         error instanceof AdministrationProblem ||
-        error instanceof CredentialRotationProblem
+        error instanceof CredentialRotationProblem ||
+        error instanceof CatalogueExportDeletionProblem
       ) {
         return problemResponse({
           requestId,
