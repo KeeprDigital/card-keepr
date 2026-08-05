@@ -196,31 +196,21 @@ export async function catalogueExportsResponse(
         },
       })
     : null;
-  const etag = `"${await sha256Text(canonicalJson({
-    route: "/v1/catalogue-exports",
-    order: "published_at:desc,catalogue_revision_id:desc",
-    revision_id: revisionId,
+  const document = {
     data,
+    meta: {
+      catalogue_revision_id: revisionId,
+      published_at: revision.published_at,
+    },
     page: { limit, next_cursor: next },
-  }))}"`;
+    links: { self: `${url.pathname}${url.search}` },
+  };
+  const etag = `"${await sha256Text(canonicalJson(document))}"`;
   const headers = revisionHeaders(revisionId, etag);
   if (ifNoneMatch(request, etag)) {
     return new Response(null, { status: 304, headers });
   }
-  return Response.json(
-    {
-      data,
-      meta: {
-        catalogue_revision_id: revisionId,
-        published_at: revision.published_at,
-      },
-      page: { limit, next_cursor: next },
-      links: { self: `${url.pathname}${url.search}` },
-    },
-    {
-      headers,
-    },
-  );
+  return Response.json(document, { headers });
 }
 
 type CatalogueExportCursor = {
@@ -789,11 +779,15 @@ function exportComponentReadMatches(
   expectedBytes: number,
   expectedSha256: string,
 ): object is R2ObjectBody {
-  if (object === null || object.size !== expectedBytes) return false;
+  if (
+    object === null ||
+    object.size !== expectedBytes ||
+    object.etag !== verifiedEtag
+  ) {
+    return false;
+  }
   const checksum = object.checksums.toJSON().sha256;
-  return checksum === undefined
-    ? object.etag === verifiedEtag
-    : checksum === expectedSha256;
+  return checksum === undefined || checksum === expectedSha256;
 }
 
 async function readableSha256(
