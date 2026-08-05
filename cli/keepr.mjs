@@ -713,6 +713,10 @@ async function administrationRequest(
       document.status !== "complete"
     ) ||
     (document.contract ===
+      "card-keepr-catalogue-backup-workflow@1" &&
+      document.status !== "complete"
+    ) ||
+    (document.contract ===
       "card-keepr-card-search-repair@1" &&
       document.complete !== true);
   return incomplete ? 10 : 0;
@@ -749,9 +753,7 @@ async function fetchAdministrationDocument(
           : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(
-        pathname === "/v1/backups" ? 15 * 60_000 : 10_000,
-      ),
+      signal: AbortSignal.timeout(10_000),
     });
   } catch {
     return {

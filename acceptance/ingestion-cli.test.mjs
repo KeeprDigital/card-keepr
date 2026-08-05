@@ -410,11 +410,18 @@ test("CLI backup create confirms the exact target before the operation", async (
     }
     response.statusCode = 201;
     response.end(JSON.stringify({
-      contract: "card-keepr-catalogue-backup@1",
-      catalogue_revision_id: "catrev_cli_demo",
-      object_key: "d1-backups/catrev_cli_demo/backup.sql",
-      d1_bookmark: "bookmark-cli-backup",
-      verified: true,
+      contract: "card-keepr-catalogue-backup-workflow@1",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+      workflow_instance_id: "backup-cli-workflow",
+      status: "complete",
+      output: {
+        contract: "card-keepr-catalogue-backup@1",
+        catalogue_revision_id: "catrev_cli_demo",
+        object_key: "d1-backups/catrev_cli_demo/backup.sql",
+        d1_bookmark: "bookmark-cli-backup",
+        verified: true,
+      },
     }));
   });
   await new Promise((resolveListen) =>

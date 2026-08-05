@@ -42,10 +42,14 @@ CREATE TABLE catalogue_backup_attempts (
     (state = 'verified' AND d1_bookmark IS NOT NULL
       AND failure_code IS NULL AND failure_detail IS NULL
       AND completed_at IS NOT NULL)
-    OR (state = 'failed' AND d1_bookmark IS NULL
+    OR (state = 'failed'
       AND failure_code IS NOT NULL AND failure_detail IS NOT NULL
       AND completed_at IS NOT NULL)
-    OR (state NOT IN ('verified', 'failed') AND d1_bookmark IS NULL
+    OR (state IN ('pending', 'exporting') AND d1_bookmark IS NULL
+      AND failure_code IS NULL AND failure_detail IS NULL
+      AND completed_at IS NULL)
+    OR (state IN ('restoring_verification', 'verifying')
+      AND d1_bookmark IS NOT NULL
       AND failure_code IS NULL AND failure_detail IS NULL
       AND completed_at IS NULL)
   )
@@ -68,6 +72,27 @@ WHEN NOT (
 )
 BEGIN
   SELECT RAISE(ABORT, 'illegal backup attempt transition');
+END;
+
+CREATE TABLE catalogue_backup_workflow_requests (
+  idempotency_key TEXT PRIMARY KEY,
+  expected_current_revision_id TEXT NOT NULL,
+  request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+  workflow_params_json TEXT NOT NULL CHECK (json_valid(workflow_params_json)),
+  workflow_instance_id TEXT NOT NULL UNIQUE,
+  observed_at TEXT NOT NULL
+);
+
+CREATE TRIGGER catalogue_backup_workflow_requests_are_immutable
+BEFORE UPDATE ON catalogue_backup_workflow_requests
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_backup_workflow_request_immutable');
+END;
+
+CREATE TRIGGER catalogue_backup_workflow_requests_are_not_deleted
+BEFORE DELETE ON catalogue_backup_workflow_requests
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_backup_workflow_request_immutable');
 END;
 
 CREATE TABLE revision_card_search_fts_rows (

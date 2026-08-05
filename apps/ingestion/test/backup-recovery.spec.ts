@@ -193,29 +193,91 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   ).first()).resolves.toEqual({ recovery_health: "degraded" });
 });
 
-test("the authenticated ingestion route executes the production D1 backup provider", async () => {
-  const response = await exports.default.fetch(new Request(
-    "https://card-keepr.invalid/v1/backups",
-    {
-      method: "POST",
-      headers: {
-        authorization: "Bearer vitest-administration-key",
-        "content-type": "application/json",
-        "x-keepr-test-now": "2026-08-05T04:00:00.000Z",
-      },
-      body: JSON.stringify({
-        expected_current_revision_id: "catrev_spine_000",
-        idempotency_key: "backup-production-route",
-      }),
+test("the Workflow can resume the same owner after an interrupted active attempt", async () => {
+  const sqlBytes = new TextEncoder().encode("-- resumable export\n");
+  let exportsAttempted = 0;
+  const provider: D1BackupProvider = {
+    async exportSql() {
+      exportsAttempted += 1;
+      if (exportsAttempted === 1) throw new Error("interrupted export");
+      return {
+        body: new Blob([sqlBytes]).stream(),
+        size: sqlBytes.byteLength,
+        bookmark: "bookmark-resumed",
+        filename: "catalogue.sql",
+      };
     },
-  ));
-
-  expect(response.status).toBe(201);
-  await expect(response.json()).resolves.toMatchObject({
-    contract: "card-keepr-catalogue-backup@1",
-    catalogue_revision_id: "catrev_spine_000",
+    async restoreSql(input) {
+      await new Response(input.body).arrayBuffer();
+    },
+    async reconstructAndVerify() {},
+  };
+  const input = {
+    expectedCurrentRevisionId: "catrev_spine_000",
+    idempotencyKey: "backup-production-resume",
+    observedAt: "2026-08-05T03:30:00.000Z",
+    cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+    catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+    exportToken: "export-token",
+    verificationToken: "verification-token",
+  } as const;
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    input,
+    provider,
+    { terminalFailure: false },
+  )).rejects.toThrow("interrupted export");
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    input,
+    provider,
+    { terminalFailure: false },
+  )).resolves.toMatchObject({
     verified: true,
-    d1_bookmark: "vitest-export-bookmark",
+    d1_bookmark: "bookmark-resumed",
+  });
+  expect(exportsAttempted).toBe(2);
+});
+
+test("the authenticated route starts and observes one durable backup Workflow", async () => {
+  let document: Record<string, unknown> | null = null;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await exports.default.fetch(new Request(
+      "https://card-keepr.invalid/v1/backups",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+          "x-keepr-test-now": "2026-08-05T04:00:00.000Z",
+        },
+        body: JSON.stringify({
+          expected_current_revision_id: "catrev_spine_000",
+          idempotency_key: "backup-production-route",
+        }),
+      },
+    ));
+    expect([200, 202]).toContain(response.status);
+    document = await response.json<Record<string, unknown>>();
+    expect(document).toMatchObject({
+      contract: "card-keepr-catalogue-backup-workflow@1",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "backup-production-route",
+    });
+    if (document.status === "complete") break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(document).toMatchObject({
+    status: "complete",
+    output: {
+      contract: "card-keepr-catalogue-backup@1",
+      catalogue_revision_id: "catrev_spine_000",
+      verified: true,
+      d1_bookmark: "vitest-export-bookmark",
+    },
   });
 });
 

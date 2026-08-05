@@ -21,11 +21,13 @@ export async function prepareCardSearchForD1Export(
      WHERE singleton = 1
        AND (
          state = 'ready'
+         OR (state = 'reconstructing' AND owner_token = ?)
          OR (state = 'reconstructing' AND lease_expires_at <= ?)
        )`,
   ).bind(
     lease.ownerToken,
     lease.leaseExpiresAt,
+    lease.ownerToken,
     lease.observedAt,
   ).run();
   if (acquired.meta.changes !== 1) {

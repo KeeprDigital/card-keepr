@@ -172,12 +172,17 @@ recovery health.
 
 ## Backup and recovery states
 
-`backup create` is the guarded owner entry point for the implemented D1
-export/restore verification boundary. It temporarily removes only the derived
-Card FTS structures, exports and retains the SQL backup, reconstructs live
-search in a `finally` path, restores into the configured disposable D1,
-reconstructs search there, and verifies the expected Catalogue Revision before
-recovery becomes healthy.
+`backup create` starts or observes one idempotently bound ingestion Workflow
+for the D1 export/restore verification boundary. The durable Workflow
+temporarily removes only the derived Card FTS structures, exports and retains
+the SQL backup, reconstructs live search in a `finally` path, restores into the
+configured disposable D1, reconstructs search there, and verifies the expected
+Catalogue Revision before recovery becomes healthy. Active phases are
+owner-bound and resumable, so a retried Workflow continues the retained export,
+restore, or verification phase rather than creating another attempt.
+The first non-terminal response is HTTP `202`; exact replays observe the same
+Workflow instance, resume a paused instance, and return HTTP `200`. The CLI
+exits `10` until the Workflow is complete.
 
 `backup create` durably binds its exact expected revision to the idempotency
 key before export and creates an immutable backup attempt:

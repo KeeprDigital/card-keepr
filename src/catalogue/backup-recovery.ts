@@ -1,5 +1,6 @@
 import { AdministrationProblem } from "./administration-problem.mjs";
 import {
+  prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
 } from "./card-search-recovery-statements.mjs";
 import {
@@ -45,6 +46,10 @@ type BackupInput = Readonly<{
   verificationToken: string;
 }>;
 
+type BackupExecutionOptions = Readonly<{
+  terminalFailure?: boolean;
+}>;
+
 export type CatalogueBackupDocument = Readonly<{
   contract: "card-keepr-catalogue-backup@1";
   catalogue_revision_id: string;
@@ -58,6 +63,7 @@ export async function createVerifiedCatalogueBackup(
   backups: R2Bucket,
   input: BackupInput,
   provider: D1BackupProvider = cloudflareD1BackupProvider,
+  options: BackupExecutionOptions = {},
 ): Promise<CatalogueBackupDocument> {
   validateInput(input);
   const digest = await sha256(input.idempotencyKey);
@@ -114,7 +120,7 @@ export async function createVerifiedCatalogueBackup(
       attempt.failure_detail ?? "The retained backup attempt failed.",
     );
   }
-  if (attempt.state !== "pending") {
+  if (!isActiveAttemptState(attempt.state)) {
     throw new AdministrationProblem(
       409,
       "backup_in_progress",
@@ -123,13 +129,15 @@ export async function createVerifiedCatalogueBackup(
   }
   const state = await database.prepare(
     `SELECT catalogue.current_revision_id,
-            operation.active_ingestion_run_id
+            operation.active_ingestion_run_id,
+            operation.recovery_health
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = 1
      WHERE catalogue.singleton = 1`,
   ).first<{
     current_revision_id: string;
     active_ingestion_run_id: string | null;
+    recovery_health: string;
   }>();
   if (state?.current_revision_id !== input.expectedCurrentRevisionId) {
     await failAttempt(
@@ -161,130 +169,166 @@ export async function createVerifiedCatalogueBackup(
       "Catalogue backup requires idle ingestion.",
     );
   }
-  await transitionAttempt(
-    database,
-    input.idempotencyKey,
-    ownerToken,
-    "pending",
-    "exporting",
-  );
-  const blocked = await database.prepare(
-    `UPDATE operation_state
-     SET recovery_health = 'blocked'
-     WHERE singleton = 1
-       AND active_ingestion_run_id IS NULL
-       AND recovery_health <> 'blocked'`,
-  ).run();
-  if (blocked.meta.changes !== 1) {
-    await failAttempt(
-      database,
-      input.idempotencyKey,
-      ownerToken,
-      input.observedAt,
-      "backup_in_progress",
-      "Catalogue recovery operation is unavailable.",
-    );
-    throw new AdministrationProblem(
-      409,
-      "backup_in_progress",
-      "Catalogue recovery operation is unavailable.",
-    );
+  let attemptState = attempt.state;
+  if (attemptState === "pending") {
+    try {
+      await database.batch([
+        database.prepare(
+          `SELECT CASE WHEN EXISTS (
+             SELECT 1 FROM catalogue_backup_attempts AS attempt
+             JOIN operation_state AS operation ON operation.singleton = 1
+             WHERE attempt.idempotency_key = ? AND attempt.owner_token = ?
+               AND attempt.state = 'pending'
+               AND operation.active_ingestion_run_id IS NULL
+               AND operation.recovery_health <> 'blocked'
+               AND NOT EXISTS (
+                 SELECT 1 FROM catalogue_backup_attempts AS active
+                 WHERE active.idempotency_key <> attempt.idempotency_key
+                   AND active.state IN (
+                     'exporting', 'restoring_verification', 'verifying'
+                   )
+               )
+           ) THEN 1 ELSE json_extract('invalid', '$') END`,
+        ).bind(input.idempotencyKey, ownerToken),
+        database.prepare(
+          `UPDATE catalogue_backup_attempts SET state = 'exporting'
+           WHERE idempotency_key = ? AND owner_token = ? AND state = 'pending'`,
+        ).bind(input.idempotencyKey, ownerToken),
+        database.prepare(
+          `UPDATE operation_state SET recovery_health = 'blocked'
+           WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+             AND recovery_health <> 'blocked'`,
+        ),
+      ]);
+    } catch {
+      throw new AdministrationProblem(
+        409,
+        "backup_in_progress",
+        "Another Catalogue backup attempt is already in progress.",
+      );
+    }
+    attemptState = "exporting";
+  } else if (state.recovery_health !== "blocked") {
+    throw new Error("The active backup attempt lost its recovery block.");
   }
 
+  const leaseObservedAt = new Date(Math.max(
+    Date.now(),
+    Date.parse(input.observedAt),
+  )).toISOString();
   const leaseExpiresAt = new Date(
-    Date.parse(input.observedAt) + 60 * 60 * 1000,
+    Date.parse(leaseObservedAt) + 60 * 60 * 1000,
   ).toISOString();
   try {
-    const exported = await withCardSearchPreparedForD1Export(
-      database,
-      { ownerToken, observedAt: input.observedAt, leaseExpiresAt },
-      () => provider.exportSql({
+    let bookmark = attempt.d1_bookmark;
+    if (attemptState === "exporting") {
+      const exported = await withCardSearchPreparedForD1Export(
+        database,
+        { ownerToken, observedAt: leaseObservedAt, leaseExpiresAt },
+        () => provider.exportSql({
+          accountId: input.cloudflareAccountId,
+          databaseId: input.catalogueDatabaseId,
+          token: input.exportToken,
+        }),
+      );
+      const sized = new FixedLengthStream(exported.size);
+      await Promise.all([
+        exported.body.pipeTo(sized.writable),
+        backups.put(objectKey, sized.readable, {
+          httpMetadata: { contentType: "application/sql; charset=utf-8" },
+          customMetadata: {
+            catalogue_revision_id: input.expectedCurrentRevisionId,
+            d1_bookmark: exported.bookmark,
+          },
+        }),
+      ]);
+      await transitionExportedAttempt(
+        database,
+        input.idempotencyKey,
+        ownerToken,
+        exported.bookmark,
+      );
+      bookmark = exported.bookmark;
+      attemptState = "restoring_verification";
+    }
+    if (bookmark === null) {
+      throw new Error("The retained D1 export bookmark is unavailable.");
+    }
+    if (attemptState === "restoring_verification") {
+      const stored = await backups.get(objectKey);
+      if (stored === null) throw new Error("Retained backup is unavailable.");
+      await provider.restoreSql({
         accountId: input.cloudflareAccountId,
-        databaseId: input.catalogueDatabaseId,
-        token: input.exportToken,
-      }),
-    );
-    const sized = new FixedLengthStream(exported.size);
-    await Promise.all([
-      exported.body.pipeTo(sized.writable),
-      backups.put(objectKey, sized.readable, {
-        httpMetadata: { contentType: "application/sql; charset=utf-8" },
-        customMetadata: {
-          catalogue_revision_id: input.expectedCurrentRevisionId,
-          d1_bookmark: exported.bookmark,
-        },
-      }),
-    ]);
-    const stored = await backups.get(objectKey);
-    if (stored === null) throw new Error("Retained backup is unavailable.");
-    await transitionAttempt(
-      database,
-      input.idempotencyKey,
-      ownerToken,
-      "exporting",
-      "restoring_verification",
-    );
-    await provider.restoreSql({
-      accountId: input.cloudflareAccountId,
-      databaseId: input.disposableDatabaseId,
-      token: input.verificationToken,
-      body: stored.body,
-      size: stored.size,
-      etag: stored.etag,
-    });
-    await transitionAttempt(
-      database,
-      input.idempotencyKey,
-      ownerToken,
-      "restoring_verification",
-      "verifying",
-    );
-    await provider.reconstructAndVerify({
-      accountId: input.cloudflareAccountId,
-      databaseId: input.disposableDatabaseId,
-      token: input.verificationToken,
-      ownerToken,
-      expectedRevisionId: input.expectedCurrentRevisionId,
-    });
-    const verified = await database.prepare(
-      `UPDATE catalogue_backup_attempts
-       SET state = 'verified', d1_bookmark = ?, completed_at = ?
-       WHERE idempotency_key = ? AND owner_token = ? AND state = 'verifying'`,
-    ).bind(
-      exported.bookmark,
-      input.observedAt,
-      input.idempotencyKey,
-      ownerToken,
-    ).run();
-    if (verified.meta.changes !== 1) {
+        databaseId: input.disposableDatabaseId,
+        token: input.verificationToken,
+        body: stored.body,
+        size: stored.size,
+        etag: stored.etag,
+      });
+      await transitionAttempt(
+        database,
+        input.idempotencyKey,
+        ownerToken,
+        "restoring_verification",
+        "verifying",
+      );
+      attemptState = "verifying";
+    }
+    if (attemptState === "verifying") {
+      await provider.reconstructAndVerify({
+        accountId: input.cloudflareAccountId,
+        databaseId: input.disposableDatabaseId,
+        token: input.verificationToken,
+        ownerToken,
+        expectedRevisionId: input.expectedCurrentRevisionId,
+      });
+    }
+    try {
+      await database.batch([
+        database.prepare(
+          `SELECT CASE WHEN EXISTS (
+             SELECT 1 FROM catalogue_backup_attempts
+             WHERE idempotency_key = ? AND owner_token = ?
+               AND state = 'verifying'
+           ) THEN 1 ELSE json_extract('invalid', '$') END`,
+        ).bind(input.idempotencyKey, ownerToken),
+        database.prepare(
+          `UPDATE catalogue_backup_attempts
+           SET state = 'verified', d1_bookmark = ?, completed_at = ?
+           WHERE idempotency_key = ? AND owner_token = ?
+             AND state = 'verifying'`,
+        ).bind(
+          bookmark,
+          input.observedAt,
+          input.idempotencyKey,
+          ownerToken,
+        ),
+        database.prepare(
+          `UPDATE operation_state SET recovery_health = 'healthy'
+           WHERE singleton = 1 AND recovery_health = 'blocked'`,
+        ),
+      ]);
+    } catch {
       throw new AdministrationProblem(
         409,
         "backup_in_progress",
         "The backup attempt state changed concurrently.",
       );
     }
-    await database.prepare(
-      `UPDATE operation_state SET recovery_health = 'healthy'
-       WHERE singleton = 1 AND recovery_health = 'blocked'`,
-    ).run();
     return backupDocument({
       catalogue_revision_id: input.expectedCurrentRevisionId,
       object_key: objectKey,
-      d1_bookmark: exported.bookmark,
+      d1_bookmark: bookmark,
     });
   } catch (error) {
-    await database.prepare(
-      `UPDATE operation_state SET recovery_health = 'degraded'
-       WHERE singleton = 1 AND recovery_health = 'blocked'`,
-    ).run();
-    await failAttempt(
-      database,
-      input.idempotencyKey,
-      ownerToken,
-      input.observedAt,
-      "backup_failed",
-      error instanceof Error ? error.message : "Catalogue backup failed.",
-    );
+    if (options.terminalFailure !== false) {
+      await failActiveCatalogueBackupAttempt(
+        database,
+        input.idempotencyKey,
+        input.observedAt,
+        error instanceof Error ? error.message : "Catalogue backup failed.",
+      );
+    }
     throw error;
   }
 }
@@ -378,6 +422,9 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
 
   async reconstructAndVerify(input) {
     const pathname = d1Path(input.accountId, input.databaseId, "query");
+    for (const sql of prepareCardSearchForD1ExportStatements) {
+      await cloudflareD1Request(pathname, input.token, { sql });
+    }
     for (const sql of reconstructCardSearchAfterD1RestoreStatements) {
       await cloudflareD1Request(pathname, input.token, { sql });
     }
@@ -519,6 +566,53 @@ async function transitionAttempt(
   }
 }
 
+async function transitionExportedAttempt(
+  database: D1Database,
+  idempotencyKey: string,
+  ownerToken: string,
+  bookmark: string,
+): Promise<void> {
+  const changed = await database.prepare(
+    `UPDATE catalogue_backup_attempts
+     SET state = 'restoring_verification', d1_bookmark = ?
+     WHERE idempotency_key = ? AND owner_token = ? AND state = 'exporting'`,
+  ).bind(bookmark, idempotencyKey, ownerToken).run();
+  if (changed.meta.changes !== 1) {
+    throw new AdministrationProblem(
+      409,
+      "backup_in_progress",
+      "The backup attempt state changed concurrently.",
+    );
+  }
+}
+
+export async function failActiveCatalogueBackupAttempt(
+  database: D1Database,
+  idempotencyKey: string,
+  completedAt: string,
+  detail: string,
+): Promise<void> {
+  const ownerToken = `backup:${await sha256(idempotencyKey)}`;
+  await database.batch([
+    database.prepare(
+      `UPDATE operation_state SET recovery_health = 'degraded'
+       WHERE singleton = 1 AND recovery_health = 'blocked'
+         AND EXISTS (
+           SELECT 1 FROM catalogue_backup_attempts
+           WHERE idempotency_key = ? AND owner_token = ?
+             AND state IN ('exporting', 'restoring_verification', 'verifying')
+         )`,
+    ).bind(idempotencyKey, ownerToken),
+    database.prepare(
+      `UPDATE catalogue_backup_attempts
+       SET state = 'failed', failure_code = 'backup_failed',
+           failure_detail = ?, completed_at = ?
+       WHERE idempotency_key = ? AND owner_token = ?
+         AND state NOT IN ('verified', 'failed')`,
+    ).bind(detail, completedAt, idempotencyKey, ownerToken),
+  ]);
+}
+
 async function failAttempt(
   database: D1Database,
   idempotencyKey: string,
@@ -568,6 +662,15 @@ function queryRows(result: Record<string, unknown>): Record<string, unknown>[] {
 function validApiCardRow(row: Record<string, unknown>): boolean {
   return [row.card_id, row.game_id, row.card_number, row.summary_json]
     .every((value) => typeof value === "string");
+}
+
+function isActiveAttemptState(value: string): boolean {
+  return [
+    "pending",
+    "exporting",
+    "restoring_verification",
+    "verifying",
+  ].includes(value);
 }
 
 function objectString(value: unknown, key: string): string {
