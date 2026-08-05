@@ -3,6 +3,10 @@ PRAGMA foreign_keys = ON;
 ALTER TABLE operation_state
 ADD COLUMN active_recovery_id TEXT;
 
+ALTER TABLE operation_state
+ADD COLUMN recovery_restore_guard TEXT NOT NULL DEFAULT 'clear'
+CHECK (recovery_restore_guard IN ('clear', 'blocked'));
+
 -- The release workflow acquires its lease through a bootstrap ingestion row.
 -- Keep the database-level gate aligned with the Worker check so neither a new
 -- ingestion nor a production-release bootstrap can begin while recovery is
@@ -15,6 +19,7 @@ WHEN EXISTS (
   WHERE singleton = 1 AND (
     active_ingestion_run_id IS NOT NULL
     OR recovery_health = 'blocked'
+    OR recovery_restore_guard = 'blocked'
     OR (
       active_release_id IS NOT NULL
       AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')

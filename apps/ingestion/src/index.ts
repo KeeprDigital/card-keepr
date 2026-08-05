@@ -45,6 +45,7 @@ import {
 import {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
+  enforceRecoveryRestoreGuard,
   inspectCatalogueRecovery,
   verifyCatalogueRecovery,
 } from "../../../src/catalogue/recovery";
@@ -176,6 +177,7 @@ const ingestionWorker = {
         });
       }
       const observedAt = administrationObservedAt(request, env);
+      await enforceRecoveryRestoreGuard(env.CATALOGUE_DB);
 
       const credentialResponse = await handleCredentialAdministration(
         request,
@@ -426,6 +428,7 @@ const ingestionWorker = {
       if (request.method === "GET" && recoveryMatch !== null) {
         return Response.json(await inspectCatalogueRecovery(
           env.CATALOGUE_DB,
+          env.BACKUPS,
           decodeURIComponent(recoveryMatch[1]!),
         ));
       }
@@ -502,6 +505,7 @@ const ingestionWorker = {
         const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
         return Response.json(await verifyCatalogueRecovery(
           env.CATALOGUE_DB,
+          env.BACKUPS,
           decodeURIComponent(recoveryVerificationMatch[1]!),
           {
             targetDigest: requiredString(body, "target_digest"),
@@ -527,6 +531,7 @@ const ingestionWorker = {
         ]);
         return Response.json(await acceptCatalogueRecovery(
           env.CATALOGUE_DB,
+          env.BACKUPS,
           decodeURIComponent(recoveryAcceptanceMatch[1]!),
           {
             expectedRestoredRevisionId: requiredString(

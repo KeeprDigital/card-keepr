@@ -76,6 +76,16 @@ export type AcceptCatalogueRecoveryInput = Readonly<{
   boundDatabaseId: string;
 }>;
 
+export async function enforceRecoveryRestoreGuard(
+  database: D1Database,
+): Promise<void> {
+  await database.prepare(
+    `UPDATE operation_state SET recovery_health = 'blocked'
+     WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
+       AND recovery_health <> 'blocked'`,
+  ).run();
+}
+
 type RecoveryRow = Readonly<{
   id: string;
   state: string;
@@ -139,6 +149,12 @@ type BackupManifest = Readonly<{
   verification: Readonly<{ verified: true }>;
 }>;
 
+type RecoveryJournal = Readonly<{
+  contract: "card-keepr-catalogue-recovery-journal@1";
+  recovery: RecoveryRow;
+  backup: VerifiedBackupRow;
+}>;
+
 export async function beginCatalogueRecovery(
   database: D1Database,
   backups: R2Bucket,
@@ -157,6 +173,12 @@ export async function beginCatalogueRecovery(
     idempotency_key: input.idempotencyKey,
     linked_operation_id: input.linkedOperationId ?? null,
   });
+  await hydrateRetainedRecoveryIfPresent(
+    database,
+    backups,
+    input.recoveryId,
+    true,
+  );
   const replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
@@ -217,6 +239,29 @@ export async function beginCatalogueRecovery(
   try {
     await database.batch([
       database.prepare(
+        `SELECT CASE WHEN EXISTS (
+           SELECT 1 FROM catalogue_state AS catalogue
+           JOIN operation_state AS operation ON operation.singleton = 1
+           WHERE catalogue.singleton = 1
+             AND catalogue.current_revision_id = ?
+             AND operation.active_ingestion_run_id IS NULL
+             AND (operation.active_release_id IS NULL
+               OR operation.active_release_expires_at <= ?)
+             AND (
+               (? IS NULL AND operation.recovery_health <> 'blocked'
+                 AND operation.active_recovery_id IS NULL)
+               OR (? IS NOT NULL AND operation.recovery_health = 'blocked'
+                 AND operation.active_recovery_id = ?)
+             )
+         ) THEN 1 ELSE json_extract('invalid', '$') END`,
+      ).bind(
+        input.expectedCurrentRevisionId,
+        input.observedAt,
+        input.linkedOperationId ?? null,
+        input.linkedOperationId ?? null,
+        input.linkedOperationId ?? null,
+      ),
+      database.prepare(
         `INSERT INTO catalogue_recovery_operations (
            id, state, method, request_json, idempotency_key,
            target_revision_id, target_bookmark, target_digest,
@@ -244,8 +289,28 @@ export async function beginCatalogueRecovery(
       ),
       database.prepare(
         `UPDATE operation_state
-         SET recovery_health = 'blocked', active_recovery_id = ?
-         WHERE singleton = 1 AND active_ingestion_run_id IS NULL`,
+         SET recovery_health = 'blocked', active_recovery_id = ?,
+             recovery_restore_guard = 'blocked'
+         WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+           AND (active_release_id IS NULL OR active_release_expires_at <= ?)
+           AND (
+             (? IS NULL AND recovery_health <> 'blocked'
+               AND active_recovery_id IS NULL)
+             OR (? IS NOT NULL AND recovery_health = 'blocked'
+               AND active_recovery_id = ?)
+           )`,
+      ).bind(
+        input.recoveryId,
+        input.observedAt,
+        input.linkedOperationId ?? null,
+        input.linkedOperationId ?? null,
+        input.linkedOperationId ?? null,
+      ),
+      database.prepare(
+        `SELECT CASE WHEN recovery_health = 'blocked'
+             AND active_recovery_id = ?
+           THEN 1 ELSE json_extract('invalid', '$') END
+         FROM operation_state WHERE singleton = 1`,
       ).bind(input.recoveryId),
     ]);
   } catch (error) {
@@ -254,11 +319,20 @@ export async function beginCatalogueRecovery(
       if (winner.request_json !== requestJson) throw idempotencyReused();
       return recoveryDocument(winner);
     }
-    throw error;
+    throw new AdministrationProblem(
+      409,
+      "recovery_state_changed",
+      "Catalogue state changed before the recovery block was acquired.",
+    );
   }
 
   try {
     await transitionRecovery(database, input.recoveryId, "preparing", "restoring");
+    await persistRecoveryJournal(
+      backups,
+      await requiredRecovery(database, input.recoveryId),
+      backup,
+    );
     if (input.method === "time_travel") {
       const restored = await provider.timeTravelRestore({
         accountId: input.cloudflareAccountId,
@@ -266,13 +340,7 @@ export async function beginCatalogueRecovery(
         token: input.verificationToken,
         bookmark: input.targetBookmark,
       });
-      await rehydrateTimeTravelJournal(database, {
-        input,
-        requestJson,
-        currentBookmark,
-        backup,
-        manifest,
-      });
+      await hydrateRecoveryJournal(database, backups, input.recoveryId);
       await transitionToValidating(database, input.recoveryId, {
         restoredBookmark: restored.bookmark,
         undoBookmark: restored.previousBookmark,
@@ -307,22 +375,35 @@ export async function beginCatalogueRecovery(
         observedAt: input.observedAt,
       });
     }
+    await persistRecoveryJournal(
+      backups,
+      await requiredRecovery(database, input.recoveryId),
+      backup,
+    );
   } catch {
+    await hydrateRecoveryJournal(database, backups, input.recoveryId)
+      .catch(() => undefined);
     await failRecovery(database, input.recoveryId, input.observedAt, "recovery_failed");
+    const failed = await recoveryRow(database, input.recoveryId);
+    if (failed !== null) {
+      await persistRecoveryJournal(backups, failed, backup).catch(() => undefined);
+    }
     throw new AdministrationProblem(
       502,
       "recovery_failed",
       "Catalogue recovery failed; mutation remains blocked.",
     );
   }
-  return inspectCatalogueRecovery(database, input.recoveryId);
+  return inspectCatalogueRecovery(database, backups, input.recoveryId);
 }
 
 export async function inspectCatalogueRecovery(
   database: D1Database,
+  backups: R2Bucket,
   recoveryId: string,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(recoveryId, "recovery_id");
+  await hydrateRecoveryJournal(database, backups, recoveryId, true);
   const row = await recoveryRow(database, recoveryId);
   if (row === null) {
     throw new AdministrationProblem(
@@ -336,12 +417,14 @@ export async function inspectCatalogueRecovery(
 
 export async function verifyCatalogueRecovery(
   database: D1Database,
+  backups: R2Bucket,
   recoveryId: string,
   input: VerifyCatalogueRecoveryInput,
   provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   assertSha256(input.targetDigest, "target_digest");
+  await hydrateRecoveryJournal(database, backups, recoveryId, true);
   const row = await requiredRecovery(database, recoveryId);
   const requestDigest = await sha256Text(canonicalJson({
     recovery_id: recoveryId,
@@ -352,6 +435,8 @@ export async function verifyCatalogueRecovery(
       row.verification_idempotency_key !== input.idempotencyKey ||
       row.verification_request_digest !== requestDigest
     ) throw idempotencyReused();
+    const retained = await requiredRecoveryJournal(backups, recoveryId);
+    await persistRecoveryJournal(backups, row, retained.backup);
     return recoveryDocument(row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
@@ -414,21 +499,32 @@ export async function verifyCatalogueRecovery(
       input.observedAt,
       "recovery_verification_failed",
     );
+    const journal = await requiredRecoveryJournal(backups, recoveryId);
+    await persistRecoveryJournal(
+      backups,
+      await requiredRecovery(database, recoveryId),
+      journal.backup,
+    );
     throw new AdministrationProblem(
       409,
       "recovery_verification_failed",
       "Restored Catalogue verification failed; mutation remains blocked.",
     );
   }
-  return inspectCatalogueRecovery(database, recoveryId);
+  const completed = await requiredRecovery(database, recoveryId);
+  const journal = await requiredRecoveryJournal(backups, recoveryId);
+  await persistRecoveryJournal(backups, completed, journal.backup);
+  return inspectCatalogueRecovery(database, backups, recoveryId);
 }
 
 export async function acceptCatalogueRecovery(
   database: D1Database,
+  backups: R2Bucket,
   recoveryId: string,
   input: AcceptCatalogueRecoveryInput,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
+  await hydrateRecoveryJournal(database, backups, recoveryId, true);
   const requestDigest = await sha256Text(canonicalJson({
     recovery_id: recoveryId,
     expected_restored_revision_id: input.expectedRestoredRevisionId,
@@ -442,6 +538,8 @@ export async function acceptCatalogueRecovery(
       row.acceptance_idempotency_key !== input.idempotencyKey ||
       row.acceptance_request_digest !== requestDigest
     ) throw idempotencyReused();
+    const retained = await requiredRecoveryJournal(backups, recoveryId);
+    await persistRecoveryJournal(backups, row, retained.backup);
     return recoveryDocument(row);
   }
   if (row.state === "failed") throw retainedRecoveryFailure(row);
@@ -511,7 +609,8 @@ export async function acceptCatalogueRecovery(
       ),
       database.prepare(
         `UPDATE operation_state
-         SET recovery_health = 'healthy', active_recovery_id = NULL
+         SET recovery_health = 'healthy', active_recovery_id = NULL,
+             recovery_restore_guard = 'clear'
          WHERE singleton = 1 AND recovery_health = 'blocked'
            AND active_recovery_id = ?`,
       ).bind(recoveryId),
@@ -523,7 +622,10 @@ export async function acceptCatalogueRecovery(
       "Recovery acceptance changed concurrently.",
     );
   }
-  return inspectCatalogueRecovery(database, recoveryId);
+  const accepted = await requiredRecovery(database, recoveryId);
+  const journal = await requiredRecoveryJournal(backups, recoveryId);
+  await persistRecoveryJournal(backups, accepted, journal.backup);
+  return inspectCatalogueRecovery(database, backups, recoveryId);
 }
 
 async function exactVerifiedBackup(
@@ -559,26 +661,218 @@ async function exactVerifiedBackup(
   return row;
 }
 
-async function rehydrateTimeTravelJournal(
-  database: D1Database,
-  journal: Readonly<{
-    input: BeginCatalogueRecoveryInput;
-    requestJson: string;
-    currentBookmark: string | null;
-    backup: VerifiedBackupRow;
-    manifest: BackupManifest;
-  }>,
+function recoveryJournalKey(recoveryId: string): string {
+  return `recovery-journals/${recoveryId}.json`;
+}
+
+async function persistRecoveryJournal(
+  backups: R2Bucket,
+  recovery: RecoveryRow,
+  backup: VerifiedBackupRow,
 ): Promise<void> {
-  // Time Travel rewinds the catalogue and the administration tables together.
-  // Re-establish the already-verified backup evidence and immutable recovery
-  // journal before advancing the restored database.
+  await backups.put(
+    recoveryJournalKey(recovery.id),
+    canonicalJson({
+      contract: "card-keepr-catalogue-recovery-journal@1",
+      recovery,
+      backup,
+    } satisfies RecoveryJournal),
+    { httpMetadata: { contentType: "application/json" } },
+  );
+}
+
+async function requiredRecoveryJournal(
+  backups: R2Bucket,
+  recoveryId: string,
+): Promise<RecoveryJournal> {
+  const object = await backups.get(recoveryJournalKey(recoveryId));
+  if (object === null) {
+    throw new AdministrationProblem(
+      404,
+      "recovery_not_found",
+      "Catalogue recovery operation not found.",
+    );
+  }
+  const journal = await object.json<RecoveryJournal>();
+  if (
+    journal.contract !== "card-keepr-catalogue-recovery-journal@1" ||
+    journal.recovery.id !== recoveryId ||
+    journal.recovery.source_backup_attempt_id !== journal.backup.idempotency_key
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_journal_invalid",
+      "The retained recovery journal is invalid.",
+    );
+  }
+  return journal;
+}
+
+async function hydrateRecoveryJournal(
+  database: D1Database,
+  backups: R2Bucket,
+  recoveryId: string,
+  ambiguousRestoringIsFailure = false,
+): Promise<void> {
+  const existing = await recoveryRow(database, recoveryId);
+  if (existing !== null) {
+    if (ambiguousRestoringIsFailure && existing.state === "restoring") {
+      const retained = await requiredRecoveryJournal(backups, recoveryId);
+      await failRecovery(
+        database,
+        recoveryId,
+        new Date().toISOString(),
+        "recovery_outcome_ambiguous",
+      );
+      await persistRecoveryJournal(
+        backups,
+        await requiredRecovery(database, recoveryId),
+        retained.backup,
+      );
+    }
+    return;
+  }
+  const journal = await requiredRecoveryJournal(backups, recoveryId);
+  if (
+    journal.recovery.linked_operation_id !== null &&
+    await recoveryRow(
+      database,
+      journal.recovery.linked_operation_id,
+    ) === null
+  ) {
+    await hydrateRecoveryJournal(
+      database,
+      backups,
+      journal.recovery.linked_operation_id,
+    );
+  }
+  await rehydrateVerifiedBackup(database, journal.backup);
+  const row = journal.recovery;
+  await database.prepare(
+    `INSERT INTO catalogue_recovery_operations (
+       id, state, method, request_json, idempotency_key,
+       target_revision_id, target_bookmark, target_digest,
+       source_backup_attempt_id, linked_operation_id,
+       expected_current_revision_id, current_bookmark, restored_bookmark,
+       undo_bookmark, original_database_id, restored_database_id,
+       retained_database_id, expected_schema_migration_level,
+       expected_verification_json, verification_json,
+       verification_idempotency_key, verification_request_digest,
+       acceptance_idempotency_key, acceptance_request_digest,
+       started_at, restored_at, verified_at, accepted_at,
+       failure_code, failure_detail, failed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    row.id,
+    row.state,
+    row.method,
+    row.request_json,
+    row.idempotency_key,
+    row.target_revision_id,
+    row.target_bookmark,
+    row.target_digest,
+    row.source_backup_attempt_id,
+    row.linked_operation_id,
+    row.expected_current_revision_id,
+    row.current_bookmark,
+    row.restored_bookmark,
+    row.undo_bookmark,
+    row.original_database_id,
+    row.restored_database_id,
+    row.retained_database_id,
+    row.expected_schema_migration_level,
+    row.expected_verification_json,
+    row.verification_json,
+    row.verification_idempotency_key,
+    row.verification_request_digest,
+    row.acceptance_idempotency_key,
+    row.acceptance_request_digest,
+    row.started_at,
+    row.restored_at,
+    row.verified_at,
+    row.accepted_at,
+    row.failure_code,
+    row.failure_detail,
+    row.failed_at,
+  ).run();
+  const blocked = row.state !== "accepted";
+  const changed = await database.prepare(
+    `UPDATE operation_state
+     SET recovery_health = ?, active_recovery_id = ?,
+         recovery_restore_guard = ?
+     WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+       AND (active_recovery_id IS NULL OR active_recovery_id = ?
+         OR active_recovery_id = ?)`,
+  ).bind(
+    blocked ? "blocked" : "healthy",
+    blocked ? row.id : null,
+    blocked ? "blocked" : "clear",
+    row.id,
+    row.linked_operation_id,
+  ).run();
+  if (changed.meta.changes !== 1) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_state_changed",
+      "The restored database cannot acquire the retained recovery journal.",
+    );
+  }
+  if (ambiguousRestoringIsFailure && row.state === "restoring") {
+    await failRecovery(
+      database,
+      recoveryId,
+      new Date().toISOString(),
+      "recovery_outcome_ambiguous",
+    );
+    await persistRecoveryJournal(
+      backups,
+      await requiredRecovery(database, recoveryId),
+      journal.backup,
+    );
+  }
+}
+
+async function hydrateRetainedRecoveryIfPresent(
+  database: D1Database,
+  backups: R2Bucket,
+  recoveryId: string,
+  ambiguousRestoringIsFailure: boolean,
+): Promise<void> {
+  try {
+    await hydrateRecoveryJournal(
+      database,
+      backups,
+      recoveryId,
+      ambiguousRestoringIsFailure,
+    );
+  } catch (error) {
+    if (
+      error instanceof AdministrationProblem &&
+      error.code === "recovery_not_found"
+    ) return;
+    throw error;
+  }
+}
+
+async function rehydrateVerifiedBackup(
+  database: D1Database,
+  backup: VerifiedBackupRow,
+): Promise<void> {
   let backupState = await database.prepare(
     "SELECT state FROM catalogue_backup_attempts WHERE idempotency_key = ?",
-  ).bind(journal.backup.idempotency_key).first<{ state: string }>();
+  ).bind(backup.idempotency_key).first<{ state: string }>();
+  if (backupState === null) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_backup_missing",
+      "The restored database does not contain the recovery Backup Attempt.",
+    );
+  }
   if (backupState?.state === "pending") {
     await database.prepare(
       "UPDATE catalogue_backup_attempts SET state = 'exporting' WHERE idempotency_key = ? AND state = 'pending'",
-    ).bind(journal.backup.idempotency_key).run();
+    ).bind(backup.idempotency_key).run();
     backupState = { state: "exporting" };
   }
   if (backupState?.state === "exporting") {
@@ -591,15 +885,15 @@ async function rehydrateTimeTravelJournal(
            restore_phase = 'prepared'
        WHERE idempotency_key = ? AND state = 'exporting'`,
     ).bind(
-      journal.backup.d1_bookmark,
-      journal.backup.manifest_key,
-      journal.backup.content_sha256,
-      journal.backup.manifest_sha256,
-      journal.backup.export_bytes,
-      journal.backup.schema_migration_level,
-      journal.backup.disposable_database_id,
-      journal.backup.restore_generation,
-      journal.backup.idempotency_key,
+      backup.d1_bookmark,
+      backup.manifest_key,
+      backup.content_sha256,
+      backup.manifest_sha256,
+      backup.export_bytes,
+      backup.schema_migration_level,
+      backup.disposable_database_id,
+      backup.restore_generation,
+      backup.idempotency_key,
     ).run();
     backupState = { state: "restoring_verification" };
   }
@@ -608,7 +902,7 @@ async function rehydrateTimeTravelJournal(
       `UPDATE catalogue_backup_attempts
        SET state = 'verifying', restore_phase = 'imported'
        WHERE idempotency_key = ? AND state = 'restoring_verification'`,
-    ).bind(journal.backup.idempotency_key).run();
+    ).bind(backup.idempotency_key).run();
     backupState = { state: "verifying" };
   }
   if (backupState?.state === "verifying") {
@@ -617,45 +911,18 @@ async function rehydrateTimeTravelJournal(
        SET state = 'verified', completed_at = ?, restore_phase = 'verified'
        WHERE idempotency_key = ? AND state = 'verifying'`,
     ).bind(
-      journal.backup.completed_at,
-      journal.backup.idempotency_key,
+      backup.completed_at,
+      backup.idempotency_key,
     ).run();
+    backupState = { state: "verified" };
   }
-  await database.prepare(
-    `INSERT INTO catalogue_recovery_operations (
-       id, state, method, request_json, idempotency_key,
-       target_revision_id, target_bookmark, target_digest,
-       source_backup_attempt_id, linked_operation_id,
-       expected_current_revision_id, current_bookmark,
-       original_database_id, expected_schema_migration_level,
-       expected_verification_json, started_at
-     ) SELECT ?, 'restoring', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-     WHERE NOT EXISTS (
-       SELECT 1 FROM catalogue_recovery_operations WHERE id = ?
-     )`,
-  ).bind(
-    journal.input.recoveryId,
-    journal.input.method,
-    journal.requestJson,
-    journal.input.idempotencyKey,
-    journal.input.targetRevisionId,
-    journal.input.targetBookmark,
-    journal.input.targetDigest,
-    journal.input.backupAttemptId,
-    journal.input.linkedOperationId ?? null,
-    journal.input.expectedCurrentRevisionId,
-    journal.currentBookmark,
-    journal.input.catalogueDatabaseId,
-    journal.manifest.schema_migration_level,
-    canonicalJson(journal.manifest.expected_evidence),
-    journal.input.observedAt,
-    journal.input.recoveryId,
-  ).run();
-  await database.prepare(
-    `UPDATE operation_state
-     SET recovery_health = 'blocked', active_recovery_id = ?
-     WHERE singleton = 1`,
-  ).bind(journal.input.recoveryId).run();
+  if (backupState.state !== "verified") {
+    throw new AdministrationProblem(
+      409,
+      "recovery_backup_invalid",
+      "The restored recovery Backup Attempt cannot be rehydrated.",
+    );
+  }
 }
 
 async function exactBackupManifest(
