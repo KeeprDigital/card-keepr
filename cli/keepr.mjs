@@ -1003,7 +1003,9 @@ async function administrationRequest(
     ) ||
     (document.contract ===
       "card-keepr-card-search-repair@1" &&
-      document.complete !== true);
+      document.complete !== true) ||
+    (document.contract === "card-keepr-catalogue-export-deletion@1" &&
+      document.state === "deleting" && observed.responseStatus === 202);
   return incomplete ? 10 : 0;
 }
 

@@ -217,7 +217,7 @@ const ingestionWorker = {
           "deletion_id",
           "idempotency_key",
         ]);
-        return Response.json(await confirmCatalogueExportDeletion(
+        const document = await confirmCatalogueExportDeletion(
           env.CATALOGUE_DB,
           env.CATALOGUE_EXPORTS,
           {
@@ -231,7 +231,10 @@ const ingestionWorker = {
             idempotency_key: requiredString(body, "idempotency_key"),
           },
           observedAt,
-        ));
+        );
+        return Response.json(document, {
+          status: catalogueExportDeletionResultStatus(document),
+        });
       }
 
       const exportDeletionRetryMatch =
@@ -239,7 +242,7 @@ const ingestionWorker = {
       if (request.method === "POST" && exportDeletionRetryMatch !== null) {
         const body = await readAdministrationBody(request);
         assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
-        return Response.json(await retryCatalogueExportDeletion(
+        const document = await retryCatalogueExportDeletion(
           env.CATALOGUE_DB,
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportDeletionRetryMatch[1]!),
@@ -248,7 +251,10 @@ const ingestionWorker = {
             idempotency_key: requiredString(body, "idempotency_key"),
           },
           observedAt,
-        ));
+        );
+        return Response.json(document, {
+          status: catalogueExportDeletionResultStatus(document),
+        });
       }
 
       const exportDeletionMatch =
@@ -1089,6 +1095,15 @@ function administrationResultStatus(
     result.status === "in_progress"
     ? 202
     : completedStatus;
+}
+
+function catalogueExportDeletionResultStatus(
+  result: Record<string, unknown>,
+): number {
+  return result.contract === "card-keepr-catalogue-export-deletion@1" &&
+      result.state === "deleting"
+    ? 202
+    : 200;
 }
 
 async function hasEvidencePlan(

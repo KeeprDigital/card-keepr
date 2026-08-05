@@ -2573,7 +2573,7 @@ test("concurrent exact deletion confirmation executes R2 once and replays one re
       CATALOGUE_EXPORTS: replayBucket,
     },
   );
-  expect(acceptedReplay.response.status).toBe(200);
+  expect(acceptedReplay.response.status).toBe(202);
   expect(acceptedReplay.document).toMatchObject({
     contract: "card-keepr-catalogue-export-deletion@1",
     id: "export-deletion-concurrent-confirm",
@@ -2585,11 +2585,13 @@ test("concurrent exact deletion confirmation executes R2 once and replays one re
   expect(replayR2Calls).toBe(0);
   release.resolve(undefined);
   const first = await firstPromise;
+  expect(first.response.status).toBe(202);
   expect(first.document).toEqual(acceptedReplay.document);
   const laterReplay = await administrationRequest(
     "/v1/catalogue-export-deletions",
     request,
   );
+  expect(laterReplay.response.status).toBe(202);
   expect(laterReplay.document).toEqual(acceptedReplay.document);
   const status = await administrationRequest(
     "/v1/catalogue-export-deletions/export-deletion-concurrent-confirm",
@@ -2747,6 +2749,7 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
   });
   expect(losingRetryR2Calls).toBe(0);
   const concurrentExactRetry = await exactRetryReplayPromise;
+  expect(concurrentExactRetry.response.status).toBe(202);
   expect(concurrentExactRetry.document).toMatchObject({
     state: "deleting",
     completed_at: null,
@@ -2755,6 +2758,7 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
   expect(exactRetryReplayR2Calls).toBe(0);
   releaseRetry.resolve(undefined);
   const retried = await retryPromise;
+  expect(retried.response.status).toBe(202);
   expect(concurrentExactRetry.document).toEqual(retried.document);
   const terminalStatus = await administrationRequest(
     "/v1/catalogue-export-deletions/export-deletion-partial",
@@ -2771,6 +2775,7 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
       idempotency_key: "export-deletion-partial-retry-key",
     },
   );
+  expect(retryReplay.response.status).toBe(202);
   expect(retryReplay.document).toEqual(retried.document);
   const confirmationReplay = await administrationRequest(
     "/v1/catalogue-export-deletions",

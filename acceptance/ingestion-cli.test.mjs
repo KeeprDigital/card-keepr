@@ -437,13 +437,25 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
       response.end(JSON.stringify(plan));
       return;
     }
-    response.end(JSON.stringify({
+    const deleting = {
       contract: "card-keepr-catalogue-export-deletion@1",
       id: "deletion-cli-export",
       plan_id: plan.id,
-      state: "deleted",
+      state: "deleting",
       catalogue_revision_id: plan.catalogue_revision_id,
       object_set_digest: plan.object_set_digest,
+      completed_at: null,
+      failure_code: null,
+    };
+    if (request.method === "POST") {
+      response.statusCode = 202;
+      response.end(JSON.stringify(deleting));
+      return;
+    }
+    response.end(JSON.stringify({
+      ...deleting,
+      state: "deleted",
+      completed_at: "2026-08-05T00:02:00.000Z",
     }));
   });
   await new Promise((resolveListen) =>
@@ -504,7 +516,17 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
     "--yes",
     "--json",
   ], environment);
-  assert.equal(confirmed.code, 0, confirmed.stderr);
+  assert.equal(confirmed.code, 10, confirmed.stderr);
+  assert.deepEqual(JSON.parse(confirmed.stdout), {
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "deletion-cli-export",
+    plan_id: plan.id,
+    state: "deleting",
+    catalogue_revision_id: plan.catalogue_revision_id,
+    object_set_digest: plan.object_set_digest,
+    completed_at: null,
+    failure_code: null,
+  });
   assert.deepEqual(requests.at(-1), {
     method: "POST",
     path: "/v1/catalogue-export-deletions",
@@ -519,6 +541,44 @@ test("CLI Catalogue Export deletion preserves the prepared bindings and typed re
       idempotency_key: "deletion-cli-export-key",
     },
   });
+
+  const retryIdempotencyKey = "deletion-cli-export-retry";
+  const retryConfirmation = JSON.stringify({
+    production_target: productionTarget,
+    deletion_id: "deletion-cli-export",
+    object_set_digest: plan.object_set_digest,
+    expected_current_revision_id: plan.expected_current_revision_id,
+    idempotency_key: retryIdempotencyKey,
+  });
+  const retried = await runCli([
+    "catalogue-export", "deletion", "retry",
+    "--deletion-id", "deletion-cli-export",
+    "--object-set-digest", plan.object_set_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--idempotency-key", retryIdempotencyKey,
+    "--environment", "production",
+    "--confirm", retryConfirmation,
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(retried.code, 10, retried.stderr);
+  assert.deepEqual(JSON.parse(retried.stdout), JSON.parse(confirmed.stdout));
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletions/deletion-cli-export/retry",
+    body: {
+      object_set_digest: plan.object_set_digest,
+      idempotency_key: retryIdempotencyKey,
+    },
+  });
+
+  const terminal = await runCli([
+    "catalogue-export", "deletion", "status",
+    "--deletion-id", "deletion-cli-export",
+    "--json",
+  ], environment);
+  assert.equal(terminal.code, 0, terminal.stderr);
+  assert.equal(JSON.parse(terminal.stdout).state, "deleted");
 });
 
 test("CLI backup create confirms the exact target before the operation", async (t) => {
