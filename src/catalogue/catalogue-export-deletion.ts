@@ -537,14 +537,43 @@ async function executeDeletion(
     ...objectKeys.filter((key) => key !== manifestKey),
     manifestKey,
   ];
+  const executionNow = advancingExecutionClock(observedAt);
+  const renewLease = async (): Promise<string | null> => {
+    const renewedAt = executionNow();
+    return await renewDeletionExecutionLease(
+      database,
+      deletionId,
+      retryIdempotencyKey,
+      executionOwnerToken,
+      renewedAt,
+    ) ? renewedAt : null;
+  };
+  const staleOwnerResponse = () => waitForDeletionResponse(
+    database,
+    deletionId,
+    retryIdempotencyKey,
+  );
   try {
     for (const key of ordered) {
-      if (await bucket.head(key) !== null) await bucket.delete(key);
+      if (await renewLease() === null) return staleOwnerResponse();
+      if (await bucket.head(key) !== null) {
+        if (await renewLease() === null) return staleOwnerResponse();
+        await bucket.delete(key);
+      }
     }
-    const remaining = await Promise.all(objectKeys.map((key) => bucket.head(key)));
+    const remaining: (R2Object | null)[] = [];
+    for (const key of objectKeys) {
+      if (await renewLease() === null) return staleOwnerResponse();
+      remaining.push(await bucket.head(key));
+    }
     const remainingPrefix = await listObjectKeys(
       bucket,
       `catalogue-exports/${plan.catalogue_revision_id}/`,
+      async () => {
+        if (await renewLease() === null) {
+          throw new DeletionExecutionLeaseLost();
+        }
+      },
     );
     if (
       remaining.some((object) => object !== null) ||
@@ -552,6 +581,8 @@ async function executeDeletion(
     ) {
       throw new Error("A bound Catalogue Export object remains present.");
     }
+    const terminalLeaseObservedAt = await renewLease();
+    if (terminalLeaseObservedAt === null) return staleOwnerResponse();
     const snapshot = deletionDocument({
       ...operation,
       state: "deleted",
@@ -565,6 +596,7 @@ async function executeDeletion(
         deletionId,
         retryIdempotencyKey,
         executionOwnerToken,
+        terminalLeaseObservedAt,
       ),
       database.prepare(
         `UPDATE catalogue_export_deletions
@@ -606,6 +638,11 @@ async function executeDeletion(
         ).bind(responseJson, retryIdempotencyKey)]),
     ]);
   } catch (error) {
+    if (error instanceof DeletionExecutionLeaseLost) {
+      return staleOwnerResponse();
+    }
+    const terminalLeaseObservedAt = await renewLease();
+    if (terminalLeaseObservedAt === null) return staleOwnerResponse();
     const snapshot = deletionDocument({
       ...operation,
       state: "failed",
@@ -619,6 +656,7 @@ async function executeDeletion(
         deletionId,
         retryIdempotencyKey,
         executionOwnerToken,
+        terminalLeaseObservedAt,
       ),
       database.prepare(
         `UPDATE catalogue_export_deletions
@@ -662,6 +700,7 @@ function deletionExecutionOwnerAssertion(
   deletionId: string,
   retryIdempotencyKey: string | null,
   executionOwnerToken: string,
+  leaseObservedAt?: string,
 ): D1PreparedStatement {
   return database.prepare(
     `SELECT CASE WHEN EXISTS (
@@ -669,8 +708,26 @@ function deletionExecutionOwnerAssertion(
        WHERE id = ? AND state = 'deleting'
          AND retry_owner_idempotency_key IS ?
          AND execution_owner_token = ?
+         ${leaseObservedAt === undefined
+          ? ""
+          : "AND execution_lease_expires_at > ?"}
      ) THEN 1 ELSE json_extract('invalid', '$') END`,
-  ).bind(deletionId, retryIdempotencyKey, executionOwnerToken);
+  ).bind(
+    deletionId,
+    retryIdempotencyKey,
+    executionOwnerToken,
+    ...(leaseObservedAt === undefined ? [] : [leaseObservedAt]),
+  );
+}
+
+class DeletionExecutionLeaseLost extends Error {}
+
+function advancingExecutionClock(observedAt: string): () => string {
+  const executionStartedAt = Date.now();
+  const observedAtMilliseconds = new Date(observedAt).valueOf();
+  return () => new Date(
+    observedAtMilliseconds + Date.now() - executionStartedAt,
+  ).toISOString();
 }
 
 function leaseExpiresAt(observedAt: string): string {
@@ -708,6 +765,51 @@ async function claimDeletionExecutionLease(
         deletionId,
         retryIdempotencyKey,
         executionOwnerToken,
+      ),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function renewDeletionExecutionLease(
+  database: D1Database,
+  deletionId: string,
+  retryIdempotencyKey: string | null,
+  executionOwnerToken: string,
+  observedAt: string,
+): Promise<boolean> {
+  const renewedLeaseExpiresAt = leaseExpiresAt(observedAt);
+  try {
+    await database.batch([
+      database.prepare(
+        `UPDATE catalogue_export_deletions
+         SET execution_lease_expires_at = ?
+         WHERE id = ? AND state = 'deleting'
+           AND retry_owner_idempotency_key IS ?
+           AND execution_owner_token = ?
+           AND execution_lease_expires_at > ?`,
+      ).bind(
+        renewedLeaseExpiresAt,
+        deletionId,
+        retryIdempotencyKey,
+        executionOwnerToken,
+        observedAt,
+      ),
+      database.prepare(
+        `SELECT CASE WHEN EXISTS (
+           SELECT 1 FROM catalogue_export_deletions
+           WHERE id = ? AND state = 'deleting'
+             AND retry_owner_idempotency_key IS ?
+             AND execution_owner_token = ?
+             AND execution_lease_expires_at = ?
+         ) THEN 1 ELSE json_extract('invalid', '$') END`,
+      ).bind(
+        deletionId,
+        retryIdempotencyKey,
+        executionOwnerToken,
+        renewedLeaseExpiresAt,
       ),
     ]);
     return true;
@@ -805,10 +907,15 @@ async function currentRevision(database: D1Database): Promise<string> {
   return revisionId;
 }
 
-async function listObjectKeys(bucket: R2Bucket, prefix: string): Promise<string[]> {
+async function listObjectKeys(
+  bucket: R2Bucket,
+  prefix: string,
+  beforeList?: () => Promise<void>,
+): Promise<string[]> {
   const keys: string[] = [];
   let cursor: string | undefined;
   do {
+    await beforeList?.();
     const page = await bucket.list({ prefix, ...(cursor === undefined ? {} : { cursor }) });
     keys.push(...page.objects.map(({ key }) => key));
     cursor = page.truncated ? page.cursor : undefined;

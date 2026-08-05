@@ -2827,6 +2827,103 @@ test("an exact confirmation replay resumes an interrupted deleting operation", a
   })).resolves.toMatchObject({ objects: [] });
 });
 
+test("a stale Catalogue Export deletion retry stops R2 after lease takeover", async () => {
+  const oldRevision = "catrev_delete_lease_takeover";
+  const currentRevision = "catrev_delete_lease_takeover_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_lease_takeover",
+    "2026-08-05T05:30:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_lease_takeover_current",
+    "2026-08-05T05:31:00.000Z",
+  );
+  testObservedAt = "2026-08-05T06:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-lease-takeover",
+    },
+  );
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      if (key === manifestKey) throw new Error("injected deletion failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-lease-takeover",
+      idempotency_key: "export-deletion-lease-takeover-confirm",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.document).toMatchObject({ state: "failed" });
+
+  const pausedDatabase = pauseBeforeThirdDeletionBatchDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  let staleHeadCalls = 0;
+  let staleDeleteCalls = 0;
+  const staleBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      staleHeadCalls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      staleDeleteCalls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const retryRequest = {
+    object_set_digest: prepared.document.object_set_digest,
+    idempotency_key: "export-deletion-lease-takeover-retry",
+  };
+  const stalePromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-lease-takeover/retry",
+    retryRequest,
+    {
+      ...testEnv,
+      CATALOGUE_DB: pausedDatabase.database,
+      CATALOGUE_EXPORTS: staleBucket,
+    },
+  );
+  await pausedDatabase.entered;
+  expect(staleHeadCalls).toBe(1);
+  expect(staleDeleteCalls).toBe(0);
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_export_deletions
+     SET execution_lease_expires_at = ? WHERE id = ?`,
+  ).bind(
+    "2026-08-05T05:59:59.000Z",
+    "export-deletion-lease-takeover",
+  ).run();
+
+  const winner = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-lease-takeover/retry",
+    retryRequest,
+  );
+  expect(winner.document).toMatchObject({ state: "deleted" });
+  pausedDatabase.release();
+  const stale = await stalePromise;
+  expect(stale.document).toEqual(winner.document);
+  expect(staleHeadCalls).toBe(1);
+  expect(staleDeleteCalls).toBe(0);
+});
+
 test("a crashed failed retry remains stable after another key succeeds", async () => {
   const oldRevision = "catrev_delete_retry_crash";
   const currentRevision = "catrev_delete_retry_crash_current";
@@ -3289,7 +3386,7 @@ function crashAfterRetryTerminalDatabase(
         return async (statements: D1PreparedStatement[]) => {
           batchCount += 1;
           const result = await target.batch(statements);
-          if (batchCount === 2) {
+          if (batchCount === 6) {
             terminated = true;
             throw new Error("injected termination after retry terminal commit");
           }
@@ -3300,4 +3397,38 @@ function crashAfterRetryTerminalDatabase(
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+function pauseBeforeThirdDeletionBatchDatabase(
+  database: D1Database,
+): {
+  database: D1Database;
+  entered: Promise<void>;
+  release: () => void;
+} {
+  let batchCount = 0;
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  return {
+    database: new Proxy(database, {
+      get(target, property) {
+        if (property === "batch") {
+          return async (statements: D1PreparedStatement[]) => {
+            batchCount += 1;
+            if (batchCount === 3) {
+              entered.resolve(undefined);
+              await release.promise;
+            }
+            return target.batch(statements);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+    entered: entered.promise,
+    release() {
+      release.resolve(undefined);
+    },
+  };
 }
