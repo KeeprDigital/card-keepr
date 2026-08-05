@@ -408,15 +408,19 @@ test("Legality Status rejects a malformed Card identity before lookup", async ()
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
+      invalid_params: [{
+        name: "card_id",
+        reason: "card_id must be an opaque identity of at most 200 characters.",
+      }],
     });
   }
 });
 
 test("Legality Status rejects unknown, repeated, and duplicated evidence includes", async () => {
-  for (const query of [
-    "include=unknown",
-    "include=evidence,evidence",
-    "include=evidence&include=evidence",
+  for (const [query, reason] of [
+    ["include=unknown", "include must be exactly evidence when supplied."],
+    ["include=evidence,evidence", "include must be exactly evidence when supplied."],
+    ["include=evidence&include=evidence", "include must be supplied exactly once."],
   ]) {
     const response = await exports.default.fetch(
       new Request(
@@ -432,8 +436,57 @@ test("Legality Status rejects unknown, repeated, and duplicated evidence include
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
+      invalid_params: [{ name: "include", reason }],
     });
   }
+});
+
+test("Legality Status reports the exact invalid query parameter", async () => {
+  const cases = [
+    ["on=2026-07-30&format=standard", "card_id", "card_id is required."],
+    ["card_id=card_any&format=standard", "on", "on is required."],
+    ["card_id=card_any&on=2026-07-30", "format", "format is required."],
+    ["card_id=card_any&on=2026-02-30&format=standard", "on", "on must be a valid ISO date."],
+    ["card_id=card_any&on=2026-07-30&format=", "format", "format must be a non-empty string."],
+    ["card_id=card_any&on=2026-07-30&format=standard&event_tier=", "event_tier", "event_tier must be a non-empty string."],
+    ["card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA", "region", "region must be EN-OCEANIA, EN-ASIA, or EN-US."],
+    ["card_id=card_any&on=2026-07-30&format=standard&unexpected=true", "unexpected", "unexpected is not accepted."],
+    ["card_id=card_any&card_id=card_other&on=2026-07-30&format=standard", "card_id", "card_id must be supplied exactly once."],
+  ] as const;
+  let address = 110;
+  for (const [query, name, reason] of cases) {
+    const response = await exports.default.fetch(new Request(
+      `https://card-keepr.invalid/v1/legality-status?${query}`,
+      { headers: apiHeaders(`203.0.113.${address++}`) },
+    ));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+      invalid_params: [{ name, reason }],
+    });
+  }
+});
+
+test("Legality Status reports an unnamed query key as a schema-valid Problem", async () => {
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/legality-status?=true",
+    { headers: apiHeaders("203.0.113.119") },
+  ));
+  expect(response.status).toBe(400);
+  const problem = await response.json();
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
+    .toBe(true);
+  expect(problem).toMatchObject({
+    code: "invalid_parameter",
+    invalid_params: [{
+      name: "query",
+      reason: "query parameter names must be non-empty.",
+    }],
+  });
 });
 
 test("authenticated Legality Status reads only indexed Card and regional applicability at high cardinality", async () => {

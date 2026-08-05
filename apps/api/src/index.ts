@@ -160,6 +160,9 @@ const apiWorker = {
                         ? "Catalogue integrity failure"
                         : "Invalid request",
                 detail: error.message,
+                extensions: error.invalidParameter === null
+                  ? undefined
+                  : { invalid_params: [error.invalidParameter] },
               }),
             );
           }

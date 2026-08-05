@@ -929,7 +929,7 @@
         "on": { "type": "string", "format": "date" },
         "format": { "type": "string", "minLength": 1 },
         "event_tier": {
-          "oneOf": [{ "type": "string" }, { "type": "null" }]
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
         },
         "region": { "$ref": "#/$defs/Region" },
         "status": { "enum": ["legal", "restricted", "not_legal", "indeterminate"] },
