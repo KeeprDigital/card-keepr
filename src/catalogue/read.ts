@@ -3,6 +3,7 @@ import {
   parsePublicationInstant,
 } from "../http/catalogue";
 import { ifNoneMatch } from "../http/conditional";
+import { problemResponse } from "../http/problem";
 import { canonicalJson, sha256Text } from "./serialization";
 import {
   canonicalDetailSelf,
@@ -235,6 +236,7 @@ export async function printingImageContentResponse(
   database: D1Database,
   bucket: R2Bucket,
   imageId: string,
+  requestId: string,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -277,12 +279,19 @@ export async function printingImageContentResponse(
         row.content_byte_length,
       );
   if (range === "unsatisfiable") {
-    baseHeaders.set(
-      "content-range",
-      `bytes */${row.content_byte_length}`,
-    );
-    baseHeaders.set("cache-control", "no-store");
-    return new Response(null, { status: 416, headers: baseHeaders });
+    return problemResponse({
+      requestId,
+      status: 416,
+      code: "range_not_satisfiable",
+      title: "Range not satisfiable",
+      detail: "The requested Printing Image byte range is not satisfiable.",
+      headers: {
+        "accept-ranges": "bytes",
+        "content-range": `bytes */${row.content_byte_length}`,
+        etag,
+        "x-catalogue-revision": row.current_revision_id,
+      },
+    });
   }
   const object =
     isHead
