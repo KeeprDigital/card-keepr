@@ -6,6 +6,8 @@ export type CatalogueBackupWorkflowParams = Readonly<{
   expected_current_revision_id: string;
   idempotency_key: string;
   observed_at: string;
+  failed_attempt_id?: string;
+  failed_attempt_digest?: string;
 }>;
 
 type BackupWorkflowRequest = CatalogueBackupWorkflowParams & Readonly<{

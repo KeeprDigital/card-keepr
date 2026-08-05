@@ -291,6 +291,13 @@ export default defineConfig({
               request.headers.get("authorization") ===
                 "Bearer vitest-d1-verification-token-active"
             ) {
+              let expected: Record<string, unknown> = {};
+              try {
+                expected = JSON.parse(body.params?.[1] ?? "{}") as
+                  Record<string, unknown>;
+              } catch {
+                // Non-verification reconstruction statements have no evidence.
+              }
               return Response.json({
                 success: true,
                 result: [{
@@ -299,6 +306,7 @@ export default defineConfig({
                       "SELECT catalogue.current_revision_id",
                     )
                     ? [{
+                      ...expected,
                       current_revision_id:
                         body.params?.[0] ?? "catrev_spine_000",
                       schema_migration_level: 15,
@@ -306,16 +314,26 @@ export default defineConfig({
                       card_search_fts_tables: 1,
                       missing_fts_rows: 0,
                       invalid_api_documents: 0,
-                      current_api_documents: 0,
-                      current_cards: 0,
-                      current_printings: 0,
-                      current_products: 0,
-                      current_legality_rules: 0,
                       invalid_curated_provenance: 0,
                       invalid_audit_rows: 0,
                     }]
                     : body.sql === "PRAGMA quick_check"
                     ? [{ quick_check: "ok" }]
+                    : body.sql?.includes(
+                        "SELECT card_id, sort_game, sort_identity_kind",
+                      )
+                    ? [{
+                      card_id: body.params?.[1],
+                      sort_game: "one-piece",
+                      sort_identity_kind: "card_number",
+                      sort_identity_value: "VITEST-001",
+                      summary_json:
+                        '{"game":"one-piece","official_identity":{"kind":"card_number","value":"VITEST-001"}}',
+                    }]
+                    : body.sql?.includes(
+                        "SELECT card_id FROM revision_card_search_terms",
+                      )
+                    ? [{ card_id: body.params?.[2] }]
                     : [],
                 }],
               });

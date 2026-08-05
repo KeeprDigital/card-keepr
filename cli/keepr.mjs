@@ -75,6 +75,12 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "backup", "create")) {
     return createBackup(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "backup", "status")) {
+    return backupStatus(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "backup", "retry")) {
+    return retryBackup(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -527,6 +533,42 @@ async function createBackup(arguments_, environment, json) {
       idempotency_key: idempotencyKey,
     },
   );
+}
+
+async function backupStatus(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--attempt-id"]);
+  const attemptId = options.values["--attempt-id"];
+  if (options.error !== null || attemptId === undefined) return usageFailure(json);
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/backups/${encodeURIComponent(attemptId)}`,
+    "GET",
+  );
+}
+
+async function retryBackup(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--expected-current-revision",
+    "--idempotency-key",
+    "--failed-attempt-id",
+    "--failed-attempt-digest",
+  ]);
+  const expected = options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const failedAttemptId = options.values["--failed-attempt-id"];
+  const failedAttemptDigest = options.values["--failed-attempt-digest"];
+  if (
+    options.error !== null || expected === undefined ||
+    idempotencyKey === undefined || failedAttemptId === undefined ||
+    failedAttemptDigest === undefined
+  ) return usageFailure(json);
+  return administrationRequest(environment, json, "/v1/backups", "POST", {
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
 }
 
 async function collectSource(arguments_, environment, json) {
@@ -1023,7 +1065,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | backup create | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | backup create | backup status | backup retry | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

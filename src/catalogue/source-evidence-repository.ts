@@ -326,7 +326,7 @@ export async function retryEvidenceRun(
           `UPDATE operation_state
            SET active_ingestion_run_id = ?
            WHERE singleton = 1
-             AND recovery_health = 'healthy'
+             AND recovery_health <> 'blocked'
              AND active_ingestion_run_id IS NULL`,
         )
         .bind(runId),
@@ -1212,7 +1212,7 @@ async function ingestionRunInsert(
         FROM catalogue_state AS catalogue
         JOIN operation_state AS operation ON operation.singleton = 1
         WHERE catalogue.singleton = 1
-          AND operation.recovery_health = 'healthy'
+          AND operation.recovery_health <> 'blocked'
           AND operation.active_ingestion_run_id IS NULL`,
       )
       .bind(...baseValues);
@@ -1231,7 +1231,7 @@ async function ingestionRunInsert(
       FROM catalogue_state AS catalogue
       JOIN operation_state AS operation ON operation.singleton = 1
       WHERE catalogue.singleton = 1
-        AND operation.recovery_health = 'healthy'
+        AND operation.recovery_health <> 'blocked'
         AND operation.active_ingestion_run_id IS NULL`,
     )
     .bind(...baseValues);

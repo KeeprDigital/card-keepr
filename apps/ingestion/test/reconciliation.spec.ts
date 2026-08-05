@@ -4932,7 +4932,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "blocked-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -4976,6 +4976,46 @@ test("recovery health gates fixture evidence injection and reconciliation before
     idempotency_key: "reject-after-recovery-restored",
   });
 }, 60_000);
+
+test("degraded recovery permits evidence collection starts and retries while blocked recovery does not", async () => {
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",
+  ).run();
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@3",
+    idempotency_key: "degraded-recovery-start",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
+  expect(started.response.status).toBe(201);
+  expect(started.document).toMatchObject({ state: "collecting" });
+
+  const sourceRunId = requiredString(started.document, "id");
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = started_at,
+           failure_code = 'synthetic_retry_source',
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = ?`,
+    ).bind(sourceRunId),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL, recovery_health = 'degraded'
+       WHERE singleton = 1`,
+    ),
+  ]);
+  const retried = await post(
+    `/v1/ingestion-runs/${sourceRunId}/collection/retry`,
+    { idempotency_key: "degraded-recovery-retry" },
+  );
+  expect(retried.response.status).toBe(201);
+  expect(retried.document).toMatchObject({
+    state: "collecting",
+    linked_run_id: sourceRunId,
+  });
+});
 
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";

@@ -37,7 +37,10 @@ import {
 import {
   startOrObserveCatalogueBackupWorkflow,
 } from "../../../src/catalogue/backup-workflow";
-import { publicationBackupReservation } from "../../../src/catalogue/backup-recovery";
+import {
+  catalogueBackupAttemptStatus,
+  publicationBackupReservation,
+} from "../../../src/catalogue/backup-recovery";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -353,11 +356,21 @@ const ingestionWorker = {
         );
       }
 
+      const backupStatusMatch = /^\/v1\/backups\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && backupStatusMatch !== null) {
+        return Response.json(await catalogueBackupAttemptStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(backupStatusMatch[1]!),
+        ));
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/backups") {
         const body = await readAdministrationBody(request);
         assertOnlyFields(body, [
           "expected_current_revision_id",
           "idempotency_key",
+          "failed_attempt_id",
+          "failed_attempt_digest",
         ]);
         const result = await startOrObserveCatalogueBackupWorkflow(
           env.CATALOGUE_DB,
@@ -368,6 +381,19 @@ const ingestionWorker = {
               "expected_current_revision_id",
             ),
             idempotency_key: requiredString(body, "idempotency_key"),
+            ...(body.failed_attempt_id === undefined
+              ? {}
+              : {
+                failed_attempt_id: requiredString(body, "failed_attempt_id"),
+              }),
+            ...(body.failed_attempt_digest === undefined
+              ? {}
+              : {
+                failed_attempt_digest: requiredString(
+                  body,
+                  "failed_attempt_digest",
+                ),
+              }),
           },
           observedAt,
         );
