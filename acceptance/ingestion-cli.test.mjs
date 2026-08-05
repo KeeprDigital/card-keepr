@@ -804,6 +804,53 @@ test("CLI reconciliation exits zero for a terminal Workflow returned by the init
 
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
+  const rejectedRun = {
+    ...run,
+    id: "run_rejected_cli",
+    state: "rejected",
+    failure_code: null,
+    progress: {
+      completed_stages: ["planning", "collecting", "parsing", "reconciling"],
+      current_stage: "rejected",
+    },
+    operational_diagnostics: {
+      ...run.operational_diagnostics,
+      references: {
+        ...run.operational_diagnostics.references,
+        run_id: "run_rejected_cli",
+        request_id: "request_rejected_cli",
+      },
+      terminal_evidence: {
+        ...run.operational_diagnostics.terminal_evidence,
+        state: "rejected",
+        failure: {
+          code: "ingestion_run_rejected",
+          retryability_code: "retryable_rejection",
+          retryable: true,
+        },
+      },
+      retry: {
+        code: "ingestion_run_retry_available",
+        source_run_id: "run_rejected_cli",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_rejected_cli/retry",
+      },
+      retry_available: true,
+      diagnosis_sequence: [
+        { code: "check_status", method: "GET", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          method: "GET",
+          path: "/v1/ingestion-runs/run_rejected_cli",
+        },
+        {
+          code: "retry_ingestion_run",
+          method: "POST",
+          path: "/v1/ingestion-runs/run_rejected_cli/retry",
+        },
+      ],
+    },
+  };
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -855,6 +902,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
           revisions_available: 2,
         }),
       );
+      return;
+    }
+    if (request.url === "/v1/ingestion-runs/run_rejected_cli") {
+      response.end(JSON.stringify(rejectedRun));
       return;
     }
     if (
@@ -933,6 +984,21 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   );
   assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
   assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);
+
+  const shownRejected = await runCli(
+    ["run", "show", "--run-id", "run_rejected_cli"],
+    environment,
+  );
+  assert.equal(shownRejected.code, 0, shownRejected.stderr);
+  assert.match(shownRejected.stdout, /Retry classification: retryable_rejection/);
+  assert.match(
+    shownRejected.stdout,
+    /Retry: ingestion_run_retry_available \(run_rejected_cli\)/,
+  );
+  assert.match(
+    shownRejected.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_rejected_cli\/retry/,
+  );
 
   const requestCountBeforeRemovedMutation = requests.length;
   const removedReconcile = await runCli(

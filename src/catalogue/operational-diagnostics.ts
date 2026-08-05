@@ -127,17 +127,16 @@ function terminalFailure(
         ? "ingestion_run_failed"
         : null);
   if (code === null) return null;
-  const retryable = evidenceBacked || state !== "rejected";
   return {
     code,
     retryability_code: evidenceBacked
       ? "retryable_evidence_collection"
-      : retryable
-      ? state === "expired"
-        ? "retryable_expiration"
-        : "retryable_failure"
-      : "non_retryable_rejection",
-    retryable,
+      : state === "rejected"
+        ? "retryable_rejection"
+        : state === "expired"
+          ? "retryable_expiration"
+          : "retryable_failure",
+    retryable: true,
   };
 }
 

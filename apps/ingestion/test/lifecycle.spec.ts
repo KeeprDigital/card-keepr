@@ -957,8 +957,8 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
         state: "rejected",
         failure: {
           code: "ingestion_run_rejected",
-          retryability_code: "non_retryable_rejection",
-          retryable: false,
+          retryability_code: "retryable_rejection",
+          retryable: true,
         },
         warning_count: 0,
         approval_decision_count: 1,
@@ -966,7 +966,10 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
       retry: {
         code: "ingestion_run_retry_available",
         source_run_id: runId,
+        method: "POST",
+        path: `/v1/ingestion-runs/${runId}/retry`,
       },
+      retry_available: true,
       diagnosis_sequence: [
         { code: "check_status", path: "/v1/status" },
         {

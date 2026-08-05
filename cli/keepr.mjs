@@ -1376,6 +1376,17 @@ function appendOperationalDiagnostics(lines, value) {
         : "not available"
     }`,
   );
+  const terminalFailure = value.terminal_evidence?.failure;
+  if (
+    terminalFailure !== null && typeof terminalFailure === "object" &&
+    !Array.isArray(terminalFailure)
+  ) {
+    lines.push(
+      `Retry classification: ${
+        safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"
+      }`,
+    );
+  }
   const diagnosis = Array.isArray(value.diagnosis_sequence)
     ? value.diagnosis_sequence.flatMap((entry) => {
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
