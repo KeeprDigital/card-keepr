@@ -8,13 +8,16 @@ on:
         required: true
         type: string
       expected_token_id:
-        required: true
+        required: false
+        default: not-applicable
         type: string
       plan_digest:
-        required: true
+        required: false
+        default: "0000000000000000000000000000000000000000000000000000000000000000"
         type: string
       plan_nonce:
-        required: true
+        required: false
+        default: "0000000000000000000000000000000000000000000000000000000000000000"
         type: string
       expected_head_sha:
         required: true
@@ -23,20 +26,80 @@ on:
         required: true
         type: string
       expected_status:
-        required: true
+        required: false
+        default: unusable
         type: choice
         options:
           - usable
           - unusable
       expected_fingerprint:
-        required: true
+        required: false
+        default: sha256:0000000000000000000000000000000000000000000000000000000000000000
         type: string
       secret_slot:
-        required: true
+        required: false
+        default: active
         type: choice
         options:
           - active
           - replacement
+      operation:
+        required: false
+        default: credential_probe
+        type: choice
+        options: [credential_probe, production_release]
+      release_id:
+        required: false
+        type: string
+      expected_current_revision:
+        required: false
+        type: string
+      expected_migration_level:
+        required: false
+        type: string
+      production_target_json:
+        required: false
+        type: string
+      production_target_digest:
+        required: false
+        type: string
+      recovery_bookmark:
+        required: false
+        type: string
+      recovery_backup_attempt_id:
+        required: false
+        type: string
+      smoke_targets_json:
+        required: false
+        type: string
+      retained_revision_evidence_json:
+        required: false
+        type: string
+      replacement_recovery_id:
+        required: false
+        default: none
+        type: string
+      replacement_database_id:
+        required: false
+        default: none
+        type: string
+      retained_database_id:
+        required: false
+        default: none
+        type: string
+      replacement_target_digest:
+        required: false
+        default: none
+        type: string
+      idempotency_key:
+        required: false
+        type: string
+      dispatch_digest:
+        required: false
+        type: string
+      prepared_plan_json:
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -47,6 +110,7 @@ concurrency:
 
 jobs:
   deploy-production:
+    if: inputs.operation == 'credential_probe'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -71,7 +135,7 @@ jobs:
           set -euo pipefail
           printf 'CLOUDFLARE_API_TOKEN=%s\n' \
             "${SELECTED_DEPLOYMENT_TOKEN}" >> "${GITHUB_ENV}"
-      - name: Verify guarded credential and deploy production
+      - name: Observe the guarded credential without mutation
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
           EXPECTED_ACCOUNT_ID: ${{ inputs.expected_account_id }}
@@ -87,72 +151,138 @@ jobs:
           set -euo pipefail
           test "${GITHUB_SHA}" = "${EXPECTED_HEAD_SHA}"
           test "${GITHUB_ACTOR}" = "${EXPECTED_ACTOR}"
-          if test "${EXPECTED_STATUS}" = "usable"; then
-            actual_fingerprint="$(printf '%s' "${CLOUDFLARE_API_TOKEN}" |
-              sha256sum | awk '{print $1}')"
-            test "sha256:${actual_fingerprint}" = "${EXPECTED_FINGERPRINT}"
-            verify="$(curl --fail-with-body --silent --show-error \
-              --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              "https://api.cloudflare.com/client/v4/accounts/${EXPECTED_ACCOUNT_ID}/tokens/verify")"
-            test "$(jq -r '.success' <<<"${verify}")" = "true"
-            test "$(jq -r '.result.id' <<<"${verify}")" = "${EXPECTED_TOKEN_ID}"
-            test "$(jq -r '.result.status' <<<"${verify}")" = "active"
-            npm ci
-            release_fence="release_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_$(cat /proc/sys/kernel/random/uuid)"
-            bootstrap_expires_at="$(date -u -d '+35 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
-            bootstrap_lease="release-bootstrap|${bootstrap_expires_at}|${release_fence}"
-            cleanup_release_lock() {
-              release_cleanup_sql="UPDATE operation_state SET active_release_id = NULL, active_release_expires_at = NULL WHERE singleton = 1 AND active_release_id = '${release_fence}';"
-              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${release_cleanup_sql}" || true
-              bootstrap_failure_sql="UPDATE ingestion_runs SET state = 'failed', terminal_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), failure_code = 'production_release_bootstrap_abandoned', progress_json = '{\"completed_stages\":[],\"current_stage\":\"failed\"}' WHERE id = '${bootstrap_lease}' AND state = 'planning' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}');"
-              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${bootstrap_failure_sql}" || true
-              bootstrap_cleanup_sql="UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}'; DELETE FROM ingestion_run_transitions WHERE ingestion_run_id = '${bootstrap_lease}' AND EXISTS (SELECT 1 FROM ingestion_runs WHERE id = '${bootstrap_lease}' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id)); DELETE FROM ingestion_runs WHERE id = '${bootstrap_lease}' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id);"
-              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${bootstrap_cleanup_sql}" || true
-            }
-            trap cleanup_release_lock EXIT
-            bootstrap_claim_sql="UPDATE ingestion_runs SET state = 'failed', terminal_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), failure_code = 'production_release_bootstrap_expired', progress_json = '{\"completed_stages\":[],\"current_stage\":\"failed\"}' WHERE id = (SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1) AND id LIKE 'release-bootstrap|%' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state = 'planning' AND substr(id, 19, 24) <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id LIKE 'release-bootstrap|%' AND substr(active_ingestion_run_id, 19, 24) <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); INSERT INTO ingestion_runs (id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json) SELECT '${bootstrap_lease}', 'planning', '[]', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), current_revision_id, '${bootstrap_lease}', '{\"production_release_bootstrap\":true}' FROM catalogue_state WHERE singleton = 1; UPDATE operation_state SET active_ingestion_run_id = '${bootstrap_lease}' WHERE singleton = 1 AND recovery_health = 'healthy' AND active_ingestion_run_id IS NULL; SELECT CASE WHEN active_ingestion_run_id = '${bootstrap_lease}' THEN 1 ELSE 0 END AS claimed FROM operation_state WHERE singleton = 1;"
-            bootstrap_claim="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${bootstrap_claim_sql}")"
-            test "$(jq -r '.[-1].results[0].claimed' <<<"${bootstrap_claim}")" = "1"
-            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
-            release_expires_at="$(date -u -d '+15 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
-            transfer_sql="UPDATE operation_state SET active_release_id = '${release_fence}', active_release_expires_at = '${release_expires_at}', active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}' AND (active_release_id IS NULL OR active_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')); DELETE FROM ingestion_run_transitions WHERE EXISTS (SELECT 1 FROM ingestion_runs AS run WHERE run.id = ingestion_run_transitions.ingestion_run_id AND run.id LIKE 'release-bootstrap|%' AND run.idempotency_key = run.id AND run.selected_games_json = '[]' AND run.candidate_json = '{\"production_release_bootstrap\":true}' AND run.state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.id)); DELETE FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id); SELECT CASE WHEN active_release_id = '${release_fence}' AND active_ingestion_run_id IS NULL THEN 1 ELSE 0 END AS claimed FROM operation_state WHERE singleton = 1;"
-            transfer="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${transfer_sql}")"
-            test "$(jq -r '.[-1].results[0].claimed' <<<"${transfer}")" = "1"
-            renew_release_lease() {
-              release_expires_at="$(date -u -d '+15 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
-              renew_sql="UPDATE operation_state SET active_release_expires_at = '${release_expires_at}' WHERE singleton = 1 AND active_release_id = '${release_fence}' AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); SELECT changes() AS claimed;"
-              renewed="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${renew_sql}")"
-              test "$(jq -r '.[-1].results[0].claimed' <<<"${renewed}")" = "1"
-            }
-            run_with_release_lease() {
-              setsid "$@" &
-              command_pid=$!
-              command_status=0
-              while kill -0 "${command_pid}" 2>/dev/null; do
-                sleep 30
-                if kill -0 "${command_pid}" 2>/dev/null && ! renew_release_lease; then
-                  kill -- "-${command_pid}" 2>/dev/null || true
-                  wait "${command_pid}" || true
-                  return 1
-                fi
-              done
-              wait "${command_pid}" || command_status=$?
-              return "${command_status}"
-            }
-            renew_release_lease
-            run_with_release_lease npx wrangler deploy --config apps/api/wrangler.jsonc
-            run_with_release_lease npx wrangler deploy --config apps/ingestion/wrangler.jsonc
-            for worker in card-keepr-api card-keepr-ingestion; do
-              renew_release_lease
-              deployments="$(curl --fail-with-body --silent --show-error --max-time 60 \
-                --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                "https://api.cloudflare.com/client/v4/accounts/${EXPECTED_ACCOUNT_ID}/workers/scripts/${worker}/deployments")"
-              test "$(jq -r '.success' <<<"${deployments}")" = "true"
-              test "$(jq -r '.result.deployments | type' <<<"${deployments}")" = "array"
-              test "$(jq -r '.result.deployments | length > 0' <<<"${deployments}")" = "true"
-            done
-          else
-            test -z "${CLOUDFLARE_API_TOKEN}"
-          fi
+          node scripts/production-release-provider.mjs credential-proof >/dev/null
           printf 'KEEPR_CREDENTIAL_PROOF plan_digest=%s plan_nonce=%s head_sha=%s token_id=%s actor=%s slot=%s\n' \
             "${PLAN_DIGEST}" "${PLAN_NONCE}" "${GITHUB_SHA}" "${EXPECTED_TOKEN_ID}" "${GITHUB_ACTOR}" "${SECRET_SLOT}"
+
+  guarded-release:
+    if: inputs.operation == 'production_release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+      RELEASE_ID: ${{ inputs.release_id }}
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      EXPECTED_ACTOR: ${{ inputs.expected_actor }}
+      EXPECTED_CURRENT_REVISION: ${{ inputs.expected_current_revision }}
+      EXPECTED_MIGRATION_LEVEL: ${{ inputs.expected_migration_level }}
+      PRODUCTION_TARGET_JSON: ${{ inputs.production_target_json }}
+      PRODUCTION_TARGET_DIGEST: ${{ inputs.production_target_digest }}
+      RECOVERY_BOOKMARK: ${{ inputs.recovery_bookmark }}
+      RECOVERY_BACKUP_ATTEMPT_ID: ${{ inputs.recovery_backup_attempt_id }}
+      SMOKE_TARGETS_JSON: ${{ inputs.smoke_targets_json }}
+      RETAINED_REVISION_EVIDENCE_JSON: ${{ inputs.retained_revision_evidence_json }}
+      REPLACEMENT_RECOVERY_ID: ${{ inputs.replacement_recovery_id }}
+      REPLACEMENT_DATABASE_ID: ${{ inputs.replacement_database_id }}
+      RETAINED_DATABASE_ID: ${{ inputs.retained_database_id }}
+      REPLACEMENT_TARGET_DIGEST: ${{ inputs.replacement_target_digest }}
+      IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
+      DISPATCH_DIGEST: ${{ inputs.dispatch_digest }}
+      PREPARED_PLAN_JSON: ${{ inputs.prepared_plan_json }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      API_TRAFFIC_TOKEN: ${{ secrets.API_TRAFFIC_TOKEN }}
+    steps:
+      - name: Check out the exact guarded release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate the exact prepared dispatch before mutation
+        run: node scripts/production-release.mjs validate-dispatch /tmp/production-release
+      - name: Verify Cloudflare credential and immutable target
+        run: node scripts/production-release-provider.mjs verify-target >/dev/null
+      - name: Recheck live Production Release gates without mutation
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/live-preflight.sql)"
+          test "$(jq -r '.[-1].results[0].ready' <<<"${result}")" = 1
+      - name: Claim the prepared pre-migration fence
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/claim.sql)"
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].claimed' <<<"${result}")" = 1
+      - name: Apply compatible forward migrations
+        run: |
+          set -euo pipefail
+          release_migration_exit() {
+            original_status=$?
+            trap - EXIT
+            if test "${original_status}" -ne 0; then
+              set +e
+              bash scripts/production-release-failure.sh /tmp/production-release
+              handler_status=$?
+              printf 'Production Release failure handler status: %s\n' "${handler_status}"
+              exit "${original_status}"
+            fi
+          }
+          trap release_migration_exit EXIT
+          marker="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${marker}")" = 1
+          test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
+          npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+          trap - EXIT
+      - name: Transfer bootstrap evidence to the durable Production Release
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
+          test "$(jq -r '.[-1].results[0].transition_rows' <<<"${result}")" = 3
+          test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
+      - name: Bind an exact verified replacement D1 when requested
+        run: |
+          set -euo pipefail
+          api_config=apps/api/wrangler.release.json
+          ingestion_config=apps/ingestion/wrangler.release.json
+          if test "${REPLACEMENT_DATABASE_ID}" = none; then
+            cp apps/api/wrangler.jsonc "${api_config}"
+            cp apps/ingestion/wrangler.jsonc "${ingestion_config}"
+          else
+            node scripts/production-release.mjs replacement-configs "${REPLACEMENT_DATABASE_ID}" "${api_config}" "${ingestion_config}"
+            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
+          fi
+          printf 'API_RELEASE_CONFIG=%s\nINGESTION_RELEASE_CONFIG=%s\n' "${api_config}" "${ingestion_config}" >> "${GITHUB_ENV}"
+      - name: Upload immutable Worker versions
+        run: |
+          set -euo pipefail
+          npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          npx wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/deploying.sql)"
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
+      - name: Activate the compatible version pair
+        run: |
+          set -euo pipefail
+          npx wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
+          npx wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
+      - name: Observe the binding while recovery remains blocked
+        run: |
+          set -euo pipefail
+          binding="$(node scripts/production-release-provider.mjs observe-bindings)"
+          KEEPR_RELEASE_EVIDENCE="${binding}" node scripts/production-release.mjs evidence-sql binding "${RELEASE_ID}" /tmp/production-release/binding.sql
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/binding.sql)"
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
+      - name: Run black-box production smoke checks
+        run: |
+          set -euo pipefail
+          smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,legalityCardId:$targets.legality_card_id,legalityDate:(now|strftime("%Y-%m-%d")),legalityFormat:$targets.legality_format,legalityRegion:$targets.legality_region,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
+          smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
+          KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/smoke.sql)"
+          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
+      - name: Record compatible roll-forward requirement on failure
+        if: failure()
+        run: |
+          set +e
+          bash scripts/production-release-failure.sh /tmp/production-release
+          handler_status=$?
+          exit "${handler_status}"

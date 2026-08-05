@@ -125,6 +125,12 @@ _Avoid_: Marketplace listing, owned sealed product
 A region-scoped availability event for a Product, expressed with the precision Bandai publishes.
 _Avoid_: Product, Distribution Context
 
+**Production Release**:
+One serialized, owner-dispatched deployment of compatible Card Keepr schema and
+Worker versions through the guarded production workflow. It is operational and
+must not be shortened to Release, which is a Product availability event.
+_Avoid_: Release, ordinary CI, unguarded deployment
+
 **Distribution Context**:
 An official context through which a Printing is made available, such as a Product, tournament pack, winner prize, or promotion.
 _Avoid_: Product, Source Bucket
