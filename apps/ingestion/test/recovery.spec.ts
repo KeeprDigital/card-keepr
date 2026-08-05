@@ -339,6 +339,62 @@ test("concurrent acceptance keys produce one retained acceptance", async () => {
   });
 });
 
+test("exact accepted replay remains immutable after a later publication", async () => {
+  const provider = recoveryProvider();
+  await beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-accepted-replay", "begin-accepted-replay"),
+    provider,
+  );
+  await verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-replay",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-accepted-replay",
+      observedAt: "2026-08-05T09:35:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  const acceptance = {
+    expectedRestoredRevisionId: "catrev_spine_000",
+    targetDigest: digest,
+    confirmationRecoveryId: "recovery-accepted-replay",
+    idempotencyKey: "accept-accepted-replay",
+    observedAt: "2026-08-05T09:36:00.000Z",
+    boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+  };
+  const accepted = await acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-replay",
+    acceptance,
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET current_revision_id = 'catrev_later_publication'
+     WHERE singleton = 1`,
+  ).run();
+  await expect(acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-replay",
+    acceptance,
+  )).resolves.toEqual(accepted);
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({
+    current_revision_id: "catrev_later_publication",
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET current_revision_id = 'catrev_spine_000'
+     WHERE singleton = 1`,
+  ).run();
+});
+
 test("a race during external prework cannot acquire the block or begin restore", async () => {
   let restoreCalls = 0;
   const provider = recoveryProvider({
@@ -380,8 +436,10 @@ test("inspect observes a paused restore without mutation and a second begin repo
     bookmark: string;
     previousBookmark: string;
   }) => void) | undefined;
+  let restoreCalls = 0;
   const provider = recoveryProvider({
     timeTravelRestore: async () => {
+      restoreCalls += 1;
       markRestoreStarted();
       return new Promise((resolve) => {
         releaseRestore = resolve;
@@ -400,6 +458,13 @@ test("inspect observes a paused restore without mutation and a second begin repo
     testEnv.BACKUPS,
     "recovery-paused",
   )).resolves.toMatchObject({ state: "restoring", failure: null });
+  await expect(beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-paused", "begin-paused"),
+    provider,
+  )).resolves.toMatchObject({ state: "restoring", failure: null });
+  expect(restoreCalls).toBe(1);
   await expect(beginCatalogueRecovery(
     testEnv.CATALOGUE_DB,
     testEnv.BACKUPS,

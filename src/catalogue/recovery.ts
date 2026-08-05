@@ -173,13 +173,18 @@ export async function beginCatalogueRecovery(
     idempotency_key: input.idempotencyKey,
     linked_operation_id: input.linkedOperationId ?? null,
   });
+  let replay = await recoveryByIdempotency(database, input.idempotencyKey);
+  if (replay !== null) {
+    if (replay.request_json !== requestJson) throw idempotencyReused();
+    return recoveryDocument(replay);
+  }
   await hydrateRetainedRecoveryIfPresent(
     database,
     backups,
     input.recoveryId,
     true,
   );
-  const replay = await recoveryByIdempotency(database, input.idempotencyKey);
+  replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
     return recoveryDocument(replay);
@@ -677,6 +682,19 @@ async function releaseAcceptedRecoveryIfSafe(
   backup: VerifiedBackupRow,
   boundDatabaseId: string,
 ): Promise<void> {
+  const operation = await database.prepare(
+    `SELECT recovery_health, active_recovery_id, recovery_restore_guard
+     FROM operation_state WHERE singleton = 1`,
+  ).first<{
+    recovery_health: string;
+    active_recovery_id: string | null;
+    recovery_restore_guard: string;
+  }>();
+  if (
+    operation?.recovery_health === "healthy" &&
+    operation.active_recovery_id === null &&
+    operation.recovery_restore_guard === "clear"
+  ) return;
   if (
     recovery.restored_database_id === null ||
     recovery.restored_database_id !== boundDatabaseId
@@ -724,18 +742,8 @@ async function releaseAcceptedRecoveryIfSafe(
     );
   }
   const local = await database.prepare(
-    `SELECT catalogue.current_revision_id, operation.recovery_health,
-            operation.active_recovery_id,
-            operation.recovery_restore_guard
-     FROM catalogue_state AS catalogue
-     JOIN operation_state AS operation ON operation.singleton = 1
-     WHERE catalogue.singleton = 1`,
-  ).first<{
-    current_revision_id: string;
-    recovery_health: string;
-    active_recovery_id: string | null;
-    recovery_restore_guard: string;
-  }>();
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<{ current_revision_id: string }>();
   if (local?.current_revision_id !== recovery.target_revision_id) {
     throw new AdministrationProblem(
       409,
@@ -743,11 +751,6 @@ async function releaseAcceptedRecoveryIfSafe(
       "The bound database does not expose the accepted Catalogue Revision.",
     );
   }
-  if (
-    local.recovery_health === "healthy" &&
-    local.active_recovery_id === null &&
-    local.recovery_restore_guard === "clear"
-  ) return;
   try {
     await database.batch([
       database.prepare(
