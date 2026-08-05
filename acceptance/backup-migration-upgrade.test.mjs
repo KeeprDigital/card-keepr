@@ -111,8 +111,60 @@ test("migration 0015 distrusts legacy verified backups without degrading a fresh
   const fresh = new DatabaseSync(":memory:");
   for (const migration of migrations) fresh.exec(migration);
   assert.equal(recoveryHealth(fresh), "healthy");
+  insertFailedAttempt(fresh, "failed-retry-source");
+  insertPendingAttempt(fresh, "first-retry-child", "failed-retry-source");
+  assert.throws(
+    () => insertPendingAttempt(fresh, "second-retry-child", "failed-retry-source"),
+    /UNIQUE constraint failed/u,
+  );
+  insertWorkflowRequest(fresh, "first-workflow-child", "failed-retry-source");
+  assert.throws(
+    () => insertWorkflowRequest(fresh, "second-workflow-child", "failed-retry-source"),
+    /UNIQUE constraint failed/u,
+  );
   fresh.close();
 });
+
+function insertFailedAttempt(database, id) {
+  database.prepare(
+    `INSERT INTO catalogue_backup_attempts (
+       idempotency_key, request_json, owner_token, catalogue_revision_id,
+       state, object_key, started_at, failure_code, failure_detail, completed_at
+     ) VALUES (?, '{}', ?, 'catrev_spine_000', 'failed', ?, ?,
+       'backup_failed', 'synthetic failure', ?)`,
+  ).run(
+    id,
+    `backup:${id}`,
+    `d1-backups/catrev_spine_000/${id}/catalogue.sql`,
+    "2026-08-05T06:00:00.000Z",
+    "2026-08-05T06:01:00.000Z",
+  );
+}
+
+function insertPendingAttempt(database, id, linkedAttemptId) {
+  database.prepare(
+    `INSERT INTO catalogue_backup_attempts (
+       idempotency_key, request_json, owner_token, catalogue_revision_id,
+       state, object_key, started_at, linked_attempt_id
+     ) VALUES (?, '{}', ?, 'catrev_spine_000', 'pending', ?, ?, ?)`,
+  ).run(
+    id,
+    `backup:${id}`,
+    `d1-backups/catrev_spine_000/${id}/catalogue.sql`,
+    "2026-08-05T06:02:00.000Z",
+    linkedAttemptId,
+  );
+}
+
+function insertWorkflowRequest(database, id, linkedAttemptId) {
+  database.prepare(
+    `INSERT INTO catalogue_backup_workflow_requests (
+       idempotency_key, expected_current_revision_id, request_json,
+       workflow_params_json, workflow_instance_id, observed_at,
+       linked_attempt_id
+     ) VALUES (?, 'catrev_spine_000', '{}', '{}', ?, ?, ?)`,
+  ).run(id, `workflow:${id}`, "2026-08-05T06:02:00.000Z", linkedAttemptId);
+}
 
 async function readMigrations() {
   const directory = resolve(root, "migrations");

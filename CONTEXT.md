@@ -88,6 +88,26 @@ _Avoid_: Curated Revision, Source Snapshot, database version
 An immutable machine-readable package of normalized Catalogue Data for one Catalogue Revision, intended for offline use by Catalogue Consumers.
 _Avoid_: Source Snapshot, database backup, live API response
 
+**Backup Attempt**:
+An immutable record of one effort to preserve and prove recovery of a Catalogue Revision. A failed Backup Attempt may have at most one retry child, and only the latest failed leaf may be retried.
+_Avoid_: Mutable retry, Catalogue Export
+
+**Disposable Restore**:
+A temporary restoration used only to prove that a Backup Attempt can recover its Catalogue Revision.
+_Avoid_: Recovery operation, current catalogue
+
+**Restore Generation**:
+One clean Disposable Restore target within a Backup Attempt. A new generation supersedes an ambiguous or failed import instead of reusing its populated target.
+_Avoid_: Backup Attempt, database version
+
+**Restore Phase**:
+The durable stage of a Restore Generation from target preparation through import and verification.
+_Avoid_: Backup Attempt state, Ingestion Run state
+
+**Backup Retention**:
+The policy that preserves the newest successful Backup Attempt indefinitely and older dated successful Backup Attempts for the accepted period.
+_Avoid_: Attempt expiry, source retention
+
 **Product**:
 An official release grouping associated with Cards or Printings, such as a booster set, starter deck, or promotional release.
 _Avoid_: Marketplace listing, owned sealed product

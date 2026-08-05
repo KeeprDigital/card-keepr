@@ -437,6 +437,53 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     testEnv.CATALOGUE_DB,
     "backup-production-newer-failure",
   );
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ recovery_health: "degraded" });
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-superseded-retry",
+      observedAt: "2026-08-05T03:07:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+      failedAttemptId: "backup-production-failure",
+      failedAttemptDigest: String(failedStatus.attempt_digest),
+    },
+    provider,
+  )).rejects.toMatchObject({
+    status: 409,
+    code: "backup_retry_source_superseded",
+  });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT 1 AS present FROM catalogue_backup_attempts
+     WHERE idempotency_key = 'backup-production-superseded-retry'`,
+  ).first()).resolves.toBeNull();
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-wrong-retry",
+      observedAt: "2026-08-05T03:08:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+      failedAttemptId: "backup-production-newer-failure",
+      failedAttemptDigest: "0".repeat(64),
+    },
+    provider,
+  )).rejects.toMatchObject({
+    status: 409,
+    code: "backup_digest_mismatch",
+  });
   exportAvailable = true;
   const retry = await createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
@@ -461,27 +508,10 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   });
   expect(retry.object_key).not.toContain("backup-production-failure.sql");
   expect(exportAttempts).toBe(3);
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ recovery_health: "healthy" });
 
-  await expect(createVerifiedCatalogueBackup(
-    testEnv.CATALOGUE_DB,
-    testEnv.BACKUPS,
-    {
-      expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-wrong-retry",
-      observedAt: "2026-08-05T03:11:00.000Z",
-      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
-      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
-      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
-      exportToken: "export-token",
-      verificationToken: "verification-token",
-      failedAttemptId: "backup-production-failure",
-      failedAttemptDigest: "0".repeat(64),
-    },
-    provider,
-  )).rejects.toMatchObject({
-    status: 409,
-    code: "backup_digest_mismatch",
-  });
   await expect(createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
     testEnv.BACKUPS,
@@ -877,13 +907,14 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
     id: string,
     state: "pending" | "failed",
     revisionId: string,
+    linkedAttemptId: string | null = null,
   ) => {
     await testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_backup_attempts (
          idempotency_key, request_json, owner_token, catalogue_revision_id,
          state, object_key, started_at, failure_code, failure_detail,
-         completed_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         completed_at, linked_attempt_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       JSON.stringify({ expected_current_revision_id: revisionId }),
@@ -895,11 +926,18 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
       state === "failed" ? "backup_failed" : null,
       state === "failed" ? "synthetic failure" : null,
       state === "failed" ? "2026-08-05T06:01:00.000Z" : null,
+      linkedAttemptId,
     ).run();
   };
   await insertAttempt("backup-source-pending", "pending", "catrev_spine_000");
   await insertAttempt("backup-source-old", "failed", "catrev_old_000");
   await insertAttempt("backup-source-current", "failed", "catrev_spine_000");
+  await insertAttempt(
+    "backup-source-current-child",
+    "failed",
+    "catrev_spine_000",
+    "backup-source-current",
+  );
 
   const unlinked = await exports.default.fetch(new Request(
     "https://card-keepr.invalid/v1/backups",
@@ -944,7 +982,19 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   await expect(oldRevision.json()).resolves.toMatchObject({
     code: "backup_not_current_revision",
   });
-  const wrongDigest = await retry("backup-source-current", "0".repeat(64));
+  const parentStatus = await catalogueBackupAttemptStatus(
+    testEnv.CATALOGUE_DB,
+    "backup-source-current",
+  );
+  const superseded = await retry(
+    "backup-source-current",
+    String(parentStatus.attempt_digest),
+  );
+  expect(superseded.status).toBe(409);
+  await expect(superseded.json()).resolves.toMatchObject({
+    code: "backup_retry_source_superseded",
+  });
+  const wrongDigest = await retry("backup-source-current-child", "0".repeat(64));
   expect(wrongDigest.status).toBe(409);
   await expect(wrongDigest.json()).resolves.toMatchObject({
     code: "backup_digest_mismatch",

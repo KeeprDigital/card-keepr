@@ -17,6 +17,7 @@ type BackupWorkflowRequest = CatalogueBackupWorkflowParams & Readonly<{
   request_json: string;
   workflow_params_json: string;
   workflow_instance_id: string;
+  linked_attempt_id: string | null;
 }>;
 
 export async function startOrObserveCatalogueBackupWorkflow(
@@ -69,7 +70,7 @@ export async function startOrObserveCatalogueBackupWorkflow(
         "Catalogue recovery operation is unavailable.",
       );
     }
-    await validateCatalogueBackupRetryEvidence(database, {
+    const linkedAttemptId = await validateCatalogueBackupRetryEvidence(database, {
       expectedCurrentRevisionId: input.expected_current_revision_id,
       idempotencyKey: input.idempotency_key,
       failedAttemptId: input.failed_attempt_id,
@@ -84,8 +85,9 @@ export async function startOrObserveCatalogueBackupWorkflow(
     const inserted = await database.prepare(
       `INSERT OR IGNORE INTO catalogue_backup_workflow_requests (
          idempotency_key, expected_current_revision_id, request_json,
-         workflow_params_json, workflow_instance_id, observed_at
-       ) VALUES (?, ?, ?, ?, ?, ?)`,
+         workflow_params_json, workflow_instance_id, observed_at,
+         linked_attempt_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       input.idempotency_key,
       input.expected_current_revision_id,
@@ -93,8 +95,16 @@ export async function startOrObserveCatalogueBackupWorkflow(
       canonicalJson(params),
       workflowInstanceId,
       observedAt,
+      linkedAttemptId,
     ).run();
     stored = await workflowRequest(database, input.idempotency_key);
+    if (stored === null && linkedAttemptId !== null) {
+      const winner = await database.prepare(
+        `SELECT idempotency_key FROM catalogue_backup_workflow_requests
+         WHERE linked_attempt_id = ? LIMIT 1`,
+      ).bind(linkedAttemptId).first<{ idempotency_key: string }>();
+      if (winner !== null) throw backupRetrySourceSuperseded();
+    }
     if (stored === null) throw new Error("Backup Workflow request was not retained.");
     assertExactReplay(stored, requestJson);
     return {
@@ -295,9 +305,18 @@ async function workflowRequest(
 ): Promise<BackupWorkflowRequest | null> {
   return database.prepare(
     `SELECT idempotency_key, expected_current_revision_id, request_json,
-            workflow_params_json, workflow_instance_id, observed_at
+            workflow_params_json, workflow_instance_id, observed_at,
+            linked_attempt_id
      FROM catalogue_backup_workflow_requests WHERE idempotency_key = ?`,
   ).bind(idempotencyKey).first<BackupWorkflowRequest>();
+}
+
+function backupRetrySourceSuperseded(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "backup_retry_source_superseded",
+    "The failed backup attempt already has an immutable retry child.",
+  );
 }
 
 function storedParams(request: BackupWorkflowRequest): CatalogueBackupWorkflowParams {

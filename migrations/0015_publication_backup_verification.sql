@@ -32,6 +32,17 @@ ALTER TABLE catalogue_backup_attempts
 ADD COLUMN restore_phase TEXT
 CHECK (restore_phase IN ('prepared', 'importing', 'imported', 'verified'));
 
+CREATE UNIQUE INDEX one_catalogue_backup_retry_per_failed_attempt
+ON catalogue_backup_attempts (linked_attempt_id)
+WHERE linked_attempt_id IS NOT NULL;
+
+ALTER TABLE catalogue_backup_workflow_requests
+ADD COLUMN linked_attempt_id TEXT REFERENCES catalogue_backup_attempts(idempotency_key);
+
+CREATE UNIQUE INDEX one_catalogue_backup_retry_workflow_per_failed_attempt
+ON catalogue_backup_workflow_requests (linked_attempt_id)
+WHERE linked_attempt_id IS NOT NULL;
+
 -- A pre-0015 verified row proves only that an object was written. It cannot
 -- retain healthy recovery status because it predates the durable manifest,
 -- digest, restore-target, and complete verification evidence introduced here.

@@ -324,6 +324,19 @@ export async function validateCatalogueBackupRetryEvidence(
       "The source backup does not belong to the current Catalogue Revision.",
     );
   }
+  const child = await database.prepare(
+    `SELECT idempotency_key FROM catalogue_backup_attempts
+     WHERE linked_attempt_id = ?
+     UNION ALL
+     SELECT idempotency_key FROM catalogue_backup_workflow_requests
+     WHERE linked_attempt_id = ?
+     LIMIT 1`,
+  ).bind(failed.idempotency_key, failed.idempotency_key).first<{
+    idempotency_key: string;
+  }>();
+  if (child !== null && child.idempotency_key !== input.idempotencyKey) {
+    throw backupRetrySourceSuperseded();
+  }
   if (await backupAttemptDigest(failed) !== input.failedAttemptDigest) {
     throw new AdministrationProblem(
       409,
@@ -332,6 +345,14 @@ export async function validateCatalogueBackupRetryEvidence(
     );
   }
   return failed.idempotency_key;
+}
+
+function backupRetrySourceSuperseded(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "backup_retry_source_superseded",
+    "The failed backup attempt already has an immutable retry child.",
+  );
 }
 
 export async function createVerifiedCatalogueBackup(
@@ -410,6 +431,13 @@ export async function createVerifiedCatalogueBackup(
     newest_success: number | null;
     retain_until: string | null;
   }>();
+  if (attempt === null && linkedAttemptId !== null) {
+    const winningChild = await database.prepare(
+      `SELECT idempotency_key FROM catalogue_backup_attempts
+       WHERE linked_attempt_id = ? LIMIT 1`,
+    ).bind(linkedAttemptId).first<{ idempotency_key: string }>();
+    if (winningChild !== null) throw backupRetrySourceSuperseded();
+  }
   if (attempt?.request_json !== requestJson) {
     throw new AdministrationProblem(
       409,
