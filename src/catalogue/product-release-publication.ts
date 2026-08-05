@@ -545,10 +545,10 @@ export function productReleasePublicationStatements(
         supported_game: product.game,
         official_code: product.official_code,
         name: product.name,
-        search_text: [product.official_code, product.name]
-          .filter((value): value is string => value !== null)
-          .join("\n")
-          .toLocaleLowerCase(),
+        search_text: productSearchText(
+          product.official_code,
+          product.name,
+        ),
         release_regions_json: JSON.stringify(
           product.releases.map(({ region }) => region),
         ),
@@ -573,10 +573,10 @@ export function productReleasePublicationStatements(
       database,
       productDocuments.map(({ product }) => ({
         product_id: product.id,
-        search_text: [product.official_code, product.name]
-          .filter((value): value is string => value !== null)
-          .join("\n")
-          .toLocaleLowerCase(),
+        search_text: productSearchText(
+          product.official_code,
+          product.name,
+        ),
       })),
       `INSERT INTO revision_products_fts (
          catalogue_revision_id, product_id, search_text
@@ -601,6 +601,17 @@ export function productReleasePublicationStatements(
       revisionId,
     ),
   ];
+}
+
+function productSearchText(
+  officialCode: string | null,
+  name: string | null,
+): string {
+  return [officialCode, name]
+    .filter((value): value is string => value !== null)
+    .join("\n")
+    .normalize("NFKC")
+    .toLocaleLowerCase("en");
 }
 
 async function rowsById<T extends { id: string }>(
