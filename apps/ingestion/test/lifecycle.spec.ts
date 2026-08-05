@@ -2589,6 +2589,34 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
     },
   );
   expect(confirmationDuringRetry.document).toEqual(failed.document);
+  let losingRetryR2Calls = 0;
+  const losingRetryBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const losingRetry = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-losing-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: losingRetryBucket },
+  );
+  expect(losingRetry.response.status).toBe(409);
+  expect(losingRetry.document).toMatchObject({
+    code: "export_deletion_not_failed",
+  });
+  expect(losingRetryR2Calls).toBe(0);
   releaseRetry.resolve(undefined);
   const retried = await retryPromise;
   expect(retried.document).toMatchObject({
@@ -2693,7 +2721,7 @@ test("an exact confirmation replay resumes an interrupted deleting operation", a
   })).resolves.toMatchObject({ objects: [] });
 });
 
-test("an exact retry reconciles durable failed and deleted outcomes after response persistence is interrupted", async () => {
+test("a crashed failed retry remains stable after another key succeeds", async () => {
   const oldRevision = "catrev_delete_retry_crash";
   const currentRevision = "catrev_delete_retry_crash_current";
   const old = await seedDeletionExport(
@@ -2739,7 +2767,7 @@ test("an exact retry reconciles durable failed and deleted outcomes after respon
   );
   expect(failed.document).toMatchObject({ state: "failed" });
 
-  const crashDatabase = crashBeforeRetryResponseDatabase(
+  const crashDatabase = crashAfterRetryTerminalDatabase(
     testEnv.CATALOGUE_DB,
   );
   const failedCrash = await administrationRequestWithEnv(
@@ -2755,6 +2783,20 @@ test("an exact retry reconciles durable failed and deleted outcomes after respon
     },
   );
   expect(failedCrash.response.status).toBe(500);
+  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
+
+  const succeeded = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-success-key",
+    },
+  );
+  expect(succeeded.document).toMatchObject({
+    state: "deleted",
+    failure_code: null,
+  });
+
   let failedReplayR2Calls = 0;
   const observingFailedBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
     async head(key) {
@@ -2770,7 +2812,7 @@ test("an exact retry reconciles durable failed and deleted outcomes after respon
       return testEnv.CATALOGUE_EXPORTS.list(options);
     },
   });
-  const reconciledFailure = await administrationRequestWithEnv(
+  const failedReplay = await administrationRequestWithEnv(
     "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
     {
       object_set_digest: prepared.document.object_set_digest,
@@ -2778,47 +2820,8 @@ test("an exact retry reconciles durable failed and deleted outcomes after respon
     },
     { ...testEnv, CATALOGUE_EXPORTS: observingFailedBucket },
   );
-  expect(reconciledFailure.document).toEqual(failed.document);
+  expect(failedReplay.document).toEqual(failed.document);
   expect(failedReplayR2Calls).toBe(0);
-  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
-
-  const successCrash = await administrationRequestWithEnv(
-    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
-    {
-      object_set_digest: prepared.document.object_set_digest,
-      idempotency_key: "export-deletion-retry-crash-success-key",
-    },
-    { ...testEnv, CATALOGUE_DB: crashDatabase },
-  );
-  expect(successCrash.response.status).toBe(500);
-  let successReplayR2Calls = 0;
-  const observingSuccessBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
-    async head(key) {
-      successReplayR2Calls += 1;
-      return testEnv.CATALOGUE_EXPORTS.head(key);
-    },
-    async delete(key) {
-      successReplayR2Calls += 1;
-      return testEnv.CATALOGUE_EXPORTS.delete(key);
-    },
-    async list(options) {
-      successReplayR2Calls += 1;
-      return testEnv.CATALOGUE_EXPORTS.list(options);
-    },
-  });
-  const reconciledSuccess = await administrationRequestWithEnv(
-    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
-    {
-      object_set_digest: prepared.document.object_set_digest,
-      idempotency_key: "export-deletion-retry-crash-success-key",
-    },
-    { ...testEnv, CATALOGUE_EXPORTS: observingSuccessBucket },
-  );
-  expect(reconciledSuccess.document).toMatchObject({
-    state: "deleted",
-    failure_code: null,
-  });
-  expect(successReplayR2Calls).toBe(0);
 });
 
 async function administrationRequest(
@@ -3161,36 +3164,20 @@ function proxyR2Bucket(
   });
 }
 
-function crashBeforeRetryResponseDatabase(
+function crashAfterRetryTerminalDatabase(
   database: D1Database,
 ): D1Database {
-  const crashingStatement = (
-    statement: D1PreparedStatement,
-  ): D1PreparedStatement => new Proxy(statement, {
-    get(target, property) {
-      if (property === "bind") {
-        return (...values: Parameters<D1PreparedStatement["bind"]>) =>
-          crashingStatement(target.bind(...values));
-      }
-      if (property === "run") {
-        return async () => {
-          throw new Error("injected termination before retry response persistence");
-        };
-      }
-      const value = Reflect.get(target, property);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
+  let batchCount = 0;
   return new Proxy(database, {
     get(target, property) {
-      if (property === "prepare") {
-        return (query: string) => {
-          const statement = target.prepare(query);
-          return query.includes(
-              "UPDATE catalogue_export_deletion_retries SET response_json",
-            )
-            ? crashingStatement(statement)
-            : statement;
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          batchCount += 1;
+          const result = await target.batch(statements);
+          if (batchCount === 2) {
+            throw new Error("injected termination after retry terminal commit");
+          }
+          return result;
         };
       }
       const value = Reflect.get(target, property);

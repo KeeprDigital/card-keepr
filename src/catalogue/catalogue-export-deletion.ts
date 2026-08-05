@@ -40,6 +40,7 @@ type DeletionRow = {
   requested_at: string;
   completed_at: string | null;
   failure_code: string | null;
+  retry_owner_idempotency_key: string | null;
   confirmation_response_json: string | null;
 };
 
@@ -337,6 +338,16 @@ export async function retryCatalogueExportDeletion(
     );
     return document;
   }
+  if (
+    replay !== null &&
+    row.retry_owner_idempotency_key !== request.idempotency_key
+  ) {
+    throw problem(
+      409,
+      "export_deletion_not_failed",
+      "Another retry owns the active deletion attempt.",
+    );
+  }
   if (replay === null && row.state !== "failed") {
     throw problem(409, "export_deletion_not_failed", "Only a failed deletion can be retried.");
   }
@@ -347,25 +358,54 @@ export async function retryCatalogueExportDeletion(
   if (plan === null) throw new Error("Deletion plan evidence is unavailable");
   await assertMaintenanceIdle(database, plan.expected_current_revision_id, observedAt);
   if (replay === null) {
-    await database.batch([
-      database.prepare(
-        `INSERT INTO catalogue_export_deletion_retries (
-           idempotency_key, deletion_id, object_set_digest,
-           request_json, response_json, created_at
-         ) VALUES (?, ?, ?, ?, NULL, ?)`,
-      ).bind(
-        request.idempotency_key,
-        deletionId,
-        request.object_set_digest,
-        requestJson,
-        observedAt,
-      ),
-      database.prepare(
-        `UPDATE catalogue_export_deletions
-         SET state = 'deleting', failure_code = NULL
-         WHERE id = ? AND state = 'failed'`,
-      ).bind(deletionId),
-    ]);
+    try {
+      await database.batch([
+        database.prepare(
+          `INSERT INTO catalogue_export_deletion_retries (
+             idempotency_key, deletion_id, object_set_digest,
+             request_json, response_json, created_at
+           ) VALUES (?, ?, ?, ?, NULL, ?)`,
+        ).bind(
+          request.idempotency_key,
+          deletionId,
+          request.object_set_digest,
+          requestJson,
+          observedAt,
+        ),
+        database.prepare(
+          `UPDATE catalogue_export_deletions
+           SET state = 'deleting', failure_code = NULL,
+               retry_owner_idempotency_key = ?
+           WHERE id = ? AND state = 'failed'`,
+        ).bind(request.idempotency_key, deletionId),
+        database.prepare(
+          `SELECT CASE WHEN EXISTS (
+             SELECT 1 FROM catalogue_export_deletions
+             WHERE id = ? AND state = 'deleting'
+               AND retry_owner_idempotency_key = ?
+           ) THEN 1 ELSE json_extract('invalid', '$') END`,
+        ).bind(deletionId, request.idempotency_key),
+      ]);
+    } catch {
+      const concurrent = await database.prepare(
+        `SELECT request_json, response_json
+         FROM catalogue_export_deletion_retries WHERE idempotency_key = ?`,
+      ).bind(request.idempotency_key).first<{
+        request_json: string;
+        response_json: string | null;
+      }>();
+      if (concurrent !== null && concurrent.request_json === requestJson) {
+        if (concurrent.response_json !== null) {
+          return JSON.parse(concurrent.response_json) as Record<string, unknown>;
+        }
+        return catalogueExportDeletionStatus(database, deletionId);
+      }
+      throw problem(
+        409,
+        "export_deletion_not_failed",
+        "Another retry claimed the failed deletion.",
+      );
+    }
   }
   const manifestKey = await database.prepare(
     "SELECT manifest_key FROM catalogue_exports WHERE catalogue_revision_id = ?",
@@ -378,8 +418,8 @@ export async function retryCatalogueExportDeletion(
     plan,
     manifestKey,
     observedAt,
+    request.idempotency_key,
   );
-  await persistRetryResponse(database, request.idempotency_key, document);
   return document;
 }
 
@@ -401,6 +441,7 @@ async function executeDeletion(
   plan: PlanRow,
   manifestKey: string,
   observedAt: string,
+  retryIdempotencyKey: string | null = null,
 ): Promise<Record<string, unknown>> {
   const operation = await database.prepare(
     "SELECT * FROM catalogue_export_deletions WHERE id = ?",
@@ -434,13 +475,25 @@ async function executeDeletion(
       completed_at: observedAt,
       failure_code: null,
     });
+    const responseJson = canonicalJson(snapshot);
     await database.batch([
+      deletionExecutionOwnerAssertion(
+        database,
+        deletionId,
+        retryIdempotencyKey,
+      ),
       database.prepare(
         `UPDATE catalogue_export_deletions
          SET state = 'deleted', completed_at = ?, failure_code = NULL,
              confirmation_response_json = COALESCE(confirmation_response_json, ?)
-         WHERE id = ? AND state = 'deleting'`,
-      ).bind(observedAt, canonicalJson(snapshot), deletionId),
+         WHERE id = ? AND state = 'deleting'
+           AND retry_owner_idempotency_key IS ?`,
+      ).bind(
+        observedAt,
+        responseJson,
+        deletionId,
+        retryIdempotencyKey,
+      ),
       database.prepare(
         `UPDATE catalogue_exports
          SET maintenance_state = 'deleted', deleted_at = ?
@@ -459,6 +512,12 @@ async function executeDeletion(
         plan.object_set_digest,
         observedAt,
       ),
+      ...(retryIdempotencyKey === null
+        ? []
+        : [database.prepare(
+          `UPDATE catalogue_export_deletion_retries SET response_json = ?
+           WHERE idempotency_key = ? AND response_json IS NULL`,
+        ).bind(responseJson, retryIdempotencyKey)]),
     ]);
   } catch {
     const snapshot = deletionDocument({
@@ -467,14 +526,43 @@ async function executeDeletion(
       completed_at: null,
       failure_code: "deleted_object_set_mismatch",
     });
-    await database.prepare(
-      `UPDATE catalogue_export_deletions
-       SET state = 'failed', failure_code = 'deleted_object_set_mismatch',
-           confirmation_response_json = COALESCE(confirmation_response_json, ?)
-       WHERE id = ? AND state = 'deleting'`,
-    ).bind(canonicalJson(snapshot), deletionId).run();
+    const responseJson = canonicalJson(snapshot);
+    await database.batch([
+      deletionExecutionOwnerAssertion(
+        database,
+        deletionId,
+        retryIdempotencyKey,
+      ),
+      database.prepare(
+        `UPDATE catalogue_export_deletions
+         SET state = 'failed', failure_code = 'deleted_object_set_mismatch',
+             confirmation_response_json = COALESCE(confirmation_response_json, ?)
+         WHERE id = ? AND state = 'deleting'
+           AND retry_owner_idempotency_key IS ?`,
+      ).bind(responseJson, deletionId, retryIdempotencyKey),
+      ...(retryIdempotencyKey === null
+        ? []
+        : [database.prepare(
+          `UPDATE catalogue_export_deletion_retries SET response_json = ?
+           WHERE idempotency_key = ? AND response_json IS NULL`,
+        ).bind(responseJson, retryIdempotencyKey)]),
+    ]);
   }
   return catalogueExportDeletionStatus(database, deletionId);
+}
+
+function deletionExecutionOwnerAssertion(
+  database: D1Database,
+  deletionId: string,
+  retryIdempotencyKey: string | null,
+): D1PreparedStatement {
+  return database.prepare(
+    `SELECT CASE WHEN EXISTS (
+       SELECT 1 FROM catalogue_export_deletions
+       WHERE id = ? AND state = 'deleting'
+         AND retry_owner_idempotency_key IS ?
+     ) THEN 1 ELSE json_extract('invalid', '$') END`,
+  ).bind(deletionId, retryIdempotencyKey);
 }
 
 async function assertMutationGuards(

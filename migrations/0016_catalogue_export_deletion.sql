@@ -50,6 +50,7 @@ CREATE TABLE catalogue_export_deletions (
   requested_at TEXT NOT NULL,
   completed_at TEXT,
   failure_code TEXT,
+  retry_owner_idempotency_key TEXT,
   confirmation_response_json TEXT CHECK (
     confirmation_response_json IS NULL OR json_valid(confirmation_response_json)
   ),
@@ -172,8 +173,10 @@ END;
 CREATE TRIGGER catalogue_export_deletion_operation_transition_guard
 BEFORE UPDATE ON catalogue_export_deletions
 WHEN NOT (
-  (OLD.state = 'deleting' AND NEW.state IN ('deleted', 'failed')) OR
-  (OLD.state = 'failed' AND NEW.state = 'deleting')
+  (OLD.state = 'deleting' AND NEW.state IN ('deleted', 'failed')
+    AND NEW.retry_owner_idempotency_key IS OLD.retry_owner_idempotency_key) OR
+  (OLD.state = 'failed' AND NEW.state = 'deleting'
+    AND NEW.retry_owner_idempotency_key IS NOT NULL)
 )
 OR (
   OLD.state = 'failed' AND NEW.state = 'deleting' AND NOT EXISTS (
@@ -189,6 +192,7 @@ OR (
       AND EXISTS (
         SELECT 1 FROM catalogue_export_deletion_retries AS retry
         WHERE retry.deletion_id = OLD.id
+          AND retry.idempotency_key = NEW.retry_owner_idempotency_key
           AND retry.object_set_digest = OLD.object_set_digest
           AND retry.response_json IS NULL
       )
@@ -198,6 +202,7 @@ OR (
           SELECT retry.created_at
           FROM catalogue_export_deletion_retries AS retry
           WHERE retry.deletion_id = OLD.id AND retry.response_json IS NULL
+            AND retry.idempotency_key = NEW.retry_owner_idempotency_key
           ORDER BY retry.created_at DESC LIMIT 1
         )
       )
