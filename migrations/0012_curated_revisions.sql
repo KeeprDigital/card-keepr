@@ -1,6 +1,62 @@
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE operation_state ADD COLUMN active_release_id TEXT;
+ALTER TABLE operation_state ADD COLUMN active_release_expires_at TEXT;
+
+-- A production release reserves the legacy ingestion lock before this migration
+-- can add the dedicated release lease. The reserved row exists only so the
+-- previously deployed ingestion worker recognises that lock as live. Once its
+-- exact operation-state pointer is gone it is safe to remove; all domain runs
+-- remain immutable.
+DROP TRIGGER guard_ingestion_deletion;
+CREATE TRIGGER guard_ingestion_deletion
+BEFORE DELETE ON ingestion_runs
+WHEN NOT (
+  OLD.id LIKE 'release-bootstrap|%'
+  AND OLD.idempotency_key = OLD.id
+  AND OLD.selected_games_json = '[]'
+  AND OLD.candidate_json = '{"production_release_bootstrap":true}'
+  AND OLD.state IN ('planning', 'failed')
+  AND NOT EXISTS (
+    SELECT 1 FROM operation_state
+    WHERE singleton = 1 AND active_ingestion_run_id = OLD.id
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_run_audit_immutable');
+END;
+
+DROP TRIGGER guard_ingestion_transition_delete;
+CREATE TRIGGER guard_ingestion_transition_delete
+BEFORE DELETE ON ingestion_run_transitions
+WHEN NOT EXISTS (
+  SELECT 1 FROM ingestion_runs AS run
+  WHERE run.id = OLD.ingestion_run_id
+    AND run.id LIKE 'release-bootstrap|%'
+    AND run.idempotency_key = run.id
+    AND run.selected_games_json = '[]'
+    AND run.candidate_json = '{"production_release_bootstrap":true}'
+    AND run.state IN ('planning', 'failed')
+    AND NOT EXISTS (
+      SELECT 1 FROM operation_state
+      WHERE singleton = 1 AND active_ingestion_run_id = run.id
+    )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'ingestion_transition_audit_immutable');
+END;
+
+CREATE TRIGGER production_release_lease_shape_guard
+BEFORE UPDATE OF active_release_id, active_release_expires_at ON operation_state
+WHEN (NEW.active_release_id IS NULL) <> (NEW.active_release_expires_at IS NULL)
+  OR (NEW.active_release_expires_at IS NOT NULL AND (
+    NEW.active_release_expires_at NOT GLOB
+      '????-??-??T??:??:??.???Z'
+    OR julianday(NEW.active_release_expires_at) IS NULL
+  ))
+BEGIN
+  SELECT RAISE(ABORT, 'production_release_lease_invalid');
+END;
 
 DROP TRIGGER require_idle_ingestion;
 CREATE TRIGGER require_idle_ingestion
@@ -8,7 +64,10 @@ BEFORE INSERT ON ingestion_runs
 WHEN EXISTS (
   SELECT 1 FROM operation_state
   WHERE singleton = 1 AND (
-    active_ingestion_run_id IS NOT NULL OR active_release_id IS NOT NULL
+    active_ingestion_run_id IS NOT NULL OR (
+      active_release_id IS NOT NULL
+      AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    )
   )
 )
 BEGIN
@@ -59,6 +118,7 @@ BEFORE INSERT ON curated_revisions
 WHEN EXISTS (
   SELECT 1 FROM operation_state
   WHERE singleton = 1 AND active_release_id IS NOT NULL
+    AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 )
 BEGIN
   SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
@@ -134,6 +194,7 @@ BEFORE INSERT ON curated_revision_events
 WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired') AND EXISTS (
   SELECT 1 FROM operation_state
   WHERE singleton = 1 AND active_release_id IS NOT NULL
+    AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 )
 BEGIN
   SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
@@ -286,4 +347,70 @@ CREATE TRIGGER catalogue_curated_provenance_is_immutable_on_delete
 BEFORE DELETE ON catalogue_curated_provenance
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_curated_provenance_immutable');
+END;
+
+CREATE TABLE retained_source_observation_evidence (
+  source_observation_id TEXT PRIMARY KEY,
+  retained_by_table TEXT NOT NULL CHECK (
+    retained_by_table IN ('reconciliation_candidates', 'legality_rules')
+  ),
+  retained_record_id TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO retained_source_observation_evidence
+  (source_observation_id, retained_by_table, retained_record_id)
+SELECT source_observation_id, 'reconciliation_candidates',
+       source_observation_set_id
+FROM reconciliation_candidates;
+
+INSERT OR IGNORE INTO retained_source_observation_evidence
+  (source_observation_id, retained_by_table, retained_record_id)
+SELECT source_observation_id, 'legality_rules', id
+FROM legality_rules;
+
+CREATE TRIGGER retained_source_observation_evidence_must_resolve
+BEFORE INSERT ON retained_source_observation_evidence
+WHEN NOT EXISTS (
+  SELECT 1 FROM reconciliation_candidates
+  WHERE source_observation_id = NEW.source_observation_id
+    AND source_observation_set_id = NEW.retained_record_id
+) AND NOT EXISTS (
+  SELECT 1 FROM legality_rules
+  WHERE source_observation_id = NEW.source_observation_id
+    AND id = NEW.retained_record_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'retained_source_observation_evidence_not_found');
+END;
+
+CREATE TRIGGER retained_source_observation_evidence_is_immutable_on_update
+BEFORE UPDATE ON retained_source_observation_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'retained_source_observation_evidence_immutable');
+END;
+
+CREATE TRIGGER retained_source_observation_evidence_is_immutable_on_delete
+BEFORE DELETE ON retained_source_observation_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'retained_source_observation_evidence_immutable');
+END;
+
+CREATE TRIGGER retain_reconciliation_candidate_evidence
+AFTER INSERT ON reconciliation_candidates
+BEGIN
+  INSERT OR IGNORE INTO retained_source_observation_evidence
+    (source_observation_id, retained_by_table, retained_record_id)
+  VALUES (
+    NEW.source_observation_id,
+    'reconciliation_candidates',
+    NEW.source_observation_set_id
+  );
+END;
+
+CREATE TRIGGER retain_legality_rule_evidence
+AFTER INSERT ON legality_rules
+BEGIN
+  INSERT OR IGNORE INTO retained_source_observation_evidence
+    (source_observation_id, retained_by_table, retained_record_id)
+  VALUES (NEW.source_observation_id, 'legality_rules', NEW.id);
 END;

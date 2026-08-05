@@ -48,6 +48,7 @@ concurrency:
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: production
     steps:
       - name: Check out the exact guarded release
@@ -97,20 +98,53 @@ jobs:
             test "$(jq -r '.result.id' <<<"${verify}")" = "${EXPECTED_TOKEN_ID}"
             test "$(jq -r '.result.status' <<<"${verify}")" = "active"
             npm ci
-            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
-            release_id="release_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+            release_fence="release_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_$(cat /proc/sys/kernel/random/uuid)"
+            bootstrap_expires_at="$(date -u -d '+35 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
+            bootstrap_lease="release-bootstrap|${bootstrap_expires_at}|${release_fence}"
             cleanup_release_lock() {
-              cleanup_sql="UPDATE operation_state SET active_release_id = NULL WHERE singleton = 1 AND active_release_id = '${release_id}';"
-              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${cleanup_sql}"
+              release_cleanup_sql="UPDATE operation_state SET active_release_id = NULL, active_release_expires_at = NULL WHERE singleton = 1 AND active_release_id = '${release_fence}';"
+              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${release_cleanup_sql}" || true
+              bootstrap_failure_sql="UPDATE ingestion_runs SET state = 'failed', terminal_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), failure_code = 'production_release_bootstrap_abandoned', progress_json = '{\"completed_stages\":[],\"current_stage\":\"failed\"}' WHERE id = '${bootstrap_lease}' AND state = 'planning' AND EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}');"
+              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${bootstrap_failure_sql}" || true
+              bootstrap_cleanup_sql="UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}'; DELETE FROM ingestion_run_transitions WHERE ingestion_run_id = '${bootstrap_lease}' AND EXISTS (SELECT 1 FROM ingestion_runs WHERE id = '${bootstrap_lease}' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id)); DELETE FROM ingestion_runs WHERE id = '${bootstrap_lease}' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id);"
+              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${bootstrap_cleanup_sql}" || true
             }
             trap cleanup_release_lock EXIT
-            claim_sql="UPDATE operation_state SET active_release_id = '${release_id}' WHERE singleton = 1 AND active_release_id IS NULL AND active_ingestion_run_id IS NULL AND recovery_health = 'healthy'; SELECT changes() AS claimed;"
-            claim="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${claim_sql}")"
-            test "$(jq -r '.[-1].results[0].claimed' <<<"${claim}")" = "1"
-            npx wrangler deploy --config apps/api/wrangler.jsonc
-            npx wrangler deploy --config apps/ingestion/wrangler.jsonc
+            bootstrap_claim_sql="UPDATE ingestion_runs SET state = 'failed', terminal_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), failure_code = 'production_release_bootstrap_expired', progress_json = '{\"completed_stages\":[],\"current_stage\":\"failed\"}' WHERE id = (SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1) AND id LIKE 'release-bootstrap|%' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state = 'planning' AND substr(id, 19, 24) <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id LIKE 'release-bootstrap|%' AND substr(active_ingestion_run_id, 19, 24) <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); INSERT INTO ingestion_runs (id, state, selected_games_json, started_at, expected_current_revision_id, idempotency_key, candidate_json) SELECT '${bootstrap_lease}', 'planning', '[]', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), current_revision_id, '${bootstrap_lease}', '{\"production_release_bootstrap\":true}' FROM catalogue_state WHERE singleton = 1; UPDATE operation_state SET active_ingestion_run_id = '${bootstrap_lease}' WHERE singleton = 1 AND recovery_health = 'healthy' AND active_ingestion_run_id IS NULL; SELECT CASE WHEN active_ingestion_run_id = '${bootstrap_lease}' THEN 1 ELSE 0 END AS claimed FROM operation_state WHERE singleton = 1;"
+            bootstrap_claim="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${bootstrap_claim_sql}")"
+            test "$(jq -r '.[-1].results[0].claimed' <<<"${bootstrap_claim}")" = "1"
+            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+            release_expires_at="$(date -u -d '+15 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
+            transfer_sql="UPDATE operation_state SET active_release_id = '${release_fence}', active_release_expires_at = '${release_expires_at}', active_ingestion_run_id = NULL WHERE singleton = 1 AND active_ingestion_run_id = '${bootstrap_lease}' AND (active_release_id IS NULL OR active_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')); DELETE FROM ingestion_run_transitions WHERE EXISTS (SELECT 1 FROM ingestion_runs AS run WHERE run.id = ingestion_run_transitions.ingestion_run_id AND run.id LIKE 'release-bootstrap|%' AND run.idempotency_key = run.id AND run.selected_games_json = '[]' AND run.candidate_json = '{\"production_release_bootstrap\":true}' AND run.state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = run.id)); DELETE FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%' AND idempotency_key = id AND selected_games_json = '[]' AND candidate_json = '{\"production_release_bootstrap\":true}' AND state IN ('planning', 'failed') AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND active_ingestion_run_id = ingestion_runs.id); SELECT CASE WHEN active_release_id = '${release_fence}' AND active_ingestion_run_id IS NULL THEN 1 ELSE 0 END AS claimed FROM operation_state WHERE singleton = 1;"
+            transfer="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${transfer_sql}")"
+            test "$(jq -r '.[-1].results[0].claimed' <<<"${transfer}")" = "1"
+            renew_release_lease() {
+              release_expires_at="$(date -u -d '+15 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
+              renew_sql="UPDATE operation_state SET active_release_expires_at = '${release_expires_at}' WHERE singleton = 1 AND active_release_id = '${release_fence}' AND active_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'); SELECT changes() AS claimed;"
+              renewed="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${renew_sql}")"
+              test "$(jq -r '.[-1].results[0].claimed' <<<"${renewed}")" = "1"
+            }
+            run_with_release_lease() {
+              setsid "$@" &
+              command_pid=$!
+              command_status=0
+              while kill -0 "${command_pid}" 2>/dev/null; do
+                sleep 30
+                if kill -0 "${command_pid}" 2>/dev/null && ! renew_release_lease; then
+                  kill -- "-${command_pid}" 2>/dev/null || true
+                  wait "${command_pid}" || true
+                  return 1
+                fi
+              done
+              wait "${command_pid}" || command_status=$?
+              return "${command_status}"
+            }
+            renew_release_lease
+            run_with_release_lease npx wrangler deploy --config apps/api/wrangler.jsonc
+            run_with_release_lease npx wrangler deploy --config apps/ingestion/wrangler.jsonc
             for worker in card-keepr-api card-keepr-ingestion; do
-              deployments="$(curl --fail-with-body --silent --show-error \
+              renew_release_lease
+              deployments="$(curl --fail-with-body --silent --show-error --max-time 60 \
                 --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
                 "https://api.cloudflare.com/client/v4/accounts/${EXPECTED_ACCOUNT_ID}/workers/scripts/${worker}/deployments")"
               test "$(jq -r '.success' <<<"${deployments}")" = "true"

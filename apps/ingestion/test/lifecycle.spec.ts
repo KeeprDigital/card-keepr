@@ -94,10 +94,10 @@ test("a legacy published run upgrades to the strict lifecycle representation wit
   const candidate = await fixtureCandidate("first-catalogue", [
     "one-piece",
   ]);
-  const candidateCreatedAt = "2026-07-29T01:00:00.000Z";
-  const approvedAt = "2026-07-29T01:01:00.000Z";
-  const terminalAt = "2026-07-29T01:02:00.000Z";
-  const deadline = "2026-08-05T01:00:00.000Z";
+  const candidateCreatedAt = "2099-07-29T01:00:00.000Z";
+  const approvedAt = "2099-07-29T01:01:00.000Z";
+  const terminalAt = "2099-07-29T01:02:00.000Z";
+  const deadline = "2099-08-05T01:00:00.000Z";
   const candidateDigest = candidate.digest;
   const manifestDigest = "b".repeat(64);
   const legacyApproval = {

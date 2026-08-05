@@ -165,6 +165,21 @@ export function validateProposal(proposal) {
   if (!proposal || typeof proposal !== "object") {
     return { valid: false, code: "curated_revision_schema_invalid", detail: "Proposal is required." };
   }
+  const proposalFields = [
+    "game", "target", "assertion", "rationale", "evidence",
+    "effective_interval", "reviewed_source_digest",
+    "supersedes_revision_id"
+  ];
+  if (
+    !proposalFields.every((field) => Object.hasOwn(proposal, field)) ||
+    Object.keys(proposal).some((field) => !proposalFields.includes(field))
+  ) {
+    return {
+      valid: false,
+      code: "curated_revision_schema_invalid",
+      detail: "The proposal must have the exact canonical fields."
+    };
+  }
   if (!SUPPORTED_GAMES.has(proposal.game)) {
     return { valid: false, code: "invalid_supported_game", detail: proposal.game };
   }
@@ -194,8 +209,11 @@ export function validateProposal(proposal) {
     };
   }
 
-  const interval = intervalOf(proposal);
+  const interval = proposal.effective_interval;
   if (
+    !interval || typeof interval !== "object" || Array.isArray(interval) ||
+    Object.keys(interval).length !== 2 ||
+    !Object.hasOwn(interval, "from") || !Object.hasOwn(interval, "to") ||
     (interval.from !== null && !isDate(interval.from)) ||
     (interval.to !== null && !isDate(interval.to)) ||
     (interval.from !== null &&
@@ -276,7 +294,6 @@ export function validateProposal(proposal) {
 
   if (
     proposal.supersedes_revision_id !== null &&
-    proposal.supersedes_revision_id !== undefined &&
     !isOpaqueId(proposal.supersedes_revision_id)
   ) {
     return {

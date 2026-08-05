@@ -1745,6 +1745,123 @@ test.each([
   },
 );
 
+test("a partial-game publication carries an unselected curation and its immutable ledger forward", async () => {
+  const digimonSource = {
+    game: "digimon",
+    lineage: "digimon-en",
+    adapter: "fixture-digimon-json@1",
+  };
+  const initial = await collect(
+    "/reconciliation/profile-digimon",
+    `partial-curation-initial-${crypto.randomUUID()}`,
+    digimonSource,
+  );
+  const initialReconciled = await reconcile(initial.id);
+  const initialPublication = await approve(initialReconciled.document);
+  expect(initialPublication.response.status).toBe(200);
+  const initialRevision = requiredString(
+    initialPublication.document,
+    "resulting_revision_id",
+  );
+  const officialCard = requiredFirst(initialReconciled.document, "cards");
+  const officialName = requiredString(officialCard, "name");
+  const retainedEvidence = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id FROM reconciliation_candidates
+     WHERE ingestion_run_id = ? ORDER BY source_observation_id LIMIT 1`,
+  ).bind(initial.id).first<{ source_observation_id: string }>();
+  expect(retainedEvidence?.source_observation_id).toMatch(/^srcobs_/u);
+  const proposal = {
+    game: "digimon",
+    target: {
+      kind: "field",
+      entity_type: "card",
+      entity_id: requiredString(officialCard, "id"),
+      path: "/name",
+    },
+    assertion: { kind: "field", value: "Owner-reviewed Digimon Name" },
+    rationale: "Preserve this Digimon correction across partial refreshes.",
+    evidence: [{
+      kind: "source_observation",
+      id: retainedEvidence!.source_observation_id,
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256(
+      new TextEncoder().encode(canonicalJson(officialName)),
+    ),
+    supersedes_revision_id: null,
+  };
+  const created = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: initialRevision,
+    proposal,
+    proposal_digest: await sha256(
+      new TextEncoder().encode(canonicalJson(proposal)),
+    ),
+    idempotency_key: `partial-curation-create-${crypto.randomUUID()}`,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const curatedRevisionId = requiredString(
+    created.document,
+    "curated_revision_id",
+  );
+
+  const curatedRun = await collect(
+    "/reconciliation/profile-digimon",
+    `partial-curation-apply-${crypto.randomUUID()}`,
+    digimonSource,
+  );
+  const curatedCandidate = await reconcile(curatedRun.id);
+  expect(requiredFirst(curatedCandidate.document, "cards")).toMatchObject({
+    name: "Owner-reviewed Digimon Name",
+    curated_provenance: [{ curated_revision_id: curatedRevisionId }],
+  });
+  const curatedPublication = await approve(curatedCandidate.document);
+  expect(curatedPublication.response.status).toBe(200);
+  const curatedCatalogueRevision = requiredString(
+    curatedPublication.document,
+    "resulting_revision_id",
+  );
+
+  const partialRun = await collect(
+    "/reconciliation/base",
+    `partial-curation-one-piece-${crypto.randomUUID()}`,
+  );
+  const partialCandidate = await reconcile(partialRun.id);
+  const partialPublication = await approve(partialCandidate.document);
+  expect(partialPublication.response.status).toBe(200);
+  const partialCatalogueRevision = requiredString(
+    partialPublication.document,
+    "resulting_revision_id",
+  );
+  const [before, after, ledger] = await Promise.all([
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT document_json FROM revision_cards
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(curatedCatalogueRevision, requiredString(officialCard, "id"))
+      .first<{ document_json: string }>(),
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT document_json FROM revision_cards
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(partialCatalogueRevision, requiredString(officialCard, "id"))
+      .first<{ document_json: string }>(),
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT curated_revision_id FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = ? AND curated_revision_id = ?`,
+    ).bind(partialCatalogueRevision, curatedRevisionId)
+      .first<{ curated_revision_id: string }>(),
+  ]);
+  expect(JSON.parse(after?.document_json ?? "{}")).toEqual(
+    JSON.parse(before?.document_json ?? "{}"),
+  );
+  expect(JSON.parse(after?.document_json ?? "{}")).toMatchObject({
+    data: {
+      name: "Owner-reviewed Digimon Name",
+      curated_provenance: [{ curated_revision_id: curatedRevisionId }],
+    },
+  });
+  expect(ledger).toEqual({ curated_revision_id: curatedRevisionId });
+}, 60_000);
+
 test("production adapters retain parser-bound coverage proof for reconciliation", async () => {
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",

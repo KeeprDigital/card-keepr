@@ -134,7 +134,7 @@ beforeEach(async () => {
     }],
   };
   await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_ingestion_run_id = NULL, active_release_id = NULL, recovery_health = 'healthy' WHERE singleton = 1",
+    "UPDATE operation_state SET active_ingestion_run_id = NULL, active_release_id = NULL, active_release_expires_at = NULL, recovery_health = 'healthy' WHERE singleton = 1",
   ).run();
   await env.CATALOGUE_DB.prepare(
     "UPDATE curated_revisions SET status = 'retired', event_version = event_version + 1 WHERE status IN ('active', 'reconfirmation_required')",
@@ -278,6 +278,60 @@ test("validate derives a canonical proposal digest and rejects protected identit
   await expect(malformedOwnerReference.json()).resolves.toMatchObject({
     code: "curated_revision_schema_invalid",
   });
+});
+
+test("proposal validation requires the exact canonical nullable fields and a closed interval", async () => {
+  const complete = await proposal("/name", "Curated Name");
+  const { effective_interval: _interval, ...withoutInterval } = complete;
+  const { supersedes_revision_id: _supersedes, ...withoutSupersedes } = complete;
+  for (const candidate of [
+    withoutInterval,
+    withoutSupersedes,
+    { ...complete, effective_interval: { from: null, to: null, extra: true } },
+  ]) {
+    const response = await adminRequest("/admin/v1/curated-revisions/validate", {
+      proposal: candidate,
+      catalogue_revision_id: currentRevision,
+    });
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "curated_revision_schema_invalid",
+    });
+  }
+});
+
+test("Source Observation evidence must resolve to retained immutable evidence", async () => {
+  const complete = await proposal("/name", "Curated Name");
+  const missingEvidence = {
+    ...complete,
+    evidence: [{ kind: "source_observation", id: `srcobs_missing_${sequence}` }],
+  };
+  const validation = await adminRequest("/admin/v1/curated-revisions/validate", {
+    proposal: missingEvidence,
+    catalogue_revision_id: currentRevision,
+  });
+  expect(validation.status).toBe(422);
+  await expect(validation.json()).resolves.toMatchObject({
+    code: "curated_revision_evidence_not_retained",
+  });
+
+  const creation = await adminRequest("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: missingEvidence,
+    proposal_digest: await sha256Text(canonicalJson(missingEvidence)),
+    idempotency_key: `missing-evidence-${sequence}`,
+  });
+  expect(creation.status).toBe(422);
+  await expect(creation.json()).resolves.toMatchObject({
+    code: "curated_revision_evidence_not_retained",
+  });
+
+  const ownerReference = await adminRequest(
+    "/admin/v1/curated-revisions/validate",
+    { proposal: complete, catalogue_revision_id: currentRevision },
+  );
+  expect(ownerReference.status).toBe(200);
 });
 
 test("validation uses the pinned shared and Game Profile schemas", async () => {
@@ -508,7 +562,7 @@ test("create is guarded by production binding, current revision, idle operation,
   });
 
   await env.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET recovery_health = 'healthy', active_release_id = 'release_active' WHERE singleton = 1",
+    "UPDATE operation_state SET recovery_health = 'healthy', active_release_id = 'release_active', active_release_expires_at = '2099-01-01T00:00:00.000Z' WHERE singleton = 1",
   ).run();
   const releaseBlocked = await adminRequest("/admin/v1/curated-revisions", {
     ...base,
@@ -559,6 +613,194 @@ test("the atomic mutation boundary rechecks the current Catalogue Revision", asy
   ).run()).rejects.toThrow("curated_revision_current_revision_mismatch");
 });
 
+test("release leases reclaim stale owners and fence cleanup and renewal", async () => {
+  const insertBootstrap = async (id: string) => env.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at,
+       expected_current_revision_id, idempotency_key, candidate_json
+     ) VALUES (
+       ?, 'planning', '[]', ?, ?, ?,
+       '{"production_release_bootstrap":true}'
+     )`,
+  ).bind(id, now, currentRevision, id).run();
+  const claimBootstrap = async (id: string) => env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_ingestion_run_id = ?
+     WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+       AND recovery_health = 'healthy'`,
+  ).bind(id).run();
+  const failBootstrap = async (id: string, failureCode: string) =>
+    env.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = ?, failure_code = ?,
+           progress_json =
+             '{"completed_stages":[],"current_stage":"failed"}'
+       WHERE id = ? AND state = 'planning'
+         AND EXISTS (
+           SELECT 1 FROM operation_state
+           WHERE singleton = 1 AND active_ingestion_run_id = ?
+         )`,
+    ).bind(now, failureCode, id, id).run();
+  const clearBootstrap = async (id: string) => env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+  ).bind(id).run();
+  const deleteBootstrap = async (id: string) => {
+    const [, result] = await env.CATALOGUE_DB.batch([
+      env.CATALOGUE_DB.prepare(
+        `DELETE FROM ingestion_run_transitions
+         WHERE ingestion_run_id = ?`,
+      ).bind(id),
+      env.CATALOGUE_DB.prepare(
+        `DELETE FROM ingestion_runs
+         WHERE id = ? AND idempotency_key = id
+           AND selected_games_json = '[]'
+           AND candidate_json = '{"production_release_bootstrap":true}'
+           AND state IN ('planning', 'failed')
+           AND NOT EXISTS (
+             SELECT 1 FROM operation_state
+             WHERE singleton = 1
+               AND active_ingestion_run_id = ingestion_runs.id
+           )`,
+      ).bind(id),
+    ]);
+    if (result === undefined) {
+      throw new Error("The bootstrap cleanup batch did not return a result.");
+    }
+    return result;
+  };
+
+  const firstFence = `release_first_${sequence}`;
+  const firstBootstrap =
+    `release-bootstrap|2099-01-01T00:00:00.000Z|${firstFence}`;
+  await insertBootstrap(firstBootstrap);
+  const firstClaim = await claimBootstrap(firstBootstrap);
+  expect(firstClaim.meta.changes).toBe(1);
+
+  // This is the cleanup query used by the previously deployed ingestion
+  // worker. A matching active planning row prevents it from dropping the
+  // pre-migration release fence as an orphan.
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM ingestion_runs
+         WHERE id = operation_state.active_ingestion_run_id
+           AND state IN (
+             'planning', 'collecting', 'parsing', 'reconciling',
+             'awaiting_approval', 'publishing'
+           )
+       )`,
+  ).run();
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
+  ).first()).toEqual({ active_ingestion_run_id: firstBootstrap });
+
+  const blockedBootstrap =
+    `release-bootstrap|2099-01-01T00:00:00.000Z|release_blocked_${sequence}`;
+  await expect(insertBootstrap(blockedBootstrap))
+    .rejects.toThrow("active_ingestion_run_or_release");
+
+  // Failure cleanup retains an immutable audit on the legacy schema, while
+  // the migrated schema can remove this exact non-domain marker and retry.
+  expect((await failBootstrap(
+    firstBootstrap,
+    "production_release_bootstrap_abandoned",
+  )).meta.changes).toBeGreaterThan(0);
+  expect((await clearBootstrap(firstBootstrap)).meta.changes).toBe(1);
+  expect((await deleteBootstrap(firstBootstrap)).meta.changes).toBe(1);
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT id FROM ingestion_runs WHERE id = ?",
+  ).bind(firstBootstrap).first()).toBeNull();
+
+  const staleBootstrap =
+    `release-bootstrap|2000-01-01T00:00:00.000Z|${firstFence}`;
+  await insertBootstrap(staleBootstrap);
+  expect((await claimBootstrap(staleBootstrap)).meta.changes).toBe(1);
+  expect((await failBootstrap(
+    staleBootstrap,
+    "production_release_bootstrap_expired",
+  )).meta.changes).toBeGreaterThan(0);
+  expect((await clearBootstrap(staleBootstrap)).meta.changes).toBe(1);
+
+  const secondFence = `release_second_${sequence}`;
+  const secondBootstrap =
+    `release-bootstrap|2099-01-01T00:00:00.000Z|${secondFence}`;
+  await insertBootstrap(secondBootstrap);
+  const reclaimed = await claimBootstrap(secondBootstrap);
+  expect(reclaimed.meta.changes).toBe(1);
+  const transferred = await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_release_id = ?, active_release_expires_at = ?,
+         active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id = ?
+       AND (active_release_id IS NULL OR active_release_expires_at <= ?)`,
+  ).bind(secondFence, "2099-01-01T00:00:00.000Z", secondBootstrap, now).run();
+  expect(transferred.meta.changes).toBe(1);
+  expect((await deleteBootstrap(secondBootstrap)).meta.changes).toBe(1);
+  expect((await deleteBootstrap(staleBootstrap)).meta.changes).toBe(1);
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT count(*) AS bootstrap_count FROM ingestion_runs
+     WHERE id IN (?, ?)`,
+  ).bind(staleBootstrap, secondBootstrap).first()).toEqual({
+    bootstrap_count: 0,
+  });
+
+  const staleCleanup = await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_release_id = NULL, active_release_expires_at = NULL
+     WHERE singleton = 1 AND active_release_id = ?`,
+  ).bind(firstFence).run();
+  expect(staleCleanup.meta.changes).toBe(0);
+  const renewed = await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_release_expires_at = ?
+     WHERE singleton = 1 AND active_release_id = ?
+       AND active_release_expires_at > ?`,
+  ).bind("2099-01-01T00:15:00.000Z", secondFence, now).run();
+  expect(renewed.meta.changes).toBe(1);
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT active_release_id, active_release_expires_at
+     FROM operation_state WHERE singleton = 1`,
+  ).first()).toEqual({
+    active_release_id: secondFence,
+    active_release_expires_at: "2099-01-01T00:15:00.000Z",
+  });
+
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_release_expires_at = ? WHERE singleton = 1 AND active_release_id = ?",
+  ).bind("2000-01-01T00:00:00.000Z", secondFence).run();
+  const thirdFence = `release_third_${sequence}`;
+  const thirdBootstrap =
+    `release-bootstrap|2099-01-01T00:00:00.000Z|${thirdFence}`;
+  await insertBootstrap(thirdBootstrap);
+  expect((await claimBootstrap(thirdBootstrap)).meta.changes).toBe(1);
+  expect((await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_release_id = ?, active_release_expires_at = ?,
+         active_ingestion_run_id = NULL
+     WHERE singleton = 1 AND active_ingestion_run_id = ?
+       AND active_release_expires_at <= ?`,
+  ).bind(
+    thirdFence,
+    "2099-01-01T00:00:00.000Z",
+    thirdBootstrap,
+    now,
+  ).run()).meta.changes).toBe(1);
+  expect((await deleteBootstrap(thirdBootstrap)).meta.changes).toBe(1);
+  expect((await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET active_release_expires_at = ?
+     WHERE singleton = 1 AND active_release_id = ?`,
+  ).bind("2099-01-01T00:30:00.000Z", secondFence).run()).meta.changes)
+    .toBe(0);
+  expect((await env.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET active_release_id = NULL, active_release_expires_at = NULL
+     WHERE singleton = 1 AND active_release_id = ?`,
+  ).bind(secondFence).run()).meta.changes).toBe(0);
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT active_release_id FROM operation_state WHERE singleton = 1",
+  ).first()).toEqual({ active_release_id: thirdFence });
+});
+
 test("only one active assertion may overlap the same target interval", async () => {
   const firstProposal = await proposal("/name", "First");
   const first = {
@@ -606,7 +848,10 @@ test("a run pins an exact ordered set and applies it after official reconciliati
     game: "digimon" as const,
     official_identity: { kind: "card_number" as const, value: "BT1-001" },
     name: "Preserved Digimon Curation",
-    game_data: { profile: "digimon@1" as const, attributes: {} },
+    game_data: {
+      profile: "digimon@1" as const,
+      attributes: digimonAttributes(),
+    },
     curated_provenance: [{
       curated_revision_id: "currev_digimon_apply",
       content_digest: "c".repeat(64),
@@ -655,7 +900,10 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     game: "digimon" as const,
     name: "Preserved Digimon Curation",
     official_identity: { kind: "card_number" as const, value: "BT1-001" },
-    game_data: { profile: "digimon@1" as const, attributes: {} },
+    game_data: {
+      profile: "digimon@1" as const,
+      attributes: digimonAttributes(),
+    },
     curated_provenance: [{
       curated_revision_id: "currev_unselected",
       content_digest: "b".repeat(64),
@@ -724,6 +972,66 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     revision_ids_json: JSON.stringify([revision.curated_revision_id]),
     set_digest: await sha256Text(canonicalJson([revision.curated_revision_id])),
   });
+});
+
+test("pinned assertions hard-fail when companion-field drift makes the composed candidate invalid", async () => {
+  const legalityProposal = {
+    game: "one-piece" as const,
+    target: {
+      kind: "field" as const,
+      entity_type: "legality_rule" as const,
+      entity_id: `legality_rule_${sequence}`,
+      path: "/event_tier",
+    },
+    assertion: { kind: "field" as const, value: "regional" },
+    rationale: "The owner reviewed the event tier.",
+    evidence: [{
+      kind: "owner_reference" as const,
+      uri: "https://owner.example/review/event-tier",
+      content_digest: "d".repeat(64),
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson(null)),
+    supersedes_revision_id: null,
+  };
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: legalityProposal,
+    proposal_digest: await sha256Text(canonicalJson(legalityProposal)),
+    idempotency_key: `companion-drift-${sequence}`,
+  }, now);
+  const runId = `run_companion_drift_${sequence}`;
+  await insertParsingRun(runId);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  const officialRule = {
+    ...((JSON.parse((await env.CATALOGUE_DB.prepare(
+      `SELECT candidate_json FROM ingestion_runs
+       WHERE idempotency_key = ?`,
+    ).bind(`curated-seed-${sequence}`).first<{ candidate_json: string }>())!
+      .candidate_json) as { legality_rules: Record<string, unknown>[] })
+      .legality_rules[0]!),
+    event_tier: null,
+    effective_from: "2026-08-05",
+    effective_until: null,
+    unresolved_scope: { dimensions: ["event_tier"] },
+    effect: { type: "unresolved" },
+  };
+  await expect(applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, {
+    contract: "card-keepr-catalogue-candidate@1",
+    selected_games: ["one-piece"],
+    cards: [card],
+    printings: [],
+    legality_rules: [officialRule as never],
+  }, now)).rejects.toThrow("curated_revision_composed_candidate_invalid");
+  const run = await env.CATALOGUE_DB.prepare(
+    "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
+  ).bind(runId).first<{ state: string; failure_code: string | null }>();
+  expect(run).toEqual({
+    state: "failed",
+    failure_code: "curated_revision_composed_candidate_invalid",
+  });
+  expect(created.document.status).toBe("active");
 });
 
 test("a prepared retry persists its failed run and every source-change conflict", async () => {
@@ -1012,6 +1320,32 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
     reviewed_source_digest: await sha256Text(canonicalJson("New Official Name")),
     supersedes_revision_id: created.curated_revision_id,
   };
+  const replacementWithMissingEvidence = {
+    ...replacement,
+    evidence: [{
+      kind: "source_observation" as const,
+      id: `srcobs_missing_replacement_${sequence}`,
+    }],
+  };
+  await expect(supersedeCuratedRevision(
+    env.CATALOGUE_DB,
+    created.curated_revision_id,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: 3,
+      conflict_digest: null,
+      proposal: replacementWithMissingEvidence,
+      proposal_digest: await sha256Text(canonicalJson(
+        replacementWithMissingEvidence,
+      )),
+      rationale: "Reject unresolved replacement evidence.",
+      idempotency_key: `supersede-missing-evidence-${sequence}`,
+    },
+    now,
+  )).rejects.toMatchObject({
+    code: "curated_revision_evidence_not_retained",
+  });
   const superseded = await supersedeCuratedRevision(
     env.CATALOGUE_DB,
     created.curated_revision_id,
@@ -1178,7 +1512,11 @@ test("a curated absence derives one relationship state and retains Official Sour
     },
     assertion: { kind: "relationship", presence: "absent" },
     rationale: "The owner reviewed the canonical relationship as absent.",
-    evidence: [{ kind: "source_observation", id: `srcobs_${sequence}` }],
+    evidence: [{
+      kind: "owner_reference",
+      uri: "https://owner.example/review/relationship-absence",
+      content_digest: "e".repeat(64),
+    }],
     effective_interval: { from: null, to: null },
     reviewed_source_digest: await sha256Text(canonicalJson("present")),
     supersedes_revision_id: null,
@@ -1282,11 +1620,28 @@ function adminRequest(pathname: string, body?: unknown): Promise<Response> {
     method: body === undefined ? "GET" : "POST",
     headers: {
       authorization: "Bearer vitest-administration-key",
+      "cf-connecting-ip": `203.0.113.${(sequence % 250) + 1}`,
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       "x-keepr-test-now": now,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }));
+}
+
+function digimonAttributes(): Record<string, unknown> {
+  return {
+    card_type: "digimon",
+    colours: ["red"],
+    level: 3,
+    play_cost: 3,
+    dp: 2000,
+    digivolution_requirements: [],
+    form: "Rookie",
+    attribute: "Vaccine",
+    traits: ["Reptile"],
+    text_sections: [],
+    use_cost: null,
+  };
 }
 
 async function insertParsingRun(runId: string) {

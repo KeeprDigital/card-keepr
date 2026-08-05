@@ -1169,10 +1169,10 @@ async function startPreparedRun(
   );
   const candidateJson = canonicalJson(curated.candidate);
   const candidateDigest = await sha256(new TextEncoder().encode(candidateJson));
-  const curatedConflict = curated.conflictRevisionIds.length > 0;
+  const curatedFailure = curated.failureCode !== null;
   const resultingRun = publicRun({
     id: runId,
-    state: curatedConflict ? "failed" : "awaiting_approval",
+    state: curatedFailure ? "failed" : "awaiting_approval",
     selected_games_json: JSON.stringify(input.selectedGames),
     started_at: startedAt,
     expected_current_revision_id: catalogueState.current_revision_id,
@@ -1185,14 +1185,12 @@ async function startPreparedRun(
     approval_json: null,
     published_revision_id: null,
     export_manifest_digest: null,
-    terminal_at: curatedConflict ? startedAt : null,
+    terminal_at: curatedFailure ? startedAt : null,
     candidate_json: candidateJson,
     approval_idempotency_key: null,
-    failure_code: curatedConflict
-      ? "curated_revision_reconfirmation_required"
-      : null,
+    failure_code: curated.failureCode,
     progress_json: JSON.stringify(progressFor(
-      curatedConflict ? "failed" : "awaiting_approval",
+      curatedFailure ? "failed" : "awaiting_approval",
     )),
     warnings_json: "[]",
     approval_history_json: "[]",
@@ -1253,7 +1251,7 @@ async function startPreparedRun(
           JSON.stringify(progressFor("planning")),
         ),
       ...curatedPinStatements,
-      ...(curatedConflict
+      ...(curatedFailure
         ? [database.prepare(
           `UPDATE operation_state
            SET active_ingestion_run_id = ?
@@ -1268,7 +1266,7 @@ async function startPreparedRun(
                candidate_created_at = ?,
                approval_deadline = ?,
                terminal_at = ?,
-               failure_code = 'curated_revision_reconfirmation_required',
+               failure_code = ?,
                progress_json = ?
            WHERE id = ? AND state = 'planning'`,
         ).bind(
@@ -1277,6 +1275,7 @@ async function startPreparedRun(
           startedAt,
           approvalDeadline,
           startedAt,
+          curated.failureCode,
           JSON.stringify(progressFor("failed")),
           runId,
         ), releaseRunLockStatement(database, runId)]

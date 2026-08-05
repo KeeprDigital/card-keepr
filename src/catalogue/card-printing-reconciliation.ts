@@ -74,6 +74,7 @@ import {
 type ActiveRunRow = {
   id: string;
   state: string;
+  selected_games_json: string;
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
   recovery_health: string;
@@ -131,6 +132,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const priorCandidate = await candidateAtRevision(
     database,
     run.expected_current_revision_id,
+    JSON.parse(run.selected_games_json) as SupportedGame[],
   );
   const cards = new Map<string, CatalogueCard>(
     priorCandidate?.cards.map((card) => [card.id, card]) ?? [],
@@ -1348,6 +1350,7 @@ function reconciliationDigestPayload(input: {
 async function candidateAtRevision(
   database: D1Database,
   revisionId: string,
+  selectedGames: readonly SupportedGame[],
 ): Promise<CatalogueCandidate | null> {
   const row = await database
     .prepare(
@@ -1366,7 +1369,7 @@ async function candidateAtRevision(
       "candidate",
       row.candidate_json,
     ),
-  ) as CatalogueCandidate);
+  ) as CatalogueCandidate, selectedGames);
   const errata = candidate.errata ?? [];
   const provenanceByErratum = new Map<
     string,
@@ -1957,7 +1960,8 @@ async function requiredActiveParsingRun(
 ): Promise<ActiveRunRow> {
   const row = await database
     .prepare(
-      `SELECT run.id, run.state, run.expected_current_revision_id,
+      `SELECT run.id, run.state, run.selected_games_json,
+              run.expected_current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_runs AS run

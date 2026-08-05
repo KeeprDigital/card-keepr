@@ -39,6 +39,12 @@ const identityRootsByType: Readonly<Record<string, ReadonlySet<string>>> = {
   erratum: new Set(["target_type", "target_id"]),
   legality_rule: new Set(["official_id"]),
 };
+const relationshipEndpointPairs: Readonly<Record<string, string>> = {
+  "printing-product": "printing->product",
+  "printing-distribution-context": "printing->distribution_context",
+  "distribution-context-product": "distribution_context->product",
+  "product-card": "product->card",
+};
 const fieldAjv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(fieldAjv);
 
@@ -52,9 +58,9 @@ type Proposal = {
   };
   rationale: string;
   evidence: readonly CuratedEvidence[];
-  effective_interval?: { from: string | null; to: string | null };
+  effective_interval: { from: string | null; to: string | null };
   reviewed_source_digest: string;
-  supersedes_revision_id?: string | null;
+  supersedes_revision_id: string | null;
 };
 
 type RevisionRow = {
@@ -87,7 +93,8 @@ export async function validateCuratedRevision(
   expectedCurrentRevisionId: string,
 ): Promise<Record<string, unknown>> {
   const proposal = structuralProposal(proposalValue);
-  const currentRevisionId = await currentRevision(database);
+  await assertRetainedCuratedEvidence(database, proposal.evidence);
+  const currentRevisionId = await currentCatalogueRevisionId(database);
   if (expectedCurrentRevisionId !== currentRevisionId) {
     throw new AdministrationProblem(409, "current_revision_mismatch", "The expected current Catalogue Revision is stale.");
   }
@@ -174,15 +181,17 @@ export async function createCuratedRevision(
     throw new AdministrationProblem(409, "curated_revision_content_digest_mismatch", "The supplied proposal digest does not match the canonical proposal.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, active_release_id, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id, active_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; active_release_expires_at: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
   }
-  if (operation?.active_release_id !== null) {
+  if (operation?.active_release_id !== null &&
+    operation?.active_release_expires_at !== null &&
+    operation.active_release_expires_at > observedAt) {
     throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const proposal = structuralProposal(input.proposal);
@@ -248,7 +257,7 @@ export async function reaffirmCuratedRevision(
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "expected_event_version", "conflict_digest", "rationale", "idempotency_key"]);
-  const mutation = await existingRevisionMutation(database, revisionId, input);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
   if (mutation.replay !== null) return mutation.replay;
   if (mutation.row.status !== "reconfirmation_required" || mutation.conflict === null) {
     throw new AdministrationProblem(409, "curated_revision_state_conflict", "Only a Curated Revision requiring reconfirmation may be reaffirmed.");
@@ -286,7 +295,7 @@ export async function retireCuratedRevision(
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "expected_event_version", "conflict_digest", "rationale", "idempotency_key"]);
-  const mutation = await existingRevisionMutation(database, revisionId, input);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   const rationale = requiredString(input.rationale, "rationale");
@@ -317,7 +326,7 @@ export async function supersedeCuratedRevision(
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "expected_event_version", "conflict_digest", "proposal", "proposal_digest", "rationale", "idempotency_key"]);
-  const mutation = await existingRevisionMutation(database, revisionId, input);
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   requiredString(input.rationale, "rationale");
@@ -491,9 +500,15 @@ export async function prepareCuratedRevisionRunStart(
   candidate: CatalogueCandidate;
   statements: D1PreparedStatement[];
   conflictRevisionIds: readonly string[];
+  failureCode: string | null;
 }> {
   if (!(await curatedRevisionSchemaAvailable(database))) {
-    return { candidate, statements: [], conflictRevisionIds: [] };
+    return {
+      candidate,
+      statements: [],
+      conflictRevisionIds: [],
+      failureCode: null,
+    };
   }
   const rows = await activeCuratedRevisionRows(
     database,
@@ -547,6 +562,7 @@ export async function prepareCuratedRevisionRunStart(
         ),
       ],
       conflictRevisionIds: conflicts.map(({ row }) => row.id),
+      failureCode: "curated_revision_reconfirmation_required",
     };
   }
   for (const { row, proposal, reviewedSourceValue } of prepared) {
@@ -568,10 +584,19 @@ export async function prepareCuratedRevisionRunStart(
       applyRelationship(result, proposal, row, String(reviewedSourceValue));
     }
   }
+  if (!validComposedCuratedCandidate(result)) {
+    return {
+      candidate: official,
+      statements: pinStatements,
+      conflictRevisionIds: [],
+      failureCode: "curated_revision_composed_candidate_invalid",
+    };
+  }
   return {
     candidate: result,
     statements: pinStatements,
     conflictRevisionIds: [],
+    failureCode: null,
   };
 }
 
@@ -787,6 +812,25 @@ export async function applyPinnedCuratedRevisions(
       applyRelationship(result, proposal, row, String(reviewedSourceValue));
     }
   }
+  if (!validComposedCuratedCandidate(result)) {
+    await database.batch([
+      database.prepare(
+        `UPDATE ingestion_runs
+         SET state = 'failed', terminal_at = ?,
+             failure_code = 'curated_revision_composed_candidate_invalid',
+             progress_json = json_set(progress_json, '$.current_stage', 'failed')
+         WHERE id = ? AND state IN (
+           'planning', 'collecting', 'parsing', 'reconciling',
+           'awaiting_approval'
+         )`,
+      ).bind(observedAt, runId),
+      database.prepare(
+        `UPDATE operation_state SET active_ingestion_run_id = NULL
+         WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+      ).bind(runId),
+    ]);
+    throw new Error("curated_revision_composed_candidate_invalid");
+  }
   return result;
 }
 
@@ -816,6 +860,19 @@ export async function curatedPublicationStatements(
        catalogue_revision_id, curated_revision_id, target_key,
        content_digest, provenance_json
      )
+     SELECT ?, prior.curated_revision_id, prior.target_key,
+            prior.content_digest, prior.provenance_json
+     FROM ingestion_runs AS run
+     JOIN catalogue_curated_provenance AS prior
+       ON prior.catalogue_revision_id = run.expected_current_revision_id
+     JOIN curated_revisions AS prior_revision
+       ON prior_revision.id = prior.curated_revision_id
+     WHERE run.id = ?
+       AND NOT EXISTS (
+         SELECT 1 FROM json_each(run.selected_games_json)
+         WHERE value = prior_revision.game
+       )
+     UNION ALL
      SELECT ?, revision.id, revision.target_key,
             revision.content_digest,
             json_object(
@@ -826,9 +883,8 @@ export async function curatedPublicationStatements(
             )
      FROM ingestion_run_curated_revisions AS pin
      JOIN curated_revisions AS revision ON revision.id = pin.revision_id
-     WHERE pin.ingestion_run_id = ?
-     ORDER BY pin.ordinal`,
-  ).bind(revisionId, runId)];
+     WHERE pin.ingestion_run_id = ?`,
+  ).bind(revisionId, runId, revisionId, runId)];
 }
 
 export function stripCuratedRevisionEffects(
@@ -963,6 +1019,7 @@ async function existingRevisionMutation(
   database: D1Database,
   revisionId: string,
   input: Record<string, unknown>,
+  observedAt: string,
 ): Promise<ExistingMutation> {
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson({ revision_id: revisionId, ...input }));
@@ -981,20 +1038,22 @@ async function existingRevisionMutation(
   if (input.environment !== "production") {
     throw new AdministrationProblem(422, "production_target_required", "Curated Revision mutations require environment production.");
   }
-  const currentRevisionId = await currentRevision(database);
+  const currentRevisionId = await currentCatalogueRevisionId(database);
   if (requiredString(input.expected_current_revision_id, "expected_current_revision_id") !== currentRevisionId) {
     throw new AdministrationProblem(409, "current_revision_mismatch", "The expected current Catalogue Revision is stale.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, active_release_id, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id, active_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; active_release_expires_at: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
   }
-  if (operation?.active_release_id !== null) {
+  if (operation?.active_release_id !== null &&
+    operation?.active_release_expires_at !== null &&
+    operation.active_release_expires_at > observedAt) {
     throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const row = await database.prepare("SELECT * FROM curated_revisions WHERE id = ?")
@@ -1149,6 +1208,7 @@ async function validateSupersedingProposal(
   mutation: ExistingMutation,
   proposal: Proposal,
 ): Promise<void> {
+  await assertRetainedCuratedEvidence(database, proposal.evidence);
   const target = await currentTarget(database, mutation.currentRevisionId, proposal);
   if (proposal.target.kind === "field") {
     const parts = pointerParts(proposal.target.path);
@@ -1232,7 +1292,7 @@ async function operationIdentity(idempotencyKey: string): Promise<string> {
   return `curop_${(await sha256Text(idempotencyKey)).slice(0, 32)}`;
 }
 
-async function currentRevision(database: D1Database): Promise<string> {
+async function currentCatalogueRevisionId(database: D1Database): Promise<string> {
   const row = await database.prepare("SELECT current_revision_id FROM catalogue_state WHERE singleton = 1")
     .first<{ current_revision_id: string }>();
   if (row === null) throw new Error("Catalogue state is unavailable.");
@@ -1393,13 +1453,8 @@ function assertRelationshipRepresentable(candidate: CatalogueCandidate, proposal
     "distribution-context-product", "product-card",
   ]);
   const endpointPair = `${target.from.type}->${target.to.type}`;
-  const pairs: Readonly<Record<string, string>> = {
-    "printing-product": "printing->product",
-    "printing-distribution-context": "printing->distribution_context",
-    "distribution-context-product": "distribution_context->product",
-    "product-card": "product->card",
-  };
-  if (!allowed.has(target.relationship_kind) || pairs[target.relationship_kind] !== endpointPair ||
+  if (!allowed.has(target.relationship_kind) ||
+    relationshipEndpointPairs[target.relationship_kind] !== endpointPair ||
     !entityExists(candidate, target.from.type, target.from.id, proposal.game) ||
     !entityExists(candidate, target.to.type, target.to.id, proposal.game)) {
     throw new AdministrationProblem(422, "curated_revision_relationship_not_in_schema", "The relationship or one of its endpoints is not representable by the V1 schema.");
@@ -1419,13 +1474,18 @@ function entityExists(candidate: CatalogueCandidate, type: string, id: string, g
 function structuralProposal(value: unknown): Proposal {
   if (!record(value)) invalid("Proposal is required.");
   onlyFields(value, ["game", "target", "assertion", "rationale", "evidence", "effective_interval", "reviewed_source_digest", "supersedes_revision_id"]);
+  if (!Object.hasOwn(value, "effective_interval") ||
+    !Object.hasOwn(value, "supersedes_revision_id")) {
+    invalid("effective_interval and supersedes_revision_id are required, including when null.");
+  }
   if (!games.has(String(value.game))) throw new AdministrationProblem(422, "invalid_supported_game", "The Supported Game is invalid.");
   if (typeof value.rationale !== "string" || value.rationale.trim() === "") invalid("A non-empty rationale is required.");
   if (!sha256Digest(value.reviewed_source_digest)) invalid("reviewed_source_digest must be a lower-case SHA-256.");
   if (!Array.isArray(value.evidence) || value.evidence.length === 0 || !value.evidence.every(validEvidence)) invalid("At least one valid evidence reference is required.");
-  const interval = value.effective_interval ?? { from: null, to: null };
+  const interval = value.effective_interval;
+  if (record(interval)) onlyFields(interval, ["from", "to"]);
   if (!record(interval) || !onlyDate(interval.from) || !onlyDate(interval.to) || (typeof interval.from === "string" && typeof interval.to === "string" && interval.from >= interval.to)) {
-    throw new AdministrationProblem(422, "curated_revision_interval_invalid", "The optional interval is closed-open and from must precede to.");
+    throw new AdministrationProblem(422, "curated_revision_interval_invalid", "The interval is closed-open and from must precede to.");
   }
   if (!record(value.target) || !record(value.assertion)) throw new AdministrationProblem(422, "curated_revision_target_invalid", "The target and assertion are required.");
   if (value.target.kind === "field") {
@@ -1442,8 +1502,36 @@ function structuralProposal(value: unknown): Proposal {
     if (!opaque(value.target.from.id) || !opaque(value.target.to.id) || typeof value.target.from.type !== "string" || typeof value.target.to.type !== "string" || typeof value.target.relationship_kind !== "string") throw new AdministrationProblem(422, "curated_revision_target_invalid", "Relationship target is incomplete.");
     if (value.assertion.kind !== "relationship" || (value.assertion.presence !== "present" && value.assertion.presence !== "absent")) invalid("A relationship assertion must be present or absent.");
   } else throw new AdministrationProblem(422, "curated_revision_target_invalid", "Target kind must be field or relationship.");
-  if (value.supersedes_revision_id !== null && value.supersedes_revision_id !== undefined && !opaque(value.supersedes_revision_id)) invalid("supersedes_revision_id must be an opaque identity or null.");
+  if (value.supersedes_revision_id !== null && !opaque(value.supersedes_revision_id)) invalid("supersedes_revision_id must be an opaque identity or null.");
   return value as unknown as Proposal;
+}
+
+async function assertRetainedCuratedEvidence(
+  database: D1Database,
+  evidence: readonly CuratedEvidence[],
+): Promise<void> {
+  const sourceObservationIds = evidence.flatMap((item) =>
+    item.kind === "source_observation" ? [item.id] : []
+  );
+  if (sourceObservationIds.length === 0) return;
+  const retained = await database.prepare(
+    `SELECT source_observation_id
+     FROM retained_source_observation_evidence
+     WHERE source_observation_id IN (SELECT value FROM json_each(?))`,
+  ).bind(JSON.stringify(sourceObservationIds)).all<{
+    source_observation_id: string;
+  }>();
+  const retainedIds = new Set(retained.results.map(({ source_observation_id }) =>
+    source_observation_id
+  ));
+  const missing = sourceObservationIds.find((id) => !retainedIds.has(id));
+  if (missing !== undefined) {
+    throw new AdministrationProblem(
+      422,
+      "curated_revision_evidence_not_retained",
+      `Source Observation ${missing} is not retained immutable evidence.`,
+    );
+  }
 }
 
 function targetKey(proposal: Proposal): string {
@@ -1714,6 +1802,52 @@ function validCompleteCuratedEntity(
         typeof entity.corrected_value === "string" && entity.corrected_value.trim().length > 0);
   }
   return true;
+}
+
+function validComposedCuratedCandidate(candidate: CatalogueCandidate): boolean {
+  if (!candidate.cards.every((entity) =>
+    validCompleteCuratedEntity("card", entity as unknown as Record<string, unknown>)
+  )) return false;
+  if (!candidate.printings.every((entity) =>
+    validCompleteCuratedEntity("printing", entity as unknown as Record<string, unknown>)
+  )) return false;
+  if (!(candidate.products ?? []).every((entity) =>
+    validCompleteCuratedEntity("product", entity as unknown as Record<string, unknown>) &&
+    entity.releases.every((release) =>
+      validCompleteCuratedEntity("release", release as unknown as Record<string, unknown>)
+    )
+  )) return false;
+  if (!(candidate.distribution_contexts ?? []).every((entity) =>
+    validCompleteCuratedEntity(
+      "distribution_context",
+      entity as unknown as Record<string, unknown>,
+    )
+  )) return false;
+  if (!(candidate.errata ?? []).every((entity) =>
+    validCompleteCuratedEntity("erratum", entity as unknown as Record<string, unknown>)
+  )) return false;
+  if (!(candidate.legality_rules ?? []).every((entity) =>
+    validCompleteCuratedEntity(
+      "legality_rule",
+      entity as unknown as Record<string, unknown>,
+    )
+  )) return false;
+  return (candidate.product_relationships ?? []).every((relationship) =>
+    relationshipEndpointPairs[relationship.kind] ===
+      `${relationship.from.type}->${relationship.to.type}` &&
+    entityExists(
+      candidate,
+      relationship.from.type,
+      relationship.from.id,
+      relationship.game,
+    ) &&
+    entityExists(
+      candidate,
+      relationship.to.type,
+      relationship.to.id,
+      relationship.game,
+    )
+  );
 }
 function validEvidence(value: unknown): boolean {
   if (!record(value)) return false;
