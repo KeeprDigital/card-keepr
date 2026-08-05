@@ -97,10 +97,24 @@ test("replacement release state is rehydrated into a distinct blocked database b
   seedOriginalReplacementRelease(original, environment);
   const exportSql = await readFile(join(directory, "replacement-handoff.sql"), "utf8");
   const handoff = original.prepare(exportSql).get().handoff_json;
+  const exactHandoff = JSON.parse(handoff);
+  assert.equal(
+    exactHandoff.contract,
+    "card-keepr-replacement-production-release-handoff@2",
+  );
+  assert.equal(exactHandoff.production_release.id, "release-47");
+  assert.equal(Object.hasOwn(exactHandoff, "release"), false);
   const alteredHandoff = JSON.parse(handoff);
-  alteredHandoff.release.unprepared_key = "must-fail-closed";
+  alteredHandoff.production_release.unprepared_key = "must-fail-closed";
   await assert.rejects(
     writeReplacementSeedSql(environment, JSON.stringify(alteredHandoff), join(directory, "altered-seed.sql")),
+    /invalid_replacement_handoff_evidence/u,
+  );
+  const shortenedHandoff = JSON.parse(handoff);
+  shortenedHandoff.release = shortenedHandoff.production_release;
+  delete shortenedHandoff.production_release;
+  await assert.rejects(
+    writeReplacementSeedSql(environment, JSON.stringify(shortenedHandoff), join(directory, "shortened-seed.sql")),
     /invalid_replacement_handoff_evidence/u,
   );
   await writeReplacementSeedSql(environment, handoff, join(directory, "replacement-seed.sql"));

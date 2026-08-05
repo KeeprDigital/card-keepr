@@ -164,15 +164,22 @@ uncertainty yields `indeterminate` when no definitive rule decides the result;
 definitive exclusions still take precedence while retaining the uncertainty
 in the audit. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
-`relationships` component. Newly generated exports use schema major 3 and
-retain `official_id`, source lineage and observation IDs, lifecycle, and each
-rule's complete normalized `effect`, including every operand and unresolved
-reason, plus nullable `effective_from` and explicit `unresolved_scope`.
+`relationships` component. Newly generated exports use schema major 4, the
+`card-keepr-catalogue-export-manifest@4` format, the canonical
+`https://card-keepr.invalid/schemas/catalogue-export-manifest@4` manifest
+schema URI, and component schema URIs rooted at
+`https://card-keepr.invalid/schemas/catalogue-export-record@4` with the exact
+record `$defs` fragment. They retain `official_id`, source lineage and
+observation IDs, lifecycle, and each rule's complete normalized `effect`,
+including every operand and unresolved reason, plus nullable `effective_from`
+and explicit `unresolved_scope`.
 Lifecycle on the rule itself states whether it is current and
 preserves its observation boundaries, including for globally applicable rules
 whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
-Historical schema-major-1 and schema-major-2 artifacts remain byte-identical,
-immutable, and readable through their explicitly versioned schemas.
+Historical schema-major-1, schema-major-2, and schema-major-3 artifacts remain
+byte-identical, immutable, and readable through their explicitly versioned
+schemas; retained major-3 exports continue to use their recorded v3 manifest
+and record URIs.
 
 Each revision materializes indexed applicability for every Card-scoped rule
 and one explicit `all_cards` row for a genuinely global rule. The authenticated

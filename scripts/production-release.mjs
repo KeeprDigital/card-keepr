@@ -132,13 +132,13 @@ export async function writeReplacementSeedSql(environment, serializedEvidence, o
   for (const item of evidence.idempotency) {
     statements.push(`INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (${q(item.idempotency_key)},${q(item.operation)},${q(item.request_json)},${q(item.response_json)},${item.http_status},${q(item.outcome)},${q(item.created_at)});`);
   }
-  const release = evidence.release;
+  const productionRelease = evidence.production_release;
   statements.push(
     `UPDATE operation_state SET recovery_health='blocked',active_recovery_id=${q(plan.replacement_handoff.recovery_id)},recovery_restore_guard='blocked' WHERE singleton=1 AND active_ingestion_run_id IS NULL AND active_release_id IS NULL AND ((recovery_health='healthy' AND active_recovery_id IS NULL AND recovery_restore_guard='clear') OR (recovery_health='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND recovery_restore_guard='blocked'));`,
-    `INSERT OR IGNORE INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) VALUES (${q(release.id)},'requested',${q(release.request_json)},${q(release.idempotency_key)},${q(release.expected_current_revision_id)},${q(release.expected_head_sha)},${q(release.production_target_digest)},${release.expected_migration_level},${q(release.recovery_bookmark)},${q(release.recovery_backup_attempt_id)},${q(release.replacement_recovery_id)},${q(release.replacement_database_id)},${q(release.retained_database_id)},${q(release.requested_at)});`,
-    `UPDATE production_releases SET state='preflight' WHERE id=${q(release.id)} AND state='requested';`,
-    `UPDATE production_releases SET state='migrating' WHERE id=${q(release.id)} AND state='preflight';`,
-    `UPDATE operation_state SET active_release_id=${q(release.id)},active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)} WHERE singleton=1 AND active_ingestion_run_id IS NULL AND recovery_health='blocked' AND recovery_restore_guard='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND (active_release_id IS NULL OR (active_release_id=${q(release.id)} AND active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)}));`,
+    `INSERT OR IGNORE INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) VALUES (${q(productionRelease.id)},'requested',${q(productionRelease.request_json)},${q(productionRelease.idempotency_key)},${q(productionRelease.expected_current_revision_id)},${q(productionRelease.expected_head_sha)},${q(productionRelease.production_target_digest)},${productionRelease.expected_migration_level},${q(productionRelease.recovery_bookmark)},${q(productionRelease.recovery_backup_attempt_id)},${q(productionRelease.replacement_recovery_id)},${q(productionRelease.replacement_database_id)},${q(productionRelease.retained_database_id)},${q(productionRelease.requested_at)});`,
+    `UPDATE production_releases SET state='preflight' WHERE id=${q(productionRelease.id)} AND state='requested';`,
+    `UPDATE production_releases SET state='migrating' WHERE id=${q(productionRelease.id)} AND state='preflight';`,
+    `UPDATE operation_state SET active_release_id=${q(productionRelease.id)},active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)} WHERE singleton=1 AND active_ingestion_run_id IS NULL AND recovery_health='blocked' AND recovery_restore_guard='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND (active_release_id IS NULL OR (active_release_id=${q(productionRelease.id)} AND active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)}));`,
     replacementTerminalAssertion(evidence, plan, environment),
   );
   await writeFile(output, `${statements.join("\n")}\n`, { mode: 0o600 });
@@ -185,7 +185,7 @@ function replacementHandoffSelect(plan, dispatchDigest) {
   const recoveryJson = `json_object('id',id,'state',state,'method',method,'request_json',request_json,'idempotency_key',idempotency_key,'target_revision_id',target_revision_id,'target_bookmark',target_bookmark,'target_digest',target_digest,'source_backup_attempt_id',source_backup_attempt_id,'linked_operation_id',linked_operation_id,'expected_current_revision_id',expected_current_revision_id,'current_bookmark',current_bookmark,'restored_bookmark',restored_bookmark,'undo_bookmark',undo_bookmark,'original_database_id',original_database_id,'restored_database_id',restored_database_id,'retained_database_id',retained_database_id,'expected_schema_migration_level',expected_schema_migration_level,'expected_verification_json',expected_verification_json,'verification_json',verification_json,'verification_idempotency_key',verification_idempotency_key,'verification_request_digest',verification_request_digest,'acceptance_idempotency_key',acceptance_idempotency_key,'acceptance_request_digest',acceptance_request_digest,'started_at',started_at,'restored_at',restored_at,'verified_at',verified_at,'accepted_at',accepted_at,'failure_code',failure_code,'failure_detail',failure_detail,'failed_at',failed_at)`;
   const backupJson = `json_object('idempotency_key',backup.idempotency_key,'request_json',backup.request_json,'owner_token',backup.owner_token,'catalogue_revision_id',backup.catalogue_revision_id,'object_key',backup.object_key,'d1_bookmark',backup.d1_bookmark,'started_at',backup.started_at,'completed_at',backup.completed_at,'manifest_key',backup.manifest_key,'content_sha256',backup.content_sha256,'manifest_sha256',backup.manifest_sha256,'export_bytes',backup.export_bytes,'schema_migration_level',backup.schema_migration_level,'disposable_database_id',backup.disposable_database_id,'restore_generation',backup.restore_generation,'restore_phase',backup.restore_phase)`;
   const idemJson = `json_object('idempotency_key',idempotency_key,'operation',operation,'request_json',request_json,'response_json',response_json,'http_status',http_status,'outcome',outcome,'created_at',created_at)`;
-  const releaseJson = `json_object('id',release.id,'state',release.state,'request_json',release.request_json,'idempotency_key',release.idempotency_key,'expected_current_revision_id',release.expected_current_revision_id,'expected_head_sha',release.expected_head_sha,'production_target_digest',release.production_target_digest,'expected_migration_level',release.expected_migration_level,'recovery_bookmark',release.recovery_bookmark,'recovery_backup_attempt_id',release.recovery_backup_attempt_id,'replacement_recovery_id',release.replacement_recovery_id,'replacement_database_id',release.replacement_database_id,'retained_database_id',release.retained_database_id,'requested_at',release.requested_at)`;
+  const productionReleaseJson = `json_object('id',release.id,'state',release.state,'request_json',release.request_json,'idempotency_key',release.idempotency_key,'expected_current_revision_id',release.expected_current_revision_id,'expected_head_sha',release.expected_head_sha,'production_target_digest',release.production_target_digest,'expected_migration_level',release.expected_migration_level,'recovery_bookmark',release.recovery_bookmark,'recovery_backup_attempt_id',release.recovery_backup_attempt_id,'replacement_recovery_id',release.replacement_recovery_id,'replacement_database_id',release.replacement_database_id,'retained_database_id',release.retained_database_id,'requested_at',release.requested_at)`;
   const claimKey = `release-dispatch:${dispatchDigest}`;
   const migrationKey = `release-migration-started:${dispatchDigest}`;
   const idempotencyWhere = `(idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release') OR (idempotency_key=${q(claimKey)} AND operation='claim_production_release') OR (idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started')`;
@@ -200,13 +200,13 @@ function replacementHandoffSelect(plan, dispatchDigest) {
   ) GROUP BY source_backup_attempt_id
 )
 SELECT json_object(
-  'contract','card-keepr-replacement-release-handoff@1',
+  'contract','card-keepr-replacement-production-release-handoff@2',
   'schema_migration_level',schema_state.migration_level,
   'operation_state',json_object('active_ingestion_run_id',operation.active_ingestion_run_id,'active_release_id',operation.active_release_id,'active_release_expires_at',operation.active_release_expires_at,'recovery_health',operation.recovery_health,'active_recovery_id',operation.active_recovery_id,'recovery_restore_guard',operation.recovery_restore_guard),
   'backups',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${backupJson} AS row_json FROM source_backups AS source JOIN catalogue_backup_attempts AS backup ON backup.idempotency_key=source.source_backup_attempt_id WHERE backup.state='verified' ORDER BY source.depth))),
   'recoveries',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${recoveryJson} AS row_json FROM recovery_chain ORDER BY depth))),
   'idempotency',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${idemJson} AS row_json FROM administration_idempotency WHERE ${idempotencyWhere} ORDER BY CASE idempotency_key WHEN ${q(plan.idempotency_key)} THEN 0 WHEN ${q(claimKey)} THEN 1 ELSE 2 END))),
-  'release',${releaseJson}
+  'production_release',${productionReleaseJson}
 ) AS handoff_json
 FROM operation_state AS operation
 JOIN catalogue_schema_state AS schema_state ON schema_state.singleton=1
@@ -227,8 +227,8 @@ WHERE operation.singleton=1
 }
 
 function validReplacementHandoffEvidence(evidence, plan, environment) {
-  if (!exactKeys(evidence, ["backups", "contract", "idempotency", "operation_state", "recoveries", "release", "schema_migration_level"]) ||
-      evidence.contract !== "card-keepr-replacement-release-handoff@1" ||
+  if (!exactKeys(evidence, ["backups", "contract", "idempotency", "operation_state", "production_release", "recoveries", "schema_migration_level"]) ||
+      evidence.contract !== "card-keepr-replacement-production-release-handoff@2" ||
       !exactKeys(plan, ["expected_actor", "expected_current_revision_id", "expected_head_sha", "expected_migration_level", "idempotency_key", "production_target", "production_target_digest", "recovery_backup_attempt_id", "recovery_bookmark", "release_id", "replacement_handoff", "retained_revision_evidence", "smoke_targets"]) ||
       !exactKeys(plan.replacement_handoff, ["recovery_id", "replacement_database_id", "retained_database_id", "target_digest", "target_revision_id"]) ||
       !validReleaseEvidence(plan) || !/^[0-9a-f]{40}$/u.test(plan.expected_head_sha) || !/^[0-9a-f]{64}$/u.test(plan.production_target_digest) ||
@@ -283,13 +283,13 @@ function validReplacementHandoffEvidence(evidence, plan, environment) {
     stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: dispatch }),
   ];
   if (evidence.idempotency.some((item, index) => item.idempotency_key !== expectedIdempotency[index][0] || item.operation !== expectedIdempotency[index][1] || item.request_json !== stableJson(plan) || item.response_json !== expectedResponses[index] || item.http_status !== 201 || item.outcome !== "success")) return false;
-  const release = evidence.release;
-  return validReleaseRow(release) && release.id === plan.release_id && release.state === "migrating" && release.request_json === stableJson(plan) &&
-    release.idempotency_key === plan.idempotency_key && release.expected_current_revision_id === plan.expected_current_revision_id &&
-    release.expected_head_sha === plan.expected_head_sha && release.production_target_digest === plan.production_target_digest &&
-    release.expected_migration_level === plan.expected_migration_level && release.recovery_bookmark === plan.recovery_bookmark &&
-    release.recovery_backup_attempt_id === plan.recovery_backup_attempt_id && release.replacement_recovery_id === plan.replacement_handoff.recovery_id &&
-    release.replacement_database_id === plan.replacement_handoff.replacement_database_id && release.retained_database_id === plan.replacement_handoff.retained_database_id;
+  const productionRelease = evidence.production_release;
+  return validProductionReleaseRow(productionRelease) && productionRelease.id === plan.release_id && productionRelease.state === "migrating" && productionRelease.request_json === stableJson(plan) &&
+    productionRelease.idempotency_key === plan.idempotency_key && productionRelease.expected_current_revision_id === plan.expected_current_revision_id &&
+    productionRelease.expected_head_sha === plan.expected_head_sha && productionRelease.production_target_digest === plan.production_target_digest &&
+    productionRelease.expected_migration_level === plan.expected_migration_level && productionRelease.recovery_bookmark === plan.recovery_bookmark &&
+    productionRelease.recovery_backup_attempt_id === plan.recovery_backup_attempt_id && productionRelease.replacement_recovery_id === plan.replacement_handoff.recovery_id &&
+    productionRelease.replacement_database_id === plan.replacement_handoff.replacement_database_id && productionRelease.retained_database_id === plan.replacement_handoff.retained_database_id;
 }
 
 const recoveryKeys = ["acceptance_idempotency_key", "acceptance_request_digest", "accepted_at", "current_bookmark", "expected_current_revision_id", "expected_schema_migration_level", "expected_verification_json", "failed_at", "failure_code", "failure_detail", "id", "idempotency_key", "linked_operation_id", "method", "original_database_id", "request_json", "restored_at", "restored_bookmark", "restored_database_id", "retained_database_id", "source_backup_attempt_id", "started_at", "state", "target_bookmark", "target_digest", "target_revision_id", "undo_bookmark", "verification_idempotency_key", "verification_json", "verification_request_digest", "verified_at"];
@@ -321,7 +321,7 @@ function validIdempotencyEvidence(row) {
     validJson(row.request_json) && validJson(row.response_json) && Number.isSafeInteger(row.http_status) && row.http_status >= 100 && row.http_status <= 599 && isoTimestamp(row.created_at);
 }
 
-function validReleaseRow(row) {
+function validProductionReleaseRow(row) {
   const keys = ["expected_current_revision_id", "expected_head_sha", "expected_migration_level", "id", "idempotency_key", "recovery_backup_attempt_id", "recovery_bookmark", "replacement_database_id", "replacement_recovery_id", "request_json", "requested_at", "retained_database_id", "production_target_digest", "state"];
   return exactKeys(row, keys) && keys.filter((key) => !["expected_migration_level"].includes(key)).every((key) => typeof row[key] === "string" && row[key].length > 0) &&
     validJson(row.request_json) && Number.isSafeInteger(row.expected_migration_level) && row.expected_migration_level > 0 && isoTimestamp(row.requested_at);
