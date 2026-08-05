@@ -467,6 +467,28 @@ test("Legality Status reports the exact invalid query parameter", async () => {
   }
 });
 
+test("Legality Status reports an unnamed query key as a schema-valid Problem", async () => {
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/legality-status?=true",
+    { headers: apiHeaders("203.0.113.119") },
+  ));
+  expect(response.status).toBe(400);
+  const problem = await response.json();
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
+    .toBe(true);
+  expect(problem).toMatchObject({
+    code: "invalid_parameter",
+    invalid_params: [{
+      name: "query",
+      reason: "query parameter names must be non-empty.",
+    }],
+  });
+});
+
 test("authenticated Legality Status reads only indexed Card and regional applicability at high cardinality", async () => {
   const revisionId = "catrev_api_legality_applicability";
   const runId = "run_api_legality_applicability";

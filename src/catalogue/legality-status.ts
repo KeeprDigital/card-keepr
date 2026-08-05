@@ -402,6 +402,12 @@ function parseQuery(url: URL): {
   ]);
   for (const key of url.searchParams.keys()) {
     if (!allowed.has(key)) {
+      if (key.length === 0) {
+        throw invalidQueryParameter(
+          "query",
+          "query parameter names must be non-empty.",
+        );
+      }
       throw invalidQueryParameter(key, `${key} is not accepted.`);
     }
     if (url.searchParams.getAll(key).length !== 1) {
