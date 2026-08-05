@@ -2543,6 +2543,108 @@ test("the Worker lifecycle endpoints fail closed on every mutation guard", async
   });
 });
 
+test("supersession rolls back both lifecycle sides when replacement persistence fails", async () => {
+  const authored = await proposal("/name", "Atomic Prior Name");
+  const createdResponse = await adminRequest(
+    "/admin/v1/curated-revisions",
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: authored,
+      proposal_digest: await sha256Text(canonicalJson(authored)),
+      idempotency_key: `atomic-supersession-create-${sequence}`,
+    },
+  );
+  expect(createdResponse.status).toBe(201);
+  const created = await createdResponse.json() as {
+    curated_revision_id: string;
+  };
+  const replacement = {
+    ...authored,
+    assertion: { kind: "field" as const, value: "Atomic Replacement Name" },
+    supersedes_revision_id: created.curated_revision_id,
+  };
+  const supersedeInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    expected_event_version: 1,
+    conflict_digest: null,
+    proposal: replacement,
+    proposal_digest: await sha256Text(canonicalJson(replacement)),
+    rationale: "Replace both lifecycle sides atomically.",
+    idempotency_key: `atomic-supersession-${sequence}`,
+  };
+  await env.CATALOGUE_DB.prepare(
+    `CREATE TRIGGER inject_curated_replacement_failure
+     BEFORE INSERT ON curated_revisions
+     BEGIN
+       SELECT RAISE(ABORT, 'injected_replacement_failure');
+     END`,
+  ).run();
+  const failed = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    supersedeInput,
+  );
+  await env.CATALOGUE_DB.prepare(
+    "DROP TRIGGER inject_curated_replacement_failure",
+  ).run();
+  expect(failed.status).toBe(500);
+  await expect(failed.json()).resolves.toMatchObject({ code: "internal_error" });
+
+  const unchanged = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+  );
+  await expect(unchanged.json()).resolves.toMatchObject({
+    revision: {
+      status: "active",
+      event_version: 1,
+      content: authored,
+    },
+    events: [{ type: "authored", event_version: 1 }],
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM curated_revision_idempotency
+     WHERE idempotency_key = ?`,
+  ).bind(supersedeInput.idempotency_key).first()).resolves.toEqual({
+    count: 0,
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count
+     FROM curated_revisions
+     WHERE json_extract(proposal_json, '$.supersedes_revision_id') = ?`,
+  ).bind(created.curated_revision_id).first()).resolves.toEqual({ count: 0 });
+
+  const committed = await adminRequest(
+    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+    supersedeInput,
+  );
+  expect(committed.status).toBe(201);
+  const committedDocument = await committed.clone().json() as {
+    curated_revision_id?: unknown;
+  };
+  if (typeof committedDocument.curated_revision_id !== "string") {
+    throw new Error("The replacement Curated Revision identity is absent");
+  }
+  const replacementId = committedDocument.curated_revision_id;
+  const [prior, replacementShown] = await Promise.all([
+    adminRequest(
+      `/admin/v1/curated-revisions/${created.curated_revision_id}`,
+    ),
+    adminRequest(`/admin/v1/curated-revisions/${replacementId}`),
+  ]);
+  await expect(prior.json()).resolves.toMatchObject({
+    revision: { status: "superseded", event_version: 2 },
+  });
+  await expect(replacementShown.json()).resolves.toMatchObject({
+    revision: {
+      status: "active",
+      event_version: 1,
+      content: replacement,
+    },
+  });
+});
+
 test("an empty curated revision set is still pinned with its digest", async () => {
   const runId = `run_curated_empty_${sequence}`;
   await insertParsingRun(runId);

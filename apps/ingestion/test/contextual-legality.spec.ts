@@ -2329,20 +2329,61 @@ test("an Official Source relationship change recovers through supersession and r
     ),
     supersedes_revision_id: priorRevisionId,
   };
-  const superseded = await request(
+  const invalidReplacement = {
+    ...replacementProposal,
+    reviewed_source_digest: "f".repeat(64),
+  };
+  const invalidReviewedSource = await request(
     `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
     {
       environment: "production",
       expected_current_revision_id: currentRevisionId,
       expected_event_version: 2,
       conflict_digest: requiredString(conflict, "digest"),
-      proposal: replacementProposal,
-      proposal_digest: await sha256(utf8(canonicalJson(replacementProposal))),
+      proposal: invalidReplacement,
+      proposal_digest: await sha256(utf8(canonicalJson(invalidReplacement))),
       rationale: "Replace the exception after reviewing the changed source.",
+      idempotency_key: "reject-invalid-relationship-reviewed-source",
+    },
+  );
+  expect(invalidReviewedSource.response.status).toBe(409);
+  expect(invalidReviewedSource.document).toMatchObject({
+    code: "curated_revision_reviewed_source_mismatch",
+  });
+
+  const supersedeInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    expected_event_version: 2,
+    conflict_digest: requiredString(conflict, "digest"),
+    proposal: replacementProposal,
+    proposal_digest: await sha256(utf8(canonicalJson(replacementProposal))),
+    rationale: "Replace the exception after reviewing the changed source.",
+    idempotency_key: "supersede-curated-relationship-source-change",
+  };
+  const superseded = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    supersedeInput,
+  );
+  expect(superseded.response.status).toBe(201);
+  const supersedeReplay = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    supersedeInput,
+  );
+  expect(supersedeReplay.response.status).toBe(200);
+  expect(supersedeReplay.document).toEqual(superseded.document);
+  const changedSupersedeReuse = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    {
+      ...supersedeInput,
+      rationale: "A changed request must not reuse the accepted key.",
       idempotency_key: "supersede-curated-relationship-source-change",
     },
   );
-  expect(superseded.response.status).toBe(201);
+  expect(changedSupersedeReuse.response.status).toBe(409);
+  expect(changedSupersedeReuse.document).toMatchObject({
+    code: "idempotency_conflict",
+  });
   const replacementRevisionId = requiredString(
     superseded.document,
     "curated_revision_id",
@@ -2403,6 +2444,13 @@ test("an Official Source relationship change recovers through supersession and r
   );
   expect(rejected.response.status).toBe(200);
 
+  const replacementBeforeRetirement = await request(
+    `/admin/v1/curated-revisions/${replacementRevisionId}`,
+  );
+  expect(replacementBeforeRetirement.response.status).toBe(200);
+  const immutableReplacement = replacementBeforeRetirement.document
+    .revision as Record<string, unknown>;
+
   const retired = await request(
     `/admin/v1/curated-revisions/${replacementRevisionId}/retire`,
     {
@@ -2419,6 +2467,35 @@ test("an Official Source relationship change recovers through supersession and r
     curated_revision_id: replacementRevisionId,
     status: "retired",
     event_version: 2,
+  });
+  const replacementAfterRetirement = await request(
+    `/admin/v1/curated-revisions/${replacementRevisionId}`,
+  );
+  expect(replacementAfterRetirement.response.status).toBe(200);
+  const retiredReplacement = replacementAfterRetirement.document
+    .revision as Record<string, unknown>;
+  expect({
+    id: retiredReplacement.id,
+    content: retiredReplacement.content,
+    content_digest: retiredReplacement.content_digest,
+    author: retiredReplacement.author,
+    created_at: retiredReplacement.created_at,
+  }).toEqual({
+    id: immutableReplacement.id,
+    content: immutableReplacement.content,
+    content_digest: immutableReplacement.content_digest,
+    author: immutableReplacement.author,
+    created_at: immutableReplacement.created_at,
+  });
+  expect(replacementAfterRetirement.document).toMatchObject({
+    revision: {
+      status: "retired",
+      event_version: 2,
+    },
+    events: [
+      expect.objectContaining({ type: "authored", event_version: 1 }),
+      expect.objectContaining({ type: "retired", event_version: 2 }),
+    ],
   });
 
   const afterRetirement = await request(
