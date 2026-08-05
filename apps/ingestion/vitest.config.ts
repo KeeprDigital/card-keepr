@@ -1884,7 +1884,8 @@ function reconciliationSourceDocument(
     );
   }
   if (scenario === "contextual-legality-domain") {
-    const rules = new URL(requestUrl).searchParams.get("rules");
+    const fixtureUrl = new URL(requestUrl);
+    const rules = fixtureUrl.searchParams.get("rules");
     return contextualLegalityFixtureDocument(
       "EN-ASIA",
       rules === "omitted" || rules === "empty" ||
@@ -1894,6 +1895,9 @@ function reconciliationSourceDocument(
           rules === "resolved-card-order" ||
           rules === "operand-overlap"
         ? rules
+        : "current",
+      fixtureUrl.searchParams.get("semantics") === "changed"
+        ? "changed"
         : "current",
     );
   }
@@ -3815,7 +3819,8 @@ function reconciliationSourceDocument(
                   distribution_contexts: ["championship-2026-pack"],
                   source_buckets: ["starter-deck-card-list"],
                 }
-            : scenario === "product-typed-relationships"
+            : scenario === "product-typed-relationships" ||
+                scenario === "product-typed-relationships-changed"
               ? {
                   products: ["CODE-X"],
                   distribution_contexts: ["typed-context"],
@@ -3976,7 +3981,10 @@ function productReleaseCatalogueForScenario(
       relationships: [],
     };
   }
-  if (scenario === "product-typed-relationships") {
+  if (
+    scenario === "product-typed-relationships" ||
+    scenario === "product-typed-relationships-changed"
+  ) {
     return {
       products: [
         {
@@ -4021,13 +4029,15 @@ function productReleaseCatalogueForScenario(
           evidence_category: "explicit",
           resolution: "explicit",
         },
-        {
-          kind: "product-card",
-          product_reference: { kind: "name", value: "CODE-X" },
-          card_reference: { kind: "current_card" },
-          evidence_category: "derived",
-          resolution: "deterministic",
-        },
+        ...(scenario === "product-typed-relationships-changed"
+          ? []
+          : [{
+              kind: "product-card",
+              product_reference: { kind: "name", value: "CODE-X" },
+              card_reference: { kind: "current_card" },
+              evidence_category: "derived",
+              resolution: "deterministic",
+            }]),
       ],
     };
   }
