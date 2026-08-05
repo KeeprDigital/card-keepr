@@ -909,6 +909,10 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
     started.document,
     "candidate_digest",
   );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
   const rejected = await administrationRequest(
     `/v1/ingestion-runs/${runId}/rejection`,
     {
@@ -934,6 +938,46 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
         "reconciling",
       ],
       current_stage: "rejected",
+    },
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: {
+        run_id: runId,
+        request_id: "start-reject",
+        expected_catalogue_revision_id: expectedRevision,
+        candidate_digest: digest,
+        adapter_versions: [],
+        workflow: {
+          status_path: `/v1/ingestion-runs/${runId}`,
+        },
+        backup: { status_path: null },
+        recovery: { status_path: "/v1/status" },
+      },
+      terminal_evidence: {
+        state: "rejected",
+        failure: {
+          code: "ingestion_run_rejected",
+          retryability_code: "non_retryable_rejection",
+          retryable: false,
+        },
+        warning_count: 0,
+        approval_decision_count: 1,
+      },
+      retry: {
+        code: "ingestion_run_retry_available",
+        source_run_id: runId,
+      },
+      diagnosis_sequence: [
+        { code: "check_status", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          path: `/v1/ingestion-runs/${runId}`,
+        },
+        {
+          code: "inspect_candidate",
+          path: `/v1/ingestion-runs/${runId}/candidate`,
+        },
+      ],
     },
   });
 

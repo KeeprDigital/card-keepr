@@ -17,6 +17,7 @@ import {
   curatedRevisionSetForRun,
   curatedRevisionPinStatementsForNewRun,
 } from "./curated-revisions";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -37,6 +38,13 @@ export type IngestionEvidenceRow = {
   child_workflow_ids_json: string | null;
   collection_completed_at: string | null;
   failure_code: string | null;
+  candidate_digest: string | null;
+  progress_json: string;
+  warnings_json: string;
+  approval_history_json: string;
+  published_revision_id: string | null;
+  resulting_revision_id: string | null;
+  publication_outcome: string | null;
 };
 
 export type EvidenceRequestRow = {
@@ -1066,7 +1074,7 @@ export async function showEvidenceRun(
       }>(),
     curatedRevisionSetForRun(database, runId),
   ]);
-  return {
+  const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
     selected_games: JSON.parse(run.selected_games_json),
@@ -1119,6 +1127,20 @@ export async function showEvidenceRun(
       retry_after_ms: row.retry_after_ms,
       diagnostic: row.diagnostic,
     })),
+  };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      candidate_digest: run.candidate_digest,
+      progress: JSON.parse(run.progress_json),
+      warnings: JSON.parse(run.warnings_json),
+      approval_history: JSON.parse(run.approval_history_json),
+      terminal_at: run.terminal_at,
+      published_revision_id: run.published_revision_id,
+      resulting_revision_id: run.resulting_revision_id,
+      publication_outcome: run.publication_outcome,
+    }),
   };
 }
 

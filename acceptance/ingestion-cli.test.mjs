@@ -54,6 +54,62 @@ const run = {
     state: "failed",
     failure_code: "publication_cleanup_failed",
   },
+  operational_diagnostics: {
+    contract: "card-keepr-operational-diagnostics@1",
+    references: {
+      run_id: "run_cli_demo",
+      request_id: "request_cli_demo",
+      expected_catalogue_revision_id: "catrev_cli_demo",
+      resulting_catalogue_revision_id: "catrev_cli_demo",
+      candidate_digest: "a".repeat(64),
+      adapter_versions: ["one-piece-en@3"],
+      workflow: {
+        status_path: "/v1/ingestion-runs/run_cli_demo",
+        parent_id: "workflow_cli_demo",
+        child_ids: ["workflow_child_cli_demo"],
+      },
+      backup: {
+        status_path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+      recovery: { status_path: "/v1/status" },
+    },
+    terminal_evidence: {
+      state: "failed",
+      terminal_at: "2026-07-29T00:01:00.000Z",
+      failure: {
+        code: "source_unavailable",
+        retryability_code: "retryable_failure",
+        retryable: true,
+      },
+      warning_count: 1,
+      approval_decision_count: 1,
+      coverage: {
+        evidence_plan_count: 1,
+        source_snapshot_count: 7,
+        source_observation_set_count: 7,
+        fetch_attempt_count: 8,
+      },
+    },
+    retry: {
+      code: "ingestion_run_retry_available",
+      source_run_id: "run_cli_demo",
+    },
+    diagnosis_sequence: [
+      { code: "check_status", path: "/v1/status" },
+      {
+        code: "inspect_run",
+        path: "/v1/ingestion-runs/run_cli_demo",
+      },
+      {
+        code: "inspect_candidate",
+        path: "/v1/ingestion-runs/run_cli_demo/candidate",
+      },
+      {
+        code: "inspect_backup",
+        path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+    ],
+  },
 };
 
 test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
@@ -830,6 +886,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     status.stdout,
     /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/,
   );
+  assert.match(
+    status.stdout,
+    /Next: keepr run show --run-id run_cli_demo/,
+  );
 
   const shown = await runCli(
     ["run", "show", "--run-id", "run_cli_demo"],
@@ -848,6 +908,21 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     shown.stdout,
     /Resulting Catalogue Revision: catrev_cli_demo/,
   );
+  assert.match(shown.stdout, /Request reference: request_cli_demo/);
+  assert.match(shown.stdout, /Workflow: workflow_cli_demo/);
+  assert.match(shown.stdout, /Adapter versions: one-piece-en@3/);
+  assert.match(shown.stdout, new RegExp(`Candidate: ${"a".repeat(64)}`));
+  assert.match(
+    shown.stdout,
+    /Backup: \/v1\/catalogue-revisions\/catrev_cli_demo\/backups/,
+  );
+  assert.match(shown.stdout, /Recovery: \/v1\/status/);
+  assert.match(
+    shown.stdout,
+    /Retry: ingestion_run_retry_available \(run_cli_demo\)/,
+  );
+  assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
+  assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);
 
   const requestCountBeforeRemovedMutation = requests.length;
   const removedReconcile = await runCli(

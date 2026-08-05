@@ -46,14 +46,13 @@ import {
   contextualLegalityStatusResponse,
   LegalityStatusProblem,
 } from "../../../src/catalogue/legality-status";
+import { withOperationalRequestLog } from "../../../src/http/operational-log";
 
-const apiWorker = {
-  async fetch(
-    request: Request,
-    env: Env,
-  ): Promise<Response> {
-    const requestId = crypto.randomUUID();
-
+async function handleApiRequest(
+  request: Request,
+  env: Env,
+  requestId: string,
+): Promise<Response> {
     try {
       const preflight = allowedPreflightResponse(
         request,
@@ -393,14 +392,6 @@ const apiWorker = {
           }),
         );
       }
-      console.error(
-        JSON.stringify({
-          message: "request failed",
-          request_id: requestId,
-          route: new URL(request.url).pathname,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
       return withCorsHeaders(
         request,
         problemResponse({
@@ -412,6 +403,20 @@ const apiWorker = {
         }),
       );
     }
+}
+
+const apiWorker = {
+  async fetch(
+    request: Request,
+    env: Env,
+  ): Promise<Response> {
+    return withOperationalRequestLog(
+      "api",
+      request,
+      env,
+      (observedEnv, requestId) =>
+        handleApiRequest(request, observedEnv, requestId),
+    );
   },
 } satisfies ExportedHandler<Env>;
 

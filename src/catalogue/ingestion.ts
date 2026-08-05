@@ -60,6 +60,7 @@ import {
 import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
 import { publicationBackupReservation } from "./backup-recovery";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -3015,12 +3016,6 @@ function publicationFailureProblem(error: unknown): AdministrationProblem {
       "The publication guards changed after approval was reserved.",
     );
   }
-  console.error(
-    JSON.stringify({
-      message: "Catalogue publication verification failed",
-      error: errorMessage(error),
-    }),
-  );
   return new AdministrationProblem(
     500,
     "export_verification_failed",
@@ -5601,7 +5596,8 @@ function decodePublicRunDocument(
     Object.keys(value).some(
       (key) =>
         !requiredKeys.includes(key) &&
-        key !== "export_manifest_digest",
+        key !== "export_manifest_digest" &&
+        key !== "operational_diagnostics",
     ) ||
     typeof value.id !== "string" ||
     !isOpaqueIdentity(value.id) ||
@@ -5659,14 +5655,22 @@ function decodePublicRunDocument(
     reservation,
     cleanup,
   });
-  return {
-    ...value,
+  const {
+    operational_diagnostics: _retainedOperationalDiagnostics,
+    ...retainedValue
+  } = value;
+  const document = {
+    ...retainedValue,
     progress,
     warnings,
     approval,
     approval_history: approvalHistory,
     publication_reservation: reservation,
     publication_cleanup: cleanup,
+  };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics(document),
   };
 }
 

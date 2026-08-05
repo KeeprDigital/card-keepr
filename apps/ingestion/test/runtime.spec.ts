@@ -74,6 +74,49 @@ test("the administration authentication boundary runs in the Workers runtime", a
   });
 });
 
+test("evidence run diagnostics retain safe adapter, workflow, coverage, and retry references", async () => {
+  const response = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      idempotency_key: "diagnostic-evidence-run",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  expect(response.status).toBe(201);
+  const run = await response.json<Record<string, unknown>>();
+  expect(run).toMatchObject({
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: {
+        request_id: "diagnostic-evidence-run",
+        adapter_versions: ["one-piece-en@3"],
+        workflow: {
+          parent_id: null,
+          child_ids: [],
+        },
+        recovery: { status_path: "/v1/status" },
+      },
+      terminal_evidence: {
+        failure: null,
+        coverage: {
+          evidence_plan_count: 1,
+          source_snapshot_count: 0,
+          source_observation_set_count: 0,
+          fetch_attempt_count: 0,
+        },
+      },
+      retry: null,
+    },
+  });
+  const bundle = JSON.stringify(run.operational_diagnostics);
+  expect(bundle).not.toContain("authorization");
+  expect(bundle).not.toContain("fixture-official-source");
+});
+
 test("production source fixture selection is invariant under retries and reordering", () => {
   const discoveryHeaders = new Headers({
     accept: "text/html",

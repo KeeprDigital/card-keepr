@@ -6,7 +6,7 @@ import {
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
@@ -67,6 +67,85 @@ test("the API authentication boundary runs in the Workers runtime", async () => 
     runtime: "api",
     status: "ok",
   });
+});
+
+test("API requests emit useful structured diagnostics without leaking failures", async () => {
+  const records: string[] = [];
+  const errors: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
+  vi.spyOn(console, "error").mockImplementation((value) => {
+    errors.push(String(value));
+  });
+
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue?proposal=source-payload", {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "x-secret-diagnostic-test": "credential-material",
+      },
+    }),
+    testEnv,
+  );
+  expect(response.status).toBe(200);
+
+  const record = JSON.parse(records.at(-1) ?? "null") as Record<string, unknown>;
+  expect(record).toMatchObject({
+    contract: "card-keepr-operational-log@1",
+    event: "request.completed",
+    runtime: "api",
+    request: {
+      method: "GET",
+      route: "/v1/catalogue",
+    },
+    status: 200,
+    cache: { status: "unknown" },
+    retry: { count: 0, classification: "not_applicable" },
+    d1: { prepared_statements: expect.any(Number) },
+  });
+  expect(record).toHaveProperty("request.id");
+  expect(record).toHaveProperty("duration_ms");
+  expect(record).toHaveProperty("workflow.step", null);
+  expect(JSON.stringify(record)).not.toContain("source-payload");
+  expect(JSON.stringify(record)).not.toContain("credential-material");
+
+  await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/source-payload-path-secret", {
+      headers: { authorization: "Bearer vitest-api-key" },
+    }),
+    testEnv,
+  );
+  expect(records.at(-1)).toContain('\"route\":\"/:ref\"');
+  expect(records.at(-1)).not.toContain("source-payload-path-secret");
+
+  const secret = "credential-and-source-payload-must-not-leak";
+  const failingEnv = new Proxy(testEnv, {
+    get(target, property, receiver) {
+      if (property === "CATALOGUE_DB") {
+        return new Proxy(target.CATALOGUE_DB, {
+          get(database, databaseProperty, databaseReceiver) {
+            if (databaseProperty === "prepare") {
+              return () => {
+                throw new Error(secret);
+              };
+            }
+            return Reflect.get(database, databaseProperty, databaseReceiver);
+          },
+        });
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const failed = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue", {
+      headers: { authorization: "Bearer vitest-api-key" },
+    }),
+    failingEnv,
+  );
+  expect(failed.status).toBe(500);
+  expect([...records, ...errors].join("\n")).not.toContain(secret);
+  expect([...records, ...errors].join("\n")).not.toContain("vitest-api-key");
 });
 
 test("an empty current Catalogue Revision remains queryable through its projection", async () => {
