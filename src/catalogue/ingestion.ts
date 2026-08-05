@@ -18,6 +18,7 @@ import {
 } from "./catalogue-candidate";
 import {
   assertCuratedGamesUnblocked,
+  curatedRevisionInspectionForRun,
   prepareCuratedRevisionRunStart,
 } from "./curated-revisions";
 import {
@@ -529,6 +530,11 @@ export async function inspectCandidate(
     candidate,
     fallbackWarnings: parseWarnings(row.warnings_json),
   });
+  const curated = await curatedRevisionInspectionForRun(
+    database,
+    row.id,
+    candidate,
+  );
   return {
     run_id: row.id,
     candidate_digest: row.candidate_digest,
@@ -536,7 +542,14 @@ export async function inspectCandidate(
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
     progress: parseProgress(row.progress_json),
-    diff,
+    ...(curated === null ? {} : {
+      curated_revision_ids: curated.revision_ids,
+      curated_revision_set_digest: curated.set_digest,
+    }),
+    diff: {
+      ...diff,
+      curated_effects: curated?.effects ?? [],
+    },
   };
 }
 

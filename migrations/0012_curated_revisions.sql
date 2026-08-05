@@ -352,7 +352,12 @@ END;
 CREATE TABLE retained_source_observation_evidence (
   source_observation_id TEXT PRIMARY KEY,
   retained_by_table TEXT NOT NULL CHECK (
-    retained_by_table IN ('reconciliation_candidates', 'legality_rules')
+    retained_by_table IN (
+      'reconciliation_candidates',
+      'legality_rules',
+      'revision_products',
+      'reconciled_product_relationships'
+    )
   ),
   retained_record_id TEXT NOT NULL
 );
@@ -368,6 +373,21 @@ INSERT OR IGNORE INTO retained_source_observation_evidence
 SELECT source_observation_id, 'legality_rules', id
 FROM legality_rules;
 
+INSERT OR IGNORE INTO retained_source_observation_evidence
+  (source_observation_id, retained_by_table, retained_record_id)
+SELECT json_extract(evidence.value, '$.id'),
+       'revision_products', product.product_id
+FROM revision_products AS product,
+     json_each(product.document_json, '$.included') AS evidence
+WHERE json_extract(evidence.value, '$.type') = 'source_observation'
+  AND json_extract(evidence.value, '$.id') IS NOT NULL;
+
+INSERT OR IGNORE INTO retained_source_observation_evidence
+  (source_observation_id, retained_by_table, retained_record_id)
+SELECT observation.value, 'reconciled_product_relationships', relationship.id
+FROM reconciled_product_relationships AS relationship,
+     json_each(relationship.source_observation_ids_json) AS observation;
+
 CREATE TRIGGER retained_source_observation_evidence_must_resolve
 BEFORE INSERT ON retained_source_observation_evidence
 WHEN NOT EXISTS (
@@ -378,6 +398,19 @@ WHEN NOT EXISTS (
   SELECT 1 FROM legality_rules
   WHERE source_observation_id = NEW.source_observation_id
     AND id = NEW.retained_record_id
+) AND NOT EXISTS (
+  SELECT 1
+  FROM revision_products AS product,
+       json_each(product.document_json, '$.included') AS evidence
+  WHERE product.product_id = NEW.retained_record_id
+    AND json_extract(evidence.value, '$.type') = 'source_observation'
+    AND json_extract(evidence.value, '$.id') = NEW.source_observation_id
+) AND NOT EXISTS (
+  SELECT 1
+  FROM reconciled_product_relationships AS relationship,
+       json_each(relationship.source_observation_ids_json) AS observation
+  WHERE relationship.id = NEW.retained_record_id
+    AND observation.value = NEW.source_observation_id
 )
 BEGIN
   SELECT RAISE(ABORT, 'retained_source_observation_evidence_not_found');
@@ -413,4 +446,37 @@ BEGIN
   INSERT OR IGNORE INTO retained_source_observation_evidence
     (source_observation_id, retained_by_table, retained_record_id)
   VALUES (NEW.source_observation_id, 'legality_rules', NEW.id);
+END;
+
+CREATE TRIGGER retain_revision_product_evidence
+AFTER INSERT ON revision_products
+BEGIN
+  INSERT OR IGNORE INTO retained_source_observation_evidence
+    (source_observation_id, retained_by_table, retained_record_id)
+  SELECT json_extract(evidence.value, '$.id'),
+         'revision_products', NEW.product_id
+  FROM json_each(NEW.document_json, '$.included') AS evidence
+  WHERE json_extract(evidence.value, '$.type') = 'source_observation'
+    AND json_extract(evidence.value, '$.id') IS NOT NULL;
+END;
+
+CREATE TRIGGER retain_product_relationship_evidence
+AFTER INSERT ON reconciled_product_relationships
+BEGIN
+  INSERT OR IGNORE INTO retained_source_observation_evidence
+    (source_observation_id, retained_by_table, retained_record_id)
+  SELECT observation.value,
+         'reconciled_product_relationships', NEW.id
+  FROM json_each(NEW.source_observation_ids_json) AS observation;
+END;
+
+CREATE TRIGGER retain_updated_product_relationship_evidence
+AFTER UPDATE OF source_observation_ids_json
+ON reconciled_product_relationships
+BEGIN
+  INSERT OR IGNORE INTO retained_source_observation_evidence
+    (source_observation_id, retained_by_table, retained_record_id)
+  SELECT observation.value,
+         'reconciled_product_relationships', NEW.id
+  FROM json_each(NEW.source_observation_ids_json) AS observation;
 END;

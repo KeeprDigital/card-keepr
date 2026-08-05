@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { applyD1Migrations, type D1Migration } from "cloudflare:test";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/serialization";
 import type { CatalogueCard } from "../../../src/catalogue/catalogue-candidate";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
@@ -102,6 +102,30 @@ beforeEach(async () => {
       relationship_value: card.official_identity.value,
       observed: true,
     }],
+    distribution_contexts: [{
+      id: `distribution_context_${sequence}`,
+      game: "one-piece",
+      key: `promotion_${sequence}`,
+      kind: "promotion",
+      label: "Official Promotion",
+      product_id: `product_${sequence}`,
+      evidence_category: "explicit",
+      observed: true,
+      source_lineages: ["one-piece-en"],
+    }],
+    errata: [{
+      id: `erratum_${sequence}`,
+      game: "one-piece",
+      target_type: "card",
+      target_id: card.id,
+      effective_from: "2026-08-05",
+      official_wording: "Official erratum wording.",
+      corrected_value: "Official corrected text.",
+      provenance: [{
+        source_lineage: "one-piece-en",
+        source_observation_id: `srcobs_erratum_${sequence}`,
+      }],
+    }],
     legality_rules: [{
       id: `legality_rule_${sequence}`,
       official_id: `official_rule_${sequence}`,
@@ -115,10 +139,39 @@ beforeEach(async () => {
       card_ids: [card.id],
       official_wording: "This card is eligible.",
       effect: { type: "eligible" },
-      source_lineage: "one-piece-legality",
+      source_lineage: "one-piece-en",
       source_snapshot_id: `snapshot_${sequence}`,
       source_observation_set_id: `set_${sequence}`,
       source_observation_id: `srcobs_legality_${sequence}`,
+      source_observation_pointer: "/observations/0/value/legality_rules/0",
+      source_field_pointers: {
+        official_wording: "/observations/0/value/legality_rules/0/official_wording",
+        effective_from: "/observations/0/value/legality_rules/0/effective_from",
+        effective_until: "/observations/0/value/legality_rules/0/effective_until",
+        unresolved_scope: "/observations/0/value/legality_rules/0/unresolved_scope",
+        region: "/observations/0/value/legality_rules/0/region",
+        format: "/observations/0/value/legality_rules/0/format",
+        event_tier: "/observations/0/value/legality_rules/0/event_tier",
+        card_numbers: "/observations/0/value/legality_rules/0/card_numbers",
+        effect: "/observations/0/value/legality_rules/0/effect",
+      },
+    }, {
+      id: `legality_rule_gundam_${sequence}`,
+      official_id: `official_rule_gundam_${sequence}`,
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-08-05",
+      effective_until: null,
+      unresolved_scope: null,
+      card_ids: [],
+      official_wording: "This Gundam rule is eligible.",
+      effect: { type: "eligible" },
+      source_lineage: "gundam-en-asia",
+      source_snapshot_id: `snapshot_gundam_${sequence}`,
+      source_observation_set_id: `set_gundam_${sequence}`,
+      source_observation_id: `srcobs_gundam_${sequence}`,
       source_observation_pointer: "/observations/0/value/legality_rules/0",
       source_field_pointers: {
         official_wording: "/observations/0/value/legality_rules/0/official_wording",
@@ -178,6 +231,36 @@ beforeEach(async () => {
     ).bind(currentRevision, `printing_${sequence}`, card.id, canonicalJson(candidate.printings[0])),
     env.CATALOGUE_DB.prepare(
       "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+    ),
+  ]);
+});
+
+afterEach(async () => {
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed',
+           terminal_at = COALESCE(candidate_created_at, started_at),
+           failure_code = CASE WHEN state = 'publishing'
+             THEN 'publication_abandoned'
+             ELSE 'test_cleanup_active_run'
+           END,
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = (
+         SELECT active_ingestion_run_id FROM operation_state
+         WHERE singleton = 1
+       ) AND state IN (
+         'planning', 'collecting', 'parsing', 'reconciling',
+         'awaiting_approval', 'publishing'
+       )`,
+    ),
+    env.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL,
+           active_release_id = NULL,
+           active_release_expires_at = NULL,
+           recovery_health = 'healthy'
+       WHERE singleton = 1`,
     ),
   ]);
 });
@@ -332,6 +415,120 @@ test("Source Observation evidence must resolve to retained immutable evidence", 
     { proposal: complete, catalogue_revision_id: currentRevision },
   );
   expect(ownerReference.status).toBe(200);
+});
+
+test("product-only Source Observations remain valid Curated Revision evidence", async () => {
+  const evidenceIds = {
+    product: `srcobs_product_only_${sequence}`,
+    release: `srcobs_release_only_${sequence}`,
+    context: `srcobs_context_only_${sequence}`,
+    relationship: `srcobs_relationship_only_${sequence}`,
+  };
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_products (
+         catalogue_revision_id, product_id, supported_game,
+         official_code, name, search_text, release_regions_json,
+         document_json
+       ) VALUES (?, ?, 'one-piece', 'OP-01', 'Booster', 'op-01 booster',
+         '["EN-OCEANIA"]', ?)`,
+    ).bind(
+      currentRevision,
+      `product_${sequence}`,
+      canonicalJson({
+        data: { id: `product_${sequence}` },
+        included: Object.values(evidenceIds).slice(0, 3).map((id) => ({
+          type: "source_observation",
+          id,
+          captured_at: now,
+          source: "one-piece-en",
+        })),
+        provenance: {},
+        disagreements: [],
+      }),
+    ),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO reconciled_product_relationships (
+         id, supported_game, relationship_kind, from_type, from_id,
+         to_type, to_id, evidence_category, source_lineage,
+         source_observation_ids_json, relationship_value,
+         first_revision_id, last_observed_revision_id, current,
+         last_missing_revision_id, document_json
+       ) VALUES (?, 'one-piece', 'product-card', 'product', ?,
+         'card', ?, 'explicit', 'one-piece-en', ?, ?, ?, ?, 1, NULL, ?)`,
+    ).bind(
+      `relationship_product_card_${sequence}`,
+      `product_${sequence}`,
+      card.id,
+      canonicalJson([evidenceIds.relationship]),
+      card.official_identity.value,
+      currentRevision,
+      currentRevision,
+      canonicalJson({
+        source_observation_ids: [evidenceIds.relationship],
+      }),
+    ),
+  ]);
+
+  const cases = [{
+    evidenceId: evidenceIds.product,
+    target: {
+      kind: "field",
+      entity_type: "product",
+      entity_id: `product_${sequence}`,
+      path: "/name",
+    },
+    assertion: { kind: "field", value: "Curated Booster" },
+    sourceValue: "Booster",
+  }, {
+    evidenceId: evidenceIds.release,
+    target: {
+      kind: "field",
+      entity_type: "release",
+      entity_id: `release_${sequence}`,
+      path: "/status",
+    },
+    assertion: { kind: "field", value: "released" },
+    sourceValue: "announced",
+  }, {
+    evidenceId: evidenceIds.context,
+    target: {
+      kind: "field",
+      entity_type: "distribution_context",
+      entity_id: `distribution_context_${sequence}`,
+      path: "/label",
+    },
+    assertion: { kind: "field", value: "Curated Promotion" },
+    sourceValue: "Official Promotion",
+  }, {
+    evidenceId: evidenceIds.relationship,
+    target: {
+      kind: "relationship",
+      relationship_kind: "product-card",
+      from: { type: "product", id: `product_${sequence}` },
+      to: { type: "card", id: card.id },
+    },
+    assertion: { kind: "relationship", presence: "absent" },
+    sourceValue: "present",
+  }];
+  for (const item of cases) {
+    const proposalValue = {
+      game: "one-piece",
+      target: item.target,
+      assertion: item.assertion,
+      rationale: "Retained product-catalogue evidence supports this review.",
+      evidence: [{ kind: "source_observation", id: item.evidenceId }],
+      effective_interval: { from: null, to: null },
+      reviewed_source_digest: await sha256Text(canonicalJson(item.sourceValue)),
+      supersedes_revision_id: null,
+    };
+    const response = await adminRequest(
+      "/admin/v1/curated-revisions/validate",
+      { proposal: proposalValue, catalogue_revision_id: currentRevision },
+    );
+    expect(response.status, item.evidenceId).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ valid: true });
+  }
 });
 
 test("validation uses the pinned shared and Game Profile schemas", async () => {
@@ -883,6 +1080,190 @@ test("a run pins an exact ordered set and applies it after official reconciliati
   expect(stripped.cards[0]).not.toHaveProperty("curated_provenance");
 });
 
+test("candidate inspection exposes the exact pinned set and every curated effect", async () => {
+  const seed = await env.CATALOGUE_DB.prepare(
+    "SELECT candidate_json FROM ingestion_runs WHERE idempotency_key = ?",
+  ).bind(`curated-seed-${sequence}`).first<{ candidate_json: string }>();
+  const official = JSON.parse(seed!.candidate_json) as {
+    contract: "card-keepr-catalogue-candidate@1";
+    selected_games: ["one-piece"];
+    cards: Record<string, unknown>[];
+    printings: Record<string, unknown>[];
+    products: Record<string, unknown>[];
+    distribution_contexts: Record<string, unknown>[];
+    product_relationships: Record<string, unknown>[];
+    errata: Record<string, unknown>[];
+    legality_rules: Record<string, unknown>[];
+  };
+  const definitions = [{
+    target: {
+      kind: "field" as const,
+      entity_type: "card" as const,
+      entity_id: card.id,
+      path: "/name",
+    },
+    assertion: { kind: "field" as const, value: "Inspected Card" },
+    sourceValue: "Official Name",
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "printing" as const,
+      entity_id: `printing_${sequence}`,
+      path: "/printed_rules_text",
+    },
+    assertion: { kind: "field" as const, value: "Inspected printing text." },
+    sourceValue: null,
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "product" as const,
+      entity_id: `product_${sequence}`,
+      path: "/name",
+    },
+    assertion: { kind: "field" as const, value: "Inspected Product" },
+    sourceValue: "Booster",
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "release" as const,
+      entity_id: `release_${sequence}`,
+      path: "/status",
+    },
+    assertion: { kind: "field" as const, value: "released" },
+    sourceValue: "announced",
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "distribution_context" as const,
+      entity_id: `distribution_context_${sequence}`,
+      path: "/label",
+    },
+    assertion: { kind: "field" as const, value: "Inspected Promotion" },
+    sourceValue: "Official Promotion",
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "erratum" as const,
+      entity_id: `erratum_${sequence}`,
+      path: "/official_wording",
+    },
+    assertion: { kind: "field" as const, value: "Inspected erratum wording." },
+    sourceValue: "Official erratum wording.",
+  }, {
+    target: {
+      kind: "field" as const,
+      entity_type: "legality_rule" as const,
+      entity_id: `legality_rule_${sequence}`,
+      path: "/official_wording",
+    },
+    assertion: { kind: "field" as const, value: "Inspected legality wording." },
+    sourceValue: "This card is eligible.",
+  }, {
+    target: {
+      kind: "relationship" as const,
+      relationship_kind: "printing-product" as const,
+      from: { type: "printing" as const, id: `printing_${sequence}` },
+      to: { type: "product" as const, id: `product_${sequence}` },
+    },
+    assertion: { kind: "relationship" as const, presence: "present" as const },
+    sourceValue: "absent",
+  }];
+  const expectedByRevision = new Map<string, Record<string, unknown>>();
+  for (const [index, definition] of definitions.entries()) {
+    const proposalValue = {
+      game: "one-piece" as const,
+      target: definition.target,
+      assertion: definition.assertion,
+      rationale: `Private rationale ${index}.`,
+      evidence: [{
+        kind: "owner_reference" as const,
+        uri: `https://owner.example/private/${index}`,
+        content_digest: String(index + 1).repeat(64),
+      }],
+      effective_interval: { from: null, to: null },
+      reviewed_source_digest: await sha256Text(
+        canonicalJson(definition.sourceValue),
+      ),
+      supersedes_revision_id: null,
+    };
+    const created = await createCuratedRevision(env.CATALOGUE_DB, {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: proposalValue,
+      proposal_digest: await sha256Text(canonicalJson(proposalValue)),
+      idempotency_key: `inspect-effect-${sequence}-${index}`,
+    }, now);
+    const target = definition.target.kind === "field"
+      ? [
+          "one-piece", "field", definition.target.entity_type,
+          definition.target.entity_id, definition.target.path,
+        ].join("|")
+      : [
+          "one-piece", "relationship", definition.target.relationship_kind,
+          definition.target.from.type, definition.target.from.id,
+          definition.target.to.type, definition.target.to.id,
+        ].join("|");
+    expectedByRevision.set(created.document.curated_revision_id, {
+      revision_id: created.document.curated_revision_id,
+      target,
+      assertion: definition.assertion,
+      evidence_category: "curated",
+    });
+  }
+
+  const runId = `run_candidate_inspection_${sequence}`;
+  await insertParsingRun(runId);
+  const pinned = await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  const candidate = await applyPinnedCuratedRevisions(
+    env.CATALOGUE_DB,
+    runId,
+    official as never,
+    now,
+  );
+  const digest = await sha256Text(canonicalJson(candidate));
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs SET state = 'reconciling',
+       progress_json =
+         '{"completed_stages":["planning","collecting","parsing"],"current_stage":"reconciling"}'
+     WHERE id = ?`,
+  ).bind(runId).run();
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+     SET state = 'awaiting_approval', candidate_json = ?,
+         candidate_digest = ?, candidate_catalogue_digest = ?,
+         candidate_created_at = ?, approval_deadline = ?,
+         progress_json =
+           '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"awaiting_approval"}'
+     WHERE id = ?`,
+  ).bind(
+    canonicalJson(candidate),
+    digest,
+    digest,
+    now,
+    "2026-08-12T01:02:03.000Z",
+    runId,
+  ).run();
+
+  const response = await adminRequest(`/v1/ingestion-runs/${runId}/candidate`);
+  expect(response.status).toBe(200);
+  const inspection = await response.json() as {
+    curated_revision_ids: string[];
+    curated_revision_set_digest: string;
+    diff: { curated_effects: Record<string, unknown>[] };
+  };
+  expect(inspection.curated_revision_ids).toEqual(pinned.revision_ids);
+  expect(inspection.curated_revision_set_digest).toBe(pinned.set_digest);
+  expect(inspection.diff.curated_effects).toEqual(
+    pinned.revision_ids.map((id) => expectedByRevision.get(id)),
+  );
+  const exposed = canonicalJson(inspection.diff.curated_effects);
+  expect(exposed).not.toContain("Private rationale");
+  expect(exposed).not.toContain("owner.example/private");
+  expect(exposed).not.toContain("reviewed_source_value");
+  expect(exposed).not.toContain("content_digest");
+  expect(exposed).not.toContain("author");
+});
+
 test("prepared runs strip prior effects, reapply exact pins, and persist the real digest atomically", async () => {
   const authoredProposal = await proposal("/name", "Current Curated Name");
   const created = await adminRequest("/admin/v1/curated-revisions", {
@@ -1034,6 +1415,75 @@ test("pinned assertions hard-fail when companion-field drift makes the composed 
   expect(created.document.status).toBe("active");
 });
 
+test("Legality Rule curation preserves registered regional authority", async () => {
+  const invalidRegion = {
+    game: "gundam" as const,
+    target: {
+      kind: "field" as const,
+      entity_type: "legality_rule" as const,
+      entity_id: `legality_rule_gundam_${sequence}`,
+      path: "/region",
+    },
+    assertion: { kind: "field" as const, value: "EN-OCEANIA" },
+    rationale: "Try to move an Asia authority rule to Oceania.",
+    evidence: [{
+      kind: "owner_reference" as const,
+      uri: "https://owner.example/review/gundam-region",
+      content_digest: "e".repeat(64),
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256Text(canonicalJson("EN-ASIA")),
+    supersedes_revision_id: null,
+  };
+  const authored = await adminRequest(
+    "/admin/v1/curated-revisions/validate",
+    { proposal: invalidRegion, catalogue_revision_id: currentRevision },
+  );
+  expect(authored.status).toBe(422);
+  await expect(authored.json()).resolves.toMatchObject({
+    code: "curated_revision_assertion_type_invalid",
+  });
+
+  const wordingProposal = {
+    ...invalidRegion,
+    target: { ...invalidRegion.target, path: "/official_wording" },
+    assertion: {
+      kind: "field" as const,
+      value: "Owner-reviewed Gundam wording.",
+    },
+    reviewed_source_digest: await sha256Text(canonicalJson(
+      "This Gundam rule is eligible.",
+    )),
+  };
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: wordingProposal,
+    proposal_digest: await sha256Text(canonicalJson(wordingProposal)),
+    idempotency_key: `gundam-authority-${sequence}`,
+  }, now);
+  const runId = `run_gundam_authority_${sequence}`;
+  await insertParsingRun(runId, ["gundam"]);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  const stored = await env.CATALOGUE_DB.prepare(
+    "SELECT candidate_json FROM ingestion_runs WHERE idempotency_key = ?",
+  ).bind(`curated-seed-${sequence}`).first<{ candidate_json: string }>();
+  const official = JSON.parse(stored!.candidate_json) as {
+    legality_rules: Record<string, unknown>[];
+  };
+  const gundamRule = official.legality_rules.find((rule) =>
+    rule.id === `legality_rule_gundam_${sequence}`
+  )!;
+  await expect(applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, {
+    contract: "card-keepr-catalogue-candidate@1",
+    selected_games: ["gundam"],
+    cards: [],
+    printings: [],
+    legality_rules: [{ ...gundamRule, region: "EN-OCEANIA" } as never],
+  }, now)).rejects.toThrow("curated_revision_composed_candidate_invalid");
+  expect(created.document.status).toBe("active");
+});
+
 test("a prepared retry persists its failed run and every source-change conflict", async () => {
   const authored = await proposal("/name", "Curated Name");
   const created = await createCuratedRevision(env.CATALOGUE_DB, {
@@ -1162,6 +1612,16 @@ test("a changed official value requires reconfirmation instead of silently apply
     status: "reconfirmation_required",
     event_version: 2,
   });
+  await expect(env.CATALOGUE_DB.prepare(
+    "SELECT state, failure_code, terminal_at FROM ingestion_runs WHERE id = ?",
+  ).bind(runId).first()).resolves.toEqual({
+    state: "failed",
+    failure_code: "curated_revision_reconfirmation_required",
+    terminal_at: now,
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ active_ingestion_run_id: null });
   await expect(applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, {
     contract: "card-keepr-catalogue-candidate@1",
     selected_games: ["one-piece"],
@@ -1644,16 +2104,25 @@ function digimonAttributes(): Record<string, unknown> {
   };
 }
 
-async function insertParsingRun(runId: string) {
+async function insertParsingRun(
+  runId: string,
+  selectedGames: readonly string[] = ["one-piece"],
+) {
   await env.CATALOGUE_DB.batch([
     env.CATALOGUE_DB.prepare(
       `INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
         expected_current_revision_id, idempotency_key, candidate_json,
         progress_json, warnings_json, approval_history_json
-      ) VALUES (?, 'parsing', '["one-piece"]', ?, ?, ?, '{}',
+      ) VALUES (?, 'parsing', ?, ?, ?, ?, '{}',
         '{"completed_stages":["planning","collecting"],"current_stage":"parsing"}', '[]', '[]')`,
-    ).bind(runId, now, currentRevision, `parse-${runId}`),
+    ).bind(
+      runId,
+      canonicalJson(selectedGames),
+      now,
+      currentRevision,
+      `parse-${runId}`,
+    ),
     env.CATALOGUE_DB.prepare(
       "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
     ).bind(runId),

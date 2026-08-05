@@ -8,7 +8,7 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   compareSourceFreshness,
@@ -69,6 +69,41 @@ beforeEach(async () => {
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+});
+
+afterEach(async () => {
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed',
+           terminal_at = COALESCE(candidate_created_at, started_at),
+           failure_code = CASE WHEN state = 'publishing'
+             THEN 'publication_abandoned'
+             ELSE 'test_cleanup_active_run'
+           END,
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = (
+         SELECT active_ingestion_run_id FROM operation_state
+         WHERE singleton = 1
+       ) AND state IN (
+         'planning', 'collecting', 'parsing', 'reconciling',
+         'awaiting_approval', 'publishing'
+       )`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL,
+           active_release_id = NULL,
+           active_release_expires_at = NULL,
+           recovery_health = 'healthy'
+       WHERE singleton = 1`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE curated_revisions
+       SET status = 'retired', event_version = event_version + 1
+       WHERE status IN ('active', 'reconfirmation_required')`,
+    ),
+  ]);
 });
 
 test("reconciliation is Workflow-owned and exact replays observe one bound instance", async () => {

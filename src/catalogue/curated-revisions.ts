@@ -15,6 +15,10 @@ import {
   canonicalProfileAttributes,
   exportedGameProfileSchema,
 } from "./reconciliation-profile";
+import {
+  assertCanonicalLegalityRule,
+  type LegalityRule,
+} from "./legality-rule";
 
 const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
 const fieldEntityTypes = new Set([
@@ -125,6 +129,9 @@ export async function validateCuratedRevision(
       path,
       assertionValue,
       fieldSchema,
+      proposal.target.entity_type === "legality_rule"
+        ? await catalogueCardsAtRevision(database, currentRevisionId)
+        : [],
     )) {
       throw new AdministrationProblem(422, "curated_revision_assertion_type_invalid", "The assertion value does not match the shared schema field type.");
     }
@@ -849,6 +856,93 @@ export async function curatedRevisionSetForRun(
     : { revision_ids: JSON.parse(row.revision_ids_json), set_digest: row.set_digest };
 }
 
+export async function curatedRevisionInspectionForRun(
+  database: D1Database,
+  runId: string,
+  candidate: CatalogueCandidate,
+): Promise<{
+  revision_ids: string[];
+  set_digest: string;
+  effects: Record<string, unknown>[];
+} | null> {
+  const set = await curatedRevisionSetForRun(database, runId);
+  if (set === null) return null;
+  const expectedDigest = await sha256Text(canonicalJson(set.revision_ids));
+  if (expectedDigest !== set.set_digest) {
+    throw new Error("The immutable Curated Revision pin-set digest is invalid.");
+  }
+  const rows = await database.prepare(
+    `SELECT pin.ordinal, pin.revision_id, pin.content_digest,
+            revision.proposal_json
+     FROM ingestion_run_curated_revisions AS pin
+     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`,
+  ).bind(runId).all<{
+    ordinal: number;
+    revision_id: string;
+    content_digest: string;
+    proposal_json: string;
+  }>();
+  if (canonicalJson(rows.results.map(({ revision_id }) => revision_id)) !==
+    canonicalJson(set.revision_ids)) {
+    throw new Error("The immutable Curated Revision pin-set rows are invalid.");
+  }
+  const effects = rows.results.map((row) => {
+    const proposal = structuralProposal(JSON.parse(row.proposal_json));
+    if (!candidateContainsCuratedRevision(
+      candidate,
+      proposal,
+      row.revision_id,
+      row.content_digest,
+    )) {
+      throw new Error(
+        `Candidate is missing applied Curated Revision ${row.revision_id}.`,
+      );
+    }
+    return {
+      revision_id: row.revision_id,
+      target: targetKey(proposal),
+      assertion: structuredClone(proposal.assertion),
+      evidence_category: "curated",
+    };
+  });
+  return {
+    revision_ids: set.revision_ids,
+    set_digest: set.set_digest,
+    effects,
+  };
+}
+
+function candidateContainsCuratedRevision(
+  candidate: CatalogueCandidate,
+  proposal: Proposal,
+  revisionId: string,
+  contentDigest: string,
+): boolean {
+  const matches = (value: unknown): boolean =>
+    Array.isArray(value) && value.some((item) =>
+      record(item) && item.curated_revision_id === revisionId &&
+      item.content_digest === contentDigest && record(item.target) &&
+      canonicalJson(item.target) === canonicalJson(proposal.target)
+    );
+  if (proposal.target.kind === "field") {
+    try {
+      return matches(candidateTarget(candidate, proposal).curated_provenance);
+    } catch {
+      return false;
+    }
+  }
+  const target = proposal.target;
+  return (candidate.product_relationships ?? []).some((relationship) =>
+    relationship.kind === target.relationship_kind &&
+    relationship.from.type === target.from.type &&
+    relationship.from.id === target.from.id &&
+    relationship.to.type === target.to.type &&
+    relationship.to.id === target.to.id &&
+    matches(relationship.curated_provenance)
+  );
+}
+
 export async function curatedPublicationStatements(
   database: D1Database,
   runId: string,
@@ -994,7 +1088,23 @@ async function recordSourceChanges(
       ).bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
     );
   }
-  if (statements.length > 0) await database.batch(statements);
+  statements.push(
+    database.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = ?,
+           failure_code = 'curated_revision_reconfirmation_required',
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = ? AND state IN (
+         'planning', 'collecting', 'parsing', 'reconciling',
+         'awaiting_approval'
+       )`,
+    ).bind(at, runId),
+    database.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = NULL
+       WHERE singleton = 1 AND active_ingestion_run_id = ?`,
+    ).bind(runId),
+  );
+  await database.batch(statements);
 }
 
 type PendingConflict = {
@@ -1227,6 +1337,12 @@ async function validateSupersedingProposal(
       parts,
       (proposal.assertion as { kind: "field"; value: unknown }).value,
       schema,
+      proposal.target.entity_type === "legality_rule"
+        ? await catalogueCardsAtRevision(
+            database,
+            mutation.currentRevisionId,
+          )
+        : [],
     )) {
       throw new AdministrationProblem(422, "curated_revision_assertion_type_invalid", "The assertion value does not match the pinned schema field type.");
     }
@@ -1339,6 +1455,22 @@ async function currentTarget(database: D1Database, revisionId: string, proposal:
     row.candidate_json,
   )) as CatalogueCandidate);
   return candidateTarget(candidate, proposal);
+}
+
+async function catalogueCardsAtRevision(
+  database: D1Database,
+  revisionId: string,
+): Promise<CatalogueCandidate["cards"]> {
+  const rows = await database.prepare(
+    `SELECT document_json FROM revision_cards
+     WHERE catalogue_revision_id = ? ORDER BY card_id`,
+  ).bind(revisionId).all<{ document_json: string }>();
+  return rows.results.map(({ document_json }) => {
+    const document = JSON.parse(document_json) as Record<string, unknown>;
+    return (record(document.data)
+      ? document.data
+      : document) as CatalogueCandidate["cards"][number];
+  });
 }
 
 function stripCuratedEntityEffects(
@@ -1682,11 +1814,20 @@ function validCuratedFieldAssertion(
   parts: readonly string[],
   assertion: unknown,
   schema: JsonSchema,
+  cards: CatalogueCandidate["cards"],
 ): boolean {
   if (!fieldAjv.compile(schema)(assertion)) return false;
   const modified = structuredClone(target);
   setAt(modified, parts, assertion);
-  return validCompleteCuratedEntity(entityType, modified);
+  if (!validCompleteCuratedEntity(entityType, modified)) return false;
+  if (entityType === "legality_rule") {
+    try {
+      assertCanonicalLegalityRule(modified as LegalityRule, cards);
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function validProfileEntity(
@@ -1765,30 +1906,6 @@ function validCompleteCuratedEntity(
     }
     return true;
   }
-  if (entityType === "legality_rule") {
-    const from = entity.effective_from;
-    const until = entity.effective_until;
-    const scope = record(entity.unresolved_scope) ? entity.unresolved_scope.dimensions : null;
-    if (!(from === null || typeof from === "string" && onlyDate(from)) ||
-      !(until === null || typeof until === "string" && onlyDate(until))) return false;
-    if (from !== null && until !== null &&
-      (typeof from !== "string" || typeof until !== "string" || until <= from)) {
-      return false;
-    }
-    if (scope !== null) {
-      if (!Array.isArray(scope) || scope.length === 0 ||
-        new Set(scope).size !== scope.length ||
-        scope.some((dimension) =>
-          dimension !== "effective_interval" && dimension !== "event_tier"
-        ) || canonicalJson(scope) !== canonicalJson([...scope].sort()) ||
-        !record(entity.effect) || entity.effect.type !== "unresolved") return false;
-      if (scope.includes("effective_interval")
-        ? from !== null || until !== null
-        : from === null) return false;
-      if (scope.includes("event_tier") && entity.event_tier !== null) return false;
-    }
-    if (from === null && scope === null) return false;
-  }
   if (entityType === "distribution_context") {
     return ["product", "tournament_pack", "winner_prize", "promotion", "other"]
       .includes(String(entity.kind)) && typeof entity.label === "string" &&
@@ -1826,12 +1943,17 @@ function validComposedCuratedCandidate(candidate: CatalogueCandidate): boolean {
   if (!(candidate.errata ?? []).every((entity) =>
     validCompleteCuratedEntity("erratum", entity as unknown as Record<string, unknown>)
   )) return false;
-  if (!(candidate.legality_rules ?? []).every((entity) =>
-    validCompleteCuratedEntity(
-      "legality_rule",
-      entity as unknown as Record<string, unknown>,
-    )
-  )) return false;
+  try {
+    for (const entity of candidate.legality_rules ?? []) {
+      if (!validCompleteCuratedEntity(
+        "legality_rule",
+        entity as unknown as Record<string, unknown>,
+      )) return false;
+      assertCanonicalLegalityRule(entity, candidate.cards);
+    }
+  } catch {
+    return false;
+  }
   return (candidate.product_relationships ?? []).every((relationship) =>
     relationshipEndpointPairs[relationship.kind] ===
       `${relationship.from.type}->${relationship.to.type}` &&
