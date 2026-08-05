@@ -6,8 +6,9 @@ import {
 
 const PLAN_TTL_MS = 15 * 60 * 1_000;
 const EXECUTION_LEASE_MS = 5 * 60 * 1_000;
-const REPLAY_WAIT_ATTEMPTS = 1_200;
-const REPLAY_WAIT_INTERVAL_MS = 25;
+const REPLAY_RESPONSE_QUERY_BUDGET = 8;
+const REPLAY_WAIT_INITIAL_MS = 10;
+const REPLAY_WAIT_MAX_MS = 250;
 
 type ExportRow = {
   catalogue_revision_id: string;
@@ -823,19 +824,30 @@ async function waitForDeletionResponse(
   deletionId: string,
   retryIdempotencyKey: string | null,
 ): Promise<Record<string, unknown>> {
-  for (let attempt = 0; attempt < REPLAY_WAIT_ATTEMPTS; attempt += 1) {
+  let waitMilliseconds = REPLAY_WAIT_INITIAL_MS;
+  for (
+    let queryAttempt = 0;
+    queryAttempt < REPLAY_RESPONSE_QUERY_BUDGET;
+    queryAttempt += 1
+  ) {
     const response = await loadDeletionResponse(
       database,
       deletionId,
       retryIdempotencyKey,
     );
     if (response !== null) return response;
-    await new Promise((resolve) => setTimeout(resolve, REPLAY_WAIT_INTERVAL_MS));
+    if (queryAttempt + 1 < REPLAY_RESPONSE_QUERY_BUDGET) {
+      await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
+      waitMilliseconds = Math.min(
+        waitMilliseconds * 2,
+        REPLAY_WAIT_MAX_MS,
+      );
+    }
   }
   throw problem(
     409,
     "export_deletion_in_progress",
-    "The active deletion attempt has not finished.",
+    `The active deletion attempt has not finished. Inspect GET /v1/catalogue-export-deletions/${deletionId}.`,
   );
 }
 

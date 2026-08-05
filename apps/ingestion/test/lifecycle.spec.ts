@@ -2561,13 +2561,32 @@ test("concurrent exact deletion confirmation executes R2 once and replays one re
       return testEnv.CATALOGUE_EXPORTS.list(options);
     },
   });
+  const countedReplayDatabase = countDeletionResponseQueriesDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  const inProgress = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    request,
+    {
+      ...testEnv,
+      CATALOGUE_DB: countedReplayDatabase.database,
+      CATALOGUE_EXPORTS: replayBucket,
+    },
+  );
+  expect(inProgress.response.status).toBe(409);
+  expect(inProgress.document).toMatchObject({
+    code: "export_deletion_in_progress",
+    detail:
+      "The active deletion attempt has not finished. Inspect GET /v1/catalogue-export-deletions/export-deletion-concurrent-confirm.",
+  });
+  expect(countedReplayDatabase.responseQueries()).toBeLessThanOrEqual(8);
+  expect(replayR2Calls).toBe(0);
   const replayPromise = administrationRequestWithEnv(
     "/v1/catalogue-export-deletions",
     request,
     { ...testEnv, CATALOGUE_EXPORTS: replayBucket },
   );
   await new Promise((resolve) => setTimeout(resolve, 50));
-  expect(replayR2Calls).toBe(0);
   release.resolve(undefined);
   const first = await firstPromise;
   const replay = await replayPromise;
@@ -3397,6 +3416,36 @@ function crashAfterRetryTerminalDatabase(
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+function countDeletionResponseQueriesDatabase(
+  database: D1Database,
+): { database: D1Database; responseQueries: () => number } {
+  let responseQueryCount = 0;
+  return {
+    database: new Proxy(database, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (query: string) => {
+            if (
+              query.includes(
+                "SELECT confirmation_response_json FROM catalogue_export_deletions WHERE id = ?",
+              ) ||
+              query.includes(
+                "SELECT response_json FROM catalogue_export_deletion_retries WHERE idempotency_key = ? AND deletion_id = ?",
+              )
+            ) {
+              responseQueryCount += 1;
+            }
+            return target.prepare(query);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+    responseQueries: () => responseQueryCount,
+  };
 }
 
 function pauseBeforeThirdDeletionBatchDatabase(
