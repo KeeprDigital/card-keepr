@@ -2564,7 +2564,7 @@ test("concurrent exact deletion confirmation executes R2 once and replays one re
   const countedReplayDatabase = countDeletionResponseQueriesDatabase(
     testEnv.CATALOGUE_DB,
   );
-  const inProgress = await administrationRequestWithEnv(
+  const acceptedReplay = await administrationRequestWithEnv(
     "/v1/catalogue-export-deletions",
     request,
     {
@@ -2573,25 +2573,32 @@ test("concurrent exact deletion confirmation executes R2 once and replays one re
       CATALOGUE_EXPORTS: replayBucket,
     },
   );
-  expect(inProgress.response.status).toBe(409);
-  expect(inProgress.document).toMatchObject({
-    code: "export_deletion_in_progress",
-    detail:
-      "The active deletion attempt has not finished. Inspect GET /v1/catalogue-export-deletions/export-deletion-concurrent-confirm.",
+  expect(acceptedReplay.response.status).toBe(200);
+  expect(acceptedReplay.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "export-deletion-concurrent-confirm",
+    state: "deleting",
+    completed_at: null,
+    failure_code: null,
   });
   expect(countedReplayDatabase.responseQueries()).toBeLessThanOrEqual(8);
   expect(replayR2Calls).toBe(0);
-  const replayPromise = administrationRequestWithEnv(
-    "/v1/catalogue-export-deletions",
-    request,
-    { ...testEnv, CATALOGUE_EXPORTS: replayBucket },
-  );
-  await new Promise((resolve) => setTimeout(resolve, 50));
   release.resolve(undefined);
   const first = await firstPromise;
-  const replay = await replayPromise;
-  expect(first.document).toMatchObject({ state: "deleted" });
-  expect(replay.document).toEqual(first.document);
+  expect(first.document).toEqual(acceptedReplay.document);
+  const laterReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    request,
+  );
+  expect(laterReplay.document).toEqual(acceptedReplay.document);
+  const status = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-concurrent-confirm",
+  );
+  expect(status.document).toMatchObject({
+    state: "deleted",
+    completed_at: expect.any(String),
+    failure_code: null,
+  });
   expect(replayR2Calls).toBe(0);
 });
 
@@ -2739,12 +2746,20 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
     code: "export_deletion_not_failed",
   });
   expect(losingRetryR2Calls).toBe(0);
+  const concurrentExactRetry = await exactRetryReplayPromise;
+  expect(concurrentExactRetry.document).toMatchObject({
+    state: "deleting",
+    completed_at: null,
+    failure_code: null,
+  });
+  expect(exactRetryReplayR2Calls).toBe(0);
   releaseRetry.resolve(undefined);
   const retried = await retryPromise;
-  const concurrentExactRetry = await exactRetryReplayPromise;
   expect(concurrentExactRetry.document).toEqual(retried.document);
-  expect(exactRetryReplayR2Calls).toBe(0);
-  expect(retried.document).toMatchObject({
+  const terminalStatus = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial",
+  );
+  expect(terminalStatus.document).toMatchObject({
     state: "deleted",
     object_set_digest: prepared.document.object_set_digest,
     failure_code: null,

@@ -827,7 +827,7 @@ async function waitForDeletionResponse(
   let waitMilliseconds = REPLAY_WAIT_INITIAL_MS;
   for (
     let queryAttempt = 0;
-    queryAttempt < REPLAY_RESPONSE_QUERY_BUDGET;
+    queryAttempt < REPLAY_RESPONSE_QUERY_BUDGET - 1;
     queryAttempt += 1
   ) {
     const response = await loadDeletionResponse(
@@ -836,7 +836,7 @@ async function waitForDeletionResponse(
       retryIdempotencyKey,
     );
     if (response !== null) return response;
-    if (queryAttempt + 1 < REPLAY_RESPONSE_QUERY_BUDGET) {
+    if (queryAttempt + 1 < REPLAY_RESPONSE_QUERY_BUDGET - 1) {
       await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
       waitMilliseconds = Math.min(
         waitMilliseconds * 2,
@@ -844,11 +844,40 @@ async function waitForDeletionResponse(
       );
     }
   }
-  throw problem(
-    409,
-    "export_deletion_in_progress",
-    `The active deletion attempt has not finished. Inspect GET /v1/catalogue-export-deletions/${deletionId}.`,
+  const operation = await database.prepare(
+    "SELECT * FROM catalogue_export_deletions WHERE id = ?",
+  ).bind(deletionId).first<DeletionRow>();
+  if (operation === null) {
+    throw new Error("Catalogue Export deletion evidence is unavailable");
+  }
+  const acceptedResponseJson = canonicalJson(deletionDocument(operation));
+  if (retryIdempotencyKey === null) {
+    await database.prepare(
+      `UPDATE catalogue_export_deletions
+       SET confirmation_response_json = ?
+       WHERE id = ? AND state = 'deleting'
+         AND confirmation_response_json IS NULL`,
+    ).bind(acceptedResponseJson, deletionId).run();
+  } else {
+    await database.prepare(
+      `UPDATE catalogue_export_deletion_retries SET response_json = ?
+       WHERE idempotency_key = ? AND deletion_id = ?
+         AND response_json IS NULL`,
+    ).bind(
+      acceptedResponseJson,
+      retryIdempotencyKey,
+      deletionId,
+    ).run();
+  }
+  const retained = await loadDeletionResponse(
+    database,
+    deletionId,
+    retryIdempotencyKey,
   );
+  if (retained === null) {
+    throw new Error("Catalogue Export deletion response evidence is unavailable");
+  }
+  return retained;
 }
 
 async function loadDeletionResponse(
