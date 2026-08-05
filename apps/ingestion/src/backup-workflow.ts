@@ -11,6 +11,7 @@ import type {
   CatalogueBackupWorkflowParams,
 } from "../../../src/catalogue/backup-workflow";
 import { canonicalJson } from "../../../src/catalogue/serialization";
+import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const backupStep = {
   retries: { limit: 3, delay: 500, backoff: "exponential" as const },
@@ -34,6 +35,7 @@ export async function runCatalogueBackupWorkflow(
   event: Readonly<WorkflowEvent<CatalogueBackupWorkflowParams>>,
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
+  ({ env, step } = observeOperationalWorkflow(step, event, env));
   const params = event.payload;
   try {
     const document = await step.do(

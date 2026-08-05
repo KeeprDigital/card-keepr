@@ -60,6 +60,7 @@ import {
 import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
 import { publicationBackupReservation } from "./backup-recovery";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -97,6 +98,7 @@ type RunRow = {
   expected_current_revision_id: string;
   linked_run_id: string | null;
   idempotency_key: string;
+  operational_request_id: string | null;
   candidate_digest: string | null;
   candidate_catalogue_digest: string | null;
   candidate_created_at: string | null;
@@ -187,6 +189,7 @@ export type StartRunRequest = {
   fixture: string;
   selected_games: readonly string[];
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type ApproveRunRequest = {
@@ -202,6 +205,7 @@ export type RejectRunRequest = {
 
 export type RetryRunRequest = {
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type RetryPublicationCleanupRequest = {
@@ -239,6 +243,7 @@ export async function startFixtureRun(
         candidate: candidate.candidate,
         selectedGames: candidate.candidate.selected_games,
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "start_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: null,
@@ -300,6 +305,7 @@ export async function retryRun(
         candidate,
         selectedGames: parseSelectedGames(source.selected_games_json),
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "retry_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: source.id,
@@ -1147,6 +1153,7 @@ async function startPreparedRun(
     candidate: CatalogueCandidate;
     selectedGames: readonly SupportedGame[];
     idempotencyKey: string;
+    operationalRequestId: string | null;
     idempotencyOperation: string;
     idempotencyRequestJson: string;
     linkedRunId: string | null;
@@ -1201,6 +1208,7 @@ async function startPreparedRun(
     expected_current_revision_id: catalogueState.current_revision_id,
     linked_run_id: input.linkedRunId,
     idempotency_key: input.idempotencyKey,
+    operational_request_id: input.operationalRequestId,
     candidate_digest: candidateDigest,
     candidate_catalogue_digest: candidateDigest,
     candidate_created_at: startedAt,
@@ -1240,6 +1248,7 @@ async function startPreparedRun(
             expected_current_revision_id,
             linked_run_id,
             idempotency_key,
+            operational_request_id,
             candidate_digest,
             candidate_catalogue_digest,
             candidate_created_at,
@@ -1258,7 +1267,7 @@ async function startPreparedRun(
             resulting_revision_id,
             freshness_checked_at
           ) VALUES (
-            ?, 'planning', ?, ?, ?, ?, ?,
+            ?, 'planning', ?, ?, ?, ?, ?, ?,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
             NULL, ?, ?, '[]', NULL, NULL, NULL
           )`,
@@ -1270,6 +1279,7 @@ async function startPreparedRun(
           catalogueState.current_revision_id,
           input.linkedRunId,
           input.idempotencyKey,
+          input.operationalRequestId,
           candidateJson,
           JSON.stringify(progressFor("planning")),
           canonicalJson(curated.diagnostics),
@@ -3023,12 +3033,6 @@ function publicationFailureProblem(error: unknown): AdministrationProblem {
       "The publication guards changed after approval was reserved.",
     );
   }
-  console.error(
-    JSON.stringify({
-      message: "Catalogue publication verification failed",
-      error: errorMessage(error),
-    }),
-  );
   return new AdministrationProblem(
     500,
     "export_verification_failed",
@@ -5507,7 +5511,7 @@ function publicRun(
       "The persisted Ingestion Run document is inconsistent.",
     );
   }
-  return decodePublicRunDocument({
+  const document = decodePublicRunDocument({
     id: row.id,
     state: row.state,
     selected_games: selectedGames,
@@ -5534,6 +5538,13 @@ function publicRun(
     publication_reservation: publicPublicationReservation(row),
     publication_cleanup: publicPublicationCleanup(cleanup),
   });
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: row.operational_request_id,
+    }),
+  };
 }
 
 function publicPublicationReservation(
@@ -5610,7 +5621,8 @@ function decodePublicRunDocument(
     Object.keys(value).some(
       (key) =>
         !requiredKeys.includes(key) &&
-        key !== "export_manifest_digest",
+        key !== "export_manifest_digest" &&
+        key !== "operational_diagnostics",
     ) ||
     typeof value.id !== "string" ||
     !isOpaqueIdentity(value.id) ||
@@ -5668,8 +5680,15 @@ function decodePublicRunDocument(
     reservation,
     cleanup,
   });
-  return {
-    ...value,
+  const operationalRequestId = retainedOperationalRequestId(
+    value.operational_diagnostics,
+  );
+  const {
+    operational_diagnostics: _retainedOperationalDiagnostics,
+    ...retainedValue
+  } = value;
+  const document = {
+    ...retainedValue,
     progress,
     warnings,
     approval,
@@ -5677,6 +5696,26 @@ function decodePublicRunDocument(
     publication_reservation: reservation,
     publication_cleanup: cleanup,
   };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: operationalRequestId,
+    }),
+  };
+}
+
+function retainedOperationalRequestId(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const references = (value as Record<string, unknown>).references;
+  if (
+    references === null || typeof references !== "object" ||
+    Array.isArray(references)
+  ) return null;
+  const requestId = (references as Record<string, unknown>).request_id;
+  return typeof requestId === "string" ? requestId : null;
 }
 
 function decodePublicationReservation(

@@ -17,6 +17,7 @@ import {
   curatedRevisionSetForRun,
   curatedRevisionPinStatementsForNewRun,
 } from "./curated-revisions";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -26,6 +27,7 @@ export type IngestionEvidenceRow = {
   expected_current_revision_id: string;
   linked_run_id: string | null;
   idempotency_key: string;
+  operational_request_id: string | null;
   terminal_at: string | null;
   source_lineage: string;
   supported_game: string;
@@ -37,6 +39,13 @@ export type IngestionEvidenceRow = {
   child_workflow_ids_json: string | null;
   collection_completed_at: string | null;
   failure_code: string | null;
+  candidate_digest: string | null;
+  progress_json: string;
+  warnings_json: string;
+  approval_history_json: string;
+  published_revision_id: string | null;
+  resulting_revision_id: string | null;
+  publication_outcome: string | null;
 };
 
 export type EvidenceRequestRow = {
@@ -164,6 +173,7 @@ export async function startEvidenceRun(
       startedAt,
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
+      operationalRequestId: request.operational_request_id ?? null,
     }),
     ...(await curatedRevisionPinStatementsForNewRun(
       database,
@@ -254,6 +264,7 @@ export async function retryEvidenceRun(
   database: D1Database,
   sourceRunId: string,
   idempotencyKey: string,
+  operationalRequestId: string,
 ): Promise<Record<string, unknown>> {
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
@@ -296,6 +307,7 @@ export async function retryEvidenceRun(
         startedAt,
         linkedRunId: source.id,
         idempotencyKey,
+        operationalRequestId,
       }),
       ...(await curatedRevisionPinStatementsForNewRun(
         database,
@@ -1066,7 +1078,7 @@ export async function showEvidenceRun(
       }>(),
     curatedRevisionSetForRun(database, runId),
   ]);
-  return {
+  const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
     selected_games: JSON.parse(run.selected_games_json),
@@ -1119,6 +1131,21 @@ export async function showEvidenceRun(
       retry_after_ms: row.retry_after_ms,
       diagnostic: row.diagnostic,
     })),
+  };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: run.operational_request_id,
+      candidate_digest: run.candidate_digest,
+      progress: JSON.parse(run.progress_json),
+      warnings: JSON.parse(run.warnings_json),
+      approval_history: JSON.parse(run.approval_history_json),
+      terminal_at: run.terminal_at,
+      published_revision_id: run.published_revision_id,
+      resulting_revision_id: run.resulting_revision_id,
+      publication_outcome: run.publication_outcome,
+    }),
   };
 }
 
@@ -1185,6 +1212,7 @@ async function ingestionRunInsert(
     startedAt: string;
     linkedRunId: string | null;
     idempotencyKey: string;
+    operationalRequestId?: string | null;
   },
 ): Promise<D1PreparedStatement> {
   const baseValues = [
@@ -1193,6 +1221,7 @@ async function ingestionRunInsert(
     input.startedAt,
     input.linkedRunId,
     input.idempotencyKey,
+    input.operationalRequestId ?? null,
   ];
   if (await supportsLifecycleV2(database)) {
     return database
@@ -1200,12 +1229,13 @@ async function ingestionRunInsert(
         `INSERT INTO ingestion_runs (
           id, state, selected_games_json, started_at,
           expected_current_revision_id, linked_run_id, idempotency_key,
+          operational_request_id,
           candidate_digest, candidate_created_at, approval_deadline,
           approval_json, published_revision_id, export_manifest_digest,
           terminal_at, candidate_json, approval_idempotency_key,
           progress_json, warnings_json, approval_history_json
         ) SELECT
-          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
+          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
           NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL,
           '{"completed_stages":["planning"],"current_stage":"collecting"}',
           '[]', '[]'
@@ -1222,11 +1252,12 @@ async function ingestionRunInsert(
       `INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
         expected_current_revision_id, linked_run_id, idempotency_key,
+        operational_request_id,
         candidate_digest, candidate_created_at, approval_deadline,
         approval_json, published_revision_id, export_manifest_digest,
         terminal_at, candidate_json, approval_idempotency_key
       ) SELECT
-        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
+        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
         NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL
       FROM catalogue_state AS catalogue
       JOIN operation_state AS operation ON operation.singleton = 1

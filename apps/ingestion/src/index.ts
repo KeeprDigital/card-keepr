@@ -78,6 +78,7 @@ import {
   prepareCatalogueExportDeletion,
   retryCatalogueExportDeletion,
 } from "../../../src/catalogue/catalogue-export-deletion";
+import { withOperationalRequestLog } from "../../../src/http/operational-log";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -86,14 +87,12 @@ export { ReconciliationWorkflow } from "./reconciliation-workflow";
 export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
 
-const ingestionWorker = {
-  async fetch(
-    request: Request,
-    env: Env,
-    context?: ExecutionContext,
-  ): Promise<Response> {
-    const requestId = crypto.randomUUID();
-
+async function handleIngestionRequest(
+  request: Request,
+  env: Env,
+  context: ExecutionContext | undefined,
+  requestId: string,
+): Promise<Response> {
     try {
       const consumerProof = await handleCredentialConsumerProof(
         request,
@@ -381,6 +380,7 @@ const ingestionWorker = {
             await startEvidenceRun(env.CATALOGUE_DB, {
               plans: requiredEvidencePlans(body, "plans"),
               idempotency_key: requiredString(body, "idempotency_key"),
+              operational_request_id: requestId,
             }),
             { status: 201 },
           );
@@ -398,6 +398,7 @@ const ingestionWorker = {
             source_lineage: requiredString(body, "source_lineage"),
             adapter_version: requiredString(body, "adapter_version"),
             idempotency_key: requiredString(body, "idempotency_key"),
+            operational_request_id: requestId,
             requests: requiredSourceRequests(body, "requests"),
           }),
           { status: 201 },
@@ -695,6 +696,7 @@ const ingestionWorker = {
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceRetryMatch[1]!),
             requiredString(body, "idempotency_key"),
+            requestId,
           ),
           { status: 201 },
         );
@@ -867,11 +869,17 @@ const ingestionWorker = {
               "Publication backup did not complete in the test observation window.",
             );
           };
-          const reportDispatchFailure = (error: unknown) => {
+          const reportDispatchFailure = (_error: unknown) => {
             console.error(JSON.stringify({
-              message: "publication backup dispatch failed",
+              contract: "card-keepr-operational-log@1",
+              event: "workflow.failed",
+              runtime: "ingestion",
+              failure_code: "catalogue_backup_dispatch_failed",
+              request_id: requestId,
+              workflow_step: "catalogue_backup_dispatch",
               catalogue_revision_id: result.resulting_revision_id,
-              error: error instanceof Error ? error.message : "unknown error",
+              retry_count: 0,
+              retry_classification: "retryable",
             }));
           };
           if (clockMode === "request") {
@@ -930,6 +938,7 @@ const ingestionWorker = {
               body,
               "idempotency_key",
             ),
+            operational_request_id: requestId,
           },
           observedAt,
         );
@@ -1003,14 +1012,6 @@ const ingestionWorker = {
           detail: error.message,
         });
       }
-      console.error(
-        JSON.stringify({
-          message: "request failed",
-          request_id: requestId,
-          route: new URL(request.url).pathname,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
       return problemResponse({
         requestId,
         status: 500,
@@ -1019,6 +1020,21 @@ const ingestionWorker = {
         detail: "The administration request could not be completed.",
       });
     }
+}
+
+const ingestionWorker = {
+  async fetch(
+    request: Request,
+    env: Env,
+    context?: ExecutionContext,
+  ): Promise<Response> {
+    return withOperationalRequestLog(
+      "ingestion",
+      request,
+      env,
+      (observedEnv, requestId) =>
+        handleIngestionRequest(request, observedEnv, context, requestId),
+    );
   },
 } satisfies ExportedHandler<Env>;
 

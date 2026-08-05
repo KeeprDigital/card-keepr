@@ -1599,7 +1599,7 @@ function formatAdministrationResult(document) {
     document.state &&
     document.id
   ) {
-    return [
+    const lines = [
       `Ingestion Run ${document.id} evidence: ${document.state}`,
       formatCount(document.snapshots.length, "Source Snapshot"),
       formatCount(
@@ -1607,7 +1607,12 @@ function formatAdministrationResult(document) {
         "Source Observation set",
       ),
       formatCount(document.diagnostics.length, "diagnostic"),
-    ].join("; ");
+    ];
+    const requestId = safeDiagnosticReference(
+      document.operational_diagnostics?.references?.request_id,
+    );
+    if (requestId !== null) lines.push(`Request reference: ${requestId}`);
+    return lines.join("; ");
   }
   if (
     document.source_snapshot_id &&
@@ -1689,6 +1694,10 @@ function formatStatus(document) {
         })`,
       );
     }
+    const nextRunId = safeDiagnosticReference(recentRuns[0]?.id);
+    if (nextRunId !== null) {
+      lines.push(`Next: keepr run show --run-id ${nextRunId}`);
+    }
   }
   return lines.join("\n");
 }
@@ -1713,14 +1722,10 @@ function formatRun(document) {
     lines.push("Warnings: none");
   } else {
     for (const warning of warnings) {
-      lines.push(
-        `Warning: ${warning.code ?? "unspecified"}${
-          warning.detail ? ` — ${warning.detail}` : ""
-        }`,
-      );
+      lines.push(`Warning: ${safeMachineCode(warning.code) ?? "unspecified"}`);
     }
   }
-  lines.push(`Failure: ${document.failure_code ?? "none"}`);
+  lines.push(`Failure: ${safeMachineCode(document.failure_code) ?? "none"}`);
   const cleanup = document.publication_cleanup;
   lines.push(
     `Publication cleanup: ${
@@ -1754,7 +1759,152 @@ function formatRun(document) {
       document.resulting_revision_id ?? "none"
     }`,
   );
+  appendOperationalDiagnostics(lines, document.operational_diagnostics);
   return lines.join("\n");
+}
+
+function appendOperationalDiagnostics(lines, value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  const references = value.references;
+  if (
+    references === null || typeof references !== "object" ||
+    Array.isArray(references)
+  ) return;
+  lines.push(
+    `Request reference: ${
+      safeDiagnosticReference(references.request_id) ?? "none"
+    }`,
+  );
+  const workflow = references.workflow;
+  lines.push(
+    `Workflow: ${
+      workflow !== null && typeof workflow === "object" &&
+        !Array.isArray(workflow)
+        ? safeDiagnosticReference(workflow.parent_id) ?? "none"
+        : "none"
+    }`,
+  );
+  const adapters = Array.isArray(references.adapter_versions)
+    ? references.adapter_versions.flatMap((adapter) => {
+      const safe = safeDiagnosticReference(adapter);
+      return safe === null ? [] : [safe];
+    })
+    : [];
+  lines.push(`Adapter versions: ${adapters.length === 0 ? "none" : adapters.join(", ")}`);
+  lines.push(
+    `Candidate: ${
+      safeDiagnosticReference(references.candidate_digest) ?? "none"
+    }`,
+  );
+  const backup = references.backup;
+  lines.push(
+    `Backup: ${
+      backup !== null && typeof backup === "object" && !Array.isArray(backup)
+        ? safeDiagnosticPath(backup.status_path) ?? "none"
+        : "none"
+    }`,
+  );
+  const recovery = references.recovery;
+  lines.push(
+    `Recovery: ${
+      recovery !== null && typeof recovery === "object" &&
+        !Array.isArray(recovery)
+        ? safeDiagnosticPath(recovery.status_path) ?? "none"
+        : "none"
+    }`,
+  );
+  const retry = value.retry;
+  lines.push(
+    `Retry: ${
+      retry !== null && typeof retry === "object" && !Array.isArray(retry)
+        ? `${safeMachineCode(retry.code) ?? "unclassified"} (${
+          safeDiagnosticReference(retry.source_run_id) ?? "unknown"
+        })`
+        : "not available"
+    }`,
+  );
+  const terminalFailure = value.terminal_evidence?.failure;
+  if (
+    terminalFailure !== null && typeof terminalFailure === "object" &&
+    !Array.isArray(terminalFailure)
+  ) {
+    lines.push(
+      `Retry classification: ${
+        safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"
+      }`,
+    );
+  }
+  const diagnosis = Array.isArray(value.diagnosis_sequence)
+    ? value.diagnosis_sequence.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        return [];
+      }
+      const method = safeDiagnosticMethod(entry.method);
+      const path = safeDiagnosticPath(entry.path);
+      const code = safeMachineCode(entry.code);
+      return method === null || path === null || code === null
+        ? []
+        : [{ method, path, code }];
+    })
+    : [];
+  for (const entry of diagnosis) {
+    lines.push(`Diagnosis: ${entry.method} ${entry.path} (${entry.code})`);
+  }
+  const retryMethod = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticMethod(retry.method)
+    : null;
+  const retryPath = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticPath(retry.path)
+    : null;
+  const next = retryMethod !== null && retryPath !== null
+    ? { method: retryMethod, path: retryPath }
+    : diagnosis[0];
+  if (next !== undefined && next !== null) {
+    lines.push(`Next: ${next.method} ${next.path}`);
+  }
+  const evidence = value.terminal_evidence;
+  const coverage = evidence !== null && typeof evidence === "object" &&
+      !Array.isArray(evidence) && evidence.coverage !== null &&
+      typeof evidence.coverage === "object" && !Array.isArray(evidence.coverage)
+    ? evidence.coverage
+    : {};
+  lines.push(
+    `Coverage: ${safeDiagnosticCount(coverage.source_snapshot_count)} snapshots, ${
+      safeDiagnosticCount(coverage.source_observation_set_count)
+    } observation sets, ${safeDiagnosticCount(coverage.fetch_attempt_count)} attempts`,
+  );
+}
+
+function safeDiagnosticReference(value) {
+  return typeof value === "string" && value.length <= 512 &&
+      /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeMachineCode(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeDiagnosticPath(value) {
+  return typeof value === "string" && value.length <= 1024 &&
+      /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeDiagnosticMethod(value) {
+  return value === "GET" || value === "POST" ? value : null;
+}
+
+function safeDiagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }
 
 async function checkRuntime(runtime) {

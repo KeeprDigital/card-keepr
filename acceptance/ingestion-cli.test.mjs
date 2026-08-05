@@ -54,6 +54,67 @@ const run = {
     state: "failed",
     failure_code: "publication_cleanup_failed",
   },
+  operational_diagnostics: {
+    contract: "card-keepr-operational-diagnostics@1",
+    references: {
+      run_id: "run_cli_demo",
+      request_id: "request_cli_demo",
+      expected_catalogue_revision_id: "catrev_cli_demo",
+      resulting_catalogue_revision_id: "catrev_cli_demo",
+      candidate_digest: "a".repeat(64),
+      adapter_versions: ["one-piece-en@3"],
+      workflow: {
+        status_path: "/v1/ingestion-runs/run_cli_demo",
+        parent_id: "workflow_cli_demo",
+        child_ids: ["workflow_child_cli_demo"],
+      },
+      backup: {
+        status_path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+      recovery: { status_path: "/v1/status" },
+    },
+    terminal_evidence: {
+      state: "failed",
+      terminal_at: "2026-07-29T00:01:00.000Z",
+      failure: {
+        code: "source_unavailable",
+        retryability_code: "retryable_failure",
+        retryable: true,
+      },
+      warning_count: 1,
+      approval_decision_count: 1,
+      coverage: {
+        evidence_plan_count: 1,
+        source_snapshot_count: 7,
+        source_observation_set_count: 7,
+        fetch_attempt_count: 8,
+      },
+    },
+    retry: {
+      code: "evidence_collection_retry_available",
+      source_run_id: "run_cli_demo",
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+    },
+    diagnosis_sequence: [
+      { code: "check_status", method: "GET", path: "/v1/status" },
+      {
+        code: "inspect_run",
+        method: "GET",
+        path: "/v1/ingestion-runs/run_cli_demo",
+      },
+      {
+        code: "retry_evidence_collection",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+      },
+      {
+        code: "inspect_backup",
+        method: "GET",
+        path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+    ],
+  },
 };
 
 test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
@@ -1083,6 +1144,53 @@ test("CLI reconciliation exits zero for a terminal Workflow returned by the init
 
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
+  const rejectedRun = {
+    ...run,
+    id: "run_rejected_cli",
+    state: "rejected",
+    failure_code: null,
+    progress: {
+      completed_stages: ["planning", "collecting", "parsing", "reconciling"],
+      current_stage: "rejected",
+    },
+    operational_diagnostics: {
+      ...run.operational_diagnostics,
+      references: {
+        ...run.operational_diagnostics.references,
+        run_id: "run_rejected_cli",
+        request_id: "request_rejected_cli",
+      },
+      terminal_evidence: {
+        ...run.operational_diagnostics.terminal_evidence,
+        state: "rejected",
+        failure: {
+          code: "ingestion_run_rejected",
+          retryability_code: "retryable_rejection",
+          retryable: true,
+        },
+      },
+      retry: {
+        code: "ingestion_run_retry_available",
+        source_run_id: "run_rejected_cli",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_rejected_cli/retry",
+      },
+      retry_available: true,
+      diagnosis_sequence: [
+        { code: "check_status", method: "GET", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          method: "GET",
+          path: "/v1/ingestion-runs/run_rejected_cli",
+        },
+        {
+          code: "retry_ingestion_run",
+          method: "POST",
+          path: "/v1/ingestion-runs/run_rejected_cli/retry",
+        },
+      ],
+    },
+  };
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -1136,6 +1244,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       );
       return;
     }
+    if (request.url === "/v1/ingestion-runs/run_rejected_cli") {
+      response.end(JSON.stringify(rejectedRun));
+      return;
+    }
     if (
       request.url ===
       "/v1/ingestion-runs/run_cli_demo/collection/resume"
@@ -1170,6 +1282,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     status.stdout,
     /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/,
   );
+  assert.match(
+    status.stdout,
+    /Next: keepr run show --run-id run_cli_demo/,
+  );
 
   const shown = await runCli(
     ["run", "show", "--run-id", "run_cli_demo"],
@@ -1187,6 +1303,41 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(
     shown.stdout,
     /Resulting Catalogue Revision: catrev_cli_demo/,
+  );
+  assert.match(shown.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(shown.stdout, /retry-cli-demo/);
+  assert.match(shown.stdout, /Workflow: workflow_cli_demo/);
+  assert.match(shown.stdout, /Adapter versions: one-piece-en@3/);
+  assert.match(shown.stdout, new RegExp(`Candidate: ${"a".repeat(64)}`));
+  assert.match(
+    shown.stdout,
+    /Backup: \/v1\/catalogue-revisions\/catrev_cli_demo\/backups/,
+  );
+  assert.match(shown.stdout, /Recovery: \/v1\/status/);
+  assert.match(
+    shown.stdout,
+    /Retry: evidence_collection_retry_available \(run_cli_demo\)/,
+  );
+  assert.match(
+    shown.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_cli_demo\/collection\/retry/,
+  );
+  assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
+  assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);
+
+  const shownRejected = await runCli(
+    ["run", "show", "--run-id", "run_rejected_cli"],
+    environment,
+  );
+  assert.equal(shownRejected.code, 0, shownRejected.stderr);
+  assert.match(shownRejected.stdout, /Retry classification: retryable_rejection/);
+  assert.match(
+    shownRejected.stdout,
+    /Retry: ingestion_run_retry_available \(run_rejected_cli\)/,
+  );
+  assert.match(
+    shownRejected.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_rejected_cli\/retry/,
   );
 
   const requestCountBeforeRemovedMutation = requests.length;
@@ -1290,6 +1441,20 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
+  const sourceRetried = await runCli(
+    [
+      "source",
+      "retry",
+      "--run-id",
+      "run_cli_demo",
+      "--idempotency-key",
+      "source-retry-cli-demo",
+    ],
+    environment,
+  );
+  assert.equal(sourceRetried.code, 0, sourceRetried.stderr);
+  assert.match(sourceRetried.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(sourceRetried.stdout, /source-retry-cli-demo/);
   const resumed = await runCli(
     [
       "source",
@@ -1305,7 +1470,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     0,
     "non-Workflow administration requests retain their established exit code",
   );
-  assert.deepEqual(requests.slice(-9), [
+  assert.deepEqual(requests.slice(-10), [
     {
       method: "GET",
       path: "/v1/ingestion-runs/run_cli_demo",
@@ -1360,6 +1525,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       body: {
         idempotency_key: "cleanup-cli-demo",
       },
+    },
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+      body: { idempotency_key: "source-retry-cli-demo" },
     },
     {
       method: "POST",

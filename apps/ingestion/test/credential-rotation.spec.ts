@@ -3,7 +3,7 @@ import {
   applyD1Migrations,
   type D1Migration,
 } from "cloudflare:test";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   credentialConsumerProofRequests,
 } from "../../../src/credentials/consumer-proof";
@@ -62,6 +62,70 @@ afterEach(async () => {
          credential_rotation_generation = 0
      WHERE singleton = 1`,
   ).run();
+});
+
+test("ingestion requests emit useful structured diagnostics without leaking proposals", async () => {
+  const records: string[] = [];
+  const errors: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
+  vi.spyOn(console, "error").mockImplementation((value) => {
+    errors.push(String(value));
+  });
+  const proposalSecret = "sensitive-proposal-input";
+  const response = await ingestionWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/status?source=payload", {
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+      },
+      body: undefined,
+    }),
+    env,
+  );
+  expect(response.status).toBe(200);
+  const rejectedProposal = await ingestionWorker.fetch(
+    new Request(
+      "https://card-keepr.invalid/admin/v1/curated-revisions/validate",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogue_revision_id: "catrev_spine_000",
+          proposal: { rationale: proposalSecret },
+        }),
+      },
+    ),
+    env,
+  );
+  expect(rejectedProposal.status).toBe(422);
+
+  const record = JSON.parse(records[0] ?? "null") as Record<string, unknown>;
+  expect(record).toMatchObject({
+    contract: "card-keepr-operational-log@1",
+    event: "request.completed",
+    runtime: "ingestion",
+    request: { method: "GET", route: "/v1/status" },
+    status: 200,
+    cache: { status: "unknown" },
+    retry: { count: 0, classification: "not_applicable" },
+    d1: { prepared_statements: expect.any(Number) },
+  });
+  expect(record).toHaveProperty("request.id");
+  expect(record).toHaveProperty("duration_ms");
+  expect(record).toHaveProperty("workflow.step", null);
+  expect(JSON.parse(records[1] ?? "null")).toMatchObject({
+    status: 422,
+    retry: { count: 0, classification: "non_retryable" },
+  });
+  const output = [...records, ...errors].join("\n");
+  expect(output).not.toContain("source=payload");
+  expect(output).not.toContain("vitest-administration-key");
+  expect(output).not.toContain(proposalSecret);
 });
 
 test("recovery rejects reservation and only a signed exact attestation atomically finalizes the immutable plan", async () => {

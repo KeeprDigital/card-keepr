@@ -13,6 +13,7 @@ import type {
   ReconciliationWorkflowParams,
 } from "../../../src/catalogue/reconciliation-workflow";
 import { canonicalJson } from "../../../src/catalogue/serialization";
+import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const reconciliationStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -36,6 +37,7 @@ export async function runReconciliationWorkflow(
   event: Readonly<WorkflowEvent<ReconciliationWorkflowParams>>,
   step: WorkflowStep,
 ): Promise<{ result_json: string }> {
+    ({ env, step } = observeOperationalWorkflow(step, event, env));
     let reconciliationResultJson: string;
     try {
       reconciliationResultJson = await step.do(
