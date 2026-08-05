@@ -1151,7 +1151,7 @@ function formatAdministrationResult(document) {
     document.state &&
     document.id
   ) {
-    return [
+    const lines = [
       `Ingestion Run ${document.id} evidence: ${document.state}`,
       formatCount(document.snapshots.length, "Source Snapshot"),
       formatCount(
@@ -1159,7 +1159,12 @@ function formatAdministrationResult(document) {
         "Source Observation set",
       ),
       formatCount(document.diagnostics.length, "diagnostic"),
-    ].join("; ");
+    ];
+    const requestId = safeDiagnosticReference(
+      document.operational_diagnostics?.references?.request_id,
+    );
+    if (requestId !== null) lines.push(`Request reference: ${requestId}`);
+    return lines.join("; ");
   }
   if (
     document.source_snapshot_id &&

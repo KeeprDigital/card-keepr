@@ -264,6 +264,7 @@ export async function retryEvidenceRun(
   database: D1Database,
   sourceRunId: string,
   idempotencyKey: string,
+  operationalRequestId: string,
 ): Promise<Record<string, unknown>> {
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
@@ -306,6 +307,7 @@ export async function retryEvidenceRun(
         startedAt,
         linkedRunId: source.id,
         idempotencyKey,
+        operationalRequestId,
       }),
       ...(await curatedRevisionPinStatementsForNewRun(
         database,

@@ -48,7 +48,8 @@ export function operationalDiagnostics(
       }/backups`,
     });
   }
-  const retry = retryAvailable && runId !== null
+  const retry = retryAvailable && runId !== null &&
+      !(evidenceBacked && state === "published")
     ? evidenceBacked && state !== "published"
       ? {
         code: "evidence_collection_retry_available",
@@ -107,6 +108,7 @@ export function operationalDiagnostics(
       coverage: safeCoverage(run),
     },
     retry,
+    retry_available: retry !== null,
     diagnosis_sequence: diagnosisSequence,
   };
 }

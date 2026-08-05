@@ -465,6 +465,7 @@ async function handleIngestionRequest(
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceRetryMatch[1]!),
             requiredString(body, "idempotency_key"),
+            requestId,
           ),
           { status: 201 },
         );

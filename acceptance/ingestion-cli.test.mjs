@@ -914,6 +914,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     /Resulting Catalogue Revision: catrev_cli_demo/,
   );
   assert.match(shown.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(shown.stdout, /retry-cli-demo/);
   assert.match(shown.stdout, /Workflow: workflow_cli_demo/);
   assert.match(shown.stdout, /Adapter versions: one-piece-en@3/);
   assert.match(shown.stdout, new RegExp(`Candidate: ${"a".repeat(64)}`));
@@ -1034,6 +1035,20 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
+  const sourceRetried = await runCli(
+    [
+      "source",
+      "retry",
+      "--run-id",
+      "run_cli_demo",
+      "--idempotency-key",
+      "source-retry-cli-demo",
+    ],
+    environment,
+  );
+  assert.equal(sourceRetried.code, 0, sourceRetried.stderr);
+  assert.match(sourceRetried.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(sourceRetried.stdout, /source-retry-cli-demo/);
   const resumed = await runCli(
     [
       "source",
@@ -1049,7 +1064,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     0,
     "non-Workflow administration requests retain their established exit code",
   );
-  assert.deepEqual(requests.slice(-9), [
+  assert.deepEqual(requests.slice(-10), [
     {
       method: "GET",
       path: "/v1/ingestion-runs/run_cli_demo",
@@ -1104,6 +1119,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       body: {
         idempotency_key: "cleanup-cli-demo",
       },
+    },
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+      body: { idempotency_key: "source-retry-cli-demo" },
     },
     {
       method: "POST",
