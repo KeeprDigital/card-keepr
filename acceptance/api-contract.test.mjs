@@ -156,6 +156,9 @@ test("Legality Status documents and validates base and evidence representations"
     },
   };
   assert.equal(validate(base), true, JSON.stringify(validate.errors));
+  const emptyEventTier = structuredClone(base);
+  emptyEventTier.data[0].event_tier = "";
+  assert.equal(validate(emptyEventTier), false);
   const evidence = {
     ...base,
     included: [{

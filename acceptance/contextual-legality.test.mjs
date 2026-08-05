@@ -98,6 +98,9 @@ ajv.addSchema(exportRecordSchemaV4);
 const validateLegalityStatus = ajv.getSchema(
   `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
 );
+const validateProblem = ajv.getSchema(
+  `${apiSchema.$id}#/$defs/Problem`,
+);
 const validateLegalityRuleExport = ajv.getSchema(
   `${exportRecordSchemaV4.$id}#/$defs/LegalityRuleRecord`,
 );
@@ -143,7 +146,7 @@ test("the public CLI fails closed for incomplete production source plans", async
     [
       "source", "collect", "--game", "gundam",
       "--lineage", "gundam-en-asia",
-      "--adapter", "gundam-en-asia@3",
+      "--adapter", "gundam-en-asia@4",
       "--request-id", "discovery",
       "--url", "https://www.gundam-gcg.com/asia-en/contextual-legality",
       "--idempotency-key", "acceptance-undemonstrated-json",
@@ -843,6 +846,84 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     KEEPR_API_KEY: apiKey,
     KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
   };
+  const scopedStatusUrl =
+    `http://127.0.0.1:${apiPort}/v1/legality-status` +
+    `?card_id=${cards.get("GD30-001")}` +
+    "&on=2026-07-30&format=standard" +
+    "&event_tier=championship&region=EN-ASIA";
+  const scopedResponse = await fetch(scopedStatusUrl, {
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      origin: "http://localhost:3000",
+    },
+  });
+  const scopedDocument = await scopedResponse.json();
+  await t.test(
+    "the authenticated scoped response is revision-bound, cacheable, and CORS-readable",
+    () => {
+      assert.equal(scopedResponse.status, 200);
+      assert.equal(
+        validateLegalityStatus(scopedDocument),
+        true,
+        JSON.stringify(validateLegalityStatus.errors),
+      );
+      assert.equal(scopedDocument.data.length, 1);
+      assert.equal(scopedDocument.data[0].region, "EN-ASIA");
+      assert.equal(scopedDocument.meta.catalogue_revision_id, revisionId);
+      assert.equal(
+        scopedResponse.headers.get("x-catalogue-revision"),
+        revisionId,
+      );
+      assert.match(scopedResponse.headers.get("etag") ?? "", /^"[a-f0-9]{64}"$/);
+      assert.equal(
+        scopedResponse.headers.get("access-control-allow-origin"),
+        "http://localhost:3000",
+      );
+      assert.equal(
+        scopedResponse.headers.get("access-control-expose-headers"),
+        "ETag, X-Catalogue-Revision",
+      );
+    },
+  );
+  const conditionalResponse = await fetch(scopedStatusUrl, {
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "if-none-match": scopedResponse.headers.get("etag"),
+      origin: "http://localhost:3000",
+    },
+  });
+  await t.test("the scoped response honors its exact ETag", async () => {
+    assert.equal(conditionalResponse.status, 304);
+    assert.equal(await conditionalResponse.text(), "");
+    assert.equal(
+      conditionalResponse.headers.get("x-catalogue-revision"),
+      revisionId,
+    );
+    assert.equal(
+      conditionalResponse.headers.get("access-control-allow-origin"),
+      "http://localhost:3000",
+    );
+  });
+  const unauthenticatedResponse = await fetch(scopedStatusUrl, {
+    headers: { origin: "http://localhost:3000" },
+  });
+  const unauthenticatedProblem = await unauthenticatedResponse.json();
+  await t.test(
+    "the Legality Status authentication failure is a CORS-shaped Problem",
+    () => {
+      assert.equal(unauthenticatedResponse.status, 401);
+      assert.equal(
+        validateProblem(unauthenticatedProblem),
+        true,
+        JSON.stringify(validateProblem.errors),
+      );
+      assert.equal(unauthenticatedProblem.code, "authentication_required");
+      assert.equal(
+        unauthenticatedResponse.headers.get("access-control-allow-origin"),
+        "http://localhost:3000",
+      );
+    },
+  );
   const cases = [
     ["GD30-001", "legal"],
     ["GD30-002", "restricted"],
@@ -948,7 +1029,13 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     apiEnvironment,
   );
   assert.equal(oceania.code, 8);
-  assert.equal(JSON.parse(oceania.stdout).code, "invalid_legality_region");
+  const oceaniaProblem = JSON.parse(oceania.stdout);
+  assert.equal(
+    validateProblem(oceaniaProblem),
+    true,
+    JSON.stringify(validateProblem.errors),
+  );
+  assert.equal(oceaniaProblem.code, "invalid_legality_region");
 
   for (const invalidCardId of [
     "card id with spaces",
@@ -965,6 +1052,11 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
       } before lookup`,
       () => {
         assert.equal(invalidCardResponse.status, 400);
+        assert.equal(
+          validateProblem(invalidCardDocument),
+          true,
+          JSON.stringify(validateProblem.errors),
+        );
         assert.equal(invalidCardDocument.code, "invalid_parameter");
       },
     );
