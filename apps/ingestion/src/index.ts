@@ -49,6 +49,15 @@ import {
   credentialConsumerProofRequestHeader,
   handleCredentialConsumerProof,
 } from "../../../src/credentials/consumer-proof";
+import {
+  createCuratedRevision,
+  listCuratedRevisions,
+  reaffirmCuratedRevision,
+  retireCuratedRevision,
+  showCuratedRevision,
+  supersedeCuratedRevision,
+  validateCuratedRevision,
+} from "../../../src/catalogue/curated-revisions";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -170,6 +179,81 @@ const ingestionWorker = {
         env.CREDENTIAL_CONSUMER_PROOF_KEY,
       );
       if (credentialResponse !== null) return credentialResponse;
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/admin/v1/curated-revisions/validate"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["proposal", "catalogue_revision_id"]);
+        return Response.json(await validateCuratedRevision(
+          env.CATALOGUE_DB,
+          body.proposal,
+          requiredString(body, "catalogue_revision_id"),
+        ));
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/admin/v1/curated-revisions"
+      ) {
+        const unexpected = [...url.searchParams.keys()].find(
+          (parameter) => !["game", "target", "status"].includes(parameter),
+        );
+        if (unexpected !== undefined) {
+          throw new AdministrationProblem(
+            422,
+            "invalid_parameter",
+            `${unexpected} is not accepted for this administration operation.`,
+          );
+        }
+        return Response.json(await listCuratedRevisions(env.CATALOGUE_DB, {
+          ...(url.searchParams.has("game")
+            ? { game: url.searchParams.get("game")! }
+            : {}),
+          ...(url.searchParams.has("target")
+            ? { target: url.searchParams.get("target")! }
+            : {}),
+          ...(url.searchParams.has("status")
+            ? { status: url.searchParams.get("status")! }
+            : {}),
+        }));
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/admin/v1/curated-revisions"
+      ) {
+        const result = await createCuratedRevision(
+          env.CATALOGUE_DB,
+          await readAdministrationBody(request),
+          observedAt,
+        );
+        return Response.json(result.document, {
+          status: result.created ? 201 : 200,
+        });
+      }
+      const curatedRevisionMutationMatch =
+        /^\/admin\/v1\/curated-revisions\/([^/]+)\/(reaffirm|supersede|retire)$/.exec(url.pathname);
+      if (request.method === "POST" && curatedRevisionMutationMatch !== null) {
+        const revisionId = decodeURIComponent(curatedRevisionMutationMatch[1]!);
+        const body = await readAdministrationBody(request);
+        const operation = curatedRevisionMutationMatch[2];
+        const result = operation === "reaffirm"
+          ? await reaffirmCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
+          : operation === "supersede"
+            ? await supersedeCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
+            : await retireCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt);
+        return Response.json(result.document, {
+          status: result.created && operation === "supersede" ? 201 : 200,
+        });
+      }
+      const curatedRevisionMatch =
+        /^\/admin\/v1\/curated-revisions\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && curatedRevisionMatch !== null) {
+        return Response.json(await showCuratedRevision(
+          env.CATALOGUE_DB,
+          decodeURIComponent(curatedRevisionMatch[1]!),
+        ));
+      }
 
       if (
         request.method === "POST" &&

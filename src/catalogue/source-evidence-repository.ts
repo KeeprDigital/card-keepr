@@ -13,6 +13,10 @@ import {
 } from "./source-evidence-model";
 import type { SourceAdapterRegistration } from "./source-adapters";
 import { evidenceRunIdentity } from "./idempotent-identities";
+import {
+  curatedRevisionSetForRun,
+  curatedRevisionPinStatementsForNewRun,
+} from "./curated-revisions";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -161,6 +165,12 @@ export async function startEvidenceRun(
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
     }),
+    ...(await curatedRevisionPinStatementsForNewRun(
+      database,
+      runId,
+      [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+      startedAt,
+    )),
     database
       .prepare(
         `INSERT INTO ingestion_evidence_plans (
@@ -206,6 +216,9 @@ export async function startEvidenceRun(
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
+    }
+    if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
+      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
     }
     if (
       errorMessage(error).includes(
@@ -284,6 +297,12 @@ export async function retryEvidenceRun(
         linkedRunId: source.id,
         idempotencyKey,
       }),
+      ...(await curatedRevisionPinStatementsForNewRun(
+        database,
+        runId,
+        [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+        startedAt,
+      )),
       database
         .prepare(
           `INSERT INTO ingestion_evidence_plans (
@@ -317,6 +336,9 @@ export async function retryEvidenceRun(
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
+    }
+    if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
+      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
     }
     if (
       errorMessage(error).includes(
@@ -1001,7 +1023,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -1042,6 +1064,7 @@ export async function showEvidenceRun(
         content_digest: string;
         created_at: string;
       }>(),
+    curatedRevisionSetForRun(database, runId),
   ]);
   return {
     id: run.id,
@@ -1071,6 +1094,10 @@ export async function showEvidenceRun(
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
+    ...(curatedSet === null ? {} : {
+      curated_revision_ids: curatedSet.revision_ids,
+      curated_revision_set_digest: curatedSet.set_digest,
+    }),
     workflow: {
       parent_id: run.parent_workflow_id,
       child_ids:

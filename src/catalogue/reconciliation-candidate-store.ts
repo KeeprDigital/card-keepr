@@ -181,15 +181,15 @@ export async function persistBlockedCandidate(
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
+    failureCode?: string;
+    atomicStatements?: readonly D1PreparedStatement[];
   },
 ): Promise<void> {
   const approvalDeadline = new Date(
     Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000,
   ).toISOString();
-  const runDiagnostics = input.diagnostics.map((diagnostic) => ({
-    code: String(diagnostic.code),
-    detail: String(diagnostic.detail),
-  }));
+  const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
+  const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   const statements = [
     database
       .prepare(
@@ -233,6 +233,7 @@ export async function persistBlockedCandidate(
       input.plans,
       canonicalJson(input.diagnostics),
     ),
+    ...(input.atomicStatements ?? []),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -243,7 +244,7 @@ export async function persistBlockedCandidate(
              candidate_created_at = ?,
              approval_deadline = ?,
              terminal_at = ?,
-             failure_code = 'printing_reconciliation_blocked',
+             failure_code = ?,
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
@@ -256,6 +257,7 @@ export async function persistBlockedCandidate(
         input.observedAt,
         approvalDeadline,
         input.observedAt,
+        failureCode,
         canonicalJson(runDiagnostics),
         input.runId,
       ),
@@ -268,6 +270,24 @@ export async function persistBlockedCandidate(
       .bind(input.runId),
   ];
   await database.batch(guardedAtomicBatch(statements));
+}
+
+function publicRunDiagnostic(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = {
+    code: String(diagnostic.code),
+    detail: String(diagnostic.detail),
+  };
+  if (diagnostic.code !== "curated_revision_reconfirmation_required") {
+    return base;
+  }
+  return {
+    ...base,
+    curated_revision_id: diagnostic.curated_revision_id,
+    conflict_id: diagnostic.conflict_id,
+    conflict_digest: diagnostic.conflict_digest,
+  };
 }
 
 export async function failReconciliation(
@@ -320,8 +340,13 @@ export async function failReconciliationWorkflow(
   observedAt: string,
   detail: string,
 ): Promise<Record<string, unknown>> {
+  const failureCode = detail.includes(
+      "curated_revision_reconfirmation_required",
+    )
+    ? "curated_revision_reconfirmation_required"
+    : "reconciliation_workflow_failed";
   const diagnostic = {
-    code: "reconciliation_workflow_failed",
+    code: failureCode,
     detail,
   };
   const result = terminalFailureResult(runId, [diagnostic]);
@@ -331,13 +356,13 @@ export async function failReconciliationWorkflow(
       .prepare(
         `UPDATE ingestion_runs
          SET state = 'failed', terminal_at = ?,
-             failure_code = 'reconciliation_workflow_failed',
+             failure_code = ?,
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing"],"current_stage":"failed"}'
          WHERE id = ? AND state IN ('parsing', 'reconciling')`,
       )
-      .bind(observedAt, canonicalJson([diagnostic]), runId),
+      .bind(observedAt, failureCode, canonicalJson([diagnostic]), runId),
     database
       .prepare(
         `UPDATE operation_state
@@ -347,10 +372,10 @@ export async function failReconciliationWorkflow(
            AND EXISTS (
              SELECT 1 FROM ingestion_runs
              WHERE id = ? AND state = 'failed'
-               AND failure_code = 'reconciliation_workflow_failed'
+               AND failure_code = ?
            )`,
       )
-      .bind(runId, runId),
+      .bind(runId, runId, failureCode),
   ]);
   return requiredTerminalResult(database, runId);
 }

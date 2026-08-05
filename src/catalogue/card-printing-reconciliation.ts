@@ -43,6 +43,12 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
+import {
+  applyPinnedCuratedRevisions,
+  CuratedRevisionSourceChangeError,
+  stripCuratedRevisionEffects,
+} from "./curated-revisions";
+import type { CuratedProvenance } from "./curated-provenance";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import {
   byteBoundedJsonArrays,
@@ -69,6 +75,7 @@ import {
 type ActiveRunRow = {
   id: string;
   state: string;
+  selected_games_json: string;
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
   recovery_health: string;
@@ -160,6 +167,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const priorCandidate = await candidateAtRevision(
     database,
     run.expected_current_revision_id,
+    JSON.parse(run.selected_games_json) as SupportedGame[],
   );
   const cards = new Map<string, CatalogueCard>(
     priorCandidate?.cards.map((card) => [card.id, card]) ?? [],
@@ -1058,7 +1066,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     })
     .sort((left, right) => left.id.localeCompare(right.id));
-  const candidate: CatalogueCandidate = {
+  let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
     selected_games: [
       ...new Set([
@@ -1075,9 +1083,23 @@ export async function reconcileRetainedCardPrintingEvidence(
     printing_images: [...printingImages.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
-    products: productCatalogue.products,
-    distribution_contexts: productCatalogue.distribution_contexts,
-    product_relationships: productCatalogue.product_relationships,
+    products: productCatalogue.products.map((product) => ({
+      ...omitUndefinedCuratedProvenance(product),
+      releases: product.releases.map(omitUndefinedCuratedProvenance),
+    })),
+    distribution_contexts: productCatalogue.distribution_contexts.map(
+      omitUndefinedCuratedProvenance,
+    ),
+    product_relationships: productCatalogue.product_relationships.map(
+      (relationship) => {
+        const sanitized = omitUndefinedCuratedProvenance(relationship);
+        const { source_lineage: lineage, ...facts } = sanitized;
+        return {
+          ...facts,
+          ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        };
+      },
+    ),
     card_observed_games: [
       ...new Set(
         cardSurfaceObservations.map(
@@ -1113,6 +1135,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     errata,
     legality_rules: candidateLegalityRules,
   };
+  candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   const cardPrintingPlans = plans.filter(
     (plan) => plan.observationKind === "card_printing",
   );
@@ -1243,7 +1266,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  const candidateCatalogueDigest = await catalogueDataDigest(
+  let candidateCatalogueDigest = await catalogueDataDigest(
     database,
     candidate,
     plans,
@@ -1312,6 +1335,79 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
+  try {
+    candidate = await applyPinnedCuratedRevisions(
+      database,
+      runId,
+      candidate,
+      observedAt,
+      { deferSourceChangeFailure: true },
+    );
+  } catch (error) {
+    if (!(error instanceof CuratedRevisionSourceChangeError)) throw error;
+    candidate = error.candidate;
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      candidate,
+      plans,
+      checkedSourceLineages,
+    );
+    const diagnostics = [...error.diagnostics].sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
+    const digestPayloadJson = reconciliationDigestPayload({
+      candidate,
+      partitions: retained.partitions,
+      plans,
+      state: "failed",
+      publishable: false,
+      sourceObservationSetId: retained.observationSetId,
+      observedCards,
+      observedPrintings,
+      observedProducts: productCatalogue.observedProducts,
+      diagnostics,
+      warnings,
+    });
+    const candidateDigest = await sha256Text(digestPayloadJson);
+    await persistBlockedCandidate(database, {
+      runId,
+      observationSetId: retained.observationSetId,
+      sourceSnapshotId: retained.sourceSnapshotId,
+      sourceLineage: retained.sourceLineage,
+      partitions: retained.partitions,
+      plans,
+      diagnostics,
+      candidate,
+      digestPayloadJson,
+      candidateDigest,
+      candidateCatalogueDigest,
+      observedAt,
+      failureCode: "curated_revision_reconfirmation_required",
+      atomicStatements: error.atomicStatements,
+    });
+    return {
+      contract: "card-keepr-card-printing-reconciliation@2",
+      run_id: runId,
+      state: "failed",
+      publishable: false,
+      candidate_digest: candidateDigest,
+      expected_current_revision_id: run.expected_current_revision_id,
+      source_observation_set_id: retained.observationSetId,
+      cards: observedCards,
+      printings: observedPrintings,
+      products: productCatalogue.observedProducts,
+      errata: candidate.errata ?? [],
+      legality_rules: candidate.legality_rules ?? [],
+      diagnostics,
+      warnings,
+    };
+  }
+  candidateCatalogueDigest = await catalogueDataDigest(
+    database,
+    candidate,
+    plans,
+    checkedSourceLineages,
+  );
   const digestPayloadJson = reconciliationDigestPayload({
     candidate,
     partitions: retained.partitions,
@@ -1454,6 +1550,7 @@ function reconciliationDigestPayload(input: {
 async function candidateAtRevision(
   database: D1Database,
   revisionId: string,
+  selectedGames: readonly SupportedGame[],
 ): Promise<CatalogueCandidate | null> {
   const row = await database
     .prepare(
@@ -1465,14 +1562,14 @@ async function candidateAtRevision(
     .bind(revisionId)
     .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) return null;
-  const candidate = JSON.parse(
+  const candidate = stripCuratedRevisionEffects(JSON.parse(
     await retainedPayload(
       database,
       row.ingestion_run_id,
       "candidate",
       row.candidate_json,
     ),
-  ) as CatalogueCandidate;
+  ) as CatalogueCandidate, selectedGames);
   const errata = candidate.errata ?? [];
   const provenanceByErratum = new Map<
     string,
@@ -1725,7 +1822,16 @@ function semanticCatalogueCandidate(
       game: product.game,
       official_code: product.official_code,
       name: product.name,
-      releases: product.releases,
+      releases: product.releases.map((release) => {
+        const { curated_provenance: provenance, ...facts } = release;
+        return {
+          ...facts,
+          ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+        };
+      }),
+      ...(Array.isArray(product.curated_provenance)
+        ? { curated_provenance: product.curated_provenance }
+        : {}),
       withdrawal:
         product.withdrawal === null
           ? null
@@ -1741,14 +1847,22 @@ function semanticCatalogueCandidate(
       })),
     })),
     distribution_contexts: (candidate.distribution_contexts ?? []).map(
-      ({ source_lineages: _lineages, ...context }) =>
-        context,
+      ({ source_lineages: _lineages, curated_provenance: provenance, ...context }) => ({
+        ...context,
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     product_relationships: (candidate.product_relationships ?? []).map(
       ({
         source_observation_ids: _observationIds,
+        source_lineage: lineage,
+        curated_provenance: provenance,
         ...relationship
-      }) => relationship,
+      }) => ({
+        ...relationship,
+        ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     errata: (candidate.errata ?? []).map((erratum) =>
       JSON.parse(canonicalErratum(erratum))
@@ -1769,6 +1883,30 @@ function semanticCatalogueCandidate(
       return semanticRule;
     }),
   };
+}
+
+function omitUndefinedCuratedProvenance<T extends {
+  curated_provenance?: readonly CuratedProvenance[];
+}>(
+  value: T,
+): T {
+  const { curated_provenance: provenance, ...facts } = value;
+  return {
+    ...facts,
+    ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+  } as T;
+}
+
+function omitUndefinedValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitUndefinedValues);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, omitUndefinedValues(item)]),
+    );
+  }
+  return value;
 }
 
 function latestCapture(
@@ -2093,7 +2231,8 @@ async function requiredActiveParsingRun(
 ): Promise<ActiveRunRow> {
   const row = await database
     .prepare(
-      `SELECT run.id, run.state, run.expected_current_revision_id,
+      `SELECT run.id, run.state, run.selected_games_json,
+              run.expected_current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_runs AS run

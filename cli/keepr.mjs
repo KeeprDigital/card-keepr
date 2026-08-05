@@ -14,6 +14,8 @@ import {
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
+import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
+import { validatedProductionTarget } from "./production-target.mjs";
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
@@ -104,6 +106,13 @@ export async function main(arguments_, environment) {
   }
   if (arguments_[0] === "credential") {
     return runCredentialCommand(
+      arguments_.slice(1),
+      environment,
+      json,
+    );
+  }
+  if (arguments_[0] === "curated-revision") {
+    return runCuratedRevisionCommand(
       arguments_.slice(1),
       environment,
       json,
@@ -938,57 +947,6 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
   );
 }
 
-function validatedProductionTarget(value) {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    !sameKeys(value, [
-      "cloudflare_account_id",
-      "worker_scripts",
-      "d1_databases",
-      "r2_buckets",
-    ]) ||
-    !/^[0-9a-f]{32}$/.test(value.cloudflare_account_id ?? "") ||
-    !sameStringArray(
-      value.worker_scripts,
-      ["card-keepr-api", "card-keepr-ingestion"],
-    ) ||
-    !sameStringArray(
-      value.r2_buckets,
-      [
-        "card-keepr-evidence",
-        "card-keepr-printing-images",
-        "card-keepr-catalogue-exports",
-        "card-keepr-backups",
-      ],
-    ) ||
-    !Array.isArray(value.d1_databases) ||
-    value.d1_databases.length !== 2
-  ) {
-    return null;
-  }
-  const expectedDatabaseNames = [
-    "card-keepr-catalogue",
-    "card-keepr-disposable-verification",
-  ];
-  for (const [index, database] of value.d1_databases.entries()) {
-    if (
-      database === null ||
-      typeof database !== "object" ||
-      Array.isArray(database) ||
-      !sameKeys(database, ["name", "id"]) ||
-      database.name !== expectedDatabaseNames[index] ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-        database.id ?? "",
-      )
-    ) {
-      return null;
-    }
-  }
-  return value;
-}
-
 function sameKeys(value, expected) {
   const keys = Object.keys(value).sort();
   return keys.length === expected.length &&
@@ -1065,7 +1023,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | backup create | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | backup create | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );

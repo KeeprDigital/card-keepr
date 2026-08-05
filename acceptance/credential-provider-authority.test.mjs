@@ -1002,6 +1002,57 @@ test("the serialized production release owns both semantic deployment slots and 
     ).length,
     1,
   );
+  const bootstrapClaim = workflow.indexOf(
+    "SET active_ingestion_run_id = '${bootstrap_lease}'",
+  );
+  const bootstrapRun = workflow.indexOf(
+    "INSERT INTO ingestion_runs (id, state, selected_games_json",
+  );
+  const migrations = workflow.indexOf("d1 migrations apply CATALOGUE_DB");
+  const transfer = workflow.indexOf(
+    "SET active_release_id = '${release_fence}',",
+  );
+  assert.ok(bootstrapRun >= 0 && bootstrapRun < bootstrapClaim);
+  assert.ok(bootstrapClaim >= 0 && bootstrapClaim < migrations);
+  assert.ok(migrations >= 0 && migrations < transfer);
+  assert.match(workflow, /timeout-minutes: 30/u);
+  assert.match(workflow, /date -u -d '\+35 minutes'/u);
+  assert.match(workflow, /release-bootstrap\|\$\{bootstrap_expires_at\}\|\$\{release_fence\}/u);
+  assert.match(workflow, /substr\(active_ingestion_run_id, 19, 24\)[\s\S]*strftime/u);
+  assert.match(workflow, /active_release_expires_at <= strftime/u);
+  assert.match(workflow, /renew_release_lease/u);
+  assert.match(workflow, /run_with_release_lease/u);
+  assert.match(
+    workflow,
+    /run_with_release_lease npx wrangler deploy --config apps\/api\/wrangler\.jsonc/u,
+  );
+  assert.match(
+    workflow,
+    /run_with_release_lease npx wrangler deploy --config apps\/ingestion\/wrangler\.jsonc/u,
+  );
+  assert.match(
+    workflow,
+    /setsid "\$@"[\s\S]*while kill -0 "\$\{command_pid\}"[\s\S]*! renew_release_lease[\s\S]*kill -- "-\$\{command_pid\}"/u,
+  );
+  assert.match(workflow, /--max-time 60/u);
+  assert.match(
+    workflow,
+    /active_release_id = '\$\{release_fence\}'[\s\S]*active_release_expires_at > strftime/u,
+  );
+  assert.match(workflow, /test "\$\(jq -r '\.\[-1\]\.results\[0\]\.claimed'/u);
+  assert.match(workflow, /trap cleanup_release_lock EXIT/u);
+  assert.match(
+    workflow,
+    /SET active_release_id = NULL,[\s\S]*active_release_expires_at = NULL[\s\S]*active_release_id = '\$\{release_fence\}'/u,
+  );
+  assert.match(
+    workflow,
+    /SET active_ingestion_run_id = NULL[\s\S]*active_ingestion_run_id = '\$\{bootstrap_lease\}'/u,
+  );
+  assert.match(
+    workflow,
+    /DELETE FROM ingestion_runs WHERE id = '\$\{bootstrap_lease\}'[\s\S]*production_release_bootstrap/u,
+  );
 });
 
 test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong actor", async () => {

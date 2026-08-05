@@ -39,17 +39,17 @@ import {
 import { deterministicGzipStream } from "./export-compression";
 
 const componentDefinitions = [
-  ["supported-games", "SupportedGameRecord", "id:utf8", 3],
-  ["game-profiles", "GameProfileRecord", "profile:utf8", 3],
-  ["cards", "CardRecord", "id:utf8", 3],
-  ["printings", "PrintingRecord", "id:utf8", 3],
-  ["printing-images", "PrintingImageRecord", "id:utf8", 3],
-  ["products", "ProductRecord", "id:utf8", 3],
-  ["releases", "ReleaseRecord", "id:utf8", 3],
-  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 3],
-  ["errata", "ErratumRecord", "id:utf8", 3],
-  ["legality-rules", "LegalityRuleRecord", "id:utf8", 3],
-  ["relationships", "RelationshipRecord", "id:utf8", 3],
+  ["supported-games", "SupportedGameRecord", "id:utf8", 4],
+  ["game-profiles", "GameProfileRecord", "profile:utf8", 4],
+  ["cards", "CardRecord", "id:utf8", 4],
+  ["printings", "PrintingRecord", "id:utf8", 4],
+  ["printing-images", "PrintingImageRecord", "id:utf8", 4],
+  ["products", "ProductRecord", "id:utf8", 4],
+  ["releases", "ReleaseRecord", "id:utf8", 4],
+  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 4],
+  ["errata", "ErratumRecord", "id:utf8", 4],
+  ["legality-rules", "LegalityRuleRecord", "id:utf8", 4],
+  ["relationships", "RelationshipRecord", "id:utf8", 4],
 ] as const;
 
 export type ExportObject = {
@@ -74,9 +74,9 @@ export type BuiltCatalogueExport = {
 export type SourceFreshness = CatalogueSourceCheck;
 
 type CatalogueExportManifest = {
-  format: "card-keepr-catalogue-export-manifest@3";
+  format: "card-keepr-catalogue-export-manifest@4";
   serialization_profile: "card-keepr-ndjson-gzip@1";
-  export_schema_major: 3;
+  export_schema_major: 4;
   catalogue_revision: {
     id: string;
     content_sha256: string;
@@ -203,9 +203,9 @@ export async function buildCatalogueExport(
   }
 
   const manifestWithPlaceholder: CatalogueExportManifest = {
-    format: "card-keepr-catalogue-export-manifest@3",
+    format: "card-keepr-catalogue-export-manifest@4",
     serialization_profile: "card-keepr-ndjson-gzip@1",
-    export_schema_major: 3,
+    export_schema_major: 4,
     catalogue_revision: {
       id: catalogueRevisionId,
       content_sha256: candidateDigest,
@@ -547,6 +547,7 @@ async function exportRecordFactories(
       game: product.game,
       official_code: product.official_code,
       name: product.name,
+      ...curatedProvenanceProjection(product),
       lifecycle:
         lifecycles?.products?.[product.id] ?? defaultLifecycle,
     })),
@@ -577,6 +578,7 @@ async function exportRecordFactories(
         kind: context.kind,
         label: context.label,
         product_id: context.product_id,
+        ...curatedProvenanceProjection(context),
       })),
   ]);
   const legalityRelationships = await legalityRuleRelationshipRecords(
@@ -656,7 +658,10 @@ async function exportRecordFactories(
       .sort((left, right) => compareUtf8(left.id, right.id)),
     "distribution-contexts": () => distributionContexts,
     errata: () => (candidate.errata ?? [])
-      .map(exportErratum)
+      .map((erratum) => ({
+        ...exportErratum(erratum),
+        ...curatedProvenanceProjection(erratum),
+      }))
       .sort((left, right) => compareUtf8(left.id, right.id)),
     "legality-rules": () => legalityRuleExportRecords(candidate, revisionId),
     relationships: () => uniqueById([
@@ -709,8 +714,13 @@ async function exportRecordFactories(
         from: relationship.from,
         to: relationship.to,
         evidence_category: relationship.evidence_category,
-        source_lineage: relationship.source_lineage,
+        ...(relationship.source_lineage === undefined
+          ? {}
+          : { source_lineage: relationship.source_lineage }),
         source_observation_ids: relationship.source_observation_ids,
+        ...(relationship.curated_provenance === undefined
+          ? {}
+          : { curated_provenance: relationship.curated_provenance }),
         relationship_value: relationship.relationship_value,
         lifecycle:
           lifecycles?.productRelationships?.[relationship.id] ?? {
@@ -757,6 +767,13 @@ async function exportRecordFactories(
       ...legalityRelationships,
     ]),
   };
+}
+
+function curatedProvenanceProjection(value: object): Record<string, unknown> {
+  return "curated_provenance" in value &&
+      Array.isArray(value.curated_provenance)
+    ? { curated_provenance: value.curated_provenance }
+    : {};
 }
 
 function inferredProductLifecycleKey(

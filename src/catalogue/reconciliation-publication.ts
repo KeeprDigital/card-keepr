@@ -33,6 +33,7 @@ import {
   erratumTargetLifecycleKey,
 } from "./errata-rules-text";
 import { requiredSourceAdapter } from "./source-adapters";
+import { curatedPublicationStatements } from "./curated-revisions";
 
 export type NormalizedLifecycle = {
   first_revision_id: string;
@@ -479,6 +480,7 @@ export async function reconciliationPublication(
       observedProvenance,
       revisionId,
     ),
+    ...await curatedPublicationStatements(database, runId, revisionId),
   );
   return result;
 }

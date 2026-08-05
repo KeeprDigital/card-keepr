@@ -56,12 +56,14 @@ The v3 component order is:
 Export schema majors are immutable compatibility contracts. Major 2 added
 Product, Release, Distribution Context, and typed game-profile properties to
 major 1. Major 3 adds the complete normalized Legality Rule `effect`, source
-provenance, and lifecycle required for exact contextual legality. Publishers
-emit `card-keepr-catalogue-export-manifest@3` and
-`catalogue-export-record@3` component schema URIs. Consumers must select a
+provenance, and lifecycle required for exact contextual legality. Major 4 adds
+strictly typed curated provenance and curated relationship records without
+changing the immutable major-3 contract. Publishers emit
+`card-keepr-catalogue-export-manifest@4` and
+`catalogue-export-record@4` component schema URIs. Consumers must select a
 decoder by `export_schema_major` and URI and must never validate a component
-with a different major. The historical major-1 and major-2 schemas remain
-checked in byte-identically for revision-addressed exports.
+with a different major. The historical major-1, major-2, and major-3 schemas
+remain checked in byte-identically for revision-addressed exports.
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are
