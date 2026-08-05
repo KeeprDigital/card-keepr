@@ -7,6 +7,7 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
+import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
   cardSearchChunks,
@@ -387,6 +388,370 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
   await expect(new Response(decompressed).text()).resolves.toBe(
     `${canonicalJson(legalityRule)}\n`,
   );
+
+  const componentEtag = `"${compressedLegalityDigest}"`;
+  const headResponse = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      method: "HEAD",
+      headers: {
+        ...apiHeaders("203.0.113.32"),
+        range: "bytes=0-9",
+      },
+    },
+  ));
+  expect(headResponse.status).toBe(200);
+  expect(await headResponse.text()).toBe("");
+  expect(headResponse.headers.get("content-length")).toBe(
+    String(compressedLegalityBytes.byteLength),
+  );
+  expect(headResponse.headers.get("content-disposition")).toBe(
+    'attachment; filename="legality-rules.ndjson.gz"',
+  );
+  expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
+  expect(headResponse.headers.get("etag")).toBe(componentEtag);
+  expect(headResponse.headers.get("cache-control")).toBe(
+    "private, max-age=31536000, immutable",
+  );
+
+  const notModified = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.33"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(notModified.status).toBe(304);
+  expect(await notModified.text()).toBe("");
+
+  const partial = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.34"),
+        range: "bytes=3-11",
+      },
+    },
+  ));
+  expect(partial.status).toBe(206);
+  expect(new Uint8Array(await partial.arrayBuffer())).toEqual(
+    compressedLegalityBytes.slice(3, 12),
+  );
+  expect(partial.headers.get("content-range")).toBe(
+    `bytes 3-11/${compressedLegalityBytes.byteLength}`,
+  );
+  expect(partial.headers.get("content-length")).toBe("9");
+  expect(partial.headers.get("etag")).toBe(componentEtag);
+
+  await testEnv.CATALOGUE_EXPORTS.put(
+    componentKey,
+    compressedLegalityBytes,
+    { sha256: compressedLegalityDigest },
+  );
+  const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async get(...arguments_) {
+      const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
+      if (arguments_[0] !== componentKey || object === null) return object;
+      return new Proxy(object, {
+        get(target, property) {
+          if (property === "etag") return `${target.etag}-replacement`;
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  });
+  const raced = await apiWorker.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
+      headers: apiHeaders("203.0.113.38"),
+    }),
+    { ...testEnv, CATALOGUE_EXPORTS: replacedBodyBucket },
+  );
+  expect(raced.status).toBe(404);
+  await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
+
+  const unsatisfiable = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.35"),
+        range: `bytes=${compressedLegalityBytes.byteLength}-`,
+      },
+    },
+  ));
+  expect(unsatisfiable.status).toBe(416);
+  expect(unsatisfiable.headers.get("content-range")).toBe(
+    `bytes */${compressedLegalityBytes.byteLength}`,
+  );
+  await expect(unsatisfiable.json()).resolves.toMatchObject({
+    code: "range_not_satisfiable",
+  });
+
+  await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
+  const missing = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.36"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("content-type")).toContain(
+    "application/problem+json",
+  );
+  const missingProblem = await missing.json();
+  expect(missingProblem).toMatchObject({ code: "not_found" });
+  const problemAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(problemAjv);
+  problemAjv.addSchema(apiSchema);
+  const validateProblem = problemAjv.getSchema(
+    `${apiSchema.$id}#/$defs/Problem`,
+  )!;
+  expect(
+    validateProblem(missingProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
+
+  const tamperedBytes = compressedLegalityBytes.slice();
+  const tamperedIndex = tamperedBytes.length - 1;
+  tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
+  const tampered = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.37"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(tampered.status).toBe(404);
+  const tamperedProblem = await tampered.json();
+  expect(tamperedProblem).toMatchObject({ code: "not_found" });
+  expect(
+    validateProblem(tamperedProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
+
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson({
+      ...manifest,
+      supported_games: ["one-piece"],
+    })}\n`,
+  );
+  const changedManifest = await exports.default.fetch(
+    authenticatedRequest(manifestPath),
+  );
+  expect(changedManifest.status).toBe(500);
+  await expect(changedManifest.json()).resolves.toMatchObject({
+    code: "internal_error",
+  });
+});
+
+test("Catalogue Export listing is ordered, bounded, and revision-pinned across pages", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_list_oldest",
+    "run_export_list_oldest",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_list_middle",
+    "run_export_list_middle",
+    "2026-07-19T00:00:00.000Z",
+  );
+
+  const first = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/catalogue-exports?limit=1",
+    { headers: apiHeaders("203.0.113.105") },
+  ));
+  expect(first.status).toBe(200);
+  const firstDocument = await first.json<{
+    data: { catalogue_revision_id: string }[];
+    page: { limit: number; next_cursor: string | null };
+    meta: { catalogue_revision_id: string };
+  }>();
+  expect(firstDocument.data.map(({ catalogue_revision_id }) =>
+    catalogue_revision_id)).toEqual(["catrev_export_list_middle"]);
+  expect(firstDocument.page).toEqual({
+    limit: 1,
+    next_cursor: expect.any(String),
+  });
+  expect(firstDocument.meta.catalogue_revision_id).toBe(
+    "catrev_export_list_middle",
+  );
+  const collectionAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(collectionAjv);
+  collectionAjv.addSchema(apiSchema);
+  const validateCollection = collectionAjv.getSchema(
+    `${apiSchema.$id}#/$defs/CatalogueExportCollection`,
+  )!;
+  expect(
+    validateCollection(firstDocument),
+    JSON.stringify(validateCollection.errors),
+  ).toBe(true);
+
+  await seedCatalogueExportSummary(
+    "catrev_export_list_newest",
+    "run_export_list_newest",
+    "2026-07-20T00:00:00.000Z",
+  );
+  const second = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/catalogue-exports?limit=1&after=" +
+      encodeURIComponent(firstDocument.page.next_cursor!),
+    { headers: apiHeaders("203.0.113.106") },
+  ));
+  expect(second.status).toBe(200);
+  const secondDocument = await second.json<{
+    data: { catalogue_revision_id: string }[];
+    page: { next_cursor: string | null };
+    meta: { catalogue_revision_id: string };
+  }>();
+  expect(secondDocument.data.map(({ catalogue_revision_id }) =>
+    catalogue_revision_id)).toEqual(["catrev_export_list_oldest"]);
+  expect(secondDocument.page.next_cursor).toBeNull();
+  expect(secondDocument.meta.catalogue_revision_id).toBe(
+    "catrev_export_list_middle",
+  );
+});
+
+test("Catalogue Export JSON routes validate requests and support conditional reads", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_http_old",
+    "run_export_http_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_http_current",
+    "run_export_http_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const request = (path: string, headers: Record<string, string> = {}) =>
+    exports.default.fetch(new Request(`https://card-keepr.invalid${path}`, {
+      headers: { ...apiHeaders("203.0.113.107"), ...headers },
+    }));
+
+  const list = await request("/v1/catalogue-exports?limit=1");
+  expect(list.status).toBe(200);
+  const listEtag = list.headers.get("etag");
+  expect(listEtag).toEqual(expect.any(String));
+  const listNotModified = await request(
+    "/v1/catalogue-exports?limit=1",
+    { "if-none-match": listEtag! },
+  );
+  expect(listNotModified.status).toBe(304);
+  expect(await listNotModified.text()).toBe("");
+  expect(listNotModified.headers.get("x-catalogue-revision")).toBe(
+    "catrev_export_http_current",
+  );
+
+  const defaultList = await request("/v1/catalogue-exports");
+  expect(defaultList.status).toBe(200);
+  const defaultListEtag = defaultList.headers.get("etag");
+  await expect(defaultList.json()).resolves.toMatchObject({
+    links: { self: "/v1/catalogue-exports" },
+  });
+  const explicitDefault = await request(
+    "/v1/catalogue-exports?limit=50",
+    { "if-none-match": defaultListEtag! },
+  );
+  expect(explicitDefault.status).toBe(200);
+  expect(explicitDefault.headers.get("etag")).not.toBe(defaultListEtag);
+  await expect(explicitDefault.json()).resolves.toMatchObject({
+    links: { self: "/v1/catalogue-exports?limit=50" },
+  });
+
+  const firstDocument = await list.json<{
+    page: { next_cursor: string };
+  }>();
+  for (const [query, code] of [
+    ["limit=0", "invalid_parameter"],
+    ["limit=101", "invalid_parameter"],
+    ["limit=1.5", "invalid_parameter"],
+    ["limit=1&limit=1", "invalid_parameter"],
+    ["unknown=value", "invalid_parameter"],
+    ["after=not-a-cursor", "invalid_cursor"],
+    [
+      `limit=2&after=${encodeURIComponent(firstDocument.page.next_cursor)}`,
+      "invalid_cursor",
+    ],
+  ]) {
+    const invalid = await request(`/v1/catalogue-exports?${query}`);
+    expect(invalid.status, query).toBe(400);
+    await expect(invalid.json(), query).resolves.toMatchObject({ code });
+  }
+  const unavailableCursor = JSON.parse(Buffer.from(
+    firstDocument.page.next_cursor,
+    "base64url",
+  ).toString("utf8"));
+  unavailableCursor.revision_id = "catrev_export_cursor_unavailable";
+  const unavailable = await request(
+    "/v1/catalogue-exports?limit=1&after=" +
+      Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url"),
+  );
+  expect(unavailable.status).toBe(409);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/catalogue-exports" },
+  });
+
+  const manifestPath =
+    "/v1/catalogue-exports/catrev_export_http_current";
+  const manifest = await request(manifestPath);
+  expect(manifest.status).toBe(200);
+  const manifestEtag = manifest.headers.get("etag");
+  const manifestNotModified = await request(manifestPath, {
+    "if-none-match": manifestEtag!,
+  });
+  expect(manifestNotModified.status).toBe(304);
+  expect(await manifestNotModified.text()).toBe("");
+});
+
+test("Catalogue Export listing ETags change when a retained package disappears", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_old",
+    "run_export_etag_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_current",
+    "run_export_etag_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const path = "/v1/catalogue-exports?limit=1";
+  const first = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    { headers: apiHeaders("203.0.113.108") },
+  ));
+  expect(first.status).toBe(200);
+  const firstEtag = first.headers.get("etag");
+  expect(firstEtag).toEqual(expect.any(String));
+  await expect(first.json()).resolves.toMatchObject({
+    page: { next_cursor: expect.any(String) },
+  });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind("catrev_export_etag_old").run();
+  const changed = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.109"),
+        "if-none-match": firstEtag!,
+      },
+    },
+  ));
+  expect(changed.status).toBe(200);
+  expect(changed.headers.get("etag")).not.toBe(firstEtag);
+  await expect(changed.json()).resolves.toMatchObject({
+    data: [{ catalogue_revision_id: "catrev_export_etag_current" }],
+    page: { limit: 1, next_cursor: null },
+  });
 });
 
 test("Legality Status rejects a malformed Card identity before lookup", async () => {
@@ -2838,6 +3203,65 @@ async function seedApiRevision(input: {
        WHERE active_ingestion_run_id = ?`,
     ).bind(input.runId),
   ]);
+}
+
+async function seedCatalogueExportSummary(
+  revisionId: string,
+  runId: string,
+  publishedAt: string,
+): Promise<void> {
+  await seedApiRevision({ revisionId, runId, cards: [] });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_revisions SET published_at = ? WHERE id = ?`,
+  ).bind(publishedAt, revisionId).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET published_at = ?
+     WHERE singleton = 1 AND current_revision_id = ?`,
+  ).bind(publishedAt, revisionId).run();
+  const manifestWithPlaceholder = {
+    export_schema_major: 4,
+    catalogue_revision: {
+      id: revisionId,
+      content_sha256: "b".repeat(64),
+    },
+    manifest_sha256: "0".repeat(64),
+    components: [],
+  };
+  const manifestDigest = await sha256Text(
+    `${canonicalJson(manifestWithPlaceholder)}\n`,
+  );
+  const manifest = {
+    ...manifestWithPlaceholder,
+    manifest_sha256: manifestDigest,
+  };
+  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson(manifest)}\n`,
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_exports (
+       catalogue_revision_id, manifest_key, manifest_digest, verified
+     ) VALUES (?, ?, ?, 1)`,
+  ).bind(revisionId, manifestKey, manifestDigest).run();
+}
+
+function proxyR2Bucket(
+  bucket: R2Bucket,
+  overrides: {
+    get?: (
+      ...arguments_: Parameters<R2Bucket["get"]>
+    ) => ReturnType<R2Bucket["get"]>;
+  },
+): R2Bucket {
+  return new Proxy(bucket, {
+    get(target, property) {
+      const override = property === "get" ? overrides.get : undefined;
+      if (override !== undefined) return override;
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 function cardSearchStatements(

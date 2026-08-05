@@ -2,8 +2,10 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   CardReadProblem,
+  CatalogueExportReadProblem,
   catalogueExportComponentResponse,
   catalogueExportResponse,
+  catalogueExportsResponse,
   currentCardResponse,
   currentCatalogueStatus,
   currentPrintingResponse,
@@ -246,8 +248,23 @@ const apiWorker = {
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportComponentMatch[1]!),
           decodeURIComponent(exportComponentMatch[2]!),
+          requestId,
         );
         if (response !== null) return withCorsHeaders(request, response);
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/v1/catalogue-exports"
+      ) {
+        return withCorsHeaders(
+          request,
+          await catalogueExportsResponse(
+            request,
+            env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
+          ),
+        );
       }
 
       const exportMatch = /^\/v1\/catalogue-exports\/([^/]+)$/.exec(
@@ -255,6 +272,7 @@ const apiWorker = {
       );
       if (request.method === "GET" && exportMatch !== null) {
         const response = await catalogueExportResponse(
+          request,
           env.CATALOGUE_DB,
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportMatch[1]!),
@@ -349,6 +367,29 @@ const apiWorker = {
             code: error.code,
             title: "Invalid Printing request",
             detail: error.message,
+          }),
+        );
+      }
+      if (error instanceof CatalogueExportReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title: error.status === 409
+              ? "Cursor revision unavailable"
+              : error.code === "invalid_cursor"
+                ? "Invalid Catalogue Export cursor"
+                : "Invalid Catalogue Export request",
+            detail: error.message,
+            ...(error.status === 409
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/catalogue-exports" },
+                  },
+                }
+              : {}),
           }),
         );
       }
