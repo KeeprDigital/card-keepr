@@ -124,17 +124,6 @@ export async function catalogueExportsResponse(
       "The Catalogue Export cursor revision is unavailable.",
     );
   }
-  const etag = `"${await sha256Text(canonicalJson({
-    route: "/v1/catalogue-exports",
-    order: "published_at:desc,catalogue_revision_id:desc",
-    revision_id: revisionId,
-    limit,
-    after: cursor?.after ?? null,
-  }))}"`;
-  const headers = revisionHeaders(revisionId, etag);
-  if (ifNoneMatch(request, etag)) {
-    return new Response(null, { status: 304, headers });
-  }
   const exports = await database
     .prepare(
       `WITH RECURSIVE pinned_revision(id) AS (
@@ -207,6 +196,17 @@ export async function catalogueExportsResponse(
         },
       })
     : null;
+  const etag = `"${await sha256Text(canonicalJson({
+    route: "/v1/catalogue-exports",
+    order: "published_at:desc,catalogue_revision_id:desc",
+    revision_id: revisionId,
+    data,
+    page: { limit, next_cursor: next },
+  }))}"`;
+  const headers = revisionHeaders(revisionId, etag);
+  if (ifNoneMatch(request, etag)) {
+    return new Response(null, { status: 304, headers });
+  }
   return Response.json(
     {
       data,
@@ -671,6 +671,15 @@ export async function catalogueExportComponentResponse(
     etag,
     "x-catalogue-revision": revisionId,
   });
+  const key = `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`;
+  const stored = await bucket.head(key);
+  if (!exportComponentObjectMatches(
+    stored,
+    component.compressed_bytes,
+    component.compressed_sha256,
+  )) {
+    return unavailableCatalogueExportComponent(requestId);
+  }
   if (ifNoneMatch(request, etag)) {
     return new Response(null, {
       status: 304,
@@ -678,7 +687,6 @@ export async function catalogueExportComponentResponse(
     });
   }
 
-  const key = `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`;
   const range = request.method === "HEAD"
     ? null
     : parseRange(
@@ -702,15 +710,14 @@ export async function catalogueExportComponentResponse(
   }
   const object =
     request.method === "HEAD"
-      ? await bucket.head(key)
+      ? stored
       : await bucket.get(key, range === null ? {} : { range });
-  if (
-    object === null ||
-    object.size !== component.compressed_bytes ||
-    (object.checksums.toJSON().sha256 !== undefined &&
-      object.checksums.toJSON().sha256 !== component.compressed_sha256)
-  ) {
-    throw new Error("Verified Catalogue Export component is unavailable");
+  if (!exportComponentObjectMatches(
+    object,
+    component.compressed_bytes,
+    component.compressed_sha256,
+  )) {
+    return unavailableCatalogueExportComponent(requestId);
   }
 
   const partial = range !== null;
@@ -736,6 +743,26 @@ export async function catalogueExportComponentResponse(
       headers,
     },
   );
+}
+
+function exportComponentObjectMatches(
+  object: R2Object | null,
+  expectedBytes: number,
+  expectedSha256: string,
+): object is R2Object {
+  if (object === null || object.size !== expectedBytes) return false;
+  const checksum = object.checksums.toJSON().sha256;
+  return checksum === expectedSha256;
+}
+
+function unavailableCatalogueExportComponent(requestId: string): Response {
+  return problemResponse({
+    requestId,
+    status: 404,
+    code: "not_found",
+    title: "Not found",
+    detail: "The Catalogue Export component is unavailable.",
+  });
 }
 
 async function findExport(

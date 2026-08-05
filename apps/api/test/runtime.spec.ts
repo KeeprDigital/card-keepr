@@ -274,6 +274,7 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     componentKey,
     compressedLegalityBytes,
     {
+      sha256: compressedLegalityDigest,
       httpMetadata: {
         contentType: "application/x-ndjson",
         contentEncoding: "gzip",
@@ -461,13 +462,51 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     code: "range_not_satisfiable",
   });
 
-  await testEnv.CATALOGUE_EXPORTS.put(componentKey, new Uint8Array([1]));
-  const changed = await exports.default.fetch(
-    authenticatedRequest(componentPath),
+  await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
+  const missing = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.36"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("content-type")).toContain(
+    "application/problem+json",
   );
-  expect(changed.status).toBe(500);
-  await expect(changed.json()).resolves.toMatchObject({
-    code: "internal_error",
+  const missingProblem = await missing.json();
+  expect(missingProblem).toMatchObject({ code: "not_found" });
+  const problemAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(problemAjv);
+  problemAjv.addSchema(apiSchema);
+  const validateProblem = problemAjv.getSchema(
+    `${apiSchema.$id}#/$defs/Problem`,
+  )!;
+  expect(
+    validateProblem(missingProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
+
+  const tamperedBytes = compressedLegalityBytes.slice();
+  const tamperedIndex = tamperedBytes.length - 1;
+  tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes, {
+    sha256: await sha256(tamperedBytes),
+  });
+  const tampered = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.37"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(tampered.status).toBe(404);
+  await expect(tampered.json()).resolves.toMatchObject({
+    code: "not_found",
   });
 
   await testEnv.CATALOGUE_EXPORTS.put(
@@ -626,6 +665,49 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   });
   expect(manifestNotModified.status).toBe(304);
   expect(await manifestNotModified.text()).toBe("");
+});
+
+test("Catalogue Export listing ETags change when a retained package disappears", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_old",
+    "run_export_etag_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_current",
+    "run_export_etag_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const path = "/v1/catalogue-exports?limit=1";
+  const first = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    { headers: apiHeaders("203.0.113.108") },
+  ));
+  expect(first.status).toBe(200);
+  const firstEtag = first.headers.get("etag");
+  expect(firstEtag).toEqual(expect.any(String));
+  await expect(first.json()).resolves.toMatchObject({
+    page: { next_cursor: expect.any(String) },
+  });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind("catrev_export_etag_old").run();
+  const changed = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.109"),
+        "if-none-match": firstEtag!,
+      },
+    },
+  ));
+  expect(changed.status).toBe(200);
+  expect(changed.headers.get("etag")).not.toBe(firstEtag);
+  await expect(changed.json()).resolves.toMatchObject({
+    data: [{ catalogue_revision_id: "catrev_export_etag_current" }],
+    page: { limit: 1, next_cursor: null },
+  });
 });
 
 test("Legality Status rejects a malformed Card identity before lookup", async () => {
