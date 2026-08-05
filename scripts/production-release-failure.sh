@@ -2,7 +2,7 @@
 set +e
 
 release_directory="${1:-/tmp/production-release}"
-config="apps/ingestion/wrangler.jsonc"
+config="${RELEASE_STATE_CONFIG:-apps/ingestion/wrangler.jsonc}"
 handler_status=0
 migration_started=0
 failure_recorded=0

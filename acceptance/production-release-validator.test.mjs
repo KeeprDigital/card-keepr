@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { validateDispatchAndWriteSql, writeEvidenceSql } from "../scripts/production-release.mjs";
+import {
+  validateDispatchAndWriteSql,
+  writeEvidenceSql,
+  writeReplacementSeedSql,
+} from "../scripts/production-release.mjs";
 
 test("workflow validator accepts only the exact durably prepared plan", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-validator-"));
@@ -39,6 +43,118 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   await assert.rejects(
     validateDispatchAndWriteSql({ ...environment, DISPATCH_DIGEST: "f".repeat(64) }, join(directory, "direct-ui")),
     /dispatch_digest_mismatch/u,
+  );
+});
+
+test("replacement handoff exports and seeds the durable release boundary", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-handoff-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = releaseEnvironment();
+  const replacement = {
+    recovery_id: "recovery-replacement",
+    target_revision_id: environment.EXPECTED_CURRENT_REVISION,
+    target_digest: "d".repeat(64),
+    replacement_database_id: "replacement-db",
+    retained_database_id: "original-db",
+  };
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  plan.replacement_handoff = replacement;
+  Object.assign(environment, {
+    REPLACEMENT_RECOVERY_ID: replacement.recovery_id,
+    REPLACEMENT_DATABASE_ID: replacement.replacement_database_id,
+    RETAINED_DATABASE_ID: replacement.retained_database_id,
+    REPLACEMENT_TARGET_DIGEST: replacement.target_digest,
+    PREPARED_PLAN_JSON: stableJson(plan),
+    DISPATCH_DIGEST: hash(stableJson(plan)),
+  });
+
+  await validateDispatchAndWriteSql(environment, directory);
+  const exportSql = await readFile(join(directory, "replacement-handoff.sql"), "utf8");
+  assert.match(exportSql, /catalogue_recovery_operations/u);
+  assert.match(exportSql, /catalogue_backup_attempts/u);
+  assert.match(exportSql, /production_release_migration_started/u);
+
+  await assert.rejects(
+    writeReplacementSeedSql(environment, "{}", join(directory, "replacement-seed.sql")),
+    /invalid_replacement_handoff_evidence/u,
+  );
+});
+
+test("replacement release state is rehydrated into a distinct blocked database before activation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-d1-handoff-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = replacementEnvironment();
+  await validateDispatchAndWriteSql(environment, directory);
+  const original = await realDatabaseThrough0018();
+  const replacement = await realDatabaseThrough0018();
+  const failedReplacement = await realDatabaseThrough0018();
+  const competingReplacement = await realDatabaseThrough0018();
+  t.after(() => [original, replacement, failedReplacement, competingReplacement].forEach((database) => database.close()));
+  for (const database of [original, replacement, failedReplacement, competingReplacement]) {
+    database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
+    database.prepare("UPDATE catalogue_state SET current_revision_id=? WHERE singleton=1").run(environment.EXPECTED_CURRENT_REVISION);
+  }
+  seedOriginalReplacementRelease(original, environment);
+  const exportSql = await readFile(join(directory, "replacement-handoff.sql"), "utf8");
+  const handoff = original.prepare(exportSql).get().handoff_json;
+  const alteredHandoff = JSON.parse(handoff);
+  alteredHandoff.release.unprepared_key = "must-fail-closed";
+  await assert.rejects(
+    writeReplacementSeedSql(environment, JSON.stringify(alteredHandoff), join(directory, "altered-seed.sql")),
+    /invalid_replacement_handoff_evidence/u,
+  );
+  await writeReplacementSeedSql(environment, handoff, join(directory, "replacement-seed.sql"));
+  const seedSql = await readFile(join(directory, "replacement-seed.sql"), "utf8");
+
+  replacement.exec(seedSql);
+  assert.deepEqual(
+    { ...replacement.prepare("SELECT active_ingestion_run_id,active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: null, active_release_id: "release-47", recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+  );
+  assert.deepEqual(
+    replacement.prepare("SELECT id,state FROM catalogue_recovery_operations ORDER BY started_at").all().map((row) => ({ ...row })),
+    [{ id: "recovery-failed", state: "failed" }, { id: "recovery-replacement", state: "awaiting_acceptance" }],
+  );
+  assert.equal(replacement.prepare("SELECT COUNT(*) AS count FROM catalogue_backup_attempts WHERE state='verified'").get().count, 2);
+  assert.equal(replacement.prepare("SELECT state FROM production_releases WHERE id='release-47'").get().state, "migrating");
+  assert.equal(replacement.prepare("SELECT COUNT(*) AS count FROM production_release_transitions WHERE release_id='release-47'").get().count, 3);
+  assert.throws(
+    () => replacement.prepare("INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,expected_current_revision_id,idempotency_key,candidate_json) VALUES ('blocked-ingestion','planning','[]','2026-08-05T00:03:00.000Z','catrev_spine_000','blocked-ingestion','{}')").run(),
+    /recovery_in_progress/u,
+  );
+  assert.equal(original.prepare("SELECT state FROM production_releases WHERE id='release-47'").get().state, "migrating");
+  assert.equal(original.prepare("SELECT recovery_health FROM operation_state WHERE singleton=1").get().recovery_health, "blocked");
+
+  replacement.exec(await readFile(join(directory, "deploying.sql"), "utf8"));
+  await writeEvidenceSql("binding", "release-47", JSON.stringify({ database_id: "replacement-db" }), join(directory, "binding.sql"));
+  await writeEvidenceSql("smoke", "release-47", JSON.stringify({ ok: true }), join(directory, "smoke.sql"));
+  replacement.exec(await readFile(join(directory, "binding.sql"), "utf8"));
+  replacement.exec(await readFile(join(directory, "smoke.sql"), "utf8"));
+  assert.deepEqual(
+    { ...replacement.prepare("SELECT active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+  );
+  assert.equal(replacement.prepare("SELECT state FROM catalogue_recovery_operations WHERE id='recovery-replacement'").get().state, "awaiting_acceptance");
+  assert.deepEqual(
+    { ...original.prepare("SELECT state,binding_observation_json,smoke_evidence_json FROM production_releases WHERE id='release-47'").get() },
+    { state: "migrating", binding_observation_json: null, smoke_evidence_json: null },
+  );
+
+  failedReplacement.exec(seedSql);
+  failedReplacement.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
+  failedReplacement.exec(await readFile(join(directory, "failed.sql"), "utf8"));
+  failedReplacement.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
+  assert.deepEqual(
+    { ...failedReplacement.prepare("SELECT active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+  );
+  assert.equal(failedReplacement.prepare("SELECT state FROM production_releases WHERE id='release-47'").get().state, "failed");
+
+  competingReplacement.exec("UPDATE operation_state SET active_ingestion_run_id='competing-ingestion' WHERE singleton=1");
+  assert.throws(() => competingReplacement.exec(seedSql), /malformed JSON/u);
+  assert.deepEqual(
+    { ...competingReplacement.prepare("SELECT active_ingestion_run_id,active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: "competing-ingestion", active_release_id: null, recovery_health: "healthy", active_recovery_id: null, recovery_restore_guard: "clear" },
   );
 });
 
@@ -154,6 +270,109 @@ function releaseEnvironment() {
     RETAINED_REVISION_EVIDENCE_JSON: JSON.stringify(retained), SMOKE_TARGETS_JSON: JSON.stringify(smoke),
     PREPARED_PLAN_JSON: stableJson(plan), DISPATCH_DIGEST: hash(stableJson(plan)),
   };
+}
+
+function replacementEnvironment() {
+  const environment = releaseEnvironment();
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  plan.replacement_handoff = {
+    recovery_id: "recovery-replacement",
+    target_revision_id: plan.expected_current_revision_id,
+    target_digest: "d".repeat(64),
+    replacement_database_id: "replacement-db",
+    retained_database_id: "original-db",
+  };
+  return {
+    ...environment,
+    REPLACEMENT_RECOVERY_ID: plan.replacement_handoff.recovery_id,
+    REPLACEMENT_DATABASE_ID: plan.replacement_handoff.replacement_database_id,
+    RETAINED_DATABASE_ID: plan.replacement_handoff.retained_database_id,
+    REPLACEMENT_TARGET_DIGEST: plan.replacement_handoff.target_digest,
+    PREPARED_PLAN_JSON: stableJson(plan),
+    DISPATCH_DIGEST: hash(stableJson(plan)),
+  };
+}
+
+function seedOriginalReplacementRelease(database, environment) {
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  const now = "2026-08-05T00:00:00.000Z";
+  const backups = [
+    { id: plan.recovery_backup_attempt_id, digest: "a".repeat(64), bookmark: plan.recovery_bookmark, owner: "release-backup-owner" },
+    { id: "backup-recovery", digest: plan.replacement_handoff.target_digest, bookmark: "bookmark-recovery", owner: "recovery-backup-owner" },
+  ];
+  for (const [index, backup] of backups.entries()) {
+    database.prepare(
+      `INSERT INTO catalogue_backup_attempts
+       (idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,d1_bookmark,
+        failure_code,failure_detail,started_at,completed_at,manifest_key,content_sha256,manifest_sha256,
+        export_bytes,schema_migration_level,linked_attempt_id,publication_ingestion_run_id,
+        disposable_database_id,restore_generation,restore_phase)
+       VALUES (?,'{}',?,?,'verified',?, ?,NULL,NULL,?,?,?, ?,?,100,19,NULL,NULL,?,1,'verified')`,
+    ).run(
+      backup.id,
+      backup.owner,
+      plan.expected_current_revision_id,
+      `backups/${backup.id}.sql`,
+      backup.bookmark,
+      now,
+      now,
+      `backups/${backup.id}.manifest.json`,
+      String(index + 1).repeat(64),
+      backup.digest,
+      `disposable-${index}`,
+    );
+  }
+  const recoverySql = `INSERT INTO catalogue_recovery_operations
+    (id,state,method,request_json,idempotency_key,target_revision_id,target_bookmark,target_digest,
+     source_backup_attempt_id,linked_operation_id,expected_current_revision_id,current_bookmark,
+     restored_bookmark,undo_bookmark,original_database_id,restored_database_id,retained_database_id,
+     expected_schema_migration_level,expected_verification_json,verification_json,
+     verification_idempotency_key,verification_request_digest,acceptance_idempotency_key,
+     acceptance_request_digest,started_at,restored_at,verified_at,accepted_at,failure_code,failure_detail,failed_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  database.prepare(recoverySql).run(
+    "recovery-failed", "failed", "time_travel", "{}", "recovery-failed-key",
+    plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
+    "backup-recovery", null, plan.expected_current_revision_id, "bookmark-current", null, null,
+    "original-db", null, null, 19, "{}", null, null, null, null, null,
+    now, null, null, null, "restore_failed", "retry with replacement", "2026-08-05T00:01:00.000Z",
+  );
+  database.prepare(recoverySql).run(
+    plan.replacement_handoff.recovery_id, "awaiting_acceptance", "replacement_database", "{}", "recovery-replacement-key",
+    plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
+    "backup-recovery", "recovery-failed", plan.expected_current_revision_id, "bookmark-current", "bookmark-restored", null,
+    "original-db", plan.replacement_handoff.replacement_database_id, plan.replacement_handoff.retained_database_id,
+    19, "{}", "{}", "recovery-verify-key", "e".repeat(64), null, null,
+    "2026-08-05T00:01:01.000Z", "2026-08-05T00:01:02.000Z", "2026-08-05T00:01:03.000Z", null, null, null, null,
+  );
+  const dispatch = environment.DISPATCH_DIGEST;
+  const idempotency = [
+    [plan.idempotency_key, "prepare_production_release", stableJson({ contract: "card-keepr-production-release-request@1", release_id: plan.release_id, state: "requested", dispatch_digest: dispatch })],
+    [`release-dispatch:${dispatch}`, "claim_production_release", stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: dispatch })],
+    [`release-migration-started:${dispatch}`, "production_release_migration_started", stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: dispatch })],
+  ];
+  for (const [index, [key, operation, response]] of idempotency.entries()) {
+    database.prepare("INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (?,?,?,?,201,'success',?)").run(
+      key, operation, environment.PREPARED_PLAN_JSON, response, `2026-08-05T00:02:0${index}.000Z`,
+    );
+  }
+  database.prepare(
+    `INSERT INTO production_releases
+     (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,
+      production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,
+      replacement_recovery_id,replacement_database_id,retained_database_id,requested_at)
+     VALUES (?,'requested',?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    plan.release_id, environment.PREPARED_PLAN_JSON, plan.idempotency_key, plan.expected_current_revision_id,
+    plan.expected_head_sha, plan.production_target_digest, plan.expected_migration_level, plan.recovery_bookmark,
+    plan.recovery_backup_attempt_id, plan.replacement_handoff.recovery_id,
+    plan.replacement_handoff.replacement_database_id, plan.replacement_handoff.retained_database_id, now,
+  );
+  database.prepare("UPDATE production_releases SET state='preflight' WHERE id=?").run(plan.release_id);
+  database.prepare("UPDATE production_releases SET state='migrating' WHERE id=?").run(plan.release_id);
+  database.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id=NULL,active_release_id=?,active_release_expires_at='2026-08-05T01:00:00.000Z',recovery_health='blocked',active_recovery_id=?,recovery_restore_guard='blocked' WHERE singleton=1",
+  ).run(plan.release_id, plan.replacement_handoff.recovery_id);
 }
 
 function liveGateDatabase(environment) {

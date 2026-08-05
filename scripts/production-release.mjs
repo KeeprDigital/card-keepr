@@ -97,7 +97,51 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   await writeFile(`${directory}/failed.sql`, `${failedInsert} SELECT changes() AS inserted_rows; UPDATE production_releases SET state='failed',failure_code='production_release_failed',failure_detail='Inspect the GitHub run and continue with a compatible roll-forward.',roll_forward_required=1,terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=${q(plan.release_id)} AND state IN ('requested','preflight','migrating','deploying','smoke_testing') AND ${migrationMarked} AND ${failureRecorded}; SELECT changes() AS transitioned_rows, CASE WHEN ${migrationMarked} AND ${failureRecorded} AND EXISTS (SELECT 1 FROM production_releases WHERE id=${q(plan.release_id)} AND state='failed' AND roll_forward_required=1 AND failure_code='production_release_failed') THEN 1 ELSE 0 END AS failed;\n`, { mode: 0o600 });
   const cleanupAllowed = `(${failureRecorded} OR NOT ${migrationMarked})`;
   await writeFile(`${directory}/cleanup.sql`, `UPDATE operation_state SET active_ingestion_run_id=NULL WHERE singleton=1 AND active_ingestion_run_id=${q(bootstrap)} AND ${cleanupAllowed}; UPDATE operation_state SET active_release_id=NULL,active_release_expires_at=NULL WHERE singleton=1 AND active_release_id=${q(plan.release_id)} AND ${cleanupAllowed}; DELETE FROM ingestion_run_transitions WHERE ingestion_run_id=${q(bootstrap)} AND ${cleanupAllowed}; DELETE FROM ingestion_runs WHERE id=${q(bootstrap)} AND ${cleanupAllowed}; SELECT CASE WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND active_ingestion_run_id IS NULL AND active_release_id IS NULL) AND NOT EXISTS (SELECT 1 FROM ingestion_runs WHERE id=${q(bootstrap)}) THEN 1 ELSE 0 END AS fence_released;\n`, { mode: 0o600 });
+  if (replacement !== null) {
+    await writeFile(`${directory}/replacement-handoff.sql`, replacementHandoffSelect(plan, environment.DISPATCH_DIGEST), { mode: 0o600 });
+  }
   return plan;
+}
+
+export async function writeReplacementSeedSql(environment, serializedEvidence, output) {
+  let evidence;
+  let plan;
+  try {
+    evidence = JSON.parse(serializedEvidence);
+    plan = JSON.parse(required(environment, "PREPARED_PLAN_JSON"));
+  } catch {
+    throw new Error("invalid_replacement_handoff_evidence");
+  }
+  if (!validReplacementHandoffEvidence(evidence, plan, environment)) {
+    throw new Error("invalid_replacement_handoff_evidence");
+  }
+  const q = sqlQuote;
+  const statements = ["PRAGMA foreign_keys = ON;"];
+  for (const backup of evidence.backups) {
+    statements.push(
+      `INSERT OR IGNORE INTO catalogue_backup_attempts (idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,d1_bookmark,failure_code,failure_detail,started_at,completed_at,manifest_key,content_sha256,manifest_sha256,export_bytes,schema_migration_level,linked_attempt_id,publication_ingestion_run_id,disposable_database_id,restore_generation,restore_phase) VALUES (${q(backup.idempotency_key)},${q(backup.request_json)},${q(backup.owner_token)},${q(backup.catalogue_revision_id)},'pending',${q(backup.object_key)},NULL,NULL,NULL,${q(backup.started_at)},NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL);`,
+      `UPDATE catalogue_backup_attempts SET state='exporting' WHERE idempotency_key=${q(backup.idempotency_key)} AND state='pending';`,
+      `UPDATE catalogue_backup_attempts SET state='restoring_verification',d1_bookmark=${q(backup.d1_bookmark)},manifest_key=${q(backup.manifest_key)},content_sha256=${q(backup.content_sha256)},manifest_sha256=${q(backup.manifest_sha256)},export_bytes=${backup.export_bytes},schema_migration_level=${backup.schema_migration_level},disposable_database_id=${q(backup.disposable_database_id)},restore_generation=${backup.restore_generation},restore_phase='prepared' WHERE idempotency_key=${q(backup.idempotency_key)} AND state='exporting';`,
+      `UPDATE catalogue_backup_attempts SET state='verifying',restore_phase='imported' WHERE idempotency_key=${q(backup.idempotency_key)} AND state='restoring_verification';`,
+      `UPDATE catalogue_backup_attempts SET state='verified',completed_at=${q(backup.completed_at)},restore_phase='verified' WHERE idempotency_key=${q(backup.idempotency_key)} AND state='verifying';`,
+    );
+  }
+  for (const recovery of [...evidence.recoveries].reverse()) {
+    statements.push(`INSERT OR IGNORE INTO catalogue_recovery_operations (id,state,method,request_json,idempotency_key,target_revision_id,target_bookmark,target_digest,source_backup_attempt_id,linked_operation_id,expected_current_revision_id,current_bookmark,restored_bookmark,undo_bookmark,original_database_id,restored_database_id,retained_database_id,expected_schema_migration_level,expected_verification_json,verification_json,verification_idempotency_key,verification_request_digest,acceptance_idempotency_key,acceptance_request_digest,started_at,restored_at,verified_at,accepted_at,failure_code,failure_detail,failed_at) VALUES (${recoveryValues(recovery).map(qNullable).join(",")});`);
+  }
+  for (const item of evidence.idempotency) {
+    statements.push(`INSERT OR IGNORE INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (${q(item.idempotency_key)},${q(item.operation)},${q(item.request_json)},${q(item.response_json)},${item.http_status},${q(item.outcome)},${q(item.created_at)});`);
+  }
+  const release = evidence.release;
+  statements.push(
+    `UPDATE operation_state SET recovery_health='blocked',active_recovery_id=${q(plan.replacement_handoff.recovery_id)},recovery_restore_guard='blocked' WHERE singleton=1 AND active_ingestion_run_id IS NULL AND active_release_id IS NULL AND ((recovery_health='healthy' AND active_recovery_id IS NULL AND recovery_restore_guard='clear') OR (recovery_health='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND recovery_restore_guard='blocked'));`,
+    `INSERT OR IGNORE INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) VALUES (${q(release.id)},'requested',${q(release.request_json)},${q(release.idempotency_key)},${q(release.expected_current_revision_id)},${q(release.expected_head_sha)},${q(release.production_target_digest)},${release.expected_migration_level},${q(release.recovery_bookmark)},${q(release.recovery_backup_attempt_id)},${q(release.replacement_recovery_id)},${q(release.replacement_database_id)},${q(release.retained_database_id)},${q(release.requested_at)});`,
+    `UPDATE production_releases SET state='preflight' WHERE id=${q(release.id)} AND state='requested';`,
+    `UPDATE production_releases SET state='migrating' WHERE id=${q(release.id)} AND state='preflight';`,
+    `UPDATE operation_state SET active_release_id=${q(release.id)},active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)} WHERE singleton=1 AND active_ingestion_run_id IS NULL AND recovery_health='blocked' AND recovery_restore_guard='blocked' AND active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND (active_release_id IS NULL OR (active_release_id=${q(release.id)} AND active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)}));`,
+    replacementTerminalAssertion(evidence, plan, environment),
+  );
+  await writeFile(output, `${statements.join("\n")}\n`, { mode: 0o600 });
 }
 
 export async function writeEvidenceSql(kind, releaseId, evidence, output) {
@@ -136,6 +180,167 @@ function validReleaseEvidence(plan) {
   );
 }
 
+function replacementHandoffSelect(plan, dispatchDigest) {
+  const q = sqlQuote;
+  const recoveryJson = `json_object('id',id,'state',state,'method',method,'request_json',request_json,'idempotency_key',idempotency_key,'target_revision_id',target_revision_id,'target_bookmark',target_bookmark,'target_digest',target_digest,'source_backup_attempt_id',source_backup_attempt_id,'linked_operation_id',linked_operation_id,'expected_current_revision_id',expected_current_revision_id,'current_bookmark',current_bookmark,'restored_bookmark',restored_bookmark,'undo_bookmark',undo_bookmark,'original_database_id',original_database_id,'restored_database_id',restored_database_id,'retained_database_id',retained_database_id,'expected_schema_migration_level',expected_schema_migration_level,'expected_verification_json',expected_verification_json,'verification_json',verification_json,'verification_idempotency_key',verification_idempotency_key,'verification_request_digest',verification_request_digest,'acceptance_idempotency_key',acceptance_idempotency_key,'acceptance_request_digest',acceptance_request_digest,'started_at',started_at,'restored_at',restored_at,'verified_at',verified_at,'accepted_at',accepted_at,'failure_code',failure_code,'failure_detail',failure_detail,'failed_at',failed_at)`;
+  const backupJson = `json_object('idempotency_key',backup.idempotency_key,'request_json',backup.request_json,'owner_token',backup.owner_token,'catalogue_revision_id',backup.catalogue_revision_id,'object_key',backup.object_key,'d1_bookmark',backup.d1_bookmark,'started_at',backup.started_at,'completed_at',backup.completed_at,'manifest_key',backup.manifest_key,'content_sha256',backup.content_sha256,'manifest_sha256',backup.manifest_sha256,'export_bytes',backup.export_bytes,'schema_migration_level',backup.schema_migration_level,'disposable_database_id',backup.disposable_database_id,'restore_generation',backup.restore_generation,'restore_phase',backup.restore_phase)`;
+  const idemJson = `json_object('idempotency_key',idempotency_key,'operation',operation,'request_json',request_json,'response_json',response_json,'http_status',http_status,'outcome',outcome,'created_at',created_at)`;
+  const releaseJson = `json_object('id',release.id,'state',release.state,'request_json',release.request_json,'idempotency_key',release.idempotency_key,'expected_current_revision_id',release.expected_current_revision_id,'expected_head_sha',release.expected_head_sha,'production_target_digest',release.production_target_digest,'expected_migration_level',release.expected_migration_level,'recovery_bookmark',release.recovery_bookmark,'recovery_backup_attempt_id',release.recovery_backup_attempt_id,'replacement_recovery_id',release.replacement_recovery_id,'replacement_database_id',release.replacement_database_id,'retained_database_id',release.retained_database_id,'requested_at',release.requested_at)`;
+  const claimKey = `release-dispatch:${dispatchDigest}`;
+  const migrationKey = `release-migration-started:${dispatchDigest}`;
+  const idempotencyWhere = `(idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release') OR (idempotency_key=${q(claimKey)} AND operation='claim_production_release') OR (idempotency_key=${q(migrationKey)} AND operation='production_release_migration_started')`;
+  return `WITH RECURSIVE recovery_chain AS (
+  SELECT 0 AS depth,recovery.* FROM catalogue_recovery_operations AS recovery WHERE recovery.id=${q(plan.replacement_handoff.recovery_id)}
+  UNION ALL
+  SELECT chain.depth+1,parent.* FROM recovery_chain AS chain JOIN catalogue_recovery_operations AS parent ON parent.id=chain.linked_operation_id WHERE chain.depth<31
+), source_backups AS (
+  SELECT source_backup_attempt_id,MIN(depth) AS depth FROM (
+    SELECT source_backup_attempt_id,depth FROM recovery_chain
+    UNION ALL SELECT ${q(plan.recovery_backup_attempt_id)},-1
+  ) GROUP BY source_backup_attempt_id
+)
+SELECT json_object(
+  'contract','card-keepr-replacement-release-handoff@1',
+  'schema_migration_level',schema_state.migration_level,
+  'operation_state',json_object('active_ingestion_run_id',operation.active_ingestion_run_id,'active_release_id',operation.active_release_id,'active_release_expires_at',operation.active_release_expires_at,'recovery_health',operation.recovery_health,'active_recovery_id',operation.active_recovery_id,'recovery_restore_guard',operation.recovery_restore_guard),
+  'backups',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${backupJson} AS row_json FROM source_backups AS source JOIN catalogue_backup_attempts AS backup ON backup.idempotency_key=source.source_backup_attempt_id WHERE backup.state='verified' ORDER BY source.depth))),
+  'recoveries',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${recoveryJson} AS row_json FROM recovery_chain ORDER BY depth))),
+  'idempotency',json((SELECT json_group_array(json(row_json)) FROM (SELECT ${idemJson} AS row_json FROM administration_idempotency WHERE ${idempotencyWhere} ORDER BY CASE idempotency_key WHEN ${q(plan.idempotency_key)} THEN 0 WHEN ${q(claimKey)} THEN 1 ELSE 2 END))),
+  'release',${releaseJson}
+) AS handoff_json
+FROM operation_state AS operation
+JOIN catalogue_schema_state AS schema_state ON schema_state.singleton=1
+JOIN production_releases AS release ON release.id=${q(plan.release_id)}
+WHERE operation.singleton=1
+  AND operation.active_ingestion_run_id IS NULL
+  AND operation.active_release_id=${q(plan.release_id)}
+  AND operation.active_release_expires_at IS NOT NULL
+  AND operation.recovery_health='blocked'
+  AND operation.active_recovery_id=${q(plan.replacement_handoff.recovery_id)}
+  AND operation.recovery_restore_guard='blocked'
+  AND schema_state.migration_level=${plan.expected_migration_level}
+  AND release.state='migrating'
+  AND (SELECT COUNT(*) FROM recovery_chain) BETWEEN 1 AND 32
+  AND (SELECT COUNT(*) FROM source_backups)=(SELECT COUNT(*) FROM source_backups AS source JOIN catalogue_backup_attempts AS backup ON backup.idempotency_key=source.source_backup_attempt_id WHERE backup.state='verified')
+  AND (SELECT COUNT(*) FROM administration_idempotency WHERE ${idempotencyWhere})=3;
+`;
+}
+
+function validReplacementHandoffEvidence(evidence, plan, environment) {
+  if (!exactKeys(evidence, ["backups", "contract", "idempotency", "operation_state", "recoveries", "release", "schema_migration_level"]) ||
+      evidence.contract !== "card-keepr-replacement-release-handoff@1" ||
+      !exactKeys(plan, ["expected_actor", "expected_current_revision_id", "expected_head_sha", "expected_migration_level", "idempotency_key", "production_target", "production_target_digest", "recovery_backup_attempt_id", "recovery_bookmark", "release_id", "replacement_handoff", "retained_revision_evidence", "smoke_targets"]) ||
+      !exactKeys(plan.replacement_handoff, ["recovery_id", "replacement_database_id", "retained_database_id", "target_digest", "target_revision_id"]) ||
+      !validReleaseEvidence(plan) || !/^[0-9a-f]{40}$/u.test(plan.expected_head_sha) || !/^[0-9a-f]{64}$/u.test(plan.production_target_digest) ||
+      createHash("sha256").update(stableJson(plan.production_target)).digest("hex") !== plan.production_target_digest ||
+      createHash("sha256").update(stableJson(plan)).digest("hex") !== environment.DISPATCH_DIGEST ||
+      plan.replacement_handoff.recovery_id !== environment.REPLACEMENT_RECOVERY_ID ||
+      plan.replacement_handoff.replacement_database_id !== environment.REPLACEMENT_DATABASE_ID ||
+      plan.replacement_handoff.retained_database_id !== environment.RETAINED_DATABASE_ID ||
+      plan.replacement_handoff.target_digest !== environment.REPLACEMENT_TARGET_DIGEST ||
+      stableJson(plan) !== stableJson(JSON.parse(environment.PREPARED_PLAN_JSON)) ||
+      evidence.schema_migration_level !== plan.expected_migration_level || !Number.isSafeInteger(evidence.schema_migration_level)) return false;
+  const operation = evidence.operation_state;
+  if (!exactKeys(operation, ["active_ingestion_run_id", "active_recovery_id", "active_release_expires_at", "active_release_id", "recovery_health", "recovery_restore_guard"]) ||
+      operation.active_ingestion_run_id !== null || operation.active_release_id !== plan.release_id ||
+      operation.active_recovery_id !== plan.replacement_handoff.recovery_id || operation.recovery_health !== "blocked" ||
+      operation.recovery_restore_guard !== "blocked" || !isoTimestamp(operation.active_release_expires_at)) return false;
+  if (!Array.isArray(evidence.recoveries) || evidence.recoveries.length < 1 || evidence.recoveries.length > 32 ||
+      !evidence.recoveries.every(validRecoveryEvidence)) return false;
+  const active = evidence.recoveries[0];
+  if (active.id !== plan.replacement_handoff.recovery_id || active.state !== "awaiting_acceptance" || active.method !== "replacement_database" ||
+      active.target_revision_id !== plan.expected_current_revision_id || active.target_digest !== plan.replacement_handoff.target_digest ||
+      active.restored_database_id !== plan.replacement_handoff.replacement_database_id || active.retained_database_id !== plan.replacement_handoff.retained_database_id ||
+      active.expected_schema_migration_level !== plan.expected_migration_level || active.acceptance_idempotency_key !== null || active.accepted_at !== null) return false;
+  for (let index = 0; index < evidence.recoveries.length; index += 1) {
+    const recovery = evidence.recoveries[index];
+    const parent = evidence.recoveries[index + 1];
+    if (recovery.linked_operation_id !== (parent?.id ?? null) || (index > 0 && recovery.state !== "failed")) return false;
+  }
+  if (!Array.isArray(evidence.backups) || evidence.backups.length < 1 || !evidence.backups.every(validBackupEvidence)) return false;
+  const backupsById = new Map(evidence.backups.map((backup) => [backup.idempotency_key, backup]));
+  const releaseBackup = backupsById.get(plan.recovery_backup_attempt_id);
+  if (releaseBackup?.catalogue_revision_id !== plan.expected_current_revision_id || releaseBackup.d1_bookmark !== plan.recovery_bookmark || releaseBackup.schema_migration_level !== plan.expected_migration_level ||
+      evidence.recoveries.some((recovery) => {
+        const backup = backupsById.get(recovery.source_backup_attempt_id);
+        return backup?.catalogue_revision_id !== recovery.target_revision_id || backup.d1_bookmark !== recovery.target_bookmark || backup.manifest_sha256 !== recovery.target_digest;
+      })) return false;
+  const expectedBackups = new Set([
+    plan.recovery_backup_attempt_id,
+    ...evidence.recoveries.map((recovery) => recovery.source_backup_attempt_id),
+  ]);
+  if (expectedBackups.size !== evidence.backups.length || evidence.backups.some((backup) => !expectedBackups.delete(backup.idempotency_key)) || expectedBackups.size !== 0) return false;
+  if (!Array.isArray(evidence.idempotency) || evidence.idempotency.length !== 3 || !evidence.idempotency.every(validIdempotencyEvidence)) return false;
+  const dispatch = required(environment, "DISPATCH_DIGEST");
+  const expectedIdempotency = [
+    [plan.idempotency_key, "prepare_production_release"],
+    [`release-dispatch:${dispatch}`, "claim_production_release"],
+    [`release-migration-started:${dispatch}`, "production_release_migration_started"],
+  ];
+  const expectedResponses = [
+    stableJson({ contract: "card-keepr-production-release-request@1", release_id: plan.release_id, state: "requested", dispatch_digest: dispatch }),
+    stableJson({ release_id: plan.release_id, state: "preflight", dispatch_digest: dispatch }),
+    stableJson({ release_id: plan.release_id, migration_started: true, dispatch_digest: dispatch }),
+  ];
+  if (evidence.idempotency.some((item, index) => item.idempotency_key !== expectedIdempotency[index][0] || item.operation !== expectedIdempotency[index][1] || item.request_json !== stableJson(plan) || item.response_json !== expectedResponses[index] || item.http_status !== 201 || item.outcome !== "success")) return false;
+  const release = evidence.release;
+  return validReleaseRow(release) && release.id === plan.release_id && release.state === "migrating" && release.request_json === stableJson(plan) &&
+    release.idempotency_key === plan.idempotency_key && release.expected_current_revision_id === plan.expected_current_revision_id &&
+    release.expected_head_sha === plan.expected_head_sha && release.production_target_digest === plan.production_target_digest &&
+    release.expected_migration_level === plan.expected_migration_level && release.recovery_bookmark === plan.recovery_bookmark &&
+    release.recovery_backup_attempt_id === plan.recovery_backup_attempt_id && release.replacement_recovery_id === plan.replacement_handoff.recovery_id &&
+    release.replacement_database_id === plan.replacement_handoff.replacement_database_id && release.retained_database_id === plan.replacement_handoff.retained_database_id;
+}
+
+const recoveryKeys = ["acceptance_idempotency_key", "acceptance_request_digest", "accepted_at", "current_bookmark", "expected_current_revision_id", "expected_schema_migration_level", "expected_verification_json", "failed_at", "failure_code", "failure_detail", "id", "idempotency_key", "linked_operation_id", "method", "original_database_id", "request_json", "restored_at", "restored_bookmark", "restored_database_id", "retained_database_id", "source_backup_attempt_id", "started_at", "state", "target_bookmark", "target_digest", "target_revision_id", "undo_bookmark", "verification_idempotency_key", "verification_json", "verification_request_digest", "verified_at"];
+function validRecoveryEvidence(row) {
+  if (!exactKeys(row, recoveryKeys) || !["failed", "awaiting_acceptance"].includes(row.state) || !["time_travel", "replacement_database"].includes(row.method) ||
+      !Number.isSafeInteger(row.expected_schema_migration_level) || row.expected_schema_migration_level < 1) return false;
+  const requiredStrings = ["id", "request_json", "idempotency_key", "target_revision_id", "target_bookmark", "target_digest", "source_backup_attempt_id", "expected_current_revision_id", "original_database_id", "expected_verification_json", "started_at"];
+  if (requiredStrings.some((key) => typeof row[key] !== "string" || row[key].length === 0) || !/^[0-9a-f]{64}$/u.test(row.target_digest) || !validJson(row.request_json) || !validJson(row.expected_verification_json)) return false;
+  const nullableStrings = recoveryKeys.filter((key) => !requiredStrings.includes(key) && !["expected_schema_migration_level", "state", "method"].includes(key));
+  if (!nullableStrings.every((key) => row[key] === null || typeof row[key] === "string") ||
+      (row.verification_json !== null && !validJson(row.verification_json)) || !isoTimestamp(row.started_at) ||
+      ![row.restored_at, row.verified_at, row.accepted_at, row.failed_at].every((value) => value === null || isoTimestamp(value))) return false;
+  return row.state === "awaiting_acceptance"
+    ? row.verification_json !== null && row.verification_idempotency_key !== null && row.verification_request_digest !== null && row.verified_at !== null && row.acceptance_idempotency_key === null && row.accepted_at === null && row.failure_code === null && row.failure_detail === null && row.failed_at === null
+    : row.failure_code !== null && row.failure_detail !== null && row.failed_at !== null && row.acceptance_idempotency_key === null && row.accepted_at === null;
+}
+
+const backupKeys = ["catalogue_revision_id", "completed_at", "content_sha256", "d1_bookmark", "disposable_database_id", "export_bytes", "idempotency_key", "manifest_key", "manifest_sha256", "object_key", "owner_token", "request_json", "restore_generation", "restore_phase", "schema_migration_level", "started_at"];
+function validBackupEvidence(row) {
+  return exactKeys(row, backupKeys) && ["idempotency_key", "request_json", "owner_token", "catalogue_revision_id", "object_key", "d1_bookmark", "manifest_key", "disposable_database_id"].every((key) => typeof row[key] === "string" && row[key].length > 0) &&
+    validJson(row.request_json) && [row.content_sha256, row.manifest_sha256].every((value) => typeof value === "string" && /^[0-9a-f]{64}$/u.test(value)) &&
+    Number.isSafeInteger(row.export_bytes) && row.export_bytes >= 0 && Number.isSafeInteger(row.schema_migration_level) && row.schema_migration_level > 0 &&
+    Number.isSafeInteger(row.restore_generation) && row.restore_generation > 0 && row.restore_phase === "verified" && isoTimestamp(row.started_at) && isoTimestamp(row.completed_at);
+}
+
+function validIdempotencyEvidence(row) {
+  return exactKeys(row, ["created_at", "http_status", "idempotency_key", "operation", "outcome", "request_json", "response_json"]) &&
+    ["idempotency_key", "operation", "request_json", "response_json", "outcome"].every((key) => typeof row[key] === "string" && row[key].length > 0) &&
+    validJson(row.request_json) && validJson(row.response_json) && Number.isSafeInteger(row.http_status) && row.http_status >= 100 && row.http_status <= 599 && isoTimestamp(row.created_at);
+}
+
+function validReleaseRow(row) {
+  const keys = ["expected_current_revision_id", "expected_head_sha", "expected_migration_level", "id", "idempotency_key", "recovery_backup_attempt_id", "recovery_bookmark", "replacement_database_id", "replacement_recovery_id", "request_json", "requested_at", "retained_database_id", "production_target_digest", "state"];
+  return exactKeys(row, keys) && keys.filter((key) => !["expected_migration_level"].includes(key)).every((key) => typeof row[key] === "string" && row[key].length > 0) &&
+    validJson(row.request_json) && Number.isSafeInteger(row.expected_migration_level) && row.expected_migration_level > 0 && isoTimestamp(row.requested_at);
+}
+
+function replacementTerminalAssertion(evidence, plan, environment) {
+  const q = sqlQuote;
+  const exactIdempotency = evidence.idempotency.map((item) => `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(item.idempotency_key)} AND operation=${q(item.operation)} AND request_json=${q(item.request_json)} AND response_json=${q(item.response_json)} AND http_status=${item.http_status} AND outcome=${q(item.outcome)} AND created_at=${q(item.created_at)})`).join(" AND ");
+  const exactBackups = evidence.backups.map((backup) => `EXISTS (SELECT 1 FROM catalogue_backup_attempts WHERE idempotency_key=${q(backup.idempotency_key)} AND state='verified' AND request_json=${q(backup.request_json)} AND owner_token=${q(backup.owner_token)} AND catalogue_revision_id=${q(backup.catalogue_revision_id)} AND object_key=${q(backup.object_key)} AND d1_bookmark=${q(backup.d1_bookmark)} AND manifest_key=${q(backup.manifest_key)} AND manifest_sha256=${q(backup.manifest_sha256)} AND content_sha256=${q(backup.content_sha256)} AND export_bytes=${backup.export_bytes} AND schema_migration_level=${backup.schema_migration_level} AND disposable_database_id=${q(backup.disposable_database_id)} AND restore_generation=${backup.restore_generation} AND restore_phase='verified')`).join(" AND ");
+  const exactRecoveries = evidence.recoveries.map((recovery) => `EXISTS (SELECT 1 FROM catalogue_recovery_operations WHERE id=${q(recovery.id)} AND state=${q(recovery.state)} AND method=${q(recovery.method)} AND request_json=${q(recovery.request_json)} AND idempotency_key=${q(recovery.idempotency_key)} AND target_revision_id=${q(recovery.target_revision_id)} AND target_bookmark=${q(recovery.target_bookmark)} AND target_digest=${q(recovery.target_digest)} AND source_backup_attempt_id=${q(recovery.source_backup_attempt_id)} AND linked_operation_id IS ${qNullable(recovery.linked_operation_id)} AND expected_current_revision_id=${q(recovery.expected_current_revision_id)} AND restored_database_id IS ${qNullable(recovery.restored_database_id)} AND retained_database_id IS ${qNullable(recovery.retained_database_id)} AND expected_schema_migration_level=${recovery.expected_schema_migration_level} AND verification_idempotency_key IS ${qNullable(recovery.verification_idempotency_key)} AND verification_request_digest IS ${qNullable(recovery.verification_request_digest)} AND acceptance_idempotency_key IS ${qNullable(recovery.acceptance_idempotency_key)} AND failure_code IS ${qNullable(recovery.failure_code)})`).join(" AND ");
+  return `SELECT CASE WHEN EXISTS (SELECT 1 FROM catalogue_schema_state AS schema_state JOIN catalogue_state AS catalogue ON catalogue.singleton=1 JOIN operation_state AS operation ON operation.singleton=1 JOIN production_releases AS release ON release.id=${q(plan.release_id)} WHERE schema_state.singleton=1 AND schema_state.migration_level=${plan.expected_migration_level} AND catalogue.current_revision_id=${q(plan.expected_current_revision_id)} AND operation.active_ingestion_run_id IS NULL AND operation.active_release_id=${q(plan.release_id)} AND operation.active_release_expires_at=${q(evidence.operation_state.active_release_expires_at)} AND operation.recovery_health='blocked' AND operation.active_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND operation.recovery_restore_guard='blocked' AND release.state='migrating' AND release.request_json=${q(stableJson(plan))} AND release.idempotency_key=${q(plan.idempotency_key)} AND release.expected_current_revision_id=${q(plan.expected_current_revision_id)} AND release.expected_head_sha=${q(plan.expected_head_sha)} AND release.production_target_digest=${q(plan.production_target_digest)} AND release.expected_migration_level=${plan.expected_migration_level} AND release.recovery_bookmark=${q(plan.recovery_bookmark)} AND release.recovery_backup_attempt_id=${q(plan.recovery_backup_attempt_id)} AND release.replacement_recovery_id=${q(plan.replacement_handoff.recovery_id)} AND release.replacement_database_id=${q(plan.replacement_handoff.replacement_database_id)} AND release.retained_database_id=${q(plan.replacement_handoff.retained_database_id)} AND 3=(SELECT COUNT(*) FROM production_release_transitions WHERE release_id=${q(plan.release_id)}) AND ${exactIdempotency} AND ${exactBackups} AND ${exactRecoveries}) THEN 1 ELSE json_extract('invalid','$.replacement_handoff') END AS seeded;`;
+}
+
+const recoveryInsertKeys = ["id", "state", "method", "request_json", "idempotency_key", "target_revision_id", "target_bookmark", "target_digest", "source_backup_attempt_id", "linked_operation_id", "expected_current_revision_id", "current_bookmark", "restored_bookmark", "undo_bookmark", "original_database_id", "restored_database_id", "retained_database_id", "expected_schema_migration_level", "expected_verification_json", "verification_json", "verification_idempotency_key", "verification_request_digest", "acceptance_idempotency_key", "acceptance_request_digest", "started_at", "restored_at", "verified_at", "accepted_at", "failure_code", "failure_detail", "failed_at"];
+function recoveryValues(row) { return recoveryInsertKeys.map((key) => row[key]); }
+function qNullable(value) { return value === null ? "NULL" : typeof value === "number" ? String(value) : sqlQuote(value); }
+function validJson(value) { try { JSON.parse(value); return true; } catch { return false; } }
+function isoTimestamp(value) { return typeof value === "string" && !Number.isNaN(Date.parse(value)) && value.includes("T"); }
+
 function exactKeys(value, keys) {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
     Object.keys(value).sort().join("|") === [...keys].sort().join("|");
@@ -154,6 +359,8 @@ if (process.argv[2] === "replacement-configs") {
   await writeReplacementConfigs(process.argv[3], process.argv[4], process.argv[5]);
 } else if (process.argv[2] === "validate-dispatch") {
   await validateDispatchAndWriteSql(process.env, process.argv[3]);
+} else if (process.argv[2] === "replacement-seed") {
+  await writeReplacementSeedSql(process.env, required(process.env, "KEEPR_REPLACEMENT_HANDOFF_EVIDENCE"), process.argv[3]);
 } else if (process.argv[2] === "evidence-sql") {
   await writeEvidenceSql(process.argv[3], process.argv[4], process.env.KEEPR_RELEASE_EVIDENCE, process.argv[5]);
 }

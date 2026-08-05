@@ -31,6 +31,11 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /production-release-provider\.mjs observe-bindings/u);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
+  assert.match(release, /replacement-handoff\.sql[\s\S]*replacement-seed[\s\S]*seeded[\s\S]*RELEASE_STATE_CONFIG/u);
+  assert.equal((release.match(/--config "\$\{RELEASE_STATE_CONFIG\}" --file \/tmp\/production-release\/(?:deploying|binding|smoke)\.sql/gu) ?? []).length, 3);
+  assert.ok(release.indexOf("seeded' <<<") < release.indexOf("versions upload"));
+  assert.match(failure, /RELEASE_STATE_CONFIG:-apps\/ingestion\/wrangler\.jsonc/u);
+  assert.doesNotMatch(release, /recovery accept|acceptCatalogueRecovery|\/acceptance/u);
   assert.match(release, /trap release_migration_exit EXIT[\s\S]*migration-started\.sql[\s\S]*d1 migrations apply/u);
   assert.match(release, /original_status=\$\?[\s\S]*exit "\$\{original_status\}"/u);
   assert.match(release, /production-release-failure\.sh/u);

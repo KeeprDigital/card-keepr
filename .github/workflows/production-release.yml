@@ -181,6 +181,7 @@ jobs:
       IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
       DISPATCH_DIGEST: ${{ inputs.dispatch_digest }}
       PREPARED_PLAN_JSON: ${{ inputs.prepared_plan_json }}
+      RELEASE_STATE_CONFIG: apps/ingestion/wrangler.jsonc
       API_BASE_URL: ${{ secrets.API_BASE_URL }}
       API_TRAFFIC_TOKEN: ${{ secrets.API_TRAFFIC_TOKEN }}
     steps:
@@ -239,20 +240,27 @@ jobs:
           set -euo pipefail
           api_config=apps/api/wrangler.release.json
           ingestion_config=apps/ingestion/wrangler.release.json
+          release_state_config=apps/ingestion/wrangler.jsonc
           if test "${REPLACEMENT_DATABASE_ID}" = none; then
             cp apps/api/wrangler.jsonc "${api_config}"
             cp apps/ingestion/wrangler.jsonc "${ingestion_config}"
           else
             node scripts/production-release.mjs replacement-configs "${REPLACEMENT_DATABASE_ID}" "${api_config}" "${ingestion_config}"
             npx wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
+            handoff_result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/replacement-handoff.sql)"
+            handoff="$(jq -er 'if length == 1 and (.[0].results | length) == 1 and (.[0].results[0].handoff_json | type) == "string" then .[0].results[0].handoff_json else error("invalid replacement handoff result") end' <<<"${handoff_result}")"
+            KEEPR_REPLACEMENT_HANDOFF_EVIDENCE="${handoff}" node scripts/production-release.mjs replacement-seed /tmp/production-release/replacement-seed.sql
+            seed_result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${ingestion_config}" --file /tmp/production-release/replacement-seed.sql)"
+            test "$(jq -r '.[-1].results[0].seeded' <<<"${seed_result}")" = 1
+            release_state_config="${ingestion_config}"
           fi
-          printf 'API_RELEASE_CONFIG=%s\nINGESTION_RELEASE_CONFIG=%s\n' "${api_config}" "${ingestion_config}" >> "${GITHUB_ENV}"
+          printf 'API_RELEASE_CONFIG=%s\nINGESTION_RELEASE_CONFIG=%s\nRELEASE_STATE_CONFIG=%s\n' "${api_config}" "${ingestion_config}" "${release_state_config}" >> "${GITHUB_ENV}"
       - name: Upload immutable Worker versions
         run: |
           set -euo pipefail
           npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
           npx wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/deploying.sql)"
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/deploying.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Activate the compatible version pair
@@ -265,7 +273,7 @@ jobs:
           set -euo pipefail
           binding="$(node scripts/production-release-provider.mjs observe-bindings)"
           KEEPR_RELEASE_EVIDENCE="${binding}" node scripts/production-release.mjs evidence-sql binding "${RELEASE_ID}" /tmp/production-release/binding.sql
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/binding.sql)"
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/binding.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Run black-box production smoke checks
@@ -274,7 +282,7 @@ jobs:
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,legalityCardId:$targets.legality_card_id,legalityDate:(now|strftime("%Y-%m-%d")),legalityFormat:$targets.legality_format,legalityRegion:$targets.legality_region,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/smoke.sql)"
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
           test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
