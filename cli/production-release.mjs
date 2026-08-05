@@ -24,7 +24,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
       !/^[0-9a-f]{40}$/.test(expectedHeadSha ?? "") ||
       !Number.isSafeInteger(expectedLevel) || expectedLevel < 1 ||
       !options.flags.has("--yes")) {
-    return failure(json, "invalid_arguments", "Release identity, revision, SHA, migration level, idempotency key, and --yes are required.", 2);
+    return failure(json, "invalid_arguments", "Production Release identity, revision, SHA, migration level, idempotency key, and --yes are required.", 2);
   }
   const replacement = replacementInput(value);
   if (replacement === false) {

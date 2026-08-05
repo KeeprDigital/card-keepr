@@ -602,6 +602,13 @@ export async function acceptCatalogueRecovery(
       "The bound database does not expose the verified Catalogue Revision.",
     );
   }
+  const retained = await requiredRecoveryJournal(backups, recoveryId);
+  await assertRecoveryEvidenceMatches(
+    database,
+    row,
+    retained.backup,
+    input.boundDatabaseId,
+  );
   try {
     await database.batch([
       database.prepare(
@@ -671,8 +678,7 @@ export async function acceptCatalogueRecovery(
     );
   }
   const accepted = await requiredRecovery(database, recoveryId);
-  const journal = await requiredRecoveryJournal(backups, recoveryId);
-  await persistRecoveryJournal(backups, accepted, journal.backup);
+  await persistRecoveryJournal(backups, accepted, retained.backup);
   return inspectCatalogueRecovery(database, backups, recoveryId);
 }
 
@@ -695,62 +701,12 @@ async function releaseAcceptedRecoveryIfSafe(
     operation.active_recovery_id === null &&
     operation.recovery_restore_guard === "clear"
   ) return;
-  if (
-    recovery.restored_database_id === null ||
-    recovery.restored_database_id !== boundDatabaseId
-  ) {
-    throw new AdministrationProblem(
-      409,
-      "recovery_database_not_bound",
-      "The accepted recovery database is not the observed production binding.",
-    );
-  }
-  if (
-    backup.idempotency_key !== recovery.source_backup_attempt_id ||
-    backup.catalogue_revision_id !== recovery.target_revision_id ||
-    backup.d1_bookmark !== recovery.target_bookmark ||
-    backup.manifest_sha256 !== recovery.target_digest ||
-    backup.schema_migration_level < 16
-  ) {
-    throw new AdministrationProblem(
-      409,
-      "recovery_journal_invalid",
-      "Accepted recovery evidence does not match the retained verified target.",
-    );
-  }
-  const localBackup = await database.prepare(
-    `SELECT catalogue_revision_id, d1_bookmark, manifest_sha256,
-            schema_migration_level
-     FROM catalogue_backup_attempts
-     WHERE idempotency_key = ? AND state = 'verified'`,
-  ).bind(backup.idempotency_key).first<{
-    catalogue_revision_id: string;
-    d1_bookmark: string;
-    manifest_sha256: string;
-    schema_migration_level: number;
-  }>();
-  if (
-    localBackup?.catalogue_revision_id !== recovery.target_revision_id ||
-    localBackup.d1_bookmark !== recovery.target_bookmark ||
-    localBackup.manifest_sha256 !== recovery.target_digest ||
-    localBackup.schema_migration_level < 16
-  ) {
-    throw new AdministrationProblem(
-      409,
-      "recovery_journal_invalid",
-      "The local verified Backup Attempt does not match the accepted target.",
-    );
-  }
-  const local = await database.prepare(
-    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
-  ).first<{ current_revision_id: string }>();
-  if (local?.current_revision_id !== recovery.target_revision_id) {
-    throw new AdministrationProblem(
-      409,
-      "restored_revision_mismatch",
-      "The bound database does not expose the accepted Catalogue Revision.",
-    );
-  }
+  await assertRecoveryEvidenceMatches(
+    database,
+    recovery,
+    backup,
+    boundDatabaseId,
+  );
   try {
     await database.batch([
       database.prepare(
@@ -785,6 +741,75 @@ async function releaseAcceptedRecoveryIfSafe(
   }
 }
 
+async function assertRecoveryEvidenceMatches(
+  database: D1Database,
+  recovery: RecoveryRow,
+  backup: VerifiedBackupRow,
+  boundDatabaseId: string,
+): Promise<void> {
+  if (
+    recovery.restored_database_id === null ||
+    recovery.restored_database_id !== boundDatabaseId
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_database_not_bound",
+      "The accepted recovery database is not the observed production binding.",
+    );
+  }
+  if (
+    backup.idempotency_key !== recovery.source_backup_attempt_id ||
+    backup.catalogue_revision_id !== recovery.target_revision_id ||
+    backup.d1_bookmark !== recovery.target_bookmark ||
+    backup.manifest_sha256 !== recovery.target_digest ||
+    backup.schema_migration_level !== recovery.expected_schema_migration_level
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_journal_invalid",
+      "Accepted recovery evidence does not match the retained verified target.",
+    );
+  }
+  const localBackup = await database.prepare(
+    `SELECT backup.catalogue_revision_id, backup.d1_bookmark,
+            backup.manifest_sha256, backup.schema_migration_level,
+            schema_state.migration_level AS current_schema_migration_level
+     FROM catalogue_backup_attempts AS backup
+     JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
+     WHERE backup.idempotency_key = ? AND backup.state = 'verified'`,
+  ).bind(backup.idempotency_key).first<{
+    catalogue_revision_id: string;
+    d1_bookmark: string;
+    manifest_sha256: string;
+    schema_migration_level: number;
+    current_schema_migration_level: number;
+  }>();
+  if (
+    localBackup?.catalogue_revision_id !== recovery.target_revision_id ||
+    localBackup.d1_bookmark !== recovery.target_bookmark ||
+    localBackup.manifest_sha256 !== recovery.target_digest ||
+    localBackup.schema_migration_level !== recovery.expected_schema_migration_level ||
+    localBackup.current_schema_migration_level !==
+      recovery.expected_schema_migration_level
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_journal_invalid",
+      "The local verified Backup Attempt does not match the accepted target.",
+    );
+  }
+  const local = await database.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<{ current_revision_id: string }>();
+  if (local?.current_revision_id !== recovery.target_revision_id) {
+    throw new AdministrationProblem(
+      409,
+      "restored_revision_mismatch",
+      "The bound database does not expose the accepted Catalogue Revision.",
+    );
+  }
+}
+
 async function exactVerifiedBackup(
   database: D1Database,
   input: BeginCatalogueRecoveryInput,
@@ -794,24 +819,35 @@ async function exactVerifiedBackup(
             manifest_key, manifest_sha256, content_sha256, export_bytes,
             schema_migration_level, disposable_database_id,
             restore_generation, restore_phase, completed_at
-     FROM catalogue_backup_attempts
-     WHERE idempotency_key = ? AND state = 'verified'`,
+     FROM catalogue_backup_attempts AS backup
+     JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
+     WHERE backup.idempotency_key = ? AND backup.state = 'verified'
+       AND backup.schema_migration_level = schema_state.migration_level`,
   ).bind(input.backupAttemptId).first<VerifiedBackupRow>();
   if (row === null) {
+    const known = await database.prepare(
+      `SELECT backup.schema_migration_level, schema_state.migration_level
+       FROM catalogue_backup_attempts AS backup
+       JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
+       WHERE backup.idempotency_key = ? AND backup.state = 'verified'`,
+    ).bind(input.backupAttemptId).first<{
+      schema_migration_level: number;
+      migration_level: number;
+    }>();
+    if (
+      known !== null &&
+      known.schema_migration_level !== known.migration_level
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "recovery_backup_schema_incompatible",
+        "The verified Backup Attempt does not match the current catalogue schema.",
+      );
+    }
     throw new AdministrationProblem(
       404,
       "verified_backup_not_found",
       "The exact verified Backup Attempt was not found.",
-    );
-  }
-  if (
-    !Number.isSafeInteger(row.schema_migration_level) ||
-    row.schema_migration_level < 16
-  ) {
-    throw new AdministrationProblem(
-      409,
-      "recovery_backup_schema_incompatible",
-      "The verified Backup Attempt predates guarded recovery state.",
     );
   }
   if (

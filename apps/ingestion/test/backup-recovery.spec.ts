@@ -109,6 +109,10 @@ test("the Cloudflare provider recreates the disposable D1 for each restore gener
 
 test("the production backup boundary exports and verifies the exact restored revision", async () => {
   const events: string[] = [];
+  const schemaState = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  if (schemaState === null) throw new Error("Catalogue schema state is unavailable.");
   const sqlBytes = new TextEncoder().encode(
     "-- exact D1 SQL export without derived FTS virtual tables\n",
   );
@@ -142,7 +146,9 @@ test("the production backup boundary exports and verifies the exact restored rev
       events.push(`verify:${input.databaseId}`);
       expect(input.expectedRevisionId).toBe("catrev_spine_000");
       expect(input.ownerToken).toMatch(/^backup:/);
-      expect(input.expectedSchemaMigrationLevel).toBe(16);
+      expect(input.expectedSchemaMigrationLevel).toBe(
+        schemaState.migration_level,
+      );
       return completeRestoredVerification();
     },
   };
@@ -230,7 +236,7 @@ test("the production backup boundary exports and verifies the exact restored rev
     exported_at: "2026-08-05T02:00:00.000Z",
     object_key: document.object_key,
     producing_workflow_identity: "backup-production-boundary",
-    schema_migration_level: 16,
+    schema_migration_level: schemaState.migration_level,
     expected_evidence: {
       cards: 0,
       printings: 0,

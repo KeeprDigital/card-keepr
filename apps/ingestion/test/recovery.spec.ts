@@ -35,7 +35,11 @@ beforeEach(async () => {
   await testEnv.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET active_recovery_id = NULL, active_ingestion_run_id = NULL, active_release_id = NULL, active_release_expires_at = NULL WHERE singleton = 1 AND recovery_health = 'healthy'",
   ).run();
-  await retainVerifiedBackup("recovery-source", "bookmark-target");
+  await retainVerifiedBackup(
+    "recovery-source",
+    "bookmark-target",
+    await currentSchemaMigrationLevel(),
+  );
 });
 
 test("Time Travel recovery records the current and immediate undo bookmarks while blocking mutation", async () => {
@@ -158,7 +162,9 @@ test("replacement recovery validates a fresh database and retains the old databa
     reconstructAndVerify: async (input) => {
       events.push(`verify:${input.databaseId}`);
       expect(input.expectedRevisionId).toBe("catrev_spine_000");
-      expect(input.expectedSchemaMigrationLevel).toBe(16);
+      expect(input.expectedSchemaMigrationLevel).toBe(
+        await currentSchemaMigrationLevel(),
+      );
       return completeVerification;
     },
   });
@@ -247,8 +253,13 @@ test("replacement recovery validates a fresh database and retains the old databa
   expect(accepted).toMatchObject({ state: "accepted" });
 });
 
-test("recovery rejects a pre-guard backup before any provider restore call", async () => {
-  await retainVerifiedBackup("recovery-pre-guard", "bookmark-pre-guard", 15);
+test("recovery rejects a backup from another schema level before any provider restore call", async () => {
+  const currentLevel = await currentSchemaMigrationLevel();
+  await retainVerifiedBackup(
+    "recovery-schema-incompatible",
+    "bookmark-schema-incompatible",
+    currentLevel - 1,
+  );
   let providerCalls = 0;
   const provider = recoveryProvider({
     currentBookmark: async () => {
@@ -264,9 +275,12 @@ test("recovery rejects a pre-guard backup before any provider restore call", asy
     testEnv.CATALOGUE_DB,
     testEnv.BACKUPS,
     {
-      ...recoveryInput("recovery-pre-guard", "begin-pre-guard"),
-      targetBookmark: "bookmark-pre-guard",
-      backupAttemptId: "recovery-pre-guard",
+      ...recoveryInput(
+        "recovery-schema-incompatible",
+        "begin-schema-incompatible",
+      ),
+      targetBookmark: "bookmark-schema-incompatible",
+      backupAttemptId: "recovery-schema-incompatible",
     },
     provider,
   )).rejects.toMatchObject({
@@ -281,6 +295,72 @@ test("recovery rejects a pre-guard backup before any provider restore call", asy
     active_recovery_id: null,
     recovery_restore_guard: "clear",
   });
+});
+
+test("recovery acceptance stays blocked if the guarded schema level changes", async () => {
+  const provider = recoveryProvider();
+  const currentLevel = await currentSchemaMigrationLevel();
+  await beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-schema-raced", "begin-schema-raced"),
+    provider,
+  );
+  await verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-schema-raced",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-schema-raced",
+      observedAt: "2026-08-05T09:25:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_schema_state SET migration_level = migration_level + 1
+     WHERE singleton = 1`,
+  ).run();
+
+  await expect(acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-schema-raced",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-schema-raced",
+      idempotencyKey: "accept-schema-raced",
+      observedAt: "2026-08-05T09:26:00.000Z",
+      boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    },
+  )).rejects.toMatchObject({ code: "recovery_journal_invalid" });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT recovery_health, active_recovery_id, recovery_restore_guard
+     FROM operation_state WHERE singleton = 1`,
+  ).first()).resolves.toEqual({
+    recovery_health: "blocked",
+    active_recovery_id: "recovery-schema-raced",
+    recovery_restore_guard: "blocked",
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE catalogue_schema_state SET migration_level = ? WHERE singleton = 1",
+  ).bind(currentLevel).run();
+  await expect(acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-schema-raced",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-schema-raced",
+      idempotencyKey: "accept-schema-raced",
+      observedAt: "2026-08-05T09:27:00.000Z",
+      boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    },
+  )).resolves.toMatchObject({ state: "accepted" });
 });
 
 test("concurrent acceptance keys produce one retained acceptance", async () => {
@@ -794,7 +874,7 @@ function recoveryProvider(
 async function retainVerifiedBackup(
   attemptId: string,
   bookmark: string,
-  schemaMigrationLevel = 16,
+  schemaMigrationLevel: number,
 ): Promise<void> {
   const objectKey = `d1-backups/catrev_spine_000/${attemptId}/catalogue.sql`;
   const manifestKey = `d1-backups/catrev_spine_000/${attemptId}/manifest.json`;
@@ -860,4 +940,12 @@ async function retainVerifiedBackup(
     schemaMigrationLevel,
     "disposable-recovery-source",
   ).run();
+}
+
+async function currentSchemaMigrationLevel(): Promise<number> {
+  const state = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  if (state === null) throw new Error("Catalogue schema state is unavailable.");
+  return state.migration_level;
 }
