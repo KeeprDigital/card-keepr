@@ -23,6 +23,9 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import {
+  parseReconciliationObservation,
+} from "../../../src/catalogue/reconciliation-observation";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
   startOrObserveReconciliationWorkflow,
@@ -61,6 +64,37 @@ test("registered Source metadata rejects unowned stored Legality freshness scope
     region: "EN-ASIA",
     checked_at: "2026-08-02T00:00:00.000Z",
   })).toThrow(/registered ownership/);
+});
+
+test("retained Gundam Official Errata crosses the reconciliation boundary", () => {
+  expect(() => parseReconciliationObservation("srcobs_gundam_erratum", {
+    kind: "official_erratum",
+    game: "gundam",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "GD04-067" },
+    },
+    published_on: "2026-04-10",
+    effective_from: null,
+    observed_printed_rules_text: "from your trash.",
+    corrected_rules_text: "from any player's trash.",
+    official_wording:
+      "Before: from your trash.\nAfter: from any player's trash.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#gundam-02_157-gd04-067",
+      display_name: "GD04-067",
+      image_url:
+        "https://www.gundam-gcg.com/gcg/bccard/en/news/2026/04/GD04-067.webp",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  })).not.toThrow();
 });
 let requestSequence = 0;
 
@@ -2408,7 +2442,38 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     requiredFirst(asia.document, "printings"),
     "id",
   );
+  expect(asia.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   await approve(asia.document);
+
+  const productMismatchRun = await collect(
+    "/reconciliation/gundam-cross-product-conflict",
+    "reconcile-gundam-product-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const productMismatch = await reconcile(productMismatchRun.id);
+  expect(productMismatch.response.status).toBe(409);
+  expect(productMismatch.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({
+      code: "printing_match_insufficient_evidence",
+      candidate_printing_ids: [printingId],
+      detail: expect.stringContaining("Product"),
+    })]),
+  );
+  expect(productMismatch.document).not.toMatchObject({
+    publishable: true,
+  });
 
   const usRun = await collect(
     "/reconciliation/gundam-cross-us",
@@ -2423,6 +2488,14 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   expect(requiredFirst(us.document, "printings")).toMatchObject({
     id: printingId,
   });
+  expect(us.document.warnings).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+      }),
+    ]),
+  );
   await approve(us.document);
   const lifecycle = await get(
     `/v1/reconciliation/printings/${printingId}`,
@@ -2467,6 +2540,15 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     },
   );
   const usMissing = await reconcile(usMissingRun.id);
+  expect(usMissing.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   const inspected = await get(
     `/v1/ingestion-runs/${usMissingRun.id}/candidate`,
   );
@@ -2562,32 +2644,21 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     ],
   });
 
-  for (const [scenario, key] of [
-    [
-      "gundam-cross-product-conflict",
-      "reconcile-gundam-product-conflict",
-    ],
-    [
-      "gundam-cross-variant-conflict",
-      "reconcile-gundam-variant-conflict",
-    ],
-  ] as const) {
-    const mismatchRun = await collect(
-      `/reconciliation/${scenario}`,
-      key,
-      {
-        game: "gundam",
-        lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
-      },
-    );
-    const mismatch = await reconcile(mismatchRun.id);
-    expect(mismatch.response.status).toBe(200);
-    expect(requiredFirst(mismatch.document, "printings")).toMatchObject({
-      id: printingId,
-    });
-    await approve(mismatch.document);
-  }
+  const variantMismatchRun = await collect(
+    "/reconciliation/gundam-cross-variant-conflict",
+    "reconcile-gundam-variant-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const variantMismatch = await reconcile(variantMismatchRun.id);
+  expect(variantMismatch.response.status).toBe(200);
+  expect(requiredFirst(variantMismatch.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  await approve(variantMismatch.document);
 }, 30_000);
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
@@ -2682,7 +2753,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
   );
 });
 
-test("historical Gundam authority survives complete disappearance in both locale orders", async () => {
+test("historical Gundam locators survive disappearance without retaining stale Card authority", async () => {
   const asiaOptions = {
     game: "gundam",
     lineage: "gundam-en-asia",
@@ -2695,7 +2766,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   } as const;
 
   const asiaRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-first",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-asia-first",
     "historical-authority-asia-first",
     asiaOptions,
   );
@@ -2729,25 +2800,42 @@ test("historical Gundam authority survives complete disappearance in both locale
     },
   });
 
+  const historicalProductConflictRun = await collect(
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-product-conflict",
+    "historical-provenance-us-product-conflict",
+    usOptions,
+  );
+  const historicalProductConflict = await reconcile(
+    historicalProductConflictRun.id,
+  );
+  expect(historicalProductConflict.response.status).toBe(409);
+  expect(historicalProductConflict.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({
+      code: "printing_match_insufficient_evidence",
+      candidate_printing_ids: [printingId],
+      detail: expect.stringContaining("Product"),
+    })]),
+  );
+
   const usEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-us-second",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-us-second",
     "historical-authority-us-equivalent",
     usOptions,
   );
   const usEquivalent = await reconcile(usEquivalentRun.id);
   expect(requiredFirst(usEquivalent.document, "cards")).toMatchObject({
     id: cardId,
-    name: "Printing authority",
+    name: "  Printing   authority  ",
     effective_rules_text: "Official effective rules",
     game_data: {
       profile: "gundam@1",
-      attributes: { effect_text: "Official effect" },
+      attributes: { effect_text: "  Official   effect  " },
     },
   });
   expect(requiredFirst(usEquivalent.document, "printings")).toMatchObject({
     id: printingId,
-    rarity: { raw: "L", normalized: "leader" },
-    printed_rules_text: "Official printed rules",
+    rarity: { raw: "  L  ", normalized: "leader" },
+    printed_rules_text: "  Official   printed rules  ",
     game_data: {
       profile: "gundam@1",
       attributes: { alternate_art: false },
@@ -2763,7 +2851,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   ).toContainEqual(
     expect.objectContaining({
       id: cardId,
-      name: "Printing authority",
+      name: "  Printing   authority  ",
       effective_rules_text: "Official effective rules",
     }),
   );
@@ -2772,8 +2860,8 @@ test("historical Gundam authority survives complete disappearance in both locale
   ).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      rarity: { raw: "L", normalized: "leader" },
-      printed_rules_text: "Official printed rules",
+      rarity: { raw: "  L  ", normalized: "leader" },
+      printed_rules_text: "  Official   printed rules  ",
     }),
   );
   const corroborated = await get(
@@ -2789,35 +2877,50 @@ test("historical Gundam authority survives complete disappearance in both locale
   });
 
   const usConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-conflict",
     "historical-authority-us-conflict",
     usOptions,
   );
   const usConflict = await reconcile(usConflictRun.id);
-  expect(usConflict.response.status).toBe(409);
-  expect(usConflict.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "canonical_card_conflict" }),
-    ]),
-  );
+  expect(usConflict.response.status).toBe(200);
+  expect(requiredFirst(usConflict.document, "cards")).toMatchObject({
+    id: cardId,
+    name: "Contradictory historical-authority Card",
+    game_data: {
+      attributes: {
+        effect_text: "Substantively different Card effect",
+      },
+    },
+  });
+  await post(`/v1/ingestion-runs/${usConflictRun.id}/rejection`, {
+    candidate_digest: requiredString(usConflict.document, "candidate_digest"),
+    idempotency_key: "reject-absent-asia-card-authority",
+  });
   const usPrintingConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-printing-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
     usOptions,
   );
   const usPrintingConflict = await reconcile(usPrintingConflictRun.id);
-  expect(usPrintingConflict.response.status).toBe(409);
-  expect(usPrintingConflict.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "printing_match_contradictory",
-        candidate_printing_ids: [printingId],
-      }),
-    ]),
-  );
+  expect(usPrintingConflict.response.status).toBe(200);
+  expect(requiredFirst(usPrintingConflict.document, "printings")).toMatchObject({
+    id: printingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Substantively different printed rules",
+    game_data: {
+      attributes: { alternate_art: true },
+    },
+  });
+  await post(`/v1/ingestion-runs/${usPrintingConflictRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      usPrintingConflict.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-us-printing-evolution",
+  });
 
   const usFirstRun = await collect(
-    "/reconciliation/gundam-printing-format-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-us-first",
     "historical-authority-us-first",
     usOptions,
   );
@@ -2839,7 +2942,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   const usMissing = await reconcile(usMissingRun.id);
   await approve(usMissing.document);
   const asiaEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-second",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-asia-second",
     "historical-authority-asia-equivalent",
     asiaOptions,
   );
@@ -2861,11 +2964,19 @@ test("historical Gundam authority survives complete disappearance in both locale
   await approve(asiaEquivalent.document);
 
   const reverseConflictUsRun = await collect(
-    "/reconciliation/gundam-printing-conflict-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-conflict-us-first",
     "historical-authority-conflict-us-first",
     usOptions,
   );
   const reverseConflictUs = await reconcile(reverseConflictUsRun.id);
+  const reverseConflictCardId = requiredString(
+    requiredFirst(reverseConflictUs.document, "cards"),
+    "id",
+  );
+  const reverseConflictPrintingId = requiredString(
+    requiredFirst(reverseConflictUs.document, "printings"),
+    "id",
+  );
   await approve(reverseConflictUs.document);
   const reverseConflictMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
@@ -2877,17 +2988,29 @@ test("historical Gundam authority survives complete disappearance in both locale
   );
   await approve(reverseConflictMissing.document);
   const reverseConflictAsiaRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-asia-conflict",
+    "/reconciliation/gundam-printing-lifecycle-reverse-disappearance-asia-conflict",
     "historical-authority-conflict-asia-second",
     asiaOptions,
   );
   const reverseConflictAsia = await reconcile(reverseConflictAsiaRun.id);
-  expect(reverseConflictAsia.response.status).toBe(409);
-  expect(reverseConflictAsia.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "canonical_card_conflict" }),
-    ]),
-  );
+  expect(reverseConflictAsia.response.status).toBe(200);
+  expect(requiredFirst(reverseConflictAsia.document, "cards")).toMatchObject({
+    id: reverseConflictCardId,
+    name: "Contradictory historical-authority Card",
+  });
+  expect(requiredFirst(reverseConflictAsia.document, "printings")).toMatchObject({
+    id: reverseConflictPrintingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Different substantive Asia printed rules",
+    game_data: { attributes: { alternate_art: true } },
+  });
+  await post(`/v1/ingestion-runs/${reverseConflictAsiaRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      reverseConflictAsia.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-asia-printing-evolution",
+  });
 }, 45_000);
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
@@ -4702,7 +4825,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
 
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";
-  const adapterVersion = "gundam-en-asia@3";
+  const adapterVersion = "gundam-en-asia@4";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
     plans: [{
       supported_game: "gundam",

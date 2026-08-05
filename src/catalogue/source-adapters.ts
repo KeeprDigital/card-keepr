@@ -203,11 +203,17 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           "one-piece-en@3",
           "fusion-world-en@4",
           "digimon-en@4",
+          "gundam-en-asia@4",
+          "gundam-en-us@4",
         ].includes(adapter.adapterVersion)
           ? ["catalogue", "errata"] as const
           : ["catalogue"] as const,
         inheritDiscoveryRequestHeaders:
-          adapter.adapterVersion === "digimon-en@4",
+          [
+            "digimon-en@4",
+            "gundam-en-asia@4",
+            "gundam-en-us@4",
+          ].includes(adapter.adapterVersion),
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,

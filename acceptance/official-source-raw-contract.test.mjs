@@ -171,10 +171,88 @@ const productionAdapterVersions = sourceAdapterRegistrations
 const expectedProductionAdapterVersions = [
   "digimon-en@4",
   "fusion-world-en@4",
-  "gundam-en-asia@3",
-  "gundam-en-us@3",
+  "gundam-en-asia@4",
+  "gundam-en-us@4",
   "one-piece-en@3",
 ];
+
+test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const retained = requiredSourceAdapter(`${lineage}@3`);
+    const payload = rawSurfacePayload(lineage, "packages");
+    assert.ok(
+      parseRegisteredSurface(retained, "packages", payload).length > 0,
+      "V3 remains available for retained snapshot replay",
+    );
+
+    const complete = structuredClone(payload);
+    const detail = complete.card_details[0];
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    delete detail.printing.normalized_rarity;
+    complete.package_options = [
+      { value: "gd01", label: "GD01" },
+      { value: "starter", label: "Starter decks" },
+    ];
+    const entry = complete.result.partitions[0].entries[0];
+    complete.result.partitions = ["gd01", "starter"].map((name) => ({
+      bucket: `package=${name}`,
+      page: 1,
+      pages: 1,
+      total: 1,
+      has_next: false,
+      entries: [structuredClone(entry)],
+    }));
+
+    const observations = parseRegisteredSurface(current, "packages", complete);
+    assert.equal(
+      observations.filter(({ card }) => card !== undefined).length,
+      1,
+      "the same full locator is deterministically deduplicated across packages",
+    );
+    assert.equal(observations[0].printing.rarity.raw, "R");
+    assert.equal(observations[0].printing.rarity.normalized, "rare");
+    assert.match(
+      observations[0].identity_evidence.artwork_fingerprint,
+      /^official-artwork:/u,
+    );
+    assert.match(
+      observations[0].identity_evidence.printed_fields_digest,
+      /^printed-material:/u,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html>${officialPublisherPayloadScript(
+            lineage,
+            "packages",
+            complete,
+          )}</html>`,
+        ),
+        {
+          mediaType: "text/html",
+          url: current.requestUrlForSurface("packages"),
+          requestId: `${lineage}:packages`,
+        },
+      ),
+      /Gundam catalogue facts require an exact package leaf/iu,
+    );
+
+    const conflicting = structuredClone(complete);
+    conflicting.result.partitions[1].entries[0].number = "GD99-999";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", conflicting),
+      /full locator.*conflict/iu,
+    );
+    const unknownRarity = structuredClone(complete);
+    unknownRarity.card_details[0].printing.rarity = "Experimental Rare";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", unknownRarity),
+      /Gundam rarity.*Experimental Rare/iu,
+    );
+  }
+});
 
 test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue facts above a leaf", () => {
   const current = requiredSourceAdapter("digimon-en@4");
@@ -746,7 +824,7 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[234]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[2-5]T/u);
   return { bytes, metadata };
 }
 
@@ -1643,7 +1721,13 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     assert.equal(adapter.reconciliationCapability, "catalogue");
     assert.deepEqual(
       adapter.reconciliationAreas,
-      ["one-piece-en@3", "fusion-world-en@4", "digimon-en@4"].includes(
+      [
+        "one-piece-en@3",
+        "fusion-world-en@4",
+        "digimon-en@4",
+        "gundam-en-asia@4",
+        "gundam-en-us@4",
+      ].includes(
         adapter.adapterVersion,
       )
         ? ["catalogue", "errata"]
@@ -1661,7 +1745,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
           ? /-raw-surfaces-with-legality-and-catalogue@3$/u
           : adapter.sourceLineage === "digimon-en"
             ? /-raw-surfaces-complete-catalogue@3$/u
-            : /-raw-surfaces-with-legality@2$/u,
+            : /-raw-surfaces-complete-catalogue@3$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -1775,8 +1859,11 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
         ? hostilePath.pathname.replace("/en/", "/asia-en/")
         : `/outside-lineage${hostilePath.pathname}`;
     const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
+    const gundamLeaf = adapter.sourceLineage.startsWith("gundam-en-");
     const discoveryUrl = fusionLeaf
       ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`
+      : gundamLeaf
+        ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?package=GD01`
       : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(`
@@ -1787,8 +1874,8 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       {
         mediaType: "text/html; charset=utf-8",
         url: discoveryUrl,
-        requestId: fusionLeaf
-          ? `fusion-world-en:listing:${"6".repeat(64)}`
+        requestId: fusionLeaf || gundamLeaf
+          ? `${adapter.sourceLineage}:listing:${"6".repeat(64)}`
           : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
       },
     );
@@ -4901,6 +4988,591 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   );
 });
 
+test("Gundam V4 visits every package option and schedules Card details only at a package leaf", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
+    const rootHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <select name="package">
+        <option value="all">All</option>
+        <option value="GD01">GD01</option>
+        <option value="ST01">ST01</option>
+      </select>
+      <a href="/${locale}/cards/index.php?detailSearch=GD01-001">Not a leaf</a>
+    </html>`;
+    const rootRequests = adapter.discoverRequests(
+      new TextEncoder().encode(rootHtml),
+      {
+        mediaType: "text/html",
+        url: rootUrl,
+        requestId: `${lineage}:packages`,
+      },
+    );
+    assert.deepEqual(
+      rootRequests.map(({ role, url }) => ({
+        role,
+        package: new URL(url).searchParams.get("package"),
+      })),
+      ["all", "GD01", "ST01"].map((packageValue) => ({
+        role: "listing",
+        package: packageValue,
+      })),
+    );
+
+    const leafUrl = `${rootUrl}?package=GD01`;
+    const leafHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <a href="?package=GD01&page=2">Next</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Card</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Duplicate</a>
+    </html>`;
+    const leafContext = {
+      mediaType: "text/html",
+      url: leafUrl,
+      requestId: `${lineage}:listing:${"a".repeat(64)}`,
+    };
+    assert.deepEqual(
+      adapter.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).map(({ role, url }) => ({ role, url })),
+      [
+        { role: "detail", url: `${rootUrl}?detailSearch=GD01-001` },
+        { role: "listing", url: `${rootUrl}?package=GD01&page=2` },
+      ],
+    );
+    assert.doesNotThrow(() =>
+      adapter.parseBytes(new TextEncoder().encode(leafHtml), leafContext)
+    );
+    assert.equal(
+      previous.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).find(({ url }) => new URL(url).searchParams.has("page"))?.role,
+      "detail",
+      "V3 preserves its historical link classification",
+    );
+  }
+});
+
+test("retained Gundam package snapshots close publisher totals and dedupe full locators across the request plan", () => {
+  for (const { lineage, packageValue } of [
+    { lineage: "gundam-en-asia", packageValue: "619102" },
+    { lineage: "gundam-en-us", packageValue: "616102" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const fixturePrefix = `./fixtures/retained-official-source/${lineage}-card-list`;
+    const rootBytes = readFileSync(new URL(
+      `${fixturePrefix}-root-live-fragment.html`,
+      import.meta.url,
+    ));
+    const packageBytes = readFileSync(new URL(
+      `${fixturePrefix}-package-live-fragment.html`,
+      import.meta.url,
+    ));
+    const rootContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: rootUrl,
+      requestId: `${lineage}:packages`,
+    };
+    const packageContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: `${rootUrl}?package=${packageValue}`,
+      requestId: `${lineage}:listing:${"b".repeat(64)}`,
+    };
+
+    const rootRequests = adapter.discoverRequests(rootBytes, rootContext);
+    assert.deepEqual(
+      rootRequests.filter(({ role }) => role === "listing")
+        .map(({ url }) => new URL(url).searchParams.get("package")),
+      lineage === "gundam-en-asia"
+        ? ["619101", "619102"]
+        : ["616101", "616102"],
+    );
+    const packageRequests = adapter.discoverRequests(
+      packageBytes,
+      packageContext,
+    );
+    const allDetailUrls = [...rootRequests, ...packageRequests]
+      .filter(({ role }) => role === "detail")
+      .map(({ url }) => url);
+    assert.equal(allDetailUrls.length, 4);
+    assert.equal(new Set(allDetailUrls).size, 2);
+
+    for (const [bytes, context] of [
+      [rootBytes, rootContext],
+      [packageBytes, packageContext],
+    ]) {
+      const [coverage] = adapter.parseBytes(bytes, context);
+      assert.deepEqual(coverage.completeness, {
+        declared_record_count: 2,
+        parsed_record_count: 2,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        structurally_complete: true,
+      });
+    }
+
+    const packageHtml = packageBytes.toString("utf8");
+    const nonterminalHtml = packageHtml
+      .replace('<span class="num">2</span>', '<span class="num">4</span>')
+      .replace(
+        '<div class="pager"></div>',
+        `<div class="pager"><a href="?package=${packageValue}&amp;page=2">2</a></div>`,
+      );
+    const [nonterminalCoverage] = adapter.parseBytes(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(nonterminalCoverage.completeness, {
+      declared_record_count: 4,
+      parsed_record_count: 2,
+      required_surfaces_complete: false,
+      partitions_complete: false,
+      structurally_complete: true,
+    });
+    const nonterminalRequests = adapter.discoverRequests(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(
+      nonterminalRequests
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001`,
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001_p1`,
+      ],
+    );
+    assert.equal(
+      nonterminalRequests.some(({ role, url }) =>
+        role === "listing" &&
+        url === `${rootUrl}?package=${packageValue}&page=2`
+      ),
+      true,
+    );
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('value="' + packageValue + '"', 'value="wrong"'),
+        ),
+        packageContext,
+      ),
+      /selected package.*request/iu,
+    );
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('<span class="num">2</span>', '<span class="num">3</span>'),
+        ),
+        packageContext,
+      ),
+      /publisher total.*full locators/iu,
+    );
+    const pagedBytes = new TextEncoder().encode(packageHtml.replace(
+      "</section>", '<input type="hidden" name="page" value="2"></section>',
+    ));
+    assert.doesNotThrow(
+      () => adapter.parseBytes(pagedBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=2`,
+      }),
+    );
+    assert.throws(
+      () => adapter.parseBytes(pagedBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=3`,
+      }),
+      /selected page.*request/iu,
+    );
+    const partialTerminalBytes = new TextEncoder().encode(
+      packageHtml
+        .replace('<span class="num">2</span>', '<span class="num">4</span>')
+        .replace(
+          "</section>",
+          '<input type="hidden" name="page" value="2"></section>',
+        ),
+    );
+    const [partialTerminalCoverage] = adapter.parseBytes(
+      partialTerminalBytes,
+      { ...packageContext, url: `${packageContext.url}&page=2` },
+    );
+    assert.equal(
+      partialTerminalCoverage.completeness.required_surfaces_complete,
+      false,
+    );
+  }
+});
+
+test("digest-verified unchanged Gundam publisher listing bytes close their exact result", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-list-complete-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const context = {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:listing:${"d".repeat(64)}`,
+  };
+  const [coverage] = adapter.parseBytes(fixture.bytes, context);
+  assert.deepEqual(coverage.completeness, {
+    declared_record_count: 187,
+    parsed_record_count: 187,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    structurally_complete: true,
+  });
+  assert.equal(
+    adapter.discoverRequests(fixture.bytes, context)
+      .filter(({ role }) => role === "detail").length,
+    187,
+  );
+});
+
+test("retained Gundam detail snapshots bind base and alternate art to full locators", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const observations = ["base", "p2"].map((variant) => {
+      const suffix = variant === "base" ? "" : "_p2";
+      const bytes = readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-${variant}-live-fragment.html`,
+        import.meta.url,
+      ));
+      const detailContext = {
+        mediaType: "text/html; charset=UTF-8",
+        url:
+          `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038${suffix}`,
+        requestId:
+          `${lineage}:detail:${(variant === "base" ? "1" : "2").repeat(64)}`,
+      };
+      assert.equal(
+        adapter.discoverRequests(bytes, detailContext)
+          .filter(({ role }) => role === "image").length,
+        1,
+      );
+      return adapter.parseBytes(bytes, detailContext)[0];
+    });
+    assert.deepEqual(
+      observations.map((observation) => ({
+        card_number: observation.card.official_identity.value,
+        locator: observation.identity_evidence.locator,
+        variant: observation.identity_evidence.variant_key,
+        treatment: observation.identity_evidence.treatment,
+        rarity: observation.printing.rarity,
+        alternate_art:
+          observation.printing.game_data.attributes.alternate_art,
+      })),
+      [
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038",
+          variant: "base",
+          treatment: "standard",
+          rarity: { raw: "LR", normalized: "legend-rare" },
+          alternate_art: false,
+        },
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038_p2",
+          variant: "_p2",
+          treatment: "alternate",
+          rarity: { raw: "LR ++", normalized: "legend-rare" },
+          alternate_art: true,
+        },
+      ],
+    );
+    assert.notEqual(
+      observations[0].identity_evidence.artwork_fingerprint,
+      observations[1].identity_evidence.artwork_fingerprint,
+    );
+    assert.deepEqual(observations[1].card.game_data.attributes, {
+      card_type: "unit",
+      colours: ["red"],
+      level: 7,
+      cost: 5,
+      block_icon: "1",
+      effect_text: "【Deploy】Official alternate effect.",
+      zone: "Space Earth",
+      traits: ["(Clan)"],
+      link_condition: "[Amate Yuzuriha (Machu)]",
+      ap: 5,
+      hp: 4,
+      series_titles: ["Mobile Suit Gundam GQuuuuuuX"],
+    });
+  }
+});
+
+test("digest-verified unchanged Gundam publisher dash remains raw and normalizes", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-detail-dash-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const [observation] = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:detail:${"4".repeat(64)}`,
+  });
+  assert.equal(
+    observation.card.game_data.attributes.link_condition,
+    null,
+  );
+  assert.equal(
+    observation.source_sidecar.raw.official_surfaces[0].document.Link,
+    "-",
+  );
+});
+
+test("synthetic Gundam dash-glyph variants normalize without changing raw evidence", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const syntheticPlaceholderBytes = new TextEncoder().encode(
+      readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
+        import.meta.url,
+      )).toString("utf8")
+        .replace('<div class="blockIcon">1</div>', '<div class="blockIcon">-</div>')
+        .replace('<dt>Zone</dt><dd>Space Earth</dd>', '<dt>Zone</dt><dd>—</dd>')
+        .replace(
+          '<dt>Link</dt><dd>[Amate Yuzuriha (Machu)]</dd>',
+          '<dt>Link</dt><dd>–</dd>',
+        ),
+    );
+    const [placeholderObservation] = adapter.parseBytes(
+      syntheticPlaceholderBytes,
+      {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
+      requestId: `${lineage}:detail:${"3".repeat(64)}`,
+      },
+    );
+    assert.deepEqual(
+      {
+        block_icon: placeholderObservation.card.game_data.attributes.block_icon,
+        zone: placeholderObservation.card.game_data.attributes.zone,
+        link_condition:
+          placeholderObservation.card.game_data.attributes.link_condition,
+      },
+      { block_icon: null, zone: null, link_condition: null },
+    );
+    const [syntheticRawSurface] =
+      placeholderObservation.source_sidecar.raw.official_surfaces;
+    assert.deepEqual(
+      {
+        block_icon: syntheticRawSurface.document["Block icon"],
+        zone: syntheticRawSurface.document.Zone,
+        link_condition: syntheticRawSurface.document.Link,
+      },
+      { block_icon: "-", zone: "—", link_condition: "–" },
+    );
+  }
+});
+
+test("active Gundam Errata is typed from both locale publications without changing V3", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    assert.equal(
+      current.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=news`,
+    );
+    assert.equal(
+      previous.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=rules`,
+    );
+
+    const payload = rawSurfacePayload(lineage, "errata");
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    payload.entries = [{
+      entry_id: `gundam-${article}-gd04-067`,
+      card_number: "GD04-067",
+      published_on: "2026-04-10",
+      effective_from: "2026-04-10",
+      before: "from your trash.",
+      after: "from any player's trash.",
+      notice: "The corrected wording applies to the applicable cards.",
+      applies_to_parallel_printings: true,
+      image_url:
+        `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
+    }];
+    const observations = parseRegisteredSurface(current, "errata", payload);
+    assert.deepEqual(
+      observations.find(({ kind }) => kind === "official_erratum"),
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        effective_from: "2026-04-10",
+        observed_printed_rules_text: "from your trash.",
+        corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: The corrected wording applies to the applicable cards.",
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: `#gundam-${article}-gd04-067`,
+          display_name: "GD04-067",
+          image_url:
+            `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
+        },
+        completeness: {
+          structurally_complete: true,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          declared_record_count: 1,
+          parsed_record_count: 1,
+        },
+      },
+    );
+
+    const unknown = structuredClone(payload);
+    unknown.entries[0].publisher_note = "unmodeled";
+    assert.throws(
+      () => parseRegisteredSurface(current, "errata", unknown),
+      /Gundam Erratum contains unknown field publisher_note/iu,
+    );
+    assert.doesNotThrow(() =>
+      parseRegisteredSurface(previous, "errata", unknown)
+    );
+  }
+});
+
+test("active Gundam discovers and parses ordinary official Errata articles", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    const listing = `<html><main>
+      <a href="/${locale}/news/ordinary.html"><span>Ordinary announcement</span></a>
+      <a href="/${locale}/news/${article}.html"><span>Apology for the errata and revision in card description of Phantom Aria [GD04]</span></a>
+      <a href="/${locale}/news/?subcategory=all&amp;tag=RULES&amp;page=1">Rules filter</a>
+      <a href="/${locale}/news/?subcategory=news&amp;page=2">Next NEWS page</a>
+    </main></html>`;
+    const context = {
+      mediaType: "text/html; charset=UTF-8",
+      url: current.requestUrlForSurface("errata"),
+      requestId: `${lineage}:errata`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "listing")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`],
+    );
+    const pageContext = {
+      ...context,
+      url: `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`,
+      requestId: `${lineage}:listing:${"f".repeat(64)}`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(
+        new TextEncoder().encode(listing),
+        pageContext,
+      ).filter(({ role }) => role === "detail").map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.equal(
+      previous.discoverRequests(new TextEncoder().encode(listing), {
+        ...context,
+        url: previous.requestUrlForSurface("errata"),
+      }).some(({ url }) => url.endsWith(`/${article}.html`)),
+      false,
+    );
+
+    const englishHeading = lineage === "gundam-en-asia"
+      ? "<div class=\"text-area\"><h6>English Version</h6></div>"
+      : "";
+    const detail = `<html><main><div class="article"><section class="articleInner">
+      <div class="articleHead"><div class="articleDetail"><div class="date">April 10, 2026</div></div>
+      <h2>Apology for the errata and revision in card description of Phantom Aria [GD04]</h2></div>
+      <div class="articleBody"><div class="blocks">${englishHeading}
+      <div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>
+      <div class="card-image"><img src="/gcg/bccard/${locale}/news/2026/04/GD04-067.webp"></div>
+      <div class="text-area"><h5><span>Before</span></h5></div>
+      <div class="text-area"><p><span>from your trash.</span></p></div>
+      <div class="text-area"><h5><span>After</span></h5></div>
+      <div class="text-area"><p><span>from any player's trash.</span></p></div>
+      <div class="text-area"><p><strong>For the applicable cards, the above shall be regarded as the correct wording.</strong></p></div>
+      </div></div></section></div></main></html>`;
+    const [erratum] = current.parseBytes(new TextEncoder().encode(detail), {
+      mediaType: "text/html; charset=UTF-8",
+      url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+      requestId: `${lineage}:detail:${"e".repeat(64)}`,
+    });
+    assert.deepEqual(
+      {
+        kind: erratum.kind,
+        game: erratum.game,
+        target: erratum.target,
+        published_on: erratum.published_on,
+        effective_from: erratum.effective_from,
+        corrected_rules_text: erratum.corrected_rules_text,
+        official_wording: erratum.official_wording,
+        applies_to_parallel_printings:
+          erratum.applies_to_parallel_printings,
+      },
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        effective_from: null,
+        corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: For the applicable cards, the above shall be regarded as the correct wording.",
+        applies_to_parallel_printings: true,
+      },
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(detail.replace(
+          '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+          '<div class="text-area"><span style="font-size:1.25em;">GD01-001 Decoy</span></div>' +
+            '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+        )),
+        {
+          mediaType: "text/html; charset=UTF-8",
+          url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+          requestId: `${lineage}:detail:${"d".repeat(64)}`,
+        },
+      ),
+      /correction inventory is incomplete/iu,
+    );
+  }
+});
+
 test("Digimon staged discovery ignores only the known global header and retains one literal local Card List link", () => {
   const adapter = requiredSourceAdapter("digimon-en@3");
   const stageUrl = "https://world.digimoncard.com/cardlist/";
@@ -5380,32 +6052,57 @@ test("real Digimon and Gundam details close every known profile field and reject
   );
 
   const gundam = byLineage("gundam-en-asia");
-  const gundamObservation = gundam.parseBytes(
-    new TextEncoder().encode(`
-      <h1>Test Gundam Unit</h1>
-      <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
-      <dl><dt>Type</dt><dd>Unit</dd></dl>
-      <dl><dt>Color</dt><dd>Blue</dd></dl>
-      <dl><dt>Level</dt><dd>5</dd></dl>
-      <dl><dt>Cost</dt><dd>1,000</dd></dl>
-      <dl><dt>Effect</dt><dd>Unit effect</dd></dl>
+  const gundamHtml = `
+      <div class="cardNo">GD99-001</div>
+      <div class="rarity">R★</div>
+      <div class="blockIcon">03</div>
+      <h1 class="cardName">Test Gundam Unit</h1>
+      <div class="cardImage"><img src= "../../jp/images/cards/card/GD99-001.webp"></div>
+      <dl><dt>TYPE</dt><dd>Unit</dd></dl>
+      <dl><dt>COLOR</dt><dd>-</dd></dl>
+      <dl><dt>Lv.</dt><dd>5</dd></dl>
+      <dl><dt>COST</dt><dd>1,000</dd></dl>
+      <div class="cardDataRow overview"><div class="dataTxt">Unit effect</div></div>
       <dl><dt>AP</dt><dd>4,000</dd></dl>
       <dl><dt>HP</dt><dd>5,000</dd></dl>
-      <dl><dt>Alternate Art</dt><dd>Yes</dd></dl>
-      <img class="card-image" src="/asia-en/images/cards/GD99-001.png">
-    `),
+      <dl><dt>Zone</dt><dd>-</dd></dl>
+      <dl><dt>Trait</dt><dd>-</dd></dl>
+      <dl><dt>Link</dt><dd>-</dd></dl>
+      <dl><dt>Source Title</dt><dd>Test Series</dd></dl>
+    `;
+  const gundamDetailUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD99-001";
+  const gundamObservation = gundam.parseBytes(
+    new TextEncoder().encode(gundamHtml),
     {
       mediaType: "text/html",
-      url: "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001",
+      url: gundamDetailUrl,
       requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
     },
   )[0];
   assert.equal(gundamObservation.card.game_data.attributes.cost, 1000);
+  assert.deepEqual(gundamObservation.card.game_data.attributes.colours, []);
+  assert.equal(gundamObservation.card.game_data.attributes.block_icon, "03");
   assert.equal(gundamObservation.card.game_data.attributes.ap, 4000);
   assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
   assert.deepEqual(
     gundamObservation.printing.game_data.attributes,
-    { alternate_art: true },
+    { alternate_art: false },
+  );
+  assert.deepEqual(gundamObservation.printing.rarity, {
+    raw: "R★",
+    normalized: "rare",
+  });
+  assert.throws(
+    () => gundam.parseBytes(
+      new TextEncoder().encode(gundamHtml.replace("R★", "Experimental Rare")),
+      {
+        mediaType: "text/html",
+        url: gundamDetailUrl,
+        requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
+      },
+    ),
+    /Gundam rarity.*Experimental Rare/iu,
   );
 });
 
@@ -6553,6 +7250,9 @@ function withLegacyFusionCanonicalFields(payload) {
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
     adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
+  const completeGundamLeaf =
+    (adapter.adapterVersion === "gundam-en-asia@4" ||
+      adapter.adapterVersion === "gundam-en-us@4") && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
     adapter.adapterVersion === "one-piece-en@3" &&
@@ -6565,6 +7265,13 @@ function parseRegisteredSurface(adapter, surface, payload) {
   }
   if (completeDigimonLeaf) {
     for (const detail of publisherPayload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      delete detail.printing.normalized_rarity;
+    }
+  }
+  if (completeGundamLeaf) {
+    for (const detail of publisherPayload.card_details ?? []) {
       delete detail.artwork_fingerprint;
       delete detail.printed_fields_digest;
       delete detail.printing.normalized_rarity;
@@ -6583,9 +7290,11 @@ function parseRegisteredSurface(adapter, surface, payload) {
       mediaType: "text/html; charset=utf-8",
       url: completeDigimonLeaf
         ? `${adapter.requestUrlForSurface(surface)}&category=all&cardcategory=digimon&colour=blue`
+        : completeGundamLeaf
+          ? `${adapter.requestUrlForSurface(surface)}?package=all`
         : adapter.requestUrlForSurface(surface),
-      requestId: completeDigimonLeaf
-        ? `digimon-en:listing:${"f".repeat(64)}`
+      requestId: completeDigimonLeaf || completeGundamLeaf
+        ? `${adapter.sourceLineage}:listing:${"f".repeat(64)}`
         : `${adapter.sourceLineage}:${surface}`,
     },
   );

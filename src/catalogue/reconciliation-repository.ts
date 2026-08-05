@@ -156,45 +156,70 @@ export async function printingsAtLocator(
   return rows.results;
 }
 
-export async function hasOtherGundamLocaleEvidence(
+export async function gundamPrintingLineages(
   database: D1Database,
-  printingId: string,
-  sourceLineage: string,
-): Promise<boolean> {
-  const counterpart =
-    sourceLineage === "gundam-en-asia"
-      ? "gundam-en-us"
-      : sourceLineage === "gundam-en-us"
-        ? "gundam-en-asia"
-        : null;
-  if (counterpart === null) return true;
-  const row = await database
+): Promise<{
+  printing_id: string;
+  source_lineage: "gundam-en-asia" | "gundam-en-us";
+  current: number;
+}[]> {
+  const rows = await database
     .prepare(
-      `SELECT printing_id
+      `SELECT printing_id, source_lineage, MAX(current) AS current
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ? AND current = 1
-       LIMIT 1`,
+       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       GROUP BY printing_id, source_lineage
+       ORDER BY printing_id, source_lineage`,
     )
-    .bind(printingId, counterpart)
-    .first<{ printing_id: string }>();
-  return row !== null;
+    .all<{
+      printing_id: string;
+      source_lineage: "gundam-en-asia" | "gundam-en-us";
+      current: number;
+    }>();
+  return rows.results;
 }
 
-export async function hasCardObservationFromLineage(
+export async function gundamCardLineages(
   database: D1Database,
-  cardId: string,
-  sourceLineage: string,
-): Promise<boolean> {
-  const row = await database
+): Promise<{
+  card_id: string;
+  source_lineage: "gundam-en-asia" | "gundam-en-us";
+  current: number;
+}[]> {
+  const rows = await database
     .prepare(
-      `SELECT card_id
+      `SELECT card_id, source_lineage, MAX(current) AS current
        FROM reconciled_card_observations
-       WHERE card_id = ? AND source_lineage = ?
-       LIMIT 1`,
+       WHERE source_lineage IN ('gundam-en-asia', 'gundam-en-us')
+       GROUP BY card_id, source_lineage
+       ORDER BY card_id, source_lineage`,
     )
-    .bind(cardId, sourceLineage)
-    .first<{ card_id: string }>();
-  return row !== null;
+    .all<{
+      card_id: string;
+      source_lineage: "gundam-en-asia" | "gundam-en-us";
+      current: number;
+    }>();
+  return rows.results;
+}
+
+export async function gundamPrintingProductMemberships(
+  database: D1Database,
+): Promise<{
+  printing_id: string;
+  relationship_value: string;
+}[]> {
+  const rows = await database
+    .prepare(
+      `SELECT DISTINCT printing_id, relationship_value
+       FROM reconciled_printing_memberships
+       WHERE relationship_kind = 'product'
+       ORDER BY printing_id, relationship_value`,
+    )
+    .all<{
+      printing_id: string;
+      relationship_value: string;
+    }>();
+  return rows.results;
 }
 
 export async function hasPrintingLocatorFromLineage(
@@ -206,7 +231,7 @@ export async function hasPrintingLocatorFromLineage(
     .prepare(
       `SELECT printing_id
        FROM reconciled_printing_locators
-       WHERE printing_id = ? AND source_lineage = ?
+       WHERE printing_id = ? AND source_lineage = ? AND current = 1
        LIMIT 1`,
     )
     .bind(printingId, sourceLineage)
@@ -263,7 +288,7 @@ export async function canonicalCardConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_card_observations
-       WHERE card_id = ?`,
+       WHERE card_id = ? AND current = 1`,
     )
     .bind(cardId)
     .all<{ source_lineage: string }>();
@@ -320,7 +345,7 @@ export async function canonicalPrintingConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_printing_locators
-       WHERE printing_id = ?`,
+       WHERE printing_id = ? AND current = 1`,
     )
     .bind(printingId)
     .all<{ source_lineage: string }>();

@@ -219,6 +219,10 @@ const legalityAwareAdapterVersions: Readonly<
 };
 
 const completeDigimonAdapterVersion = "digimon-en@4";
+const completeGundamAdapterVersions = new Map([
+  ["gundam-en-asia", "gundam-en-asia@4"],
+  ["gundam-en-us", "gundam-en-us@4"],
+]);
 
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
@@ -288,6 +292,36 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               expandedOnePieceCatalogue: false,
               catalogueComplete: false,
               completeDigimonCatalogue: true,
+            }]
+          : []),
+        ...(completeGundamAdapterVersions.has(definition.sourceLineage)
+          ? [{
+              ...definition,
+              imagePathnamePrefixes:
+                definition.sourceLineage === "gundam-en-asia"
+                  ? [
+                      ...definition.imagePathnamePrefixes,
+                      "/jp/images/cards/card/",
+                      "/gcg/bccard/asia-en/",
+                    ]
+                  : [
+                      ...definition.imagePathnamePrefixes,
+                      "/gcg/bccard/en/",
+                    ],
+              adapterVersion: completeGundamAdapterVersions.get(
+                definition.sourceLineage,
+              )!,
+              urls: activeBandaiSurfaceUrls(
+                definition.sourceLineage,
+                definition.urls,
+                true,
+              ),
+              parserContract:
+                `${definition.sourceLineage}-raw-surfaces-complete-catalogue@3`,
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete: true,
+              completeDigimonCatalogue: false,
             }]
           : []),
       ];
@@ -676,6 +710,19 @@ function bandaiRequestDiscovery(
         )
       : null;
     const current = new URL(context.url);
+    const completeGundamCatalogue =
+      catalogueComplete && format === "gundam";
+    const gundamLiveListing = completeGundamCatalogue &&
+        (initialSurface === requiredSurfaces[0] || dynamicRole === "listing")
+      ? parseCompleteGundamLiveListing(
+          discoveryHtml,
+          current,
+          sourceLineage,
+        )
+      : null;
+    const completeGundamLeaf =
+      completeGundamCatalogue &&
+      (gundamCompleteListingLeaf(current) || gundamLiveListing !== null);
     if (
       catalogueComplete &&
       format === "fusion-world" &&
@@ -717,6 +764,7 @@ function bandaiRequestDiscovery(
       initialSurface,
       requiredSurfaces,
       completeDigimonCatalogue,
+      completeGundamCatalogue,
     );
     const candidates: {
       role: "listing" | "detail" | "product_detail" | "image";
@@ -730,20 +778,42 @@ function bandaiRequestDiscovery(
         structuredSurface,
       );
       if (structured !== null) {
-        candidates.push(
-          ...structuredImageUrls(structured, current, sourceLineage).map(
-            (url) => ({
-              role: "image" as const,
-              url,
-              headers: officialDiscoveredRequestHeaders("image"),
-            }),
-          ),
-        );
+        if (!completeGundamCatalogue || completeGundamLeaf) {
+          candidates.push(
+            ...structuredImageUrls(structured, current, sourceLineage).map(
+              (url) => ({
+                role: "image" as const,
+                url,
+                headers: officialDiscoveredRequestHeaders("image"),
+              }),
+            ),
+          );
+        }
       }
     }
     if (
-      (initialSurface !== null && isDiscoverySurface(initialSurface)) ||
-      dynamicRole === "listing"
+      completeGundamCatalogue &&
+      (initialSurface === "errata" ||
+        gundamErrataListingUrl(current, sourceLineage))
+    ) {
+      candidates.push(
+        ...gundamErrataArticleUrls(
+          discoveryHtml,
+          current,
+          sourceLineage,
+        ).map((url) => ({
+          role: "detail" as const,
+          url,
+          headers: officialDiscoveredRequestHeaders("detail"),
+        })),
+      );
+    }
+    if (
+      ((initialSurface !== null && isDiscoverySurface(initialSurface)) ||
+        dynamicRole === "listing") &&
+      !(completeGundamCatalogue &&
+        (initialSurface === "errata" ||
+          gundamErrataListingUrl(current, sourceLineage)))
     ) {
       candidates.push(
         ...discoveredPartitionRequests(
@@ -772,9 +842,14 @@ function bandaiRequestDiscovery(
         : null;
       const rawUrl =
         tag === "a"
-          ? htmlAttribute(attributes, "href")
+          ? completeGundamCatalogue
+            ? htmlAttribute(attributes, "data-src") ??
+              htmlAttribute(attributes, "href")
+            : htmlAttribute(attributes, "href")
           : htmlAttribute(attributes, "data-src") ??
-            htmlAttribute(attributes, "src");
+            htmlAttribute(attributes, "src") ??
+            looseHtmlAttribute(attributes, "data-src") ??
+            looseHtmlAttribute(attributes, "src");
       let resolved: URL;
       if (fusionWorldAnchor === null) {
         if (
@@ -811,6 +886,13 @@ function bandaiRequestDiscovery(
               completeDigimonCatalogue,
             );
       if (role === null) continue;
+      if (
+        completeGundamCatalogue &&
+        (initialSurface === requiredSurfaces[0] ||
+          dynamicRole === "listing") &&
+        !completeGundamLeaf &&
+        role !== "listing"
+      ) continue;
       if (!officialUrl(
         sourceLineage,
         resolved,
@@ -882,6 +964,20 @@ function discoveredPartitionRequests(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
 ): string[] {
+  if (
+    catalogueComplete &&
+    format === "gundam" &&
+    !current.searchParams.has("package")
+  ) {
+    const packageOptions = gundamPublisherPackageOptions(html);
+    if (packageOptions.length > 0) {
+      return packageOptions.map((packageValue) => {
+        const target = new URL(current);
+        target.searchParams.set("package", packageValue);
+        return target.href;
+      });
+    }
+  }
   const selectFacets = [...html.matchAll(
     /<select\b([^>]*)>([\s\S]*?)<\/select>/giu,
   )]
@@ -896,7 +992,9 @@ function discoveredPartitionRequests(
       )]
         .map((option) => decodeHtmlText(option[1]!).trim())
         .filter((value) =>
-          value.length > 0 && !/^(?:all|0|-)$/iu.test(value)
+          value.length > 0 &&
+          ((catalogueComplete && format === "gundam") ||
+            !/^(?:all|0|-)$/iu.test(value))
         );
       return options.length === 0
         ? null
@@ -1249,10 +1347,169 @@ function dynamicStructuredSurface(
   fallbackSurface: string | null,
   requiredSurfaces: readonly string[],
   completeDigimonCatalogue: boolean,
+  completeGundamCatalogue = false,
 ): string | null {
-  return completeDigimonCatalogue && dynamicRole === "listing"
+  return dynamicRole === "listing" &&
+      (completeDigimonCatalogue || completeGundamCatalogue)
     ? requiredSurfaces[0]!
     : fallbackSurface;
+}
+
+function gundamCompleteListingLeaf(url: URL): boolean {
+  const packages = url.searchParams.getAll("package");
+  const pages = url.searchParams.getAll("page");
+  return [...url.searchParams.keys()].every((key) =>
+    key === "package" || key === "page"
+  ) &&
+    packages.length === 1 && packages[0]!.trim().length > 0 &&
+    pages.length <= 1 &&
+    (pages.length === 0 || /^[1-9]\d*$/u.test(pages[0]!));
+}
+
+function gundamPublisherPackageOptions(html: string): string[] {
+  return [...new Set(
+    [...html.matchAll(/<a\b([^>]*)>/giu)].flatMap((match) => {
+      const attributes = match[1]!;
+      const classes = htmlAttribute(attributes, "class")?.split(/\s+/u) ?? [];
+      if (!classes.includes("js-selectBtn-package")) return [];
+      const value = htmlAttribute(attributes, "data-val")?.trim();
+      return value === undefined || value.length === 0 ? [] : [value];
+    }),
+  )];
+}
+
+function parseCompleteGundamLiveListing(
+  html: string,
+  requestUrl: URL,
+  sourceLineage: string,
+): {
+  declaredTotal: number;
+  fullLocators: string[];
+  selectedPackage: string | null;
+  selectedPage: number;
+  terminalPage: boolean;
+} | null {
+  const totals = [...html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bresultTxt\b[^"']*["'][^>]*>[\s\S]*?<span\b[^>]*\bclass=["'][^"']*\bnum\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>[\s\S]*?<\/div>/giu,
+  )];
+  const cardItems = [...html.matchAll(
+    /<li\b[^>]*\bclass=["'][^"']*\bcardItem\b[^"']*["'][^>]*>([\s\S]*?)<\/li>/giu,
+  )];
+  if (totals.length === 0 && cardItems.length === 0) return null;
+  if (totals.length !== 1) {
+    throw new Error(
+      "Official Source Gundam listing requires one exact publisher total.",
+    );
+  }
+  if (
+    [...requestUrl.searchParams.keys()].some(
+      (key) => key !== "package" && key !== "page",
+    )
+  ) {
+    throw new Error(
+      "Official Source Gundam listing request has unsupported facets.",
+    );
+  }
+  const requestedPackages = requestUrl.searchParams.getAll("package");
+  if (requestedPackages.length > 1 || requestedPackages[0]?.trim() === "") {
+    throw new Error("Official Source Gundam listing request package is invalid.");
+  }
+  const selectedPackages = [...html.matchAll(/<input\b([^>]*)>/giu)]
+    .flatMap((match) => {
+      const attributes = match[1]!;
+      return htmlAttribute(attributes, "name") === "package"
+        ? [htmlAttribute(attributes, "value")?.trim() ?? ""]
+        : [];
+    });
+  const requestedPackage = requestedPackages[0] ?? "";
+  if (
+    selectedPackages.length === 0 ||
+    selectedPackages.some((value) => value !== requestedPackage)
+  ) {
+    throw new Error(
+      "Official Source Gundam selected package does not match the request.",
+    );
+  }
+  const requestedPages = requestUrl.searchParams.getAll("page");
+  if (
+    requestedPages.length > 1 ||
+    (requestedPages.length === 1 && !/^[1-9]\d*$/u.test(requestedPages[0]!))
+  ) {
+    throw new Error("Official Source Gundam listing request page is invalid.");
+  }
+  const requestedPage = requestedPages[0] ?? "1";
+  const selectedPages = [...html.matchAll(/<input\b([^>]*)>/giu)]
+    .flatMap((match) => {
+      const attributes = match[1]!;
+      return htmlAttribute(attributes, "name") === "page"
+        ? [htmlAttribute(attributes, "value")?.trim() ?? ""]
+        : [];
+    });
+  if (
+    requestedPages.length === 1 &&
+    (selectedPages.length === 0 ||
+      selectedPages.some((value) => value !== requestedPage))
+  ) {
+    throw new Error(
+      "Official Source Gundam selected page does not match the request.",
+    );
+  }
+  if (
+    requestedPages.length === 0 &&
+    selectedPages.some((value) => value !== "1")
+  ) {
+    throw new Error(
+      "Official Source Gundam selected page does not match the request.",
+    );
+  }
+  const declaredTotal = Number.parseInt(totals[0]![1]!, 10);
+  const fullLocators = cardItems.map((item) => {
+    const anchor = item[1]!.match(/<a\b([^>]*)>/iu);
+    const rawDetail = anchor === null
+      ? null
+      : htmlAttribute(anchor[1]!, "data-src");
+    if (rawDetail === null) {
+      throw new Error(
+        "Official Source Gundam listing Card has no full detail locator.",
+      );
+    }
+    const detailUrl = new URL(decodeHtmlText(rawDetail), requestUrl);
+    const entries = [...detailUrl.searchParams.entries()];
+    const locator = detailUrl.searchParams.get("detailSearch")?.trim();
+    if (
+      !officialUrl(sourceLineage, detailUrl, "document") ||
+      !/\/cards\/detail\.php$/u.test(detailUrl.pathname) ||
+      entries.length !== 1 ||
+      entries[0]![0] !== "detailSearch" ||
+      locator === undefined ||
+      !/^[A-Z0-9]+(?:-[A-Z0-9]+)+(?:_p[1-9]\d*)?$/u.test(locator)
+    ) {
+      throw new Error(
+        "Official Source Gundam listing Card full detail locator is invalid.",
+      );
+    }
+    return locator;
+  });
+  const terminalPage =
+    /<div\b[^>]*\bclass=["'][^"']*\bpager\b[^"']*["'][^>]*>\s*<\/div>/iu
+      .test(html);
+  if (
+    new Set(fullLocators).size !== fullLocators.length ||
+    fullLocators.length > declaredTotal ||
+    (terminalPage && requestedPage === "1" &&
+      fullLocators.length !== declaredTotal)
+  ) {
+    throw new Error(
+      "Official Source Gundam publisher total does not match its unique full locators.",
+    );
+  }
+  return {
+    declaredTotal,
+    fullLocators,
+    selectedPackage: requestedPackages[0] ?? null,
+    selectedPage: Number.parseInt(requestedPage, 10),
+    terminalPage,
+  };
 }
 
 function discoveredHtmlRole(
@@ -1271,6 +1528,23 @@ function discoveredHtmlRole(
     return "detail";
   }
   if (initialSurface === "legality") return null;
+  if (
+    catalogueComplete &&
+    format === "gundam" &&
+    (initialSurface === "errata" ||
+      /^\/(?:asia-en|en)\/news\/$/u.test(url.pathname))
+  ) {
+    return gundamErrataListingUrl(url) ? "listing" : null;
+  }
+  if (
+    catalogueComplete &&
+    format === "gundam" &&
+    /^\/(?:asia-en|en)\/cards\/(?:index\.php)?$/u.test(url.pathname) &&
+    (url.searchParams.has("package") || url.searchParams.has("page")) &&
+    !url.searchParams.has("detailSearch")
+  ) {
+    return "listing";
+  }
   if (
     catalogueComplete &&
     format === "fusion-world" &&
@@ -1325,6 +1599,64 @@ function discoveredHtmlRole(
     return "listing";
   }
   return null;
+}
+
+function gundamErrataArticleUrls(
+  html: string,
+  current: URL,
+  sourceLineage: string,
+): string[] {
+  return [...new Set(
+    [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/giu)].flatMap(
+      (match) => {
+        const href = htmlAttribute(match[1]!, "href");
+        if (
+          href === null ||
+          !/\b(?:errata|revision|correction)\b/iu.test(htmlText(match[2]!))
+        ) return [];
+        let url: URL;
+        try {
+          url = new URL(decodeHtmlText(href), current);
+        } catch {
+          return [];
+        }
+        url.hash = "";
+        return gundamErrataArticleUrl(url, sourceLineage) ? [url.href] : [];
+      },
+    ),
+  )].sort();
+}
+
+function gundamErrataArticleUrl(
+  url: URL,
+  sourceLineage: string,
+): boolean {
+  const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+  return url.origin === "https://www.gundam-gcg.com" &&
+    new RegExp(`^/${locale}/news/(?:01|02)_[0-9]+\\.html$`, "u").test(
+      url.pathname,
+    ) &&
+    url.search === "" &&
+    url.username === "" &&
+    url.password === "";
+}
+
+function gundamErrataListingUrl(
+  url: URL,
+  sourceLineage?: string,
+): boolean {
+  const locale = sourceLineage === undefined
+    ? "(?:asia-en|en)"
+    : sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+  const keys = [...url.searchParams.keys()];
+  const pages = url.searchParams.getAll("page");
+  return url.origin === "https://www.gundam-gcg.com" &&
+    new RegExp(`^/${locale}/news/$`, "u").test(url.pathname) &&
+    url.searchParams.getAll("subcategory").length === 1 &&
+    url.searchParams.get("subcategory") === "news" &&
+    (pages.length === 0 ||
+      (pages.length === 1 && /^[1-9]\d*$/u.test(pages[0]!))) &&
+    keys.every((key) => key === "subcategory" || key === "page");
 }
 
 function nonCardProductClassification(value: string): "accessory" | null {
@@ -1689,6 +2021,7 @@ function bandaiSnapshotDecoder(
       surface,
       requiredSurfaces,
       profile.completeDigimonCatalogue === true,
+      profile.catalogueComplete === true && format === "gundam",
     );
     if (structuredSurface === null) {
       throw new Error("Official Source dynamic surface identity is invalid.");
@@ -1730,6 +2063,13 @@ function bandaiSnapshotDecoder(
         structuredSurface === requiredSurfaces[0]
       ) {
         assertDigimonPayloadAtCompleteLeaf(structuredPayload, context.url);
+      }
+      if (
+        profile.catalogueComplete === true &&
+        format === "gundam" &&
+        structuredSurface === requiredSurfaces[0]
+      ) {
+        assertGundamPayloadAtCompleteLeaf(structuredPayload, context.url);
       }
       const observations = normalizedSurfaceObservationsV2(
         format,
@@ -1796,6 +2136,24 @@ function bandaiSnapshotDecoder(
       )];
     }
     if (dynamicRole === "detail") {
+      if (
+        profile.catalogueComplete === true &&
+        format === "gundam" &&
+        gundamErrataArticleUrl(new URL(context.url), sourceLineage)
+      ) {
+        return parseGundamOfficialErrataHtmlV4(
+          html,
+          sourceLineage,
+          context.url,
+        );
+      }
+      if (profile.catalogueComplete === true && format === "gundam") {
+        return [parseGundamCardDetailHtmlV4(
+          html,
+          sourceLineage,
+          context.url,
+        )];
+      }
       return [
         profile.catalogueComplete === true && format === "fusion-world"
           ? parseFusionWorldCardDetailV3(
@@ -1804,11 +2162,12 @@ function bandaiSnapshotDecoder(
             context.url,
           )
           : parseBandaiCardDetailV2(
-          html,
-          format,
-          sourceLineage,
-          context.url,
-          ),
+              html,
+              format,
+              sourceLineage,
+              context.url,
+              profile.catalogueComplete === true && format === "gundam",
+            ),
       ];
     }
     if (dynamicRole === "product_detail") {
@@ -1860,8 +2219,24 @@ function bandaiSnapshotDecoder(
       assertCompleteDigimonLeafUrl(context.url);
       return parseDigimonCardListPopupHtmlV4(html, context.url);
     }
+    const completeGundamListing = profile.catalogueComplete === true &&
+        format === "gundam" &&
+        structuredSurface === requiredSurfaces[0]
+      ? parseCompleteGundamLiveListing(
+          html,
+          new URL(context.url),
+          sourceLineage,
+        )
+      : null;
     const parsed =
-      format === "one-piece" &&
+      completeGundamListing !== null
+        ? completeGundamListingCoverage(
+            completeGundamListing,
+            sourceLineage,
+            surface,
+            context.url,
+          )
+        : format === "one-piece" &&
           (surface === "card-list" || isOnePieceRecordingLeaf)
         ? parseOnePieceBandaiCardListV1(
             html,
@@ -2951,6 +3326,36 @@ function digimonPayloadContainsCatalogueFacts(
   );
 }
 
+function assertGundamPayloadAtCompleteLeaf(
+  payload: Record<string, unknown>,
+  requestUrl: string,
+): void {
+  if (!gundamPayloadContainsCatalogueFacts(payload)) return;
+  if (!gundamCompleteListingLeaf(new URL(requestUrl))) {
+    throw new Error(
+      "Official Source Gundam catalogue facts require an exact package leaf with only an optional positive page.",
+    );
+  }
+}
+
+function gundamPayloadContainsCatalogueFacts(
+  payload: Record<string, unknown>,
+): boolean {
+  const populated = (value: unknown) => Array.isArray(value) && value.length > 0;
+  if (
+    populated(payload.card_details) ||
+    populated(payload.products) ||
+    populated(payload.releases)
+  ) return true;
+  if (payload.result === null || typeof payload.result !== "object") return false;
+  const partitions = (payload.result as Record<string, unknown>).partitions;
+  return Array.isArray(partitions) && partitions.some((partition) =>
+    partition !== null &&
+    typeof partition === "object" &&
+    populated((partition as Record<string, unknown>).entries)
+  );
+}
+
 function publisherPayloadScriptId(
   sourceLineage: string,
   surface: string,
@@ -3038,8 +3443,15 @@ function exactFusionPolicySurfaceUrl(surface: string, url: URL): boolean {
 function activeBandaiSurfaceUrls(
   sourceLineage: string,
   urls: Readonly<Record<string, string>>,
+  completeGundamCatalogue = false,
 ): Readonly<Record<string, string>> {
-  return sourceLineage === "fusion-world-en"
+  return completeGundamCatalogue &&
+      (sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us")
+    ? {
+      ...urls,
+      errata: urls.errata!.replace("subcategory=rules", "subcategory=news"),
+    }
+    : sourceLineage === "fusion-world-en"
     ? {
       ...urls,
       "legality-current":
@@ -3378,6 +3790,7 @@ function parseBandaiCardDetailV2(
   format: DiscoveryFormat,
   sourceLineage: string,
   requestUrl: string,
+  preserveGundamVocabulary = false,
 ): Record<string, unknown> {
   return parseBandaiCardDetailFrozenV1(
     html,
@@ -3385,6 +3798,7 @@ function parseBandaiCardDetailV2(
     sourceLineage,
     requestUrl,
     "path-v2",
+    preserveGundamVocabulary,
   );
 }
 
@@ -3451,6 +3865,180 @@ function fusionWorldLocatorIdentity(value: string): {
   };
 }
 
+function parseGundamCardDetailHtmlV4(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const url = new URL(requestUrl);
+  const entries = [...url.searchParams.entries()];
+  if (
+    entries.length !== 1 ||
+    entries[0]![0] !== "detailSearch" ||
+    !/^[A-Z0-9]+(?:-[A-Z0-9]+)+(?:_p[1-9]\d*)?$/u.test(entries[0]![1])
+  ) {
+    throw new Error("Official Gundam detail full locator is invalid.");
+  }
+  const locator = entries[0]![1];
+  const locatorMatch = locator.match(
+    /^([A-Z0-9]+(?:-[A-Z0-9]+)+)((?:_p[1-9]\d*)?)$/u,
+  )!;
+  const expectedCardNumber = locatorMatch[1]!;
+  const variant = locatorMatch[2] || "base";
+  const pairs = htmlLabelPairs(html);
+  const field = (names: readonly string[]): string | null =>
+    firstLabelValue(pairs, names);
+  const cardNumber = gundamDetailClassText(html, "cardNo", "Card Number");
+  if (cardNumber !== expectedCardNumber) {
+    throw new Error(
+      "Official Gundam detail Card Number does not match its full locator.",
+    );
+  }
+  const name = gundamDetailClassText(html, "cardName", "Card name");
+  const rarity = gundamDetailClassText(html, "rarity", "rarity");
+  const blockIcon = gundamDetailClassText(html, "blockIcon", "Block icon");
+  const cardType = requiredText(field(["TYPE", "Type"]), "Gundam Card Type");
+  const colour = requiredText(field(["COLOR", "Color"]), "Gundam Color");
+  const overview = html.match(
+    /<div\b[^>]*\bclass=["'][^"']*\bcardDataRow\b[^"']*\boverview\b[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>/iu,
+  );
+  const rules = requiredText(
+    htmlText(overview?.[1] ?? ""),
+    "Gundam Card Effect",
+  );
+  const cardImage = html.match(
+    /<div\b[^>]*\bclass=["'][^"']*\bcardImage\b[^"']*["'][^>]*>[\s\S]*?<img\b([^>]*)>/iu,
+  );
+  const rawImage = cardImage === null
+    ? null
+    : looseHtmlAttribute(cardImage[1]!, "src");
+  if (rawImage === null) {
+    throw new Error("Official Gundam detail has no Printing Image URL.");
+  }
+  const imageUrl = new URL(decodeHtmlText(rawImage), requestUrl);
+  if (!officialUrl(sourceLineage, imageUrl, "image")) {
+    throw new Error("Official Gundam detail Printing Image URL is invalid.");
+  }
+  const expectedImageLocator = imageUrl.pathname.match(
+    /\/([A-Z0-9]+(?:-[A-Z0-9]+)+(?:_p[1-9]\d*)?)\.(?:avif|gif|jpe?g|png|webp)$/iu,
+  )?.[1];
+  if (expectedImageLocator !== locator) {
+    throw new Error(
+      "Official Gundam detail Printing Image does not match its full locator.",
+    );
+  }
+  const productLinks = productLinksFromHtml(html, requestUrl);
+  const products = productLinks.products;
+  const distribution = products.length === 0
+    ? {
+        code: `detail:${url.pathname}`,
+        kind: "source_bucket",
+        label: field(["Where to get it"]) ?? "Card detail",
+      }
+    : {
+        code: `product:${products[0]!.code}`,
+        kind: "product",
+        label: products[0]!.title,
+        product_reference: {
+          kind: "official_code",
+          value: products[0]!.code,
+        },
+      };
+  const alternateArt = variant !== "base";
+  const detail = {
+    ...canonicalDetail({
+      detailSearch: locator,
+      card_number: cardNumber,
+      name,
+      Effect: rules,
+      profile: "gundam@1",
+      product_codes: products.map(({ code }) => code),
+      fuzzy_product_labels: productLinks.fuzzyLabels,
+      distribution,
+      printing: {
+        rarity,
+        attributes: { alternate_art: alternateArt },
+      },
+      printed_rules: rules,
+      variant,
+      image_url: imageUrl.href,
+    }, {
+      path: "detailSearch",
+      number: "card_number",
+      title: "name",
+      rules: "Effect",
+      attributes: {
+        card_type: cardType.toLowerCase().replace(/\s+/gu, "_"),
+        colours: colour === "-" ? [] : colourValues(colour),
+        level: integerOrNull(field(["Lv.", "Lv", "Level"])),
+        cost: integerOrNull(field(["COST", "Cost"])),
+        block_icon: gundamPublisherNullableText(blockIcon),
+        effect_text: rules,
+        zone: gundamPublisherNullableText(field(["Zone"])),
+        traits: textValues(field(["Trait", "Traits"])),
+        link_condition: gundamPublisherNullableText(field(["Link"])),
+        ap: integerOrNull(field(["AP"])),
+        hp: integerOrNull(field(["HP"])),
+        series_titles: textValues(field(["Source Title", "Title"])),
+      },
+      printingAttributes: { alternate_art: alternateArt },
+      normalizedRarity: normalizedGundamRarity(rarity),
+      imageFields: [{ role: "front", value: imageUrl.href }],
+      preserveFuzzyProductLabels: true,
+      derivePrintingIdentity: true,
+    }),
+    treatment: alternateArt ? "alternate" : "standard",
+  };
+  const observation = cardObservation(
+    detail,
+    products,
+    new Map(),
+    { revision: "captured-by-policy-surface", entries: [] },
+    { revision: "captured-by-policy-surface", entries: [] },
+    "gundam",
+  );
+  const retainedDocument = Object.fromEntries([
+    ...pairs.map(({ label, value }) => [label, value] as const),
+    ["Card Number", cardNumber],
+    ["Card Name", name],
+    ["Rarity", rarity],
+    ["Block icon", blockIcon],
+    ["Effect", rules],
+    ["Full locator", locator],
+    ["Printing Image URL", imageUrl.href],
+  ]);
+  return attachRawSurfaceEvidenceV1(
+    observation,
+    sourceLineage,
+    "card-detail",
+    retainedDocument,
+    true,
+    Object.keys(retainedDocument),
+  );
+}
+
+function gundamDetailClassText(
+  html: string,
+  className: string,
+  field: string,
+): string {
+  const matches = [...html.matchAll(new RegExp(
+    `<[^>]+\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>([\\s\\S]*?)<\\/[^>]+>`,
+    "giu",
+  ))];
+  if (matches.length !== 1) {
+    throw new Error(`Official Gundam detail ${field} is incomplete.`);
+  }
+  return requiredText(htmlText(matches[0]![1]!), `Gundam ${field}`);
+}
+
+function looseHtmlAttribute(attributes: string, name: string): string | null {
+  const match = attributes.match(
+    new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "iu"),
+  );
+  return match?.[1] ?? null;
+}
+
 /**
  * Frozen V1 card-detail decoder foundation. Historical registrations always
  * select hostname-v1. Newer registrations may only layer stricter authority
@@ -3462,6 +4050,7 @@ function parseBandaiCardDetailFrozenV1(
   sourceLineage: string,
   requestUrl: string,
   imageAuthority: "hostname-v1" | "path-v2",
+  preserveGundamVocabulary = false,
 ): Record<string, unknown> {
   const pairs = htmlLabelPairs(html);
   const field = (names: readonly string[]): string | null =>
@@ -3581,7 +4170,8 @@ function parseBandaiCardDetailFrozenV1(
           source_url: imageUrl,
         }));
   const colours = colour === "-"
-    ? format === "fusion-world" || format === "gundam"
+    ? format === "fusion-world" ||
+        (format === "gundam" && !preserveGundamVocabulary)
       ? ["colourless"]
       : []
     : colourValues(colour);
@@ -3729,7 +4319,10 @@ function parseBandaiCardDetailFrozenV1(
     distribution,
     printing: {
       rarity: field(["Rarity"]),
-      normalizedRarity: field(["Rarity"])?.toLowerCase() ?? null,
+      normalizedRarity:
+        format === "gundam" && preserveGundamVocabulary
+          ? normalizedGundamRarity(field(["Rarity"]))
+          : field(["Rarity"])?.toLowerCase() ?? null,
       attributes:
         format === "digimon"
           ? {
@@ -4315,6 +4908,62 @@ function parseBandaiSurfaceCoverageV2(
   );
 }
 
+function completeGundamListingCoverage(
+  listing: {
+    declaredTotal: number;
+    fullLocators: string[];
+    selectedPackage: string | null;
+    selectedPage: number;
+    terminalPage: boolean;
+  },
+  sourceLineage: string,
+  surface: string,
+  url: string,
+): ParsedBandaiSurface {
+  return {
+    observations: [{
+      completeness: listing.terminalPage &&
+          listing.fullLocators.length === listing.declaredTotal
+        ? completeObservation(
+            listing.declaredTotal,
+            listing.fullLocators.length,
+          )
+        : {
+            structurally_complete: true,
+            required_surfaces_complete: false,
+            partitions_complete: false,
+            declared_record_count: listing.declaredTotal,
+            parsed_record_count: listing.fullLocators.length,
+          },
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    }],
+    retainedDocument: {
+      source_lineage: sourceLineage,
+      surface,
+      url,
+      selected_package: listing.selectedPackage,
+      selected_page: listing.selectedPage,
+      declared_total: listing.declaredTotal,
+      full_locators: listing.fullLocators,
+      terminal_page: listing.terminalPage,
+    },
+    consumedFields: [
+      "source_lineage",
+      "surface",
+      "url",
+      "selected_package",
+      "selected_page",
+      "declared_total",
+      "full_locators",
+      "terminal_page",
+    ],
+  };
+}
+
 function parseBandaiSurfaceCoverageByContract(
   html: string,
   format: DiscoveryFormat,
@@ -4740,6 +5389,13 @@ function integerOrNull(value: string | null): number | null {
     throw new Error(`Unrecognized official numeric token: ${value}`);
   }
   return Number.parseInt(normalized.replaceAll(",", ""), 10);
+}
+
+function gundamPublisherNullableText(value: unknown): unknown {
+  return typeof value === "string" &&
+      /^\s*[\p{Dash_Punctuation}\u2212]+\s*$/u.test(value)
+    ? null
+    : value;
 }
 
 function textValues(value: string | null): string[] {
@@ -5262,6 +5918,9 @@ function normalizedSurfaceObservationsV2(
       ...(catalogueComplete && format === "fusion-world" && surface === "errata"
         ? fusionWorldOfficialErrataObservations(document)
         : []),
+      ...(catalogueComplete && format === "gundam" && surface === "errata"
+        ? gundamOfficialErrataObservations(document, sourceLineage)
+        : []),
       ...(
         completeDigimonCatalogue && game === "digimon" && surface === "errata"
            ? parseDigimonOfficialErrata(document)
@@ -5484,6 +6143,236 @@ function fusionWorldOfficialErrataObservations(
       completeness: completeObservation(1, 1),
     };
   });
+}
+
+function gundamOfficialErrataObservations(
+  document: Record<string, unknown>,
+  sourceLineage: string,
+): readonly Record<string, unknown>[] {
+  const entries = requiredArray(document.entries, "Gundam Errata entries");
+  return entries.map((value) => {
+    const entry = requiredRecord(value, "Gundam Erratum");
+    const allowed = new Set([
+      "entry_id",
+      "card_number",
+      "published_on",
+      "effective_from",
+      "before",
+      "after",
+      "notice",
+      "applies_to_parallel_printings",
+      "image_url",
+    ]);
+    const unknown = Object.keys(entry).find((field) => !allowed.has(field));
+    if (unknown !== undefined) {
+      throw new Error(`Gundam Erratum contains unknown field ${unknown}.`);
+    }
+    for (const field of allowed) {
+      if (!Object.hasOwn(entry, field)) {
+        throw new Error(`Gundam Erratum is missing field ${field}.`);
+      }
+    }
+    const entryId = requiredText(entry.entry_id, "Gundam Erratum identity");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]+$/u.test(entryId)) {
+      throw new Error("Gundam Erratum identity is invalid.");
+    }
+    const cardNumber = requiredText(
+      entry.card_number,
+      "Gundam Erratum Card Number",
+    );
+    if (!/^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/u.test(cardNumber)) {
+      throw new Error(`Gundam Erratum Card Number ${cardNumber} is invalid.`);
+    }
+    const publishedOn = exactOnePieceSourceDate(
+      entry.published_on,
+      "Gundam Erratum published date",
+    );
+    const effectiveFrom = entry.effective_from === null
+      ? null
+      : exactOnePieceSourceDate(
+          entry.effective_from,
+          "Gundam Erratum effective date",
+        );
+    const before = requiredText(entry.before, "Gundam Erratum Before text");
+    const after = requiredText(entry.after, "Gundam Erratum After text");
+    const notice = requiredText(entry.notice, "Gundam Erratum notice");
+    if (typeof entry.applies_to_parallel_printings !== "boolean") {
+      throw new Error(
+        "Gundam Erratum parallel Printing applicability is invalid.",
+      );
+    }
+    const imageUrl = new URL(
+      requiredText(entry.image_url, "Gundam Erratum image URL"),
+    );
+    if (!officialUrl(sourceLineage, imageUrl, "image")) {
+      throw new Error("Gundam Erratum image provenance is invalid.");
+    }
+    return {
+      kind: "official_erratum",
+      game: "gundam",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: cardNumber },
+      },
+      published_on: publishedOn,
+      effective_from: effectiveFrom,
+      observed_printed_rules_text: before,
+      corrected_rules_text: after,
+      official_wording: `Before: ${before}\nAfter: ${after}\nNote: ${notice}`,
+      applies_to_parallel_printings: entry.applies_to_parallel_printings,
+      source: {
+        fragment: `#${entryId}`,
+        display_name: cardNumber,
+        image_url: imageUrl.href,
+      },
+      completeness: completeObservation(1, 1),
+    };
+  });
+}
+
+function parseGundamOfficialErrataHtmlV4(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): readonly Record<string, unknown>[] {
+  const titleMatch = html.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/iu);
+  const title = htmlText(titleMatch?.[1] ?? "");
+  if (!/\b(?:errata|revision|correction)\b/iu.test(title)) {
+    throw new Error("Gundam Errata title authority is invalid.");
+  }
+  const dateMatch = html.match(
+    /<div\b[^>]*\bclass=["'][^"']*\bdate\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/iu,
+  );
+  const publishedOn = exactGundamArticleDate(htmlText(dateMatch?.[1] ?? ""));
+  const bodyStart = html.search(
+    /<div\b[^>]*\bclass=["'][^"']*\barticleBody\b[^"']*["'][^>]*>/iu,
+  );
+  if (bodyStart < 0) {
+    throw new Error("Gundam Errata article body is unavailable.");
+  }
+  let body = html.slice(bodyStart);
+  if (sourceLineage === "gundam-en-asia") {
+    const english = body.search(/<h6\b[^>]*>\s*English Version\s*<\/h6>/iu);
+    if (english < 0) {
+      throw new Error("Gundam Asia Errata English Version is unavailable.");
+    }
+    body = body.slice(english);
+  }
+  const headings = [...body.matchAll(
+    /<span\b(?=[^>]*\bstyle=["'][^"']*\bfont-size\s*:\s*1\.25em\b[^"']*["'])[^>]*>([\s\S]*?)<\/span>/giu,
+  )].map((match) => {
+    const heading = htmlText(match[1]!);
+    const cardNumber = heading.match(
+      /^([A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6})(?:\s|$)/u,
+    )?.[1];
+    if (cardNumber === undefined) {
+      throw new Error("Gundam Errata Card heading identity is invalid.");
+    }
+    return { cardNumber, index: match.index };
+  });
+  const beforeCount = [...body.matchAll(/<h5\b[^>]*>[\s\S]*?\bBefore\b[\s\S]*?<\/h5>/giu)].length;
+  const afterCount = [...body.matchAll(/<h5\b[^>]*>[\s\S]*?\bAfter\b[\s\S]*?<\/h5>/giu)].length;
+  if (
+    headings.length === 0 ||
+    headings.length !== beforeCount ||
+    headings.length !== afterCount ||
+    new Set(headings.map(({ cardNumber }) => cardNumber)).size !== headings.length
+  ) {
+    throw new Error("Gundam Errata correction inventory is incomplete.");
+  }
+  const entries = headings.map((heading, index) => {
+    const segment = body.slice(
+      heading.index,
+      headings[index + 1]?.index ?? body.length,
+    );
+    const before = gundamErrataHtmlField(segment, "Before");
+    const after = gundamErrataHtmlField(segment, "After");
+    const imageMatches = [...segment.matchAll(/<img\b([^>]*)>/giu)]
+      .flatMap((match) => {
+        const rawUrl = looseHtmlAttribute(match[1]!, "src");
+        if (rawUrl === null) return [];
+        const imageUrl = new URL(decodeHtmlText(rawUrl), requestUrl);
+        return imageUrl.pathname.includes(heading.cardNumber)
+          ? [imageUrl]
+          : [];
+      });
+    if (
+      imageMatches.length !== 1 ||
+      !officialUrl(sourceLineage, imageMatches[0]!, "image")
+    ) {
+      throw new Error("Gundam Errata correction image is incomplete.");
+    }
+    return {
+      cardNumber: heading.cardNumber,
+      before,
+      after,
+      imageUrl: imageMatches[0]!.href,
+    };
+  });
+  const qualifiers = [...body.matchAll(
+    /<strong\b[^>]*>([\s\S]*?)<\/strong>/giu,
+  )]
+    .map((match) => htmlText(match[1]!))
+    .filter((wording) => /\bcorrect wording\b/iu.test(wording));
+  if (qualifiers.length !== 1) {
+    throw new Error("Gundam Errata correction qualifier is incomplete.");
+  }
+  const articleId = new URL(requestUrl).pathname.split("/").at(-1)!
+    .replace(/\.html$/u, "");
+  const notice = qualifiers[0]!;
+  const appliesToParallelPrintings =
+    /^For the applicable cards, the above shall be regarded as the correct wording\.?$/iu
+      .test(notice);
+  return gundamOfficialErrataObservations({
+    entries: entries.map((entry) => ({
+      entry_id: `gundam-${articleId}-${entry.cardNumber.toLowerCase()}`,
+      card_number: entry.cardNumber,
+      published_on: publishedOn,
+      effective_from: null,
+      before: entry.before,
+      after: entry.after,
+      notice,
+      applies_to_parallel_printings: appliesToParallelPrintings,
+      image_url: entry.imageUrl,
+    })),
+  }, sourceLineage);
+}
+
+function gundamErrataHtmlField(
+  segment: string,
+  label: "Before" | "After",
+): string {
+  const expression = new RegExp(
+    `<h5\\b[^>]*>[\\s\\S]*?\\b${label}\\b[\\s\\S]*?<\\/h5>` +
+      `[\\s\\S]*?<div\\b[^>]*\\bclass=["'][^"']*\\btext-area\\b[^"']*["'][^>]*>` +
+      `([\\s\\S]*?)<\\/div>`,
+    "iu",
+  );
+  const matches = [...segment.matchAll(new RegExp(expression.source, "giu"))];
+  if (matches.length !== 1) {
+    throw new Error("Gundam Errata correction inventory is incomplete.");
+  }
+  return requiredText(
+    htmlText(matches[0]![1]!),
+    `Gundam Erratum ${label} text`,
+  );
+}
+
+function exactGundamArticleDate(value: string): string {
+  const match = value.match(
+    /^(January|February|March|April|May|June|July|August|September|October|November|December) ([1-9]|[12][0-9]|3[01]), ([0-9]{4})$/u,
+  );
+  if (match === null) throw new Error("Gundam Errata publication date is invalid.");
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  const month = String(months.indexOf(match[1]!) + 1).padStart(2, "0");
+  const day = match[2]!.padStart(2, "0");
+  return exactOnePieceSourceDate(
+    `${match[3]}-${month}-${day}`,
+    "Gundam Erratum publication date",
+  );
 }
 
 function exactOnePieceSourceDate(value: unknown, name: string): string {
@@ -6204,7 +7093,12 @@ function normalizeLineageSurface(
         ? normalizeFusionWorldSurface(surface, raw, catalogueComplete)
         : format === "digimon"
           ? normalizeDigimonSurface(surface, raw, completeDigimonCatalogue)
-          : normalizeGundamSurface(sourceLineage, surface, raw);
+          : normalizeGundamSurface(
+              sourceLineage,
+              surface,
+              raw,
+              catalogueComplete,
+            );
   return {
     document: {
       contract: "card-keepr-official-source-surface@1",
@@ -6494,6 +7388,7 @@ function normalizeGundamSurface(
   sourceLineage: string,
   surface: string,
   raw: Record<string, unknown>,
+  catalogueComplete = false,
 ): NormalizedSurfaceBody {
   const expectedLocale =
     sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US";
@@ -6508,7 +7403,7 @@ function normalizeGundamSurface(
       normalizedDiscovery(
         raw.package_options,
         raw.result,
-        normalizeGundamDetails(raw.card_details),
+        normalizeGundamDetails(raw.card_details, catalogueComplete),
         normalizeGundamProducts(raw.products),
         normalizeGundamReleases(raw.releases),
         "package=all",
@@ -7022,9 +7917,15 @@ function normalizeDigimonDetails(
   });
 }
 
-function normalizeGundamDetails(value: unknown): unknown[] {
+function normalizeGundamDetails(
+  value: unknown,
+  completeCatalogue = false,
+): unknown[] {
   return requiredArray(value, "Gundam Card details").map((item) => {
     const card = requiredRecord(item, "Gundam Card detail");
+    const printing = card.printing === undefined
+      ? undefined
+      : requiredRecord(card.printing, "Gundam Printing fields");
     return canonicalDetail(card, {
       path: "detailSearch",
       number: "card_number",
@@ -7035,16 +7936,26 @@ function normalizeGundamDetails(value: unknown): unknown[] {
         colours: card.Color,
         level: card.Level,
         cost: card.Cost,
-        block_icon: card.Block,
+        block_icon: completeCatalogue
+          ? gundamPublisherNullableText(card.Block)
+          : card.Block,
         effect_text: card.Effect,
-        zone: card.Zone,
+        zone: completeCatalogue
+          ? gundamPublisherNullableText(card.Zone)
+          : card.Zone,
         traits: card.Trait,
-        link_condition: card.Link,
+        link_condition: completeCatalogue
+          ? gundamPublisherNullableText(card.Link)
+          : card.Link,
         ap: card.AP,
         hp: card.HP,
         series_titles: card.Title,
       },
       imageFields: [{ role: "front", value: card.image_url }],
+      normalizedRarity: completeCatalogue
+        ? normalizedGundamRarity(printing?.rarity ?? null)
+        : undefined,
+      derivePrintingIdentity: completeCatalogue,
     });
   });
 }
@@ -7165,7 +8076,9 @@ function canonicalDetail(
                     raw.printed_rules,
                     "Official printed rules",
                   ),
-                  rarity: printing.rarity ?? null,
+                  rarity: mapping.normalizedRarity !== undefined
+                    ? mapping.normalizedRarity
+                    : printing.rarity ?? null,
                   attributes: printing.attributes ?? {},
                 }))}`
               : requiredText(
@@ -7197,6 +8110,28 @@ function normalizedDigimonRarity(value: unknown): string | null {
   ]).get(raw.toLowerCase());
   if (normalized === undefined) {
     throw new Error("Official Digimon rarity vocabulary is unsupported.");
+  }
+  return normalized;
+}
+
+const normalizedGundamRarities: Readonly<Record<string, string>> = {
+  C: "common",
+  U: "uncommon",
+  R: "rare",
+  LR: "legend-rare",
+  P: "promo",
+};
+
+function normalizedGundamRarity(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const raw = requiredText(value, "Official Gundam rarity");
+  if (raw === "-") return null;
+  const match = raw.match(/^(LR|C|U|R|P)(?:\s*(?:\+{1,2}|[★☆]))?$/u);
+  const normalized = match === null
+    ? undefined
+    : normalizedGundamRarities[match[1]!];
+  if (normalized === undefined) {
+    throw new Error(`Official Gundam rarity vocabulary is unsupported: ${raw}`);
   }
   return normalized;
 }
@@ -7706,6 +8641,27 @@ function parseRawDiscoverySurfaceV2(
       game,
     );
   }
+  if (catalogueComplete && format === "gundam") {
+    const entries = completePartitionEntriesCatalogueV3(
+      surface.partitions,
+      gundamFullLocatorIdentity,
+    );
+    return parseRawDiscoverySurfaceFrozenV1(
+      {
+        ...surface,
+        partitions: [{
+          bucket: "gundam-full-locator-deduplication",
+          page: 1,
+          pages: 1,
+          total: entries.length,
+          has_next: false,
+          entries,
+        }],
+      },
+      format,
+      game,
+    );
+  }
   return parseRawDiscoverySurfaceFrozenV1(surface, format, game);
 }
 
@@ -7760,6 +8716,15 @@ const fusionWorldFullLocatorIdentity: PartitionEntryIdentityStrategy = {
     requiredText(
       requiredRecord(entry, "Fusion World partition entry").detail,
       "Fusion World full locator",
+    ),
+};
+
+const gundamFullLocatorIdentity: PartitionEntryIdentityStrategy = {
+  label: "full locator",
+  identity: (entry) =>
+    requiredText(
+      requiredRecord(entry, "Gundam partition entry").detail,
+      "Gundam full locator",
     ),
 };
 
