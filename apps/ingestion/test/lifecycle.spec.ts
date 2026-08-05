@@ -2577,6 +2577,93 @@ test("a partial Catalogue Export deletion stays unavailable and retries only its
     },
   );
   expect(retryReplay.document).toEqual(retried.document);
+  const confirmationReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+  );
+  expect(confirmationReplay.document).toEqual(failed.document);
+});
+
+test("an exact confirmation replay resumes an interrupted deleting operation", async () => {
+  const oldRevision = "catrev_delete_interrupted";
+  const currentRevision = "catrev_delete_interrupted_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_interrupted",
+    "2026-08-05T04:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_interrupted_current",
+    "2026-08-05T04:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T05:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-interrupted",
+    },
+  );
+  const request = {
+    plan_id: String(prepared.document.id),
+    plan_digest: String(prepared.document.plan_digest),
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    confirmation_revision_id: oldRevision,
+    deletion_id: "export-deletion-interrupted",
+    idempotency_key: "export-deletion-interrupted-key",
+  };
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_export_deletions (
+         id, plan_id, state, catalogue_revision_id, manifest_digest,
+         expected_current_revision_id, object_set_digest, idempotency_key,
+         request_json, requested_at, completed_at, failure_code
+       ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+    ).bind(
+      request.deletion_id,
+      request.plan_id,
+      oldRevision,
+      old.manifestDigest,
+      currentRevision,
+      prepared.document.object_set_digest,
+      request.idempotency_key,
+      canonicalJson(request),
+      testObservedAt,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_exports
+       SET maintenance_state = 'deleting', deletion_operation_id = ?
+       WHERE catalogue_revision_id = ?`,
+    ).bind(request.deletion_id, oldRevision),
+  ]);
+
+  const resumed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    request,
+  );
+  expect(resumed.response.status).toBe(200);
+  expect(resumed.document).toMatchObject({
+    id: request.deletion_id,
+    state: "deleted",
+    object_set_digest: prepared.document.object_set_digest,
+  });
+  await expect(testEnv.CATALOGUE_EXPORTS.list({
+    prefix: `catalogue-exports/${oldRevision}/`,
+  })).resolves.toMatchObject({ objects: [] });
 });
 
 async function administrationRequest(

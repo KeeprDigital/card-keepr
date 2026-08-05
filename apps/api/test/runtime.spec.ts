@@ -788,10 +788,11 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
   await testEnv.CATALOGUE_DB.prepare(
     `INSERT INTO catalogue_export_deletion_plans (
        id, catalogue_revision_id, manifest_digest,
-       expected_current_revision_id, object_keys_json, object_set_digest,
+       expected_current_revision_id, object_keys_json, component_names_json,
+       object_set_digest,
        dependencies_json, plan_digest, created_at, expires_at
      ) VALUES (?, 'catrev_export_deleted_old', ?,
-       'catrev_export_deleted_current', ?, ?, '[]', ?,
+       'catrev_export_deleted_current', ?, '["cards"]', ?, '[]', ?,
        '2026-07-20T00:00:00.000Z', '2099-01-01T00:00:00.000Z')`,
   ).bind(
     planId,
@@ -839,6 +840,14 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
       code: "catalogue_export_deleted",
     });
   }
+  const neverKnownComponent = await request(
+    "/v1/catalogue-exports/catrev_export_deleted_old/components/never-known",
+  );
+  expect(neverKnownComponent.status).toBe(404);
+  await expect(neverKnownComponent.json()).resolves.toMatchObject({
+    status: 404,
+    code: "not_found",
+  });
   const unknown = await request(
     "/v1/catalogue-exports/catrev_export_never_known",
   );

@@ -646,6 +646,26 @@ export async function catalogueExportComponentResponse(
   componentName: string,
   requestId: string,
 ): Promise<Response | null> {
+  const exportRow = await findExport(database, revisionId);
+  if (exportRow === null) return null;
+  if (exportRow.maintenance_state !== "available") {
+    const knownComponent = await database.prepare(
+      `SELECT 1 AS present
+       FROM catalogue_exports AS export
+       JOIN catalogue_export_deletions AS deletion
+         ON deletion.id = export.deletion_operation_id
+       JOIN catalogue_export_deletion_plans AS plan
+         ON plan.id = deletion.plan_id
+       JOIN json_each(plan.component_names_json) AS component
+       WHERE export.catalogue_revision_id = ? AND component.value = ?`,
+    ).bind(revisionId, componentName).first();
+    if (knownComponent === null) return null;
+    throw new CatalogueExportReadProblem(
+      410,
+      "catalogue_export_deleted",
+      "This known Catalogue Export component has been deleted.",
+    );
+  }
   const verifiedExport = await loadVerifiedExportManifest(
     database,
     bucket,

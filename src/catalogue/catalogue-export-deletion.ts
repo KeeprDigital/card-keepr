@@ -19,6 +19,7 @@ type PlanRow = {
   manifest_digest: string;
   expected_current_revision_id: string;
   object_keys_json: string;
+  component_names_json: string;
   object_set_digest: string;
   dependencies_json: string;
   plan_digest: string;
@@ -39,6 +40,7 @@ type DeletionRow = {
   requested_at: string;
   completed_at: string | null;
   failure_code: string | null;
+  confirmation_response_json: string | null;
 };
 
 type OperationState = {
@@ -109,11 +111,12 @@ export async function prepareCatalogueExportDeletion(
   }
 
   const prefix = `catalogue-exports/${request.catalogue_revision_id}/`;
-  const objectKeys = await verifiedExportObjectKeys(
+  const resolvedObjects = await verifiedExportObjects(
     bucket,
     catalogueExport,
     prefix,
   );
+  const objectKeys = resolvedObjects.objectKeys;
   const objectSetDigest = await sha256Text(canonicalJson(objectKeys));
   const dependencies: Record<string, string>[] = [
     {
@@ -155,15 +158,17 @@ export async function prepareCatalogueExportDeletion(
   await database.prepare(
     `INSERT INTO catalogue_export_deletion_plans (
        id, catalogue_revision_id, manifest_digest,
-       expected_current_revision_id, object_keys_json, object_set_digest,
+       expected_current_revision_id, object_keys_json, component_names_json,
+       object_set_digest,
        dependencies_json, plan_digest, created_at, expires_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     document.id,
     document.catalogue_revision_id,
     document.manifest_digest,
     document.expected_current_revision_id,
     canonicalJson(document.object_keys),
+    canonicalJson(resolvedObjects.componentNames),
     document.object_set_digest,
     canonicalJson(document.dependencies),
     document.plan_digest,
@@ -187,7 +192,30 @@ export async function confirmCatalogueExportDeletion(
     if (replay.request_json !== requestJson) {
       throw problem(409, "idempotency_key_reused", "The idempotency key is bound to another deletion request.");
     }
-    return deletionDocument(replay);
+    if (replay.state === "deleting") {
+      const replayPlan = await loadPlan(database, replay.plan_id);
+      if (replayPlan === null) {
+        throw new Error("Deletion plan evidence is unavailable");
+      }
+      const manifestKey = await database.prepare(
+        "SELECT manifest_key FROM catalogue_exports WHERE catalogue_revision_id = ?",
+      ).bind(replay.catalogue_revision_id).first<string>("manifest_key");
+      if (manifestKey === null) {
+        throw new Error("Catalogue Export evidence is unavailable");
+      }
+      return executeDeletion(
+        database,
+        bucket,
+        replay.id,
+        replayPlan,
+        manifestKey,
+        observedAt,
+      );
+    }
+    if (replay.confirmation_response_json === null) {
+      throw new Error("Confirmation replay evidence is unavailable");
+    }
+    return JSON.parse(replay.confirmation_response_json) as Record<string, unknown>;
   }
 
   const plan = await loadPlan(database, request.plan_id);
@@ -233,8 +261,9 @@ export async function confirmCatalogueExportDeletion(
       `INSERT INTO catalogue_export_deletions (
          id, plan_id, state, catalogue_revision_id, manifest_digest,
          expected_current_revision_id, object_set_digest, idempotency_key,
-         request_json, requested_at, completed_at, failure_code
-       ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+         request_json, requested_at, completed_at, failure_code,
+         confirmation_response_json
+       ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
     ).bind(
       request.deletion_id,
       plan.id,
@@ -356,6 +385,12 @@ async function executeDeletion(
   manifestKey: string,
   observedAt: string,
 ): Promise<Record<string, unknown>> {
+  const operation = await database.prepare(
+    "SELECT * FROM catalogue_export_deletions WHERE id = ?",
+  ).bind(deletionId).first<DeletionRow>();
+  if (operation === null) {
+    throw new Error("Catalogue Export deletion evidence is unavailable");
+  }
   const objectKeys = parseStringArray(plan.object_keys_json);
   const ordered = [
     ...objectKeys.filter((key) => key !== manifestKey),
@@ -376,12 +411,19 @@ async function executeDeletion(
     ) {
       throw new Error("A bound Catalogue Export object remains present.");
     }
+    const snapshot = deletionDocument({
+      ...operation,
+      state: "deleted",
+      completed_at: observedAt,
+      failure_code: null,
+    });
     await database.batch([
       database.prepare(
         `UPDATE catalogue_export_deletions
-         SET state = 'deleted', completed_at = ?, failure_code = NULL
+         SET state = 'deleted', completed_at = ?, failure_code = NULL,
+             confirmation_response_json = COALESCE(confirmation_response_json, ?)
          WHERE id = ? AND state = 'deleting'`,
-      ).bind(observedAt, deletionId),
+      ).bind(observedAt, canonicalJson(snapshot), deletionId),
       database.prepare(
         `UPDATE catalogue_exports
          SET maintenance_state = 'deleted', deleted_at = ?
@@ -402,11 +444,18 @@ async function executeDeletion(
       ),
     ]);
   } catch {
+    const snapshot = deletionDocument({
+      ...operation,
+      state: "failed",
+      completed_at: null,
+      failure_code: "deleted_object_set_mismatch",
+    });
     await database.prepare(
       `UPDATE catalogue_export_deletions
-       SET state = 'failed', failure_code = 'deleted_object_set_mismatch'
+       SET state = 'failed', failure_code = 'deleted_object_set_mismatch',
+           confirmation_response_json = COALESCE(confirmation_response_json, ?)
        WHERE id = ? AND state = 'deleting'`,
-    ).bind(deletionId).run();
+    ).bind(canonicalJson(snapshot), deletionId).run();
   }
   return catalogueExportDeletionStatus(database, deletionId);
 }
@@ -473,11 +522,11 @@ async function listObjectKeys(bucket: R2Bucket, prefix: string): Promise<string[
   return keys.sort(compareUtf8);
 }
 
-async function verifiedExportObjectKeys(
+async function verifiedExportObjects(
   bucket: R2Bucket,
   catalogueExport: ExportRow,
   prefix: string,
-): Promise<string[]> {
+): Promise<{ objectKeys: string[]; componentNames: string[] }> {
   const manifestObject = await bucket.get(catalogueExport.manifest_key);
   if (manifestObject === null || manifestObject.size > 1_048_576) {
     throw problem(409, "unsafe_export_object_scope", "The verified manifest is unavailable.");
@@ -502,6 +551,7 @@ async function verifiedExportObjectKeys(
     components.some((component) =>
       component === null ||
       typeof component !== "object" ||
+      typeof (component as { name?: unknown }).name !== "string" ||
       typeof (component as { compressed_sha256?: unknown }).compressed_sha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(
         (component as { compressed_sha256: string }).compressed_sha256,
@@ -536,7 +586,12 @@ async function verifiedExportObjectKeys(
   ) {
     throw problem(409, "unsafe_export_object_scope", "The exact prefix contains objects outside the verified manifest.");
   }
-  return expected;
+  return {
+    objectKeys: expected,
+    componentNames: components.map((component) =>
+      (component as { name: string }).name
+    ).sort(compareUtf8),
+  };
 }
 
 async function loadPlan(database: D1Database, planId: string): Promise<PlanRow | null> {

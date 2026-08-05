@@ -11,6 +11,7 @@ CREATE TABLE catalogue_export_deletion_plans (
   manifest_digest TEXT NOT NULL,
   expected_current_revision_id TEXT NOT NULL,
   object_keys_json TEXT NOT NULL CHECK (json_valid(object_keys_json)),
+  component_names_json TEXT NOT NULL CHECK (json_valid(component_names_json)),
   object_set_digest TEXT NOT NULL CHECK (
     length(object_set_digest) = 64 AND object_set_digest NOT GLOB '*[^0-9a-f]*'
   ),
@@ -49,10 +50,15 @@ CREATE TABLE catalogue_export_deletions (
   requested_at TEXT NOT NULL,
   completed_at TEXT,
   failure_code TEXT,
+  confirmation_response_json TEXT CHECK (
+    confirmation_response_json IS NULL OR json_valid(confirmation_response_json)
+  ),
   CHECK (
     (state = 'deleting' AND completed_at IS NULL AND failure_code IS NULL) OR
-    (state = 'deleted' AND completed_at IS NOT NULL AND failure_code IS NULL) OR
-    (state = 'failed' AND completed_at IS NULL AND failure_code IS NOT NULL)
+    (state = 'deleted' AND completed_at IS NOT NULL AND failure_code IS NULL
+      AND confirmation_response_json IS NOT NULL) OR
+    (state = 'failed' AND completed_at IS NULL AND failure_code IS NOT NULL
+      AND confirmation_response_json IS NOT NULL)
   )
 );
 
@@ -207,6 +213,8 @@ OR NEW.object_set_digest <> OLD.object_set_digest
 OR NEW.idempotency_key <> OLD.idempotency_key
 OR NEW.request_json <> OLD.request_json
 OR NEW.requested_at <> OLD.requested_at
+OR (OLD.confirmation_response_json IS NOT NULL
+    AND NEW.confirmation_response_json IS NOT OLD.confirmation_response_json)
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_export_deletion_transition_invalid');
 END;
