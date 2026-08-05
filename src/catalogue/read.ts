@@ -58,6 +58,7 @@ type ExportRow = {
   published_at: string;
   manifest_key: string;
   manifest_digest: string;
+  maintenance_state: "available" | "deleting" | "deleted";
 };
 
 type ExportManifest = {
@@ -76,11 +77,12 @@ type ExportManifest = {
 
 export class CatalogueExportReadProblem extends Error {
   constructor(
-    readonly status: 400 | 409,
+    readonly status: 400 | 409 | 410,
     readonly code:
       | "invalid_parameter"
       | "invalid_cursor"
-      | "cursor_revision_unavailable",
+      | "cursor_revision_unavailable"
+      | "catalogue_export_deleted",
     message: string,
   ) {
     super(message);
@@ -134,13 +136,15 @@ export async function catalogueExportsResponse(
          JOIN pinned_revision ON revision.id = pinned_revision.id
        )
        SELECT export.catalogue_revision_id, revision.published_at,
-              export.manifest_key, export.manifest_digest
+              export.manifest_key, export.manifest_digest,
+              export.maintenance_state
        FROM catalogue_exports AS export
        JOIN catalogue_revisions AS revision
          ON revision.id = export.catalogue_revision_id
        JOIN pinned_revision AS pinned
          ON pinned.id = export.catalogue_revision_id
        WHERE export.verified = 1
+         AND export.maintenance_state = 'available'
          AND (
            ? IS NULL OR revision.published_at < ? OR (
              revision.published_at = ? AND
@@ -642,6 +646,26 @@ export async function catalogueExportComponentResponse(
   componentName: string,
   requestId: string,
 ): Promise<Response | null> {
+  const exportRow = await findExport(database, revisionId);
+  if (exportRow === null) return null;
+  if (exportRow.maintenance_state !== "available") {
+    const knownComponent = await database.prepare(
+      `SELECT 1 AS present
+       FROM catalogue_exports AS export
+       JOIN catalogue_export_deletions AS deletion
+         ON deletion.id = export.deletion_operation_id
+       JOIN catalogue_export_deletion_plans AS plan
+         ON plan.id = deletion.plan_id
+       JOIN json_each(plan.component_names_json) AS component
+       WHERE export.catalogue_revision_id = ? AND component.value = ?`,
+    ).bind(revisionId, componentName).first();
+    if (knownComponent === null) return null;
+    throw new CatalogueExportReadProblem(
+      410,
+      "catalogue_export_deleted",
+      "This known Catalogue Export component has been deleted.",
+    );
+  }
   const verifiedExport = await loadVerifiedExportManifest(
     database,
     bucket,
@@ -820,7 +844,8 @@ async function findExport(
         export.catalogue_revision_id,
         revision.published_at,
         export.manifest_key,
-        export.manifest_digest
+        export.manifest_digest,
+        export.maintenance_state
       FROM catalogue_exports AS export
       JOIN catalogue_revisions AS revision
         ON revision.id = export.catalogue_revision_id
@@ -840,6 +865,13 @@ async function loadVerifiedExportManifest(
 } | null> {
   const exportRow = await findExport(database, revisionId);
   if (exportRow === null) return null;
+  if (exportRow.maintenance_state !== "available") {
+    throw new CatalogueExportReadProblem(
+      410,
+      "catalogue_export_deleted",
+      "This known Catalogue Export has been deleted.",
+    );
+  }
   const object = await bucket.get(exportRow.manifest_key);
   if (object === null || object.size > 1_048_576) {
     throw new Error("Verified Catalogue Export manifest is unavailable");

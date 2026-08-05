@@ -93,6 +93,17 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "recovery", "accept")) {
     return acceptRecovery(arguments_.slice(2), environment, json);
   }
+  if (
+    arguments_[0] === "catalogue-export" &&
+    arguments_[1] === "deletion"
+  ) {
+    return catalogueExportDeletion(
+      arguments_[2],
+      arguments_.slice(3),
+      environment,
+      json,
+    );
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -626,6 +637,176 @@ async function retryBackup(arguments_, environment, json) {
   });
 }
 
+async function catalogueExportDeletion(action, arguments_, environment, json) {
+  if (action === "prepare") {
+    const options = parseOptions(arguments_, [
+      "--catalogue-revision",
+      "--manifest-digest",
+      "--expected-current-revision",
+      "--plan-id",
+    ]);
+    const revision = options.values["--catalogue-revision"];
+    const manifest = options.values["--manifest-digest"];
+    const expected = options.values["--expected-current-revision"];
+    const planId = options.values["--plan-id"];
+    if (
+      options.error !== null || revision === undefined ||
+      manifest === undefined || expected === undefined || planId === undefined
+    ) return usageFailure(json);
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/catalogue-export-deletion-plans",
+      "POST",
+      {
+        catalogue_revision_id: revision,
+        manifest_digest: manifest,
+        expected_current_revision_id: expected,
+        plan_id: planId,
+      },
+    );
+  }
+  if (action === "status") {
+    const options = parseOptions(arguments_, ["--deletion-id"]);
+    const deletionId = options.values["--deletion-id"];
+    if (options.error !== null || deletionId === undefined) {
+      return usageFailure(json);
+    }
+    return administrationRequest(
+      environment,
+      json,
+      `/v1/catalogue-export-deletions/${encodeURIComponent(deletionId)}`,
+      "GET",
+    );
+  }
+  if (action === "confirm") {
+    const options = parseOptions(arguments_, [
+      "--plan-id",
+      "--plan-digest",
+      "--catalogue-revision",
+      "--manifest-digest",
+      "--expected-current-revision",
+      "--confirm-revision",
+      "--deletion-id",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ], ["--yes"]);
+    const values = options.values;
+    const required = [
+      "--plan-id", "--plan-digest", "--catalogue-revision",
+      "--manifest-digest", "--expected-current-revision",
+      "--confirm-revision", "--deletion-id", "--idempotency-key",
+      "--environment",
+    ];
+    if (
+      options.error !== null ||
+      required.some((name) => values[name] === undefined) ||
+      !options.flags.has("--yes")
+    ) return usageFailure(json);
+    if (values["--environment"] !== "production") {
+      return productionTargetFailure(
+        json,
+        "Catalogue Export deletion requires --environment production.",
+      );
+    }
+    const resolved = await resolveProductionStatus(
+      environment,
+      json,
+      values["--expected-current-revision"],
+    );
+    if (typeof resolved === "number") return resolved;
+    const confirmation = {
+      production_target: resolved.productionTarget,
+      plan_id: values["--plan-id"],
+      plan_digest: values["--plan-digest"],
+      catalogue_revision_id: values["--catalogue-revision"],
+      manifest_digest: values["--manifest-digest"],
+      expected_current_revision_id: values["--expected-current-revision"],
+      deletion_id: values["--deletion-id"],
+      idempotency_key: values["--idempotency-key"],
+    };
+    const confirmed = confirmProductionTarget(
+      json,
+      confirmation,
+      values["--confirm"],
+    );
+    if (confirmed !== 0) return confirmed;
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/catalogue-export-deletions",
+      "POST",
+      {
+        plan_id: values["--plan-id"],
+        plan_digest: values["--plan-digest"],
+        catalogue_revision_id: values["--catalogue-revision"],
+        manifest_digest: values["--manifest-digest"],
+        expected_current_revision_id: values["--expected-current-revision"],
+        confirmation_revision_id: values["--confirm-revision"],
+        deletion_id: values["--deletion-id"],
+        idempotency_key: values["--idempotency-key"],
+      },
+    );
+  }
+  if (action === "retry") {
+    const options = parseOptions(arguments_, [
+      "--deletion-id",
+      "--object-set-digest",
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ], ["--yes"]);
+    const values = options.values;
+    const required = [
+      "--deletion-id", "--object-set-digest", "--expected-current-revision",
+      "--idempotency-key", "--environment",
+    ];
+    if (
+      options.error !== null ||
+      required.some((name) => values[name] === undefined) ||
+      !options.flags.has("--yes")
+    ) return usageFailure(json);
+    if (values["--environment"] !== "production") {
+      return productionTargetFailure(
+        json,
+        "Catalogue Export deletion retry requires --environment production.",
+      );
+    }
+    const resolved = await resolveProductionStatus(
+      environment,
+      json,
+      values["--expected-current-revision"],
+    );
+    if (typeof resolved === "number") return resolved;
+    const confirmation = {
+      production_target: resolved.productionTarget,
+      deletion_id: values["--deletion-id"],
+      object_set_digest: values["--object-set-digest"],
+      expected_current_revision_id: values["--expected-current-revision"],
+      idempotency_key: values["--idempotency-key"],
+    };
+    const confirmed = confirmProductionTarget(
+      json,
+      confirmation,
+      values["--confirm"],
+    );
+    if (confirmed !== 0) return confirmed;
+    return administrationRequest(
+      environment,
+      json,
+      `/v1/catalogue-export-deletions/${encodeURIComponent(values["--deletion-id"])}/retry`,
+      "POST",
+      {
+        object_set_digest: values["--object-set-digest"],
+        idempotency_key: values["--idempotency-key"],
+      },
+    );
+  }
+  return usageFailure(json);
+}
+
 function writeResolvedBackupRetry(json, resolved) {
   if (json) {
     process.stderr.write(`${JSON.stringify(resolved)}\n`);
@@ -1032,7 +1213,9 @@ async function administrationRequest(
     ) ||
     (document.contract ===
       "card-keepr-card-search-repair@1" &&
-      document.complete !== true);
+      document.complete !== true) ||
+    (document.contract === "card-keepr-catalogue-export-deletion@1" &&
+      document.state === "deleting" && observed.responseStatus === 202);
   return incomplete ? 10 : 0;
 }
 
@@ -1383,7 +1566,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
