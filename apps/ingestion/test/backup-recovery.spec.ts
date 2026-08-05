@@ -55,8 +55,9 @@ test("restored verification executes the real D1 schema and rejects an empty or 
       representative_printing_id: null,
       representative_product_id: null,
       representative_legality_rule_id: null,
-      representative_search_term: null,
-      representative_provenance_id: null,
+      representative_search_text: null,
+      representative_curated_revision_id: null,
+      representative_curated_revision_digest: null,
       publication_ingestion_run_id: null,
     },
   })).rejects.toThrow("Restored D1 verification failed.");
@@ -197,8 +198,9 @@ test("the production backup boundary exports and verifies the exact restored rev
       representative_printing_id: null,
       representative_product_id: null,
       representative_legality_rule_id: null,
-      representative_search_term: null,
-      representative_provenance_id: null,
+      representative_search_text: null,
+      representative_curated_revision_id: null,
+      representative_curated_revision_digest: null,
       publication_ingestion_run_id: null,
     },
     verification: {
@@ -394,7 +396,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     provider,
   )).rejects.toMatchObject({
     status: 409,
-    code: "backup_retry_evidence_mismatch",
+    code: "backup_digest_mismatch",
   });
 });
 
@@ -639,6 +641,27 @@ test("the authenticated status route exposes the exact pending publication attem
       },
     },
   });
+  const revisionResponse = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/catalogue-revisions/catrev_spine_000/backups",
+    { headers: { authorization: "Bearer vitest-administration-key" } },
+  ));
+  expect(revisionResponse.status).toBe(200);
+  const revisionBackups = await revisionResponse.json() as {
+    attempts: Record<string, unknown>[];
+  } & Record<string, unknown>;
+  expect(revisionBackups).toMatchObject({
+    contract: "card-keepr-catalogue-revision-backups@1",
+    catalogue_revision_id: "catrev_spine_000",
+  });
+  expect(revisionBackups.attempts.find((attempt) =>
+    attempt.idempotency_key === "backup-production-route"
+  )).toMatchObject({
+      idempotency_key: "backup-production-route",
+      state: "pending",
+      resume: {
+        body: { idempotency_key: "backup-production-route" },
+      },
+    });
 });
 
 test("the backup route reports stale revision as a stable conflict", async () => {
@@ -661,4 +684,69 @@ test("the backup route reports stale revision as a stable conflict", async () =>
   await expect(response.json()).resolves.toMatchObject({
     code: "current_revision_mismatch",
   });
+});
+
+test("backup retry rejects source state, revision, and digest before Workflow creation", async () => {
+  const insertAttempt = async (
+    id: string,
+    state: "pending" | "failed",
+    revisionId: string,
+  ) => {
+    await testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_backup_attempts (
+         idempotency_key, request_json, owner_token, catalogue_revision_id,
+         state, object_key, started_at, failure_code, failure_detail,
+         completed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      JSON.stringify({ expected_current_revision_id: revisionId }),
+      `backup:${id.padEnd(64, "0").slice(0, 64)}`,
+      revisionId,
+      state,
+      `d1-backups/${revisionId}/${id}/catalogue.sql`,
+      "2026-08-05T06:00:00.000Z",
+      state === "failed" ? "backup_failed" : null,
+      state === "failed" ? "synthetic failure" : null,
+      state === "failed" ? "2026-08-05T06:01:00.000Z" : null,
+    ).run();
+  };
+  await insertAttempt("backup-source-pending", "pending", "catrev_spine_000");
+  await insertAttempt("backup-source-old", "failed", "catrev_old_000");
+  await insertAttempt("backup-source-current", "failed", "catrev_spine_000");
+
+  const retry = (failedAttemptId: string, failedAttemptDigest: string) =>
+    exports.default.fetch(new Request("https://card-keepr.invalid/v1/backups", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        expected_current_revision_id: "catrev_spine_000",
+        idempotency_key: `retry-${failedAttemptId}`,
+        failed_attempt_id: failedAttemptId,
+        failed_attempt_digest: failedAttemptDigest,
+      }),
+    }));
+  const notFailed = await retry("backup-source-pending", "0".repeat(64));
+  expect(notFailed.status).toBe(409);
+  await expect(notFailed.json()).resolves.toMatchObject({
+    code: "source_backup_not_failed",
+  });
+  const oldRevision = await retry("backup-source-old", "0".repeat(64));
+  expect(oldRevision.status).toBe(409);
+  await expect(oldRevision.json()).resolves.toMatchObject({
+    code: "backup_not_current_revision",
+  });
+  const wrongDigest = await retry("backup-source-current", "0".repeat(64));
+  expect(wrongDigest.status).toBe(409);
+  await expect(wrongDigest.json()).resolves.toMatchObject({
+    code: "backup_digest_mismatch",
+  });
+  const retained = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT count(*) AS count FROM catalogue_backup_workflow_requests
+     WHERE idempotency_key LIKE 'retry-backup-source-%'`,
+  ).first<{ count: number }>();
+  expect(retained?.count).toBe(0);
 });

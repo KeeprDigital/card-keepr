@@ -193,11 +193,7 @@ pending → exporting → restoring_verification → verifying → verified
 ```
 
 Any active backup state may become `failed`. A retry creates another immutable
-attempt with a new idempotency key and must name the exact failed attempt ID and
-its status-document digest; selecting the latest failure is forbidden. `backup
-status` returns that digest and, for a pending or active attempt, the exact
-`POST /v1/backups` body that resumes or dispatches the same durable Workflow.
-Exact replays return the retained verified
+attempt with a new idempotency key. Exact replays return the retained verified
 document or retained failure without repeating export or restore; changed reuse
 fails closed. The SQL artifact streams from D1 into private R2 and from R2 into
 the disposable D1 without whole-artifact Worker buffering. Only a `verified`

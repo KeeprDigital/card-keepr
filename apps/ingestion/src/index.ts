@@ -39,6 +39,7 @@ import {
 } from "../../../src/catalogue/backup-workflow";
 import {
   catalogueBackupAttemptStatus,
+  catalogueRevisionBackupStatus,
   publicationBackupReservation,
 } from "../../../src/catalogue/backup-recovery";
 import { resumeEvidenceRun } from "./evidence-administration";
@@ -361,6 +362,15 @@ const ingestionWorker = {
         return Response.json(await catalogueBackupAttemptStatus(
           env.CATALOGUE_DB,
           decodeURIComponent(backupStatusMatch[1]!),
+        ));
+      }
+
+      const revisionBackupsMatch =
+        /^\/v1\/catalogue-revisions\/([^/]+)\/backups$/.exec(url.pathname);
+      if (request.method === "GET" && revisionBackupsMatch !== null) {
+        return Response.json(await catalogueRevisionBackupStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(revisionBackupsMatch[1]!),
         ));
       }
 

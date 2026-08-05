@@ -1,5 +1,8 @@
 import { AdministrationProblem } from "./administration-problem.mjs";
-import { failActiveCatalogueBackupAttempt } from "./backup-recovery";
+import {
+  failActiveCatalogueBackupAttempt,
+  validateCatalogueBackupRetryEvidence,
+} from "./backup-recovery";
 import { canonicalJson, sha256Text } from "./serialization";
 
 export type CatalogueBackupWorkflowParams = Readonly<{
@@ -66,6 +69,11 @@ export async function startOrObserveCatalogueBackupWorkflow(
         "Catalogue recovery operation is unavailable.",
       );
     }
+    await validateCatalogueBackupRetryEvidence(database, {
+      expectedCurrentRevisionId: input.expected_current_revision_id,
+      failedAttemptId: input.failed_attempt_id,
+      failedAttemptDigest: input.failed_attempt_digest,
+    });
     const params: CatalogueBackupWorkflowParams = {
       ...input,
       observed_at: observedAt,

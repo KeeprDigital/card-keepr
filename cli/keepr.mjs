@@ -536,13 +536,22 @@ async function createBackup(arguments_, environment, json) {
 }
 
 async function backupStatus(arguments_, environment, json) {
-  const options = parseOptions(arguments_, ["--attempt-id"]);
+  const options = parseOptions(arguments_, [
+    "--attempt-id",
+    "--catalogue-revision",
+  ]);
   const attemptId = options.values["--attempt-id"];
-  if (options.error !== null || attemptId === undefined) return usageFailure(json);
+  const catalogueRevision = options.values["--catalogue-revision"];
+  if (
+    options.error !== null ||
+    (attemptId === undefined) === (catalogueRevision === undefined)
+  ) return usageFailure(json);
   return administrationRequest(
     environment,
     json,
-    `/v1/backups/${encodeURIComponent(attemptId)}`,
+    attemptId === undefined
+      ? `/v1/catalogue-revisions/${encodeURIComponent(catalogueRevision)}/backups`
+      : `/v1/backups/${encodeURIComponent(attemptId)}`,
     "GET",
   );
 }
@@ -553,16 +562,41 @@ async function retryBackup(arguments_, environment, json) {
     "--idempotency-key",
     "--failed-attempt-id",
     "--failed-attempt-digest",
-  ]);
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
   const expected = options.values["--expected-current-revision"];
   const idempotencyKey = options.values["--idempotency-key"];
   const failedAttemptId = options.values["--failed-attempt-id"];
   const failedAttemptDigest = options.values["--failed-attempt-digest"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
   if (
     options.error !== null || expected === undefined ||
     idempotencyKey === undefined || failedAttemptId === undefined ||
-    failedAttemptDigest === undefined
+    failedAttemptDigest === undefined || target === undefined ||
+    !options.flags.has("--yes")
   ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue backup retry requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(environment, json, expected);
+  if (typeof resolved === "number") return resolved;
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      expected_current_revision_id: expected,
+      idempotency_key: idempotencyKey,
+      failed_attempt_id: failedAttemptId,
+      failed_attempt_digest: failedAttemptDigest,
+    },
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
   return administrationRequest(environment, json, "/v1/backups", "POST", {
     expected_current_revision_id: expected,
     idempotency_key: idempotencyKey,

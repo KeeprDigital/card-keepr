@@ -6,6 +6,7 @@ import {
 import {
   withCardSearchPreparedForD1Export,
 } from "./card-search-recovery";
+import { cardCollectionPageQuery } from "./card-collection-read";
 import { canonicalJson } from "./serialization";
 import { StreamingSha256 } from "./streaming-sha256";
 
@@ -53,8 +54,9 @@ export type CatalogueVerificationEvidence = Readonly<{
   representative_printing_id: string | null;
   representative_product_id: string | null;
   representative_legality_rule_id: string | null;
-  representative_search_term: string | null;
-  representative_provenance_id: string | null;
+  representative_search_text: string | null;
+  representative_curated_revision_id: string | null;
+  representative_curated_revision_digest: string | null;
   publication_ingestion_run_id: string | null;
 }>;
 
@@ -187,6 +189,38 @@ export async function catalogueBackupAttemptStatus(
   };
 }
 
+export async function catalogueRevisionBackupStatus(
+  database: D1Database,
+  catalogueRevisionId: string,
+): Promise<Record<string, unknown>> {
+  const known = await database.prepare(
+    `SELECT 1 AS present FROM catalogue_state
+     WHERE singleton = 1 AND current_revision_id = ?
+     UNION ALL
+     SELECT 1 AS present FROM catalogue_revisions WHERE id = ?
+     LIMIT 1`,
+  ).bind(catalogueRevisionId, catalogueRevisionId).first<{ present: number }>();
+  if (known === null) {
+    throw new AdministrationProblem(
+      404,
+      "catalogue_revision_not_found",
+      "Catalogue Revision not found.",
+    );
+  }
+  const rows = await database.prepare(
+    `SELECT idempotency_key FROM catalogue_backup_attempts
+     WHERE catalogue_revision_id = ?
+     ORDER BY started_at DESC, idempotency_key DESC`,
+  ).bind(catalogueRevisionId).all<{ idempotency_key: string }>();
+  return {
+    contract: "card-keepr-catalogue-revision-backups@1",
+    catalogue_revision_id: catalogueRevisionId,
+    attempts: await Promise.all(rows.results.map((row) =>
+      catalogueBackupAttemptStatus(database, row.idempotency_key)
+    )),
+  };
+}
+
 async function backupAttemptEvidenceRow(
   database: D1Database,
   idempotencyKey: string,
@@ -202,6 +236,54 @@ async function backupAttemptEvidenceRow(
 
 async function backupAttemptDigest(row: BackupAttemptEvidenceRow): Promise<string> {
   return sha256(canonicalJson(row));
+}
+
+export async function validateCatalogueBackupRetryEvidence(
+  database: D1Database,
+  input: Readonly<{
+    expectedCurrentRevisionId: string;
+    failedAttemptId?: string;
+    failedAttemptDigest?: string;
+  }>,
+): Promise<string | null> {
+  if ((input.failedAttemptId === undefined) !==
+    (input.failedAttemptDigest === undefined)) {
+    throw new AdministrationProblem(
+      422,
+      "backup_retry_evidence_incomplete",
+      "A backup retry requires both the exact failed attempt ID and digest.",
+    );
+  }
+  if (input.failedAttemptId === undefined) return null;
+  const failed = await backupAttemptEvidenceRow(database, input.failedAttemptId);
+  if (failed === null || failed.state !== "failed") {
+    throw new AdministrationProblem(
+      409,
+      "source_backup_not_failed",
+      "The source backup attempt is not failed.",
+    );
+  }
+  const current = await database.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<{ current_revision_id: string }>();
+  if (
+    failed.catalogue_revision_id !== current?.current_revision_id ||
+    failed.catalogue_revision_id !== input.expectedCurrentRevisionId
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "backup_not_current_revision",
+      "The source backup does not belong to the current Catalogue Revision.",
+    );
+  }
+  if (await backupAttemptDigest(failed) !== input.failedAttemptDigest) {
+    throw new AdministrationProblem(
+      409,
+      "backup_digest_mismatch",
+      "The failed backup attempt digest does not match retained evidence.",
+    );
+  }
+  return failed.idempotency_key;
 }
 
 export async function createVerifiedCatalogueBackup(
@@ -227,30 +309,11 @@ export async function createVerifiedCatalogueBackup(
         failed_attempt_digest: input.failedAttemptDigest,
       }),
   });
-  if ((input.failedAttemptId === undefined) !==
-    (input.failedAttemptDigest === undefined)) {
-    throw new AdministrationProblem(
-      422,
-      "backup_retry_evidence_incomplete",
-      "A backup retry requires both the exact failed attempt ID and digest.",
-    );
-  }
-  let linkedAttemptId: string | null = null;
-  if (input.failedAttemptId !== undefined) {
-    const failed = await backupAttemptEvidenceRow(database, input.failedAttemptId);
-    if (
-      failed === null || failed.state !== "failed" ||
-      failed.catalogue_revision_id !== input.expectedCurrentRevisionId ||
-      await backupAttemptDigest(failed) !== input.failedAttemptDigest
-    ) {
-      throw new AdministrationProblem(
-        409,
-        "backup_retry_evidence_mismatch",
-        "The backup retry does not identify the exact failed attempt evidence.",
-      );
-    }
-    linkedAttemptId = failed.idempotency_key;
-  }
+  const linkedAttemptId = await validateCatalogueBackupRetryEvidence(database, {
+    expectedCurrentRevisionId: input.expectedCurrentRevisionId,
+    failedAttemptId: input.failedAttemptId,
+    failedAttemptDigest: input.failedAttemptDigest,
+  });
   await database.prepare(
     `INSERT OR IGNORE INTO catalogue_backup_attempts (
        idempotency_key, request_json, owner_token, catalogue_revision_id,
@@ -375,7 +438,7 @@ export async function createVerifiedCatalogueBackup(
       "Catalogue backup requires idle ingestion.",
     );
   }
-  const expectedVerification = await catalogueVerificationEvidence(
+  const expectedVerification = await captureCatalogueVerificationEvidence(
     database,
     input.expectedCurrentRevisionId,
   );
@@ -672,7 +735,7 @@ export async function verifyRestoredCatalogue(
   );
 }
 
-async function catalogueVerificationEvidence(
+export async function captureCatalogueVerificationEvidence(
   database: D1Database,
   revisionId: string,
 ): Promise<CatalogueVerificationEvidence> {
@@ -695,8 +758,10 @@ async function catalogueVerificationEvidence(
     representative_printing_id: row.representative_printing_id,
     representative_product_id: row.representative_product_id,
     representative_legality_rule_id: row.representative_legality_rule_id,
-    representative_search_term: row.representative_search_term,
-    representative_provenance_id: row.representative_provenance_id,
+    representative_search_text: row.representative_search_text,
+    representative_curated_revision_id: row.representative_curated_revision_id,
+    representative_curated_revision_digest:
+      row.representative_curated_revision_digest,
     publication_ingestion_run_id: row.publication_ingestion_run_id,
   };
 }
@@ -719,29 +784,16 @@ async function verifyRestoredCatalogueQueries(
     canonicalJson(input.expected),
   ]);
   const [integrity] = await query("PRAGMA quick_check");
-  const apiRows = await query(
-    `SELECT card_id, sort_game, sort_identity_kind, sort_identity_value,
-            summary_json
-     FROM revision_card_query_documents
-     WHERE catalogue_revision_id = ? AND ? IS NOT NULL
-     ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
-     LIMIT 1`,
-    [input.expectedRevisionId, input.expected.representative_card_id],
-  );
-  const searchRows = input.expected.representative_search_term === null
-    ? []
-    : await query(
-      `SELECT card_id FROM revision_card_search_terms
-       WHERE catalogue_revision_id = ? AND term = ? AND ? IS NOT NULL
-       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
-       LIMIT 1`,
-      [
-        input.expectedRevisionId,
-        input.expected.representative_search_term,
-        input.expected.representative_card_id,
-      ],
-    );
   const expected = input.expected;
+  const apiRows = expected.representative_search_text === null ||
+      expected.representative_card_id === null
+    ? []
+    : await representativeCardApiRows(
+      query,
+      input.expectedRevisionId,
+      expected.representative_card_id,
+      expected.representative_search_text,
+    );
   const exactEvidence = row !== undefined &&
     row.current_revision_id === input.expectedRevisionId &&
     row.schema_migration_level === input.expectedSchemaMigrationLevel &&
@@ -765,8 +817,10 @@ async function verifyRestoredCatalogueQueries(
     row.representative_product_id === expected.representative_product_id &&
     row.representative_legality_rule_id ===
       expected.representative_legality_rule_id &&
-    row.representative_provenance_id ===
-      expected.representative_provenance_id &&
+    row.representative_curated_revision_id ===
+      expected.representative_curated_revision_id &&
+    row.representative_curated_revision_digest ===
+      expected.representative_curated_revision_digest &&
     row.publication_ingestion_run_id ===
       expected.publication_ingestion_run_id;
   const nonVacuous = [
@@ -777,20 +831,50 @@ async function verifyRestoredCatalogueQueries(
     expected.api_documents,
     expected.search_terms,
     expected.search_chunks,
-    expected.provenance,
     expected.audit_rows,
   ].every((count) => count > 0) &&
-    Object.entries(expected)
-      .filter(([name]) => name.startsWith("representative_") ||
-        name === "publication_ingestion_run_id")
-      .every(([, value]) => typeof value === "string" && value.length > 0);
+    [
+      expected.representative_card_id,
+      expected.representative_printing_id,
+      expected.representative_product_id,
+      expected.representative_legality_rule_id,
+      expected.representative_search_text,
+      expected.publication_ingestion_run_id,
+    ].every((value) => typeof value === "string" && value.length > 0) &&
+    (expected.provenance === 0
+      ? expected.representative_curated_revision_id === null &&
+        expected.representative_curated_revision_digest === null
+      : typeof expected.representative_curated_revision_id === "string" &&
+        typeof expected.representative_curated_revision_digest === "string");
   if (
     integrity?.quick_check !== "ok" || !exactEvidence || !nonVacuous ||
-    apiRows.length !== 1 || !apiRows.every(validApiCardRow) ||
-    apiRows[0]?.card_id !== expected.representative_card_id ||
-    searchRows[0]?.card_id !== expected.representative_card_id
+    apiRows.length === 0 || !apiRows.every(validApiCardRow) ||
+    !apiRows.some((apiRow) =>
+      apiCardId(apiRow) === expected.representative_card_id
+    )
   ) throw new Error("Restored D1 verification failed.");
   return completeRestoredVerification();
+}
+
+async function representativeCardApiRows(
+  query: VerificationQuery,
+  revisionId: string,
+  representativeCardId: string,
+  searchText: string,
+): Promise<Record<string, unknown>[]> {
+  const page = cardCollectionPageQuery(revisionId, {
+    q: searchText,
+    game: null,
+    cardNumber: null,
+    limit: 100,
+  }, null, 100);
+  return query(
+    `WITH expected_card(value) AS (SELECT ?),
+          api_page AS (${page.sql})
+     SELECT api_page.* FROM api_page, expected_card
+     WHERE expected_card.value IS NOT NULL`,
+    [representativeCardId, ...page.bindings],
+  );
 }
 
 function verificationEvidenceSql(): string {
@@ -808,11 +892,25 @@ function verificationEvidenceSql(): string {
       (SELECT count(*) FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id
          AND json_valid(summary_json) = 0) AS invalid_api_documents,
-      (SELECT count(*) FROM catalogue_revisions AS revision
-       JOIN ingestion_evidence_plans AS plan
-         ON plan.ingestion_run_id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id
-         AND json_valid(plan.request_plan_json) = 0) AS invalid_curated_provenance,
+      (SELECT count(*) FROM catalogue_curated_provenance AS provenance
+       LEFT JOIN curated_revisions AS curated
+         ON curated.id = provenance.curated_revision_id
+       WHERE provenance.catalogue_revision_id = catalogue.current_revision_id
+         AND (
+           curated.id IS NULL
+           OR provenance.content_digest <> curated.content_digest
+           OR provenance.target_key <> curated.target_key
+           OR json_valid(provenance.provenance_json) = 0
+           OR json_extract(provenance.provenance_json, '$.author')
+                IS NOT curated.author
+           OR json_extract(provenance.provenance_json, '$.created_at')
+                IS NOT curated.created_at
+           OR json_type(provenance.provenance_json, '$.evidence') <> 'array'
+           OR json_extract(provenance.provenance_json, '$.evidence')
+                IS NOT json_extract(curated.proposal_json, '$.evidence')
+           OR json_extract(provenance.provenance_json, '$.rationale')
+                IS NOT json_extract(curated.proposal_json, '$.rationale')
+         )) AS invalid_curated_provenance,
       (SELECT count(*) FROM catalogue_revisions AS revision
        JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
        WHERE revision.id = catalogue.current_revision_id
@@ -831,10 +929,9 @@ function verificationEvidenceSql(): string {
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_terms,
       (SELECT count(*) FROM revision_card_search_chunks
        WHERE catalogue_revision_id = catalogue.current_revision_id) AS search_chunks,
-      (SELECT count(*) FROM catalogue_revisions AS revision
-       JOIN ingestion_evidence_plans AS plan
-         ON plan.ingestion_run_id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id) AS provenance,
+      (SELECT count(*) FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = catalogue.current_revision_id)
+        AS provenance,
       (SELECT count(*) FROM catalogue_revisions AS revision
        JOIN ingestion_runs AS run ON run.id = revision.ingestion_run_id
        WHERE revision.id = catalogue.current_revision_id) AS audit_rows,
@@ -851,16 +948,18 @@ function verificationEvidenceSql(): string {
       (SELECT legality_rule_id FROM revision_legality_rules
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY legality_rule_id LIMIT 1) AS representative_legality_rule_id,
-      (SELECT term FROM revision_card_search_terms
+      (SELECT sort_identity_value FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id
-       ORDER BY length(term) DESC, term LIMIT 1) AS representative_search_term,
-      (SELECT plan.source_lineage || '@' || plan.adapter_version
-       FROM catalogue_revisions AS revision
-       JOIN ingestion_evidence_plans AS plan
-         ON plan.ingestion_run_id = revision.ingestion_run_id
-       WHERE revision.id = catalogue.current_revision_id
-       ORDER BY plan.source_lineage, plan.adapter_version
-       LIMIT 1) AS representative_provenance_id,
+       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id
+       LIMIT 1) AS representative_search_text,
+      (SELECT curated_revision_id FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = catalogue.current_revision_id
+       ORDER BY curated_revision_id LIMIT 1)
+        AS representative_curated_revision_id,
+      (SELECT content_digest FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = catalogue.current_revision_id
+       ORDER BY curated_revision_id LIMIT 1)
+        AS representative_curated_revision_digest,
       (SELECT ingestion_run_id FROM catalogue_revisions
        WHERE id = catalogue.current_revision_id) AS publication_ingestion_run_id
     FROM catalogue_state AS catalogue
@@ -1175,13 +1274,22 @@ function queryRows(result: Record<string, unknown>): Record<string, unknown>[] {
 
 function validApiCardRow(row: Record<string, unknown>): boolean {
   return [
-    row.card_id,
     row.sort_game,
     row.sort_identity_kind,
     row.sort_identity_value,
     row.summary_json,
   ]
     .every((value) => typeof value === "string");
+}
+
+function apiCardId(row: Record<string, unknown>): string | null {
+  if (typeof row.summary_json !== "string") return null;
+  try {
+    const summary = JSON.parse(row.summary_json) as Record<string, unknown>;
+    return typeof summary.id === "string" ? summary.id : null;
+  } catch {
+    return null;
+  }
 }
 
 async function digestRetainedObject(

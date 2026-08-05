@@ -88,13 +88,7 @@
       ],
       "properties": {
         "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" },
-        "failed_attempt_id": { "$ref": "#/$defs/OpaqueId" },
-        "failed_attempt_digest": { "$ref": "#/$defs/Sha256" }
-      },
-      "dependentRequired": {
-        "failed_attempt_id": ["failed_attempt_digest"],
-        "failed_attempt_digest": ["failed_attempt_id"]
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
       }
     },
     "CatalogueSearchRepairCommandRequest": {

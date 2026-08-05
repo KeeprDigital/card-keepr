@@ -320,20 +320,22 @@ export default defineConfig({
                     : body.sql === "PRAGMA quick_check"
                     ? [{ quick_check: "ok" }]
                     : body.sql?.includes(
-                        "SELECT card_id, sort_game, sort_identity_kind",
+                        "WITH expected_card(value) AS (SELECT ?)",
                       )
                     ? [{
-                      card_id: body.params?.[1],
                       sort_game: "one-piece",
                       sort_identity_kind: "card_number",
                       sort_identity_value: "VITEST-001",
-                      summary_json:
-                        '{"game":"one-piece","official_identity":{"kind":"card_number","value":"VITEST-001"}}',
+                      sort_id: body.params?.[0],
+                      summary_json: JSON.stringify({
+                        id: body.params?.[0],
+                        game: "one-piece",
+                        official_identity: {
+                          kind: "card_number",
+                          value: "VITEST-001",
+                        },
+                      }),
                     }]
-                    : body.sql?.includes(
-                        "SELECT card_id FROM revision_card_search_terms",
-                      )
-                    ? [{ card_id: body.params?.[2] }]
                     : [],
                 }],
               });
