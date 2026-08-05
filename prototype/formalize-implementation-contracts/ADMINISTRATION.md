@@ -182,7 +182,8 @@ owner-bound and resumable, so a retried Workflow continues the retained export,
 restore, or verification phase rather than creating another attempt.
 The first non-terminal response is HTTP `202`; exact replays observe the same
 Workflow instance, resume a paused instance, and return HTTP `200`. The CLI
-exits `10` until the Workflow is complete.
+exits `10` until the Workflow is complete. A retained terminal success or
+failure is an HTTP `200` observation and exits `0`.
 
 `backup create` durably binds its exact expected revision to the idempotency
 key before export and creates an immutable backup attempt:

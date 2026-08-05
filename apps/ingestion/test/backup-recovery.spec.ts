@@ -9,6 +9,10 @@ import {
   createVerifiedCatalogueBackup,
   type D1BackupProvider,
 } from "../../../src/catalogue/backup-recovery";
+import {
+  startOrObserveCatalogueBackupWorkflow,
+  type CatalogueBackupWorkflowParams,
+} from "../../../src/catalogue/backup-workflow";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -240,6 +244,52 @@ test("the Workflow can resume the same owner after an interrupted active attempt
     d1_bookmark: "bookmark-resumed",
   });
   expect(exportsAttempted).toBe(2);
+});
+
+test("terminal Workflow failure is an exact replayable observation", async () => {
+  let creates = 0;
+  const instance = {
+    status: async () => ({
+      status: "errored" as const,
+      error: { message: "terminal workflow outage" },
+    }),
+  } as unknown as WorkflowInstance;
+  const workflow = {
+    create: async () => {
+      creates += 1;
+      return instance;
+    },
+    get: async () => instance,
+  } as unknown as Workflow<CatalogueBackupWorkflowParams>;
+  const input = {
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "backup-terminal-observation",
+  } as const;
+  const first = await startOrObserveCatalogueBackupWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-08-05T03:45:00.000Z",
+  );
+  const replay = await startOrObserveCatalogueBackupWorkflow(
+    testEnv.CATALOGUE_DB,
+    workflow,
+    input,
+    "2026-08-05T03:46:00.000Z",
+  );
+  expect(first.created).toBe(true);
+  expect(replay.created).toBe(false);
+  expect(replay.document).toEqual(first.document);
+  expect(first.document).toMatchObject({
+    contract: "card-keepr-catalogue-backup-workflow@1",
+    status: "complete",
+    output: {
+      contract: "card-keepr-catalogue-backup-workflow-failure@1",
+      code: "backup_failed",
+      detail: "terminal workflow outage",
+    },
+  });
+  expect(creates).toBe(1);
 });
 
 test("the authenticated route starts and observes one durable backup Workflow", async () => {

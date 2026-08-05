@@ -129,6 +129,8 @@ async function publicWorkflowDocument(
     }
     status = await instance.status();
   }
+  let publicStatus = status.status;
+  let output: ReturnType<typeof workflowOutput> | null = null;
   if (status.status === "errored" || status.status === "terminated") {
     const detail = status.error?.message ??
       `The backup Workflow became ${status.status}.`;
@@ -138,13 +140,13 @@ async function publicWorkflowDocument(
       request.observed_at,
       detail,
     );
-    throw new AdministrationProblem(
-      409,
-      "backup_failed",
+    publicStatus = "complete";
+    output = {
+      ok: false,
+      code: "backup_failed",
       detail,
-    );
+    };
   }
-  let output: ReturnType<typeof workflowOutput> | null = null;
   if (status.status === "complete") {
     try {
       output = workflowOutput(status.output, request);
@@ -152,16 +154,25 @@ async function publicWorkflowDocument(
       output = await retainedBackupOutcome(database, request);
     }
   }
-  if (output !== null && output.ok === false) {
-    throw new AdministrationProblem(409, output.code, output.detail);
-  }
   return {
     contract: "card-keepr-catalogue-backup-workflow@1",
     expected_current_revision_id: request.expected_current_revision_id,
     idempotency_key: request.idempotency_key,
     workflow_instance_id: request.workflow_instance_id,
-    status: status.status,
-    output: output?.document ?? null,
+    status: publicStatus,
+    output: publicWorkflowOutput(output),
+  };
+}
+
+function publicWorkflowOutput(
+  output: ReturnType<typeof workflowOutput> | null,
+): Record<string, unknown> | null {
+  if (output === null) return null;
+  if (output.ok) return output.document;
+  return {
+    contract: "card-keepr-catalogue-backup-workflow-failure@1",
+    code: output.code,
+    detail: output.detail,
   };
 }
 
