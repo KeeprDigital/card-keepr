@@ -236,17 +236,7 @@ export async function createCuratedRevision(
         document: JSON.parse(concurrentReplay.response_json) as MutationResult,
       };
     }
-    const detail = error instanceof Error ? error.message : String(error);
-    if (detail.includes("curated_revision_target_conflict")) {
-      throw new AdministrationProblem(409, "curated_revision_target_conflict", "An active Curated Revision already overlaps this target and interval.");
-    }
-    if (detail.includes("curated_revision_operation_not_idle")) {
-      throw new AdministrationProblem(409, "operation_not_idle", "The production mutation boundary is not idle.");
-    }
-    if (detail.includes("curated_revision_release_not_idle")) {
-      throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
-    }
-    throw error;
+    throw lifecycleWriteProblem(error);
   }
   return { created: true, document };
 }
@@ -282,6 +272,7 @@ export async function reaffirmCuratedRevision(
       conflict_digest: conflictDigest,
       reviewed_source_digest: mutation.conflict.observed_source_digest,
       rationale,
+      expected_current_revision_id: mutation.currentRevisionId,
     },
     observedAt,
   });
@@ -312,6 +303,7 @@ export async function retireCuratedRevision(
       conflict_id: mutation.conflict?.conflict_id ?? null,
       conflict_digest: mutation.conflict?.conflict_digest ?? null,
       rationale,
+      expected_current_revision_id: mutation.currentRevisionId,
     },
     observedAt,
   });
@@ -366,6 +358,7 @@ export async function supersedeCuratedRevision(
         superseded_by_revision_id: replacementId,
         rationale: input.rationale,
         conflict_digest: mutation.conflict?.conflict_digest ?? null,
+        expected_current_revision_id: mutation.currentRevisionId,
       }), observedAt),
       database.prepare(
         `INSERT INTO curated_revisions (
@@ -497,9 +490,10 @@ export async function prepareCuratedRevisionRunStart(
 ): Promise<{
   candidate: CatalogueCandidate;
   statements: D1PreparedStatement[];
+  conflictRevisionIds: readonly string[];
 }> {
   if (!(await curatedRevisionSchemaAvailable(database))) {
-    return { candidate, statements: [] };
+    return { candidate, statements: [], conflictRevisionIds: [] };
   }
   const rows = await activeCuratedRevisionRows(
     database,
@@ -508,6 +502,12 @@ export async function prepareCuratedRevisionRunStart(
   );
   const official = stripCuratedRevisionEffects(candidate, selectedGames);
   const result = structuredClone(official) as CatalogueCandidate;
+  const prepared: {
+    row: ActiveCuratedRevisionRow;
+    proposal: Proposal;
+    reviewedSourceValue: unknown;
+  }[] = [];
+  const conflicts: typeof prepared = [];
   for (const row of rows) {
     const proposal = structuralProposal(JSON.parse(row.proposal_json));
     const officialTarget = candidateTarget(official, proposal);
@@ -523,16 +523,33 @@ export async function prepareCuratedRevisionRunStart(
         ? "present"
         : "absent";
     }
-    if (
-      await sha256Text(canonicalJson(reviewedSourceValue)) !==
-        row.reviewed_source_digest
-    ) {
-      throw new AdministrationProblem(
-        409,
-        "curated_revision_reconfirmation_required",
-        `Curated Revision ${row.id} no longer matches the Official Source candidate.`,
-      );
-    }
+    const item = { row, proposal, reviewedSourceValue };
+    prepared.push(item);
+    if (await sha256Text(canonicalJson(reviewedSourceValue)) !==
+      row.reviewed_source_digest) conflicts.push(item);
+  }
+  const pinStatements = await curatedRevisionPinStatements(
+    database,
+    runId,
+    rows,
+    observedAt,
+  );
+  if (conflicts.length > 0) {
+    return {
+      candidate: official,
+      statements: [
+        ...pinStatements,
+        ...await preparedSourceChangeStatements(
+          database,
+          runId,
+          conflicts,
+          observedAt,
+        ),
+      ],
+      conflictRevisionIds: conflicts.map(({ row }) => row.id),
+    };
+  }
+  for (const { row, proposal, reviewedSourceValue } of prepared) {
     const target = candidateTarget(result, proposal);
     if (proposal.target.kind === "field") {
       setAt(
@@ -553,12 +570,8 @@ export async function prepareCuratedRevisionRunStart(
   }
   return {
     candidate: result,
-    statements: await curatedRevisionPinStatements(
-      database,
-      runId,
-      rows,
-      observedAt,
-    ),
+    statements: pinStatements,
+    conflictRevisionIds: [],
   };
 }
 
@@ -567,6 +580,7 @@ type ActiveCuratedRevisionRow = {
   proposal_json: string;
   content_digest: string;
   reviewed_source_digest: string;
+  event_version: number;
 };
 
 async function activeCuratedRevisionRows(
@@ -578,6 +592,7 @@ async function activeCuratedRevisionRows(
   const on = observedAt.slice(0, 10);
   const rows = await database.prepare(
     `SELECT revision.id, revision.proposal_json, revision.content_digest,
+            revision.event_version,
             COALESCE((
               SELECT json_extract(event.event_json, '$.reviewed_source_digest')
               FROM curated_revision_events AS event
@@ -593,6 +608,47 @@ async function activeCuratedRevisionRows(
      ORDER BY revision.id`,
   ).bind(gamesJson, on, on).all<ActiveCuratedRevisionRow>();
   return rows.results;
+}
+
+async function preparedSourceChangeStatements(
+  database: D1Database,
+  runId: string,
+  conflicts: readonly {
+    row: ActiveCuratedRevisionRow;
+    reviewedSourceValue: unknown;
+  }[],
+  at: string,
+): Promise<D1PreparedStatement[]> {
+  const statements: D1PreparedStatement[] = [];
+  for (const conflict of conflicts) {
+    const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
+    const version = conflict.row.event_version + 1;
+    const conflictId = `crconf_${crypto.randomUUID()}`;
+    const details = {
+      conflict_id: conflictId,
+      conflict_digest: await sha256Text(canonicalJson({
+        conflict_id: conflictId,
+        run_id: runId,
+        revision_id: conflict.row.id,
+        previous_source_digest: conflict.row.reviewed_source_digest,
+        observed_source_digest: observed,
+      })),
+      run_id: runId,
+      previous_source_digest: conflict.row.reviewed_source_digest,
+      observed_source_digest: observed,
+    };
+    statements.push(
+      database.prepare(
+        "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active' AND event_version = ?",
+      ).bind(version, conflict.row.id, conflict.row.event_version),
+      database.prepare(
+        `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
+         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`,
+      ).bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
+    );
+  }
+  return statements;
 }
 
 async function curatedRevisionPinStatements(
@@ -651,7 +707,7 @@ export async function applyPinnedCuratedRevisions(
   observedAt: string,
 ): Promise<CatalogueCandidate> {
   if (!(await curatedRevisionSchemaAvailable(database))) return candidate;
-  const rows = await database.prepare(
+  const [rows, run] = await Promise.all([database.prepare(
     `SELECT revision.id, revision.proposal_json, revision.content_digest,
             pin.reviewed_source_digest
      FROM ingestion_run_curated_revisions AS pin
@@ -659,10 +715,16 @@ export async function applyPinnedCuratedRevisions(
      WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`,
   ).bind(runId).all<{
     id: string; proposal_json: string; content_digest: string; reviewed_source_digest: string;
-  }>();
+  }>(), database.prepare(
+    "SELECT selected_games_json FROM ingestion_runs WHERE id = ?",
+  ).bind(runId).first<{ selected_games_json: string }>()]);
+  if (run === null) {
+    throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
+  }
+  const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
   const official = stripCuratedRevisionEffects(
     candidate,
-    candidate.selected_games,
+    selectedGames,
   );
   const planned = rows.results.map((row) => ({
     row,
@@ -1059,6 +1121,9 @@ function lifecycleWriteProblem(error: unknown): Error {
   if (detail.includes("curated_revision_release_not_idle")) {
     return new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
+  if (detail.includes("curated_revision_current_revision_mismatch")) {
+    return new AdministrationProblem(409, "current_revision_mismatch", "The expected current Catalogue Revision changed concurrently.");
+  }
   if (detail.includes("UNIQUE constraint failed") || detail.includes("curated_revision_events")) {
     return new AdministrationProblem(409, "curated_revision_event_version_mismatch", "The lifecycle event version changed concurrently.");
   }
@@ -1109,10 +1174,10 @@ async function validateSupersedingProposal(
     assertRelationshipRepresentable(target as unknown as CatalogueCandidate, proposal);
   }
   const previous = structuralProposal(JSON.parse(mutation.row.proposal_json));
-  const expectedDigest = mutation.conflict?.observed_source_digest ??
-    (targetKey(previous) === targetKey(proposal)
-      ? await effectiveReviewedSourceDigest(database, mutation.row.id, mutation.row.reviewed_source_digest)
-      : await sourceDigestForProposal(target, proposal));
+  const expectedDigest = targetKey(previous) === targetKey(proposal)
+    ? mutation.conflict?.observed_source_digest ??
+      await effectiveReviewedSourceDigest(database, mutation.row.id, mutation.row.reviewed_source_digest)
+    : await sourceDigestForProposal(target, proposal);
   if (proposal.reviewed_source_digest !== expectedDigest) {
     throw new AdministrationProblem(409, "curated_revision_reviewed_source_mismatch", "The replacement must bind the exact reviewed Official Source value.");
   }
@@ -1258,13 +1323,13 @@ function applyRelationship(candidate: CatalogueCandidate, proposal: Proposal, re
   const target = proposal.target as RelationshipTarget;
   const assertion = proposal.assertion as { kind: "relationship"; presence: "present" | "absent" };
   const relationships = [...(candidate.product_relationships ?? [])];
-  const index = relationships.findIndex((item) =>
+  const matchingIndexes = relationships.flatMap((item, index) =>
     item.from.type === target.from.type && item.from.id === target.from.id &&
     item.to.type === target.to.type && item.to.id === target.to.id &&
-    item.kind === target.relationship_kind
+    item.kind === target.relationship_kind ? [index] : []
   );
   const curatedProvenance = provenanceFor(proposal, revision, reviewedPresence);
-  if (index >= 0) {
+  for (const index of matchingIndexes) {
     const existing = relationships[index]!;
     relationships[index] = {
       ...existing,
@@ -1275,7 +1340,7 @@ function applyRelationship(candidate: CatalogueCandidate, proposal: Proposal, re
       ],
     };
   }
-  if (index < 0) {
+  if (matchingIndexes.length === 0) {
     relationships.push({
       id: `relationship_${revision.id}`,
       game: proposal.game,
@@ -1397,7 +1462,7 @@ function valueAt(target: Record<string, unknown>, parts: string[]): { found: boo
   }
   return { found: true, value };
 }
-function setAt(target: Record<string, unknown>, parts: string[], value: unknown) {
+function setAt(target: Record<string, unknown>, parts: readonly string[], value: unknown) {
   let parent: Record<string, unknown> = target;
   for (const part of parts.slice(0, -1)) parent = parent[part] as Record<string, unknown>;
   parent[parts.at(-1)!] = structuredClone(value);
@@ -1531,29 +1596,124 @@ function validCuratedFieldAssertion(
   schema: JsonSchema,
 ): boolean {
   if (!fieldAjv.compile(schema)(assertion)) return false;
-  if (
-    (entityType !== "card" && entityType !== "printing") ||
-    parts[0] !== "game_data" || parts[1] !== "attributes"
-  ) return true;
-  const gameData = record(target.game_data) ? target.game_data : null;
-  if (
-    gameData === null || typeof gameData.profile !== "string" ||
-    !record(gameData.attributes)
-  ) return false;
-  const attributes = structuredClone(gameData.attributes);
-  setAt(attributes, parts.slice(2), assertion);
+  const modified = structuredClone(target);
+  setAt(modified, parts, assertion);
+  return validCompleteCuratedEntity(entityType, modified);
+}
+
+function validProfileEntity(
+  entityType: "card" | "printing",
+  entity: Record<string, unknown>,
+): boolean {
+  if (entityType === "card" &&
+    (typeof entity.name !== "string" || entity.name.trim().length === 0 ||
+      !(entity.effective_rules_text === null ||
+        typeof entity.effective_rules_text === "string"))) return false;
+  if (entityType === "printing") {
+    const rarity = record(entity.rarity) ? entity.rarity : null;
+    if (rarity === null ||
+      ![rarity.normalized, rarity.raw].every((value) =>
+        value === null || typeof value === "string"
+      ) || !(entity.printed_rules_text === null ||
+        typeof entity.printed_rules_text === "string")) return false;
+    if (entity.game_data === null) return true;
+  }
+  const gameData = record(entity.game_data) ? entity.game_data : null;
+  if (gameData === null || typeof gameData.profile !== "string" ||
+    !record(gameData.attributes)) return false;
   try {
     canonicalProfileAttributes(
       "curated_revision_validation",
       gameData.profile,
       entityType,
-      attributes,
+      gameData.attributes,
       [],
     );
     return true;
   } catch {
     return false;
   }
+}
+
+function validCompleteCuratedEntity(
+  entityType: string,
+  entity: Record<string, unknown>,
+): boolean {
+  if (entityType === "card" || entityType === "printing") {
+    return validProfileEntity(entityType, entity);
+  }
+  if (entityType === "product") {
+    const reference = record(entity.reference) ? entity.reference : null;
+    const code = entity.official_code;
+    const name = entity.name;
+    if (reference === null || typeof reference.value !== "string" ||
+      reference.value.trim().length === 0 ||
+      !(code === null || typeof code === "string" && code.trim().length > 0) ||
+      !(name === null || typeof name === "string" && name.trim().length > 0)) {
+      return false;
+    }
+    return reference.kind === "official_code"
+      ? code === reference.value
+      : reference.kind === "name" && code === null && name === reference.value;
+  }
+  if (entityType === "release") {
+    const date = record(entity.date) ? entity.date : null;
+    if (date === null) return false;
+    const precision = date.precision === null ? "unknown" : date.precision;
+    const value = date.value;
+    const patterns: Readonly<Record<string, RegExp>> = {
+      day: /^\d{4}-\d{2}-\d{2}$/,
+      month: /^\d{4}-\d{2}$/,
+      quarter: /^\d{4}-Q[1-4]$/,
+      year: /^\d{4}$/,
+    };
+    if (precision === "unknown") return value === null;
+    if (typeof precision !== "string" || patterns[precision] === undefined ||
+      typeof value !== "string" || !patterns[precision]!.test(value)) return false;
+    if (precision === "day") return onlyDate(value);
+    if (precision === "month") {
+      const month = Number(value.slice(5, 7));
+      return month >= 1 && month <= 12;
+    }
+    return true;
+  }
+  if (entityType === "legality_rule") {
+    const from = entity.effective_from;
+    const until = entity.effective_until;
+    const scope = record(entity.unresolved_scope) ? entity.unresolved_scope.dimensions : null;
+    if (!(from === null || typeof from === "string" && onlyDate(from)) ||
+      !(until === null || typeof until === "string" && onlyDate(until))) return false;
+    if (from !== null && until !== null &&
+      (typeof from !== "string" || typeof until !== "string" || until <= from)) {
+      return false;
+    }
+    if (scope !== null) {
+      if (!Array.isArray(scope) || scope.length === 0 ||
+        new Set(scope).size !== scope.length ||
+        scope.some((dimension) =>
+          dimension !== "effective_interval" && dimension !== "event_tier"
+        ) || canonicalJson(scope) !== canonicalJson([...scope].sort()) ||
+        !record(entity.effect) || entity.effect.type !== "unresolved") return false;
+      if (scope.includes("effective_interval")
+        ? from !== null || until !== null
+        : from === null) return false;
+      if (scope.includes("event_tier") && entity.event_tier !== null) return false;
+    }
+    if (from === null && scope === null) return false;
+  }
+  if (entityType === "distribution_context") {
+    return ["product", "tournament_pack", "winner_prize", "promotion", "other"]
+      .includes(String(entity.kind)) && typeof entity.label === "string" &&
+      entity.label.trim().length > 0;
+  }
+  if (entityType === "erratum") {
+    return (entity.effective_from === null ||
+      typeof entity.effective_from === "string" && onlyDate(entity.effective_from)) &&
+      typeof entity.official_wording === "string" && entity.official_wording.trim().length > 0 &&
+      (entity.corrected_value === null ||
+        typeof entity.corrected_value === "string" && entity.corrected_value.trim().length > 0);
+  }
+  return true;
 }
 function validEvidence(value: unknown): boolean {
   if (!record(value)) return false;

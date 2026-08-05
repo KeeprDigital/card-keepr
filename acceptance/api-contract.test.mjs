@@ -40,6 +40,57 @@ test("curated catalogue exports use a new schema major", async () => {
   assert.equal(manifest.properties.export_schema_major.const, 4);
   assert.ok(manifest.$defs.CardsComponent.allOf[1].properties.record_schema
     .const.includes("catalogue-export-record@4"));
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(record);
+  const validateRelationship = ajv.getSchema(
+    `${record.$id}#/$defs/RelationshipRecord`,
+  );
+  const endpointCases = [
+    ["printing-distribution-context", "printing", "distribution_context"],
+    ["printing-product", "printing", "product"],
+    ["distribution-context-product", "distribution_context", "product"],
+    ["product-card", "product", "card"],
+    ["erratum-target", "erratum", "printing"],
+    ["legality-rule-card", "legality_rule", "card"],
+  ];
+  for (const [kind, from, to] of endpointCases) {
+    assert.equal(validateRelationship({
+      type: "relationship",
+      id: `relationship_${kind}`,
+      kind,
+      from: { type: from, id: "from_1" },
+      to: { type: to, id: "to_1" },
+      evidence_category: "explicit",
+      source_lineage: "official-source",
+      source_observation_ids: ["srcobs_1"],
+      relationship_value: "value",
+      lifecycle: {
+        first_revision_id: "catrev_1",
+        last_observed_revision_id: "catrev_1",
+        current: true,
+        last_missing_revision_id: null,
+      },
+    }), true, `${kind}: ${ajv.errorsText(validateRelationship.errors)}`);
+  }
+  assert.equal(validateRelationship({
+    type: "relationship",
+    id: "relationship_wrong_pair",
+    kind: "product-card",
+    from: { type: "printing", id: "from_1" },
+    to: { type: "card", id: "to_1" },
+    evidence_category: "explicit",
+    source_lineage: "official-source",
+    source_observation_ids: ["srcobs_1"],
+    relationship_value: "value",
+    lifecycle: {
+      first_revision_id: "catrev_1",
+      last_observed_revision_id: "catrev_1",
+      current: true,
+      last_missing_revision_id: null,
+    },
+  }), false);
 });
 
 test("Product detail documents invalid include requests", async () => {

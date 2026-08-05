@@ -1013,18 +1013,68 @@
         "relationship_value": { "type": "string", "minLength": 1 },
         "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
       },
-      "oneOf": [
+      "allOf": [
         {
-          "required": ["source_lineage", "source_observation_ids"],
-          "properties": {
-            "evidence_category": { "enum": ["explicit", "derived"] },
-            "source_observation_ids": { "minItems": 1 }
-          }
+          "oneOf": [
+            {
+              "required": ["source_lineage", "source_observation_ids"],
+              "properties": {
+                "evidence_category": { "enum": ["explicit", "derived"] },
+                "source_observation_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "required": ["curated_provenance"],
+              "not": { "required": ["source_lineage"] },
+              "properties": { "evidence_category": { "const": "curated" } }
+            }
+          ]
         },
         {
-          "required": ["curated_provenance"],
-          "not": { "required": ["source_lineage"] },
-          "properties": { "evidence_category": { "const": "curated" } }
+          "oneOf": [
+            {
+              "properties": {
+                "kind": { "const": "printing-distribution-context" },
+                "from": { "properties": { "type": { "const": "printing" } } },
+                "to": { "properties": { "type": { "const": "distribution_context" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "printing-product" },
+                "from": { "properties": { "type": { "const": "printing" } } },
+                "to": { "properties": { "type": { "const": "product" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "distribution-context-product" },
+                "from": { "properties": { "type": { "const": "distribution_context" } } },
+                "to": { "properties": { "type": { "const": "product" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "product-card" },
+                "from": { "properties": { "type": { "const": "product" } } },
+                "to": { "properties": { "type": { "const": "card" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "erratum-target" },
+                "from": { "properties": { "type": { "const": "erratum" } } },
+                "to": { "properties": { "type": { "enum": ["card", "printing"] } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "legality-rule-card" },
+                "from": { "properties": { "type": { "const": "legality_rule" } } },
+                "to": { "properties": { "type": { "const": "card" } } }
+              }
+            }
+          ]
         }
       ]
     }

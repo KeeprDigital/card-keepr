@@ -2,6 +2,19 @@ PRAGMA foreign_keys = ON;
 
 ALTER TABLE operation_state ADD COLUMN active_release_id TEXT;
 
+DROP TRIGGER require_idle_ingestion;
+CREATE TRIGGER require_idle_ingestion
+BEFORE INSERT ON ingestion_runs
+WHEN EXISTS (
+  SELECT 1 FROM operation_state
+  WHERE singleton = 1 AND (
+    active_ingestion_run_id IS NOT NULL OR active_release_id IS NOT NULL
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'active_ingestion_run_or_release');
+END;
+
 CREATE TABLE curated_revisions (
   id TEXT PRIMARY KEY,
   game TEXT NOT NULL CHECK (
@@ -49,6 +62,18 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
+END;
+
+CREATE TRIGGER curated_revision_catalogue_revision_guard
+BEFORE INSERT ON curated_revisions
+WHEN COALESCE(json_extract(
+  NEW.schema_binding_json,
+  '$.catalogue_revision_id'
+), '') <> (
+  SELECT current_revision_id FROM catalogue_state WHERE singleton = 1
+)
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_current_revision_mismatch');
 END;
 
 CREATE TRIGGER curated_revision_target_overlap_guard
@@ -114,6 +139,19 @@ BEGIN
   SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
 END;
 
+CREATE TRIGGER curated_revision_owner_event_catalogue_guard
+BEFORE INSERT ON curated_revision_events
+WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired')
+  AND COALESCE(json_extract(
+    NEW.event_json,
+    '$.expected_current_revision_id'
+  ), '') <> (
+    SELECT current_revision_id FROM catalogue_state WHERE singleton = 1
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_current_revision_mismatch');
+END;
+
 CREATE TRIGGER curated_revision_events_are_immutable_on_update
 BEFORE UPDATE ON curated_revision_events
 BEGIN
@@ -135,6 +173,18 @@ CREATE TABLE curated_revision_idempotency (
   response_status INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TRIGGER curated_revision_idempotency_is_immutable_on_update
+BEFORE UPDATE ON curated_revision_idempotency
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_idempotency_immutable');
+END;
+
+CREATE TRIGGER curated_revision_idempotency_is_immutable_on_delete
+BEFORE DELETE ON curated_revision_idempotency
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_idempotency_immutable');
+END;
 
 CREATE TABLE ingestion_run_curated_revisions (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id) ON DELETE CASCADE,
@@ -225,3 +275,15 @@ CREATE TABLE catalogue_curated_provenance (
   provenance_json TEXT NOT NULL CHECK (json_valid(provenance_json)),
   PRIMARY KEY (catalogue_revision_id, curated_revision_id)
 );
+
+CREATE TRIGGER catalogue_curated_provenance_is_immutable_on_update
+BEFORE UPDATE ON catalogue_curated_provenance
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_curated_provenance_immutable');
+END;
+
+CREATE TRIGGER catalogue_curated_provenance_is_immutable_on_delete
+BEFORE DELETE ON catalogue_curated_provenance
+BEGIN
+  SELECT RAISE(ABORT, 'catalogue_curated_provenance_immutable');
+END;

@@ -232,6 +232,7 @@ export async function startFixtureRun(
       const candidate = await validatedCatalogueCandidate(request);
       return startPreparedRun(database, {
         candidate: candidate.candidate,
+        selectedGames: candidate.candidate.selected_games,
         idempotencyKey: request.idempotency_key,
         idempotencyOperation: "start_ingestion_run",
         idempotencyRequestJson: requestJson,
@@ -292,6 +293,7 @@ export async function retryRun(
       const candidate = parseCandidate(source);
       return startPreparedRun(database, {
         candidate,
+        selectedGames: parseSelectedGames(source.selected_games_json),
         idempotencyKey: request.idempotency_key,
         idempotencyOperation: "retry_ingestion_run",
         idempotencyRequestJson: requestJson,
@@ -1120,6 +1122,7 @@ async function startPreparedRun(
   database: D1Database,
   input: {
     candidate: CatalogueCandidate;
+    selectedGames: readonly SupportedGame[];
     idempotencyKey: string;
     idempotencyOperation: string;
     idempotencyRequestJson: string;
@@ -1149,7 +1152,7 @@ async function startPreparedRun(
   }
   await assertCuratedGamesUnblocked(
     database,
-    input.candidate.selected_games,
+    input.selectedGames,
   );
 
   const startedAt = input.observedAt;
@@ -1160,16 +1163,17 @@ async function startPreparedRun(
   const curated = await prepareCuratedRevisionRunStart(
     database,
     runId,
-    input.candidate.selected_games,
+    input.selectedGames,
     input.candidate,
     startedAt,
   );
   const candidateJson = canonicalJson(curated.candidate);
   const candidateDigest = await sha256(new TextEncoder().encode(candidateJson));
+  const curatedConflict = curated.conflictRevisionIds.length > 0;
   const resultingRun = publicRun({
     id: runId,
-    state: "awaiting_approval",
-    selected_games_json: JSON.stringify(curated.candidate.selected_games),
+    state: curatedConflict ? "failed" : "awaiting_approval",
+    selected_games_json: JSON.stringify(input.selectedGames),
     started_at: startedAt,
     expected_current_revision_id: catalogueState.current_revision_id,
     linked_run_id: input.linkedRunId,
@@ -1181,11 +1185,15 @@ async function startPreparedRun(
     approval_json: null,
     published_revision_id: null,
     export_manifest_digest: null,
-    terminal_at: null,
+    terminal_at: curatedConflict ? startedAt : null,
     candidate_json: candidateJson,
     approval_idempotency_key: null,
-    failure_code: null,
-    progress_json: JSON.stringify(progressFor("awaiting_approval")),
+    failure_code: curatedConflict
+      ? "curated_revision_reconfirmation_required"
+      : null,
+    progress_json: JSON.stringify(progressFor(
+      curatedConflict ? "failed" : "awaiting_approval",
+    )),
     warnings_json: "[]",
     approval_history_json: "[]",
     publication_outcome: null,
@@ -1236,7 +1244,7 @@ async function startPreparedRun(
         )
         .bind(
           runId,
-          JSON.stringify(curated.candidate.selected_games),
+          JSON.stringify(input.selectedGames),
           startedAt,
           catalogueState.current_revision_id,
           input.linkedRunId,
@@ -1245,7 +1253,34 @@ async function startPreparedRun(
           JSON.stringify(progressFor("planning")),
         ),
       ...curatedPinStatements,
-      database
+      ...(curatedConflict
+        ? [database.prepare(
+          `UPDATE operation_state
+           SET active_ingestion_run_id = ?
+           WHERE singleton = 1
+             AND active_ingestion_run_id IS NULL
+             AND recovery_health <> 'blocked'`,
+        ).bind(runId), database.prepare(
+          `UPDATE ingestion_runs
+           SET state = 'failed',
+               candidate_digest = ?,
+               candidate_catalogue_digest = ?,
+               candidate_created_at = ?,
+               approval_deadline = ?,
+               terminal_at = ?,
+               failure_code = 'curated_revision_reconfirmation_required',
+               progress_json = ?
+           WHERE id = ? AND state = 'planning'`,
+        ).bind(
+          candidateDigest,
+          candidateDigest,
+          startedAt,
+          approvalDeadline,
+          startedAt,
+          JSON.stringify(progressFor("failed")),
+          runId,
+        ), releaseRunLockStatement(database, runId)]
+        : [database
         .prepare(
           `UPDATE operation_state
           SET active_ingestion_run_id = ?
@@ -1275,7 +1310,7 @@ async function startPreparedRun(
           approvalDeadline,
           JSON.stringify(progressFor("awaiting_approval")),
           runId,
-        ),
+        )]),
       ...idempotencyCompletionStatements(database, {
         key: input.idempotencyKey,
         operation: input.idempotencyOperation,

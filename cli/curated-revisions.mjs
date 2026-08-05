@@ -331,7 +331,7 @@ function requestFailure(json, result) {
 function format(document) {
   if (Array.isArray(document.items) && Object.hasOwn(document, "next_cursor")) {
     const revisions = Array.isArray(document.items) ? document.items : [];
-    return revisions.length === 0 ? "No Curated Revisions" : revisions.map((revision) => `${revision.id} ${revision.game} ${revision.status} ${revision.content_digest}`).join("\n");
+    return revisions.length === 0 ? "No Curated Revisions" : revisions.map((revision) => `${revision.id} ${revision.content?.game ?? "unknown"} ${revision.status} ${revision.content_digest}`).join("\n");
   }
   if (document.contract === "card-keepr-curated-revision-validation@1") return `Valid Curated Revision proposal ${document.proposal_digest}`;
   return `Curated Revision ${document.curated_revision_id ?? document.revision?.id}: ${document.status ?? document.revision?.status} (${document.content_digest ?? document.revision?.content_digest ?? "digest unavailable"})`;

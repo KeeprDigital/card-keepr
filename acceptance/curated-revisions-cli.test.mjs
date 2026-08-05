@@ -111,6 +111,27 @@ test("CLI list/show have stable query paths and validation failures exit 8", asy
   });
 });
 
+test("CLI human list renders the Supported Game from immutable content", async (t) => {
+  const observed = [];
+  const server = await jsonServer(t, observed, {
+    items: [{
+      id: "currev_listed",
+      content: { game: "digimon" },
+      status: "active",
+      content_digest: "a".repeat(64),
+    }],
+    next_cursor: null,
+  });
+  const result = await runCli([
+    "curated-revision", "list", "--secrets-stdin-fd", "3",
+  ], server.environment, { administration_key: "cli-admin-key" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(
+    result.stdout,
+    `currev_listed digimon active ${"a".repeat(64)}\n`,
+  );
+});
+
 test("CLI retirement resolves the exact revision and production identities before mutation", async (t) => {
   const observed = [];
   const revision = {

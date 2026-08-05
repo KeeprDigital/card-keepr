@@ -1002,6 +1002,16 @@ test("the serialized production release owns both semantic deployment slots and 
     ).length,
     1,
   );
+  assert.match(
+    workflow,
+    /UPDATE operation_state SET active_release_id = '\$\{release_id\}'[\s\S]*active_ingestion_run_id IS NULL[\s\S]*recovery_health = 'healthy'/u,
+  );
+  assert.match(workflow, /test "\$\(jq -r '\.\[-1\]\.results\[0\]\.claimed'/u);
+  assert.match(workflow, /trap cleanup_release_lock EXIT/u);
+  assert.match(
+    workflow,
+    /SET active_release_id = NULL[\s\S]*active_release_id = '\$\{release_id\}'/u,
+  );
 });
 
 test("the GitHub provider maps A/B slots and rejects a workflow run by the wrong actor", async () => {

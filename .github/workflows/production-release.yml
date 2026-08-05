@@ -97,6 +97,16 @@ jobs:
             test "$(jq -r '.result.id' <<<"${verify}")" = "${EXPECTED_TOKEN_ID}"
             test "$(jq -r '.result.status' <<<"${verify}")" = "active"
             npm ci
+            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+            release_id="release_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+            cleanup_release_lock() {
+              cleanup_sql="UPDATE operation_state SET active_release_id = NULL WHERE singleton = 1 AND active_release_id = '${release_id}';"
+              npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${cleanup_sql}"
+            }
+            trap cleanup_release_lock EXIT
+            claim_sql="UPDATE operation_state SET active_release_id = '${release_id}' WHERE singleton = 1 AND active_release_id IS NULL AND active_ingestion_run_id IS NULL AND recovery_health = 'healthy'; SELECT changes() AS claimed;"
+            claim="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${claim_sql}")"
+            test "$(jq -r '.[-1].results[0].claimed' <<<"${claim}")" = "1"
             npx wrangler deploy --config apps/api/wrangler.jsonc
             npx wrangler deploy --config apps/ingestion/wrangler.jsonc
             for worker in card-keepr-api card-keepr-ingestion; do

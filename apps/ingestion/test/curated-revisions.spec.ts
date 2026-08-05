@@ -9,7 +9,11 @@ import {
   createCuratedRevision,
   pinCuratedRevisionsForRun,
   prepareCuratedRevisionRunStart,
+  reaffirmCuratedRevision,
+  retireCuratedRevision,
+  showCuratedRevision,
   stripCuratedRevisionEffects,
+  supersedeCuratedRevision,
 } from "../../../src/catalogue/curated-revisions";
 
 declare global {
@@ -71,7 +75,14 @@ beforeEach(async () => {
       game: "one-piece",
       official_code: "OP-01",
       name: "Booster",
-      releases: [],
+      releases: [{
+        id: `release_${sequence}`,
+        event_key: `event_${sequence}`,
+        product_id: `product_${sequence}`,
+        region: "EN-OCEANIA",
+        date: { precision: "day", value: "2026-08-05" },
+        status: "announced",
+      }],
       observed: true,
       withdrawal: null,
       included: [],
@@ -90,6 +101,36 @@ beforeEach(async () => {
       source_observation_ids: [`srcobs_${sequence}`],
       relationship_value: card.official_identity.value,
       observed: true,
+    }],
+    legality_rules: [{
+      id: `legality_rule_${sequence}`,
+      official_id: `official_rule_${sequence}`,
+      game: "one-piece",
+      region: "EN-OCEANIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-08-05",
+      effective_until: null,
+      unresolved_scope: null,
+      card_ids: [card.id],
+      official_wording: "This card is eligible.",
+      effect: { type: "eligible" },
+      source_lineage: "one-piece-legality",
+      source_snapshot_id: `snapshot_${sequence}`,
+      source_observation_set_id: `set_${sequence}`,
+      source_observation_id: `srcobs_legality_${sequence}`,
+      source_observation_pointer: "/observations/0/value/legality_rules/0",
+      source_field_pointers: {
+        official_wording: "/observations/0/value/legality_rules/0/official_wording",
+        effective_from: "/observations/0/value/legality_rules/0/effective_from",
+        effective_until: "/observations/0/value/legality_rules/0/effective_until",
+        unresolved_scope: "/observations/0/value/legality_rules/0/unresolved_scope",
+        region: "/observations/0/value/legality_rules/0/region",
+        format: "/observations/0/value/legality_rules/0/format",
+        event_tier: "/observations/0/value/legality_rules/0/event_tier",
+        card_numbers: "/observations/0/value/legality_rules/0/card_numbers",
+        effect: "/observations/0/value/legality_rules/0/effect",
+      },
     }],
   };
   await env.CATALOGUE_DB.prepare(
@@ -291,6 +332,49 @@ test("validation uses the pinned shared and Game Profile schemas", async () => {
     catalogue_revision_id: currentRevision,
   });
   expect(optional.status).toBe(200);
+
+  const crossFieldRelease = {
+    ...(await proposal("/name", "unused")),
+    target: {
+      kind: "field",
+      entity_type: "release",
+      entity_id: `release_${sequence}`,
+      path: "/date/precision",
+    },
+    assertion: { kind: "field", value: "month" },
+    reviewed_source_digest: await sha256Text(canonicalJson("day")),
+  };
+  const invalidRelease = await adminRequest("/admin/v1/curated-revisions/validate", {
+    proposal: crossFieldRelease,
+    catalogue_revision_id: currentRevision,
+  });
+  expect(invalidRelease.status).toBe(422);
+  await expect(invalidRelease.json()).resolves.toMatchObject({
+    code: "curated_revision_assertion_type_invalid",
+  });
+
+  const invalidEffectiveFrom = {
+    ...(await proposal("/name", "unused")),
+    target: {
+      kind: "field",
+      entity_type: "legality_rule",
+      entity_id: `legality_rule_${sequence}`,
+      path: "/effective_from",
+    },
+    assertion: { kind: "field", value: null },
+    reviewed_source_digest: await sha256Text(canonicalJson("2026-08-05")),
+  };
+  const invalidNullControl = await adminRequest(
+    "/admin/v1/curated-revisions/validate",
+    {
+      proposal: invalidEffectiveFrom,
+      catalogue_revision_id: currentRevision,
+    },
+  );
+  expect(invalidNullControl.status).toBe(422);
+  await expect(invalidNullControl.json()).resolves.toMatchObject({
+    code: "curated_revision_assertion_type_invalid",
+  });
 });
 
 test("relationship endpoints are closed objects", async () => {
@@ -370,6 +454,26 @@ test("create is idempotent, server-authored, and available through stable list/s
     },
     events: [{ type: "authored" }],
   });
+  await expect(env.CATALOGUE_DB.prepare(
+    "UPDATE curated_revision_idempotency SET response_status = 202 WHERE idempotency_key = ?",
+  ).bind(input.idempotency_key).run()).rejects.toThrow(
+    "curated_revision_idempotency_immutable",
+  );
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_curated_provenance (
+       catalogue_revision_id, curated_revision_id, target_key,
+       content_digest, provenance_json
+     ) VALUES (?, ?, 'target', ?, '{}')`,
+  ).bind(
+    currentRevision,
+    mutation.curated_revision_id,
+    mutation.content_digest,
+  ).run();
+  await expect(env.CATALOGUE_DB.prepare(
+    "DELETE FROM catalogue_curated_provenance WHERE catalogue_revision_id = ? AND curated_revision_id = ?",
+  ).bind(currentRevision, mutation.curated_revision_id).run()).rejects.toThrow(
+    "catalogue_curated_provenance_immutable",
+  );
 });
 
 test("create is guarded by production binding, current revision, idle operation, and nonblocked recovery", async () => {
@@ -415,6 +519,44 @@ test("create is guarded by production binding, current revision, idle operation,
   await expect(releaseBlocked.json()).resolves.toMatchObject({
     code: "release_not_idle",
   });
+  await expect(insertParsingRun(
+    `run_release_blocked_${sequence}`,
+  )).rejects.toThrow("active_ingestion_run_or_release");
+});
+
+test("the atomic mutation boundary rechecks the current Catalogue Revision", async () => {
+  const authored = await proposal("/name", "Curated Name");
+  await expect(env.CATALOGUE_DB.prepare(
+    `INSERT INTO curated_revisions (
+       id, game, target_key, target_kind, proposal_json, content_digest,
+       reviewed_source_digest, schema_binding_json, author, created_at,
+       status, event_version
+     ) VALUES ('currev_stale_atomic', 'one-piece', 'stale-target', 'field',
+       ?, ?, ?, ?, 'owner', ?, 'active', 1)`,
+  ).bind(
+    canonicalJson(authored),
+    await sha256Text(canonicalJson(authored)),
+    authored.reviewed_source_digest,
+    canonicalJson({ catalogue_revision_id: "catrev_stale", game_profile: "one-piece@1" }),
+    now,
+  ).run()).rejects.toThrow("curated_revision_current_revision_mismatch");
+
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: authored,
+    proposal_digest: await sha256Text(canonicalJson(authored)),
+    idempotency_key: `atomic-current-${sequence}`,
+  }, now);
+  await expect(env.CATALOGUE_DB.prepare(
+    `INSERT INTO curated_revision_events (
+       revision_id, event_version, kind, event_json, created_at, author
+     ) VALUES (?, 2, 'retired', ?, ?, 'owner')`,
+  ).bind(
+    created.document.curated_revision_id,
+    canonicalJson({ expected_current_revision_id: "catrev_stale" }),
+    now,
+  ).run()).rejects.toThrow("curated_revision_current_revision_mismatch");
 });
 
 test("only one active assertion may overlap the same target interval", async () => {
@@ -458,16 +600,39 @@ test("a run pins an exact ordered set and applies it after official reconciliati
   expect(pin.revision_ids).toContain(revision.curated_revision_id);
   expect(pin.set_digest).toMatch(/^[a-f0-9]{64}$/);
 
+  const unselected = {
+    ...card,
+    id: `card_digimon_apply_${sequence}`,
+    game: "digimon" as const,
+    official_identity: { kind: "card_number" as const, value: "BT1-001" },
+    name: "Preserved Digimon Curation",
+    game_data: { profile: "digimon@1" as const, attributes: {} },
+    curated_provenance: [{
+      curated_revision_id: "currev_digimon_apply",
+      content_digest: "c".repeat(64),
+      target: {
+        kind: "field" as const,
+        entity_type: "card" as const,
+        entity_id: `card_digimon_apply_${sequence}`,
+        path: "/name",
+      },
+      rationale: "Retain an unselected game's curation.",
+      evidence: [{ kind: "source_observation" as const, id: "srcobs_digimon_apply" }],
+      author: "owner",
+      reviewed_source_value: "Official Digimon Name",
+    }],
+  };
   const applied = await applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, {
     contract: "card-keepr-catalogue-candidate@1",
-    selected_games: ["one-piece"],
-    cards: [card],
+    selected_games: ["one-piece", "digimon"],
+    cards: [card, unselected],
     printings: [],
   }, now);
   expect(applied.cards[0]).toMatchObject({
     name: "Curated Name",
     curated_provenance: [{ curated_revision_id: revision.curated_revision_id }],
   });
+  expect(applied.cards[1]).toEqual(unselected);
   const stripped = stripCuratedRevisionEffects(applied);
   expect(stripped.cards[0]).toMatchObject({ name: "Official Name" });
   expect(stripped.cards[0]).not.toHaveProperty("curated_provenance");
@@ -561,6 +726,108 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
   });
 });
 
+test("a prepared retry persists its failed run and every source-change conflict", async () => {
+  const authored = await proposal("/name", "Curated Name");
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: authored,
+    proposal_digest: await sha256Text(canonicalJson(authored)),
+    idempotency_key: `prepared-conflict-create-${sequence}`,
+  }, now);
+  const authoredRules = await proposal(
+    "/effective_rules_text",
+    "Curated rules text",
+  );
+  const createdRules = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: authoredRules,
+    proposal_digest: await sha256Text(canonicalJson(authoredRules)),
+    idempotency_key: `prepared-conflict-rules-${sequence}`,
+  }, now);
+  const sourceRunId = `run_prepared_conflict_source_${sequence}`;
+  const failedCandidate = {
+    contract: "card-keepr-catalogue-candidate@1" as const,
+    selected_games: ["one-piece" as const],
+    cards: [{
+      ...card,
+      name: "Curated Name",
+      effective_rules_text: "Curated rules text",
+      curated_provenance: [
+        {
+          curated_revision_id: created.document.curated_revision_id,
+          content_digest: created.document.content_digest,
+          target: authored.target,
+          rationale: authored.rationale,
+          evidence: authored.evidence,
+          author: "owner",
+          reviewed_source_value: "Changed Official Name",
+        },
+        {
+          curated_revision_id: createdRules.document.curated_revision_id,
+          content_digest: createdRules.document.content_digest,
+          target: authoredRules.target,
+          rationale: authoredRules.rationale,
+          evidence: authoredRules.evidence,
+          author: "owner",
+          reviewed_source_value: "Changed Official Rules",
+        },
+      ],
+    }],
+    printings: [],
+  };
+  const sourceDigest = await sha256Text(canonicalJson(failedCandidate));
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at,
+       expected_current_revision_id, idempotency_key, candidate_digest,
+       candidate_catalogue_digest, candidate_created_at, terminal_at,
+       candidate_json, failure_code, progress_json, warnings_json,
+       approval_history_json
+     ) VALUES (?, 'failed', '["one-piece"]', ?, ?, ?, ?, ?, ?, ?, ?,
+       'prior_failure',
+       '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}',
+       '[]', '[]')`,
+  ).bind(
+    sourceRunId,
+    now,
+    currentRevision,
+    `prepared-conflict-source-${sequence}`,
+    sourceDigest,
+    sourceDigest,
+    now,
+    now,
+    canonicalJson(failedCandidate),
+  ).run();
+
+  const retried = await adminRequest(`/v1/ingestion-runs/${sourceRunId}/retry`, {
+    idempotency_key: `prepared-conflict-retry-${sequence}`,
+  });
+  expect(retried.status, JSON.stringify(await retried.clone().json())).toBe(201);
+  const document = await retried.json() as { id: string };
+  await expect(env.CATALOGUE_DB.prepare(
+    "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
+  ).bind(document.id).first()).resolves.toEqual({
+    state: "failed",
+    failure_code: "curated_revision_reconfirmation_required",
+  });
+  const conflictedIds = [
+    created.document.curated_revision_id,
+    createdRules.document.curated_revision_id,
+  ];
+  const statuses = await env.CATALOGUE_DB.prepare(
+    "SELECT status, event_version FROM curated_revisions WHERE id IN (SELECT value FROM json_each(?))",
+  ).bind(canonicalJson(conflictedIds)).all<{ status: string; event_version: number }>();
+  expect(statuses.results).toHaveLength(2);
+  expect(statuses.results.every(({ status, event_version }) =>
+    status === "reconfirmation_required" && event_version === 2
+  )).toBe(true);
+  await expect(env.CATALOGUE_DB.prepare(
+    "SELECT COUNT(*) AS count FROM curated_revision_events WHERE revision_id IN (SELECT value FROM json_each(?)) AND kind = 'source_change_detected'",
+  ).bind(canonicalJson(conflictedIds)).first()).resolves.toEqual({ count: 2 });
+});
+
 test("a changed official value requires reconfirmation instead of silently applying", async () => {
   const authoredProposal = await proposal("/name", "Curated Name");
   const created = await adminRequest("/admin/v1/curated-revisions", {
@@ -639,16 +906,67 @@ test("all changed pinned revisions are marked before the run fails once", async 
   )).toBe(true);
 });
 
+test("retargeted supersession binds the old conflict and the replacement target's official digest", async () => {
+  const authored = await proposal("/name", "Curated Name");
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: authored,
+    proposal_digest: await sha256Text(canonicalJson(authored)),
+    idempotency_key: `retarget-create-${sequence}`,
+  }, now);
+  const runId = `run_retarget_${sequence}`;
+  await insertParsingRun(runId);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
+  await expect(applyPinnedCuratedRevisions(env.CATALOGUE_DB, runId, {
+    contract: "card-keepr-catalogue-candidate@1",
+    selected_games: ["one-piece"],
+    cards: [{ ...card, name: "Changed Official Name" }],
+    printings: [],
+  }, now)).rejects.toThrow("curated_revision_reconfirmation_required");
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+  ).run();
+  const shown = await adminRequest(
+    `/admin/v1/curated-revisions/${created.document.curated_revision_id}`,
+  );
+  const inspected = await shown.json() as {
+    revision: { pending_conflict: { digest: string }; event_version: number };
+  };
+  const replacement = {
+    ...(await proposal("/effective_rules_text", "Replacement text")),
+    supersedes_revision_id: created.document.curated_revision_id,
+  };
+  const superseded = await adminRequest(
+    `/admin/v1/curated-revisions/${created.document.curated_revision_id}/supersede`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: inspected.revision.event_version,
+      conflict_digest: inspected.revision.pending_conflict.digest,
+      proposal: replacement,
+      proposal_digest: await sha256Text(canonicalJson(replacement)),
+      rationale: "Move the exception to the independently reviewed target.",
+      idempotency_key: `retarget-supersede-${sequence}`,
+    },
+  );
+  expect(superseded.status).toBe(201);
+  await expect(superseded.json()).resolves.toMatchObject({
+    code: "curated_revision_superseded",
+    status: "active",
+  });
+});
+
 test("exact reaffirmation, supersession, and retirement recover lifecycle without rewriting history", async () => {
   const authoredProposal = await proposal("/name", "Curated Name");
-  const createdResponse = await adminRequest("/admin/v1/curated-revisions", {
+  const createdResult = await createCuratedRevision(env.CATALOGUE_DB, {
     environment: "production",
     expected_current_revision_id: currentRevision,
     proposal: authoredProposal,
     proposal_digest: await sha256Text(canonicalJson(authoredProposal)),
     idempotency_key: `lifecycle-create-${sequence}`,
-  });
-  const created = await createdResponse.json() as { curated_revision_id: string };
+  }, now);
+  const created = createdResult.document;
   const runId = `run_curated_lifecycle_${sequence}`;
   await insertParsingRun(runId);
   await pinCuratedRevisionsForRun(env.CATALOGUE_DB, runId, now);
@@ -662,13 +980,16 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();
 
-  const conflicted = await adminRequest(`/admin/v1/curated-revisions/${created.curated_revision_id}`);
-  const conflictDocument = await conflicted.json() as {
+  const conflictDocument = await showCuratedRevision(
+    env.CATALOGUE_DB,
+    created.curated_revision_id,
+  ) as {
     events: { details: { conflict_digest?: string } }[];
   };
   const conflictDigest = conflictDocument.events.at(-1)!.details.conflict_digest!;
-  const reaffirmed = await adminRequest(
-    `/admin/v1/curated-revisions/${created.curated_revision_id}/reaffirm`,
+  const reaffirmed = await reaffirmCuratedRevision(
+    env.CATALOGUE_DB,
+    created.curated_revision_id,
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -677,9 +998,9 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
       rationale: "The owner accepts the new Official Source value.",
       idempotency_key: `reaffirm-${sequence}`,
     },
+    now,
   );
-  expect(reaffirmed.status).toBe(200);
-  await expect(reaffirmed.json()).resolves.toMatchObject({
+  expect(reaffirmed.document).toMatchObject({
     curated_revision_id: created.curated_revision_id,
     status: "active",
     event_version: 3,
@@ -691,8 +1012,9 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
     reviewed_source_digest: await sha256Text(canonicalJson("New Official Name")),
     supersedes_revision_id: created.curated_revision_id,
   };
-  const superseded = await adminRequest(
-    `/admin/v1/curated-revisions/${created.curated_revision_id}/supersede`,
+  const superseded = await supersedeCuratedRevision(
+    env.CATALOGUE_DB,
+    created.curated_revision_id,
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -703,12 +1025,14 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
       rationale: "Replace the assertion.",
       idempotency_key: `supersede-${sequence}`,
     },
+    now,
   );
-  expect(superseded.status).toBe(201);
-  const replacementResult = await superseded.json() as { curated_revision_id: string };
+  expect(superseded.created).toBe(true);
+  const replacementResult = superseded.document;
 
-  const retired = await adminRequest(
-    `/admin/v1/curated-revisions/${replacementResult.curated_revision_id}/retire`,
+  const retired = await retireCuratedRevision(
+    env.CATALOGUE_DB,
+    replacementResult.curated_revision_id,
     {
       environment: "production",
       expected_current_revision_id: currentRevision,
@@ -717,9 +1041,9 @@ test("exact reaffirmation, supersession, and retirement recover lifecycle withou
       rationale: "The exception is no longer required.",
       idempotency_key: `retire-${sequence}`,
     },
+    now,
   );
-  expect(retired.status).toBe(200);
-  await expect(retired.json()).resolves.toMatchObject({
+  expect(retired.document).toMatchObject({
     status: "retired",
     event_version: 2,
     code: "curated_revision_retired",
@@ -838,6 +1162,12 @@ test("a curated absence derives one relationship state and retains Official Sour
     relationship_value: card.official_identity.value,
     observed: true,
   };
+  const corroboratingOfficial = {
+    ...official,
+    id: `${official.id}_corroborating`,
+    source_lineage: "one-piece-product-detail",
+    source_observation_ids: [`srcobs_${sequence}_corroborating`],
+  };
   const relationshipProposal = {
     game: "one-piece",
     target: {
@@ -888,21 +1218,19 @@ test("a curated absence derives one relationship state and retains Official Sour
       provenance: {},
       disagreements: [],
     }],
-    product_relationships: [official],
+    product_relationships: [official, corroboratingOfficial],
   }, now);
-  expect(applied.product_relationships).toEqual([
-    expect.objectContaining({
-      id: official.id,
-      observed: false,
-      source_lineage: official.source_lineage,
-      source_observation_ids: official.source_observation_ids,
-      curated_provenance: [expect.objectContaining({
-        reviewed_source_value: "present",
-      })],
-    }),
-  ]);
+  expect(applied.product_relationships).toHaveLength(2);
+  expect(applied.product_relationships).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: official.id, observed: false }),
+    expect.objectContaining({ id: corroboratingOfficial.id, observed: false }),
+  ]));
+  expect(applied.product_relationships!.every((relationship) =>
+    relationship.curated_provenance?.at(-1)?.reviewed_source_value === "present"
+  )).toBe(true);
   expect(stripCuratedRevisionEffects(applied).product_relationships).toEqual([
     official,
+    corroboratingOfficial,
   ]);
   const built = await buildCatalogueExport(
     applied,
