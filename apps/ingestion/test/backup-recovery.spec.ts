@@ -8,6 +8,7 @@ import { beforeEach, expect, test } from "vitest";
 import {
   createVerifiedCatalogueBackup,
   type D1BackupProvider,
+  type RestoredCatalogueVerification,
 } from "../../../src/catalogue/backup-recovery";
 import {
   startOrObserveCatalogueBackupWorkflow,
@@ -15,6 +16,17 @@ import {
 } from "../../../src/catalogue/backup-workflow";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
+
+const completeRestoredVerification = (): RestoredCatalogueVerification => ({
+  schema: true,
+  integrity: true,
+  current_revision: true,
+  representative_entities: true,
+  search: true,
+  provenance: true,
+  audit: true,
+  api: true,
+});
 
 beforeEach(async () => {
   await applyD1Migrations(
@@ -55,6 +67,8 @@ test("the production backup boundary exports and verifies the exact restored rev
       events.push(`verify:${input.databaseId}`);
       expect(input.expectedRevisionId).toBe("catrev_spine_000");
       expect(input.ownerToken).toMatch(/^backup:/);
+      expect(input.expectedSchemaMigrationLevel).toBe(15);
+      return completeRestoredVerification();
     },
   };
 
@@ -79,6 +93,12 @@ test("the production backup boundary exports and verifies the exact restored rev
     catalogue_revision_id: "catrev_spine_000",
     verified: true,
     d1_bookmark: "bookmark-backup-1",
+    content_sha256:
+      "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
+    manifest_key: expect.stringMatching(/\/manifest\.json$/),
+    manifest_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    linked_attempt_id: null,
+    retention: { newest_success: true, retain_until: null },
   });
   expect(events).toEqual([
     `export:${testEnv.CATALOGUE_D1_DATABASE_ID}`,
@@ -123,6 +143,25 @@ test("the production backup boundary exports and verifies the exact restored rev
   });
   const backup = await testEnv.BACKUPS.get(document.object_key);
   expect(new Uint8Array(await backup!.arrayBuffer())).toEqual(sqlBytes);
+  const manifest = await testEnv.BACKUPS.get(document.manifest_key);
+  expect(await manifest!.json()).toEqual({
+    contract: "card-keepr-catalogue-backup-manifest@1",
+    attempt_id: "backup-production-boundary",
+    catalogue_revision_id: "catrev_spine_000",
+    content_sha256:
+      "85b8329ea262e672d4abc5352f8f1c504196ea0dfdc13c268575e5ba6ac2ec87",
+    d1_bookmark: "bookmark-backup-1",
+    export_bytes: sqlBytes.byteLength,
+    exported_at: "2026-08-05T02:00:00.000Z",
+    object_key: document.object_key,
+    producing_workflow_identity: "backup-production-boundary",
+    schema_migration_level: 15,
+    verification: {
+      disposable_database_id: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      verified: true,
+      verified_at: "2026-08-05T02:00:00.000Z",
+    },
+  });
   await expect(testEnv.CATALOGUE_DB.prepare(
     `SELECT state, owner_token, lease_expires_at
      FROM card_search_fts_state WHERE singleton = 1`,
@@ -134,20 +173,63 @@ test("the production backup boundary exports and verifies the exact restored rev
   await expect(testEnv.CATALOGUE_DB.prepare(
     "SELECT recovery_health FROM operation_state WHERE singleton = 1",
   ).first()).resolves.toEqual({ recovery_health: "healthy" });
+
+  await createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-boundary-newest",
+      observedAt: "2026-08-06T02:00:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  const datedReplay = await createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-boundary",
+      observedAt: "2026-08-07T02:00:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  expect(datedReplay.retention).toEqual({
+    newest_success: false,
+    retain_until: "2026-11-03T02:00:00.000Z",
+  });
 });
 
 test("backup failure reconstructs live search and leaves recovery degraded", async () => {
   let exportAttempts = 0;
+  let exportAvailable = false;
   const provider: D1BackupProvider = {
     async exportSql() {
       exportAttempts += 1;
-      throw new Error("synthetic export outage");
+      if (!exportAvailable) throw new Error("synthetic export outage");
+      const bytes = new TextEncoder().encode("-- immutable retry export\n");
+      return {
+        body: new Blob([bytes]).stream(),
+        size: bytes.byteLength,
+        bookmark: "bookmark-immutable-retry",
+        filename: "catalogue.sql",
+      };
     },
-    async restoreSql() {
-      throw new Error("restore must not run");
+    async restoreSql(input) {
+      await new Response(input.body).arrayBuffer();
     },
     async reconstructAndVerify() {
-      throw new Error("verification must not run");
+      return completeRestoredVerification();
     },
   };
 
@@ -195,6 +277,77 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
   await expect(testEnv.CATALOGUE_DB.prepare(
     "SELECT recovery_health FROM operation_state WHERE singleton = 1",
   ).first()).resolves.toEqual({ recovery_health: "degraded" });
+
+  exportAvailable = true;
+  const retry = await createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-failure-retry",
+      observedAt: "2026-08-05T03:10:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  expect(retry).toMatchObject({
+    linked_attempt_id: "backup-production-failure",
+    retention: { newest_success: true, retain_until: null },
+  });
+  expect(retry.object_key).not.toContain("backup-production-failure.sql");
+  expect(exportAttempts).toBe(2);
+});
+
+test("recovery stays degraded unless every restored catalogue contract passes", async () => {
+  const sqlBytes = new TextEncoder().encode("-- incomplete verified restore\n");
+  const provider = {
+    async exportSql() {
+      return {
+        body: new Blob([sqlBytes]).stream(),
+        size: sqlBytes.byteLength,
+        bookmark: "bookmark-incomplete-verification",
+        filename: "catalogue.sql",
+      };
+    },
+    async restoreSql(input: { body: ReadableStream<Uint8Array> }) {
+      await new Response(input.body).arrayBuffer();
+    },
+    async reconstructAndVerify() {
+      return {
+        schema: true,
+        integrity: true,
+        current_revision: true,
+        representative_entities: true,
+        search: true,
+        provenance: false,
+        audit: true,
+        api: true,
+      };
+    },
+  } as unknown as D1BackupProvider;
+
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-incomplete-verification",
+      observedAt: "2026-08-05T03:20:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+    },
+    provider,
+  )).rejects.toThrow(/restored.*verification/iu);
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT recovery_health FROM operation_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ recovery_health: "degraded" });
 });
 
 test("the Workflow can resume the same owner after an interrupted active attempt", async () => {
@@ -214,7 +367,9 @@ test("the Workflow can resume the same owner after an interrupted active attempt
     async restoreSql(input) {
       await new Response(input.body).arrayBuffer();
     },
-    async reconstructAndVerify() {},
+    async reconstructAndVerify() {
+      return completeRestoredVerification();
+    },
   };
   const input = {
     expectedCurrentRevisionId: "catrev_spine_000",

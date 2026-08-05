@@ -37,6 +37,7 @@ import {
 import {
   startOrObserveCatalogueBackupWorkflow,
 } from "../../../src/catalogue/backup-workflow";
+import { publicationBackupReservation } from "../../../src/catalogue/backup-recovery";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -67,7 +68,11 @@ export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
 
 const ingestionWorker = {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    context?: ExecutionContext,
+  ): Promise<Response> {
     const requestId = crypto.randomUUID();
 
     try {
@@ -88,6 +93,7 @@ const ingestionWorker = {
               },
             }),
             env,
+            context,
           );
           await response.body?.cancel();
           return response.status === 200;
@@ -564,6 +570,49 @@ const ingestionWorker = {
             observedAt,
             env.PRINTING_IMAGES,
           );
+        if (
+          result.publication_outcome === "revision" &&
+          typeof result.resulting_revision_id === "string"
+        ) {
+          const reservation = await publicationBackupReservation(
+            result.resulting_revision_id,
+          );
+          const clockMode = String(env.ADMINISTRATION_CLOCK_MODE);
+          const dispatch = async () => {
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+              const observed = await startOrObserveCatalogueBackupWorkflow(
+                env.CATALOGUE_DB,
+                env.CATALOGUE_BACKUP_WORKFLOW,
+                {
+                  expected_current_revision_id:
+                    result.resulting_revision_id as string,
+                  idempotency_key: reservation.idempotencyKey,
+                },
+                observedAt,
+              );
+              if (
+                clockMode !== "request" ||
+                observed.document.status === "complete"
+              ) return;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            throw new Error(
+              "Publication backup did not complete in the test observation window.",
+            );
+          };
+          const reportDispatchFailure = (error: unknown) => {
+            console.error(JSON.stringify({
+              message: "publication backup dispatch failed",
+              catalogue_revision_id: result.resulting_revision_id,
+              error: error instanceof Error ? error.message : "unknown error",
+            }));
+          };
+          if (clockMode === "request") {
+            await dispatch().catch(reportDispatchFailure);
+          } else {
+            context?.waitUntil(dispatch().catch(reportDispatchFailure));
+          }
+        }
         return Response.json(result, {
           status: administrationResultStatus(result, 200),
         });

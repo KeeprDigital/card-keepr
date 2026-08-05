@@ -299,12 +299,20 @@ export default defineConfig({
                       "SELECT catalogue.current_revision_id",
                     )
                     ? [{
-                      current_revision_id: "catrev_spine_000",
+                      current_revision_id:
+                        body.params?.[0] ?? "catrev_spine_000",
+                      schema_migration_level: 15,
                       card_search_state: "ready",
                       card_search_fts_tables: 1,
                       missing_fts_rows: 0,
                       invalid_api_documents: 0,
                       current_api_documents: 0,
+                      current_cards: 0,
+                      current_printings: 0,
+                      current_products: 0,
+                      current_legality_rules: 0,
+                      invalid_curated_provenance: 0,
+                      invalid_audit_rows: 0,
                     }]
                     : body.sql === "PRAGMA quick_check"
                     ? [{ quick_check: "ok" }]

@@ -26,14 +26,20 @@ export async function startOrObserveCatalogueBackupWorkflow(
     const state = await database.prepare(
       `SELECT catalogue.current_revision_id,
               operation.active_ingestion_run_id,
-              operation.recovery_health
+              operation.recovery_health,
+              EXISTS (
+                SELECT 1 FROM catalogue_backup_attempts
+                WHERE idempotency_key = ?
+                  AND publication_ingestion_run_id IS NOT NULL
+              ) AS publication_attempt
        FROM catalogue_state AS catalogue
        JOIN operation_state AS operation ON operation.singleton = 1
        WHERE catalogue.singleton = 1`,
-    ).first<{
+    ).bind(input.idempotency_key).first<{
       current_revision_id: string;
       active_ingestion_run_id: string | null;
       recovery_health: string;
+      publication_attempt: number;
     }>();
     if (state?.current_revision_id !== input.expected_current_revision_id) {
       throw new AdministrationProblem(
@@ -42,7 +48,9 @@ export async function startOrObserveCatalogueBackupWorkflow(
         "The expected current Catalogue Revision is stale.",
       );
     }
-    if (state.active_ingestion_run_id !== null) {
+    if (
+      state.active_ingestion_run_id !== null && state.publication_attempt !== 1
+    ) {
       throw new AdministrationProblem(
         409,
         "maintenance_not_idle",
@@ -212,9 +220,15 @@ async function retainedBackupOutcome(
   request: BackupWorkflowRequest,
 ): Promise<ReturnType<typeof workflowOutput>> {
   const attempt = await database.prepare(
-    `SELECT state, catalogue_revision_id, object_key, d1_bookmark,
-            failure_code, failure_detail
-     FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
+    `SELECT attempt.state, attempt.catalogue_revision_id, attempt.object_key,
+            attempt.d1_bookmark, attempt.failure_code, attempt.failure_detail,
+            attempt.content_sha256, attempt.manifest_key,
+            attempt.manifest_sha256, attempt.linked_attempt_id,
+            retention.newest_success, retention.retain_until
+     FROM catalogue_backup_attempts AS attempt
+     LEFT JOIN catalogue_backup_retention AS retention
+       ON retention.attempt_id = attempt.idempotency_key
+     WHERE attempt.idempotency_key = ?`,
   ).bind(request.idempotency_key).first<{
     state: string;
     catalogue_revision_id: string;
@@ -222,10 +236,18 @@ async function retainedBackupOutcome(
     d1_bookmark: string | null;
     failure_code: string | null;
     failure_detail: string | null;
+    content_sha256: string | null;
+    manifest_key: string | null;
+    manifest_sha256: string | null;
+    linked_attempt_id: string | null;
+    newest_success: number | null;
+    retain_until: string | null;
   }>();
   if (
     attempt?.state === "verified" && attempt.d1_bookmark !== null &&
-    attempt.catalogue_revision_id === request.expected_current_revision_id
+    attempt.catalogue_revision_id === request.expected_current_revision_id &&
+    attempt.content_sha256 !== null && attempt.manifest_key !== null &&
+    attempt.manifest_sha256 !== null && attempt.newest_success !== null
   ) {
     return {
       ok: true,
@@ -234,6 +256,14 @@ async function retainedBackupOutcome(
         catalogue_revision_id: attempt.catalogue_revision_id,
         object_key: attempt.object_key,
         d1_bookmark: attempt.d1_bookmark,
+        content_sha256: attempt.content_sha256,
+        manifest_key: attempt.manifest_key,
+        manifest_sha256: attempt.manifest_sha256,
+        linked_attempt_id: attempt.linked_attempt_id,
+        retention: {
+          newest_success: attempt.newest_success === 1,
+          retain_until: attempt.retain_until,
+        },
         verified: true,
       },
     };

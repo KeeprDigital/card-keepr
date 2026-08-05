@@ -6,6 +6,8 @@ import {
 import {
   withCardSearchPreparedForD1Export,
 } from "./card-search-recovery";
+import { canonicalJson } from "./serialization";
+import { StreamingSha256 } from "./streaming-sha256";
 
 export type D1BackupProvider = Readonly<{
   exportSql(input: Readonly<{
@@ -32,7 +34,19 @@ export type D1BackupProvider = Readonly<{
     token: string;
     ownerToken: string;
     expectedRevisionId: string;
-  }>): Promise<void>;
+    expectedSchemaMigrationLevel: number;
+  }>): Promise<RestoredCatalogueVerification>;
+}>;
+
+export type RestoredCatalogueVerification = Readonly<{
+  schema: true;
+  integrity: true;
+  current_revision: true;
+  representative_entities: true;
+  search: true;
+  provenance: true;
+  audit: true;
+  api: true;
 }>;
 
 type BackupInput = Readonly<{
@@ -50,11 +64,41 @@ type BackupExecutionOptions = Readonly<{
   terminalFailure?: boolean;
 }>;
 
+export type PublicationBackupReservation = Readonly<{
+  idempotencyKey: string;
+  requestJson: string;
+  ownerToken: string;
+  objectKey: string;
+}>;
+
+export async function publicationBackupReservation(
+  catalogueRevisionId: string,
+): Promise<PublicationBackupReservation> {
+  const idempotencyKey = `publication-backup-${await sha256(catalogueRevisionId)}`;
+  const digest = await sha256(idempotencyKey);
+  return {
+    idempotencyKey,
+    requestJson: JSON.stringify({
+      expected_current_revision_id: catalogueRevisionId,
+    }),
+    ownerToken: `backup:${digest}`,
+    objectKey: `d1-backups/${catalogueRevisionId}/${digest}/catalogue.sql`,
+  };
+}
+
 export type CatalogueBackupDocument = Readonly<{
   contract: "card-keepr-catalogue-backup@1";
   catalogue_revision_id: string;
   object_key: string;
   d1_bookmark: string;
+  content_sha256: string;
+  manifest_key: string;
+  manifest_sha256: string;
+  linked_attempt_id: string | null;
+  retention: Readonly<{
+    newest_success: boolean;
+    retain_until: string | null;
+  }>;
   verified: true;
 }>;
 
@@ -68,16 +112,23 @@ export async function createVerifiedCatalogueBackup(
   validateInput(input);
   const digest = await sha256(input.idempotencyKey);
   const ownerToken = `backup:${digest}`;
-  const objectKey =
-    `d1-backups/${input.expectedCurrentRevisionId}/${digest}.sql`;
+  const objectPrefix =
+    `d1-backups/${input.expectedCurrentRevisionId}/${digest}`;
+  const objectKey = `${objectPrefix}/catalogue.sql`;
+  const manifestKey = `${objectPrefix}/manifest.json`;
   const requestJson = JSON.stringify({
     expected_current_revision_id: input.expectedCurrentRevisionId,
   });
+  const linkedAttempt = await database.prepare(
+    `SELECT idempotency_key FROM catalogue_backup_attempts
+     WHERE catalogue_revision_id = ? AND state = 'failed'
+     ORDER BY completed_at DESC, idempotency_key DESC LIMIT 1`,
+  ).bind(input.expectedCurrentRevisionId).first<{ idempotency_key: string }>();
   await database.prepare(
     `INSERT OR IGNORE INTO catalogue_backup_attempts (
        idempotency_key, request_json, owner_token, catalogue_revision_id,
-       state, object_key, started_at
-     ) VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
+       state, object_key, started_at, linked_attempt_id
+     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
   ).bind(
     input.idempotencyKey,
     requestJson,
@@ -85,11 +136,19 @@ export async function createVerifiedCatalogueBackup(
     input.expectedCurrentRevisionId,
     objectKey,
     input.observedAt,
+    linkedAttempt?.idempotency_key ?? null,
   ).run();
   const attempt = await database.prepare(
     `SELECT request_json, state, catalogue_revision_id, object_key,
-            d1_bookmark, failure_code, failure_detail
-     FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
+            d1_bookmark, failure_code, failure_detail, manifest_key,
+            content_sha256, manifest_sha256, export_bytes,
+            schema_migration_level, linked_attempt_id,
+            publication_ingestion_run_id, retention.newest_success,
+            retention.retain_until
+     FROM catalogue_backup_attempts AS attempt
+     LEFT JOIN catalogue_backup_retention AS retention
+       ON retention.attempt_id = attempt.idempotency_key
+     WHERE attempt.idempotency_key = ?`,
   ).bind(input.idempotencyKey).first<{
     request_json: string;
     state: string;
@@ -98,6 +157,15 @@ export async function createVerifiedCatalogueBackup(
     d1_bookmark: string | null;
     failure_code: string | null;
     failure_detail: string | null;
+    manifest_key: string | null;
+    content_sha256: string | null;
+    manifest_sha256: string | null;
+    export_bytes: number | null;
+    schema_migration_level: number | null;
+    linked_attempt_id: string | null;
+    publication_ingestion_run_id: string | null;
+    newest_success: number | null;
+    retain_until: string | null;
   }>();
   if (attempt?.request_json !== requestJson) {
     throw new AdministrationProblem(
@@ -106,11 +174,21 @@ export async function createVerifiedCatalogueBackup(
       "The backup idempotency key is bound to another request.",
     );
   }
-  if (attempt.state === "verified" && attempt.d1_bookmark !== null) {
+  if (
+    attempt.state === "verified" && attempt.d1_bookmark !== null &&
+    attempt.manifest_key !== null && attempt.content_sha256 !== null &&
+    attempt.manifest_sha256 !== null
+  ) {
     return backupDocument({
       catalogue_revision_id: attempt.catalogue_revision_id,
       object_key: attempt.object_key,
       d1_bookmark: attempt.d1_bookmark,
+      content_sha256: attempt.content_sha256,
+      manifest_key: attempt.manifest_key,
+      manifest_sha256: attempt.manifest_sha256,
+      linked_attempt_id: attempt.linked_attempt_id,
+      newest_success: attempt.newest_success === 1,
+      retain_until: attempt.retain_until,
     });
   }
   if (attempt.state === "failed") {
@@ -127,6 +205,7 @@ export async function createVerifiedCatalogueBackup(
       "The retained backup attempt is already in progress.",
     );
   }
+  const publicationOwned = attempt.publication_ingestion_run_id !== null;
   const state = await database.prepare(
     `SELECT catalogue.current_revision_id,
             operation.active_ingestion_run_id,
@@ -154,7 +233,7 @@ export async function createVerifiedCatalogueBackup(
       "The expected current Catalogue Revision is stale.",
     );
   }
-  if (state.active_ingestion_run_id !== null) {
+  if (state.active_ingestion_run_id !== null && !publicationOwned) {
     await failAttempt(
       database,
       input.idempotencyKey,
@@ -179,7 +258,7 @@ export async function createVerifiedCatalogueBackup(
              JOIN operation_state AS operation ON operation.singleton = 1
              WHERE attempt.idempotency_key = ? AND attempt.owner_token = ?
                AND attempt.state = 'pending'
-               AND operation.active_ingestion_run_id IS NULL
+               AND (? = 1 OR operation.active_ingestion_run_id IS NULL)
                AND operation.recovery_health <> 'blocked'
                AND NOT EXISTS (
                  SELECT 1 FROM catalogue_backup_attempts AS active
@@ -189,16 +268,18 @@ export async function createVerifiedCatalogueBackup(
                    )
                )
            ) THEN 1 ELSE json_extract('invalid', '$') END`,
-        ).bind(input.idempotencyKey, ownerToken),
+        ).bind(input.idempotencyKey, ownerToken, publicationOwned ? 1 : 0),
         database.prepare(
           `UPDATE catalogue_backup_attempts SET state = 'exporting'
            WHERE idempotency_key = ? AND owner_token = ? AND state = 'pending'`,
         ).bind(input.idempotencyKey, ownerToken),
         database.prepare(
-          `UPDATE operation_state SET recovery_health = 'blocked'
-           WHERE singleton = 1 AND active_ingestion_run_id IS NULL
+          `UPDATE operation_state
+           SET recovery_health = CASE WHEN ? = 1 THEN 'degraded' ELSE 'blocked' END
+           WHERE singleton = 1
+             AND (? = 1 OR active_ingestion_run_id IS NULL)
              AND recovery_health <> 'blocked'`,
-        ),
+        ).bind(publicationOwned ? 1 : 0, publicationOwned ? 1 : 0),
       ]);
     } catch {
       throw new AdministrationProblem(
@@ -208,7 +289,9 @@ export async function createVerifiedCatalogueBackup(
       );
     }
     attemptState = "exporting";
-  } else if (state.recovery_health !== "blocked") {
+  } else if (
+    state.recovery_health !== (publicationOwned ? "degraded" : "blocked")
+  ) {
     throw new Error("The active backup attempt lost its recovery block.");
   }
 
@@ -221,6 +304,10 @@ export async function createVerifiedCatalogueBackup(
   ).toISOString();
   try {
     let bookmark = attempt.d1_bookmark;
+    let exportBytes = attempt.export_bytes;
+    let contentSha256 = attempt.content_sha256;
+    const schemaMigrationLevel = attempt.schema_migration_level ??
+      await currentSchemaMigrationLevel(database);
     if (attemptState === "exporting") {
       const exported = await withCardSearchPreparedForD1Export(
         database,
@@ -232,9 +319,17 @@ export async function createVerifiedCatalogueBackup(
         }),
       );
       const sized = new FixedLengthStream(exported.size);
-      await Promise.all([
-        exported.body.pipeTo(sized.writable),
+      const contentDigest = new StreamingSha256();
+      const hashing = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          contentDigest.update(chunk);
+          controller.enqueue(chunk);
+        },
+      });
+      const [, retainedObject] = await Promise.all([
+        exported.body.pipeThrough(hashing).pipeTo(sized.writable),
         backups.put(objectKey, sized.readable, {
+          onlyIf: { etagDoesNotMatch: "*" },
           httpMetadata: { contentType: "application/sql; charset=utf-8" },
           customMetadata: {
             catalogue_revision_id: input.expectedCurrentRevisionId,
@@ -242,17 +337,32 @@ export async function createVerifiedCatalogueBackup(
           },
         }),
       ]);
+      if (retainedObject === null) {
+        throw new Error("Immutable backup object already exists.");
+      }
+      const retained = await backups.head(objectKey);
+      if (retained === null || retained.size !== exported.size) {
+        throw new Error("Retained backup digest is unavailable.");
+      }
+      contentSha256 = contentDigest.digestHex();
+      exportBytes = retained.size;
       await transitionExportedAttempt(
         database,
         input.idempotencyKey,
         ownerToken,
         exported.bookmark,
+        contentSha256,
+        exportBytes,
+        schemaMigrationLevel,
       );
       bookmark = exported.bookmark;
       attemptState = "restoring_verification";
     }
     if (bookmark === null) {
       throw new Error("The retained D1 export bookmark is unavailable.");
+    }
+    if (contentSha256 === null || exportBytes === null) {
+      throw new Error("The retained D1 export evidence is unavailable.");
     }
     if (attemptState === "restoring_verification") {
       const stored = await backups.get(objectKey);
@@ -275,13 +385,49 @@ export async function createVerifiedCatalogueBackup(
       attemptState = "verifying";
     }
     if (attemptState === "verifying") {
-      await provider.reconstructAndVerify({
+      const restoredVerification = await provider.reconstructAndVerify({
         accountId: input.cloudflareAccountId,
         databaseId: input.disposableDatabaseId,
         token: input.verificationToken,
         ownerToken,
         expectedRevisionId: input.expectedCurrentRevisionId,
+        expectedSchemaMigrationLevel: schemaMigrationLevel,
       });
+      assertCompleteRestoredVerification(restoredVerification);
+    }
+    const manifest = {
+      contract: "card-keepr-catalogue-backup-manifest@1",
+      attempt_id: input.idempotencyKey,
+      catalogue_revision_id: input.expectedCurrentRevisionId,
+      content_sha256: contentSha256,
+      d1_bookmark: bookmark,
+      export_bytes: exportBytes,
+      exported_at: input.observedAt,
+      object_key: objectKey,
+      producing_workflow_identity: input.idempotencyKey,
+      schema_migration_level: schemaMigrationLevel,
+      verification: {
+        disposable_database_id: input.disposableDatabaseId,
+        verified: true,
+        verified_at: input.observedAt,
+      },
+    } as const;
+    const manifestJson = canonicalJson(manifest);
+    const manifestSha256 = await sha256(manifestJson);
+    const storedManifest = await backups.put(manifestKey, manifestJson, {
+      onlyIf: { etagDoesNotMatch: "*" },
+      httpMetadata: { contentType: "application/json; charset=utf-8" },
+      customMetadata: {
+        catalogue_revision_id: input.expectedCurrentRevisionId,
+        content_sha256: contentSha256,
+        manifest_sha256: manifestSha256,
+      },
+    });
+    if (storedManifest === null) {
+      const existingManifest = await backups.head(manifestKey);
+      if (
+        existingManifest?.customMetadata?.manifest_sha256 !== manifestSha256
+      ) throw new Error("Immutable backup manifest already exists.");
     }
     try {
       await database.batch([
@@ -294,18 +440,37 @@ export async function createVerifiedCatalogueBackup(
         ).bind(input.idempotencyKey, ownerToken),
         database.prepare(
           `UPDATE catalogue_backup_attempts
-           SET state = 'verified', d1_bookmark = ?, completed_at = ?
+           SET state = 'verified', d1_bookmark = ?, completed_at = ?,
+               manifest_key = ?, manifest_sha256 = ?
            WHERE idempotency_key = ? AND owner_token = ?
              AND state = 'verifying'`,
         ).bind(
           bookmark,
           input.observedAt,
+          manifestKey,
+          manifestSha256,
           input.idempotencyKey,
           ownerToken,
         ),
         database.prepare(
+          `UPDATE catalogue_backup_retention
+           SET newest_success = 0,
+               retain_until = (
+                 SELECT strftime('%Y-%m-%dT%H:%M:%fZ', completed_at, '+90 days')
+                 FROM catalogue_backup_attempts
+                 WHERE idempotency_key = catalogue_backup_retention.attempt_id
+               )
+           WHERE newest_success = 1`,
+        ),
+        database.prepare(
+          `INSERT INTO catalogue_backup_retention (
+             attempt_id, newest_success, retain_until, policy
+           ) VALUES (?, 1, NULL, 'newest-indefinite-and-dated-90-days')`,
+        ).bind(input.idempotencyKey),
+        database.prepare(
           `UPDATE operation_state SET recovery_health = 'healthy'
-           WHERE singleton = 1 AND recovery_health = 'blocked'`,
+           WHERE singleton = 1
+             AND recovery_health IN ('blocked', 'degraded')`,
         ),
       ]);
     } catch {
@@ -319,6 +484,12 @@ export async function createVerifiedCatalogueBackup(
       catalogue_revision_id: input.expectedCurrentRevisionId,
       object_key: objectKey,
       d1_bookmark: bookmark,
+      content_sha256: contentSha256,
+      manifest_key: manifestKey,
+      manifest_sha256: manifestSha256,
+      linked_attempt_id: attempt.linked_attempt_id,
+      newest_success: true,
+      retain_until: null,
     });
   } catch (error) {
     if (options.terminalFailure !== false) {
@@ -442,6 +613,7 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
       {
         sql:
           `SELECT catalogue.current_revision_id,
+                  schema_state.migration_level AS schema_migration_level,
                   search.state AS card_search_state,
                   (SELECT count(*) FROM sqlite_schema
                    WHERE type = 'table'
@@ -456,10 +628,32 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
                    WHERE json_valid(summary_json) = 0) AS invalid_api_documents,
                   (SELECT count(*) FROM revision_card_query_documents
                    WHERE catalogue_revision_id = catalogue.current_revision_id)
-                    AS current_api_documents
+                    AS current_api_documents,
+                  (SELECT count(*) FROM revision_cards
+                   WHERE catalogue_revision_id = catalogue.current_revision_id)
+                    AS current_cards,
+                  (SELECT count(*) FROM revision_printings
+                   WHERE catalogue_revision_id = catalogue.current_revision_id)
+                    AS current_printings,
+                  (SELECT count(*) FROM revision_products
+                   WHERE catalogue_revision_id = catalogue.current_revision_id)
+                    AS current_products,
+                  (SELECT count(*) FROM revision_legality_rules
+                   WHERE catalogue_revision_id = catalogue.current_revision_id)
+                    AS current_legality_rules,
+                  (SELECT count(*) FROM catalogue_curated_provenance
+                   WHERE json_valid(provenance_json) = 0)
+                    AS invalid_curated_provenance,
+                  (SELECT count(*) FROM ingestion_runs
+                   WHERE json_valid(progress_json) = 0)
+                    AS invalid_audit_rows
            FROM catalogue_state AS catalogue
            JOIN card_search_fts_state AS search ON search.singleton = 1
-           WHERE catalogue.singleton = 1`,
+           JOIN catalogue_schema_state AS schema_state
+             ON schema_state.singleton = 1
+           WHERE catalogue.singleton = 1
+             AND catalogue.current_revision_id = ?`,
+        params: [input.expectedRevisionId],
       },
     );
     const integrity = firstQueryRow(await cloudflareD1Request(
@@ -482,16 +676,25 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
     const row = firstQueryRow(verification);
     if (
       integrity.quick_check !== "ok" ||
+      row.schema_migration_level !== input.expectedSchemaMigrationLevel ||
       row.current_revision_id !== input.expectedRevisionId ||
       row.card_search_state !== "ready" ||
       row.card_search_fts_tables !== 1 ||
       row.missing_fts_rows !== 0 ||
       row.invalid_api_documents !== 0 ||
+      row.invalid_curated_provenance !== 0 ||
+      row.invalid_audit_rows !== 0 ||
       typeof row.current_api_documents !== "number" ||
+      typeof row.current_cards !== "number" ||
+      typeof row.current_printings !== "number" ||
+      typeof row.current_products !== "number" ||
+      typeof row.current_legality_rules !== "number" ||
+      row.current_api_documents !== row.current_cards ||
       !apiRows.every(validApiCardRow)
     ) {
       throw new Error("Restored D1 verification failed.");
     }
+    return completeRestoredVerification();
   },
 };
 
@@ -536,12 +739,26 @@ function backupDocument(attempt: Readonly<{
   catalogue_revision_id: string;
   object_key: string;
   d1_bookmark: string;
+  content_sha256: string;
+  manifest_key: string;
+  manifest_sha256: string;
+  linked_attempt_id: string | null;
+  newest_success: boolean;
+  retain_until: string | null;
 }>): CatalogueBackupDocument {
   return {
     contract: "card-keepr-catalogue-backup@1",
     catalogue_revision_id: attempt.catalogue_revision_id,
     object_key: attempt.object_key,
     d1_bookmark: attempt.d1_bookmark,
+    content_sha256: attempt.content_sha256,
+    manifest_key: attempt.manifest_key,
+    manifest_sha256: attempt.manifest_sha256,
+    linked_attempt_id: attempt.linked_attempt_id,
+    retention: {
+      newest_success: attempt.newest_success,
+      retain_until: attempt.retain_until,
+    },
     verified: true,
   };
 }
@@ -571,12 +788,23 @@ async function transitionExportedAttempt(
   idempotencyKey: string,
   ownerToken: string,
   bookmark: string,
+  contentSha256: string,
+  exportBytes: number,
+  schemaMigrationLevel: number,
 ): Promise<void> {
   const changed = await database.prepare(
     `UPDATE catalogue_backup_attempts
-     SET state = 'restoring_verification', d1_bookmark = ?
+     SET state = 'restoring_verification', d1_bookmark = ?,
+         content_sha256 = ?, export_bytes = ?, schema_migration_level = ?
      WHERE idempotency_key = ? AND owner_token = ? AND state = 'exporting'`,
-  ).bind(bookmark, idempotencyKey, ownerToken).run();
+  ).bind(
+    bookmark,
+    contentSha256,
+    exportBytes,
+    schemaMigrationLevel,
+    idempotencyKey,
+    ownerToken,
+  ).run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(
       409,
@@ -664,6 +892,37 @@ function validApiCardRow(row: Record<string, unknown>): boolean {
     .every((value) => typeof value === "string");
 }
 
+function assertCompleteRestoredVerification(
+  result: RestoredCatalogueVerification,
+): void {
+  if (
+    result === null || typeof result !== "object" ||
+    [
+      result.schema,
+      result.integrity,
+      result.current_revision,
+      result.representative_entities,
+      result.search,
+      result.provenance,
+      result.audit,
+      result.api,
+    ].some((check) => check !== true)
+  ) throw new Error("Restored Catalogue verification is incomplete.");
+}
+
+function completeRestoredVerification(): RestoredCatalogueVerification {
+  return {
+    schema: true,
+    integrity: true,
+    current_revision: true,
+    representative_entities: true,
+    search: true,
+    provenance: true,
+    audit: true,
+    api: true,
+  };
+}
+
 function isActiveAttemptState(value: string): boolean {
   return [
     "pending",
@@ -718,6 +977,16 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
+}
+
+async function currentSchemaMigrationLevel(database: D1Database): Promise<number> {
+  const row = await database.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  if (!Number.isSafeInteger(row?.migration_level) || row!.migration_level <= 0) {
+    throw new Error("The Catalogue schema migration level is unavailable.");
+  }
+  return row!.migration_level;
 }
 
 function delay(milliseconds: number): Promise<void> {
