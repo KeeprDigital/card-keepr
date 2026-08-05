@@ -1,10 +1,11 @@
 # Retained Bandai Official Source bytes
 
 These fixtures were captured from the public URLs recorded in each JSON file
-through 2026-08-04 Australia/Melbourne time. `body_base64` is either the complete
+through 2026-08-05 Australia/Melbourne time. `body_base64` is either the complete
 unchanged HTTP response body (`range_start = 0` and
 `range_end_exclusive = full_body_size`) or an unchanged byte range containing
-the complete publisher `<header>`. Range fixtures record their offsets, the
+the complete publisher `<header>` or one complete parseable publication
+section. Range fixtures record their offsets, the
 full response size and digest, and the retained-range digest. Tests decode the
 bytes, verify `body_sha256`, and pass those exact bytes to the production
 adapter.

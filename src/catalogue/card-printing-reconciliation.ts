@@ -132,10 +132,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     gundamCardLineages(database),
     gundamPrintingProductMemberships(database),
   ]);
-  const publishedGundamLineages = gundamLineagesByPrinting(
+  const currentGundamPrintingAuthorities = gundamLineagesByPrinting(
     storedGundamLineages.filter(({ current }) => current === 1),
   );
-  const historicalGundamLineages = gundamLineagesByPrinting(
+  const historicalGundamPrintingProvenance = gundamLineagesByPrinting(
     storedGundamLineages,
   );
   const publishedGundamCardLineages = gundamLineagesByCard(
@@ -148,7 +148,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
   >();
-  const localGundamLineages = new Map<
+  const candidateGundamPrintingProvenance = new Map<
     string,
     Set<"gundam-en-asia" | "gundam-en-us">
   >();
@@ -444,8 +444,8 @@ export async function reconcileRetainedCardPrintingEvidence(
       const crossLocaleCandidates = observation.supportedGame === "gundam"
         ? [...matchIds].filter((candidateId) => {
             const observedLineages = new Set([
-              ...(publishedGundamLineages.get(candidateId) ?? []),
-              ...(localGundamLineages.get(candidateId) ?? []),
+              ...(historicalGundamPrintingProvenance.get(candidateId) ?? []),
+              ...(candidateGundamPrintingProvenance.get(candidateId) ?? []),
             ]);
             return observedLineages.size > 0 &&
               !observedLineages.has(observation.sourceLineage as
@@ -565,7 +565,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.sourceLineage === "gundam-en-us"
       ) {
         addGundamLineage(
-          localGundamLineages,
+          candidateGundamPrintingProvenance,
           printingId,
           observation.sourceLineage,
         );
@@ -586,9 +586,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.supportedGame === "gundam" &&
         observation.sourceLineage === "gundam-en-us" &&
         carriedPrinting !== undefined &&
-        (historicalGundamLineages.get(printingId)?.has("gundam-en-asia") ===
+        (currentGundamPrintingAuthorities.get(printingId)?.has(
+          "gundam-en-asia",
+        ) ===
             true ||
-          localGundamLineages.get(printingId)?.has("gundam-en-asia") === true);
+          candidateGundamPrintingProvenance.get(printingId)?.has(
+            "gundam-en-asia",
+          ) === true);
       let acceptedPrinting = proposedPrinting;
       if (retainAsiaPrintingAuthority) {
         const {
@@ -1136,7 +1140,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         ),
       ].sort();
   const resultingGundamLineages = new Map(
-    [...publishedGundamLineages].map(([printingId, lineages]) =>
+    [...currentGundamPrintingAuthorities].map(([printingId, lineages]) =>
       [printingId, new Set(lineages)] as const
     ),
   );

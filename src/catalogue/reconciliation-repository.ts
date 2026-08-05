@@ -345,7 +345,7 @@ export async function canonicalPrintingConflict(
     .prepare(
       `SELECT DISTINCT source_lineage
        FROM reconciled_printing_locators
-       WHERE printing_id = ?`,
+       WHERE printing_id = ? AND current = 1`,
     )
     .bind(printingId)
     .all<{ source_lineage: string }>();

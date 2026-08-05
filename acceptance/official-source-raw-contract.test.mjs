@@ -824,7 +824,7 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[234]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[2-5]T/u);
   return { bytes, metadata };
 }
 
@@ -5086,6 +5086,31 @@ test("retained Gundam package snapshots close publisher totals and dedupe full l
   }
 });
 
+test("digest-verified unchanged Gundam publisher listing bytes close their exact result", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-list-complete-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const context = {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:listing:${"d".repeat(64)}`,
+  };
+  const [coverage] = adapter.parseBytes(fixture.bytes, context);
+  assert.deepEqual(coverage.completeness, {
+    declared_record_count: 187,
+    parsed_record_count: 187,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    structurally_complete: true,
+  });
+  assert.equal(
+    adapter.discoverRequests(fixture.bytes, context)
+      .filter(({ role }) => role === "detail").length,
+    187,
+  );
+});
+
 test("retained Gundam detail snapshots bind base and alternate art to full locators", () => {
   for (const { lineage, locale } of [
     { lineage: "gundam-en-asia", locale: "asia-en" },
@@ -5159,7 +5184,36 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
       hp: 4,
       series_titles: ["Mobile Suit Gundam GQuuuuuuX"],
     });
-    const placeholderBytes = new TextEncoder().encode(
+  }
+});
+
+test("digest-verified unchanged Gundam publisher dash remains raw and normalizes", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-detail-dash-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const [observation] = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:detail:${"4".repeat(64)}`,
+  });
+  assert.equal(
+    observation.card.game_data.attributes.link_condition,
+    null,
+  );
+  assert.equal(
+    observation.source_sidecar.raw.official_surfaces[0].document.Link,
+    "-",
+  );
+});
+
+test("synthetic Gundam dash-glyph variants normalize without changing raw evidence", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const syntheticPlaceholderBytes = new TextEncoder().encode(
       readFileSync(new URL(
         `./fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
         import.meta.url,
@@ -5171,12 +5225,15 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
           '<dt>Link</dt><dd>–</dd>',
         ),
     );
-    const [placeholderObservation] = adapter.parseBytes(placeholderBytes, {
+    const [placeholderObservation] = adapter.parseBytes(
+      syntheticPlaceholderBytes,
+      {
       mediaType: "text/html; charset=UTF-8",
       url:
         `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
       requestId: `${lineage}:detail:${"3".repeat(64)}`,
-    });
+      },
+    );
     assert.deepEqual(
       {
         block_icon: placeholderObservation.card.game_data.attributes.block_icon,
@@ -5186,13 +5243,13 @@ test("retained Gundam detail snapshots bind base and alternate art to full locat
       },
       { block_icon: null, zone: null, link_condition: null },
     );
-    const [retainedSurface] =
+    const [syntheticRawSurface] =
       placeholderObservation.source_sidecar.raw.official_surfaces;
     assert.deepEqual(
       {
-        block_icon: retainedSurface.document["Block icon"],
-        zone: retainedSurface.document.Zone,
-        link_condition: retainedSurface.document.Link,
+        block_icon: syntheticRawSurface.document["Block icon"],
+        zone: syntheticRawSurface.document.Zone,
+        link_condition: syntheticRawSurface.document.Link,
       },
       { block_icon: "-", zone: "—", link_condition: "–" },
     );

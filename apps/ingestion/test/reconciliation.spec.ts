@@ -2766,7 +2766,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
   } as const;
 
   const asiaRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-first",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-asia-first",
     "historical-authority-asia-first",
     asiaOptions,
   );
@@ -2800,8 +2800,25 @@ test("historical Gundam locators survive disappearance without retaining stale C
     },
   });
 
+  const historicalProductConflictRun = await collect(
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-product-conflict",
+    "historical-provenance-us-product-conflict",
+    usOptions,
+  );
+  const historicalProductConflict = await reconcile(
+    historicalProductConflictRun.id,
+  );
+  expect(historicalProductConflict.response.status).toBe(409);
+  expect(historicalProductConflict.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({
+      code: "printing_match_insufficient_evidence",
+      candidate_printing_ids: [printingId],
+      detail: expect.stringContaining("Product"),
+    })]),
+  );
+
   const usEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-us-second",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-us-second",
     "historical-authority-us-equivalent",
     usOptions,
   );
@@ -2817,8 +2834,8 @@ test("historical Gundam locators survive disappearance without retaining stale C
   });
   expect(requiredFirst(usEquivalent.document, "printings")).toMatchObject({
     id: printingId,
-    rarity: { raw: "L", normalized: "leader" },
-    printed_rules_text: "Official printed rules",
+    rarity: { raw: "  L  ", normalized: "leader" },
+    printed_rules_text: "  Official   printed rules  ",
     game_data: {
       profile: "gundam@1",
       attributes: { alternate_art: false },
@@ -2843,8 +2860,8 @@ test("historical Gundam locators survive disappearance without retaining stale C
   ).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      rarity: { raw: "L", normalized: "leader" },
-      printed_rules_text: "Official printed rules",
+      rarity: { raw: "  L  ", normalized: "leader" },
+      printed_rules_text: "  Official   printed rules  ",
     }),
   );
   const corroborated = await get(
@@ -2860,7 +2877,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
   });
 
   const usConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-conflict",
     "historical-authority-us-conflict",
     usOptions,
   );
@@ -2880,23 +2897,30 @@ test("historical Gundam locators survive disappearance without retaining stale C
     idempotency_key: "reject-absent-asia-card-authority",
   });
   const usPrintingConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-printing-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
     usOptions,
   );
   const usPrintingConflict = await reconcile(usPrintingConflictRun.id);
-  expect(usPrintingConflict.response.status).toBe(409);
-  expect(usPrintingConflict.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "printing_match_contradictory",
-        candidate_printing_ids: [printingId],
-      }),
-    ]),
-  );
+  expect(usPrintingConflict.response.status).toBe(200);
+  expect(requiredFirst(usPrintingConflict.document, "printings")).toMatchObject({
+    id: printingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Substantively different printed rules",
+    game_data: {
+      attributes: { alternate_art: true },
+    },
+  });
+  await post(`/v1/ingestion-runs/${usPrintingConflictRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      usPrintingConflict.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-us-printing-evolution",
+  });
 
   const usFirstRun = await collect(
-    "/reconciliation/gundam-printing-format-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-us-first",
     "historical-authority-us-first",
     usOptions,
   );
@@ -2918,7 +2942,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
   const usMissing = await reconcile(usMissingRun.id);
   await approve(usMissing.document);
   const asiaEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-second",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-asia-second",
     "historical-authority-asia-equivalent",
     asiaOptions,
   );
@@ -2940,11 +2964,19 @@ test("historical Gundam locators survive disappearance without retaining stale C
   await approve(asiaEquivalent.document);
 
   const reverseConflictUsRun = await collect(
-    "/reconciliation/gundam-printing-conflict-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-conflict-us-first",
     "historical-authority-conflict-us-first",
     usOptions,
   );
   const reverseConflictUs = await reconcile(reverseConflictUsRun.id);
+  const reverseConflictCardId = requiredString(
+    requiredFirst(reverseConflictUs.document, "cards"),
+    "id",
+  );
+  const reverseConflictPrintingId = requiredString(
+    requiredFirst(reverseConflictUs.document, "printings"),
+    "id",
+  );
   await approve(reverseConflictUs.document);
   const reverseConflictMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
@@ -2956,22 +2988,29 @@ test("historical Gundam locators survive disappearance without retaining stale C
   );
   await approve(reverseConflictMissing.document);
   const reverseConflictAsiaRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-asia-conflict",
+    "/reconciliation/gundam-printing-lifecycle-reverse-disappearance-asia-conflict",
     "historical-authority-conflict-asia-second",
     asiaOptions,
   );
   const reverseConflictAsia = await reconcile(reverseConflictAsiaRun.id);
-  expect(reverseConflictAsia.response.status).toBe(409);
-  expect(reverseConflictAsia.document.diagnostics).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "canonical_card_conflict" }),
-    ]),
-  );
-  expect(reverseConflictAsia.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "printing_match_contradictory" }),
-    ]),
-  );
+  expect(reverseConflictAsia.response.status).toBe(200);
+  expect(requiredFirst(reverseConflictAsia.document, "cards")).toMatchObject({
+    id: reverseConflictCardId,
+    name: "Contradictory historical-authority Card",
+  });
+  expect(requiredFirst(reverseConflictAsia.document, "printings")).toMatchObject({
+    id: reverseConflictPrintingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Different substantive Asia printed rules",
+    game_data: { attributes: { alternate_art: true } },
+  });
+  await post(`/v1/ingestion-runs/${reverseConflictAsiaRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      reverseConflictAsia.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-asia-printing-evolution",
+  });
 }, 45_000);
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {

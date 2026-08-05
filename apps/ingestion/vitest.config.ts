@@ -57,6 +57,22 @@ const retainedProductionDiscoveryFixtures = {
 
 type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
 
+const pendingPaginatedGundamScenarioUrls = new Set<string>();
+
+function activatePaginatedGundamScenario(): void {
+  pendingPaginatedGundamScenarioUrls.clear();
+  for (const url of [
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102&page=2",
+    ...["GD02-001", "GD02-002", "GD02-003", "GD02-004"].flatMap(
+      (locator) => [
+        `https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=${locator}`,
+        `https://www.gundam-gcg.com/jp/images/cards/card/${locator}.png`,
+      ],
+    ),
+  ]) pendingPaginatedGundamScenarioUrls.add(url);
+}
+
 function retainedProductionDiscoveryRoot(
   lineage: ProductionSourceLineage,
   marker: string | null,
@@ -67,6 +83,10 @@ function retainedProductionDiscoveryRoot(
     request.url !== fixture.source_url ||
     productionSourceFixtureRole(request.headers) !== "retained-discovery"
   ) return null;
+  if (
+    lineage === "gundam-en-asia" &&
+    marker === "card-keepr-gundam-pagination-v4"
+  ) activatePaginatedGundamScenario();
   const retainedBytes = Buffer.from(fixture.body_base64, "base64");
   const responseBytes =
     marker === "card-keepr-incomplete-discovery-v3" &&
@@ -92,18 +112,17 @@ function paginatedGundamCollectionResponse(
   officialNavigation: string,
 ): Response | null {
   const url = new URL(request.url);
-  const retainedChild =
-    url.searchParams.get("package") === "619102" ||
-    /^GD02-00[1-4]$/u.test(url.searchParams.get("detailSearch") ?? "") ||
-    /^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname);
+  const markedScenario = productionSourceFixtureMarker(request.headers) ===
+    "card-keepr-gundam-pagination-v4";
+  const activatedScenarioChild = pendingPaginatedGundamScenarioUrls.delete(
+    url.href,
+  );
   if (
+    (!markedScenario && !activatedScenarioChild) ||
     (
-      productionSourceFixtureMarker(request.headers) !==
-        "card-keepr-gundam-pagination-v4" &&
-      !retainedChild
-    ) ||
-    !url.pathname.startsWith("/asia-en/") &&
+      !url.pathname.startsWith("/asia-en/") &&
       !url.pathname.startsWith("/jp/images/cards/card/")
+    )
   ) return null;
   if (/^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname)) {
     return new Response(new Uint8Array([
@@ -3439,31 +3458,37 @@ function reconciliationSourceDocument(
   if (scenario.startsWith("gundam-printing-")) {
     const formatting = scenario.includes("-format-");
     const usSurface = scenario.includes("-us-");
+    const historicalProductConflict =
+      scenario.endsWith("-disappearance-us-product-conflict");
     const printingAuthorityConflict =
-      scenario ===
-      "gundam-printing-disappearance-us-printing-conflict";
+      scenario.endsWith("-disappearance-us-printing-conflict");
     const substantiveConflict =
       (scenario.includes("-conflict-") && usSurface) ||
       printingAuthorityConflict ||
-      scenario === "gundam-printing-disappearance-asia-conflict";
+      scenario.endsWith("-disappearance-asia-conflict");
     const authorityAfterDisappearance =
-      scenario === "gundam-printing-disappearance-us-conflict";
+      scenario.endsWith("-disappearance-us-conflict");
     const reverseAuthorityConflict =
-      scenario === "gundam-printing-disappearance-asia-conflict";
+      scenario.endsWith("-disappearance-asia-conflict");
     const cardNumber =
-      authorityAfterDisappearance || printingAuthorityConflict
-        ? "GD94-001"
-        : reverseAuthorityConflict
-          ? "GD91-001"
-          : formatting
-            ? scenario.endsWith("-asia-first") ||
-              scenario.endsWith("-us-second")
-              ? "GD94-001"
-              : "GD93-001"
-            : scenario.endsWith("-asia-first") ||
-                scenario.endsWith("-us-second")
-              ? "GD92-001"
-              : "GD91-001";
+      scenario.includes("-lifecycle-primary-")
+        ? "GD90-001"
+        : scenario.includes("-lifecycle-reverse-")
+          ? "GD89-001"
+          : authorityAfterDisappearance || printingAuthorityConflict ||
+          historicalProductConflict
+            ? "GD94-001"
+            : reverseAuthorityConflict
+              ? "GD91-001"
+              : formatting
+                ? scenario.endsWith("-asia-first") ||
+                  scenario.endsWith("-us-second")
+                  ? "GD94-001"
+                  : "GD93-001"
+                : scenario.endsWith("-asia-first") ||
+                    scenario.endsWith("-us-second")
+                  ? "GD92-001"
+                  : "GD91-001";
     return {
       cards: [
         printingObservation({
@@ -3514,7 +3539,9 @@ function reconciliationSourceDocument(
           variantKey: "base",
           lineageMarker: `gundam-printing-${cardNumber}`,
           memberships: {
-            products: [`product_${cardNumber.slice(0, 4).toLowerCase()}`],
+            products: [historicalProductConflict
+              ? `product_${cardNumber.slice(0, 4).toLowerCase()}_other`
+              : `product_${cardNumber.slice(0, 4).toLowerCase()}`],
             distribution_contexts: [],
             source_buckets: ["gundam-card-list"],
           },

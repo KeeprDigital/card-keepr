@@ -117,7 +117,7 @@ test("production source fixture selection is invariant under retries and reorder
   }))).toBe("card-keepr-representable-legality-v3");
 });
 
-test("authentic paginated Gundam listing observations close as one collection graph", async () => {
+test("synthetic Bandai-shaped paginated Gundam observations close as one collection graph", async () => {
   const adapter = requiredSourceAdapter("gundam-en-asia@4");
   if (
     adapter.requestUrlForSurface === undefined ||
@@ -198,7 +198,7 @@ test("authentic paginated Gundam listing observations close as one collection gr
   ])).toThrow(/publisher total/iu);
 });
 
-test("production Gundam pagination is captured per page and reconciled as one complete graph", async () => {
+test("synthetic production transport captures Gundam pages and reconciles one complete graph", async () => {
   const sourceLineage = "gundam-en-asia";
   const created = await administrationRequest(
     "/v1/ingestion-runs/evidence",
@@ -303,6 +303,64 @@ test("production Gundam pagination is captured per page and reconciled as one co
     },
   });
 }, 60_000);
+
+test("synthetic paginated Gundam transport requires its scenario marker", async () => {
+  const listingUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102";
+  const detailUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-001";
+  const imageUrl =
+    "https://www.gundam-gcg.com/jp/images/cards/card/GD02-001.png";
+  const markedHeaders = {
+    "user-agent": "card-keepr-gundam-pagination-v4; request-role=listing",
+  };
+  const unmarkedHeaders = {
+    "user-agent": "unrelated-scenario; request-role=listing",
+  };
+  const [
+    marked,
+    unmarked,
+    markedDetail,
+    unmarkedDetail,
+    markedImage,
+    unmarkedImage,
+  ] = await Promise.all([
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl, {
+      headers: markedHeaders,
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl, {
+      headers: unmarkedHeaders,
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=detail",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=detail",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=image",
+      },
+    }),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=image",
+      },
+    }),
+  ]);
+  expect(marked).toContain('<span class="num">4</span>cards found.');
+  expect(unmarked).not.toContain('<span class="num">4</span>cards found.');
+  expect(markedDetail).toContain("Paginated GD02-001");
+  expect(unmarkedDetail).not.toContain("Paginated GD02-001");
+  expect(markedImage.headers.get("content-type")).toBe("image/png");
+  expect(unmarkedImage.headers.get("content-type")).not.toBe("image/png");
+});
 
 test("every pinned aggregate adapter retains its immutable parser contract", () => {
   const pinned = [
