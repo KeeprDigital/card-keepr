@@ -371,6 +371,78 @@ test("a race during external prework cannot acquire the block or begin restore",
   ).run();
 });
 
+test("inspect observes a paused restore without mutation and a second begin reports recovery_exists", async () => {
+  let markRestoreStarted: () => void = () => {};
+  const restoreStarted = new Promise<void>((resolve) => {
+    markRestoreStarted = resolve;
+  });
+  let releaseRestore: ((value: {
+    bookmark: string;
+    previousBookmark: string;
+  }) => void) | undefined;
+  const provider = recoveryProvider({
+    timeTravelRestore: async () => {
+      markRestoreStarted();
+      return new Promise((resolve) => {
+        releaseRestore = resolve;
+      });
+    },
+  });
+  const beginning = beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-paused", "begin-paused"),
+    provider,
+  );
+  await restoreStarted;
+  await expect(inspectCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-paused",
+  )).resolves.toMatchObject({ state: "restoring", failure: null });
+  await expect(beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
+    recoveryProvider(),
+  )).rejects.toMatchObject({ code: "recovery_exists" });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, failure_code FROM catalogue_recovery_operations
+     WHERE id = 'recovery-paused'`,
+  ).first()).resolves.toEqual({ state: "restoring", failure_code: null });
+  releaseRestore?.({
+    bookmark: "bookmark-restored",
+    previousBookmark: "bookmark-undo",
+  });
+  await beginning;
+  await verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-paused",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-paused",
+      observedAt: "2026-08-05T09:45:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  await acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-paused",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-paused",
+      idempotencyKey: "accept-paused",
+      observedAt: "2026-08-05T09:46:00.000Z",
+      boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    },
+  );
+});
+
 test("an ambiguous Time Travel response rehydrates a fail-closed journal", async () => {
   const provider = recoveryProvider({
     timeTravelRestore: async () => {
@@ -472,6 +544,93 @@ test("replacement acceptance rehydrates its journal through the rebound HTTP rou
   ));
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({ state: "accepted" });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT recovery_health, active_recovery_id, recovery_restore_guard
+     FROM operation_state WHERE singleton = 1`,
+  ).first()).resolves.toEqual({
+    recovery_health: "healthy",
+    active_recovery_id: null,
+    recovery_restore_guard: "clear",
+  });
+});
+
+test("accepted journal hydration stays blocked against the wrong local catalogue", async () => {
+  const provider = recoveryProvider();
+  await beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-accepted-wrong-local", "begin-accepted-wrong-local"),
+    provider,
+  );
+  await verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-accepted-wrong-local",
+      observedAt: "2026-08-05T09:50:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  );
+  const acceptance = {
+    expectedRestoredRevisionId: "catrev_spine_000",
+    targetDigest: digest,
+    confirmationRecoveryId: "recovery-accepted-wrong-local",
+    idempotencyKey: "accept-accepted-wrong-local",
+    observedAt: "2026-08-05T09:51:00.000Z",
+    boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+  };
+  await acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    acceptance,
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM catalogue_recovery_operations
+     WHERE id = 'recovery-accepted-wrong-local'`,
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET current_revision_id = 'catrev_wrong_local'
+     WHERE singleton = 1`,
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state SET recovery_restore_guard = 'blocked'
+     WHERE singleton = 1`,
+  ).run();
+
+  await expect(inspectCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+  )).resolves.toMatchObject({ state: "accepted" });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT recovery_health, active_recovery_id, recovery_restore_guard
+     FROM operation_state WHERE singleton = 1`,
+  ).first()).resolves.toEqual({
+    recovery_health: "blocked",
+    active_recovery_id: "recovery-accepted-wrong-local",
+    recovery_restore_guard: "blocked",
+  });
+  await expect(acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    acceptance,
+  )).rejects.toMatchObject({ code: "restored_revision_mismatch" });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET current_revision_id = 'catrev_spine_000'
+     WHERE singleton = 1`,
+  ).run();
+  await acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-accepted-wrong-local",
+    acceptance,
+  );
   await expect(testEnv.CATALOGUE_DB.prepare(
     `SELECT recovery_health, active_recovery_id, recovery_restore_guard
      FROM operation_state WHERE singleton = 1`,

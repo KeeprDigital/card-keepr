@@ -403,7 +403,7 @@ export async function inspectCatalogueRecovery(
   recoveryId: string,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(recoveryId, "recovery_id");
-  await hydrateRecoveryJournal(database, backups, recoveryId, true);
+  await hydrateRecoveryJournal(database, backups, recoveryId);
   const row = await recoveryRow(database, recoveryId);
   if (row === null) {
     throw new AdministrationProblem(
@@ -424,7 +424,7 @@ export async function verifyCatalogueRecovery(
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   assertSha256(input.targetDigest, "target_digest");
-  await hydrateRecoveryJournal(database, backups, recoveryId, true);
+  await hydrateRecoveryJournal(database, backups, recoveryId);
   const row = await requiredRecovery(database, recoveryId);
   const requestDigest = await sha256Text(canonicalJson({
     recovery_id: recoveryId,
@@ -524,7 +524,7 @@ export async function acceptCatalogueRecovery(
   input: AcceptCatalogueRecoveryInput,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
-  await hydrateRecoveryJournal(database, backups, recoveryId, true);
+  await hydrateRecoveryJournal(database, backups, recoveryId);
   const requestDigest = await sha256Text(canonicalJson({
     recovery_id: recoveryId,
     expected_restored_revision_id: input.expectedRestoredRevisionId,
@@ -539,6 +539,12 @@ export async function acceptCatalogueRecovery(
       row.acceptance_request_digest !== requestDigest
     ) throw idempotencyReused();
     const retained = await requiredRecoveryJournal(backups, recoveryId);
+    await releaseAcceptedRecoveryIfSafe(
+      database,
+      row,
+      retained.backup,
+      input.boundDatabaseId,
+    );
     await persistRecoveryJournal(backups, row, retained.backup);
     return recoveryDocument(row);
   }
@@ -663,6 +669,117 @@ export async function acceptCatalogueRecovery(
   const journal = await requiredRecoveryJournal(backups, recoveryId);
   await persistRecoveryJournal(backups, accepted, journal.backup);
   return inspectCatalogueRecovery(database, backups, recoveryId);
+}
+
+async function releaseAcceptedRecoveryIfSafe(
+  database: D1Database,
+  recovery: RecoveryRow,
+  backup: VerifiedBackupRow,
+  boundDatabaseId: string,
+): Promise<void> {
+  if (
+    recovery.restored_database_id === null ||
+    recovery.restored_database_id !== boundDatabaseId
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_database_not_bound",
+      "The accepted recovery database is not the observed production binding.",
+    );
+  }
+  if (
+    backup.idempotency_key !== recovery.source_backup_attempt_id ||
+    backup.catalogue_revision_id !== recovery.target_revision_id ||
+    backup.d1_bookmark !== recovery.target_bookmark ||
+    backup.manifest_sha256 !== recovery.target_digest ||
+    backup.schema_migration_level < 16
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_journal_invalid",
+      "Accepted recovery evidence does not match the retained verified target.",
+    );
+  }
+  const localBackup = await database.prepare(
+    `SELECT catalogue_revision_id, d1_bookmark, manifest_sha256,
+            schema_migration_level
+     FROM catalogue_backup_attempts
+     WHERE idempotency_key = ? AND state = 'verified'`,
+  ).bind(backup.idempotency_key).first<{
+    catalogue_revision_id: string;
+    d1_bookmark: string;
+    manifest_sha256: string;
+    schema_migration_level: number;
+  }>();
+  if (
+    localBackup?.catalogue_revision_id !== recovery.target_revision_id ||
+    localBackup.d1_bookmark !== recovery.target_bookmark ||
+    localBackup.manifest_sha256 !== recovery.target_digest ||
+    localBackup.schema_migration_level < 16
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "recovery_journal_invalid",
+      "The local verified Backup Attempt does not match the accepted target.",
+    );
+  }
+  const local = await database.prepare(
+    `SELECT catalogue.current_revision_id, operation.recovery_health,
+            operation.active_recovery_id,
+            operation.recovery_restore_guard
+     FROM catalogue_state AS catalogue
+     JOIN operation_state AS operation ON operation.singleton = 1
+     WHERE catalogue.singleton = 1`,
+  ).first<{
+    current_revision_id: string;
+    recovery_health: string;
+    active_recovery_id: string | null;
+    recovery_restore_guard: string;
+  }>();
+  if (local?.current_revision_id !== recovery.target_revision_id) {
+    throw new AdministrationProblem(
+      409,
+      "restored_revision_mismatch",
+      "The bound database does not expose the accepted Catalogue Revision.",
+    );
+  }
+  if (
+    local.recovery_health === "healthy" &&
+    local.active_recovery_id === null &&
+    local.recovery_restore_guard === "clear"
+  ) return;
+  try {
+    await database.batch([
+      database.prepare(
+        `SELECT CASE WHEN recovery_health = 'blocked'
+             AND active_recovery_id = ?
+             AND recovery_restore_guard = 'blocked'
+           THEN 1 ELSE json_extract('invalid', '$') END
+         FROM operation_state WHERE singleton = 1`,
+      ).bind(recovery.id),
+      database.prepare(
+        `UPDATE operation_state
+         SET recovery_health = 'healthy', active_recovery_id = NULL,
+             recovery_restore_guard = 'clear'
+         WHERE singleton = 1 AND recovery_health = 'blocked'
+           AND active_recovery_id = ?
+           AND recovery_restore_guard = 'blocked'`,
+      ).bind(recovery.id),
+      database.prepare(
+        `SELECT CASE WHEN recovery_health = 'healthy'
+             AND active_recovery_id IS NULL
+             AND recovery_restore_guard = 'clear'
+           THEN 1 ELSE json_extract('invalid', '$') END
+         FROM operation_state WHERE singleton = 1`,
+      ),
+    ]);
+  } catch {
+    throw new AdministrationProblem(
+      409,
+      "recovery_state_changed",
+      "Accepted recovery health changed concurrently.",
+    );
+  }
 }
 
 async function exactVerifiedBackup(
@@ -843,18 +960,15 @@ async function hydrateRecoveryJournal(
     row.failure_detail,
     row.failed_at,
   ).run();
-  const blocked = row.state !== "accepted";
   const changed = await database.prepare(
     `UPDATE operation_state
-     SET recovery_health = ?, active_recovery_id = ?,
-         recovery_restore_guard = ?
+     SET recovery_health = 'blocked', active_recovery_id = ?,
+         recovery_restore_guard = 'blocked'
      WHERE singleton = 1 AND active_ingestion_run_id IS NULL
        AND (active_recovery_id IS NULL OR active_recovery_id = ?
          OR active_recovery_id = ?)`,
   ).bind(
-    blocked ? "blocked" : "healthy",
-    blocked ? row.id : null,
-    blocked ? "blocked" : "clear",
+    row.id,
     row.id,
     row.linked_operation_id,
   ).run();
@@ -1046,6 +1160,19 @@ async function assertLinkedRecovery(
   }
   if (state.recovery_health === "blocked") {
     if (linkedOperationId === undefined) {
+      const active = state.active_recovery_id === null
+        ? null
+        : await recoveryRow(database, state.active_recovery_id);
+      if (
+        active !== null &&
+        !["accepted", "failed"].includes(active.state)
+      ) {
+        throw new AdministrationProblem(
+          409,
+          "recovery_exists",
+          "Another Catalogue recovery operation is already active.",
+        );
+      }
       throw new AdministrationProblem(
         409,
         "recovery_link_required",
