@@ -34,6 +34,9 @@ import {
 import {
   runGuardedCardSearchRepair,
 } from "../../../src/catalogue/card-search-repair-administration";
+import {
+  startOrObserveCatalogueBackupWorkflow,
+} from "../../../src/catalogue/backup-workflow";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -51,6 +54,7 @@ export {
   EvidenceIngestionWorkflow,
 } from "./evidence-workflows";
 export { ReconciliationWorkflow } from "./reconciliation-workflow";
+export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
 
 const ingestionWorker = {
@@ -257,6 +261,32 @@ const ingestionWorker = {
             idempotency_key: requiredString(body, "idempotency_key"),
           }, observedAt),
         );
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/backups") {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "expected_current_revision_id",
+          "idempotency_key",
+        ]);
+        const result = await startOrObserveCatalogueBackupWorkflow(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_BACKUP_WORKFLOW,
+          {
+            expected_current_revision_id: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        );
+        return Response.json(result.document, {
+          status:
+            result.created && result.document.status !== "complete"
+              ? 202
+              : 200,
+        });
       }
 
       const reconciledPrintingMatch =

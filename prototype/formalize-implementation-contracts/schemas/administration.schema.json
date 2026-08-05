@@ -105,6 +105,18 @@
         "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
       }
     },
+    "CatalogueBackupCommandRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_current_revision_id",
+        "idempotency_key"
+      ],
+      "properties": {
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
     "IngestionRun": {
       "type": "object",
       "additionalProperties": false,

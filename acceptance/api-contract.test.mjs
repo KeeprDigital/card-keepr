@@ -105,6 +105,92 @@ test("Legality Status documents and validates base and evidence representations"
   assert.equal(validate(evidence), true, JSON.stringify(validate.errors));
 });
 
+test("Card browsing documents and validates collection, detail, and problem representations", async () => {
+  const [openapi, schema] = await Promise.all([
+    readFile(
+      resolve(root, "prototype/formalize-implementation-contracts/openapi.json"),
+      "utf8",
+    ).then(JSON.parse),
+    readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
+      ),
+      "utf8",
+    ).then(JSON.parse),
+  ]);
+  assert.deepEqual(
+    openapi.paths["/cards"].get.responses["200"].content["application/json"].schema,
+    { $ref: "./schemas/api.schema.json#/$defs/CardCollection" },
+  );
+  assert.deepEqual(openapi.paths["/cards"].get.responses["400"], {
+    $ref: "#/components/responses/InvalidRequest",
+  });
+  assert.deepEqual(openapi.paths["/cards"].get.responses["409"], {
+    $ref: "#/components/responses/CursorUnavailable",
+  });
+  assert.deepEqual(
+    openapi.paths["/cards/{card_id}"].get.responses["200"].content["application/json"].schema,
+    { $ref: "./schemas/api.schema.json#/$defs/CardDocument" },
+  );
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(schema);
+  const validateCollection = ajv.getSchema(
+    `${schema.$id}#/$defs/CardCollection`,
+  );
+  const validateDetail = ajv.getSchema(`${schema.$id}#/$defs/CardDocument`);
+  const validateProblem = ajv.getSchema(`${schema.$id}#/$defs/Problem`);
+  const card = {
+    type: "card",
+    id: "card_test",
+    game: "one-piece",
+    official_identity: { kind: "card_number", value: "OP01-001" },
+    name: "Test Card",
+    game_data: { profile: "one-piece@1", attributes: {} },
+    lifecycle: {
+      first_revision_id: "catrev_test",
+      last_observed_revision_id: "catrev_test",
+      withdrawn: false,
+    },
+    links: { self: "/v1/cards/card_test" },
+  };
+  const meta = {
+    catalogue_revision_id: "catrev_test",
+    published_at: "2026-08-01T00:00:00.000Z",
+  };
+  assert.equal(validateCollection({
+    data: [card],
+    meta,
+    page: { limit: 50, next_cursor: null },
+    links: { self: "/v1/cards" },
+  }), true, JSON.stringify(validateCollection.errors));
+
+  const detail = {
+    data: { ...card, effective_rules_text: null, printing_ids: [] },
+    meta,
+    links: { self: "/v1/cards/card_test" },
+  };
+  assert.equal(validateDetail(detail), true, JSON.stringify(validateDetail.errors));
+  assert.equal(validateDetail({ ...detail, included: [] }), true,
+    JSON.stringify(validateDetail.errors));
+  assert.equal(validateDetail({
+    ...detail,
+    provenance: { "/data/effective_rules_text": ["srcobs_test"] },
+  }), false, "provenance must identify resources in included");
+
+  assert.equal(validateProblem({
+    type: "/problems/cursor-revision-unavailable",
+    title: "Cursor Revision Unavailable",
+    status: 409,
+    code: "cursor_revision_unavailable",
+    detail: "Restart browsing from the current revision.",
+    request_id: "req_test",
+    links: { collection: "/v1/cards" },
+  }), true, JSON.stringify(validateProblem.errors));
+});
+
 test("export schema major 3 carries typed Product, Release, and Legality projections", async () => {
   const [api, exportSchema, exportManifest] = await Promise.all(
     [

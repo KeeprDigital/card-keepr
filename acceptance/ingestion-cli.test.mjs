@@ -86,6 +86,14 @@ test("guarded reconciliation and bounded search repair are normative administrat
     schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties,
     false,
   );
+  assert.deepEqual(
+    schema.$defs.CatalogueBackupCommandRequest.required,
+    ["expected_current_revision_id", "idempotency_key"],
+  );
+  assert.equal(
+    schema.$defs.CatalogueBackupCommandRequest.additionalProperties,
+    false,
+  );
   const contract = await readFile(
     resolve(
       root,
@@ -95,6 +103,10 @@ test("guarded reconciliation and bounded search repair are normative administrat
   );
   assert.match(contract, /never executes reconciliation inline/);
   assert.match(contract, /one resumable, byte-bounded repair step/);
+  assert.match(contract, /backup create.*starts or observes.*Workflow/s);
+  assert.match(contract, /first non-terminal response is HTTP `202`/);
+  assert.match(contract, /exact replays observe the same.*HTTP `200`/s);
+  assert.match(contract, /CLI\s+exits `10` until the Workflow is complete/s);
 });
 
 test("CLI reconciliation requires explicit production selection and confirmation", async () => {
@@ -377,6 +389,80 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
       target_revision_id: "catrev_cli_second_previous",
       expected_current_revision_id: "catrev_cli_demo",
       idempotency_key: "repair-cli-confirmed-target",
+    },
+  });
+});
+
+test("CLI backup create confirms the exact target before the operation", async (t) => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.statusCode = 201;
+    response.end(JSON.stringify({
+      contract: "card-keepr-catalogue-backup-workflow@1",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+      workflow_instance_id: "backup-cli-workflow",
+      status: "complete",
+      output: {
+        contract: "card-keepr-catalogue-backup@1",
+        catalogue_revision_id: "catrev_cli_demo",
+        object_key: "d1-backups/catrev_cli_demo/backup.sql",
+        d1_bookmark: "bookmark-cli-backup",
+        verified: true,
+      },
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const result = await runCli([
+    "backup",
+    "create",
+    "--expected-current-revision",
+    "catrev_cli_demo",
+    "--idempotency-key",
+    "backup-cli-confirmed-target",
+    "--environment",
+    "production",
+    "--confirm",
+    JSON.stringify({
+      production_target: productionTarget,
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+    }),
+    "--yes",
+    "--json",
+  ], {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/backups",
+    body: {
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
     },
   });
 });

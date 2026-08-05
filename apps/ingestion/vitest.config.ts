@@ -210,6 +210,9 @@ export default defineConfig({
             "vitest-d1-verification-token-active",
           D1_VERIFICATION_TOKEN_REPLACEMENT:
             "vitest-d1-verification-token-replacement",
+          D1_EXPORT_TOKEN: "vitest-d1-export-token-active",
+          D1_EXPORT_TOKEN_REPLACEMENT:
+            "vitest-d1-export-token-replacement",
           GITHUB_REPOSITORY_ID: "1313489088",
           GITHUB_APP_ID: "11111111",
           GITHUB_INSTALLATION_ID: "22222222",
@@ -219,6 +222,63 @@ export default defineConfig({
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          if (url.hostname === "vitest-d1-export.invalid") {
+            const body = "-- vitest D1 backup SQL\n";
+            return new Response(body, {
+              headers: { "content-length": String(Buffer.byteLength(body)) },
+            });
+          }
+          if (url.hostname === "vitest-d1-upload.invalid") {
+            const bytes = new Uint8Array(await request.arrayBuffer());
+            const etag = createHash("md5").update(bytes).digest("hex");
+            return new Response(null, { headers: { etag: `"${etag}"` } });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/export")
+          ) {
+            return Response.json({
+              success: true,
+              result: {
+                type: "export",
+                status: "complete",
+                success: true,
+                at_bookmark: "vitest-export-bookmark",
+                result: {
+                  filename: "vitest-catalogue.sql",
+                  signed_url: "https://vitest-d1-export.invalid/catalogue.sql",
+                },
+                messages: [],
+              },
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/import")
+          ) {
+            const body = await request.clone().json<{
+              action?: string;
+            }>();
+            return Response.json({
+              success: true,
+              result: body.action === "init"
+                ? {
+                  type: "import",
+                  status: "upload",
+                  success: true,
+                  filename: "vitest-catalogue.sql",
+                  upload_url: "https://vitest-d1-upload.invalid/catalogue.sql",
+                  messages: [],
+                }
+                : {
+                  type: "import",
+                  status: "complete",
+                  success: true,
+                  at_bookmark: "vitest-restore-bookmark",
+                  messages: [],
+                },
+            });
+          }
           if (
             url.hostname === "api.cloudflare.com" &&
             url.pathname.endsWith("/query")
@@ -227,6 +287,31 @@ export default defineConfig({
               sql?: string;
               params?: string[];
             }>();
+            if (
+              request.headers.get("authorization") ===
+                "Bearer vitest-d1-verification-token-active"
+            ) {
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: body.sql?.includes(
+                      "SELECT catalogue.current_revision_id",
+                    )
+                    ? [{
+                      current_revision_id: "catrev_spine_000",
+                      card_search_state: "ready",
+                      card_search_fts_tables: 1,
+                      missing_fts_rows: 0,
+                      invalid_api_documents: 0,
+                      current_api_documents: 0,
+                    }]
+                    : body.sql === "PRAGMA quick_check"
+                    ? [{ quick_check: "ok" }]
+                    : [],
+                }],
+              });
+            }
             const table = /"(__keepr_probe_[0-9a-f]+)"/u.exec(
               body.sql ?? "",
             )?.[1];

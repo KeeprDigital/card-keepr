@@ -45,6 +45,7 @@ operation accepted but not yet terminal.
 | `keepr run reject` | yes | run identity and candidate digest |
 | `keepr run retry` | yes | terminal source run; creates a new linked run |
 | `keepr backup status` | no | Catalogue Revision identity |
+| `keepr backup create` | yes | expected current Catalogue Revision; idle ingestion; exact production target; idempotency key |
 | `keepr backup retry` | yes | current revision; exact failed attempt and export/backup digest |
 | `keepr catalogue-export deletion prepare` | no | exact Catalogue Revision, manifest digest, expected current revision |
 | `keepr catalogue-export deletion confirm` | yes | unexpired plan and plan digest; exact Catalogue Revision, manifest digest, expected current revision, typed confirmation, idempotency key |
@@ -171,15 +172,34 @@ recovery health.
 
 ## Backup and recovery states
 
-Publishing creates an immutable backup attempt:
+`backup create` starts or observes one idempotently bound ingestion Workflow
+for the D1 export/restore verification boundary. The durable Workflow
+temporarily removes only the derived Card FTS structures, exports and retains
+the SQL backup, reconstructs live search in a `finally` path, restores into the
+configured disposable D1, reconstructs search there, and verifies the expected
+Catalogue Revision before recovery becomes healthy. Active phases are
+owner-bound and resumable, so a retried Workflow continues the retained export,
+restore, or verification phase rather than creating another attempt.
+The first non-terminal response is HTTP `202`; exact replays observe the same
+Workflow instance, resume a paused instance, and return HTTP `200`. The CLI
+exits `10` until the Workflow is complete. A retained terminal success or
+failure is an HTTP `200` observation and exits `0`.
+
+`backup create` durably binds its exact expected revision to the idempotency
+key before export and creates an immutable backup attempt:
 
 ```text
 pending → exporting → restoring_verification → verifying → verified
 ```
 
 Any active backup state may become `failed`. A retry creates another immutable
-attempt. Only a `verified` attempt whose manifest names the current Catalogue
-Revision makes recovery `healthy`.
+attempt with a new idempotency key. Exact replays return the retained verified
+document or retained failure without repeating export or restore; changed reuse
+fails closed. The SQL artifact streams from D1 into private R2 and from R2 into
+the disposable D1 without whole-artifact Worker buffering. Only a `verified`
+attempt whose restored database passes SQLite integrity, derived-index, and
+representative Card API projection checks for the current Catalogue Revision
+makes recovery `healthy`.
 
 A recovery operation follows:
 
