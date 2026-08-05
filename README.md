@@ -162,7 +162,7 @@ npm run deploy:dry-run
 Pull requests and `main` run these checks without production credentials or
 remote mutation. Production changes are dispatched only by the guarded
 `keepr release production` command into the serialized, protected GitHub
-workflow. See [the production release runbook](docs/runbooks/production-release.md)
+workflow. See [the Production Release runbook](docs/runbooks/production-release.md)
 for confirmation bindings, versioned deployment, smoke checks, compatible
 roll-forward, and replacement-D1 handoff.
 
@@ -227,7 +227,7 @@ Both the installation and minted token must expose exactly `actions:write`,
 `contents:read`, `environments:write`, and `metadata:read`.
 `GET /installation/repositories` must return exactly the one configured
 repository. The authenticated GraphQL viewer must be the installation's bot
-actor; each production release verifies that exact actor. Persisted consumer
+actor; each Production Release verifies that exact actor. Persisted consumer
 slots `a` and `b` map at the GitHub boundary to the serialized
 `production-release.yml` workflow's `active` and `replacement` inputs
 respectively; a usable proof performs the real API and ingestion Worker

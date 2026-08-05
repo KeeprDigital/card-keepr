@@ -13,6 +13,7 @@ import {
   assertBindingsAvailable,
   healthResponse,
 } from "../../../src/http/health";
+import { prepareProductionRelease } from "../../../src/catalogue/production-release";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
@@ -184,6 +185,16 @@ async function handleIngestionRequest(
       }
       const observedAt = administrationObservedAt(request, env);
       await enforceRecoveryRestoreGuard(env.CATALOGUE_DB);
+
+      if (request.method === "POST" && url.pathname === "/v1/production-releases") {
+        const body = await readAdministrationBody(request);
+        return Response.json(await prepareProductionRelease(
+          env.CATALOGUE_DB,
+          body,
+          productionTarget(env),
+          observedAt,
+        ), { status: 201 });
+      }
 
       if (
         request.method === "POST" &&
@@ -772,29 +783,7 @@ async function handleIngestionRequest(
             env.CATALOGUE_DB,
             env.CATALOGUE_EXPORTS,
             observedAt,
-            {
-              cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
-              worker_scripts: [
-                "card-keepr-api",
-                "card-keepr-ingestion",
-              ],
-              d1_databases: [
-                {
-                  name: "card-keepr-catalogue",
-                  id: env.CATALOGUE_D1_DATABASE_ID,
-                },
-                {
-                  name: "card-keepr-disposable-verification",
-                  id: env.DISPOSABLE_D1_DATABASE_ID,
-                },
-              ],
-              r2_buckets: [
-                "card-keepr-evidence",
-                "card-keepr-printing-images",
-                "card-keepr-catalogue-exports",
-                "card-keepr-backups",
-              ],
-            },
+            productionTarget(env),
           ),
         );
       }
@@ -1064,6 +1053,21 @@ function requiredString(
     );
   }
   return value;
+}
+
+function productionTarget(env: Env) {
+  return {
+    cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+    d1_databases: [
+      { name: "card-keepr-catalogue", id: env.CATALOGUE_D1_DATABASE_ID },
+      { name: "card-keepr-disposable-verification", id: env.DISPOSABLE_D1_DATABASE_ID },
+    ],
+    r2_buckets: [
+      "card-keepr-evidence", "card-keepr-printing-images",
+      "card-keepr-catalogue-exports", "card-keepr-backups",
+    ],
+  } as const;
 }
 
 function requiredStringArray(

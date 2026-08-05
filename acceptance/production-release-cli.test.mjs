@@ -24,6 +24,15 @@ test("guarded CLI dispatches exact release bindings and never receives deploymen
       if (request.url === "/v1/status") {
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify(statusDocument()));
+      } else if (request.url === "/v1/production-releases") {
+        response.statusCode = 201;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({
+          contract: "card-keepr-production-release-request@1",
+          release_id: request.url && requests.at(-1).body.release_id,
+          state: "requested",
+          dispatch_digest: createHash("sha256").update(stableJson(requests.at(-1).body)).digest("hex"),
+        }));
       } else {
         response.statusCode = 204;
         response.end();
@@ -51,14 +60,16 @@ test("guarded CLI dispatches exact release bindings and never receives deploymen
     "--confirm", JSON.stringify(confirmation), "--yes", "--json",
   ], base);
   assert.equal(result.code, 10, result.stderr);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.equal(requests[0].url, "/v1/status");
-  assert.match(requests[1].url, /production-release\.yml\/dispatches$/u);
-  assert.equal(requests[1].body.inputs.operation, "production_release");
-  assert.equal(requests[1].body.inputs.expected_current_revision, "catrev-current");
-  assert.equal(requests[1].body.inputs.recovery_bookmark, "bookmark-current");
-  assert.equal(requests[1].body.inputs.replacement_database_id, "none");
-  assert.equal(JSON.stringify(requests[1]).includes("CLOUDFLARE"), false);
+  assert.equal(requests[1].url, "/v1/production-releases");
+  assert.match(requests[2].url, /production-release\.yml\/dispatches$/u);
+  assert.equal(requests[2].body.inputs.operation, "production_release");
+  assert.equal(requests[2].body.inputs.expected_current_revision, "catrev-current");
+  assert.equal(requests[2].body.inputs.recovery_bookmark, "bookmark-current");
+  assert.equal(requests[2].body.inputs.replacement_database_id, "none");
+  assert.equal(requests[2].body.inputs.dispatch_digest, createHash("sha256").update(stableJson(requests[1].body)).digest("hex"));
+  assert.equal(JSON.stringify(requests[2]).includes("CLOUDFLARE"), false);
 });
 
 test("replacement handoff fails closed unless status proves the exact verified target", async (t) => {
@@ -87,7 +98,7 @@ function statusDocument() {
     safe_state: { current_revision_id: "catrev-current", mutation_safe: true, recovery_health: "healthy" },
     release_preflight: {
       schema_migration_level: 19,
-      production_target_digest: createHash("sha256").update(JSON.stringify(target)).digest("hex"),
+      production_target_digest: createHash("sha256").update(stableJson(target)).digest("hex"),
       recovery_bookmark: "bookmark-current", recovery_backup_attempt_id: "backup-current",
       retention_ready: true,
       retained_revision_evidence: ["catrev-current", "catrev-previous", "catrev-old"].map((revision_id, depth) => ({ revision_id, depth, export_verified: true, recovery_verified: true })),
@@ -96,6 +107,8 @@ function statusDocument() {
     },
   };
 }
+
+function stableJson(value) { if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`; if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`; return JSON.stringify(value); }
 
 function runCli(args, base) {
   return new Promise((resolve, reject) => {

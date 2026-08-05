@@ -1,4 +1,4 @@
-# Guarded production release
+# Guarded Production Release
 
 `keepr release production` is the only general production mutation path. Pull
 request and `main` CI run validation and local Wrangler dry-runs only. The
@@ -11,8 +11,8 @@ deployment credentials.
 1. Confirm GitHub's `production` environment reviewers, branch policy, and the
    Cloudflare deployment token's least-privilege grants outside the repository.
 2. Run `npm test`, `npm run typecheck`, `npm run types:check`, and
-   `npm run deploy:dry-run` at the exact release SHA.
-3. Run `keepr status --json`. Release preflight must report the expected
+   `npm run deploy:dry-run` at the exact Production Release SHA.
+3. Run `keepr status --json`. Production Release preflight must report the expected
    schema level, idle mutation state, a verified current-revision backup and
    usable bookmark, complete current-plus-two export/recovery evidence, exact
    production bindings, and representative smoke targets.
@@ -31,14 +31,14 @@ npm run keepr -- release production \
 ```
 
 Exit `10` means GitHub accepted the immutable request; it does not mean the
-release succeeded. Inspect the workflow and the durable `production_releases`
+Production Release succeeded. Inspect the workflow and the durable `production_releases`
 record for terminal evidence.
 
-## Release behavior
+## Production Release behavior
 
 The workflow rechecks the SHA, actor, complete target digest, current Catalogue
 Revision, migration level, idle ingestion, recovery evidence and retained
-revision window before mutation. It acquires the D1 release lease, applies only
+revision window before mutation. It acquires the D1 Production Release lease, applies only
 checked-in forward migrations, uploads tagged immutable Worker versions,
 activates the API and ingestion pair, observes the resulting binding, and runs
 black-box health/auth/revision/Card/Printing/search/Legality Status/export/image
@@ -46,7 +46,7 @@ checks. Current and two predecessor export packages must remain queryable;
 displacement is blocked without verified export and recovery evidence.
 
 After migration begins, a failure is recorded with
-`roll_forward_required=1`. Correct it with a compatible forward release. Do not
+`roll_forward_required=1`. Correct it with a compatible forward Production Release. Do not
 roll back a Worker unless its compatibility with the migrated schema has been
 separately proven and recorded.
 
@@ -60,7 +60,7 @@ For a verified replacement recovery awaiting acceptance, add all three:
 --retained-database-id <old-d1-id>
 ```
 
-The identities must exactly match the blocked recovery operation. The release
+The identities must exactly match the blocked recovery operation. The Production Release
 generates ephemeral Wrangler configs binding both Worker versions to the new
 D1, deploys the pair, and records an observation through the newly bound API.
 It never deletes the old database. Only after that evidence exists may the
@@ -74,4 +74,4 @@ Repository tests cannot prove GitHub reviewer policy, organization workflows,
 live secret scope, token grants, D1 location/bookmark usability, R2 public
 access settings, traffic propagation, or production observability acceptance.
 Verify these in GitHub and Cloudflare before approving the workflow run and
-retain the resulting run, deployment/version IDs, logs, and release evidence.
+retain the resulting run, deployment/version IDs, logs, and Production Release evidence.

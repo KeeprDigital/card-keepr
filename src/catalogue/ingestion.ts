@@ -527,7 +527,7 @@ export async function administrationStatus(
     printing_image_id: string | null; legality_card_id: string | null;
     legality_format: string | null; legality_region: string | null;
   }>();
-  const productionTargetDigest = await sha256Text(JSON.stringify(productionTarget));
+  const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
   const retention = retainedEvidence.results.map((row) => ({
     revision_id: row.revision_id,
     depth: row.depth,
