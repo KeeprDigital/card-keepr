@@ -67,7 +67,7 @@ export async function startOrObserveCatalogueBackupWorkflow(
       throw new AdministrationProblem(
         409,
         "backup_in_progress",
-        "Catalogue recovery operation is unavailable.",
+        "Another Backup Attempt is already active.",
       );
     }
     const linkedAttemptId = await validateCatalogueBackupRetryEvidence(database, {

@@ -368,7 +368,7 @@ function assertRecoveryAvailable(recoveryHealth: string): void {
     throw new AdministrationProblem(
       409,
       "recovery_not_verified",
-      "An active recovery operation blocks evidence ingestion.",
+      "An active Backup Attempt blocks evidence ingestion.",
     );
   }
 }
