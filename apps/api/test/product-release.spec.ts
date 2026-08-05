@@ -8,6 +8,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
+import {
+  catalogueCandidateContract,
+  type CatalogueCandidate,
+} from "../../../src/catalogue/catalogue-candidate";
+import {
+  productReleasePublicationStatements,
+} from "../../../src/catalogue/product-release-publication";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
@@ -314,6 +321,102 @@ test("Product search normalizes official codes and names without accepting repea
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
     });
+  }
+});
+
+test("Product search normalizes compatibility-form official facts during publication", async () => {
+  const productId = "product_st16_compatibility";
+  const releaseId = "release_st16_compatibility";
+  const candidate: CatalogueCandidate = {
+    contract: catalogueCandidateContract,
+    selected_games: ["one-piece"],
+    cards: [],
+    printings: [],
+    products: [
+      {
+        reference: { kind: "official_code", value: "ＳＴ－１６" },
+        id: productId,
+        game: "one-piece",
+        official_code: "ＳＴ－１６",
+        name: "Ｓｔａｒｔｅｒ Ｄｅｃｋ ＧＲＥＥＮ Ｕｔａ",
+        releases: [
+          {
+            id: releaseId,
+            event_key: "oceania-compatibility",
+            product_id: productId,
+            region: "EN-OCEANIA",
+            date: { precision: "day", value: "2026-10-01" },
+            status: "announced",
+          },
+        ],
+        observed: true,
+        withdrawal: null,
+        included: [],
+        provenance: {},
+        disagreements: [],
+      },
+    ],
+  };
+  await testEnv.CATALOGUE_DB.batch(
+    productReleasePublicationStatements(
+      testEnv.CATALOGUE_DB,
+      candidate,
+      "catrev_products",
+      {
+        products: {
+          [productId]: {
+            first_revision_id: "catrev_products",
+            last_observed_revision_id: "catrev_products",
+            withdrawn: false,
+            withdrawal: null,
+          },
+        },
+        releases: {
+          [releaseId]: {
+            first_revision_id: "catrev_products",
+            last_observed_revision_id: "catrev_products",
+          },
+        },
+        relationships: {},
+      },
+    ),
+  );
+
+  try {
+    for (const query of ["st-16", "starter deck green uta"]) {
+      const response = await api(
+        `/v1/products?q=${encodeURIComponent(query)}`,
+      );
+      expect(response.status).toBe(200);
+      const document = await response.json();
+      expectSchema("ProductCollection", document);
+      expect(document).toMatchObject({
+        data: [
+          {
+            id: productId,
+            official_code: "ＳＴ－１６",
+            name: "Ｓｔａｒｔｅｒ Ｄｅｃｋ ＧＲＥＥＮ Ｕｔａ",
+          },
+        ],
+      });
+    }
+  } finally {
+    await testEnv.CATALOGUE_DB.batch([
+      testEnv.CATALOGUE_DB.prepare(
+        `DELETE FROM revision_products_fts WHERE product_id = ?`,
+      ).bind(productId),
+      testEnv.CATALOGUE_DB.prepare(
+        `DELETE FROM revision_products
+         WHERE catalogue_revision_id = 'catrev_products'
+           AND product_id = ?`,
+      ).bind(productId),
+      testEnv.CATALOGUE_DB.prepare(
+        `DELETE FROM reconciled_releases WHERE id = ?`,
+      ).bind(releaseId),
+      testEnv.CATALOGUE_DB.prepare(
+        `DELETE FROM reconciled_products WHERE id = ?`,
+      ).bind(productId),
+    ]);
   }
 });
 
