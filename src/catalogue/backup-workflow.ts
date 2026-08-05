@@ -71,6 +71,7 @@ export async function startOrObserveCatalogueBackupWorkflow(
     }
     await validateCatalogueBackupRetryEvidence(database, {
       expectedCurrentRevisionId: input.expected_current_revision_id,
+      idempotencyKey: input.idempotency_key,
       failedAttemptId: input.failed_attempt_id,
       failedAttemptDigest: input.failed_attempt_digest,
     });

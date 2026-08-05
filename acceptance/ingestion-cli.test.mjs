@@ -530,6 +530,15 @@ test("CLI backup status and retry preserve the exact failed-attempt evidence", a
     "--json",
   ], environment);
   assert.equal(retry.code, 0, retry.stderr);
+  assert.deepEqual(JSON.parse(retry.stderr), {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: productionTarget,
+    current_catalogue_revision_id: "catrev_cli_demo",
+    expected_current_revision_id: "catrev_cli_demo",
+    idempotency_key: "backup-retry-exact",
+    failed_attempt_id: "backup-failed-exact",
+    failed_attempt_digest: digest,
+  });
   assert.deepEqual(requests, [{
     method: "GET",
     path: "/v1/backups/backup-failed-exact",

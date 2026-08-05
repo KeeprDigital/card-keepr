@@ -585,6 +585,15 @@ async function retryBackup(arguments_, environment, json) {
   }
   const resolved = await resolveProductionStatus(environment, json, expected);
   if (typeof resolved === "number") return resolved;
+  writeResolvedBackupRetry(json, {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: resolved.productionTarget,
+    current_catalogue_revision_id: expected,
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
   const confirmed = confirmProductionTarget(
     json,
     {
@@ -603,6 +612,16 @@ async function retryBackup(arguments_, environment, json) {
     failed_attempt_id: failedAttemptId,
     failed_attempt_digest: failedAttemptDigest,
   });
+}
+
+function writeResolvedBackupRetry(json, resolved) {
+  if (json) {
+    process.stderr.write(`${JSON.stringify(resolved)}\n`);
+    return;
+  }
+  process.stderr.write(
+    `Resolved backup retry ${JSON.stringify(resolved)}\n`,
+  );
 }
 
 async function collectSource(arguments_, environment, json) {

@@ -174,6 +174,8 @@ let digimonArtworkVariant:
   | "alternate-two" = "base";
 const ambiguousD1Tables = new Map<string, string>();
 const unconfirmedD1Drops = new Set<string>();
+let disposableD1Generation = 0;
+let disposableD1DatabaseId = "00000000-0000-0000-0000-000000000002";
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
   modulusLength: 2048,
 }).privateKey.export({
@@ -222,6 +224,44 @@ export default defineConfig({
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          const d1CollectionPath =
+            "/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database";
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "GET"
+          ) {
+            return Response.json({
+              success: true,
+              result: [{
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              }],
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "POST"
+          ) {
+            disposableD1Generation += 1;
+            disposableD1DatabaseId =
+              `00000000-0000-4000-8000-${
+                String(disposableD1Generation).padStart(12, "0")
+              }`;
+            return Response.json({
+              success: true,
+              result: {
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              },
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.startsWith(`${d1CollectionPath}/`) &&
+            request.method === "DELETE"
+          ) {
+            return Response.json({ success: true, result: {} });
+          }
           if (url.hostname === "vitest-d1-export.invalid") {
             const body = "-- vitest D1 backup SQL\n";
             return new Response(body, {

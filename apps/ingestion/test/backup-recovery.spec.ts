@@ -7,6 +7,7 @@ import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import {
   catalogueBackupAttemptStatus,
+  cloudflareD1BackupProvider,
   createVerifiedCatalogueBackup,
   type D1BackupProvider,
   type RestoredCatalogueVerification,
@@ -30,11 +31,28 @@ const completeRestoredVerification = (): RestoredCatalogueVerification => ({
   api: true,
 });
 
+const freshRestoreTarget: D1BackupProvider["prepareRestoreTarget"] =
+  async (input) => ({
+    databaseId:
+      `${input.configuredDatabaseId}:${input.attemptId}:${input.generation}`,
+  });
+
 beforeEach(async () => {
   await applyD1Migrations(
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+  await testEnv.CATALOGUE_DB.prepare(
+    "DELETE FROM catalogue_backup_retention",
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    "DELETE FROM catalogue_backup_attempts",
+  ).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE operation_state
+     SET recovery_health = 'healthy', active_ingestion_run_id = NULL
+     WHERE singleton = 1`,
+  ).run();
 });
 
 test("restored verification executes the real D1 schema and rejects an empty or partial catalogue", async () => {
@@ -63,11 +81,39 @@ test("restored verification executes the real D1 schema and rejects an empty or 
   })).rejects.toThrow("Restored D1 verification failed.");
 });
 
+test("the Cloudflare provider recreates the disposable D1 for each restore generation", async () => {
+  const first = await cloudflareD1BackupProvider.prepareRestoreTarget({
+    accountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+    configuredDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+    token: "vitest-d1-verification-token-active",
+    attemptId: "provider-restore-generation",
+    previousDatabaseId: null,
+    generation: 1,
+  });
+  const second = await cloudflareD1BackupProvider.prepareRestoreTarget({
+    accountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+    configuredDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+    token: "vitest-d1-verification-token-active",
+    attemptId: "provider-restore-generation",
+    previousDatabaseId: first.databaseId,
+    generation: 2,
+  });
+  expect(first.databaseId).toMatch(
+    /^00000000-0000-4000-8000-[0-9]{12}$/u,
+  );
+  expect(second.databaseId).toMatch(
+    /^00000000-0000-4000-8000-[0-9]{12}$/u,
+  );
+  expect(second.databaseId).not.toBe(first.databaseId);
+});
+
 test("the production backup boundary exports and verifies the exact restored revision", async () => {
   const events: string[] = [];
   const sqlBytes = new TextEncoder().encode(
     "-- exact D1 SQL export without derived FTS virtual tables\n",
   );
+  const firstRestoreDatabaseId =
+    `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary:1`;
   const provider: D1BackupProvider = {
     async exportSql(input) {
       events.push(`export:${input.databaseId}`);
@@ -85,6 +131,7 @@ test("the production backup boundary exports and verifies the exact restored rev
         filename: "catalogue.sql",
       };
     },
+    prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input) {
       events.push(`restore:${input.databaseId}`);
       expect(new Uint8Array(await new Response(input.body).arrayBuffer()))
@@ -130,8 +177,8 @@ test("the production backup boundary exports and verifies the exact restored rev
   });
   expect(events).toEqual([
     `export:${testEnv.CATALOGUE_D1_DATABASE_ID}`,
-    `restore:${testEnv.DISPOSABLE_D1_DATABASE_ID}`,
-    `verify:${testEnv.DISPOSABLE_D1_DATABASE_ID}`,
+    `restore:${firstRestoreDatabaseId}`,
+    `verify:${firstRestoreDatabaseId}`,
   ]);
 
   const replay = await createVerifiedCatalogueBackup(
@@ -204,7 +251,8 @@ test("the production backup boundary exports and verifies the exact restored rev
       publication_ingestion_run_id: null,
     },
     verification: {
-      disposable_database_id: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      disposable_database_id: firstRestoreDatabaseId,
+      restore_generation: 1,
       verified: true,
       verified_at: "2026-08-05T02:00:00.000Z",
     },
@@ -236,6 +284,13 @@ test("the production backup boundary exports and verifies the exact restored rev
     },
     provider,
   );
+  const secondRestoreDatabaseId =
+    `${testEnv.DISPOSABLE_D1_DATABASE_ID}:backup-production-boundary-newest:1`;
+  expect(secondRestoreDatabaseId).not.toBe(firstRestoreDatabaseId);
+  expect(events.slice(-2)).toEqual([
+    `restore:${secondRestoreDatabaseId}`,
+    `verify:${secondRestoreDatabaseId}`,
+  ]);
   const datedReplay = await createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
     testEnv.BACKUPS,
@@ -272,6 +327,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
         filename: "catalogue.sql",
       };
     },
+    prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input) {
       await new Response(input.body).arrayBuffer();
     },
@@ -343,7 +399,7 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     testEnv.BACKUPS,
     {
       expectedCurrentRevisionId: "catrev_spine_000",
-      idempotencyKey: "backup-production-newer-failure",
+      idempotencyKey: "backup-production-unlinked-after-failure",
       observedAt: "2026-08-05T03:05:00.000Z",
       cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
       catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
@@ -352,7 +408,35 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
       verificationToken: "verification-token",
     },
     provider,
+  )).rejects.toMatchObject({
+    status: 409,
+    code: "backup_retry_required",
+  });
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT 1 AS present FROM catalogue_backup_attempts
+     WHERE idempotency_key = 'backup-production-unlinked-after-failure'`,
+  ).first()).resolves.toBeNull();
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-production-newer-failure",
+      observedAt: "2026-08-05T03:06:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+      failedAttemptId: "backup-production-failure",
+      failedAttemptDigest: String(failedStatus.attempt_digest),
+    },
+    provider,
   )).rejects.toThrow("synthetic export outage");
+  const newerFailedStatus = await catalogueBackupAttemptStatus(
+    testEnv.CATALOGUE_DB,
+    "backup-production-newer-failure",
+  );
   exportAvailable = true;
   const retry = await createVerifiedCatalogueBackup(
     testEnv.CATALOGUE_DB,
@@ -366,13 +450,13 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
       disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
       exportToken: "export-token",
       verificationToken: "verification-token",
-      failedAttemptId: "backup-production-failure",
-      failedAttemptDigest: String(failedStatus.attempt_digest),
+      failedAttemptId: "backup-production-newer-failure",
+      failedAttemptDigest: String(newerFailedStatus.attempt_digest),
     },
     provider,
   );
   expect(retry).toMatchObject({
-    linked_attempt_id: "backup-production-failure",
+    linked_attempt_id: "backup-production-newer-failure",
     retention: { newest_success: true, retain_until: null },
   });
   expect(retry.object_key).not.toContain("backup-production-failure.sql");
@@ -398,6 +482,25 @@ test("backup failure reconstructs live search and leaves recovery degraded", asy
     status: 409,
     code: "backup_digest_mismatch",
   });
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    {
+      expectedCurrentRevisionId: "catrev_spine_000",
+      idempotencyKey: "backup-periodic-after-recovery",
+      observedAt: "2026-08-05T03:12:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+      disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+      exportToken: "export-token",
+      verificationToken: "verification-token",
+    },
+    provider,
+  )).resolves.toMatchObject({
+    linked_attempt_id: null,
+    verified: true,
+  });
+  expect(exportAttempts).toBe(4);
 });
 
 test("recovery stays degraded unless every restored catalogue contract passes", async () => {
@@ -411,6 +514,7 @@ test("recovery stays degraded unless every restored catalogue contract passes", 
         filename: "catalogue.sql",
       };
     },
+    prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input: { body: ReadableStream<Uint8Array> }) {
       await new Response(input.body).arrayBuffer();
     },
@@ -462,6 +566,7 @@ test("the Workflow can resume the same owner after an interrupted active attempt
         filename: "catalogue.sql",
       };
     },
+    prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input) {
       await new Response(input.body).arrayBuffer();
     },
@@ -499,6 +604,86 @@ test("the Workflow can resume the same owner after an interrupted active attempt
   expect(exportsAttempted).toBe(2);
 });
 
+test("a lost import response recreates and journals a fresh disposable target before retry", async () => {
+  const sqlBytes = new TextEncoder().encode("-- lost import response\n");
+  const preparedTargets: string[] = [];
+  const populatedTargets = new Set<string>();
+  let importAttempts = 0;
+  const provider: D1BackupProvider = {
+    async exportSql() {
+      return {
+        body: new Blob([sqlBytes]).stream(),
+        size: sqlBytes.byteLength,
+        bookmark: "bookmark-lost-import-response",
+        filename: "catalogue.sql",
+      };
+    },
+    async prepareRestoreTarget(input) {
+      const databaseId = `disposable-${input.attemptId}-${input.generation}`;
+      expect(input.previousDatabaseId).toBe(
+        input.generation === 1 ? null : preparedTargets.at(-1),
+      );
+      preparedTargets.push(databaseId);
+      return { databaseId };
+    },
+    async restoreSql(input) {
+      importAttempts += 1;
+      if (populatedTargets.has(input.databaseId)) {
+        throw new Error("schema replayed into a populated disposable D1");
+      }
+      populatedTargets.add(input.databaseId);
+      await new Response(input.body).arrayBuffer();
+      if (importAttempts === 1) {
+        throw new Error("synthetic lost import response");
+      }
+    },
+    async reconstructAndVerify(input) {
+      expect(input.databaseId).toBe(preparedTargets.at(-1));
+      return completeRestoredVerification();
+    },
+  };
+  const input = {
+    expectedCurrentRevisionId: "catrev_spine_000",
+    idempotencyKey: "backup-lost-import-response",
+    observedAt: "2026-08-05T03:35:00.000Z",
+    cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+    catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+    exportToken: "export-token",
+    verificationToken: "verification-token",
+  } as const;
+
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    input,
+    provider,
+    { terminalFailure: false },
+  )).rejects.toThrow("synthetic lost import response");
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    `SELECT state, disposable_database_id, restore_generation, restore_phase
+     FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
+  ).bind(input.idempotencyKey).first()).resolves.toEqual({
+    state: "restoring_verification",
+    disposable_database_id: preparedTargets[0],
+    restore_generation: 1,
+    restore_phase: "importing",
+  });
+
+  await expect(createVerifiedCatalogueBackup(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    input,
+    provider,
+    { terminalFailure: false },
+  )).resolves.toMatchObject({ verified: true });
+  expect(preparedTargets).toEqual([
+    "disposable-backup-lost-import-response-1",
+    "disposable-backup-lost-import-response-2",
+  ]);
+  expect(importAttempts).toBe(2);
+});
+
 test("an exact retained export resumes after the R2 put and D1 transition response is lost", async () => {
   const sqlBytes = new TextEncoder().encode("-- retained ambiguous export\n");
   let exportsAttempted = 0;
@@ -512,6 +697,7 @@ test("an exact retained export resumes after the R2 put and D1 transition respon
         filename: "catalogue.sql",
       };
     },
+    prepareRestoreTarget: freshRestoreTarget,
     async restoreSql(input) {
       await new Response(input.body).arrayBuffer();
     },
@@ -715,6 +901,25 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   await insertAttempt("backup-source-old", "failed", "catrev_old_000");
   await insertAttempt("backup-source-current", "failed", "catrev_spine_000");
 
+  const unlinked = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/backups",
+    {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        expected_current_revision_id: "catrev_spine_000",
+        idempotency_key: "backup-unlinked-route",
+      }),
+    },
+  ));
+  expect(unlinked.status).toBe(409);
+  await expect(unlinked.json()).resolves.toMatchObject({
+    code: "backup_retry_required",
+  });
+
   const retry = (failedAttemptId: string, failedAttemptDigest: string) =>
     exports.default.fetch(new Request("https://card-keepr.invalid/v1/backups", {
       method: "POST",
@@ -746,7 +951,8 @@ test("backup retry rejects source state, revision, and digest before Workflow cr
   });
   const retained = await testEnv.CATALOGUE_DB.prepare(
     `SELECT count(*) AS count FROM catalogue_backup_workflow_requests
-     WHERE idempotency_key LIKE 'retry-backup-source-%'`,
+     WHERE idempotency_key LIKE 'retry-backup-source-%'
+        OR idempotency_key = 'backup-unlinked-route'`,
   ).first<{ count: number }>();
   expect(retained?.count).toBe(0);
 });

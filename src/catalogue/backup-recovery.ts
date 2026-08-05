@@ -21,6 +21,14 @@ export type D1BackupProvider = Readonly<{
     bookmark: string;
     filename: string;
   }>;
+  prepareRestoreTarget(input: Readonly<{
+    accountId: string;
+    configuredDatabaseId: string;
+    token: string;
+    attemptId: string;
+    previousDatabaseId: string | null;
+    generation: number;
+  }>): Promise<{ databaseId: string }>;
   restoreSql(input: Readonly<{
     accountId: string;
     databaseId: string;
@@ -141,6 +149,9 @@ type BackupAttemptEvidenceRow = Readonly<{
   completed_at: string | null;
   linked_attempt_id: string | null;
   manifest_sha256: string | null;
+  disposable_database_id: string | null;
+  restore_generation: number;
+  restore_phase: string | null;
 }>;
 
 export async function catalogueBackupAttemptStatus(
@@ -166,6 +177,9 @@ export async function catalogueBackupAttemptStatus(
     content_sha256: attempt.content_sha256,
     manifest_sha256: attempt.manifest_sha256,
     linked_attempt_id: attempt.linked_attempt_id,
+    disposable_database_id: attempt.disposable_database_id,
+    restore_generation: attempt.restore_generation,
+    restore_phase: attempt.restore_phase,
     failure: attempt.state === "failed"
       ? { code: attempt.failure_code, detail: attempt.failure_detail }
       : null,
@@ -229,7 +243,8 @@ async function backupAttemptEvidenceRow(
     `SELECT idempotency_key, request_json, catalogue_revision_id, state,
             object_key, d1_bookmark, content_sha256, export_bytes,
             failure_code, failure_detail, started_at, completed_at,
-            linked_attempt_id, manifest_sha256
+            linked_attempt_id, manifest_sha256, disposable_database_id,
+            restore_generation, restore_phase
      FROM catalogue_backup_attempts WHERE idempotency_key = ?`,
   ).bind(idempotencyKey).first<BackupAttemptEvidenceRow>();
 }
@@ -242,6 +257,7 @@ export async function validateCatalogueBackupRetryEvidence(
   database: D1Database,
   input: Readonly<{
     expectedCurrentRevisionId: string;
+    idempotencyKey: string;
     failedAttemptId?: string;
     failedAttemptDigest?: string;
   }>,
@@ -254,7 +270,39 @@ export async function validateCatalogueBackupRetryEvidence(
       "A backup retry requires both the exact failed attempt ID and digest.",
     );
   }
-  if (input.failedAttemptId === undefined) return null;
+  if (input.failedAttemptId === undefined) {
+    const retryRequired = await database.prepare(
+      `SELECT 1 AS required
+       FROM catalogue_backup_attempts AS failed
+       WHERE failed.catalogue_revision_id = ?
+         AND failed.state = 'failed'
+         AND failed.idempotency_key <> ?
+         AND NOT EXISTS (
+           SELECT 1 FROM catalogue_backup_attempts AS recovered
+           WHERE recovered.catalogue_revision_id = failed.catalogue_revision_id
+             AND recovered.state = 'verified'
+             AND recovered.completed_at >= failed.completed_at
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM catalogue_backup_attempts AS reserved
+           WHERE reserved.idempotency_key = ?
+             AND reserved.publication_ingestion_run_id IS NOT NULL
+         )
+       LIMIT 1`,
+    ).bind(
+      input.expectedCurrentRevisionId,
+      input.idempotencyKey,
+      input.idempotencyKey,
+    ).first<{ required: number }>();
+    if (retryRequired !== null) {
+      throw new AdministrationProblem(
+        409,
+        "backup_retry_required",
+        "A failed backup for the current Catalogue Revision requires an exact linked retry.",
+      );
+    }
+    return null;
+  }
   const failed = await backupAttemptEvidenceRow(database, input.failedAttemptId);
   if (failed === null || failed.state !== "failed") {
     throw new AdministrationProblem(
@@ -311,6 +359,7 @@ export async function createVerifiedCatalogueBackup(
   });
   const linkedAttemptId = await validateCatalogueBackupRetryEvidence(database, {
     expectedCurrentRevisionId: input.expectedCurrentRevisionId,
+    idempotencyKey: input.idempotencyKey,
     failedAttemptId: input.failedAttemptId,
     failedAttemptDigest: input.failedAttemptDigest,
   });
@@ -333,7 +382,8 @@ export async function createVerifiedCatalogueBackup(
             d1_bookmark, failure_code, failure_detail, manifest_key,
             content_sha256, manifest_sha256, export_bytes,
             schema_migration_level, linked_attempt_id,
-            publication_ingestion_run_id, retention.newest_success,
+            publication_ingestion_run_id, disposable_database_id,
+            restore_generation, restore_phase, retention.newest_success,
             retention.retain_until
      FROM catalogue_backup_attempts AS attempt
      LEFT JOIN catalogue_backup_retention AS retention
@@ -354,6 +404,9 @@ export async function createVerifiedCatalogueBackup(
     schema_migration_level: number | null;
     linked_attempt_id: string | null;
     publication_ingestion_run_id: string | null;
+    disposable_database_id: string | null;
+    restore_generation: number;
+    restore_phase: string | null;
     newest_success: number | null;
     retain_until: string | null;
   }>();
@@ -500,6 +553,8 @@ export async function createVerifiedCatalogueBackup(
     let bookmark = attempt.d1_bookmark;
     let exportBytes = attempt.export_bytes;
     let contentSha256 = attempt.content_sha256;
+    let disposableDatabaseId = attempt.disposable_database_id;
+    let restoreGeneration = attempt.restore_generation;
     const schemaMigrationLevel = attempt.schema_migration_level ??
       await currentSchemaMigrationLevel(database);
     if (attemptState === "exporting") {
@@ -574,29 +629,60 @@ export async function createVerifiedCatalogueBackup(
       throw new Error("The retained D1 export evidence is unavailable.");
     }
     if (attemptState === "restoring_verification") {
+      const nextGeneration = restoreGeneration + 1;
+      const prepared = await provider.prepareRestoreTarget({
+        accountId: input.cloudflareAccountId,
+        configuredDatabaseId: input.disposableDatabaseId,
+        token: input.verificationToken,
+        attemptId: input.idempotencyKey,
+        previousDatabaseId: disposableDatabaseId,
+        generation: nextGeneration,
+      });
+      await persistPreparedRestoreTarget(
+        database,
+        input.idempotencyKey,
+        ownerToken,
+        prepared.databaseId,
+        restoreGeneration,
+        nextGeneration,
+      );
+      disposableDatabaseId = prepared.databaseId;
+      restoreGeneration = nextGeneration;
       const stored = await backups.get(objectKey);
       if (stored === null) throw new Error("Retained backup is unavailable.");
+      await transitionRestorePhase(
+        database,
+        input.idempotencyKey,
+        ownerToken,
+        "prepared",
+        "importing",
+      );
       await provider.restoreSql({
         accountId: input.cloudflareAccountId,
-        databaseId: input.disposableDatabaseId,
+        databaseId: disposableDatabaseId,
         token: input.verificationToken,
         body: stored.body,
         size: stored.size,
         etag: stored.etag,
       });
-      await transitionAttempt(
+      await transitionRestoredAttempt(
         database,
         input.idempotencyKey,
         ownerToken,
-        "restoring_verification",
-        "verifying",
       );
       attemptState = "verifying";
     }
     if (attemptState === "verifying") {
+      if (
+        disposableDatabaseId === null || restoreGeneration < 1 ||
+        (attempt.restore_phase !== "imported" &&
+          attemptState === attempt.state)
+      ) {
+        throw new Error("The persisted disposable restore target is unavailable.");
+      }
       const restoredVerification = await provider.reconstructAndVerify({
         accountId: input.cloudflareAccountId,
-        databaseId: input.disposableDatabaseId,
+        databaseId: disposableDatabaseId,
         token: input.verificationToken,
         ownerToken,
         expectedRevisionId: input.expectedCurrentRevisionId,
@@ -618,7 +704,8 @@ export async function createVerifiedCatalogueBackup(
       schema_migration_level: schemaMigrationLevel,
       expected_evidence: expectedVerification,
       verification: {
-        disposable_database_id: input.disposableDatabaseId,
+        disposable_database_id: disposableDatabaseId,
+        restore_generation: restoreGeneration,
         verified: true,
         verified_at: input.observedAt,
       },
@@ -652,7 +739,8 @@ export async function createVerifiedCatalogueBackup(
         database.prepare(
           `UPDATE catalogue_backup_attempts
            SET state = 'verified', d1_bookmark = ?, completed_at = ?,
-               manifest_key = ?, manifest_sha256 = ?
+               manifest_key = ?, manifest_sha256 = ?,
+               restore_phase = 'verified'
            WHERE idempotency_key = ? AND owner_token = ?
              AND state = 'verifying'`,
         ).bind(
@@ -969,7 +1057,7 @@ function verificationEvidenceSql(): string {
       AND ? IS NOT NULL`;
 }
 
-const cloudflareD1BackupProvider: D1BackupProvider = {
+export const cloudflareD1BackupProvider: D1BackupProvider = {
   async exportSql(input) {
     const pathname = d1Path(input.accountId, input.databaseId, "export");
     let bookmark: string | undefined;
@@ -1007,6 +1095,50 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
       await delay(500);
     }
     throw new Error("D1 export polling exceeded its bounded attempts.");
+  },
+
+  async prepareRestoreTarget(input) {
+    const collectionPath =
+      `/accounts/${encodeURIComponent(input.accountId)}/d1/database`;
+    const listed = await cloudflareD1ManagementRequest(
+      `${collectionPath}?name=${
+        encodeURIComponent("card-keepr-disposable-verification")
+      }`,
+      input.token,
+      "GET",
+    );
+    if (!Array.isArray(listed)) {
+      throw new Error("Disposable D1 database inventory is invalid.");
+    }
+    const databaseIds = new Set<string>();
+    for (const candidate of listed) {
+      if (isRecord(candidate) && typeof candidate.uuid === "string") {
+        databaseIds.add(candidate.uuid);
+      }
+    }
+    if (input.previousDatabaseId !== null) {
+      databaseIds.add(input.previousDatabaseId);
+    }
+    if (input.generation === 1) {
+      databaseIds.add(input.configuredDatabaseId);
+    }
+    for (const databaseId of databaseIds) {
+      await deleteCloudflareD1Database(
+        input.accountId,
+        databaseId,
+        input.token,
+      );
+    }
+    const created = await cloudflareD1ManagementRequest(
+      collectionPath,
+      input.token,
+      "POST",
+      { name: "card-keepr-disposable-verification" },
+    );
+    if (!isRecord(created)) {
+      throw new Error("Disposable D1 database creation response is invalid.");
+    }
+    return { databaseId: requiredString(created.uuid, "database identity") };
   },
 
   async restoreSql(input) {
@@ -1083,6 +1215,54 @@ const cloudflareD1BackupProvider: D1BackupProvider = {
   },
 };
 
+async function cloudflareD1ManagementRequest(
+  pathname: string,
+  token: string,
+  method: "GET" | "POST",
+  body?: Record<string, unknown>,
+): Promise<unknown> {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4${pathname}`,
+    {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    },
+  );
+  const envelope = await response.json<{
+    success?: boolean;
+    result?: unknown;
+  }>();
+  if (!response.ok || envelope.success !== true) {
+    throw new Error("Cloudflare D1 management operation failed.");
+  }
+  return envelope.result;
+}
+
+async function deleteCloudflareD1Database(
+  accountId: string,
+  databaseId: string,
+  token: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${
+      encodeURIComponent(accountId)
+    }/d1/database/${encodeURIComponent(databaseId)}`,
+    {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    },
+  );
+  if (response.status === 404) return;
+  const envelope = await response.json<{ success?: boolean }>();
+  if (!response.ok || envelope.success !== true) {
+    throw new Error("Disposable D1 database deletion failed.");
+  }
+}
+
 async function cloudflareD1Request(
   pathname: string,
   token: string,
@@ -1148,7 +1328,37 @@ function backupDocument(attempt: Readonly<{
   };
 }
 
-async function transitionAttempt(
+async function persistPreparedRestoreTarget(
+  database: D1Database,
+  idempotencyKey: string,
+  ownerToken: string,
+  disposableDatabaseId: string,
+  previousGeneration: number,
+  nextGeneration: number,
+): Promise<void> {
+  const changed = await database.prepare(
+    `UPDATE catalogue_backup_attempts
+     SET disposable_database_id = ?, restore_generation = ?,
+         restore_phase = 'prepared'
+     WHERE idempotency_key = ? AND owner_token = ?
+       AND state = 'restoring_verification' AND restore_generation = ?`,
+  ).bind(
+    disposableDatabaseId,
+    nextGeneration,
+    idempotencyKey,
+    ownerToken,
+    previousGeneration,
+  ).run();
+  if (changed.meta.changes !== 1) {
+    throw new AdministrationProblem(
+      409,
+      "backup_in_progress",
+      "The disposable restore target changed concurrently.",
+    );
+  }
+}
+
+async function transitionRestorePhase(
   database: D1Database,
   idempotencyKey: string,
   ownerToken: string,
@@ -1156,14 +1366,35 @@ async function transitionAttempt(
   to: string,
 ): Promise<void> {
   const changed = await database.prepare(
-    `UPDATE catalogue_backup_attempts SET state = ?
-     WHERE idempotency_key = ? AND owner_token = ? AND state = ?`,
+    `UPDATE catalogue_backup_attempts SET restore_phase = ?
+     WHERE idempotency_key = ? AND owner_token = ?
+       AND state = 'restoring_verification' AND restore_phase = ?`,
   ).bind(to, idempotencyKey, ownerToken, from).run();
   if (changed.meta.changes !== 1) {
     throw new AdministrationProblem(
       409,
       "backup_in_progress",
-      "The backup attempt state changed concurrently.",
+      "The disposable restore phase changed concurrently.",
+    );
+  }
+}
+
+async function transitionRestoredAttempt(
+  database: D1Database,
+  idempotencyKey: string,
+  ownerToken: string,
+): Promise<void> {
+  const changed = await database.prepare(
+    `UPDATE catalogue_backup_attempts
+     SET state = 'verifying', restore_phase = 'imported'
+     WHERE idempotency_key = ? AND owner_token = ?
+       AND state = 'restoring_verification' AND restore_phase = 'importing'`,
+  ).bind(idempotencyKey, ownerToken).run();
+  if (changed.meta.changes !== 1) {
+    throw new AdministrationProblem(
+      409,
+      "backup_in_progress",
+      "The restored backup attempt changed concurrently.",
     );
   }
 }
@@ -1362,6 +1593,10 @@ function requiredString(value: unknown, name: string): string {
     throw new Error(`D1 ${name} is unavailable.`);
   }
   return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function requiredContentLength(response: Response): number {
