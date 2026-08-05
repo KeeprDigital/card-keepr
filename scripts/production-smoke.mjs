@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 export async function runProductionSmoke(input, fetchImpl = fetch) {
+  validateInput(input);
   const base = new URL(input.apiUrl);
   const authorized = { authorization: `Bearer ${input.apiKey}` };
   await expectStatus(fetchImpl, new URL("/health", base), authorized, 200);
@@ -8,23 +9,50 @@ export async function runProductionSmoke(input, fetchImpl = fetch) {
 
   const catalogue = await expectJson(fetchImpl, new URL("/v1/catalogue", base), authorized, 200, input.currentRevisionId);
   if (catalogue.meta?.catalogue_revision_id !== input.currentRevisionId) throw new Error("current_revision_mismatch");
-  await expectJson(fetchImpl, new URL(`/v1/cards/${encodeURIComponent(input.cardId)}`, base), authorized, 200, input.currentRevisionId);
-  await expectJson(fetchImpl, new URL(`/v1/printings/${encodeURIComponent(input.printingId)}`, base), authorized, 200, input.currentRevisionId);
-  await expectJson(fetchImpl, new URL(`/v1/cards?q=${encodeURIComponent(input.searchQuery)}`, base), authorized, 200, input.currentRevisionId);
+  const current = input.revisions[0];
+  await expectJson(fetchImpl, new URL(`/v1/cards/${encodeURIComponent(current.card_id)}`, base), authorized, 200, input.currentRevisionId);
+  await expectJson(fetchImpl, new URL(`/v1/printings/${encodeURIComponent(current.printing_id)}`, base), authorized, 200, input.currentRevisionId);
   await expectJson(fetchImpl, new URL(`/v1/legality-status?card_id=${encodeURIComponent(input.legalityCardId)}&on=${encodeURIComponent(input.legalityDate)}&format=${encodeURIComponent(input.legalityFormat)}&region=${encodeURIComponent(input.legalityRegion)}`, base), authorized, 200, input.currentRevisionId);
-  const exported = await expectJson(fetchImpl, new URL(`/v1/catalogue-exports/${encodeURIComponent(input.currentRevisionId)}`, base), authorized, 200, input.currentRevisionId);
-  const component = exported.data?.components?.[0]?.name;
+  await expectStatus(fetchImpl, new URL(`/v1/printing-images/${encodeURIComponent(input.printingImageId)}/content`, base), authorized, 200, input.currentRevisionId);
+  let currentExport;
+  for (const fixture of input.revisions) {
+    const cards = await expectJson(fetchImpl, new URL(`/v1/cards?after=${encodeURIComponent(fixture.card_cursor)}`, base), authorized, 200, fixture.revision_id);
+    assertRevisionCollection(cards, fixture.revision_id, fixture.card_id, "card");
+    const search = await expectJson(fetchImpl, new URL(`/v1/cards?q=${encodeURIComponent(fixture.search_query)}&after=${encodeURIComponent(fixture.search_cursor)}`, base), authorized, 200, fixture.revision_id);
+    assertRevisionCollection(search, fixture.revision_id, fixture.card_id, "search");
+    const printings = await expectJson(fetchImpl, new URL(`/v1/printings?after=${encodeURIComponent(fixture.printing_cursor)}`, base), authorized, 200, fixture.revision_id);
+    assertRevisionCollection(printings, fixture.revision_id, fixture.printing_id, "printing");
+    const exported = await expectJson(fetchImpl, new URL(`/v1/catalogue-exports/${encodeURIComponent(fixture.revision_id)}`, base), authorized, 200, fixture.revision_id);
+    if (fixture.revision_id === input.currentRevisionId) currentExport = exported;
+  }
+  const component = currentExport?.data?.components?.[0]?.name;
   if (typeof component !== "string") throw new Error("catalogue_export_component_missing");
   await expectStatus(fetchImpl, new URL(`/v1/catalogue-exports/${encodeURIComponent(input.currentRevisionId)}/components/${encodeURIComponent(component)}`, base), authorized, 200, input.currentRevisionId);
-  await expectStatus(fetchImpl, new URL(`/v1/printing-images/${encodeURIComponent(input.printingImageId)}/content`, base), authorized, 200, input.currentRevisionId);
-  for (const revision of input.retainedRevisionIds) {
-    await expectJson(fetchImpl, new URL(`/v1/catalogue-exports/${encodeURIComponent(revision)}`, base), authorized, 200, revision);
+  const stale = await expectJson(fetchImpl, new URL(`/v1/cards?after=${encodeURIComponent(input.staleCursor)}`, base), authorized, 409);
+  if (stale.code !== "cursor_revision_unavailable") throw new Error("stale_cursor_did_not_fail_predictably");
+  return { contract: "card-keepr-production-smoke@1", revision_id: input.currentRevisionId, revision_ids: input.revisions.map((item) => item.revision_id), stale_revision_id: input.staleRevisionId, checks: 21 };
+}
+
+function validateInput(input) {
+  if (input === null || typeof input !== "object" || !Array.isArray(input.revisions) || input.revisions.length !== 3 ||
+      input.revisions[0]?.revision_id !== input.currentRevisionId || new Set(input.revisions.map((item) => item?.revision_id)).size !== 3 ||
+      input.revisions.some((item) => item === null || typeof item !== "object" ||
+        [item.revision_id, item.card_id, item.printing_id, item.search_query, item.card_cursor, item.search_cursor, item.printing_cursor].some((value) => typeof value !== "string" || value.length === 0)) ||
+      [input.apiUrl, input.apiKey, input.printingImageId, input.legalityCardId, input.legalityDate, input.legalityFormat, input.legalityRegion, input.staleCursor, input.staleRevisionId]
+        .some((value) => typeof value !== "string" || value.length === 0) ||
+      input.revisions.some((item) => item.revision_id === input.staleRevisionId)) throw new Error("invalid_smoke_input");
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(input.staleCursor), (character) => character.charCodeAt(0))));
+    if (decoded.revision_id !== input.staleRevisionId) throw new Error("stale_revision_mismatch");
+  } catch (error) {
+    if (error?.message === "stale_revision_mismatch") throw error;
+    throw new Error("invalid_stale_cursor");
   }
-  if (input.staleCursor) {
-    const stale = await expectJson(fetchImpl, new URL(`/v1/cards?after=${encodeURIComponent(input.staleCursor)}`, base), authorized, 409);
-    if (stale.code !== "cursor_revision_unavailable") throw new Error("stale_cursor_did_not_fail_predictably");
-  }
-  return { contract: "card-keepr-production-smoke@1", revision_id: input.currentRevisionId, checks: 10 + input.retainedRevisionIds.length + (input.staleCursor ? 1 : 0) };
+}
+
+function assertRevisionCollection(document, revision, expectedId, kind) {
+  if (document.meta?.catalogue_revision_id !== revision || !Array.isArray(document.data) ||
+      !document.data.some((item) => item?.id === expectedId)) throw new Error(`${kind}_revision_fixture_mismatch`);
 }
 
 async function expectStatus(fetchImpl, url, headers, status, revision) {

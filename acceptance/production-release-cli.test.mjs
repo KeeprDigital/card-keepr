@@ -102,9 +102,23 @@ function statusDocument() {
       recovery_bookmark: "bookmark-current", recovery_backup_attempt_id: "backup-current",
       retention_ready: true,
       retained_revision_evidence: ["catrev-current", "catrev-previous", "catrev-old"].map((revision_id, depth) => ({ revision_id, depth, export_verified: true, recovery_verified: true })),
-      smoke_targets: { card_id: "card-1", printing_id: "printing-1", printing_image_id: "image-1", legality_card_id: "card-1", legality_format: "standard", legality_region: "EN-OCEANIA", search_query: "card-1" },
+      smoke_targets: smokeTargets(),
       replacement_handoff: null,
     },
+  };
+}
+
+function smokeTargets() {
+  const revisions = ["catrev-current", "catrev-previous", "catrev-old"].map((revision_id, index) => ({
+    revision_id, card_id: `card-${index}`, printing_id: `printing-${index}`,
+    search_query: `card-${index}`, card_cursor: `card-cursor-${index}`,
+    search_cursor: `search-cursor-${index}`, printing_cursor: `printing-cursor-${index}`,
+  }));
+  return {
+    revisions, printing_image_id: "image-1", legality_card_id: "card-0",
+    legality_format: "standard", legality_region: "EN-OCEANIA",
+    stale_cursor: Buffer.from(JSON.stringify({ revision_id: "catrev-archived" })).toString("base64"),
+    stale_revision_id: "catrev-archived",
   };
 }
 

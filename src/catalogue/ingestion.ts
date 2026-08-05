@@ -510,23 +510,6 @@ export async function administrationStatus(
      WHERE state IN ('requested','preflight','migrating','deploying','smoke_testing')
      LIMIT 1`,
   ).first<Record<string, unknown>>();
-  const smokeTargets = await database.prepare(
-    `SELECT
-       (SELECT card_id FROM revision_cards WHERE catalogue_revision_id = ? ORDER BY card_id LIMIT 1) AS card_id,
-       (SELECT printing_id FROM revision_printings WHERE catalogue_revision_id = ? ORDER BY printing_id LIMIT 1) AS printing_id,
-       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id = ? ORDER BY image_id LIMIT 1) AS printing_image_id,
-       (SELECT json_extract(card_ids_json, '$[0]') FROM revision_legality_rules
-        WHERE catalogue_revision_id = ? AND json_array_length(card_ids_json) > 0
-        ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
-       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id = ?
-        AND json_array_length(card_ids_json) > 0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
-       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id = ?
-        AND json_array_length(card_ids_json) > 0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`,
-  ).bind(...Array(6).fill(catalogue.current_revision_id)).first<{
-    card_id: string | null; printing_id: string | null;
-    printing_image_id: string | null; legality_card_id: string | null;
-    legality_format: string | null; legality_region: string | null;
-  }>();
   const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
   const retention = retainedEvidence.results.map((row) => ({
     revision_id: row.revision_id,
@@ -534,6 +517,10 @@ export async function administrationStatus(
     export_verified: row.export_verified === 1,
     recovery_verified: row.recovery_verified === 1,
   }));
+  const smokeTargets = await productionReleaseSmokeTargets(
+    database,
+    retention.map((item) => item.revision_id),
+  );
   return {
     contract: "card-keepr-administration-status@1",
     production_target: productionTarget,
@@ -562,10 +549,7 @@ export async function administrationStatus(
         retention.length === 3 && retention.every((item) =>
           item.export_verified && item.recovery_verified
         ),
-      smoke_targets: smokeTargets !== null &&
-          Object.values(smokeTargets).every((value) => typeof value === "string")
-        ? { ...smokeTargets, search_query: smokeTargets.card_id }
-        : null,
+      smoke_targets: smokeTargets,
       replacement_handoff: replacement === null ? null : {
         recovery_id: replacement.id,
         target_revision_id: replacement.target_revision_id,
@@ -668,6 +652,90 @@ export async function inspectCandidate(
       curated_effects: curated?.effects ?? [],
     },
   };
+}
+
+async function productionReleaseSmokeTargets(
+  database: D1Database,
+  revisionIds: readonly string[],
+): Promise<Record<string, unknown> | null> {
+  if (revisionIds.length !== 3) return null;
+  const revisions = [];
+  for (const revisionId of revisionIds) {
+    const [cards, printings] = await Promise.all([
+      database.prepare(
+        `SELECT card_id,sort_game,sort_identity_kind,sort_identity_value,sort_id
+         FROM revision_card_query_documents WHERE catalogue_revision_id=?
+         ORDER BY sort_game,sort_identity_kind,sort_identity_value,sort_id LIMIT 2`,
+      ).bind(revisionId).all<{ card_id: string; sort_game: string; sort_identity_kind: string; sort_identity_value: string; sort_id: string }>(),
+      database.prepare(
+        `SELECT printing_id,card_id FROM revision_printings
+         WHERE catalogue_revision_id=? ORDER BY card_id,printing_id LIMIT 2`,
+      ).bind(revisionId).all<{ printing_id: string; card_id: string }>(),
+    ]);
+    if (cards.results.length !== 2 || printings.results.length !== 2) return null;
+    const firstCard = cards.results[0]!;
+    const representativeCard = cards.results[1]!;
+    const firstPrinting = printings.results[0]!;
+    const representativePrinting = printings.results[1]!;
+    const cardAfter = {
+      game: firstCard.sort_game,
+      identity_kind: firstCard.sort_identity_kind,
+      identity_value: firstCard.sort_identity_value,
+      id: firstCard.sort_id,
+    };
+    revisions.push({
+      revision_id: revisionId,
+      card_id: representativeCard.card_id,
+      printing_id: representativePrinting.printing_id,
+      search_query: representativeCard.card_id,
+      card_cursor: encodeReleaseCursor({
+        contract: "card-keepr-card-cursor@1", route: "/v1/cards",
+        order: "game,official_identity.kind,official_identity.value,id",
+        revision_id: revisionId, q: null, game: null, card_number: null,
+        limit: 50, after: cardAfter,
+      }),
+      search_cursor: encodeReleaseCursor({
+        contract: "card-keepr-card-cursor@1", route: "/v1/cards",
+        order: "game,official_identity.kind,official_identity.value,id",
+        revision_id: revisionId, q: representativeCard.card_id,
+        game: null, card_number: null, limit: 50, after: cardAfter,
+      }),
+      printing_cursor: encodeReleaseCursor({
+        route: "/v1/printings", ordering: "card-id,printing-id",
+        revision: revisionId,
+        filters: { card_id: null, game: null, rarity: null, product_id: null, release_region: null, limit: 50 },
+        last: { card_id: firstPrinting.card_id, id: firstPrinting.printing_id },
+      }),
+    });
+  }
+  const [currentExtras, unavailable] = await Promise.all([
+    database.prepare(
+      `SELECT
+       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1) AS printing_image_id,
+       (SELECT json_extract(card_ids_json,'$[0]') FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
+       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
+       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`,
+    ).bind(...Array(4).fill(revisionIds[0])).first<Record<string, string | null>>(),
+    database.prepare(
+      `SELECT catalogue_revision_id FROM catalogue_query_revisions
+       WHERE state='archived' ORDER BY catalogue_revision_id DESC LIMIT 1`,
+    ).first<{ catalogue_revision_id: string }>(),
+  ]);
+  if (currentExtras === null || unavailable === null ||
+      Object.values(currentExtras).some((value) => typeof value !== "string")) return null;
+  const staleAfter = (revisions[0] as { card_cursor: string }).card_cursor;
+  const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(staleAfter), (character) => character.charCodeAt(0)))) as Record<string, unknown>;
+  return {
+    revisions,
+    ...currentExtras,
+    stale_cursor: encodeReleaseCursor({ ...decoded, revision_id: unavailable.catalogue_revision_id }),
+    stale_revision_id: unavailable.catalogue_revision_id,
+  };
+}
+
+function encodeReleaseCursor(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  return btoa(String.fromCharCode(...bytes));
 }
 
 export async function approveRun(
