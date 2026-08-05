@@ -943,7 +943,7 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
       contract: "card-keepr-operational-diagnostics@1",
       references: {
         run_id: runId,
-        request_id: "start-reject",
+        request_id: null,
         expected_catalogue_revision_id: expectedRevision,
         candidate_digest: digest,
         adapter_versions: [],
@@ -974,8 +974,8 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
           path: `/v1/ingestion-runs/${runId}`,
         },
         {
-          code: "inspect_candidate",
-          path: `/v1/ingestion-runs/${runId}/candidate`,
+          code: "retry_ingestion_run",
+          path: `/v1/ingestion-runs/${runId}/retry`,
         },
       ],
     },

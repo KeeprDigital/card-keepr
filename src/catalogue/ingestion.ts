@@ -98,6 +98,7 @@ type RunRow = {
   expected_current_revision_id: string;
   linked_run_id: string | null;
   idempotency_key: string;
+  operational_request_id: string | null;
   candidate_digest: string | null;
   candidate_catalogue_digest: string | null;
   candidate_created_at: string | null;
@@ -185,6 +186,7 @@ export type StartRunRequest = {
   fixture: string;
   selected_games: readonly string[];
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type ApproveRunRequest = {
@@ -200,6 +202,7 @@ export type RejectRunRequest = {
 
 export type RetryRunRequest = {
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type RetryPublicationCleanupRequest = {
@@ -237,6 +240,7 @@ export async function startFixtureRun(
         candidate: candidate.candidate,
         selectedGames: candidate.candidate.selected_games,
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "start_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: null,
@@ -298,6 +302,7 @@ export async function retryRun(
         candidate,
         selectedGames: parseSelectedGames(source.selected_games_json),
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "retry_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: source.id,
@@ -1140,6 +1145,7 @@ async function startPreparedRun(
     candidate: CatalogueCandidate;
     selectedGames: readonly SupportedGame[];
     idempotencyKey: string;
+    operationalRequestId: string | null;
     idempotencyOperation: string;
     idempotencyRequestJson: string;
     linkedRunId: string | null;
@@ -1194,6 +1200,7 @@ async function startPreparedRun(
     expected_current_revision_id: catalogueState.current_revision_id,
     linked_run_id: input.linkedRunId,
     idempotency_key: input.idempotencyKey,
+    operational_request_id: input.operationalRequestId,
     candidate_digest: candidateDigest,
     candidate_catalogue_digest: candidateDigest,
     candidate_created_at: startedAt,
@@ -1233,6 +1240,7 @@ async function startPreparedRun(
             expected_current_revision_id,
             linked_run_id,
             idempotency_key,
+            operational_request_id,
             candidate_digest,
             candidate_catalogue_digest,
             candidate_created_at,
@@ -1251,7 +1259,7 @@ async function startPreparedRun(
             resulting_revision_id,
             freshness_checked_at
           ) VALUES (
-            ?, 'planning', ?, ?, ?, ?, ?,
+            ?, 'planning', ?, ?, ?, ?, ?, ?,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
             NULL, ?, ?, '[]', NULL, NULL, NULL
           )`,
@@ -1263,6 +1271,7 @@ async function startPreparedRun(
           catalogueState.current_revision_id,
           input.linkedRunId,
           input.idempotencyKey,
+          input.operationalRequestId,
           candidateJson,
           JSON.stringify(progressFor("planning")),
           canonicalJson(curated.diagnostics),
@@ -5493,7 +5502,7 @@ function publicRun(
       "The persisted Ingestion Run document is inconsistent.",
     );
   }
-  return decodePublicRunDocument({
+  const document = decodePublicRunDocument({
     id: row.id,
     state: row.state,
     selected_games: selectedGames,
@@ -5520,6 +5529,13 @@ function publicRun(
     publication_reservation: publicPublicationReservation(row),
     publication_cleanup: publicPublicationCleanup(cleanup),
   });
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: row.operational_request_id,
+    }),
+  };
 }
 
 function publicPublicationReservation(
@@ -5655,6 +5671,9 @@ function decodePublicRunDocument(
     reservation,
     cleanup,
   });
+  const operationalRequestId = retainedOperationalRequestId(
+    value.operational_diagnostics,
+  );
   const {
     operational_diagnostics: _retainedOperationalDiagnostics,
     ...retainedValue
@@ -5670,8 +5689,24 @@ function decodePublicRunDocument(
   };
   return {
     ...document,
-    operational_diagnostics: operationalDiagnostics(document),
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: operationalRequestId,
+    }),
   };
+}
+
+function retainedOperationalRequestId(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const references = (value as Record<string, unknown>).references;
+  if (
+    references === null || typeof references !== "object" ||
+    Array.isArray(references)
+  ) return null;
+  const requestId = (references as Record<string, unknown>).request_id;
+  return typeof requestId === "string" ? requestId : null;
 }
 
 function decodePublicationReservation(

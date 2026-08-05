@@ -17,20 +17,24 @@ export function operationalDiagnostics(
   const approvalHistory = Array.isArray(run.approval_history)
     ? run.approval_history
     : [];
-  const failure = terminalFailure(run, state);
+  const evidenceBacked = Array.isArray(run.evidence_plans) &&
+    run.evidence_plans.length > 0;
+  const failure = terminalFailure(run, state, evidenceBacked);
   const retryAvailable = state !== null && terminalRunStates.has(state);
   const adapterVersions = retainedAdapterVersions(run);
   const diagnosisSequence: Array<Record<string, string>> = [
-    { code: "check_status", path: "/v1/status" },
+    { code: "check_status", method: "GET", path: "/v1/status" },
   ];
   if (runId !== null) {
     diagnosisSequence.push({
       code: "inspect_run",
+      method: "GET",
       path: `/v1/ingestion-runs/${encodeURIComponent(runId)}`,
     });
-    if (candidateDigest !== null) {
+    if (candidateDigest !== null && state === "awaiting_approval") {
       diagnosisSequence.push({
         code: "inspect_candidate",
+        method: "GET",
         path: `/v1/ingestion-runs/${encodeURIComponent(runId)}/candidate`,
       });
     }
@@ -38,16 +42,41 @@ export function operationalDiagnostics(
   if (resultingRevisionId !== null) {
     diagnosisSequence.push({
       code: "inspect_backup",
+      method: "GET",
       path: `/v1/catalogue-revisions/${
         encodeURIComponent(resultingRevisionId)
       }/backups`,
+    });
+  }
+  const retry = retryAvailable && runId !== null
+    ? evidenceBacked && state !== "published"
+      ? {
+        code: "evidence_collection_retry_available",
+        source_run_id: runId,
+        method: "POST",
+        path: `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/retry`,
+      }
+      : {
+        code: "ingestion_run_retry_available",
+        source_run_id: runId,
+        method: "POST",
+        path: `/v1/ingestion-runs/${encodeURIComponent(runId)}/retry`,
+      }
+    : null;
+  if (retry !== null) {
+    diagnosisSequence.push({
+      code: evidenceBacked
+        ? "retry_evidence_collection"
+        : "retry_ingestion_run",
+      method: retry.method,
+      path: retry.path,
     });
   }
   return {
     contract: "card-keepr-operational-diagnostics@1",
     references: {
       run_id: runId,
-      request_id: safeReference(run.idempotency_key),
+      request_id: safeReference(run.operational_request_id),
       expected_catalogue_revision_id:
         safeReference(run.expected_current_revision_id),
       resulting_catalogue_revision_id: resultingRevisionId,
@@ -77,12 +106,7 @@ export function operationalDiagnostics(
       approval_decision_count: approvalHistory.length,
       coverage: safeCoverage(run),
     },
-    retry: retryAvailable && runId !== null
-      ? {
-        code: "ingestion_run_retry_available",
-        source_run_id: runId,
-      }
-      : null,
+    retry,
     diagnosis_sequence: diagnosisSequence,
   };
 }
@@ -90,6 +114,7 @@ export function operationalDiagnostics(
 function terminalFailure(
   run: Record<string, unknown>,
   state: string | null,
+  evidenceBacked: boolean,
 ): Record<string, unknown> | null {
   const retainedCode = safeMachineCode(run.failure_code);
   const code = retainedCode ?? (state === "rejected"
@@ -100,10 +125,12 @@ function terminalFailure(
         ? "ingestion_run_failed"
         : null);
   if (code === null) return null;
-  const retryable = state !== "rejected";
+  const retryable = evidenceBacked || state !== "rejected";
   return {
     code,
-    retryability_code: retryable
+    retryability_code: evidenceBacked
+      ? "retryable_evidence_collection"
+      : retryable
       ? state === "expired"
         ? "retryable_expiration"
         : "retryable_failure"

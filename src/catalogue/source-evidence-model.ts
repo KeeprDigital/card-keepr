@@ -61,10 +61,14 @@ export type EvidencePlanInput = {
 };
 
 export type StartEvidenceRunRequest =
-  | (EvidencePlanInput & { idempotency_key: string })
+  | (EvidencePlanInput & {
+      idempotency_key: string;
+      operational_request_id?: string;
+    })
   | {
       plans: readonly EvidencePlanInput[];
       idempotency_key: string;
+      operational_request_id?: string;
     };
 
 export type EvidenceParentWorkflowParams = {

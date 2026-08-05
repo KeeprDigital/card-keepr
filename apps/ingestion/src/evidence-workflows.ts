@@ -33,6 +33,7 @@ import {
   requiredSourceAdapter,
 } from "../../../src/catalogue/source-adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
+import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 
 const deterministicDatabaseStep = {
   retries: { limit: 3, delay: 250, backoff: "exponential" as const },
@@ -68,6 +69,9 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
     event: Readonly<WorkflowEvent<EvidenceParentWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<unknown> {
+    const operational = observeOperationalWorkflow(step, event, this.env);
+    this.env = operational.env;
+    step = operational.step;
     const runId = event.payload.ingestion_run_id;
     const retainedChildIds = await step.do(
       "load retained hostname Workflow identities",
@@ -398,6 +402,9 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
     event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>,
     step: WorkflowStep,
   ): Promise<unknown> {
+    const operational = observeOperationalWorkflow(step, event, this.env);
+    this.env = operational.env;
+    step = operational.step;
     const {
       ingestion_run_id: runId,
       hostname,

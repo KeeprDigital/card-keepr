@@ -91,21 +91,26 @@ const run = {
       },
     },
     retry: {
-      code: "ingestion_run_retry_available",
+      code: "evidence_collection_retry_available",
       source_run_id: "run_cli_demo",
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
     },
     diagnosis_sequence: [
-      { code: "check_status", path: "/v1/status" },
+      { code: "check_status", method: "GET", path: "/v1/status" },
       {
         code: "inspect_run",
+        method: "GET",
         path: "/v1/ingestion-runs/run_cli_demo",
       },
       {
-        code: "inspect_candidate",
-        path: "/v1/ingestion-runs/run_cli_demo/candidate",
+        code: "retry_evidence_collection",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
       },
       {
         code: "inspect_backup",
+        method: "GET",
         path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
       },
     ],
@@ -919,7 +924,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(shown.stdout, /Recovery: \/v1\/status/);
   assert.match(
     shown.stdout,
-    /Retry: ingestion_run_retry_available \(run_cli_demo\)/,
+    /Retry: evidence_collection_retry_available \(run_cli_demo\)/,
+  );
+  assert.match(
+    shown.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_cli_demo\/collection\/retry/,
   );
   assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
   assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);

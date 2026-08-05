@@ -8,7 +8,7 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   compareSourceFreshness,
@@ -522,6 +522,10 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
 });
 
 test("reconciliation commit success survives lost step output without repeating semantic work", async () => {
+  const operationalRecords: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    operationalRecords.push(String(value));
+  });
   const run = await collect(
     "/reconciliation/base",
     "workflow-output-loss-recovery",
@@ -535,22 +539,25 @@ test("reconciliation commit success survives lost step output without repeating 
     do: async (
       name: string,
       _config: unknown,
-      callback: () => Promise<string>,
+      callback: (context: unknown) => Promise<string>,
     ) => {
       if (
         name ===
           "reconcile retained Card, Printing, and Erratum evidence"
       ) {
         reconciliationAttempts += 1;
-        await callback();
+        await callback({ step: { name, count: 2 }, attempt: 3 });
         reconciliationAttempts += 1;
       }
-      return callback();
+      return callback({ step: { name, count: 2 }, attempt: 3 });
     },
   } as unknown as WorkflowStep;
   const output = await runReconciliationWorkflow(
     testEnv,
     {
+      instanceId: "workflow-reconciliation-correlation",
+      workflowName: "reconciliation-workflow",
+      timestamp: new Date("2026-07-31T01:00:00.000Z"),
       payload: {
         ingestion_run_id: run.id,
         expected_current_revision_id: expectedCurrentRevisionId,
@@ -562,6 +569,29 @@ test("reconciliation commit success survives lost step output without repeating 
   );
 
   expect(reconciliationAttempts).toBe(2);
+  const workflowRecord = operationalRecords.map((record) => JSON.parse(record))
+    .find((record) =>
+      record.event === "workflow.step.completed" &&
+      record.request?.id === "workflow-reconciliation-correlation"
+    );
+  expect(workflowRecord).toMatchObject({
+    contract: "card-keepr-operational-log@1",
+    runtime: "ingestion",
+    request: {
+      id: "workflow-reconciliation-correlation",
+      method: "WORKFLOW",
+      route: "/workflows/reconciliation-workflow",
+    },
+    status: 200,
+    workflow: {
+      step: "reconcile retained Card, Printing, and Erratum evidence",
+      step_count: 2,
+    },
+    retry: { count: 2, classification: "not_applicable" },
+    cache: { status: "unknown" },
+    d1: { prepared_statements: expect.any(Number) },
+  });
+  expect(workflowRecord.duration_ms).toEqual(expect.any(Number));
   expect(JSON.parse(output.result_json)).toMatchObject({
     contract: "card-keepr-reconciliation-workflow-result@1",
     run_id: run.id,

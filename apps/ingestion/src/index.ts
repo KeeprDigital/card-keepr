@@ -275,6 +275,7 @@ async function handleIngestionRequest(
             await startEvidenceRun(env.CATALOGUE_DB, {
               plans: requiredEvidencePlans(body, "plans"),
               idempotency_key: requiredString(body, "idempotency_key"),
+              operational_request_id: requestId,
             }),
             { status: 201 },
           );
@@ -292,6 +293,7 @@ async function handleIngestionRequest(
             source_lineage: requiredString(body, "source_lineage"),
             adapter_version: requiredString(body, "adapter_version"),
             idempotency_key: requiredString(body, "idempotency_key"),
+            operational_request_id: requestId,
             requests: requiredSourceRequests(body, "requests"),
           }),
           { status: 201 },
@@ -704,6 +706,7 @@ async function handleIngestionRequest(
               body,
               "idempotency_key",
             ),
+            operational_request_id: requestId,
           },
           observedAt,
         );

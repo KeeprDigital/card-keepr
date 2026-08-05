@@ -1371,6 +1371,36 @@ function appendOperationalDiagnostics(lines, value) {
         : "not available"
     }`,
   );
+  const diagnosis = Array.isArray(value.diagnosis_sequence)
+    ? value.diagnosis_sequence.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        return [];
+      }
+      const method = safeDiagnosticMethod(entry.method);
+      const path = safeDiagnosticPath(entry.path);
+      const code = safeMachineCode(entry.code);
+      return method === null || path === null || code === null
+        ? []
+        : [{ method, path, code }];
+    })
+    : [];
+  for (const entry of diagnosis) {
+    lines.push(`Diagnosis: ${entry.method} ${entry.path} (${entry.code})`);
+  }
+  const retryMethod = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticMethod(retry.method)
+    : null;
+  const retryPath = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticPath(retry.path)
+    : null;
+  const next = retryMethod !== null && retryPath !== null
+    ? { method: retryMethod, path: retryPath }
+    : diagnosis[0];
+  if (next !== undefined && next !== null) {
+    lines.push(`Next: ${next.method} ${next.path}`);
+  }
   const evidence = value.terminal_evidence;
   const coverage = evidence !== null && typeof evidence === "object" &&
       !Array.isArray(evidence) && evidence.coverage !== null &&
@@ -1402,6 +1432,10 @@ function safeDiagnosticPath(value) {
       /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
     ? value
     : null;
+}
+
+function safeDiagnosticMethod(value) {
+  return value === "GET" || value === "POST" ? value : null;
 }
 
 function safeDiagnosticCount(value) {

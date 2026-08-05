@@ -3,7 +3,7 @@ import {
   applyD1Migrations,
   type D1Migration,
 } from "cloudflare:test";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import {
   captureOperationIdentity,
   capturePreparedAttempt,
@@ -75,6 +75,10 @@ test("the administration authentication boundary runs in the Workers runtime", a
 });
 
 test("evidence run diagnostics retain safe adapter, workflow, coverage, and retry references", async () => {
+  const records: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
   const response = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
@@ -88,11 +92,14 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
   );
   expect(response.status).toBe(201);
   const run = await response.json<Record<string, unknown>>();
+  const requestLog = JSON.parse(records.at(-1) ?? "null") as {
+    request: { id: string };
+  };
   expect(run).toMatchObject({
     operational_diagnostics: {
       contract: "card-keepr-operational-diagnostics@1",
       references: {
-        request_id: "diagnostic-evidence-run",
+        request_id: requestLog.request.id,
         adapter_versions: ["one-piece-en@3"],
         workflow: {
           parent_id: null,
@@ -113,8 +120,62 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
     },
   });
   const bundle = JSON.stringify(run.operational_diagnostics);
+  expect(bundle).not.toContain("diagnostic-evidence-run");
   expect(bundle).not.toContain("authorization");
   expect(bundle).not.toContain("fixture-official-source");
+});
+
+test("terminal evidence diagnostics expose collection retry guidance without a stale candidate path", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      idempotency_key: "terminal-evidence-diagnostics",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  const run = await created.json<{ id: string }>();
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+     SET state = 'failed', terminal_at = ?,
+         failure_code = 'source_request_retries_exhausted'
+     WHERE id = ?`,
+  ).bind("2026-08-05T00:00:00.000Z", run.id).run();
+  const shown = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}`,
+    "GET",
+  );
+  expect(shown.status).toBe(200);
+  const document = await shown.json<Record<string, unknown>>();
+  expect(document).toMatchObject({
+    operational_diagnostics: {
+      retry: {
+        code: "evidence_collection_retry_available",
+        source_run_id: run.id,
+        method: "POST",
+        path: `/v1/ingestion-runs/${run.id}/collection/retry`,
+      },
+      diagnosis_sequence: [
+        { code: "check_status", method: "GET", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          method: "GET",
+          path: `/v1/ingestion-runs/${run.id}`,
+        },
+        {
+          code: "retry_evidence_collection",
+          method: "POST",
+          path: `/v1/ingestion-runs/${run.id}/collection/retry`,
+        },
+      ],
+    },
+  });
+  expect(JSON.stringify(document.operational_diagnostics)).not.toContain(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+  );
 });
 
 test("production source fixture selection is invariant under retries and reordering", () => {
