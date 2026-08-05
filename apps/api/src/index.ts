@@ -207,6 +207,7 @@ const apiWorker = {
           env.CATALOGUE_DB,
           env.PRINTING_IMAGES,
           decodeURIComponent(printingImageContentMatch[1]!),
+          requestId,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }

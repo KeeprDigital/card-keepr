@@ -55,6 +55,18 @@ beforeEach(async () => {
         "/v1/printing-images/printing_image_st15_front/content",
     },
   };
+  const backPrintingImage = {
+    ...printingImage,
+    id: "printing_image_st15_back",
+    role: "back",
+    content_sha256:
+      "eed832d958fc4054fffb3027319dcd914448475c226ce55ae8053a442ed1b2cf",
+    links: {
+      self: "/v1/printing-images/printing_image_st15_back",
+      content:
+        "/v1/printing-images/printing_image_st15_back/content",
+    },
+  };
   const printing = {
     type: "printing",
     id: "printing_st15_event",
@@ -65,7 +77,7 @@ beforeEach(async () => {
       profile: "one-piece@1",
       attributes: { illustration_types: [] },
     },
-    printing_images: [printingImage],
+    printing_images: [printingImage, backPrintingImage],
     products: [],
     distribution_contexts: [
       {
@@ -200,6 +212,27 @@ beforeEach(async () => {
        ) VALUES ('catrev_products', ?, ?)`,
     ).bind(printingImage.id, printingImage.printing_id),
     testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO reconciled_printing_images (
+         id, printing_id, role, media_type, width, height,
+         content_sha256, content_byte_length, object_key
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      backPrintingImage.id,
+      backPrintingImage.printing_id,
+      backPrintingImage.role,
+      backPrintingImage.media_type,
+      backPrintingImage.width,
+      backPrintingImage.height,
+      backPrintingImage.content_sha256,
+      17,
+      `printing-images/${backPrintingImage.content_sha256}`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printing_images (
+         catalogue_revision_id, image_id, printing_id
+       ) VALUES ('catrev_products', ?, ?)`,
+    ).bind(backPrintingImage.id, backPrintingImage.printing_id),
+    testEnv.CATALOGUE_DB.prepare(
       `UPDATE catalogue_state
        SET current_revision_id = 'catrev_products',
            published_at = '2026-01-01T00:00:00.000Z'
@@ -223,6 +256,14 @@ beforeEach(async () => {
     {
       httpMetadata: { contentType: printingImage.media_type },
       sha256: printingImage.content_sha256,
+    },
+  );
+  await testEnv.PRINTING_IMAGES.put(
+    `printing-images/${backPrintingImage.content_sha256}`,
+    new TextEncoder().encode("fusion-back-image"),
+    {
+      httpMetadata: { contentType: backPrintingImage.media_type },
+      sha256: backPrintingImage.content_sha256,
     },
   );
 });
@@ -271,9 +312,15 @@ test("authenticated Product reads preserve regional precision and announced stat
 
   const printingRead = await api("/v1/printings/printing_st15_event");
   expect(printingRead.status).toBe(200);
-  await expect(printingRead.json()).resolves.toMatchObject({
+  const printingDocument = await printingRead.json();
+  expectSchema("PrintingDocument", printingDocument);
+  expect(printingDocument).toMatchObject({
     data: {
       id: "printing_st15_event",
+      printing_images: [
+        { id: "printing_image_st15_front", role: "front" },
+        { id: "printing_image_st15_back", role: "back" },
+      ],
       distribution_contexts: [
         {
           kind: "tournament_pack",
@@ -293,7 +340,11 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(content.headers.get("content-type")).toBe("image/webp");
   expect(content.headers.get("content-length")).toBe("18");
   expect(content.headers.get("cache-control")).toContain("private");
-  expect(await content.text()).toBe("fusion-front-image");
+  expect(content.headers.get("cache-control")).not.toContain("public");
+  expect(content.headers.get("cache-control")).not.toContain("s-maxage");
+  expect(new TextDecoder().decode(await content.arrayBuffer())).toBe(
+    "fusion-front-image",
+  );
 
   const head = await api(
     "/v1/printing-images/printing_image_st15_front/content",
@@ -331,7 +382,7 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   );
   expect(partial.status).toBe(206);
   expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
-  expect(await partial.text()).toBe("front");
+  expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe("front");
 
   const notModified = await api(
     "/v1/printing-images/printing_image_st15_front/content",
@@ -341,6 +392,57 @@ test("authenticated Printing Image content is immutable, conditional, and range-
     },
   );
   expect(notModified.status).toBe(304);
+
+  const back = await api(
+    "/v1/printing-images/printing_image_st15_back/content",
+  );
+  expect(back.status).toBe(200);
+  expect(new TextDecoder().decode(await back.arrayBuffer())).toBe(
+    "fusion-back-image",
+  );
+
+  const unsatisfiable = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    { range: "bytes=99-100" },
+  );
+  expect(unsatisfiable.status).toBe(416);
+  expect(unsatisfiable.headers.get("content-range")).toBe("bytes */18");
+  expect(unsatisfiable.headers.get("content-type") ?? "").toMatch(
+    /^application\/problem\+json/u,
+  );
+  const rangeProblem = await unsatisfiable.json();
+  expectSchema("Problem", rangeProblem);
+  expect(rangeProblem).toMatchObject({
+    status: 416,
+    code: "range_not_satisfiable",
+  });
+});
+
+test("Printing Image content rejects unknown identities before private content is returned", async () => {
+  const path = "/v1/printing-images/printing_image_unknown/content";
+  const unknown = await api(path);
+  expect(unknown.status).toBe(404);
+  const unknownProblem = await unknown.json();
+  expectSchema("Problem", unknownProblem);
+  expect(unknownProblem).toMatchObject({ code: "not_found" });
+
+  const unauthorized = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    { authorization: "Bearer invalid-api-key" },
+  );
+  expect(unauthorized.status).toBe(401);
+  const authenticationProblem = await unauthorized.json();
+  expectSchema("Problem", authenticationProblem);
+  expect(authenticationProblem).toMatchObject({ code: "invalid_api_key" });
+
+  const invalidOrigin = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    { origin: "https://catalogue.example.invalid" },
+  );
+  expect(invalidOrigin.status).toBe(403);
+  const originProblem = await invalidOrigin.json();
+  expectSchema("Problem", originProblem);
+  expect(originProblem).toMatchObject({ code: "forbidden_origin" });
 });
 
 test("Product conditional reads return 304 for matching revision ETags", async () => {
@@ -1052,6 +1154,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     page: { next_cursor: string | null };
     meta: { catalogue_revision_id: string };
   }>();
+  expectSchema("PrintingCollection", first);
   expect(first.data.map(({ id }) => id)).toEqual([
     "printing_st15_event",
   ]);
