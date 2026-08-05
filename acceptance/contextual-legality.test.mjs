@@ -1002,12 +1002,17 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   assert.equal(regional.data[0].status, "legal");
   assert.equal(regional.data[1].status, "legal");
 
+  const championshipTier = await legalityStatus(
+    cards.get("GD30-002"),
+    ["--region", "EN-ASIA"],
+    apiEnvironment,
+  );
   const withoutEventTier = await runCli(
     [
       "legality",
       "status",
       "--card-id",
-      cards.get("GD30-001"),
+      cards.get("GD30-002"),
       "--on",
       "2026-07-30",
       "--format",
@@ -1019,7 +1024,22 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     apiEnvironment,
   );
   assert.equal(withoutEventTier.code, 0, withoutEventTier.stderr);
-  assert.equal(JSON.parse(withoutEventTier.stdout).data[0].status, "legal");
+  const withoutEventTierDocument = JSON.parse(withoutEventTier.stdout);
+  assert.deepEqual(
+    championshipTier.data[0].rule_ids,
+    [
+      asiaRuleId("legality_rule_asia_eligible"),
+      asiaRuleId("legality_rule_asia_copy_limit"),
+      asiaRuleId("legality_rule_asia_combination"),
+    ].sort(),
+  );
+  assert.deepEqual(
+    withoutEventTierDocument.data[0].rule_ids,
+    [
+      asiaRuleId("legality_rule_asia_eligible"),
+      asiaRuleId("legality_rule_asia_combination"),
+    ].sort(),
+  );
 
   const oceania = await runCli(
     legalityArguments(cards.get("GD30-001"), [
@@ -1058,6 +1078,13 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
           JSON.stringify(validateProblem.errors),
         );
         assert.equal(invalidCardDocument.code, "invalid_parameter");
+        assert.deepEqual(invalidCardDocument.invalid_params, [
+          {
+            name: "card_id",
+            reason:
+              "card_id must be an opaque identity of at most 200 characters.",
+          },
+        ]);
       },
     );
   }
