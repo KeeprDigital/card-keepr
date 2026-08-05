@@ -6,7 +6,6 @@ import {
   apiCapabilities,
   ingestionCapabilities,
 } from "../src/runtime-capabilities.mjs";
-import { runCredentialCommand } from "./credential-rotation.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
 import {
   exitCodeForStatus,
@@ -16,6 +15,7 @@ import {
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
 import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
 import { validatedProductionTarget } from "./production-target.mjs";
+import { runProductionReleaseCommand } from "./production-release.mjs";
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
@@ -35,6 +35,9 @@ export async function main(arguments_, environment) {
       "/v1/status",
       "GET",
     );
+  }
+  if (isCommand(arguments_, "release", "production")) {
+    return runProductionReleaseCommand(arguments_.slice(2), environment, json);
   }
 
   if (isCommand(arguments_, "run", "start")) {
@@ -134,6 +137,7 @@ export async function main(arguments_, environment) {
     );
   }
   if (arguments_[0] === "credential") {
+    const { runCredentialCommand } = await import("./credential-rotation.mjs");
     return runCredentialCommand(
       arguments_.slice(1),
       environment,

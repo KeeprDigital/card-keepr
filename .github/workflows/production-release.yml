@@ -8,13 +8,16 @@ on:
         required: true
         type: string
       expected_token_id:
-        required: true
+        required: false
+        default: not-applicable
         type: string
       plan_digest:
-        required: true
+        required: false
+        default: "0000000000000000000000000000000000000000000000000000000000000000"
         type: string
       plan_nonce:
-        required: true
+        required: false
+        default: "0000000000000000000000000000000000000000000000000000000000000000"
         type: string
       expected_head_sha:
         required: true
@@ -23,20 +26,71 @@ on:
         required: true
         type: string
       expected_status:
-        required: true
+        required: false
+        default: unusable
         type: choice
         options:
           - usable
           - unusable
       expected_fingerprint:
-        required: true
+        required: false
+        default: sha256:0000000000000000000000000000000000000000000000000000000000000000
         type: string
       secret_slot:
-        required: true
+        required: false
+        default: active
         type: choice
         options:
           - active
           - replacement
+      operation:
+        required: false
+        default: credential_probe
+        type: choice
+        options: [credential_probe, production_release]
+      release_id:
+        required: false
+        type: string
+      expected_current_revision:
+        required: false
+        type: string
+      expected_migration_level:
+        required: false
+        type: string
+      production_target_json:
+        required: false
+        type: string
+      production_target_digest:
+        required: false
+        type: string
+      recovery_bookmark:
+        required: false
+        type: string
+      recovery_backup_attempt_id:
+        required: false
+        type: string
+      smoke_targets_json:
+        required: false
+        type: string
+      retained_revision_evidence_json:
+        required: false
+        type: string
+      replacement_recovery_id:
+        required: false
+        default: none
+        type: string
+      replacement_database_id:
+        required: false
+        default: none
+        type: string
+      retained_database_id:
+        required: false
+        default: none
+        type: string
+      replacement_target_digest:
+        required: false
+        default: none
+        type: string
 
 permissions:
   contents: read
@@ -47,6 +101,7 @@ concurrency:
 
 jobs:
   deploy-production:
+    if: inputs.operation == 'credential_probe'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -156,3 +211,136 @@ jobs:
           fi
           printf 'KEEPR_CREDENTIAL_PROOF plan_digest=%s plan_nonce=%s head_sha=%s token_id=%s actor=%s slot=%s\n' \
             "${PLAN_DIGEST}" "${PLAN_NONCE}" "${GITHUB_SHA}" "${EXPECTED_TOKEN_ID}" "${GITHUB_ACTOR}" "${SECRET_SLOT}"
+
+  guarded-release:
+    if: inputs.operation == 'production_release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+      RELEASE_ID: ${{ inputs.release_id }}
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      EXPECTED_ACTOR: ${{ inputs.expected_actor }}
+      EXPECTED_CURRENT_REVISION: ${{ inputs.expected_current_revision }}
+      EXPECTED_MIGRATION_LEVEL: ${{ inputs.expected_migration_level }}
+      PRODUCTION_TARGET_JSON: ${{ inputs.production_target_json }}
+      PRODUCTION_TARGET_DIGEST: ${{ inputs.production_target_digest }}
+      RECOVERY_BOOKMARK: ${{ inputs.recovery_bookmark }}
+      RECOVERY_BACKUP_ATTEMPT_ID: ${{ inputs.recovery_backup_attempt_id }}
+      SMOKE_TARGETS_JSON: ${{ inputs.smoke_targets_json }}
+      RETAINED_REVISION_EVIDENCE_JSON: ${{ inputs.retained_revision_evidence_json }}
+      REPLACEMENT_RECOVERY_ID: ${{ inputs.replacement_recovery_id }}
+      REPLACEMENT_DATABASE_ID: ${{ inputs.replacement_database_id }}
+      RETAINED_DATABASE_ID: ${{ inputs.retained_database_id }}
+      REPLACEMENT_TARGET_DIGEST: ${{ inputs.replacement_target_digest }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      API_TRAFFIC_TOKEN: ${{ secrets.API_TRAFFIC_TOKEN }}
+      ADMINISTRATION_BASE_URL: ${{ secrets.ADMINISTRATION_BASE_URL }}
+      ADMINISTRATION_TOKEN: ${{ secrets.ADMINISTRATION_TOKEN }}
+    steps:
+      - name: Check out the exact guarded release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate immutable dispatch bindings
+        run: |
+          set -euo pipefail
+          test "${GITHUB_SHA}" = "${EXPECTED_HEAD_SHA}"
+          test "${GITHUB_ACTOR}" = "${EXPECTED_ACTOR}"
+          [[ "${RELEASE_ID}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]
+          [[ "${EXPECTED_CURRENT_REVISION}" =~ ^[A-Za-z][A-Za-z0-9_-]{0,127}$ ]]
+          [[ "${PRODUCTION_TARGET_DIGEST}" =~ ^[0-9a-f]{64}$ ]]
+          actual_target_digest="$(printf '%s' "${PRODUCTION_TARGET_JSON}" | sha256sum | awk '{print $1}')"
+          test "${actual_target_digest}" = "${PRODUCTION_TARGET_DIGEST}"
+          test "$(jq -r '.cloudflare_account_id' <<<"${PRODUCTION_TARGET_JSON}")" = "${CLOUDFLARE_ACCOUNT_ID}"
+          test "$(jq -c '.worker_scripts' <<<"${PRODUCTION_TARGET_JSON}")" = '["card-keepr-api","card-keepr-ingestion"]'
+          test "$(jq -c '.r2_buckets' <<<"${PRODUCTION_TARGET_JSON}")" = '["card-keepr-evidence","card-keepr-printing-images","card-keepr-catalogue-exports","card-keepr-backups"]'
+          test "$(jq -r '.d1_databases[0].name' <<<"${PRODUCTION_TARGET_JSON}")" = 'card-keepr-catalogue'
+          test "$(jq -r '.d1_databases[1].name' <<<"${PRODUCTION_TARGET_JSON}")" = 'card-keepr-disposable-verification'
+      - name: Atomically acquire and recheck production gate
+        run: |
+          set -euo pipefail
+          expires_at="$(date -u -d '+15 minutes' '+%Y-%m-%dT%H:%M:%S.000Z')"
+          replacement_gate="recovery_health = 'healthy'"
+          if test "${REPLACEMENT_RECOVERY_ID}" != none; then
+            test "${REPLACEMENT_DATABASE_ID}" != none
+            test "${RETAINED_DATABASE_ID}" != none
+            test "${REPLACEMENT_DATABASE_ID}" != "${RETAINED_DATABASE_ID}"
+            replacement_gate="EXISTS (SELECT 1 FROM catalogue_recovery_operations WHERE id = '${REPLACEMENT_RECOVERY_ID}' AND state = 'awaiting_acceptance' AND method = 'replacement_database' AND restored_database_id = '${REPLACEMENT_DATABASE_ID}' AND retained_database_id = '${RETAINED_DATABASE_ID}' AND verification_json IS NOT NULL)"
+          fi
+          gate_sql="UPDATE operation_state SET active_release_id = '${RELEASE_ID}', active_release_expires_at = '${expires_at}' WHERE singleton = 1 AND active_ingestion_run_id IS NULL AND (active_release_id IS NULL OR active_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')) AND (${replacement_gate}) AND EXISTS (SELECT 1 FROM catalogue_state WHERE singleton = 1 AND current_revision_id = '${EXPECTED_CURRENT_REVISION}') AND EXISTS (SELECT 1 FROM catalogue_schema_state WHERE singleton = 1 AND migration_level = ${EXPECTED_MIGRATION_LEVEL}) AND EXISTS (SELECT 1 FROM catalogue_backup_attempts WHERE idempotency_key = '${RECOVERY_BACKUP_ATTEMPT_ID}' AND catalogue_revision_id = '${EXPECTED_CURRENT_REVISION}' AND state = 'verified' AND d1_bookmark = '${RECOVERY_BOOKMARK}' AND manifest_sha256 IS NOT NULL); SELECT CASE WHEN active_release_id = '${RELEASE_ID}' THEN 1 ELSE 0 END AS claimed FROM operation_state WHERE singleton = 1;"
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --command "${gate_sql}")"
+          test "$(jq -r '.[-1].results[0].claimed' <<<"${result}")" = 1
+      - name: Verify retention displacement gate
+        run: |
+          set -euo pipefail
+          test "$(jq 'length == 3 and all(.[]; .export_verified == true and .recovery_verified == true)' <<<"${RETAINED_REVISION_EVIDENCE_JSON}")" = true
+      - name: Apply compatible forward migrations
+        run: npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+      - name: Retain requested and migrating release evidence
+        run: |
+          set -euo pipefail
+          request="$(jq -cn --arg release "${RELEASE_ID}" --arg revision "${EXPECTED_CURRENT_REVISION}" --arg bookmark "${RECOVERY_BOOKMARK}" --arg replacement "${REPLACEMENT_DATABASE_ID}" '{release_id:$release,expected_current_revision_id:$revision,recovery_bookmark:$bookmark,replacement_database_id:$replacement}')"
+          sql="INSERT INTO production_releases (id,state,request_json,idempotency_key,expected_current_revision_id,expected_head_sha,production_target_digest,expected_migration_level,recovery_bookmark,recovery_backup_attempt_id,replacement_recovery_id,replacement_database_id,retained_database_id,requested_at) VALUES ('${RELEASE_ID}','requested','${request}','${RELEASE_ID}','${EXPECTED_CURRENT_REVISION}','${EXPECTED_HEAD_SHA}','${PRODUCTION_TARGET_DIGEST}',${EXPECTED_MIGRATION_LEVEL},'${RECOVERY_BOOKMARK}','${RECOVERY_BACKUP_ATTEMPT_ID}',NULLIF('${REPLACEMENT_RECOVERY_ID}','none'),NULLIF('${REPLACEMENT_DATABASE_ID}','none'),NULLIF('${RETAINED_DATABASE_ID}','none'),strftime('%Y-%m-%dT%H:%M:%fZ','now')); UPDATE production_releases SET state='preflight' WHERE id='${RELEASE_ID}'; UPDATE production_releases SET state='migrating' WHERE id='${RELEASE_ID}';"
+          npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "${sql}"
+      - name: Bind an exact verified replacement D1 when requested
+        run: |
+          set -euo pipefail
+          api_config=apps/api/wrangler.release.json
+          ingestion_config=apps/ingestion/wrangler.release.json
+          if test "${REPLACEMENT_DATABASE_ID}" = none; then
+            cp apps/api/wrangler.jsonc "${api_config}"
+            cp apps/ingestion/wrangler.jsonc "${ingestion_config}"
+          else
+            node scripts/production-release.mjs replacement-configs "${REPLACEMENT_DATABASE_ID}" "${api_config}" "${ingestion_config}"
+            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
+          fi
+          printf 'API_RELEASE_CONFIG=%s\nINGESTION_RELEASE_CONFIG=%s\n' "${api_config}" "${ingestion_config}" >> "${GITHUB_ENV}"
+      - name: Upload immutable Worker versions
+        run: |
+          set -euo pipefail
+          npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          npx wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "UPDATE production_releases SET state='deploying',api_version_id='release-${RELEASE_ID}-api',ingestion_version_id='release-${RELEASE_ID}-ingestion' WHERE id='${RELEASE_ID}' AND state='migrating';"
+      - name: Activate the compatible version pair
+        run: |
+          set -euo pipefail
+          npx wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
+          npx wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
+      - name: Observe bound replacement before recovery acceptance
+        run: |
+          set -euo pipefail
+          expected_database_id="$(jq -r '.d1_databases[0].id' <<<"${PRODUCTION_TARGET_JSON}")"
+          test "${REPLACEMENT_DATABASE_ID}" = none || expected_database_id="${REPLACEMENT_DATABASE_ID}"
+          for worker in card-keepr-api card-keepr-ingestion; do
+            settings="$(curl --fail-with-body --silent --show-error --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}/settings")"
+            test "$(jq -r '.result.bindings[] | select(.name == "CATALOGUE_DB") | .id' <<<"${settings}")" = "${expected_database_id}"
+          done
+          observed="$(curl --fail-with-body --silent --show-error --header "Authorization: Bearer ${API_TRAFFIC_TOKEN}" "${API_BASE_URL}/v1/catalogue")"
+          test "$(jq -r '.meta.catalogue_revision_id' <<<"${observed}")" = "${EXPECTED_CURRENT_REVISION}"
+          binding="$(jq -cn --arg api "${REPLACEMENT_DATABASE_ID}" --arg ingestion "${REPLACEMENT_DATABASE_ID}" --arg retained "${RETAINED_DATABASE_ID}" '{api_database_id:$api,ingestion_database_id:$ingestion,retained_database_id:$retained}')"
+          npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "UPDATE production_releases SET binding_observation_json='${binding}',state='smoke_testing' WHERE id='${RELEASE_ID}' AND state='deploying';"
+      - name: Accept only the observed replacement binding
+        if: inputs.replacement_database_id != 'none'
+        run: |
+          set -euo pipefail
+          acceptance="$(jq -cn --arg revision "${EXPECTED_CURRENT_REVISION}" --arg digest "${REPLACEMENT_TARGET_DIGEST}" --arg recovery "${REPLACEMENT_RECOVERY_ID}" --arg key "${RELEASE_ID}-acceptance" '{expected_restored_revision_id:$revision,target_digest:$digest,confirmation_recovery_id:$recovery,idempotency_key:$key}')"
+          accepted="$(curl --fail-with-body --silent --show-error --header "Authorization: Bearer ${ADMINISTRATION_TOKEN}" --header 'Content-Type: application/json' --data "${acceptance}" "${ADMINISTRATION_BASE_URL}/v1/recoveries/${REPLACEMENT_RECOVERY_ID}/acceptance")"
+          test "$(jq -r '.state' <<<"${accepted}")" = accepted
+      - name: Run black-box production smoke checks
+        run: |
+          set -euo pipefail
+          smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" --argjson retained "${RETAINED_REVISION_EVIDENCE_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,cardId:$targets.card_id,printingId:$targets.printing_id,printingImageId:$targets.printing_image_id,searchQuery:$targets.search_query,legalityCardId:$targets.legality_card_id,legalityDate:(now|strftime("%Y-%m-%d")),legalityFormat:$targets.legality_format,legalityRegion:$targets.legality_region,retainedRevisionIds:[$retained[].revision_id],staleCursor:($targets.stale_cursor // null)}')"
+          smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
+          npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "UPDATE production_releases SET state='succeeded',smoke_evidence_json='${smoke}',terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='${RELEASE_ID}' AND state='smoke_testing'; UPDATE operation_state SET active_release_id=NULL,active_release_expires_at=NULL WHERE singleton=1 AND active_release_id='${RELEASE_ID}';"
+      - name: Record compatible roll-forward requirement on failure
+        if: failure()
+        run: |
+          npx wrangler d1 execute CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc --command "UPDATE production_releases SET state='failed',failure_code='production_release_failed',failure_detail='Inspect the GitHub run and continue with a compatible roll-forward.',roll_forward_required=1,terminal_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id='${RELEASE_ID}' AND state IN ('migrating','deploying','smoke_testing'); UPDATE operation_state SET active_release_id=NULL,active_release_expires_at=NULL WHERE singleton=1 AND active_release_id='${RELEASE_ID}';" || true

@@ -29,7 +29,7 @@ import {
   sourceFreshnessStorageScope,
   type SourceFreshnessStorageRow,
 } from "./source-freshness";
-import { canonicalJson, sha256 } from "./serialization";
+import { canonicalJson, sha256, sha256Text } from "./serialization";
 import {
   reconciliationPublication,
   type PublicationEvidenceResource,
@@ -458,6 +458,82 @@ export async function administrationStatus(
       ...(active === null ? [] : [active.id]),
     ],
   );
+  const schema = await database.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  const recoveryBackup = await database.prepare(
+    `SELECT idempotency_key, d1_bookmark, manifest_sha256
+     FROM catalogue_backup_attempts
+     WHERE state = 'verified' AND catalogue_revision_id = ?
+       AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL
+     ORDER BY completed_at DESC LIMIT 1`,
+  ).bind(catalogue.current_revision_id).first<{
+    idempotency_key: string;
+    d1_bookmark: string;
+    manifest_sha256: string;
+  }>();
+  const retainedEvidence = await database.prepare(
+    `WITH RECURSIVE retained(revision_id, depth) AS (
+       SELECT revision.id, 0 FROM catalogue_state AS state
+       JOIN catalogue_revisions AS revision ON revision.id = state.current_revision_id
+       WHERE state.singleton = 1
+       UNION ALL
+       SELECT previous.id, retained.depth + 1 FROM retained
+       JOIN catalogue_revisions AS revision ON revision.id = retained.revision_id
+       JOIN catalogue_revisions AS previous
+         ON previous.id = revision.expected_previous_revision_id
+       WHERE retained.depth < 2
+     )
+     SELECT retained.revision_id, retained.depth,
+       CASE WHEN export.verified = 1 AND export.maintenance_state = 'available'
+         THEN 1 ELSE 0 END AS export_verified,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM catalogue_backup_attempts AS backup
+         WHERE backup.catalogue_revision_id = retained.revision_id
+           AND backup.state = 'verified' AND backup.d1_bookmark IS NOT NULL
+           AND backup.manifest_sha256 IS NOT NULL
+       ) THEN 1 ELSE 0 END AS recovery_verified
+     FROM retained LEFT JOIN catalogue_exports AS export
+       ON export.catalogue_revision_id = retained.revision_id
+     ORDER BY retained.depth`,
+  ).all<{ revision_id: string; depth: number; export_verified: number; recovery_verified: number }>();
+  const replacement = await database.prepare(
+    `SELECT id, target_revision_id, target_digest, restored_database_id, retained_database_id, verification_json
+     FROM catalogue_recovery_operations
+     WHERE state = 'awaiting_acceptance' AND method = 'replacement_database'
+     ORDER BY started_at DESC LIMIT 1`,
+  ).first<{ id: string; target_revision_id: string; target_digest: string; restored_database_id: string; retained_database_id: string; verification_json: string }>();
+  const activeRelease = await database.prepare(
+    `SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
+            failure_code, roll_forward_required
+     FROM production_releases
+     WHERE state IN ('requested','preflight','migrating','deploying','smoke_testing')
+     LIMIT 1`,
+  ).first<Record<string, unknown>>();
+  const smokeTargets = await database.prepare(
+    `SELECT
+       (SELECT card_id FROM revision_cards WHERE catalogue_revision_id = ? ORDER BY card_id LIMIT 1) AS card_id,
+       (SELECT printing_id FROM revision_printings WHERE catalogue_revision_id = ? ORDER BY printing_id LIMIT 1) AS printing_id,
+       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id = ? ORDER BY image_id LIMIT 1) AS printing_image_id,
+       (SELECT json_extract(card_ids_json, '$[0]') FROM revision_legality_rules
+        WHERE catalogue_revision_id = ? AND json_array_length(card_ids_json) > 0
+        ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
+       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id = ?
+        AND json_array_length(card_ids_json) > 0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
+       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id = ?
+        AND json_array_length(card_ids_json) > 0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`,
+  ).bind(...Array(6).fill(catalogue.current_revision_id)).first<{
+    card_id: string | null; printing_id: string | null;
+    printing_image_id: string | null; legality_card_id: string | null;
+    legality_format: string | null; legality_region: string | null;
+  }>();
+  const productionTargetDigest = await sha256Text(JSON.stringify(productionTarget));
+  const retention = retainedEvidence.results.map((row) => ({
+    revision_id: row.revision_id,
+    depth: row.depth,
+    export_verified: row.export_verified === 1,
+    recovery_verified: row.recovery_verified === 1,
+  }));
   return {
     contract: "card-keepr-administration-status@1",
     production_target: productionTarget,
@@ -473,6 +549,31 @@ export async function administrationStatus(
         !(operation.active_release_id !== null &&
           operation.active_release_expires_at !== null &&
           operation.active_release_expires_at > observedAt),
+    },
+    active_production_release: activeRelease,
+    release_preflight: {
+      schema_migration_level: schema?.migration_level ?? 0,
+      production_target_digest: productionTargetDigest,
+      recovery_bookmark: recoveryBackup?.d1_bookmark ?? null,
+      recovery_backup_attempt_id: recoveryBackup?.idempotency_key ?? null,
+      recovery_manifest_digest: recoveryBackup?.manifest_sha256 ?? null,
+      retained_revision_evidence: retention,
+      retention_ready:
+        retention.length === 3 && retention.every((item) =>
+          item.export_verified && item.recovery_verified
+        ),
+      smoke_targets: smokeTargets !== null &&
+          Object.values(smokeTargets).every((value) => typeof value === "string")
+        ? { ...smokeTargets, search_query: smokeTargets.card_id }
+        : null,
+      replacement_handoff: replacement === null ? null : {
+        recovery_id: replacement.id,
+        target_revision_id: replacement.target_revision_id,
+        target_digest: replacement.target_digest,
+        replacement_database_id: replacement.restored_database_id,
+        retained_database_id: replacement.retained_database_id,
+        verified: replacement.verification_json !== null,
+      },
     },
     active_ingestion_run:
       active === null

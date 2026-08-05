@@ -159,6 +159,13 @@ npm test
 npm run deploy:dry-run
 ```
 
+Pull requests and `main` run these checks without production credentials or
+remote mutation. Production changes are dispatched only by the guarded
+`keepr release production` command into the serialized, protected GitHub
+workflow. See [the production release runbook](docs/runbooks/production-release.md)
+for confirmation bindings, versioned deployment, smoke checks, compatible
+roll-forward, and replacement-D1 handoff.
+
 Binding declarations live in each runtime's `wrangler.jsonc`; generated
 `worker-configuration.d.ts` files are checked in and must be regenerated after
 binding changes with `npm run types:generate`.
