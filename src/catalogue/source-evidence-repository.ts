@@ -154,7 +154,7 @@ export async function startEvidenceRun(
     )
     .first<{ current_revision_id: string; recovery_health: string }>();
   if (catalogue === null) throw new Error("Catalogue state is unavailable");
-  assertRecoveryHealthy(catalogue.recovery_health);
+  assertRecoveryAvailable(catalogue.recovery_health);
   const statements: D1PreparedStatement[] = [
     await ingestionRunInsert(database, {
       runId,
@@ -194,7 +194,7 @@ export async function startEvidenceRun(
         `UPDATE operation_state
          SET active_ingestion_run_id = ?
          WHERE singleton = 1
-           AND recovery_health = 'healthy'
+           AND recovery_health <> 'blocked'
            AND active_ingestion_run_id IS NULL`,
       )
       .bind(runId),
@@ -283,7 +283,7 @@ export async function retryEvidenceRun(
     )
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
-  assertRecoveryHealthy(operation.recovery_health);
+  assertRecoveryAvailable(operation.recovery_health);
   const runId = await evidenceRunIdentity(idempotencyKey);
   const startedAt = new Date().toISOString();
   try {
@@ -326,7 +326,7 @@ export async function retryEvidenceRun(
           `UPDATE operation_state
            SET active_ingestion_run_id = ?
            WHERE singleton = 1
-             AND recovery_health = 'healthy'
+             AND recovery_health <> 'blocked'
              AND active_ingestion_run_id IS NULL`,
         )
         .bind(runId),
@@ -363,12 +363,12 @@ export async function retryEvidenceRun(
   return showEvidenceRun(database, runId);
 }
 
-function assertRecoveryHealthy(recoveryHealth: string): void {
-  if (recoveryHealth !== "healthy") {
+function assertRecoveryAvailable(recoveryHealth: string): void {
+  if (recoveryHealth === "blocked") {
     throw new AdministrationProblem(
       409,
       "recovery_not_verified",
-      "Recovery is not healthy, so evidence ingestion is blocked.",
+      "An active Backup Attempt blocks evidence ingestion.",
     );
   }
 }
@@ -380,7 +380,7 @@ async function throwIfRecoveryBlocked(database: D1Database): Promise<void> {
     )
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
-  assertRecoveryHealthy(operation.recovery_health);
+  assertRecoveryAvailable(operation.recovery_health);
 }
 
 async function throwIfAnotherRunActive(database: D1Database): Promise<void> {
@@ -1212,7 +1212,7 @@ async function ingestionRunInsert(
         FROM catalogue_state AS catalogue
         JOIN operation_state AS operation ON operation.singleton = 1
         WHERE catalogue.singleton = 1
-          AND operation.recovery_health = 'healthy'
+          AND operation.recovery_health <> 'blocked'
           AND operation.active_ingestion_run_id IS NULL`,
       )
       .bind(...baseValues);
@@ -1231,7 +1231,7 @@ async function ingestionRunInsert(
       FROM catalogue_state AS catalogue
       JOIN operation_state AS operation ON operation.singleton = 1
       WHERE catalogue.singleton = 1
-        AND operation.recovery_health = 'healthy'
+        AND operation.recovery_health <> 'blocked'
         AND operation.active_ingestion_run_id IS NULL`,
     )
     .bind(...baseValues);

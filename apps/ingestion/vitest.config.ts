@@ -174,6 +174,8 @@ let digimonArtworkVariant:
   | "alternate-two" = "base";
 const ambiguousD1Tables = new Map<string, string>();
 const unconfirmedD1Drops = new Set<string>();
+let disposableD1Generation = 0;
+let disposableD1DatabaseId = "00000000-0000-0000-0000-000000000002";
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
   modulusLength: 2048,
 }).privateKey.export({
@@ -222,6 +224,44 @@ export default defineConfig({
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          const d1CollectionPath =
+            "/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database";
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "GET"
+          ) {
+            return Response.json({
+              success: true,
+              result: [{
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              }],
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "POST"
+          ) {
+            disposableD1Generation += 1;
+            disposableD1DatabaseId =
+              `00000000-0000-4000-8000-${
+                String(disposableD1Generation).padStart(12, "0")
+              }`;
+            return Response.json({
+              success: true,
+              result: {
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              },
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.startsWith(`${d1CollectionPath}/`) &&
+            request.method === "DELETE"
+          ) {
+            return Response.json({ success: true, result: {} });
+          }
           if (url.hostname === "vitest-d1-export.invalid") {
             const body = "-- vitest D1 backup SQL\n";
             return new Response(body, {
@@ -291,6 +331,13 @@ export default defineConfig({
               request.headers.get("authorization") ===
                 "Bearer vitest-d1-verification-token-active"
             ) {
+              let expected: Record<string, unknown> = {};
+              try {
+                expected = JSON.parse(body.params?.[1] ?? "{}") as
+                  Record<string, unknown>;
+              } catch {
+                // Non-verification reconstruction statements have no evidence.
+              }
               return Response.json({
                 success: true,
                 result: [{
@@ -299,15 +346,36 @@ export default defineConfig({
                       "SELECT catalogue.current_revision_id",
                     )
                     ? [{
-                      current_revision_id: "catrev_spine_000",
+                      ...expected,
+                      current_revision_id:
+                        body.params?.[0] ?? "catrev_spine_000",
+                      schema_migration_level: 15,
                       card_search_state: "ready",
                       card_search_fts_tables: 1,
                       missing_fts_rows: 0,
                       invalid_api_documents: 0,
-                      current_api_documents: 0,
+                      invalid_curated_provenance: 0,
+                      invalid_audit_rows: 0,
                     }]
                     : body.sql === "PRAGMA quick_check"
                     ? [{ quick_check: "ok" }]
+                    : body.sql?.includes(
+                        "WITH expected_card(value) AS (SELECT ?)",
+                      )
+                    ? [{
+                      sort_game: "one-piece",
+                      sort_identity_kind: "card_number",
+                      sort_identity_value: "VITEST-001",
+                      sort_id: body.params?.[0],
+                      summary_json: JSON.stringify({
+                        id: body.params?.[0],
+                        game: "one-piece",
+                        official_identity: {
+                          kind: "card_number",
+                          value: "VITEST-001",
+                        },
+                      }),
+                    }]
                     : [],
                 }],
               });

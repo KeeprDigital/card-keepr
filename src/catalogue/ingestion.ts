@@ -59,6 +59,7 @@ import {
 } from "./source-adapters";
 import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
+import { publicationBackupReservation } from "./backup-recovery";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -2198,6 +2199,7 @@ async function commitVerifiedPublication(
     input.run.publication_manifest_digest,
     "manifest digest",
   );
+  const publicationBackup = await publicationBackupReservation(revisionId);
   if (
     input.catalogueExport.manifest.manifest_sha256 !== manifestDigest ||
     input.catalogueExport.manifestKey !==
@@ -2579,6 +2581,24 @@ async function commitVerifiedPublication(
         input.completedAt,
         input.run.id,
       ),
+    database.prepare(
+      `INSERT INTO catalogue_backup_attempts (
+         idempotency_key, request_json, owner_token, catalogue_revision_id,
+         state, object_key, started_at, publication_ingestion_run_id
+       ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+    ).bind(
+      publicationBackup.idempotencyKey,
+      publicationBackup.requestJson,
+      publicationBackup.ownerToken,
+      revisionId,
+      publicationBackup.objectKey,
+      input.completedAt,
+      input.run.id,
+    ),
+    database.prepare(
+      `UPDATE operation_state SET recovery_health = 'degraded'
+       WHERE singleton = 1 AND recovery_health = 'healthy'`,
+    ),
     releaseRunLockStatement(database, input.run.id),
     ...idempotencyCompletionStatements(database, {
       key: idempotencyKey,

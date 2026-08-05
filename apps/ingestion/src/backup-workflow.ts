@@ -57,6 +57,8 @@ export async function runCatalogueBackupWorkflow(
             verificationToken: slots.verification === "a"
               ? env.D1_VERIFICATION_TOKEN
               : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+            failedAttemptId: params.failed_attempt_id,
+            failedAttemptDigest: params.failed_attempt_digest,
           },
           undefined,
           { terminalFailure: false },

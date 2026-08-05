@@ -51,6 +51,8 @@ import {
   runReconciliationWorkflow,
 } from "../src/reconciliation-workflow";
 import ingestionWorker from "../src/index";
+import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-workflow";
+import { currentCatalogueStatus } from "../../../src/catalogue/read";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -4930,7 +4932,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "blocked-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -4975,6 +4977,46 @@ test("recovery health gates fixture evidence injection and reconciliation before
   });
 }, 60_000);
 
+test("degraded recovery permits evidence collection starts and retries while blocked recovery does not", async () => {
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",
+  ).run();
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@3",
+    idempotency_key: "degraded-recovery-start",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
+  expect(started.response.status).toBe(201);
+  expect(started.document).toMatchObject({ state: "collecting" });
+
+  const sourceRunId = requiredString(started.document, "id");
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = started_at,
+           failure_code = 'synthetic_retry_source',
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = ?`,
+    ).bind(sourceRunId),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL, recovery_health = 'degraded'
+       WHERE singleton = 1`,
+    ),
+  ]);
+  const retried = await post(
+    `/v1/ingestion-runs/${sourceRunId}/collection/retry`,
+    { idempotency_key: "degraded-recovery-retry" },
+  );
+  expect(retried.response.status).toBe(201);
+  expect(retried.document).toMatchObject({
+    state: "collecting",
+    linked_run_id: sourceRunId,
+  });
+});
+
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";
   const adapterVersion = "gundam-en-asia@4";
@@ -5003,6 +5045,92 @@ test("a partial Gundam refresh accepts one selected production lineage independe
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();
 });
+
+test("publication stays readable while its immutable degraded backup blocks the next approval", async () => {
+  const firstRun = await collect(
+    "/reconciliation/base",
+    "publication-backup-degraded-first",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  const failingWorkflow = {
+    async create() {
+      throw new Error("synthetic backup dispatch outage");
+    },
+    async get() {
+      throw new Error("synthetic backup dispatch outage");
+    },
+  } as unknown as Workflow<CatalogueBackupWorkflowParams>;
+  const publicEnv = {
+    ...testEnv,
+    CATALOGUE_BACKUP_WORKFLOW: failingWorkflow,
+  } as unknown as Env;
+  const approvalResponse = await ingestionWorker.fetch(
+    new Request(
+      `https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+          "cf-connecting-ip": "203.0.113.240",
+        },
+        body: JSON.stringify({
+          candidate_digest: requiredString(
+            firstCandidate.document,
+            "candidate_digest",
+          ),
+          expected_current_revision_id: requiredString(
+            firstCandidate.document,
+            "expected_current_revision_id",
+          ),
+          idempotency_key: "publication-backup-degraded-approval",
+        }),
+      },
+    ),
+    publicEnv,
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    } as unknown as ExecutionContext,
+  );
+  expect(approvalResponse.status).toBe(200);
+  const published = await approvalResponse.json<Record<string, unknown>>();
+  const revisionId = requiredString(published, "resulting_revision_id");
+  const statusResponse = await ingestionWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/status", {
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "cf-connecting-ip": "203.0.113.241",
+      },
+    }),
+    publicEnv,
+  );
+  expect(await statusResponse.json()).toMatchObject({
+    safe_state: {
+      current_revision_id: revisionId,
+      recovery_health: "degraded",
+    },
+  });
+  await expect(currentCatalogueStatus(testEnv.CATALOGUE_DB)).resolves
+    .toMatchObject({
+      revisionId,
+    });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
+  ).run();
+  const secondRun = await collect(
+    "/reconciliation/profile-one-piece",
+    "publication-backup-degraded-second",
+  );
+  const secondCandidate = await reconcile(secondRun.id);
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",
+  ).run();
+  const blocked = await approve(secondCandidate.document);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({ code: "recovery_not_verified" });
+}, 60_000);
 
 test("a complete Product fixture publishes separated release and distribution records atomically", async () => {
   const run = await collect(

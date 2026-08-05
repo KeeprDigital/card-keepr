@@ -467,6 +467,102 @@ test("CLI backup create confirms the exact target before the operation", async (
   });
 });
 
+test("CLI backup status and retry preserve the exact failed-attempt evidence", async (t) => {
+  const requests = [];
+  const digest = "a".repeat(64);
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.end(JSON.stringify({
+      contract: "card-keepr-catalogue-backup-status@1",
+      idempotency_key: "backup-failed-exact",
+      state: "failed",
+      attempt_digest: digest,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const status = await runCli([
+    "backup", "status", "--attempt-id", "backup-failed-exact", "--json",
+  ], environment);
+  assert.equal(status.code, 0, status.stderr);
+  const revisionStatus = await runCli([
+    "backup", "status", "--catalogue-revision", "catrev_cli_demo", "--json",
+  ], environment);
+  assert.equal(revisionStatus.code, 0, revisionStatus.stderr);
+  const retry = await runCli([
+    "backup", "retry",
+    "--expected-current-revision", "catrev_cli_demo",
+    "--idempotency-key", "backup-retry-exact",
+    "--failed-attempt-id", "backup-failed-exact",
+    "--failed-attempt-digest", digest,
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-retry-exact",
+      failed_attempt_id: "backup-failed-exact",
+      failed_attempt_digest: digest,
+    }),
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(retry.code, 0, retry.stderr);
+  assert.deepEqual(JSON.parse(retry.stderr), {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: productionTarget,
+    current_catalogue_revision_id: "catrev_cli_demo",
+    expected_current_revision_id: "catrev_cli_demo",
+    idempotency_key: "backup-retry-exact",
+    failed_attempt_id: "backup-failed-exact",
+    failed_attempt_digest: digest,
+  });
+  assert.deepEqual(requests, [{
+    method: "GET",
+    path: "/v1/backups/backup-failed-exact",
+    body: null,
+  }, {
+    method: "GET",
+    path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+    body: null,
+  }, {
+    method: "GET",
+    path: "/v1/status",
+    body: null,
+  }, {
+    method: "POST",
+    path: "/v1/backups",
+    body: {
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-retry-exact",
+      failed_attempt_id: "backup-failed-exact",
+      failed_attempt_digest: digest,
+    },
+  }]);
+});
+
 test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {

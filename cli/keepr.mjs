@@ -75,6 +75,12 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "backup", "create")) {
     return createBackup(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "backup", "status")) {
+    return backupStatus(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "backup", "retry")) {
+    return retryBackup(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -526,6 +532,95 @@ async function createBackup(arguments_, environment, json) {
       expected_current_revision_id: expectedCurrentRevision,
       idempotency_key: idempotencyKey,
     },
+  );
+}
+
+async function backupStatus(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--attempt-id",
+    "--catalogue-revision",
+  ]);
+  const attemptId = options.values["--attempt-id"];
+  const catalogueRevision = options.values["--catalogue-revision"];
+  if (
+    options.error !== null ||
+    (attemptId === undefined) === (catalogueRevision === undefined)
+  ) return usageFailure(json);
+  return administrationRequest(
+    environment,
+    json,
+    attemptId === undefined
+      ? `/v1/catalogue-revisions/${encodeURIComponent(catalogueRevision)}/backups`
+      : `/v1/backups/${encodeURIComponent(attemptId)}`,
+    "GET",
+  );
+}
+
+async function retryBackup(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--expected-current-revision",
+    "--idempotency-key",
+    "--failed-attempt-id",
+    "--failed-attempt-digest",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const expected = options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const failedAttemptId = options.values["--failed-attempt-id"];
+  const failedAttemptDigest = options.values["--failed-attempt-digest"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || expected === undefined ||
+    idempotencyKey === undefined || failedAttemptId === undefined ||
+    failedAttemptDigest === undefined || target === undefined ||
+    !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue backup retry requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(environment, json, expected);
+  if (typeof resolved === "number") return resolved;
+  writeResolvedBackupRetry(json, {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: resolved.productionTarget,
+    current_catalogue_revision_id: expected,
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      expected_current_revision_id: expected,
+      idempotency_key: idempotencyKey,
+      failed_attempt_id: failedAttemptId,
+      failed_attempt_digest: failedAttemptDigest,
+    },
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(environment, json, "/v1/backups", "POST", {
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
+}
+
+function writeResolvedBackupRetry(json, resolved) {
+  if (json) {
+    process.stderr.write(`${JSON.stringify(resolved)}\n`);
+    return;
+  }
+  process.stderr.write(
+    `Resolved backup retry ${JSON.stringify(resolved)}\n`,
   );
 }
 
@@ -1023,7 +1118,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | backup create | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | backup create | backup status | backup retry | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
