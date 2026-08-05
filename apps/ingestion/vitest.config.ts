@@ -57,22 +57,6 @@ const retainedProductionDiscoveryFixtures = {
 
 type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
 
-const pendingPaginatedGundamScenarioUrls = new Set<string>();
-
-function activatePaginatedGundamScenario(): void {
-  pendingPaginatedGundamScenarioUrls.clear();
-  for (const url of [
-    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
-    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102&page=2",
-    ...["GD02-001", "GD02-002", "GD02-003", "GD02-004"].flatMap(
-      (locator) => [
-        `https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=${locator}`,
-        `https://www.gundam-gcg.com/jp/images/cards/card/${locator}.png`,
-      ],
-    ),
-  ]) pendingPaginatedGundamScenarioUrls.add(url);
-}
-
 function retainedProductionDiscoveryRoot(
   lineage: ProductionSourceLineage,
   marker: string | null,
@@ -83,10 +67,6 @@ function retainedProductionDiscoveryRoot(
     request.url !== fixture.source_url ||
     productionSourceFixtureRole(request.headers) !== "retained-discovery"
   ) return null;
-  if (
-    lineage === "gundam-en-asia" &&
-    marker === "card-keepr-gundam-pagination-v4"
-  ) activatePaginatedGundamScenario();
   const retainedBytes = Buffer.from(fixture.body_base64, "base64");
   const responseBytes =
     marker === "card-keepr-incomplete-discovery-v3" &&
@@ -114,11 +94,8 @@ function paginatedGundamCollectionResponse(
   const url = new URL(request.url);
   const markedScenario = productionSourceFixtureMarker(request.headers) ===
     "card-keepr-gundam-pagination-v4";
-  const activatedScenarioChild = pendingPaginatedGundamScenarioUrls.delete(
-    url.href,
-  );
   if (
-    (!markedScenario && !activatedScenarioChild) ||
+    !markedScenario ||
     (
       !url.pathname.startsWith("/asia-en/") &&
       !url.pathname.startsWith("/jp/images/cards/card/")

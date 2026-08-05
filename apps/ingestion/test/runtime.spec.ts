@@ -264,6 +264,27 @@ test("synthetic production transport captures Gundam pages and reconciles one co
     "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
     "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102&page=2",
   ]);
+  const discoveredHeaders = await env.CATALOGUE_DB.prepare(
+    `SELECT request_role, request_headers_json
+     FROM source_requests
+     WHERE ingestion_run_id = ?
+       AND request_role IN ('listing', 'detail', 'image')
+       AND (
+         url LIKE '%package=619102%'
+         OR url LIKE '%detailSearch=GD02-00%'
+         OR url LIKE '%/GD02-00%.png'
+       )
+     ORDER BY sequence_number`,
+  ).bind(run.id).all<{
+    request_role: "listing" | "detail" | "image";
+    request_headers_json: string;
+  }>();
+  expect(discoveredHeaders.results).toHaveLength(10);
+  expect(discoveredHeaders.results.every(({ request_headers_json }) =>
+    productionSourceFixtureMarker(
+      new Headers(JSON.parse(request_headers_json)),
+    ) === "card-keepr-gundam-pagination-v4"
+  )).toBe(true);
   const firstPageEvidence = await env.CATALOGUE_DB.prepare(
     `SELECT observation.content_object_key
      FROM source_requests AS request
@@ -305,41 +326,54 @@ test("synthetic production transport captures Gundam pages and reconciles one co
 }, 60_000);
 
 test("synthetic paginated Gundam transport requires its scenario marker", async () => {
+  const discoveryUrl = requiredSourceAdapter("gundam-en-asia@4")
+    .requestUrlForDiscovery?.();
+  if (discoveryUrl === undefined) {
+    throw new Error("Gundam discovery URL is unavailable.");
+  }
   const listingUrl =
     "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102";
   const detailUrl =
     "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-001";
   const imageUrl =
     "https://www.gundam-gcg.com/jp/images/cards/card/GD02-001.png";
-  const markedHeaders = {
-    "user-agent": "card-keepr-gundam-pagination-v4; request-role=listing",
-  };
-  const unmarkedHeaders = {
-    "user-agent": "unrelated-scenario; request-role=listing",
-  };
+  const activated = await env.OFFICIAL_SOURCE_TRANSPORT.fetch(discoveryUrl, {
+    headers: { "user-agent": "card-keepr-gundam-pagination-v4" },
+  });
+  expect(activated.status).toBe(200);
+  await activated.body?.cancel();
+  const [unmarked, mismatchedDetail, mismatchedImage] = await Promise.all([
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl)
+      .then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=detail",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=image",
+      },
+    }),
+  ]);
+  expect(unmarked).not.toContain('<span class="num">4</span>cards found.');
+  expect(mismatchedDetail).not.toContain("Paginated GD02-001");
+  expect(mismatchedImage.headers.get("content-type")).not.toBe("image/png");
   const [
     marked,
-    unmarked,
     markedDetail,
-    unmarkedDetail,
     markedImage,
-    unmarkedImage,
   ] = await Promise.all([
     env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl, {
-      headers: markedHeaders,
-    }).then((response) => response.text()),
-    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl, {
-      headers: unmarkedHeaders,
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=listing",
+      },
     }).then((response) => response.text()),
     env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
       headers: {
         "user-agent":
           "card-keepr-gundam-pagination-v4; request-role=detail",
-      },
-    }).then((response) => response.text()),
-    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
-      headers: {
-        "user-agent": "unrelated-scenario; request-role=detail",
       },
     }).then((response) => response.text()),
     env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
@@ -348,18 +382,10 @@ test("synthetic paginated Gundam transport requires its scenario marker", async 
           "card-keepr-gundam-pagination-v4; request-role=image",
       },
     }),
-    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
-      headers: {
-        "user-agent": "unrelated-scenario; request-role=image",
-      },
-    }),
   ]);
   expect(marked).toContain('<span class="num">4</span>cards found.');
-  expect(unmarked).not.toContain('<span class="num">4</span>cards found.');
   expect(markedDetail).toContain("Paginated GD02-001");
-  expect(unmarkedDetail).not.toContain("Paginated GD02-001");
   expect(markedImage.headers.get("content-type")).toBe("image/png");
-  expect(unmarkedImage.headers.get("content-type")).not.toBe("image/png");
 });
 
 test("every pinned aggregate adapter retains its immutable parser contract", () => {
