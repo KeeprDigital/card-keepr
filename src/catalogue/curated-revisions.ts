@@ -1,9 +1,20 @@
 import type { CatalogueCandidate, SupportedGame } from "./catalogue-candidate";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { AdministrationProblem } from "./administration-problem.mjs";
 import { canonicalJson, sha256Text } from "./serialization";
 import { retainedPayload } from "./reconciliation-payload";
-import type { CuratedProvenance } from "./curated-provenance";
+import type {
+  CuratedEvidence,
+  CuratedFieldTarget,
+  CuratedProvenance,
+  CuratedRelationshipTarget,
+} from "./curated-provenance";
 import type { ProductRelationship } from "./product-release-catalogue";
+import {
+  canonicalProfileAttributes,
+  exportedGameProfileSchema,
+} from "./reconciliation-profile";
 
 const games = new Set(["one-piece", "fusion-world", "digimon", "gundam"]);
 const fieldEntityTypes = new Set([
@@ -28,19 +39,11 @@ const identityRootsByType: Readonly<Record<string, ReadonlySet<string>>> = {
   erratum: new Set(["target_type", "target_id"]),
   legality_rule: new Set(["official_id"]),
 };
+const fieldAjv = new Ajv2020({ allErrors: true, strict: false });
+addFormats(fieldAjv);
 
-type FieldTarget = {
-  kind: "field";
-  entity_type: string;
-  entity_id: string;
-  path: string;
-};
-type RelationshipTarget = {
-  kind: "relationship";
-  relationship_kind: string;
-  from: { type: string; id: string };
-  to: { type: string; id: string };
-};
+type FieldTarget = CuratedFieldTarget;
+type RelationshipTarget = CuratedRelationshipTarget;
 type Proposal = {
   game: SupportedGame;
   target: FieldTarget | RelationshipTarget;
@@ -48,9 +51,7 @@ type Proposal = {
     kind: "relationship"; presence: "present" | "absent";
   };
   rationale: string;
-  evidence: readonly ({ kind: "source_observation"; id: string } | {
-    kind: "owner_reference"; uri: string; content_digest: string;
-  })[];
+  evidence: readonly CuratedEvidence[];
   effective_interval?: { from: string | null; to: string | null };
   reviewed_source_digest: string;
   supersedes_revision_id?: string | null;
@@ -102,14 +103,27 @@ export async function validateCuratedRevision(
       throw new AdministrationProblem(422, "curated_revision_identity_forbidden", `The protected field ${proposal.target.path} cannot be curated.`);
     }
     const sourceValue = valueAt(target, path);
-    if (!sourceValue.found) {
+    const fieldSchema = curatedFieldSchema(
+      proposal.target.entity_type,
+      target,
+      path,
+    );
+    if (fieldSchema === null) {
       throw new AdministrationProblem(422, "curated_revision_field_not_in_schema", "A Curated Revision cannot invent a Game Profile field.");
     }
     const assertionValue = (proposal.assertion as { kind: "field"; value: unknown }).value;
-    if (!compatibleFieldAssertion(proposal.target.entity_type, path, sourceValue.value, assertionValue)) {
+    if (!validCuratedFieldAssertion(
+      proposal.target.entity_type,
+      target,
+      path,
+      assertionValue,
+      fieldSchema,
+    )) {
       throw new AdministrationProblem(422, "curated_revision_assertion_type_invalid", "The assertion value does not match the shared schema field type.");
     }
-    const digest = await sha256Text(canonicalJson(sourceValue.value));
+    const digest = await sha256Text(canonicalJson(
+      sourceValue.found ? sourceValue.value : null,
+    ));
     if (digest !== proposal.reviewed_source_digest) {
       throw new AdministrationProblem(409, "curated_revision_reviewed_source_mismatch", "The reviewed Official Source value does not match the current Catalogue Revision.");
     }
@@ -160,13 +174,16 @@ export async function createCuratedRevision(
     throw new AdministrationProblem(409, "curated_revision_content_digest_mismatch", "The supplied proposal digest does not match the canonical proposal.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
+  }
+  if (operation?.active_release_id !== null) {
+    throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const proposal = structuralProposal(input.proposal);
   if (proposal.supersedes_revision_id) {
@@ -225,6 +242,9 @@ export async function createCuratedRevision(
     }
     if (detail.includes("curated_revision_operation_not_idle")) {
       throw new AdministrationProblem(409, "operation_not_idle", "The production mutation boundary is not idle.");
+    }
+    if (detail.includes("curated_revision_release_not_idle")) {
+      throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
     }
     throw error;
   }
@@ -434,19 +454,130 @@ export async function pinCuratedRevisionsForRun(
     const revisionIds = JSON.parse(existing.revision_ids_json) as string[];
     const digest = await sha256Text(canonicalJson(revisionIds));
     if (existing.set_digest !== digest) {
-      await database.prepare(
-        "UPDATE ingestion_run_curated_revision_sets SET set_digest = ? WHERE ingestion_run_id = ? AND set_digest = ?",
-      ).bind(digest, runId, existing.set_digest).run();
+      throw new Error("The immutable Curated Revision pin-set digest is invalid.");
     }
     return { revision_ids: revisionIds, set_digest: digest };
   }
   const run = await database.prepare("SELECT selected_games_json FROM ingestion_runs WHERE id = ?")
     .bind(runId).first<{ selected_games_json: string }>();
   if (run === null) throw new AdministrationProblem(404, "ingestion_run_not_found", "The requested Ingestion Run does not exist.");
-  const selectedGames = JSON.parse(run.selected_games_json) as string[];
+  const statements = await curatedRevisionPinStatementsForNewRun(
+    database,
+    runId,
+    JSON.parse(run.selected_games_json) as string[],
+    observedAt,
+  );
+  await database.batch(statements);
+  const pinned = await curatedRevisionSetForRun(database, runId);
+  if (pinned === null) throw new Error("The Curated Revision set was not pinned.");
+  return pinned;
+}
+
+export async function curatedRevisionPinStatementsForNewRun(
+  database: D1Database,
+  runId: string,
+  selectedGames: readonly string[],
+  observedAt: string,
+): Promise<D1PreparedStatement[]> {
+  if (!(await curatedRevisionSchemaAvailable(database))) return [];
+  const rows = await activeCuratedRevisionRows(
+    database,
+    selectedGames,
+    observedAt,
+  );
+  return curatedRevisionPinStatements(database, runId, rows, observedAt);
+}
+
+export async function prepareCuratedRevisionRunStart(
+  database: D1Database,
+  runId: string,
+  selectedGames: readonly SupportedGame[],
+  candidate: CatalogueCandidate,
+  observedAt: string,
+): Promise<{
+  candidate: CatalogueCandidate;
+  statements: D1PreparedStatement[];
+}> {
+  if (!(await curatedRevisionSchemaAvailable(database))) {
+    return { candidate, statements: [] };
+  }
+  const rows = await activeCuratedRevisionRows(
+    database,
+    selectedGames,
+    observedAt,
+  );
+  const official = stripCuratedRevisionEffects(candidate, selectedGames);
+  const result = structuredClone(official) as CatalogueCandidate;
+  for (const row of rows) {
+    const proposal = structuralProposal(JSON.parse(row.proposal_json));
+    const officialTarget = candidateTarget(official, proposal);
+    let reviewedSourceValue: unknown;
+    if (proposal.target.kind === "field") {
+      const source = valueAt(
+        officialTarget,
+        pointerParts(proposal.target.path),
+      );
+      reviewedSourceValue = source.found ? source.value : null;
+    } else {
+      reviewedSourceValue = relationshipPresent(official, proposal)
+        ? "present"
+        : "absent";
+    }
+    if (
+      await sha256Text(canonicalJson(reviewedSourceValue)) !==
+        row.reviewed_source_digest
+    ) {
+      throw new AdministrationProblem(
+        409,
+        "curated_revision_reconfirmation_required",
+        `Curated Revision ${row.id} no longer matches the Official Source candidate.`,
+      );
+    }
+    const target = candidateTarget(result, proposal);
+    if (proposal.target.kind === "field") {
+      setAt(
+        target,
+        pointerParts(proposal.target.path),
+        (proposal.assertion as { kind: "field"; value: unknown }).value,
+      );
+      const entity = target as Record<string, unknown> & {
+        curated_provenance?: readonly CuratedProvenance[];
+      };
+      entity.curated_provenance = [
+        ...(entity.curated_provenance ?? []),
+        provenanceFor(proposal, row, reviewedSourceValue),
+      ];
+    } else {
+      applyRelationship(result, proposal, row, String(reviewedSourceValue));
+    }
+  }
+  return {
+    candidate: result,
+    statements: await curatedRevisionPinStatements(
+      database,
+      runId,
+      rows,
+      observedAt,
+    ),
+  };
+}
+
+type ActiveCuratedRevisionRow = {
+  id: string;
+  proposal_json: string;
+  content_digest: string;
+  reviewed_source_digest: string;
+};
+
+async function activeCuratedRevisionRows(
+  database: D1Database,
+  selectedGames: readonly string[],
+  observedAt: string,
+): Promise<ActiveCuratedRevisionRow[]> {
+  const gamesJson = canonicalJson([...new Set(selectedGames)].sort());
   const on = observedAt.slice(0, 10);
   const rows = await database.prepare(
-    `SELECT revision.id, revision.content_digest,
+    `SELECT revision.id, revision.proposal_json, revision.content_digest,
             COALESCE((
               SELECT json_extract(event.event_json, '$.reviewed_source_digest')
               FROM curated_revision_events AS event
@@ -460,71 +591,36 @@ export async function pinCuratedRevisionsForRun(
        AND (revision.effective_from IS NULL OR revision.effective_from <= ?)
        AND (revision.effective_to IS NULL OR ? < revision.effective_to)
      ORDER BY revision.id`,
-  ).bind(canonicalJson(selectedGames), on, on).all<{
-    id: string; content_digest: string; reviewed_source_digest: string;
-  }>();
-  const ids = rows.results.map(({ id }) => id);
-  const setDigest = await sha256Text(canonicalJson(ids));
-  await database.batch([
-    ...rows.results.map((row, ordinal) => database.prepare(
-      `INSERT INTO ingestion_run_curated_revisions (
-        ingestion_run_id, ordinal, revision_id, content_digest, reviewed_source_digest
-      ) VALUES (?, ?, ?, ?, ?)`,
-    ).bind(runId, ordinal, row.id, row.content_digest, row.reviewed_source_digest)),
-    database.prepare(
-      `INSERT INTO ingestion_run_curated_revision_sets (
-        ingestion_run_id, revision_ids_json, set_digest, pinned_at
-      ) VALUES (?, ?, ?, ?)`,
-    ).bind(runId, canonicalJson(ids), setDigest, observedAt),
-  ]);
-  return { revision_ids: ids, set_digest: setDigest };
+  ).bind(gamesJson, on, on).all<ActiveCuratedRevisionRow>();
+  return rows.results;
 }
 
-export async function curatedRevisionPinStatementsForNewRun(
+async function curatedRevisionPinStatements(
   database: D1Database,
   runId: string,
-  selectedGames: readonly string[],
+  rows: readonly ActiveCuratedRevisionRow[],
   observedAt: string,
 ): Promise<D1PreparedStatement[]> {
-  if (!(await curatedRevisionSchemaAvailable(database))) return [];
-  const gamesJson = canonicalJson([...new Set(selectedGames)].sort());
-  const on = observedAt.slice(0, 10);
+  const ids = rows.map(({ id }) => id);
+  const setDigest = await sha256Text(canonicalJson(ids));
   return [
-    database.prepare(
+    ...rows.map((row, ordinal) => database.prepare(
       `INSERT INTO ingestion_run_curated_revisions (
          ingestion_run_id, ordinal, revision_id, content_digest,
          reviewed_source_digest
-       )
-       SELECT ?, ROW_NUMBER() OVER (ORDER BY revision.id) - 1,
-              revision.id, revision.content_digest,
-              COALESCE((
-                SELECT json_extract(event.event_json, '$.reviewed_source_digest')
-                FROM curated_revision_events AS event
-                WHERE event.revision_id = revision.id
-                  AND event.kind = 'reaffirmed'
-                ORDER BY event.event_version DESC LIMIT 1
-              ), revision.reviewed_source_digest)
-       FROM curated_revisions AS revision
-       WHERE revision.status = 'active'
-         AND revision.game IN (SELECT value FROM json_each(?))
-         AND (revision.effective_from IS NULL OR revision.effective_from <= ?)
-         AND (revision.effective_to IS NULL OR ? < revision.effective_to)
-       ORDER BY revision.id`,
-    ).bind(runId, gamesJson, on, on),
+       ) VALUES (?, ?, ?, ?, ?)`,
+    ).bind(
+      runId,
+      ordinal,
+      row.id,
+      row.content_digest,
+      row.reviewed_source_digest,
+    )),
     database.prepare(
       `INSERT INTO ingestion_run_curated_revision_sets (
          ingestion_run_id, revision_ids_json, set_digest, pinned_at
-       ) VALUES (?, COALESCE((
-         SELECT json_group_array(id) FROM (
-           SELECT id FROM curated_revisions
-           WHERE status = 'active'
-             AND game IN (SELECT value FROM json_each(?))
-             AND (effective_from IS NULL OR effective_from <= ?)
-             AND (effective_to IS NULL OR ? < effective_to)
-           ORDER BY id
-         )
-       ), '[]'), ?, ?)`,
-    ).bind(runId, gamesJson, on, on, "0".repeat(64), observedAt),
+       ) VALUES (?, ?, ?, ?)`,
+    ).bind(runId, canonicalJson(ids), setDigest, observedAt),
   ];
 }
 
@@ -564,30 +660,69 @@ export async function applyPinnedCuratedRevisions(
   ).bind(runId).all<{
     id: string; proposal_json: string; content_digest: string; reviewed_source_digest: string;
   }>();
-  const result = structuredClone(candidate) as CatalogueCandidate;
-  for (const row of rows.results) {
-    const proposal = structuralProposal(JSON.parse(row.proposal_json));
-    const target = candidateTarget(result, proposal);
+  const official = stripCuratedRevisionEffects(
+    candidate,
+    candidate.selected_games,
+  );
+  const planned = rows.results.map((row) => ({
+    row,
+    proposal: structuralProposal(JSON.parse(row.proposal_json)),
+  }));
+  const comparisons: {
+    row: typeof rows.results[number];
+    proposal: Proposal;
+    reviewedSourceValue: unknown;
+    changed: boolean;
+  }[] = [];
+  for (const { row, proposal } of planned) {
+    const target = candidateTarget(official, proposal);
     if (proposal.target.kind === "field") {
       const parts = pointerParts(proposal.target.path);
       const source = valueAt(target, parts);
-      if (!source.found || await sha256Text(canonicalJson(source.value)) !== row.reviewed_source_digest) {
-        await recordSourceChange(database, row.id, runId, source.found ? source.value : null, row.reviewed_source_digest, observedAt);
-        throw new Error("curated_revision_reconfirmation_required");
-      }
-      setAt(target, parts, (proposal.assertion as { kind: "field"; value: unknown }).value);
-      const entity = target as Record<string, unknown> & { curated_provenance?: readonly CuratedProvenance[] };
-      const provenance = Array.isArray(entity.curated_provenance) ? entity.curated_provenance : [];
-      entity.curated_provenance = [...provenance, provenanceFor(proposal, row, source.value)];
+      const reviewedSourceValue = source.found ? source.value : null;
+      comparisons.push({
+        row,
+        proposal,
+        reviewedSourceValue,
+        changed: await sha256Text(canonicalJson(reviewedSourceValue)) !==
+          row.reviewed_source_digest,
+      });
     } else {
-      const sourcePresence = relationshipPresent(result, proposal)
+      const sourcePresence = relationshipPresent(official, proposal)
         ? "present"
         : "absent";
-      if (await sha256Text(canonicalJson(sourcePresence)) !== row.reviewed_source_digest) {
-        await recordSourceChange(database, row.id, runId, sourcePresence, row.reviewed_source_digest, observedAt);
-        throw new Error("curated_revision_reconfirmation_required");
-      }
-      applyRelationship(result, proposal, row, sourcePresence);
+      comparisons.push({
+        row,
+        proposal,
+        reviewedSourceValue: sourcePresence,
+        changed: await sha256Text(canonicalJson(sourcePresence)) !==
+          row.reviewed_source_digest,
+      });
+    }
+  }
+  const conflicts = comparisons.filter(({ changed }) => changed);
+  if (conflicts.length > 0) {
+    await recordSourceChanges(database, runId, conflicts, observedAt);
+    throw new Error("curated_revision_reconfirmation_required");
+  }
+  const result = structuredClone(official) as CatalogueCandidate;
+  for (const { row, proposal, reviewedSourceValue } of comparisons) {
+    const target = candidateTarget(result, proposal);
+    if (proposal.target.kind === "field") {
+      setAt(
+        target,
+        pointerParts(proposal.target.path),
+        (proposal.assertion as { kind: "field"; value: unknown }).value,
+      );
+      const entity = target as Record<string, unknown> & {
+        curated_provenance?: readonly CuratedProvenance[];
+      };
+      entity.curated_provenance = [
+        ...(entity.curated_provenance ?? []),
+        provenanceFor(proposal, row, reviewedSourceValue),
+      ];
+    } else {
+      applyRelationship(result, proposal, row, String(reviewedSourceValue));
     }
   }
   return result;
@@ -636,16 +771,23 @@ export async function curatedPublicationStatements(
 
 export function stripCuratedRevisionEffects(
   input: CatalogueCandidate,
+  selectedGames?: readonly SupportedGame[],
 ): CatalogueCandidate {
   const candidate = structuredClone(input) as CatalogueCandidate;
+  const selected = selectedGames === undefined
+    ? null
+    : new Set<SupportedGame>(selectedGames);
   const entities: Record<string, unknown>[] = [
-    ...candidate.cards,
-    ...candidate.printings,
-    ...(candidate.products ?? []),
-    ...(candidate.products ?? []).flatMap((product) => product.releases),
-    ...(candidate.distribution_contexts ?? []),
-    ...(candidate.errata ?? []),
-    ...(candidate.legality_rules ?? []),
+    ...candidate.cards.filter((card) => selected === null || selected.has(card.game)),
+    ...candidate.printings.filter((printing) => {
+      const game = candidate.cards.find((card) => card.id === printing.card_id)?.game;
+      return selected === null || (game !== undefined && selected.has(game));
+    }),
+    ...(candidate.products ?? []).filter((product) => selected === null || selected.has(product.game)),
+    ...(candidate.products ?? []).filter((product) => selected === null || selected.has(product.game)).flatMap((product) => product.releases),
+    ...(candidate.distribution_contexts ?? []).filter((context) => selected === null || selected.has(context.game)),
+    ...(candidate.errata ?? []).filter((erratum) => selected === null || selected.has(erratum.game)),
+    ...(candidate.legality_rules ?? []).filter((rule) => selected === null || selected.has(rule.game)),
   ] as Record<string, unknown>[];
   for (const entity of entities) {
     const provenance = Array.isArray(entity.curated_provenance)
@@ -661,10 +803,25 @@ export function stripCuratedRevisionEffects(
   }
   if (candidate.product_relationships !== undefined) {
     candidate.product_relationships = candidate.product_relationships
-      .filter((relationship) => relationship.evidence_category !== "curated")
+      .filter((relationship) =>
+        selected !== null && !selected.has(relationship.game) ||
+        relationship.evidence_category !== "curated"
+      )
       .map((relationship) => {
+        if (selected !== null && !selected.has(relationship.game)) {
+          return relationship;
+        }
+        const reviewed = relationship.curated_provenance?.at(-1)
+          ?.reviewed_source_value;
         const { curated_provenance: _provenance, ...official } = relationship;
-        return official;
+        return {
+          ...official,
+          ...(reviewed === "present"
+            ? { observed: true }
+            : reviewed === "absent"
+            ? { observed: false }
+            : {}),
+        };
       });
   }
   return candidate;
@@ -677,35 +834,49 @@ async function curatedRevisionSchemaAvailable(database: D1Database): Promise<boo
   return row?.present === 1;
 }
 
-async function recordSourceChange(database: D1Database, revisionId: string, runId: string, value: unknown, previous: string, at: string) {
-  const observed = await sha256Text(canonicalJson(value));
-  const revision = await database.prepare("SELECT status, event_version FROM curated_revisions WHERE id = ?")
-    .bind(revisionId).first<{ status: string; event_version: number }>();
-  if (revision?.status === "reconfirmation_required") return;
-  const version = (revision?.event_version ?? 0) + 1;
-  const conflictId = `crconf_${crypto.randomUUID()}`;
-  const conflictDigest = await sha256Text(canonicalJson({
-    conflict_id: conflictId,
-    run_id: runId,
-    revision_id: revisionId,
-    previous_source_digest: previous,
-    observed_source_digest: observed,
-  }));
-  const details = {
-    conflict_id: conflictId,
-    conflict_digest: conflictDigest,
-    run_id: runId,
-    previous_source_digest: previous,
-    observed_source_digest: observed,
-  };
-  await database.batch([
-    database.prepare("UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active'")
-      .bind(version, revisionId),
-    database.prepare(
-      `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
-       VALUES (?, ?, 'source_change_detected', ?, ?, 'system')`,
-    ).bind(revisionId, version, canonicalJson(details), at),
-  ]);
+async function recordSourceChanges(
+  database: D1Database,
+  runId: string,
+  conflicts: readonly {
+    row: { id: string; reviewed_source_digest: string };
+    reviewedSourceValue: unknown;
+  }[],
+  at: string,
+) {
+  const statements: D1PreparedStatement[] = [];
+  for (const conflict of conflicts) {
+    const revision = await database.prepare(
+      "SELECT status, event_version FROM curated_revisions WHERE id = ?",
+    ).bind(conflict.row.id).first<{ status: string; event_version: number }>();
+    if (revision?.status === "reconfirmation_required") continue;
+    const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
+    const version = (revision?.event_version ?? 0) + 1;
+    const conflictId = `crconf_${crypto.randomUUID()}`;
+    const details = {
+      conflict_id: conflictId,
+      conflict_digest: await sha256Text(canonicalJson({
+        conflict_id: conflictId,
+        run_id: runId,
+        revision_id: conflict.row.id,
+        previous_source_digest: conflict.row.reviewed_source_digest,
+        observed_source_digest: observed,
+      })),
+      run_id: runId,
+      previous_source_digest: conflict.row.reviewed_source_digest,
+      observed_source_digest: observed,
+    };
+    statements.push(
+      database.prepare(
+        "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active'",
+      ).bind(version, conflict.row.id),
+      database.prepare(
+        `INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
+         SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
+         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`,
+      ).bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
+    );
+  }
+  if (statements.length > 0) await database.batch(statements);
 }
 
 type PendingConflict = {
@@ -753,13 +924,16 @@ async function existingRevisionMutation(
     throw new AdministrationProblem(409, "current_revision_mismatch", "The expected current Catalogue Revision is stale.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
+  }
+  if (operation?.active_release_id !== null) {
+    throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const row = await database.prepare("SELECT * FROM curated_revisions WHERE id = ?")
     .bind(revisionId).first<RevisionRow>();
@@ -882,6 +1056,9 @@ function lifecycleWriteProblem(error: unknown): Error {
   if (detail.includes("curated_revision_operation_not_idle")) {
     return new AdministrationProblem(409, "operation_not_idle", "The production mutation boundary is not idle.");
   }
+  if (detail.includes("curated_revision_release_not_idle")) {
+    return new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
+  }
   if (detail.includes("UNIQUE constraint failed") || detail.includes("curated_revision_events")) {
     return new AdministrationProblem(409, "curated_revision_event_version_mismatch", "The lifecycle event version changed concurrently.");
   }
@@ -914,7 +1091,18 @@ async function validateSupersedingProposal(
       throw new AdministrationProblem(422, "curated_revision_identity_forbidden", `The protected field ${proposal.target.path} cannot be curated.`);
     }
     const source = valueAt(target, parts);
-    if (!source.found || !compatibleFieldAssertion(proposal.target.entity_type, parts, source.value, (proposal.assertion as { kind: "field"; value: unknown }).value)) {
+    const schema = curatedFieldSchema(
+      proposal.target.entity_type,
+      target,
+      parts,
+    );
+    if (schema === null || !validCuratedFieldAssertion(
+      proposal.target.entity_type,
+      target,
+      parts,
+      (proposal.assertion as { kind: "field"; value: unknown }).value,
+      schema,
+    )) {
       throw new AdministrationProblem(422, "curated_revision_assertion_type_invalid", "The assertion value does not match the pinned schema field type.");
     }
   } else {
@@ -1009,7 +1197,7 @@ async function currentTarget(database: D1Database, revisionId: string, proposal:
         throw new AdministrationProblem(422, "curated_revision_target_invalid", "The target does not belong to the proposed Supported Game.");
       }
     }
-    return entity;
+    return stripCuratedEntityEffects(entity);
   }
   const row = await database.prepare(
     `SELECT run.id AS ingestion_run_id, run.candidate_json FROM catalogue_revisions AS revision
@@ -1019,13 +1207,29 @@ async function currentTarget(database: D1Database, revisionId: string, proposal:
   if (row === null) {
     throw new AdministrationProblem(422, "curated_revision_target_not_found", "The target entity is unavailable in the expected Catalogue Revision.");
   }
-  const candidate = JSON.parse(await retainedPayload(
+  const candidate = stripCuratedRevisionEffects(JSON.parse(await retainedPayload(
     database,
     row.ingestion_run_id,
     "candidate",
     row.candidate_json,
-  )) as CatalogueCandidate;
+  )) as CatalogueCandidate);
   return candidateTarget(candidate, proposal);
+}
+
+function stripCuratedEntityEffects(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const entity = structuredClone(input);
+  const provenance = Array.isArray(entity.curated_provenance)
+    ? entity.curated_provenance as CuratedProvenance[]
+    : [];
+  for (const item of provenance) {
+    if (item.target.kind === "field") {
+      setAt(entity, pointerParts(item.target.path), item.reviewed_source_value);
+    }
+  }
+  delete entity.curated_provenance;
+  return entity;
 }
 
 function candidateTarget(candidate: CatalogueCandidate, proposal: Proposal): Record<string, unknown> {
@@ -1060,17 +1264,18 @@ function applyRelationship(candidate: CatalogueCandidate, proposal: Proposal, re
     item.kind === target.relationship_kind
   );
   const curatedProvenance = provenanceFor(proposal, revision, reviewedPresence);
-  if (assertion.presence === "present" && index >= 0) {
+  if (index >= 0) {
     const existing = relationships[index]!;
     relationships[index] = {
       ...existing,
+      observed: assertion.presence === "present",
       curated_provenance: [
         ...(existing.curated_provenance ?? []),
         curatedProvenance,
       ],
     };
   }
-  if (index < 0 || assertion.presence === "absent") {
+  if (index < 0) {
     relationships.push({
       id: `relationship_${revision.id}`,
       game: proposal.game,
@@ -1109,6 +1314,7 @@ function provenanceFor(
 function relationshipPresent(candidate: CatalogueCandidate, proposal: Proposal): boolean {
   const target = proposal.target as RelationshipTarget;
   return (candidate.product_relationships ?? []).some((item) =>
+    item.observed &&
     item.from.type === target.from.type && item.from.id === target.from.id &&
     item.to.type === target.to.type && item.to.id === target.to.id &&
     item.kind === target.relationship_kind
@@ -1165,7 +1371,10 @@ function structuralProposal(value: unknown): Proposal {
   } else if (value.target.kind === "relationship") {
     onlyFields(value.target, ["kind", "relationship_kind", "from", "to"]);
     onlyFields(value.assertion, ["kind", "presence"]);
-    if (!record(value.target.from) || !record(value.target.to) || !opaque(value.target.from.id) || !opaque(value.target.to.id) || typeof value.target.from.type !== "string" || typeof value.target.to.type !== "string" || typeof value.target.relationship_kind !== "string") throw new AdministrationProblem(422, "curated_revision_target_invalid", "Relationship target is incomplete.");
+    if (!record(value.target.from) || !record(value.target.to)) throw new AdministrationProblem(422, "curated_revision_target_invalid", "Relationship target is incomplete.");
+    onlyFields(value.target.from, ["type", "id"]);
+    onlyFields(value.target.to, ["type", "id"]);
+    if (!opaque(value.target.from.id) || !opaque(value.target.to.id) || typeof value.target.from.type !== "string" || typeof value.target.to.type !== "string" || typeof value.target.relationship_kind !== "string") throw new AdministrationProblem(422, "curated_revision_target_invalid", "Relationship target is incomplete.");
     if (value.assertion.kind !== "relationship" || (value.assertion.presence !== "present" && value.assertion.presence !== "absent")) invalid("A relationship assertion must be present or absent.");
   } else throw new AdministrationProblem(422, "curated_revision_target_invalid", "Target kind must be field or relationship.");
   if (value.supersedes_revision_id !== null && value.supersedes_revision_id !== undefined && !opaque(value.supersedes_revision_id)) invalid("supersedes_revision_id must be an opaque identity or null.");
@@ -1211,55 +1420,154 @@ function protectedPath(parts: readonly string[]): boolean {
     parts.some((part) => part === "id" || part.endsWith("_id"));
 }
 
-function compatibleFieldAssertion(
+type JsonSchema = Readonly<Record<string, unknown>>;
+
+const nullableTextSchema = {
+  oneOf: [{ type: "string" }, { type: "null" }],
+} as const;
+const nullableNonEmptyTextSchema = {
+  oneOf: [{ type: "string", minLength: 1 }, { type: "null" }],
+} as const;
+const nullableDateSchema = {
+  oneOf: [{ type: "string", format: "date" }, { type: "null" }],
+} as const;
+const sharedCuratableFieldSchemas: Readonly<Record<string, JsonSchema>> = {
+  "card:/name": { type: "string", minLength: 1 },
+  "card:/effective_rules_text": nullableTextSchema,
+  "printing:/rarity": {
+    type: "object",
+    additionalProperties: false,
+    required: ["normalized", "raw"],
+    properties: { normalized: nullableTextSchema, raw: nullableTextSchema },
+  },
+  "printing:/rarity/normalized": nullableTextSchema,
+  "printing:/rarity/raw": nullableTextSchema,
+  "printing:/printed_rules_text": nullableTextSchema,
+  "product:/official_code": nullableNonEmptyTextSchema,
+  "product:/name": nullableNonEmptyTextSchema,
+  "release:/date": {
+    type: "object",
+    additionalProperties: false,
+    required: ["precision", "value"],
+    properties: {
+      precision: { enum: ["day", "month", "quarter", "year", "unknown", null] },
+      value: nullableNonEmptyTextSchema,
+    },
+  },
+  "release:/date/precision": { enum: ["day", "month", "quarter", "year", "unknown", null] },
+  "release:/date/value": nullableNonEmptyTextSchema,
+  "release:/status": { enum: ["announced", "released", null] },
+  "distribution_context:/kind": { enum: ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
+  "distribution_context:/label": { type: "string", minLength: 1 },
+  "erratum:/effective_from": nullableDateSchema,
+  "erratum:/official_wording": { type: "string", minLength: 1 },
+  "erratum:/corrected_value": nullableNonEmptyTextSchema,
+  "legality_rule:/region": { enum: ["EN-OCEANIA", "EN-ASIA", "EN-US"] },
+  "legality_rule:/format": { type: "string", minLength: 1 },
+  "legality_rule:/event_tier": nullableNonEmptyTextSchema,
+  "legality_rule:/effective_from": nullableDateSchema,
+  "legality_rule:/effective_until": nullableDateSchema,
+  "legality_rule:/official_wording": { type: "string", minLength: 1 },
+  "legality_rule:/unresolved_scope": {
+    oneOf: [
+      { type: "null" },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["dimensions"],
+        properties: {
+          dimensions: {
+            enum: [
+              ["effective_interval"],
+              ["event_tier"],
+              ["effective_interval", "event_tier"],
+            ],
+          },
+        },
+      },
+    ],
+  },
+};
+
+function curatedFieldSchema(
   entityType: string,
+  target: Record<string, unknown>,
   parts: readonly string[],
-  source: unknown,
+): JsonSchema | null {
+  if (
+    (entityType === "card" || entityType === "printing") &&
+    parts[0] === "game_data" && parts[1] === "attributes"
+  ) {
+    const gameData = record(target.game_data) ? target.game_data : null;
+    const profile = typeof gameData?.profile === "string"
+      ? gameData.profile
+      : null;
+    if (profile === null) return null;
+    const exported = exportedGameProfileSchema(profile);
+    const root = record(exported.properties) &&
+        record(exported.properties[entityType])
+      ? exported.properties[entityType] as JsonSchema
+      : null;
+    return root === null ? null : schemaAt(root, parts.slice(2));
+  }
+  return sharedCuratableFieldSchemas[`${entityType}:/${parts.join("/")}`] ?? null;
+}
+
+function schemaAt(schema: JsonSchema, parts: readonly string[]): JsonSchema | null {
+  let current: JsonSchema = schema;
+  for (const part of parts) {
+    const properties = record(current.properties) ? current.properties : null;
+    if (properties === null || !record(properties[part])) return null;
+    current = properties[part] as JsonSchema;
+  }
+  return current;
+}
+
+function validCuratedFieldAssertion(
+  entityType: string,
+  target: Record<string, unknown>,
+  parts: readonly string[],
   assertion: unknown,
+  schema: JsonSchema,
 ): boolean {
-  const path = `/${parts.join("/")}`;
-  const nullable = new Set([
-    "card:/effective_rules_text",
-    "printing:/rarity/normalized", "printing:/rarity/raw",
-    "printing:/printed_rules_text", "printing:/game_data",
-    "product:/official_code", "product:/name",
-    "release:/date/precision", "release:/date/value", "release:/status",
-    "distribution_context:/product_id",
-    "erratum:/effective_from", "erratum:/corrected_value",
-    "legality_rule:/event_tier", "legality_rule:/effective_from",
-    "legality_rule:/effective_until", "legality_rule:/unresolved_scope",
-  ]).has(`${entityType}:${path}`);
-  if (assertion === null) return nullable;
-  if (source === null) {
-    if (!nullable) return false;
-    if (path === "/game_data" || path === "/unresolved_scope") return record(assertion);
-    if (path === "/date/precision") return typeof assertion === "string" && ["day", "month", "quarter", "year", "unknown"].includes(assertion);
-    if (path === "/status") return assertion === "announced" || assertion === "released";
-    return typeof assertion === "string";
+  if (!fieldAjv.compile(schema)(assertion)) return false;
+  if (
+    (entityType !== "card" && entityType !== "printing") ||
+    parts[0] !== "game_data" || parts[1] !== "attributes"
+  ) return true;
+  const gameData = record(target.game_data) ? target.game_data : null;
+  if (
+    gameData === null || typeof gameData.profile !== "string" ||
+    !record(gameData.attributes)
+  ) return false;
+  const attributes = structuredClone(gameData.attributes);
+  setAt(attributes, parts.slice(2), assertion);
+  try {
+    canonicalProfileAttributes(
+      "curated_revision_validation",
+      gameData.profile,
+      entityType,
+      attributes,
+      [],
+    );
+    return true;
+  } catch {
+    return false;
   }
-  if (path === "/region") return typeof assertion === "string" && ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"].includes(assertion);
-  if (path === "/date/precision") return typeof assertion === "string" && ["day", "month", "quarter", "year", "unknown"].includes(assertion);
-  if (path === "/status") return assertion === "announced" || assertion === "released";
-  if (["/effective_from", "/effective_until"].includes(path)) return typeof assertion === "string" && onlyDate(assertion);
-  if (path === "/kind" && entityType === "distribution_context") return typeof assertion === "string" && ["product", "tournament_pack", "winner_prize", "promotion", "other"].includes(assertion);
-  if (Array.isArray(source)) {
-    return Array.isArray(assertion) &&
-      assertion.length === source.length &&
-      source.every((value, index) => compatibleFieldAssertion(entityType, [...parts, String(index)], value, assertion[index]));
-  }
-  if (record(source)) {
-    if (!record(assertion)) return false;
-    const sourceKeys = Object.keys(source).sort();
-    const assertionKeys = Object.keys(assertion).sort();
-    return sourceKeys.length === assertionKeys.length &&
-      sourceKeys.every((key, index) => key === assertionKeys[index] && compatibleFieldAssertion(entityType, [...parts, key], source[key], assertion[key]));
-  }
-  return typeof source === typeof assertion;
 }
 function validEvidence(value: unknown): boolean {
   if (!record(value)) return false;
   if (value.kind === "source_observation") return Object.keys(value).length === 2 && opaque(value.id);
-  return value.kind === "owner_reference" && Object.keys(value).length === 3 && typeof value.uri === "string" && value.uri.length > 0 && sha256Digest(value.content_digest);
+  return value.kind === "owner_reference" && Object.keys(value).length === 3 &&
+    typeof value.uri === "string" && absoluteUri(value.uri) &&
+    sha256Digest(value.content_digest);
+}
+function absoluteUri(value: string): boolean {
+  try {
+    return new URL(value).protocol.length > 1;
+  } catch {
+    return false;
+  }
 }
 function requiredString(value: unknown, field: string): string { if (typeof value !== "string" || value.length === 0) invalid(`${field} must be a non-empty string.`); return value as string; }
 function onlyFields(value: Record<string, unknown>, fields: readonly string[]) { const extra = Object.keys(value).find((key) => !fields.includes(key)); if (extra) invalid(`${extra} is not accepted.`); }

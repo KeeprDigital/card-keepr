@@ -72,6 +72,7 @@ async function create(arguments_, environment, json) {
     affected_supported_game: proposal.value.game,
     target: proposal.value.target,
     content_digest: digest,
+    idempotency_key: idempotencyKey,
   });
   if (typeof context === "number") return context;
   return request(environment, json, "/admin/v1/curated-revisions", "POST", {
@@ -110,7 +111,9 @@ async function lifecycle(operation, arguments_, environment, json) {
   }
   const context = await mutationContext(operation, options, environment, json, {
     curated_revision_id: revisionId,
+    expected_event_version: eventVersion,
     conflict_digest: conflictDigest,
+    idempotency_key: idempotencyKey,
     ...(operation === "supersede"
       ? {
           replacement_supported_game: proposal.value.game,
@@ -179,11 +182,18 @@ async function mutationContext(operation, options, environment, json, binding) {
     const revision = shown.document?.revision;
     if (revision?.id !== binding.curated_revision_id ||
         typeof revision?.content?.game !== "string" ||
-        typeof revision?.content_digest !== "string") {
+        typeof revision?.content_digest !== "string" ||
+        !Number.isSafeInteger(revision?.event_version)) {
       return writeCliFailure(json, {
         code: "invalid_administration_contract",
         detail: "The Curated Revision inspection document is invalid.",
       }, 8);
+    }
+    if (revision.event_version !== binding.expected_event_version) {
+      return writeCliFailure(json, {
+        code: "resolved_target_mismatch",
+        detail: "The Curated Revision does not resolve to the supplied lifecycle event version.",
+      }, 7);
     }
     const resolvedConflict = revision.pending_conflict?.digest ?? null;
     if (binding.conflict_digest !== resolvedConflict) {
@@ -197,6 +207,7 @@ async function mutationContext(operation, options, environment, json, binding) {
       affected_supported_game: revision.content.game,
       current_content_digest: revision.content_digest,
       target: revision.content.target,
+      conflict_id: revision.pending_conflict?.id ?? null,
     };
   }
   const summary = {

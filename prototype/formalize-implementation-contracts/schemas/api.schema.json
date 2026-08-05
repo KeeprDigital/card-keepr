@@ -13,6 +13,96 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     },
+    "CuratedEntityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
+        },
+        "id": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CuratedFieldTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entity_type", "entity_id", "path"],
+      "properties": {
+        "kind": { "const": "field" },
+        "entity_type": {
+          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
+        },
+        "entity_id": { "$ref": "#/$defs/OpaqueId" },
+        "path": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "CuratedRelationshipTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relationship_kind", "from", "to"],
+      "properties": {
+        "kind": { "const": "relationship" },
+        "relationship_kind": {
+          "enum": ["printing-product", "printing-distribution-context", "distribution-context-product", "product-card"]
+        },
+        "from": { "$ref": "#/$defs/CuratedEntityReference" },
+        "to": { "$ref": "#/$defs/CuratedEntityReference" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "relationship_kind": { "const": "printing-product" },
+            "from": { "properties": { "type": { "const": "printing" } } },
+            "to": { "properties": { "type": { "const": "product" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "printing-distribution-context" },
+            "from": { "properties": { "type": { "const": "printing" } } },
+            "to": { "properties": { "type": { "const": "distribution_context" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "distribution-context-product" },
+            "from": { "properties": { "type": { "const": "distribution_context" } } },
+            "to": { "properties": { "type": { "const": "product" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "product-card" },
+            "from": { "properties": { "type": { "const": "product" } } },
+            "to": { "properties": { "type": { "const": "card" } } }
+          }
+        }
+      ]
+    },
+    "CuratedEvidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "source_observation" },
+            "id": { "$ref": "#/$defs/OpaqueId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "uri", "content_digest"],
+          "properties": {
+            "kind": { "const": "owner_reference" },
+            "uri": { "type": "string", "format": "uri" },
+            "content_digest": { "$ref": "#/$defs/Sha256" }
+          }
+        }
+      ]
+    },
     "CuratedProvenance": {
       "type": "object",
       "additionalProperties": false,
@@ -20,9 +110,14 @@
       "properties": {
         "curated_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "content_digest": { "$ref": "#/$defs/Sha256" },
-        "target": { "type": "object" },
+        "target": {
+          "oneOf": [
+            { "$ref": "#/$defs/CuratedFieldTarget" },
+            { "$ref": "#/$defs/CuratedRelationshipTarget" }
+          ]
+        },
         "rationale": { "type": "string", "minLength": 1 },
-        "evidence": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CuratedEvidence" } },
         "author": { "type": "string", "minLength": 1 },
         "reviewed_source_value": true
       }
@@ -914,6 +1009,9 @@
             },
             {
               "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@3"
+            },
+            {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@4"
             }
           ]
         },

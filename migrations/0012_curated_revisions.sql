@@ -1,5 +1,7 @@
 PRAGMA foreign_keys = ON;
 
+ALTER TABLE operation_state ADD COLUMN active_release_id TEXT;
+
 CREATE TABLE curated_revisions (
   id TEXT PRIMARY KEY,
   game TEXT NOT NULL CHECK (
@@ -37,6 +39,16 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'curated_revision_operation_not_idle');
+END;
+
+CREATE TRIGGER curated_revision_release_guard
+BEFORE INSERT ON curated_revisions
+WHEN EXISTS (
+  SELECT 1 FROM operation_state
+  WHERE singleton = 1 AND active_release_id IS NOT NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
 END;
 
 CREATE TRIGGER curated_revision_target_overlap_guard
@@ -92,6 +104,16 @@ BEGIN
   SELECT RAISE(ABORT, 'curated_revision_operation_not_idle');
 END;
 
+CREATE TRIGGER curated_revision_owner_event_release_guard
+BEFORE INSERT ON curated_revision_events
+WHEN NEW.kind IN ('reaffirmed', 'superseded', 'retired') AND EXISTS (
+  SELECT 1 FROM operation_state
+  WHERE singleton = 1 AND active_release_id IS NOT NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_release_not_idle');
+END;
+
 CREATE TRIGGER curated_revision_events_are_immutable_on_update
 BEFORE UPDATE ON curated_revision_events
 BEGIN
@@ -133,9 +155,52 @@ CREATE TABLE ingestion_run_curated_revision_sets (
   revision_ids_json TEXT NOT NULL CHECK (json_valid(revision_ids_json)),
   set_digest TEXT NOT NULL CHECK (
     length(set_digest) = 64 AND set_digest NOT GLOB '*[^0-9a-f]*'
+      AND set_digest <> '0000000000000000000000000000000000000000000000000000000000000000'
   ),
   pinned_at TEXT NOT NULL
 );
+
+CREATE TRIGGER curated_revision_pin_set_matches_run_start
+BEFORE INSERT ON ingestion_run_curated_revision_sets
+WHEN NEW.revision_ids_json <> COALESCE((
+  SELECT json_group_array(id) FROM (
+    SELECT revision.id
+    FROM curated_revisions AS revision
+    JOIN ingestion_runs AS run ON run.id = NEW.ingestion_run_id
+    WHERE revision.status = 'active'
+      AND revision.game IN (SELECT value FROM json_each(run.selected_games_json))
+      AND (revision.effective_from IS NULL OR revision.effective_from <= substr(run.started_at, 1, 10))
+      AND (revision.effective_to IS NULL OR substr(run.started_at, 1, 10) < revision.effective_to)
+    ORDER BY revision.id
+  )
+), '[]')
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_set_changed');
+END;
+
+CREATE TRIGGER curated_revision_pins_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_curated_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pins_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_curated_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pin_sets_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_curated_revision_sets
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_set_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pin_sets_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_curated_revision_sets
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_set_immutable');
+END;
 
 CREATE TRIGGER curated_revision_reconfirmation_blocks_run
 BEFORE INSERT ON ingestion_runs

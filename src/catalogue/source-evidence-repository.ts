@@ -16,7 +16,6 @@ import { evidenceRunIdentity } from "./idempotent-identities";
 import {
   curatedRevisionSetForRun,
   curatedRevisionPinStatementsForNewRun,
-  pinCuratedRevisionsForRun,
 } from "./curated-revisions";
 
 export type IngestionEvidenceRow = {
@@ -241,7 +240,6 @@ export async function startEvidenceRun(
     }
     throw error;
   }
-  await pinCuratedRevisionsForRun(database, runId, startedAt);
   return showEvidenceRun(database, runId);
 }
 
@@ -362,7 +360,6 @@ export async function retryEvidenceRun(
     }
     throw error;
   }
-  await pinCuratedRevisionsForRun(database, runId, startedAt);
   return showEvidenceRun(database, runId);
 }
 

@@ -59,6 +59,24 @@ const exportManifestSchemaV2 = JSON.parse(
     "utf8",
   ),
 );
+const exportManifestSchemaV4 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json",
+    ),
+    "utf8",
+  ),
+);
+const exportRecordSchemaV4 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v4.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const gzipGolden = JSON.parse(
   readFileSync(
     resolve(
@@ -73,13 +91,15 @@ addFormats(ajv);
 ajv.addSchema(exportManifestSchema);
 ajv.addSchema(exportManifestSchemaV1);
 ajv.addSchema(exportManifestSchemaV2);
+ajv.addSchema(exportManifestSchemaV4);
 ajv.addSchema(apiSchema);
 ajv.addSchema(exportRecordSchema);
+ajv.addSchema(exportRecordSchemaV4);
 const validateLegalityStatus = ajv.getSchema(
   `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
 );
 const validateLegalityRuleExport = ajv.getSchema(
-  `${exportRecordSchema.$id}#/$defs/LegalityRuleRecord`,
+  `${exportRecordSchemaV4.$id}#/$defs/LegalityRuleRecord`,
 );
 const validateCatalogueExportDocument = ajv.getSchema(
   `${apiSchema.$id}#/$defs/CatalogueExportDocument`,
@@ -1093,14 +1113,14 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     );
   }
   await t.test(
-    "Legality Rule exports use schema v3 and retain exact effects",
+    "Legality Rule exports use the current schema and retain exact effects",
     () => {
-      assert.equal(manifestDocument.data.export_schema_major, 3);
+      assert.equal(manifestDocument.data.export_schema_major, 4);
       assert.equal(
         manifestDocument.data.components.find(
           (component) => component.name === "legality-rules",
         ).record_schema,
-        "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/LegalityRuleRecord",
+        "https://card-keepr.invalid/schemas/catalogue-export-record@4#/$defs/LegalityRuleRecord",
       );
     },
   );

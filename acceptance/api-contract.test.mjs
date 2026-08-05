@@ -15,6 +15,7 @@ test("historical export schemas remain byte-identical to their fixed points", as
     ["catalogue-export-record-v1.schema.json", "07f524d9506388e454bd0ca36a554a9cb61fdc8b798f0f53c770b24e036f32e0", "catalogue-export-record@1"],
     ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
     ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
+    ["catalogue-export-record.schema.json", "cb9b7ef626dad9473f641d567167379a4edfba5572153b55c9dbabb0ab1d1f62", "catalogue-export-record@3"],
   ]) {
     const bytes = await readFile(resolve(
       root,
@@ -23,6 +24,22 @@ test("historical export schemas remain byte-identical to their fixed points", as
     assert.equal(createHash("sha256").update(bytes).digest("hex"), digest);
     assert.equal(JSON.parse(bytes.toString("utf8")).$id.endsWith(id), true);
   }
+});
+
+test("curated catalogue exports use a new schema major", async () => {
+  const [record, manifest] = await Promise.all([
+    "catalogue-export-record-v4.schema.json",
+    "catalogue-export-manifest-v4.schema.json",
+  ].map((name) => readFile(resolve(
+    root,
+    "prototype/formalize-implementation-contracts/schemas",
+    name,
+  ), "utf8").then(JSON.parse)));
+  assert.equal(record.$id.endsWith("catalogue-export-record@4"), true);
+  assert.equal(manifest.$id.endsWith("catalogue-export-manifest@4"), true);
+  assert.equal(manifest.properties.export_schema_major.const, 4);
+  assert.ok(manifest.$defs.CardsComponent.allOf[1].properties.record_schema
+    .const.includes("catalogue-export-record@4"));
 });
 
 test("Product detail documents invalid include requests", async () => {

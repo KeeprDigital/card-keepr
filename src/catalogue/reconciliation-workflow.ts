@@ -5,7 +5,6 @@ import {
 } from "./reconciliation-candidate-store";
 import { canonicalJson, sha256Text } from "./serialization";
 import { assertIdentifier } from "./source-evidence-model";
-import { pinCuratedRevisionsForRun } from "./curated-revisions";
 
 export type ReconciliationWorkflowParams = Readonly<{
   ingestion_run_id: string;
@@ -107,12 +106,6 @@ export async function startOrObserveReconciliationWorkflow(
       "Recovery is not healthy, so reconciliation is blocked.",
     );
   }
-
-  await pinCuratedRevisionsForRun(
-    database,
-    input.ingestion_run_id,
-    observedAt,
-  );
 
   const workflowInstanceId =
     `reconcile-${(await sha256Text(requestJson)).slice(0, 64)}`;

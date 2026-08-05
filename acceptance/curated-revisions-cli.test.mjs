@@ -62,6 +62,7 @@ test("CLI creates a production Curated Revision with all mutation bindings", asy
     affected_supported_game: "one-piece",
     target: proposal.target,
     content_digest: "b".repeat(64),
+    idempotency_key: "create-123",
   });
   const result = await runCli([
     "curated-revision", "create", "--proposal", file,
@@ -116,6 +117,7 @@ test("CLI retirement resolves the exact revision and production identities befor
     id: "currev_123",
     content: { game: "one-piece", target: fixtureProposal().target },
     content_digest: "d".repeat(64),
+    event_version: 1,
     pending_conflict: null,
   };
   const resultDocument = {
@@ -137,10 +139,13 @@ test("CLI retirement resolves the exact revision and production identities befor
     operation: "retire",
     current_catalogue_revision_id: "catrev_123",
     curated_revision_id: revision.id,
+    expected_event_version: 1,
     conflict_digest: null,
+    idempotency_key: "retire-123",
     affected_supported_game: "one-piece",
     current_content_digest: revision.content_digest,
     target: revision.content.target,
+    conflict_id: null,
   });
   const result = await runCli([
     "curated-revision", "retire",
