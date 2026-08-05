@@ -349,7 +349,7 @@ export default defineConfig({
                       ...expected,
                       current_revision_id:
                         body.params?.[0] ?? "catrev_spine_000",
-                      schema_migration_level: 15,
+                      schema_migration_level: 16,
                       card_search_state: "ready",
                       card_search_fts_tables: 1,
                       missing_fts_rows: 0,

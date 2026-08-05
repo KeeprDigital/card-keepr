@@ -42,6 +42,13 @@ import {
   catalogueRevisionBackupStatus,
   publicationBackupReservation,
 } from "../../../src/catalogue/backup-recovery";
+import {
+  acceptCatalogueRecovery,
+  beginCatalogueRecovery,
+  inspectCatalogueRecovery,
+  verifyCatalogueRecovery,
+} from "../../../src/catalogue/recovery";
+import { activeD1CredentialSlots } from "./backup-workflow";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -413,6 +420,129 @@ const ingestionWorker = {
               ? 202
               : 200,
         });
+      }
+
+      const recoveryMatch = /^\/v1\/recoveries\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && recoveryMatch !== null) {
+        return Response.json(await inspectCatalogueRecovery(
+          env.CATALOGUE_DB,
+          decodeURIComponent(recoveryMatch[1]!),
+        ));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/recoveries") {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "environment",
+          "recovery_id",
+          "method",
+          "target_revision_id",
+          "target_bookmark",
+          "target_digest",
+          "backup_attempt_id",
+          "expected_current_revision_id",
+          "idempotency_key",
+          "linked_operation_id",
+        ]);
+        if (requiredString(body, "environment") !== "production") {
+          throw new AdministrationProblem(
+            422,
+            "production_target_required",
+            "Catalogue recovery requires environment production.",
+          );
+        }
+        const method = requiredString(body, "method");
+        if (method !== "time_travel" && method !== "replacement_database") {
+          throw new AdministrationProblem(
+            422,
+            "invalid_recovery_method",
+            "method must be time_travel or replacement_database.",
+          );
+        }
+        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
+        const document = await beginCatalogueRecovery(
+          env.CATALOGUE_DB,
+          env.BACKUPS,
+          {
+            recoveryId: requiredString(body, "recovery_id"),
+            method,
+            targetRevisionId: requiredString(body, "target_revision_id"),
+            targetBookmark: requiredString(body, "target_bookmark"),
+            targetDigest: requiredString(body, "target_digest"),
+            backupAttemptId: requiredString(body, "backup_attempt_id"),
+            expectedCurrentRevisionId: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            ...(body.linked_operation_id === undefined
+              ? {}
+              : {
+                linkedOperationId: requiredString(
+                  body,
+                  "linked_operation_id",
+                ),
+              }),
+            observedAt,
+            cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+            catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+            verificationToken: slots.verification === "a"
+              ? env.D1_VERIFICATION_TOKEN
+              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+          },
+        );
+        return Response.json(document, { status: 201 });
+      }
+
+      const recoveryVerificationMatch =
+        /^\/v1\/recoveries\/([^/]+)\/verification$/.exec(url.pathname);
+      if (request.method === "POST" && recoveryVerificationMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["target_digest", "idempotency_key"]);
+        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
+        return Response.json(await verifyCatalogueRecovery(
+          env.CATALOGUE_DB,
+          decodeURIComponent(recoveryVerificationMatch[1]!),
+          {
+            targetDigest: requiredString(body, "target_digest"),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            observedAt,
+            cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+            verificationToken: slots.verification === "a"
+              ? env.D1_VERIFICATION_TOKEN
+              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+          },
+        ));
+      }
+
+      const recoveryAcceptanceMatch =
+        /^\/v1\/recoveries\/([^/]+)\/acceptance$/.exec(url.pathname);
+      if (request.method === "POST" && recoveryAcceptanceMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "expected_restored_revision_id",
+          "target_digest",
+          "confirmation_recovery_id",
+          "idempotency_key",
+        ]);
+        return Response.json(await acceptCatalogueRecovery(
+          env.CATALOGUE_DB,
+          decodeURIComponent(recoveryAcceptanceMatch[1]!),
+          {
+            expectedRestoredRevisionId: requiredString(
+              body,
+              "expected_restored_revision_id",
+            ),
+            targetDigest: requiredString(body, "target_digest"),
+            confirmationRecoveryId: requiredString(
+              body,
+              "confirmation_recovery_id",
+            ),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            observedAt,
+            boundDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+          },
+        ));
       }
 
       const reconciledPrintingMatch =

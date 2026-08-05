@@ -99,7 +99,7 @@ export async function runCatalogueBackupWorkflow(
   }
 }
 
-async function activeD1CredentialSlots(database: D1Database): Promise<{
+export async function activeD1CredentialSlots(database: D1Database): Promise<{
   export: "a" | "b";
   verification: "a" | "b";
 }> {

@@ -213,6 +213,20 @@ the owner must resume with a new linked operation or explicitly restore and
 verify another target. Acceptance makes recovery healthy and records the
 restored current Catalogue Revision.
 
+`recovery begin` binds a production target, recovery identity, method, exact
+Catalogue Revision and D1 bookmark, verified backup manifest digest and attempt,
+expected current revision, optional failed-operation link, and idempotency key.
+It records the current bookmark where the platform exposes one. Time Travel
+retains the restore response's `previous_bookmark` as the immediate undo
+reference. Replacement recovery imports into a new D1 database and retains the
+old database identity through acceptance; changing bindings is a separately
+reviewed deployment action. `recovery verify` reuses every backup verification
+check against the exact restored database and digest. `recovery accept` requires
+the expected restored revision, target digest, typed recovery identity,
+production binding observation, idempotency key, and exact production
+confirmation. Changed idempotent replays fail closed; exact replays return the
+retained operation without repeating a restore, verification, or acceptance.
+
 ## Release and credential states
 
 A production release follows:
