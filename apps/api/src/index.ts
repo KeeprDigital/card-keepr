@@ -299,6 +299,13 @@ const apiWorker = {
                 ? "Cursor revision unavailable"
                 : "Invalid Product request",
             detail: error.message,
+            ...(error.code === "cursor_revision_unavailable"
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/products" },
+                  },
+                }
+              : {}),
           }),
         );
       }

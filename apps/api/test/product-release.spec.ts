@@ -163,6 +163,11 @@ beforeEach(async () => {
       }),
     ),
     testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_query_revisions (
+         catalogue_revision_id, state, repaired_through_card_id
+       ) VALUES ('catrev_products', 'available', NULL)`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO revision_products_fts (
          catalogue_revision_id, product_id, search_text
        ) VALUES ('catrev_products', 'product_st15',
@@ -283,6 +288,33 @@ test("authenticated Product reads preserve regional precision and announced stat
       ],
     },
   });
+});
+
+test("Product search normalizes official codes and names without accepting repeated scalar filters", async () => {
+  for (const query of ["ＳＴ－１５", "RED EDWARD.NEWGATE"]) {
+    const response = await api(
+      `/v1/products?q=${encodeURIComponent(query)}`,
+    );
+    expect(response.status).toBe(200);
+    const document = await response.json();
+    expectSchema("ProductCollection", document);
+    expect(document).toMatchObject({
+      data: [{ id: "product_st15" }],
+      meta: { catalogue_revision_id: "catrev_products" },
+    });
+  }
+
+  for (const path of [
+    "/v1/products?game=one-piece&game=digimon",
+    "/v1/products?release_region=EN-OCEANIA&release_region=EN-US",
+    "/v1/products?limit=1&limit=2",
+  ]) {
+    const response = await api(path);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+    });
+  }
 });
 
 test("authenticated Printing Image content is immutable, conditional, and range-capable", async () => {
@@ -773,6 +805,166 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
   }
 });
 
+test("Product evidence projects Curated Revisions onto exact Product and nested Release fields", async () => {
+  const stored = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT document_json FROM revision_products
+     WHERE catalogue_revision_id = 'catrev_products'
+       AND product_id = 'product_st15'`,
+  ).first<{ document_json: string }>();
+  expect(stored).not.toBeNull();
+  const envelope = JSON.parse(stored!.document_json) as {
+    data: Record<string, unknown> & {
+      releases: Record<string, unknown>[];
+    };
+    included: unknown[];
+    provenance: Record<string, string[]>;
+    disagreements: unknown[];
+  };
+  const productRevision = {
+    curated_revision_id: "currev_product_name",
+    content_digest: "b".repeat(64),
+    target: {
+      kind: "field",
+      entity_type: "product",
+      entity_id: "product_st15",
+      path: "/name",
+    },
+    rationale: "Use the owner-verified official Product name.",
+    evidence: [{ kind: "source_observation", id: "srcobs_product_name" }],
+    author: "owner",
+    reviewed_source_value: "Starter Deck RED Edward.Newgate",
+  };
+  const releaseRevision = {
+    curated_revision_id: "currev_release_status",
+    content_digest: "c".repeat(64),
+    target: {
+      kind: "field",
+      entity_type: "release",
+      entity_id: "release_st15_oceania",
+      path: "/status",
+    },
+    rationale: "Record the owner-verified regional Release status.",
+    evidence: [{ kind: "source_observation", id: "srcobs_release_status" }],
+    author: "owner",
+    reviewed_source_value: "announced",
+  };
+  envelope.data.name = "Starter Deck Red Edward Newgate";
+  envelope.data.curated_provenance = [productRevision];
+  envelope.data.releases[0] = {
+    ...envelope.data.releases[0],
+    status: "released",
+    curated_provenance: [releaseRevision],
+  };
+  envelope.included = [
+    {
+      type: "source_observation",
+      id: "srcobs_product_name",
+      captured_at: "2026-01-01T00:00:00.000Z",
+      source: "one-piece-en",
+    },
+    {
+      type: "source_observation",
+      id: "srcobs_release_status",
+      captured_at: "2026-01-01T00:00:00.000Z",
+      source: "one-piece-en",
+    },
+  ];
+  envelope.provenance = {
+    "/data/name": ["srcobs_product_name"],
+    "/data/releases/0/status": ["srcobs_release_status"],
+  };
+
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = NULL
+       WHERE singleton = 1`,
+    ),
+    ...[
+      {
+        id: "currev_product_name",
+        target: productRevision.target,
+        digest: productRevision.content_digest,
+        createdAt: "2026-01-02T00:00:00.000Z",
+      },
+      {
+        id: "currev_release_status",
+        target: releaseRevision.target,
+        digest: releaseRevision.content_digest,
+        createdAt: "2026-01-03T00:00:00.000Z",
+      },
+    ].map(({ id, target, digest, createdAt }) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO curated_revisions (
+           id, game, target_key, target_kind, effective_from, effective_to,
+           proposal_json, content_digest, reviewed_source_digest,
+           schema_binding_json, author, created_at, status, event_version
+         ) VALUES (
+           ?, 'one-piece', ?, 'field', NULL, NULL, ?, ?, ?, ?, 'owner', ?,
+           'active', 1
+         )`,
+      ).bind(
+        id,
+        JSON.stringify(target),
+        JSON.stringify({ target }),
+        digest,
+        "d".repeat(64),
+        JSON.stringify({ catalogue_revision_id: "catrev_products" }),
+        createdAt,
+      )
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_products SET document_json = ?
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND product_id = 'product_st15'`,
+    ).bind(JSON.stringify(envelope)),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = 'run_products'
+       WHERE singleton = 1`,
+    ),
+  ]);
+
+  try {
+    const base = await api("/v1/products/product_st15");
+    expect(base.status).toBe(200);
+    await expect(base.json()).resolves.not.toHaveProperty("included");
+
+    const response = await api(
+      "/v1/products/product_st15?include=evidence",
+    );
+    expect(response.status).toBe(200);
+    const document = await response.json();
+    expectSchema("ProductDocument", document);
+    expect(document).toMatchObject({
+      included: [
+        { id: "srcobs_product_name" },
+        { id: "srcobs_release_status" },
+        {
+          type: "curated_revision",
+          id: "currev_product_name",
+          captured_at: "2026-01-02T00:00:00.000Z",
+          source: "owner",
+        },
+        {
+          type: "curated_revision",
+          id: "currev_release_status",
+          captured_at: "2026-01-03T00:00:00.000Z",
+          source: "owner",
+        },
+      ],
+      provenance: {
+        "/data/name": ["currev_product_name"],
+        "/data/releases/0/status": ["currev_release_status"],
+      },
+    });
+  } finally {
+    await testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_products SET document_json = ?
+       WHERE catalogue_revision_id = 'catrev_products'
+         AND product_id = 'product_st15'`,
+    ).bind(stored!.document_json).run();
+  }
+});
+
 test("an explicitly unknown Release region is readable and schema-valid", async () => {
   const product = {
     type: "product",
@@ -898,6 +1090,23 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     meta: { catalogue_revision_id: "catrev_products" },
   });
 
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions SET state = 'archived'
+     WHERE catalogue_revision_id = 'catrev_products'`,
+  ).run();
+  const archived = await api(
+    `/v1/products?game=one-piece&release_region=EN-OCEANIA&limit=1&after=${encodeURIComponent(first.page.next_cursor)}`,
+  );
+  expect(archived.status).toBe(409);
+  await expect(archived.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/products" },
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions SET state = 'available'
+     WHERE catalogue_revision_id = 'catrev_products'`,
+  ).run();
+
   const forged = decodeCursor(first.page.next_cursor);
   const unavailableRevision = encodeCursor({
     ...forged,
@@ -909,6 +1118,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
+    links: { collection: "/v1/products" },
   });
   const wrongRoute = encodeCursor({ ...forged, route: "/v1/cards" });
   const rejected = await api(

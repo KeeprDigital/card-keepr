@@ -862,6 +862,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["data", "meta", "links"],
+      "dependentRequired": {
+        "included": ["provenance"],
+        "provenance": ["included"]
+      },
       "properties": {
         "data": { "$ref": "#/$defs/Product" },
         "included": {

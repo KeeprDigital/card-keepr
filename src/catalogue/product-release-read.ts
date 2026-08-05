@@ -20,7 +20,7 @@ type ProductOrderValue = {
 
 type ProductEnvelope = {
   data: ProductOrderValue & {
-    releases: { region: string }[];
+    releases: ({ id: string; region: string } & Record<string, unknown>)[];
   } & Record<string, unknown>;
   included: unknown[];
   provenance: Record<string, string[]>;
@@ -79,15 +79,13 @@ export async function currentProductResponse(
   if (ifNoneMatch(request, etag)) {
     return notModified(etag, row.current_revision_id);
   }
+  const evidenceSidecar = include.has("evidence")
+    ? await productEvidenceProjection(database, envelope)
+    : {};
   return Response.json(
     {
       data: envelope.data,
-      ...(include.has("evidence")
-        ? {
-            included: envelope.included,
-            provenance: envelope.provenance,
-          }
-        : {}),
+      ...evidenceSidecar,
       ...(include.has("disagreements")
         ? { disagreements: envelope.disagreements }
         : {}),
@@ -103,6 +101,118 @@ export async function currentProductResponse(
   );
 }
 
+async function productEvidenceProjection(
+  database: D1Database,
+  envelope: ProductEnvelope,
+): Promise<{
+  included: unknown[];
+  provenance: Record<string, string[]>;
+}> {
+  const references = curatedRevisionReferences(envelope.data);
+  if (references.length === 0) {
+    return {
+      included: envelope.included,
+      provenance: envelope.provenance,
+    };
+  }
+  const revisionIds = [
+    ...new Set(references.map(({ revisionId }) => revisionId)),
+  ];
+  const rows = await database
+    .prepare(
+      `SELECT id, created_at, author
+       FROM curated_revisions
+       WHERE id IN (SELECT value FROM json_each(?))`,
+    )
+    .bind(JSON.stringify(revisionIds))
+    .all<{ id: string; created_at: string; author: string }>();
+  const rowsById = new Map(rows.results.map((row) => [row.id, row]));
+  if (rowsById.size !== revisionIds.length) {
+    throw new Error(
+      "A revision-pinned Product references unavailable Curated Revision evidence.",
+    );
+  }
+  const provenance = structuredClone(envelope.provenance);
+  for (const { path } of references) {
+    provenance[path] = [
+      ...new Set(
+        references
+          .filter((reference) => reference.path === path)
+          .map(({ revisionId }) => revisionId),
+      ),
+    ];
+  }
+  return {
+    included: [
+      ...envelope.included,
+      ...revisionIds.map((revisionId) => {
+        const row = rowsById.get(revisionId)!;
+        return {
+          type: "curated_revision",
+          id: row.id,
+          captured_at: row.created_at,
+          source: row.author,
+        };
+      }),
+    ],
+    provenance,
+  };
+}
+
+function curatedRevisionReferences(
+  data: ProductEnvelope["data"],
+): { path: string; revisionId: string }[] {
+  return [
+    ...curatedFieldReferences(data, "/data", "product", data.id),
+    ...data.releases.flatMap((release, index) =>
+      curatedFieldReferences(
+        release,
+        `/data/releases/${index}`,
+        "release",
+        release.id,
+      )
+    ),
+  ];
+}
+
+function curatedFieldReferences(
+  value: Record<string, unknown>,
+  responsePath: string,
+  entityType: "product" | "release",
+  entityId: string,
+): { path: string; revisionId: string }[] {
+  if (!Array.isArray(value.curated_provenance)) return [];
+  return value.curated_provenance.flatMap((item) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("A revision-pinned Product has invalid curated provenance.");
+    }
+    const provenance = item as Record<string, unknown>;
+    const target = provenance.target;
+    if (
+      typeof provenance.curated_revision_id !== "string" ||
+      target === null ||
+      typeof target !== "object" ||
+      Array.isArray(target)
+    ) {
+      throw new Error("A revision-pinned Product has invalid curated provenance.");
+    }
+    const field = target as Record<string, unknown>;
+    if (
+      field.kind !== "field" ||
+      field.entity_type !== entityType ||
+      field.entity_id !== entityId ||
+      typeof field.path !== "string" ||
+      !field.path.startsWith("/")
+    ) {
+      throw new Error("A revision-pinned Product has invalid curated provenance.");
+    }
+    return [{
+      path: `${responsePath}${field.path}`,
+      revisionId: provenance.curated_revision_id,
+    }];
+  });
+}
+
 export async function currentProductsResponse(
   database: D1Database,
   request: Request,
@@ -115,23 +225,27 @@ export async function currentProductsResponse(
     )
     .first<{ current_revision_id: string; published_at: string }>();
   if (state === null) throw new Error("Catalogue state is unavailable");
-  const limit = parseLimit(url.searchParams.get("limit"));
+  const limit = parseLimit(singleParameter(url, "limit"));
   const q = parseQuery(url);
   const fts = q === null ? null : ftsQuery(q);
-  const game = url.searchParams.get("game");
-  const region = url.searchParams.get("release_region");
+  const game = singleParameter(url, "game");
+  const region = singleParameter(url, "release_region");
   assertFilter(game, region);
   const filters = { q, game, region, limit };
-  const cursor = parseCursor(url.searchParams.get("after"), filters);
+  const requestedAfter = singleParameter(url, "after");
+  const cursor = parseCursor(requestedAfter, filters);
   const revisionId = cursor?.revision ?? state.current_revision_id;
   const revision =
     revisionId === state.current_revision_id
       ? { published_at: state.published_at }
       : await database
           .prepare(
-            `SELECT published_at
-             FROM catalogue_revisions
-             WHERE id = ?`,
+            `SELECT revision.published_at
+             FROM catalogue_revisions AS revision
+             JOIN catalogue_query_revisions AS query
+               ON query.catalogue_revision_id = revision.id
+              AND query.state = 'available'
+             WHERE revision.id = ?`,
           )
           .bind(revisionId)
           .first<{ published_at: string }>();
@@ -239,7 +353,7 @@ export async function currentProductsResponse(
           game,
           region,
           limit,
-          after: url.searchParams.get("after"),
+          after: requestedAfter,
         }),
       },
     },
@@ -302,8 +416,17 @@ function productEnvelope(documentJson: string): ProductEnvelope {
 function parseQuery(url: URL): string | null {
   const values = url.searchParams.getAll("q");
   if (values.length === 0) return null;
-  const q = values[0]!.trim().toLocaleLowerCase();
-  if (values.length !== 1 || q.length < 1 || q.length > 500) {
+  const raw = values[0]!;
+  const q = raw
+    .normalize("NFKC")
+    .trim()
+    .toLocaleLowerCase("en");
+  if (
+    values.length !== 1 ||
+    [...raw].length > 500 ||
+    q.length < 1 ||
+    [...q].length > 500
+  ) {
     throw new ProductReadProblem(
       400,
       "invalid_parameter",
@@ -311,6 +434,19 @@ function parseQuery(url: URL): string | null {
     );
   }
   return q;
+}
+
+function singleParameter(url: URL, name: string): string | null {
+  const values = url.searchParams.getAll(name);
+  if (values.length === 0) return null;
+  if (values.length !== 1) {
+    throw new ProductReadProblem(
+      400,
+      "invalid_parameter",
+      `Product ${name} parameter is repeated.`,
+    );
+  }
+  return values[0]!;
 }
 
 function canonicalProductSelf(
