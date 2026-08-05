@@ -81,6 +81,18 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "backup", "retry")) {
     return retryBackup(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "recovery", "begin")) {
+    return beginRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "inspect")) {
+    return inspectRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "verify")) {
+    return verifyRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "accept")) {
+    return acceptRecovery(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -624,6 +636,204 @@ function writeResolvedBackupRetry(json, resolved) {
   );
 }
 
+async function beginRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--method",
+    "--target-revision",
+    "--target-bookmark",
+    "--target-digest",
+    "--backup-attempt-id",
+    "--expected-current-revision",
+    "--idempotency-key",
+    "--linked-operation-id",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const method = options.values["--method"];
+  const targetRevision = options.values["--target-revision"];
+  const targetBookmark = options.values["--target-bookmark"];
+  const targetDigest = options.values["--target-digest"];
+  const backupAttemptId = options.values["--backup-attempt-id"];
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const linkedOperationId = options.values["--linked-operation-id"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    !["time_travel", "replacement_database"].includes(method) ||
+    targetRevision === undefined || targetBookmark === undefined ||
+    targetDigest === undefined || backupAttemptId === undefined ||
+    expectedCurrentRevision === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    environment: "production",
+    recovery_id: recoveryId,
+    method,
+    target_revision_id: targetRevision,
+    target_bookmark: targetBookmark,
+    target_digest: targetDigest,
+    backup_attempt_id: backupAttemptId,
+    expected_current_revision_id: expectedCurrentRevision,
+    idempotency_key: idempotencyKey,
+    ...(linkedOperationId === undefined
+      ? {}
+      : { linked_operation_id: linkedOperationId }),
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/recoveries",
+    "POST",
+    request,
+  );
+}
+
+async function inspectRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--recovery-id"]);
+  const recoveryId = options.values["--recovery-id"];
+  if (options.error !== null || recoveryId === undefined) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
+    "GET",
+  );
+}
+
+async function verifyRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--target-digest",
+    "--idempotency-key",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const targetDigest = options.values["--target-digest"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    targetDigest === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery verification requires --environment production.",
+    );
+  }
+  const resolved = await resolveRecoveryTarget(
+    environment,
+    json,
+    recoveryId,
+    targetDigest,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    target_digest: targetDigest,
+    idempotency_key: idempotencyKey,
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    recovery_id: recoveryId,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}/verification`,
+    "POST",
+    request,
+  );
+}
+
+async function acceptRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--expected-restored-revision",
+    "--target-digest",
+    "--confirmation-recovery-id",
+    "--idempotency-key",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const expectedRestoredRevision =
+    options.values["--expected-restored-revision"];
+  const targetDigest = options.values["--target-digest"];
+  const confirmationRecoveryId =
+    options.values["--confirmation-recovery-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    expectedRestoredRevision === undefined || targetDigest === undefined ||
+    confirmationRecoveryId === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery acceptance requires --environment production.",
+    );
+  }
+  const resolved = await resolveRecoveryTarget(
+    environment,
+    json,
+    recoveryId,
+    targetDigest,
+    expectedRestoredRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    expected_restored_revision_id: expectedRestoredRevision,
+    target_digest: targetDigest,
+    confirmation_recovery_id: confirmationRecoveryId,
+    idempotency_key: idempotencyKey,
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    recovery_id: recoveryId,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}/acceptance`,
+    "POST",
+    request,
+  );
+}
+
 async function collectSource(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--game",
@@ -972,6 +1182,61 @@ async function resolveSearchRepairTarget(
   return resolved;
 }
 
+async function resolveRecoveryTarget(
+  environment,
+  json,
+  recoveryId,
+  targetDigest,
+  expectedRestoredRevision,
+) {
+  const observed = await fetchAdministrationDocument(
+    environment,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
+  );
+  const failed = writeObservedFailure(observed, json);
+  if (failed !== null) return failed;
+  const recovery = observed.document;
+  if (
+    recovery?.id !== recoveryId || recovery?.target_digest !== targetDigest ||
+    (expectedRestoredRevision !== undefined &&
+      recovery?.target_revision_id !== expectedRestoredRevision) ||
+    typeof recovery?.expected_current_revision_id !== "string"
+  ) {
+    return resolvedTargetFailure(
+      json,
+      "The production recovery operation does not match the supplied exact target evidence.",
+    );
+  }
+  const status = await fetchAdministrationDocument(environment, "/v1/status");
+  const failedStatus = writeObservedFailure(status, json);
+  if (failedStatus !== null) return failedStatus;
+  const currentRevision = status.document?.safe_state?.current_revision_id;
+  if (
+    currentRevision !== recovery.expected_current_revision_id &&
+    currentRevision !== recovery.target_revision_id
+  ) {
+    return resolvedTargetFailure(
+      json,
+      "Production does not resolve to either the recovery source or restored Catalogue Revision.",
+    );
+  }
+  const productionTarget = validatedProductionTarget(
+    status.document?.production_target,
+  );
+  if (productionTarget === null) {
+    return writeFailure(
+      json,
+      {
+        code: "invalid_administration_contract",
+        detail:
+          "Production status did not expose exact Cloudflare target identities.",
+      },
+      8,
+    );
+  }
+  return { productionTarget };
+}
+
 async function resolveProductionStatus(
   environment,
   json,
@@ -1118,7 +1383,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | backup create | backup status | backup retry | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
@@ -1190,6 +1455,7 @@ function formatStatus(document) {
     `Active Ingestion Run: ${
       safeState.active_ingestion_run_id ?? "none"
     }`,
+    `Active Recovery: ${safeState.active_recovery_id ?? "none"}`,
   ];
   const diagnostics = document.diagnostics ?? {};
   lines.push(

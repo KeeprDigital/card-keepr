@@ -599,15 +599,28 @@ export async function createVerifiedCatalogueBackup(
         contentSha256 = retainedEvidence.sha256;
         exportBytes = retainedEvidence.size;
       } else {
-        const exported = await withCardSearchPreparedForD1Export(
-          database,
-          { ownerToken, observedAt: leaseObservedAt, leaseExpiresAt },
-          () => provider.exportSql({
-            accountId: input.cloudflareAccountId,
-            databaseId: input.catalogueDatabaseId,
-            token: input.exportToken,
-          }),
-        );
+        await database.prepare(
+          `UPDATE operation_state SET recovery_restore_guard = 'blocked'
+           WHERE singleton = 1 AND recovery_restore_guard = 'clear'`,
+        ).run();
+        let exported;
+        try {
+          exported = await withCardSearchPreparedForD1Export(
+            database,
+            { ownerToken, observedAt: leaseObservedAt, leaseExpiresAt },
+            () => provider.exportSql({
+              accountId: input.cloudflareAccountId,
+              databaseId: input.catalogueDatabaseId,
+              token: input.exportToken,
+            }),
+          );
+        } finally {
+          await database.prepare(
+            `UPDATE operation_state SET recovery_restore_guard = 'clear'
+             WHERE singleton = 1 AND recovery_restore_guard = 'blocked'
+               AND active_recovery_id IS NULL`,
+          ).run();
+        }
         exportedBookmark = exported.bookmark;
         const sized = new FixedLengthStream(exported.size);
         const contentDigest = new StreamingSha256();

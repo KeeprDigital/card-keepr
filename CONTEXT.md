@@ -96,6 +96,15 @@ _Avoid_: Mutable retry, Catalogue Export
 A temporary restoration used only to prove that a Backup Attempt can recover its Catalogue Revision.
 _Avoid_: Recovery operation, current catalogue
 
+**Catalogue Recovery**:
+An immutable, owner-accepted operation that restores the current catalogue from
+one exact verified Backup Attempt, either through its D1 Time Travel bookmark or
+through a replacement database. It is distinct from the Backup Attempt's
+Disposable Restore: that restore proves recoverability, while Catalogue Recovery
+changes the production catalogue and keeps mutation blocked until verification
+and explicit acceptance.
+_Avoid_: Backup Attempt, Disposable Restore, deployment
+
 **Restore Generation**:
 One clean Disposable Restore target within a Backup Attempt. A new generation supersedes an ambiguous or failed import instead of reusing its populated target.
 _Avoid_: Backup Attempt, database version

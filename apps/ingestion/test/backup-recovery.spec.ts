@@ -58,7 +58,7 @@ beforeEach(async () => {
 test("restored verification executes the real D1 schema and rejects an empty or partial catalogue", async () => {
   await expect(verifyRestoredCatalogue(testEnv.CATALOGUE_DB, {
     expectedRevisionId: "catrev_spine_000",
-    expectedSchemaMigrationLevel: 15,
+    expectedSchemaMigrationLevel: 16,
     expected: {
       cards: 0,
       printings: 0,
@@ -142,7 +142,7 @@ test("the production backup boundary exports and verifies the exact restored rev
       events.push(`verify:${input.databaseId}`);
       expect(input.expectedRevisionId).toBe("catrev_spine_000");
       expect(input.ownerToken).toMatch(/^backup:/);
-      expect(input.expectedSchemaMigrationLevel).toBe(15);
+      expect(input.expectedSchemaMigrationLevel).toBe(16);
       return completeRestoredVerification();
     },
   };
@@ -230,7 +230,7 @@ test("the production backup boundary exports and verifies the exact restored rev
     exported_at: "2026-08-05T02:00:00.000Z",
     object_key: document.object_key,
     producing_workflow_identity: "backup-production-boundary",
-    schema_migration_level: 15,
+    schema_migration_level: 16,
     expected_evidence: {
       cards: 0,
       printings: 0,

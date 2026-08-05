@@ -94,6 +94,23 @@ test("guarded reconciliation and bounded search repair are normative administrat
     schema.$defs.CatalogueBackupCommandRequest.additionalProperties,
     false,
   );
+  assert.equal(
+    schema.$defs.CatalogueRecoveryBeginCommandRequest.additionalProperties,
+    false,
+  );
+  assert.deepEqual(
+    schema.$defs.CatalogueRecoveryVerifyCommandRequest.required,
+    ["target_digest", "idempotency_key"],
+  );
+  assert.deepEqual(
+    schema.$defs.CatalogueRecoveryAcceptCommandRequest.required,
+    [
+      "expected_restored_revision_id",
+      "target_digest",
+      "confirmation_recovery_id",
+      "idempotency_key",
+    ],
+  );
   const contract = await readFile(
     resolve(
       root,
@@ -464,6 +481,141 @@ test("CLI backup create confirms the exact target before the operation", async (
       expected_current_revision_id: "catrev_cli_demo",
       idempotency_key: "backup-cli-confirmed-target",
     },
+  });
+});
+
+test("CLI recovery commands resolve and confirm exact production evidence", async (t) => {
+  const requests = [];
+  const targetDigest = "c".repeat(64);
+  const recovery = {
+    contract: "card-keepr-catalogue-recovery@1",
+    id: "recovery-cli-exact",
+    state: "validating",
+    target_revision_id: "catrev_cli_restored",
+    target_digest: targetDigest,
+    expected_current_revision_id: "catrev_cli_demo",
+  };
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.statusCode = request.method === "POST" ? 201 : 200;
+    response.end(JSON.stringify(recovery));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const beginBody = {
+    environment: "production",
+    recovery_id: recovery.id,
+    method: "time_travel",
+    target_revision_id: recovery.target_revision_id,
+    target_bookmark: "bookmark-cli-restored",
+    target_digest: targetDigest,
+    backup_attempt_id: "backup-cli-restored",
+    expected_current_revision_id: recovery.expected_current_revision_id,
+    idempotency_key: "recovery-cli-begin",
+  };
+  const begun = await runCli([
+    "recovery", "begin",
+    "--recovery-id", recovery.id,
+    "--method", "time_travel",
+    "--target-revision", recovery.target_revision_id,
+    "--target-bookmark", "bookmark-cli-restored",
+    "--target-digest", targetDigest,
+    "--backup-attempt-id", "backup-cli-restored",
+    "--expected-current-revision", recovery.expected_current_revision_id,
+    "--idempotency-key", "recovery-cli-begin",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      ...beginBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(begun.code, 0, begun.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/recoveries",
+    body: beginBody,
+  });
+
+  const inspected = await runCli([
+    "recovery", "inspect", "--recovery-id", recovery.id, "--json",
+  ], environment);
+  assert.equal(inspected.code, 0, inspected.stderr);
+  assert.equal(requests.at(-1).path, `/v1/recoveries/${recovery.id}`);
+
+  const verifyBody = {
+    target_digest: targetDigest,
+    idempotency_key: "recovery-cli-verify",
+  };
+  const verified = await runCli([
+    "recovery", "verify",
+    "--recovery-id", recovery.id,
+    "--target-digest", targetDigest,
+    "--idempotency-key", "recovery-cli-verify",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      recovery_id: recovery.id,
+      ...verifyBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(verified.code, 0, verified.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: `/v1/recoveries/${recovery.id}/verification`,
+    body: verifyBody,
+  });
+
+  const acceptBody = {
+    expected_restored_revision_id: recovery.target_revision_id,
+    target_digest: targetDigest,
+    confirmation_recovery_id: recovery.id,
+    idempotency_key: "recovery-cli-accept",
+  };
+  const accepted = await runCli([
+    "recovery", "accept",
+    "--recovery-id", recovery.id,
+    "--expected-restored-revision", recovery.target_revision_id,
+    "--target-digest", targetDigest,
+    "--confirmation-recovery-id", recovery.id,
+    "--idempotency-key", "recovery-cli-accept",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      recovery_id: recovery.id,
+      ...acceptBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: `/v1/recoveries/${recovery.id}/acceptance`,
+    body: acceptBody,
   });
 });
 
