@@ -45,6 +45,7 @@ import {
 import { canonicalJson, sha256Text } from "./serialization";
 import {
   applyPinnedCuratedRevisions,
+  CuratedRevisionSourceChangeError,
   stripCuratedRevisionEffects,
 } from "./curated-revisions";
 import type { CuratedProvenance } from "./curated-provenance";
@@ -1196,12 +1197,73 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
-  candidate = await applyPinnedCuratedRevisions(
-    database,
-    runId,
-    candidate,
-    observedAt,
-  );
+  try {
+    candidate = await applyPinnedCuratedRevisions(
+      database,
+      runId,
+      candidate,
+      observedAt,
+      { deferSourceChangeFailure: true },
+    );
+  } catch (error) {
+    if (!(error instanceof CuratedRevisionSourceChangeError)) throw error;
+    candidate = error.candidate;
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      candidate,
+      plans,
+      checkedSourceLineages,
+    );
+    const diagnostics = [...error.diagnostics].sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
+    const digestPayloadJson = reconciliationDigestPayload({
+      candidate,
+      partitions: retained.partitions,
+      plans,
+      state: "failed",
+      publishable: false,
+      sourceObservationSetId: retained.observationSetId,
+      observedCards,
+      observedPrintings,
+      observedProducts: productCatalogue.observedProducts,
+      diagnostics,
+      warnings,
+    });
+    const candidateDigest = await sha256Text(digestPayloadJson);
+    await persistBlockedCandidate(database, {
+      runId,
+      observationSetId: retained.observationSetId,
+      sourceSnapshotId: retained.sourceSnapshotId,
+      sourceLineage: retained.sourceLineage,
+      partitions: retained.partitions,
+      plans,
+      diagnostics,
+      candidate,
+      digestPayloadJson,
+      candidateDigest,
+      candidateCatalogueDigest,
+      observedAt,
+      failureCode: "curated_revision_reconfirmation_required",
+      atomicStatements: error.atomicStatements,
+    });
+    return {
+      contract: "card-keepr-card-printing-reconciliation@2",
+      run_id: runId,
+      state: "failed",
+      publishable: false,
+      candidate_digest: candidateDigest,
+      expected_current_revision_id: run.expected_current_revision_id,
+      source_observation_set_id: retained.observationSetId,
+      cards: observedCards,
+      printings: observedPrintings,
+      products: productCatalogue.observedProducts,
+      errata: candidate.errata ?? [],
+      legality_rules: candidate.legality_rules ?? [],
+      diagnostics,
+      warnings,
+    };
+  }
   candidateCatalogueDigest = await catalogueDataDigest(
     database,
     candidate,

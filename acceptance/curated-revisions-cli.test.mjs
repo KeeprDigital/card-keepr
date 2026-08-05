@@ -198,6 +198,80 @@ test("CLI retirement resolves the exact revision and production identities befor
   });
 });
 
+test("CLI supersession sends the required explicit null conflict binding", async (t) => {
+  const observed = [];
+  const revision = {
+    id: "currev_123",
+    content: { game: "one-piece", target: fixtureProposal().target },
+    content_digest: "d".repeat(64),
+    event_version: 1,
+    pending_conflict: null,
+  };
+  const proposal = {
+    ...fixtureProposal(),
+    supersedes_revision_id: revision.id,
+  };
+  const resultDocument = {
+    operation_id: "curop_supersede",
+    curated_revision_id: "currev_456",
+    status: "active",
+    event_version: 1,
+    content_digest: "b".repeat(64),
+    current_catalogue_revision_id: "catrev_123",
+    code: "curated_revision_superseded",
+  };
+  const server = await jsonServer(t, observed, (request) =>
+    request.method === "GET"
+      ? { revision, events: [] }
+      : resultDocument
+  );
+  const directory = await mkdtemp(join(tmpdir(), "keepr-curated-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = join(directory, "replacement.json");
+  await writeFile(file, JSON.stringify(proposal));
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    operation: "supersede",
+    current_catalogue_revision_id: "catrev_123",
+    curated_revision_id: revision.id,
+    expected_event_version: 1,
+    conflict_digest: null,
+    idempotency_key: "supersede-123",
+    replacement_supported_game: "one-piece",
+    replacement_target: proposal.target,
+    replacement_content_digest: "b".repeat(64),
+    affected_supported_game: "one-piece",
+    current_content_digest: revision.content_digest,
+    target: revision.content.target,
+    conflict_id: null,
+  });
+  const result = await runCli([
+    "curated-revision", "supersede",
+    "--revision-id", revision.id,
+    "--event-version", "1",
+    "--proposal", file,
+    "--proposal-digest", "b".repeat(64),
+    "--rationale", "Replace the exception",
+    "--expected-current-revision", "catrev_123",
+    "--idempotency-key", "supersede-123",
+    "--environment", "production",
+    "--confirm", confirmation,
+    "--secrets-stdin-fd", "3",
+    "--yes", "--json",
+  ], server.environment, { administration_key: "cli-admin-key" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(observed[2].body, {
+    environment: "production",
+    expected_current_revision_id: "catrev_123",
+    expected_event_version: 1,
+    conflict_digest: null,
+    rationale: "Replace the exception",
+    idempotency_key: "supersede-123",
+    proposal,
+    proposal_digest: "b".repeat(64),
+  });
+});
+
 async function jsonServer(t, observed, document, status = 200) {
   const server = createServer((request, response) => {
     let body = "";

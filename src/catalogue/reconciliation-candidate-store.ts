@@ -181,15 +181,15 @@ export async function persistBlockedCandidate(
     candidateDigest: string;
     candidateCatalogueDigest: string;
     observedAt: string;
+    failureCode?: string;
+    atomicStatements?: readonly D1PreparedStatement[];
   },
 ): Promise<void> {
   const approvalDeadline = new Date(
     Date.parse(input.observedAt) + 7 * 24 * 60 * 60 * 1_000,
   ).toISOString();
-  const runDiagnostics = input.diagnostics.map((diagnostic) => ({
-    code: String(diagnostic.code),
-    detail: String(diagnostic.detail),
-  }));
+  const runDiagnostics = input.diagnostics.map(publicRunDiagnostic);
+  const failureCode = input.failureCode ?? "printing_reconciliation_blocked";
   const statements = [
     database
       .prepare(
@@ -233,6 +233,7 @@ export async function persistBlockedCandidate(
       input.plans,
       canonicalJson(input.diagnostics),
     ),
+    ...(input.atomicStatements ?? []),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -243,7 +244,7 @@ export async function persistBlockedCandidate(
              candidate_created_at = ?,
              approval_deadline = ?,
              terminal_at = ?,
-             failure_code = 'printing_reconciliation_blocked',
+             failure_code = ?,
              warnings_json = ?,
              progress_json =
                '{"completed_stages":["planning","collecting","parsing","reconciling"],"current_stage":"failed"}'
@@ -256,6 +257,7 @@ export async function persistBlockedCandidate(
         input.observedAt,
         approvalDeadline,
         input.observedAt,
+        failureCode,
         canonicalJson(runDiagnostics),
         input.runId,
       ),
@@ -268,6 +270,24 @@ export async function persistBlockedCandidate(
       .bind(input.runId),
   ];
   await database.batch(guardedAtomicBatch(statements));
+}
+
+function publicRunDiagnostic(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  const base = {
+    code: String(diagnostic.code),
+    detail: String(diagnostic.detail),
+  };
+  if (diagnostic.code !== "curated_revision_reconfirmation_required") {
+    return base;
+  }
+  return {
+    ...base,
+    curated_revision_id: diagnostic.curated_revision_id,
+    conflict_id: diagnostic.conflict_id,
+    conflict_digest: diagnostic.conflict_digest,
+  };
 }
 
 export async function failReconciliation(

@@ -49,6 +49,9 @@ const relationshipEndpointPairs: Readonly<Record<string, string>> = {
   "distribution-context-product": "distribution_context->product",
   "product-card": "product->card",
 };
+export const curatedSourceAbsence = Object.freeze({
+  contract: "card-keepr-curated-source-absence@1" as const,
+});
 const fieldAjv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(fieldAjv);
 
@@ -136,7 +139,7 @@ export async function validateCuratedRevision(
       throw new AdministrationProblem(422, "curated_revision_assertion_type_invalid", "The assertion value does not match the shared schema field type.");
     }
     const digest = await sha256Text(canonicalJson(
-      sourceValue.found ? sourceValue.value : null,
+      reviewedFieldSource(sourceValue),
     ));
     if (digest !== proposal.reviewed_source_digest) {
       throw new AdministrationProblem(409, "curated_revision_reviewed_source_mismatch", "The reviewed Official Source value does not match the current Catalogue Revision.");
@@ -302,6 +305,7 @@ export async function retireCuratedRevision(
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "expected_event_version", "conflict_digest", "rationale", "idempotency_key"]);
+  requiredOwnField(input, "conflict_digest");
   const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
@@ -333,6 +337,7 @@ export async function supersedeCuratedRevision(
   observedAt: string,
 ): Promise<{ created: boolean; document: MutationResult }> {
   onlyFields(input, ["environment", "expected_current_revision_id", "expected_event_version", "conflict_digest", "proposal", "proposal_digest", "rationale", "idempotency_key"]);
+  requiredOwnField(input, "conflict_digest");
   const mutation = await existingRevisionMutation(database, revisionId, input, observedAt);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
@@ -507,6 +512,7 @@ export async function prepareCuratedRevisionRunStart(
   candidate: CatalogueCandidate;
   statements: D1PreparedStatement[];
   conflictRevisionIds: readonly string[];
+  diagnostics: readonly Record<string, unknown>[];
   failureCode: string | null;
 }> {
   if (!(await curatedRevisionSchemaAvailable(database))) {
@@ -514,6 +520,7 @@ export async function prepareCuratedRevisionRunStart(
       candidate,
       statements: [],
       conflictRevisionIds: [],
+      diagnostics: [],
       failureCode: null,
     };
   }
@@ -539,7 +546,7 @@ export async function prepareCuratedRevisionRunStart(
         officialTarget,
         pointerParts(proposal.target.path),
       );
-      reviewedSourceValue = source.found ? source.value : null;
+      reviewedSourceValue = reviewedFieldSource(source);
     } else {
       reviewedSourceValue = relationshipPresent(official, proposal)
         ? "present"
@@ -557,18 +564,20 @@ export async function prepareCuratedRevisionRunStart(
     observedAt,
   );
   if (conflicts.length > 0) {
+    const sourceChanges = await preparedSourceChangeStatements(
+      database,
+      runId,
+      conflicts,
+      observedAt,
+    );
     return {
       candidate: official,
       statements: [
         ...pinStatements,
-        ...await preparedSourceChangeStatements(
-          database,
-          runId,
-          conflicts,
-          observedAt,
-        ),
+        ...sourceChanges.statements,
       ],
       conflictRevisionIds: conflicts.map(({ row }) => row.id),
+      diagnostics: sourceChanges.diagnostics,
       failureCode: "curated_revision_reconfirmation_required",
     };
   }
@@ -596,6 +605,7 @@ export async function prepareCuratedRevisionRunStart(
       candidate: official,
       statements: pinStatements,
       conflictRevisionIds: [],
+      diagnostics: [],
       failureCode: "curated_revision_composed_candidate_invalid",
     };
   }
@@ -603,6 +613,7 @@ export async function prepareCuratedRevisionRunStart(
     candidate: result,
     statements: pinStatements,
     conflictRevisionIds: [],
+    diagnostics: [],
     failureCode: null,
   };
 }
@@ -650,8 +661,12 @@ async function preparedSourceChangeStatements(
     reviewedSourceValue: unknown;
   }[],
   at: string,
-): Promise<D1PreparedStatement[]> {
+): Promise<{
+  statements: D1PreparedStatement[];
+  diagnostics: Record<string, unknown>[];
+}> {
   const statements: D1PreparedStatement[] = [];
+  const diagnostics: Record<string, unknown>[] = [];
   for (const conflict of conflicts) {
     const observed = await sha256Text(canonicalJson(conflict.reviewedSourceValue));
     const version = conflict.row.event_version + 1;
@@ -669,6 +684,7 @@ async function preparedSourceChangeStatements(
       previous_source_digest: conflict.row.reviewed_source_digest,
       observed_source_digest: observed,
     };
+    diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
       database.prepare(
         "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active' AND event_version = ?",
@@ -680,7 +696,7 @@ async function preparedSourceChangeStatements(
       ).bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
     );
   }
-  return statements;
+  return { statements, diagnostics };
 }
 
 async function curatedRevisionPinStatements(
@@ -737,6 +753,7 @@ export async function applyPinnedCuratedRevisions(
   runId: string,
   candidate: CatalogueCandidate,
   observedAt: string,
+  options: { deferSourceChangeFailure?: boolean } = {},
 ): Promise<CatalogueCandidate> {
   if (!(await curatedRevisionSchemaAvailable(database))) return candidate;
   const [rows, run] = await Promise.all([database.prepare(
@@ -773,7 +790,7 @@ export async function applyPinnedCuratedRevisions(
     if (proposal.target.kind === "field") {
       const parts = pointerParts(proposal.target.path);
       const source = valueAt(target, parts);
-      const reviewedSourceValue = source.found ? source.value : null;
+      const reviewedSourceValue = reviewedFieldSource(source);
       comparisons.push({
         row,
         proposal,
@@ -796,6 +813,19 @@ export async function applyPinnedCuratedRevisions(
   }
   const conflicts = comparisons.filter(({ changed }) => changed);
   if (conflicts.length > 0) {
+    if (options.deferSourceChangeFailure === true) {
+      const persistence = await sourceChangePersistence(
+        database,
+        runId,
+        conflicts,
+        observedAt,
+      );
+      throw new CuratedRevisionSourceChangeError(
+        official,
+        persistence.statements,
+        persistence.diagnostics,
+      );
+    }
     await recordSourceChanges(database, runId, conflicts, observedAt);
     throw new Error("curated_revision_reconfirmation_required");
   }
@@ -867,6 +897,11 @@ export async function curatedRevisionInspectionForRun(
 } | null> {
   const set = await curatedRevisionSetForRun(database, runId);
   if (set === null) return null;
+  const run = await database.prepare(
+    "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
+  ).bind(runId).first<{ state: string; failure_code: string | null }>();
+  const sourceChangeFailure = run?.state === "failed" &&
+    run.failure_code === "curated_revision_reconfirmation_required";
   const expectedDigest = await sha256Text(canonicalJson(set.revision_ids));
   if (expectedDigest !== set.set_digest) {
     throw new Error("The immutable Curated Revision pin-set digest is invalid.");
@@ -887,7 +922,7 @@ export async function curatedRevisionInspectionForRun(
     canonicalJson(set.revision_ids)) {
     throw new Error("The immutable Curated Revision pin-set rows are invalid.");
   }
-  const effects = rows.results.map((row) => {
+  const effects = rows.results.flatMap((row) => {
     const proposal = structuralProposal(JSON.parse(row.proposal_json));
     if (!candidateContainsCuratedRevision(
       candidate,
@@ -895,16 +930,17 @@ export async function curatedRevisionInspectionForRun(
       row.revision_id,
       row.content_digest,
     )) {
+      if (sourceChangeFailure) return [];
       throw new Error(
         `Candidate is missing applied Curated Revision ${row.revision_id}.`,
       );
     }
-    return {
+    return [{
       revision_id: row.revision_id,
       target: targetKey(proposal),
       assertion: structuredClone(proposal.assertion),
       evidence_category: "curated",
-    };
+    }];
   });
   return {
     revision_ids: set.revision_ids,
@@ -1008,7 +1044,11 @@ export function stripCuratedRevisionEffects(
     for (const item of provenance) {
       const target = item.target;
       if (target.kind === "field" && typeof target.path === "string") {
-        setAt(entity, pointerParts(target.path), item.reviewed_source_value);
+        restoreReviewedField(
+          entity,
+          pointerParts(target.path),
+          item.reviewed_source_value,
+        );
       }
     }
     delete entity.curated_provenance;
@@ -1055,7 +1095,32 @@ async function recordSourceChanges(
   }[],
   at: string,
 ) {
+  const persistence = await sourceChangePersistence(
+    database,
+    runId,
+    conflicts,
+    at,
+  );
+  await database.batch([
+    ...persistence.statements,
+    ...sourceChangeRunFailureStatements(database, runId, at),
+  ]);
+}
+
+async function sourceChangePersistence(
+  database: D1Database,
+  runId: string,
+  conflicts: readonly {
+    row: { id: string; reviewed_source_digest: string };
+    reviewedSourceValue: unknown;
+  }[],
+  at: string,
+): Promise<{
+  statements: D1PreparedStatement[];
+  diagnostics: Record<string, unknown>[];
+}> {
   const statements: D1PreparedStatement[] = [];
+  const diagnostics: Record<string, unknown>[] = [];
   for (const conflict of conflicts) {
     const revision = await database.prepare(
       "SELECT status, event_version FROM curated_revisions WHERE id = ?",
@@ -1077,6 +1142,7 @@ async function recordSourceChanges(
       previous_source_digest: conflict.row.reviewed_source_digest,
       observed_source_digest: observed,
     };
+    diagnostics.push(sourceChangeDiagnostic(conflict.row.id, details));
     statements.push(
       database.prepare(
         "UPDATE curated_revisions SET status = 'reconfirmation_required', event_version = ? WHERE id = ? AND status = 'active'",
@@ -1088,7 +1154,15 @@ async function recordSourceChanges(
       ).bind(conflict.row.id, version, canonicalJson(details), at, conflict.row.id, version),
     );
   }
-  statements.push(
+  return { statements, diagnostics };
+}
+
+function sourceChangeRunFailureStatements(
+  database: D1Database,
+  runId: string,
+  at: string,
+): D1PreparedStatement[] {
+  return [
     database.prepare(
       `UPDATE ingestion_runs
        SET state = 'failed', terminal_at = ?,
@@ -1103,8 +1177,17 @@ async function recordSourceChanges(
       `UPDATE operation_state SET active_ingestion_run_id = NULL
        WHERE singleton = 1 AND active_ingestion_run_id = ?`,
     ).bind(runId),
-  );
-  await database.batch(statements);
+  ];
+}
+
+export class CuratedRevisionSourceChangeError extends Error {
+  constructor(
+    readonly candidate: CatalogueCandidate,
+    readonly atomicStatements: readonly D1PreparedStatement[],
+    readonly diagnostics: readonly Record<string, unknown>[],
+  ) {
+    super("curated_revision_reconfirmation_required");
+  }
 }
 
 type PendingConflict = {
@@ -1114,6 +1197,19 @@ type PendingConflict = {
   previous_source_digest: string;
   observed_source_digest: string;
 };
+
+function sourceChangeDiagnostic(
+  revisionId: string,
+  conflict: PendingConflict,
+): Record<string, unknown> {
+  return {
+    code: "curated_revision_reconfirmation_required",
+    detail: `Official Source evidence changed for Curated Revision ${revisionId}.`,
+    curated_revision_id: revisionId,
+    conflict_id: conflict.conflict_id,
+    conflict_digest: conflict.conflict_digest,
+  };
+}
 
 type ExistingMutation = {
   replay: { created: boolean; document: MutationResult } | null;
@@ -1202,7 +1298,7 @@ async function pendingConflict(
 
 function assertConflictBinding(conflict: PendingConflict | null, supplied: unknown): void {
   if (conflict === null) {
-    if (supplied !== null && supplied !== undefined) {
+    if (supplied !== null) {
       throw new AdministrationProblem(409, "curated_revision_has_no_pending_conflict", "The Curated Revision has no pending source conflict.");
     }
     return;
@@ -1362,7 +1458,7 @@ async function validateSupersedingProposal(
 async function sourceDigestForProposal(target: Record<string, unknown>, proposal: Proposal): Promise<string> {
   if (proposal.target.kind === "field") {
     const source = valueAt(target, pointerParts(proposal.target.path));
-    return sha256Text(canonicalJson(source.found ? source.value : null));
+    return sha256Text(canonicalJson(reviewedFieldSource(source)));
   }
   return sha256Text(canonicalJson(relationshipPresent(target as unknown as CatalogueCandidate, proposal) ? "present" : "absent"));
 }
@@ -1482,7 +1578,11 @@ function stripCuratedEntityEffects(
     : [];
   for (const item of provenance) {
     if (item.target.kind === "field") {
-      setAt(entity, pointerParts(item.target.path), item.reviewed_source_value);
+      restoreReviewedField(
+        entity,
+        pointerParts(item.target.path),
+        item.reviewed_source_value,
+      );
     }
   }
   delete entity.curated_provenance;
@@ -1682,10 +1782,37 @@ function valueAt(target: Record<string, unknown>, parts: string[]): { found: boo
   }
   return { found: true, value };
 }
+function reviewedFieldSource(source: { found: boolean; value: unknown }): unknown {
+  return source.found ? source.value : curatedSourceAbsence;
+}
+function isCuratedSourceAbsence(value: unknown): boolean {
+  return record(value) && Object.keys(value).length === 1 &&
+    value.contract === curatedSourceAbsence.contract;
+}
+function restoreReviewedField(
+  target: Record<string, unknown>,
+  parts: readonly string[],
+  reviewedSourceValue: unknown,
+): void {
+  if (isCuratedSourceAbsence(reviewedSourceValue)) {
+    deleteAt(target, parts);
+    return;
+  }
+  setAt(target, parts, reviewedSourceValue);
+}
 function setAt(target: Record<string, unknown>, parts: readonly string[], value: unknown) {
   let parent: Record<string, unknown> = target;
   for (const part of parts.slice(0, -1)) parent = parent[part] as Record<string, unknown>;
   parent[parts.at(-1)!] = structuredClone(value);
+}
+function deleteAt(target: Record<string, unknown>, parts: readonly string[]): void {
+  let parent: Record<string, unknown> = target;
+  for (const part of parts.slice(0, -1)) {
+    const child = parent[part];
+    if (!record(child) && !Array.isArray(child)) return;
+    parent = child as Record<string, unknown>;
+  }
+  delete parent[parts.at(-1)!];
 }
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function opaque(value: unknown): value is string { return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value); }
@@ -1987,4 +2114,5 @@ function absoluteUri(value: string): boolean {
 }
 function requiredString(value: unknown, field: string): string { if (typeof value !== "string" || value.length === 0) invalid(`${field} must be a non-empty string.`); return value as string; }
 function onlyFields(value: Record<string, unknown>, fields: readonly string[]) { const extra = Object.keys(value).find((key) => !fields.includes(key)); if (extra) invalid(`${extra} is not accepted.`); }
+function requiredOwnField(value: Record<string, unknown>, field: string): void { if (!Object.hasOwn(value, field)) invalid(`${field} is required, including when null.`); }
 function invalid(detail: string): never { throw new AdministrationProblem(422, "curated_revision_schema_invalid", detail); }

@@ -181,16 +181,11 @@ const ingestionWorker = {
         url.pathname === "/admin/v1/curated-revisions/validate"
       ) {
         const body = await readAdministrationBody(request);
-        assertOnlyFields(body, ["proposal", "catalogue_revision_id", "expected_current_revision_id"]);
-        if (body.catalogue_revision_id !== undefined && body.expected_current_revision_id !== undefined) {
-          throw new AdministrationProblem(422, "curated_revision_schema_invalid", "Supply catalogue_revision_id exactly once.");
-        }
+        assertOnlyFields(body, ["proposal", "catalogue_revision_id"]);
         return Response.json(await validateCuratedRevision(
           env.CATALOGUE_DB,
           body.proposal,
-          body.catalogue_revision_id === undefined
-            ? requiredString(body, "expected_current_revision_id")
-            : requiredString(body, "catalogue_revision_id"),
+          requiredString(body, "catalogue_revision_id"),
         ));
       }
       if (

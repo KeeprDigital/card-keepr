@@ -498,18 +498,19 @@ export async function inspectCandidate(
   );
   assertOpaqueId(runId, "run_id");
   const row = await requiredRun(database, runId);
-  const blockedReconciliation =
+  const inspectableFailure =
     row.state === "failed" &&
     row.candidate_digest !== null &&
-    (await database
-      .prepare(
-        `SELECT 1 AS present
-         FROM reconciliation_contexts
-         WHERE ingestion_run_id = ?`,
-      )
-      .bind(row.id)
-      .first<{ present: number }>()) !== null;
-  if (row.state !== "awaiting_approval" && !blockedReconciliation) {
+    (row.failure_code === "curated_revision_reconfirmation_required" ||
+      (await database
+        .prepare(
+          `SELECT 1 AS present
+           FROM reconciliation_contexts
+           WHERE ingestion_run_id = ?`,
+        )
+        .bind(row.id)
+        .first<{ present: number }>()) !== null);
+  if (row.state !== "awaiting_approval" && !inspectableFailure) {
     throw new AdministrationProblem(
       409,
       "candidate_not_approvable",
@@ -1205,7 +1206,7 @@ async function startPreparedRun(
     progress_json: JSON.stringify(progressFor(
       curatedFailure ? "failed" : "awaiting_approval",
     )),
-    warnings_json: "[]",
+    warnings_json: canonicalJson(curated.diagnostics),
     approval_history_json: "[]",
     publication_outcome: null,
     resulting_revision_id: null,
@@ -1250,7 +1251,7 @@ async function startPreparedRun(
           ) VALUES (
             ?, 'planning', ?, ?, ?, ?, ?,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
-            NULL, ?, '[]', '[]', NULL, NULL, NULL
+            NULL, ?, ?, '[]', NULL, NULL, NULL
           )`,
         )
         .bind(
@@ -1262,6 +1263,7 @@ async function startPreparedRun(
           input.idempotencyKey,
           candidateJson,
           JSON.stringify(progressFor("planning")),
+          canonicalJson(curated.diagnostics),
         ),
       ...curatedPinStatements,
       ...(curatedFailure
@@ -3858,7 +3860,9 @@ async function assertSuccessfulReplayCorrelation(
         typeof request.source_run_id === "string" &&
         run.linked_run_id === request.source_run_id &&
         run.idempotency_key === key &&
-        run.state === "awaiting_approval";
+        (run.state === "awaiting_approval" ||
+          run.state === "failed" &&
+          run.failure_code === "curated_revision_reconfirmation_required");
     } else if (prior.operation === "approve_ingestion_run") {
       correlated =
         hasOnlyKeys(request, [
@@ -5281,9 +5285,21 @@ function validCompletedStageCount(
 }
 
 function isWarningDocument(value: unknown): value is Record<string, unknown> {
+  const curatedConflict = isRecord(value) &&
+    hasOnlyKeys(value, [
+      "code", "detail", "curated_revision_id", "conflict_id",
+      "conflict_digest",
+    ]) &&
+    value.code === "curated_revision_reconfirmation_required" &&
+    typeof value.curated_revision_id === "string" &&
+    isOpaqueIdentity(value.curated_revision_id) &&
+    typeof value.conflict_id === "string" &&
+    isOpaqueIdentity(value.conflict_id) &&
+    typeof value.conflict_digest === "string" &&
+    isSha256Digest(value.conflict_digest);
   return (
     isRecord(value) &&
-    (hasOnlyKeys(value, ["code", "detail"]) ||
+    (curatedConflict || hasOnlyKeys(value, ["code", "detail"]) ||
       hasOnlyKeys(value, ["code", "detail", "severity"])) &&
     typeof value.code === "string" &&
     value.code.length > 0 &&

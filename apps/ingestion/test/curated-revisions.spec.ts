@@ -7,6 +7,7 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   applyPinnedCuratedRevisions,
   createCuratedRevision,
+  curatedSourceAbsence,
   pinCuratedRevisionsForRun,
   prepareCuratedRevisionRunStart,
   reaffirmCuratedRevision,
@@ -363,6 +364,64 @@ test("validate derives a canonical proposal digest and rejects protected identit
   });
 });
 
+test("administration mutations require the exact normative request shapes", async () => {
+  const proposalDocument = await proposal("/name", "Curated Name");
+  const undocumentedValidate = await adminRequest(
+    "/admin/v1/curated-revisions/validate",
+    {
+      proposal: proposalDocument,
+      expected_current_revision_id: currentRevision,
+    },
+  );
+  expect(undocumentedValidate.status).toBe(422);
+  await expect(undocumentedValidate.json()).resolves.toMatchObject({
+    code: "invalid_parameter",
+  });
+
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: proposalDocument,
+    proposal_digest: await sha256Text(canonicalJson(proposalDocument)),
+    idempotency_key: `exact-shape-create-${sequence}`,
+  }, now);
+  const lifecycleBase = {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    expected_event_version: 1,
+    rationale: "Exercise the exact mutation schema.",
+  };
+  const retired = await adminRequest(
+    `/admin/v1/curated-revisions/${created.document.curated_revision_id}/retire`,
+    {
+      ...lifecycleBase,
+      idempotency_key: `exact-shape-retire-${sequence}`,
+    },
+  );
+  expect(retired.status).toBe(422);
+  await expect(retired.json()).resolves.toMatchObject({
+    code: "curated_revision_schema_invalid",
+  });
+
+  const replacement = {
+    ...(await proposal("/name", "Replacement Name")),
+    supersedes_revision_id: created.document.curated_revision_id,
+  };
+  const superseded = await adminRequest(
+    `/admin/v1/curated-revisions/${created.document.curated_revision_id}/supersede`,
+    {
+      ...lifecycleBase,
+      proposal: replacement,
+      proposal_digest: await sha256Text(canonicalJson(replacement)),
+      idempotency_key: `exact-shape-supersede-${sequence}`,
+    },
+  );
+  expect(superseded.status).toBe(422);
+  await expect(superseded.json()).resolves.toMatchObject({
+    code: "curated_revision_schema_invalid",
+  });
+});
+
 test("proposal validation requires the exact canonical nullable fields and a closed interval", async () => {
   const complete = await proposal("/name", "Curated Name");
   const { effective_interval: _interval, ...withoutInterval } = complete;
@@ -576,7 +635,9 @@ test("validation uses the pinned shared and Game Profile schemas", async () => {
       path: "/game_data/attributes/illustration_types",
     },
     assertion: { kind: "field", value: [] },
-    reviewed_source_digest: await sha256Text(canonicalJson(null)),
+    reviewed_source_digest: await sha256Text(canonicalJson(
+      curatedSourceAbsence,
+    )),
   };
   const optional = await adminRequest("/admin/v1/curated-revisions/validate", {
     proposal: optionalProposal,
@@ -1563,7 +1624,17 @@ test("a prepared retry persists its failed run and every source-change conflict"
     idempotency_key: `prepared-conflict-retry-${sequence}`,
   });
   expect(retried.status, JSON.stringify(await retried.clone().json())).toBe(201);
-  const document = await retried.json() as { id: string };
+  const document = await retried.json() as {
+    id: string;
+    warnings: Record<string, unknown>[];
+  };
+  expect(document.warnings).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      code: "curated_revision_reconfirmation_required",
+      conflict_id: expect.stringMatching(/^crconf_/),
+      conflict_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    }),
+  ]));
   await expect(env.CATALOGUE_DB.prepare(
     "SELECT state, failure_code FROM ingestion_runs WHERE id = ?",
   ).bind(document.id).first()).resolves.toEqual({
@@ -1584,6 +1655,46 @@ test("a prepared retry persists its failed run and every source-change conflict"
   await expect(env.CATALOGUE_DB.prepare(
     "SELECT COUNT(*) AS count FROM curated_revision_events WHERE revision_id IN (SELECT value FROM json_each(?)) AND kind = 'source_change_detected'",
   ).bind(canonicalJson(conflictedIds)).first()).resolves.toEqual({ count: 2 });
+  const inspectionResponse = await adminRequest(
+    `/v1/ingestion-runs/${document.id}/candidate`,
+  );
+  expect(
+    inspectionResponse.status,
+    JSON.stringify(await inspectionResponse.clone().json()),
+  ).toBe(200);
+  const inspection = await inspectionResponse.json() as {
+    candidate_digest: string;
+    curated_revision_ids: string[];
+    diff: {
+      curated_effects: unknown[];
+      warnings: Record<string, unknown>[];
+    };
+  };
+  expect(inspection.curated_revision_ids).toEqual([...conflictedIds].sort());
+  expect(inspection.diff.curated_effects).toEqual([]);
+  expect(inspection.diff.warnings).toEqual(expect.arrayContaining(
+    conflictedIds.map((curatedRevisionId) => expect.objectContaining({
+      code: "curated_revision_reconfirmation_required",
+      curated_revision_id: curatedRevisionId,
+      conflict_id: expect.stringMatching(/^crconf_/),
+      conflict_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })),
+  ));
+  await expect(env.CATALOGUE_DB.prepare(
+    "UPDATE ingestion_runs SET candidate_json = '{}' WHERE id = ?",
+  ).bind(document.id).run()).rejects.toThrow("candidate_immutable");
+  const replay = await adminRequest(`/v1/ingestion-runs/${sourceRunId}/retry`, {
+    idempotency_key: `prepared-conflict-retry-${sequence}`,
+  });
+  expect([200, 201]).toContain(replay.status);
+  await expect(replay.json()).resolves.toMatchObject({ id: document.id });
+  const inspectionReplay = await adminRequest(
+    `/v1/ingestion-runs/${document.id}/candidate`,
+  );
+  await expect(inspectionReplay.json()).resolves.toMatchObject({
+    candidate_digest: inspection.candidate_digest,
+    curated_revision_ids: inspection.curated_revision_ids,
+  });
 });
 
 test("a changed official value requires reconfirmation instead of silently applying", async () => {
@@ -1672,6 +1783,133 @@ test("all changed pinned revisions are marked before the run fails once", async 
   expect(statuses.results.every(({ status }) =>
     status === "reconfirmation_required"
   )).toBe(true);
+});
+
+test("field absence is distinct from null and retirement restores exact absence", async () => {
+  const absence = curatedSourceAbsence;
+  const printingId = `printing_optional_${sequence}`;
+  const printing = {
+    id: printingId,
+    card_id: card.id,
+    rarity: { normalized: "common", raw: "C" },
+    printed_rules_text: null,
+    game_data: { profile: "one-piece@1", attributes: {} },
+  };
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO revision_printings (
+       catalogue_revision_id, printing_id, card_id, document_json
+     ) VALUES (?, ?, ?, ?)`,
+  ).bind(currentRevision, printingId, card.id, canonicalJson(printing)).run();
+  const authored = {
+    ...(await proposal("/name", "unused")),
+    target: {
+      kind: "field" as const,
+      entity_type: "printing" as const,
+      entity_id: printingId,
+      path: "/game_data/attributes/illustration_types",
+    },
+    assertion: { kind: "field" as const, value: ["comic"] },
+    reviewed_source_digest: await sha256Text(canonicalJson(absence)),
+  };
+  const validation = await adminRequest(
+    "/admin/v1/curated-revisions/validate",
+    { proposal: authored, catalogue_revision_id: currentRevision },
+  );
+  expect(validation.status, JSON.stringify(await validation.clone().json()))
+    .toBe(200);
+  const created = await createCuratedRevision(env.CATALOGUE_DB, {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: authored,
+    proposal_digest: await sha256Text(canonicalJson(authored)),
+    idempotency_key: `absence-create-${sequence}`,
+  }, now);
+
+  const appliedRunId = `run_absence_applied_${sequence}`;
+  await insertParsingRun(appliedRunId);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, appliedRunId, now);
+  const applied = await applyPinnedCuratedRevisions(
+    env.CATALOGUE_DB,
+    appliedRunId,
+    {
+      contract: "card-keepr-catalogue-candidate@1",
+      selected_games: ["one-piece"],
+      cards: [card],
+      printings: [printing as never],
+    },
+    now,
+  );
+  expect((applied.printings[0]!.game_data!.attributes as Record<string, unknown>)
+    .illustration_types).toEqual(["comic"]);
+  expect(applied.printings[0]!.curated_provenance?.[0]
+    ?.reviewed_source_value).toEqual(absence);
+  const stripped = stripCuratedRevisionEffects(applied);
+  expect(Object.hasOwn(
+    stripped.printings[0]!.game_data!.attributes,
+    "illustration_types",
+  )).toBe(false);
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      "UPDATE ingestion_runs SET state = 'failed', terminal_at = ?, failure_code = 'test_complete' WHERE id = ?",
+    ).bind(now, appliedRunId),
+    env.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+    ),
+  ]);
+
+  const nullRunId = `run_absence_to_null_${sequence}`;
+  await insertParsingRun(nullRunId);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, nullRunId, now);
+  const explicitNull = structuredClone(printing) as Record<string, unknown>;
+  ((explicitNull.game_data as { attributes: Record<string, unknown> })
+    .attributes).illustration_types = null;
+  await expect(applyPinnedCuratedRevisions(
+    env.CATALOGUE_DB,
+    nullRunId,
+    {
+      contract: "card-keepr-catalogue-candidate@1",
+      selected_games: ["one-piece"],
+      cards: [card],
+      printings: [explicitNull as never],
+    },
+    now,
+  )).rejects.toThrow("curated_revision_reconfirmation_required");
+
+  const shown = await showCuratedRevision(
+    env.CATALOGUE_DB,
+    created.document.curated_revision_id,
+  ) as { revision: { event_version: number; pending_conflict: { digest: string } } };
+  await retireCuratedRevision(
+    env.CATALOGUE_DB,
+    created.document.curated_revision_id,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      expected_event_version: shown.revision.event_version,
+      conflict_digest: shown.revision.pending_conflict.digest,
+      rationale: "Restore the Official Source absence.",
+      idempotency_key: `absence-retire-${sequence}`,
+    },
+    now,
+  );
+  const restoredRunId = `run_absence_restored_${sequence}`;
+  await insertParsingRun(restoredRunId);
+  await pinCuratedRevisionsForRun(env.CATALOGUE_DB, restoredRunId, now);
+  const restored = await applyPinnedCuratedRevisions(
+    env.CATALOGUE_DB,
+    restoredRunId,
+    {
+      contract: "card-keepr-catalogue-candidate@1",
+      selected_games: ["one-piece"],
+      cards: [card],
+      printings: [printing as never],
+    },
+    now,
+  );
+  expect(Object.hasOwn(
+    restored.printings[0]!.game_data!.attributes,
+    "illustration_types",
+  )).toBe(false);
 });
 
 test("retargeted supersession binds the old conflict and the replacement target's official digest", async () => {
