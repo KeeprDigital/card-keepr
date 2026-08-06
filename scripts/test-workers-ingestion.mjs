@@ -162,8 +162,8 @@ for (let shard = 0; shard < shardCount; shard += 1) {
   });
 }
 
-// Each task owns a fresh Workerd process. Two processes keep the complete CI
-// run inside its 20-minute budget without sharing Workflow or D1 state.
+// Each task owns a fresh Workerd process. Two processes keep the suite bounded
+// without sharing Workflow or D1 state.
 await runTasks(tasks, 2);
 // Reconciliation shards each exercise Workflow-backed backup verification and
 // must not compete for Workerd's polling deadlines.
