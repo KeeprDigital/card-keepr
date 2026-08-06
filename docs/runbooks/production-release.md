@@ -25,7 +25,7 @@ npm run keepr -- release production \
   --release-id release-2026-08-05-01 \
   --expected-current-revision catrev_example \
   --expected-head-sha 0123456789abcdef0123456789abcdef01234567 \
-  --expected-migration-level 19 \
+  --expected-migration-level 20 \
   --idempotency-key release-2026-08-05-01 \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
 ```

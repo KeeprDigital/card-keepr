@@ -3,6 +3,7 @@ import {
   env,
   type D1Migration,
 } from "cloudflare:test";
+import { installWorkflowIsolation } from "./workflow-isolation";
 import {
   exports,
   type WorkflowEvent,
@@ -53,6 +54,8 @@ import {
 import ingestionWorker from "../src/index";
 import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-workflow";
 import { currentCatalogueStatus } from "../../../src/catalogue/read";
+
+installWorkflowIsolation();
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -1703,7 +1706,7 @@ test("immutable Observation Set counts, not an observation novelty assertion, de
       {
         code: "retained_evidence_invalid",
         detail: expect.stringContaining(
-          "Source Observation Set provenance is invalid",
+          "incomplete declared/parsed count closure",
         ),
       },
     ],
@@ -2184,7 +2187,7 @@ test("production Evidence Plans bind discovery identity to its exact Official So
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "forged-production-surface-url",
     requests,
   });

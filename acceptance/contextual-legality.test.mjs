@@ -1050,12 +1050,13 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
   assert.equal(oceania.code, 8);
   const oceaniaProblem = JSON.parse(oceania.stdout);
-  assert.equal(
-    validateProblem(oceaniaProblem),
-    true,
-    JSON.stringify(validateProblem.errors),
-  );
-  assert.equal(oceaniaProblem.code, "invalid_legality_region");
+  assert.deepEqual(oceaniaProblem, {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "invalid_legality_region",
+    detail:
+      "Gundam Legality Status is available only for EN-ASIA and EN-US; EN-OCEANIA is not synthesized.",
+  });
 
   for (const invalidCardId of [
     "card id with spaces",

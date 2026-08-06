@@ -28,7 +28,7 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
   const expectedSchemaMigrationLevel = source.prepare(
     "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
   ).get().migration_level;
-  assert.equal(expectedSchemaMigrationLevel, 19);
+  assert.equal(expectedSchemaMigrationLevel, 20);
   seedRepresentativeCatalogue(source);
 
   const vite = await createServer({

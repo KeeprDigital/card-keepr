@@ -46,6 +46,13 @@ import {
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
+const currentSchemaMigrationLevel = Number.parseInt(
+  migrations.at(-1)?.name ?? "",
+  10,
+);
+if (!Number.isSafeInteger(currentSchemaMigrationLevel)) {
+  throw new Error("The current schema migration level could not be derived.");
+}
 const retryAttemptCounts = new Map<string, number>();
 const retainedProductionDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
@@ -54,6 +61,26 @@ const retainedProductionDiscoveryFixtures = {
   "gundam-en-asia": gundamAsiaDiscovery,
   "gundam-en-us": gundamUsDiscovery,
 } as const;
+
+function rewrittenOnePieceCompleteResponse(
+  request: Request,
+  markerPattern: RegExp,
+): Response | null {
+  const headers = new Headers(request.headers);
+  headers.set(
+    "user-agent",
+    (headers.get("user-agent") ?? "").replace(
+      markerPattern,
+      "card-keepr-one-piece-complete-v1",
+    ),
+  );
+  return onePieceCompleteOfficialSourceResponse(
+    new Request(request.url, {
+      method: request.method,
+      headers,
+    }),
+  );
+}
 
 type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
 
@@ -349,7 +376,7 @@ export default defineConfig({
                       ...expected,
                       current_revision_id:
                         body.params?.[0] ?? "catrev_spine_000",
-                      schema_migration_level: 16,
+                      schema_migration_level: currentSchemaMigrationLevel,
                       card_search_state: "ready",
                       card_search_fts_tables: 1,
                       missing_fts_rows: 0,
@@ -659,6 +686,26 @@ export default defineConfig({
             if (representableFusionLegality !== null) {
               return representableFusionLegality;
             }
+            if (officialLineage === "one-piece-en") {
+              const completeChildResponse =
+                onePieceCompleteOfficialSourceResponse(request);
+              if (completeChildResponse !== null) {
+                return completeChildResponse;
+              }
+              if (
+                artworkMarker === "card-keepr-official-source/1" &&
+                url.pathname.startsWith("/images/cardlist/card/OP31-")
+              ) {
+                const completeImageResponse =
+                  rewrittenOnePieceCompleteResponse(
+                    request,
+                    /^card-keepr-official-source\/1/u,
+                  );
+                if (completeImageResponse !== null) {
+                  return completeImageResponse;
+                }
+              }
+            }
             if (
               artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
               officialLineage === "one-piece-en" &&
@@ -707,19 +754,23 @@ export default defineConfig({
               artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
               officialLineage === "one-piece-en"
             ) {
-              const headers = new Headers(request.headers);
-              headers.set(
-                "user-agent",
-                (headers.get("user-agent") ?? "").replace(
-                  /^card-keepr-runtime-parser\/[^;]+/u,
-                  "card-keepr-one-piece-complete-v1",
-                ),
+              const completeResponse = rewrittenOnePieceCompleteResponse(
+                request,
+                /^card-keepr-runtime-parser\/[^;]+/u,
               );
-              const completeResponse = onePieceCompleteOfficialSourceResponse(
-                new Request(request.url, {
-                  method: request.method,
-                  headers,
-                }),
+              if (completeResponse !== null) return completeResponse;
+            }
+            if (
+              (
+                artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
+                artworkMarker === "card-keepr-one-piece-unrecognized-release-v2"
+              ) &&
+              officialLineage === "one-piece-en" &&
+              url.pathname !== "/products/"
+            ) {
+              const completeResponse = rewrittenOnePieceCompleteResponse(
+                request,
+                /^card-keepr-one-piece-(?:release-timing|unrecognized-release)-v2/u,
               );
               if (completeResponse !== null) return completeResponse;
             }
@@ -1799,6 +1850,9 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/ingestion/test/**/*.spec.ts"],
+    // Workflow bindings and failure-injection state outlive Vitest's per-file
+    // storage isolation, so files must not share a pool process.
+    maxWorkers: 1,
     hookTimeout: 30_000,
     testTimeout: 30_000,
   },

@@ -370,7 +370,6 @@ describe("Errata rules-text lifecycle", () => {
         selected_games: ["one-piece"],
         idempotency_key: "legacy-candidate-without-errata",
       },
-      "2026-07-30T00:00:00.000Z",
     );
     const runId = requiredString(started, "id");
     const rejected = await post(`/v1/ingestion-runs/${runId}/rejection`, {

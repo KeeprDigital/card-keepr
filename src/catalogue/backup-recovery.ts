@@ -952,35 +952,48 @@ async function verifyRestoredCatalogueQueries(
       expected.representative_curated_revision_digest &&
     row.publication_ingestion_run_id ===
       expected.publication_ingestion_run_id;
-  const nonVacuous = [
-    expected.cards,
-    expected.printings,
-    expected.products,
-    expected.legality_rules,
-    expected.api_documents,
-    expected.search_terms,
-    expected.search_chunks,
-    expected.audit_rows,
-  ].every((count) => count > 0) &&
-    [
-      expected.representative_card_id,
-      expected.representative_printing_id,
-      expected.representative_product_id,
-      expected.representative_legality_rule_id,
-      expected.representative_search_text,
-      expected.publication_ingestion_run_id,
-    ].every((value) => typeof value === "string" && value.length > 0) &&
+  const cardEvidence = expected.cards === 0
+    ? expected.api_documents === 0 && expected.search_terms === 0 &&
+      expected.search_chunks === 0 &&
+      expected.representative_card_id === null &&
+      expected.representative_search_text === null
+    : expected.api_documents > 0 && expected.search_terms > 0 &&
+      expected.search_chunks > 0 &&
+      [
+        expected.representative_card_id,
+        expected.representative_search_text,
+      ].every((value) => typeof value === "string" && value.length > 0);
+  const printingEvidence = expected.printings === 0
+    ? expected.representative_printing_id === null
+    : typeof expected.representative_printing_id === "string" &&
+      expected.representative_printing_id.length > 0;
+  const nonVacuous =
+    expected.cards + expected.products + expected.legality_rules > 0 &&
+    expected.audit_rows > 0 && cardEvidence && printingEvidence &&
+    typeof expected.publication_ingestion_run_id === "string" &&
+    expected.publication_ingestion_run_id.length > 0 &&
+    (expected.products === 0
+      ? expected.representative_product_id === null
+      : typeof expected.representative_product_id === "string" &&
+        expected.representative_product_id.length > 0) &&
+    (expected.legality_rules === 0
+      ? expected.representative_legality_rule_id === null
+      : typeof expected.representative_legality_rule_id === "string" &&
+        expected.representative_legality_rule_id.length > 0) &&
     (expected.provenance === 0
       ? expected.representative_curated_revision_id === null &&
         expected.representative_curated_revision_digest === null
       : typeof expected.representative_curated_revision_id === "string" &&
         typeof expected.representative_curated_revision_digest === "string");
+  const apiEvidence = expected.cards === 0
+    ? apiRows.length === 0
+    : apiRows.length > 0 && apiRows.every(validApiCardRow) &&
+      apiRows.some((apiRow) =>
+        apiCardId(apiRow) === expected.representative_card_id
+      );
   if (
     integrity?.quick_check !== "ok" || !exactEvidence || !nonVacuous ||
-    apiRows.length === 0 || !apiRows.every(validApiCardRow) ||
-    !apiRows.some((apiRow) =>
-      apiCardId(apiRow) === expected.representative_card_id
-    )
+    !apiEvidence
   ) throw new Error("Restored D1 verification failed.");
   return completeRestoredVerification();
 }
