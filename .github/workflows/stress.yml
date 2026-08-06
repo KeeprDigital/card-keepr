@@ -1,0 +1,23 @@
+name: stress
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 03:17 UTC — off the busy top-of-hour cron window.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:stress
