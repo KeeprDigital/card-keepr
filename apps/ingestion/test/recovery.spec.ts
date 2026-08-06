@@ -42,6 +42,77 @@ beforeEach(async () => {
   );
 });
 
+test("recovery keeps legacy backup manifests without representative document digests recoverable", async () => {
+  const provider = recoveryProvider({
+    reconstructAndVerify: async (input) => {
+      expect(Object.hasOwn(input.expected, "representative_product_digest"))
+        .toBe(false);
+      expect(Object.hasOwn(
+        input.expected,
+        "representative_legality_rule_digest",
+      )).toBe(false);
+      return completeVerification;
+    },
+  });
+  await beginCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    recoveryInput("recovery-legacy-manifest", "begin-legacy-manifest"),
+    provider,
+  );
+  await expect(verifyCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-legacy-manifest",
+    {
+      targetDigest: digest,
+      idempotencyKey: "verify-legacy-manifest",
+      observedAt: "2026-08-05T07:30:00.000Z",
+      cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+      verificationToken: "verification-token",
+    },
+    provider,
+  )).resolves.toMatchObject({ state: "awaiting_acceptance" });
+  await expect(acceptCatalogueRecovery(
+    testEnv.CATALOGUE_DB,
+    testEnv.BACKUPS,
+    "recovery-legacy-manifest",
+    {
+      expectedRestoredRevisionId: "catrev_spine_000",
+      targetDigest: digest,
+      confirmationRecoveryId: "recovery-legacy-manifest",
+      idempotencyKey: "accept-legacy-manifest",
+      observedAt: "2026-08-05T07:31:00.000Z",
+      boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+    },
+  )).resolves.toMatchObject({ state: "accepted" });
+});
+
+test("recovery rejects invalid representative document digests present in a backup manifest", async () => {
+  const manifestKey =
+    "d1-backups/catrev_spine_000/recovery-source/manifest.json";
+  const retained = await testEnv.BACKUPS.get(manifestKey);
+  if (retained === null) throw new Error("Recovery manifest is unavailable.");
+  const manifest = await retained.json<Record<string, unknown>>();
+  const invalidDigests = [
+    ["representative_product_digest", "A".repeat(64)],
+    ["representative_legality_rule_digest", "a".repeat(63)],
+  ] as const;
+  for (const [key, invalidDigest] of invalidDigests) {
+    const mutated = structuredClone(manifest) as {
+      expected_evidence: Record<string, unknown>;
+    };
+    mutated.expected_evidence[key] = invalidDigest;
+    await testEnv.BACKUPS.put(manifestKey, JSON.stringify(mutated));
+    await expect(beginCatalogueRecovery(
+      testEnv.CATALOGUE_DB,
+      testEnv.BACKUPS,
+      recoveryInput(`recovery-invalid-${key}`, `begin-invalid-${key}`),
+      recoveryProvider(),
+    )).rejects.toMatchObject({ code: "recovery_manifest_mismatch" });
+  }
+});
+
 test("Time Travel recovery records the current and immediate undo bookmarks while blocking mutation", async () => {
   const events: string[] = [];
   const provider = recoveryProvider({

@@ -7,7 +7,9 @@ import {
   withCardSearchPreparedForD1Export,
 } from "./card-search-recovery";
 import { cardCollectionPageQuery } from "./card-collection-read";
-import { canonicalJson } from "./serialization";
+import { storedProductApiProjection } from "./product-release-read";
+import { parseStoredLegalityRule } from "./stored-legality-documents";
+import { canonicalJson, sha256Text } from "./serialization";
 import { StreamingSha256 } from "./streaming-sha256";
 
 export type D1BackupProvider = Readonly<{
@@ -62,6 +64,8 @@ export type CatalogueVerificationEvidence = Readonly<{
   representative_printing_id: string | null;
   representative_product_id: string | null;
   representative_legality_rule_id: string | null;
+  representative_product_digest?: string | null;
+  representative_legality_rule_digest?: string | null;
   representative_search_text: string | null;
   representative_curated_revision_id: string | null;
   representative_curated_revision_digest: string | null;
@@ -871,7 +875,7 @@ export async function captureCatalogueVerificationEvidence(
   const row = await database.prepare(verificationEvidenceSql()).bind(
     revisionId,
     "capture",
-  ).first<CatalogueVerificationEvidence>();
+  ).first<CatalogueVerificationEvidence & RepresentativeDocumentEvidence>();
   if (row === null) throw new Error("Catalogue verification evidence is unavailable.");
   return {
     cards: row.cards,
@@ -887,6 +891,12 @@ export async function captureCatalogueVerificationEvidence(
     representative_printing_id: row.representative_printing_id,
     representative_product_id: row.representative_product_id,
     representative_legality_rule_id: row.representative_legality_rule_id,
+    representative_product_digest: await representativeDocumentDigest(
+      row.representative_product_document_json,
+    ),
+    representative_legality_rule_digest: await representativeDocumentDigest(
+      row.representative_legality_rule_document_json,
+    ),
     representative_search_text: row.representative_search_text,
     representative_curated_revision_id: row.representative_curated_revision_id,
     representative_curated_revision_digest:
@@ -899,6 +909,11 @@ type VerificationQuery = (
   sql: string,
   params?: readonly unknown[],
 ) => Promise<Record<string, unknown>[]>;
+
+type RepresentativeDocumentEvidence = Readonly<{
+  representative_product_document_json: string | null;
+  representative_legality_rule_document_json: string | null;
+}>;
 
 async function verifyRestoredCatalogueQueries(
   query: VerificationQuery,
@@ -923,6 +938,12 @@ async function verifyRestoredCatalogueQueries(
       expected.representative_card_id,
       expected.representative_search_text,
     );
+  let representativeDocuments = false;
+  try {
+    representativeDocuments = await validRepresentativeDocuments(row, expected);
+  } catch {
+    representativeDocuments = false;
+  }
   const exactEvidence = row !== undefined &&
     row.current_revision_id === input.expectedRevisionId &&
     row.schema_migration_level === input.expectedSchemaMigrationLevel &&
@@ -993,9 +1014,77 @@ async function verifyRestoredCatalogueQueries(
       );
   if (
     integrity?.quick_check !== "ok" || !exactEvidence || !nonVacuous ||
-    !apiEvidence
+    !apiEvidence || !representativeDocuments
   ) throw new Error("Restored D1 verification failed.");
   return completeRestoredVerification();
+}
+
+async function validRepresentativeDocuments(
+  row: Record<string, unknown> | undefined,
+  expected: CatalogueVerificationEvidence,
+): Promise<boolean> {
+  if (row === undefined) return false;
+  const productDocument = nullableDocumentJson(
+    row.representative_product_document_json,
+  );
+  const legalityRuleDocument = nullableDocumentJson(
+    row.representative_legality_rule_document_json,
+  );
+  if (expected.representative_product_id === null) {
+    if (productDocument !== null) return false;
+  } else {
+    if (productDocument === null) return false;
+    if (
+      storedProductApiProjection(productDocument).id !==
+        expected.representative_product_id
+    ) return false;
+  }
+  if (expected.representative_legality_rule_id === null) {
+    if (legalityRuleDocument !== null) return false;
+  } else {
+    if (legalityRuleDocument === null) return false;
+    if (
+      parseStoredLegalityRule(legalityRuleDocument).id !==
+        expected.representative_legality_rule_id
+    ) return false;
+  }
+  return await representativeDigestMatches(
+    expected,
+    "representative_product_digest",
+    productDocument,
+  ) && await representativeDigestMatches(
+    expected,
+    "representative_legality_rule_digest",
+    legalityRuleDocument,
+  );
+}
+
+function nullableDocumentJson(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string") {
+    throw new Error("Representative restore document is unavailable.");
+  }
+  return value;
+}
+
+async function representativeDigestMatches(
+  expected: CatalogueVerificationEvidence,
+  key:
+    | "representative_product_digest"
+    | "representative_legality_rule_digest",
+  documentJson: string | null,
+): Promise<boolean> {
+  if (!Object.prototype.hasOwnProperty.call(expected, key)) return true;
+  const digest = expected[key];
+  if (digest === null) return documentJson === null;
+  return typeof digest === "string" && /^[a-f0-9]{64}$/u.test(digest) &&
+    documentJson !== null && await sha256Text(documentJson) === digest;
+}
+
+async function representativeDocumentDigest(
+  documentJson: string | null,
+): Promise<string | null> {
+  return documentJson === null ? null : sha256Text(documentJson);
 }
 
 async function representativeCardApiRows(
@@ -1087,9 +1176,16 @@ function verificationEvidenceSql(): string {
       (SELECT product_id FROM revision_products
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY product_id LIMIT 1) AS representative_product_id,
+      (SELECT document_json FROM revision_products
+       WHERE catalogue_revision_id = catalogue.current_revision_id
+       ORDER BY product_id LIMIT 1) AS representative_product_document_json,
       (SELECT legality_rule_id FROM revision_legality_rules
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY legality_rule_id LIMIT 1) AS representative_legality_rule_id,
+      (SELECT document_json FROM revision_legality_rules
+       WHERE catalogue_revision_id = catalogue.current_revision_id
+       ORDER BY legality_rule_id LIMIT 1)
+        AS representative_legality_rule_document_json,
       (SELECT sort_identity_value FROM revision_card_query_documents
        WHERE catalogue_revision_id = catalogue.current_revision_id
        ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id

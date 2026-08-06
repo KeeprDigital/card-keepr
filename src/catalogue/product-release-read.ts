@@ -18,10 +18,12 @@ type ProductOrderValue = {
   name: string | null;
 };
 
+export type StoredProductApiProjection = ProductOrderValue & {
+  releases: ({ id: string; region: string } & Record<string, unknown>)[];
+} & Record<string, unknown>;
+
 type ProductEnvelope = {
-  data: ProductOrderValue & {
-    releases: ({ id: string; region: string } & Record<string, unknown>)[];
-  } & Record<string, unknown>;
+  data: StoredProductApiProjection;
   included: unknown[];
   provenance: Record<string, string[]>;
   disagreements: unknown[];
@@ -326,7 +328,7 @@ export async function currentProductsResponse(
     )
     .all<{ document_json: string }>();
   const selected = rows.results.map(
-    ({ document_json }) => productEnvelope(document_json).data,
+    ({ document_json }) => storedProductApiProjection(document_json),
   );
   const data = selected.slice(0, limit);
   const next =
@@ -411,6 +413,12 @@ function productEnvelope(documentJson: string): ProductEnvelope {
       ? value.disagreements
       : [],
   };
+}
+
+export function storedProductApiProjection(
+  documentJson: string,
+): StoredProductApiProjection {
+  return productEnvelope(documentJson).data;
 }
 
 function parseQuery(url: URL): string | null {

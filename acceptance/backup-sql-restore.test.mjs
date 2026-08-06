@@ -118,7 +118,199 @@ test("a real SQL export restores a multi-Card catalogue whose FTS, API, and Cura
     }),
     /Restored D1 verification failed/u,
   );
+
+  removeCardAndLegalityProjection(restored);
+  const productOnlyExpected =
+    await recovery.captureCatalogueVerificationEvidence(
+      database,
+      "catrev_restore_acceptance",
+    );
+  assert.equal(productOnlyExpected.cards, 0);
+  assert.equal(productOnlyExpected.printings, 0);
+  assert.equal(productOnlyExpected.products, 1);
+  assert.equal(productOnlyExpected.legality_rules, 0);
+  assert.match(
+    productOnlyExpected.representative_product_digest,
+    /^[a-f0-9]{64}$/u,
+  );
+  assert.equal(productOnlyExpected.representative_legality_rule_digest, null);
+  await assert.doesNotReject(recovery.verifyRestoredCatalogue(database, {
+    expectedRevisionId: "catrev_restore_acceptance",
+    expectedSchemaMigrationLevel,
+    expected: productOnlyExpected,
+  }));
+
+  const {
+    representative_product_digest: _legacyProductDigest,
+    representative_legality_rule_digest: _legacyLegalityRuleDigest,
+    ...legacyProductOnlyExpected
+  } = productOnlyExpected;
+  await assert.doesNotReject(recovery.verifyRestoredCatalogue(database, {
+    expectedRevisionId: "catrev_restore_acceptance",
+    expectedSchemaMigrationLevel,
+    expected: legacyProductOnlyExpected,
+  }));
+
+  restored.prepare(
+    `UPDATE revision_products
+     SET document_json = json_set(document_json, '$.name', 'Corrupted Product')
+     WHERE catalogue_revision_id = ? AND product_id = ?`,
+  ).run("catrev_restore_acceptance", "product_alpha");
+  await assert.rejects(
+    recovery.verifyRestoredCatalogue(database, {
+      expectedRevisionId: "catrev_restore_acceptance",
+      expectedSchemaMigrationLevel,
+      expected: productOnlyExpected,
+    }),
+    /Restored D1 verification failed/u,
+  );
+
+  restored.prepare(
+    `UPDATE revision_products
+     SET document_json = json_set(document_json, '$.releases', 'malformed')
+     WHERE catalogue_revision_id = ? AND product_id = ?`,
+  ).run("catrev_restore_acceptance", "product_alpha");
+  const malformedProductExpected =
+    await recovery.captureCatalogueVerificationEvidence(
+      database,
+      "catrev_restore_acceptance",
+    );
+  await assert.rejects(
+    recovery.verifyRestoredCatalogue(database, {
+      expectedRevisionId: "catrev_restore_acceptance",
+      expectedSchemaMigrationLevel,
+      expected: malformedProductExpected,
+    }),
+    /Restored D1 verification failed/u,
+  );
+
+  seedGlobalLegalityRuleOnly(restored);
+  const globalRuleOnlyExpected =
+    await recovery.captureCatalogueVerificationEvidence(
+      database,
+      "catrev_restore_acceptance",
+    );
+  assert.equal(globalRuleOnlyExpected.cards, 0);
+  assert.equal(globalRuleOnlyExpected.products, 0);
+  assert.equal(globalRuleOnlyExpected.legality_rules, 1);
+  assert.equal(globalRuleOnlyExpected.representative_product_digest, null);
+  assert.match(
+    globalRuleOnlyExpected.representative_legality_rule_digest,
+    /^[a-f0-9]{64}$/u,
+  );
+  await assert.doesNotReject(recovery.verifyRestoredCatalogue(database, {
+    expectedRevisionId: "catrev_restore_acceptance",
+    expectedSchemaMigrationLevel,
+    expected: globalRuleOnlyExpected,
+  }));
+
+  restored.prepare(
+    `UPDATE revision_legality_rules
+     SET document_json = json_set(document_json, '$.source_field_pointers', json('{}'))
+     WHERE catalogue_revision_id = ? AND legality_rule_id = ?`,
+  ).run("catrev_restore_acceptance", "legality_global");
+  const malformedRuleExpected =
+    await recovery.captureCatalogueVerificationEvidence(
+      database,
+      "catrev_restore_acceptance",
+    );
+  await assert.rejects(
+    recovery.verifyRestoredCatalogue(database, {
+      expectedRevisionId: "catrev_restore_acceptance",
+      expectedSchemaMigrationLevel,
+      expected: malformedRuleExpected,
+    }),
+    /Restored D1 verification failed/u,
+  );
 });
+
+function removeCardAndLegalityProjection(database) {
+  database.exec(`
+    DROP TRIGGER revision_legality_rules_immutable_update;
+    DROP TRIGGER revision_legality_rules_immutable_delete;
+    DROP TRIGGER revision_legality_rule_applicability_immutable_update;
+    DROP TRIGGER revision_legality_rule_applicability_immutable_delete;
+    DROP TRIGGER catalogue_curated_provenance_is_immutable_on_delete;
+    DELETE FROM revision_card_search_fts;
+    DELETE FROM revision_card_search_fts_rows;
+    DELETE FROM revision_card_search_chunks;
+    DELETE FROM revision_card_search_terms;
+    DELETE FROM revision_card_query_documents;
+    DELETE FROM revision_printings;
+    DELETE FROM revision_legality_rule_applicability;
+    DELETE FROM revision_legality_rules;
+    DELETE FROM revision_cards;
+    DELETE FROM catalogue_curated_provenance;
+  `);
+}
+
+function seedGlobalLegalityRuleOnly(database) {
+  const document = validStoredLegalityRule("legality_global", []);
+  database.exec(`
+    DELETE FROM revision_products;
+    INSERT INTO legality_rules (
+      id, official_id, supported_game, region, format, event_tier,
+      effective_from, effective_until, unresolved_scope_json,
+      official_wording, effect_json, card_ids_json, direct_card_ids_json,
+      source_lineage, source_snapshot_id, source_observation_set_id,
+      source_observation_id, source_observation_pointer,
+      source_field_pointers_json, first_revision_id,
+      last_observed_revision_id, current
+    ) VALUES (
+      'legality_global', 'official-legality-global', 'one-piece',
+      'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null',
+      'The global tournament restriction applies.', '{"type":"ban"}',
+      '[]', '[]', 'one-piece-en', 'snapshot_alpha', 'set_alpha',
+      'observation_alpha', '/observations/0',
+      '${JSON.stringify(document.source_field_pointers)}',
+      'catrev_restore_acceptance', 'catrev_restore_acceptance', 1
+    );
+    INSERT INTO revision_legality_rules (
+      catalogue_revision_id, legality_rule_id, supported_game, region,
+      format, event_tier, effective_from, effective_until,
+      unresolved_scope_json, card_ids_json, document_json
+    ) VALUES (
+      'catrev_restore_acceptance', 'legality_global', 'one-piece',
+      'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null', '[]',
+      '${JSON.stringify(document)}'
+    );
+  `);
+}
+
+function validStoredLegalityRule(
+  id,
+  cardIds,
+  officialWording = "The global tournament restriction applies.",
+) {
+  const observationPointer = "/observations/0";
+  return {
+    id,
+    official_id: `official-${id.replaceAll("_", "-")}`,
+    game: "one-piece",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-01-01",
+    effective_until: null,
+    unresolved_scope: null,
+    official_wording: officialWording,
+    effect: { type: "ban" },
+    card_ids: cardIds,
+    source_lineage: "one-piece-en",
+    source_snapshot_id: "snapshot_alpha",
+    source_observation_set_id: "set_alpha",
+    source_observation_id: "observation_alpha",
+    source_observation_pointer: observationPointer,
+    source_field_pointers: Object.fromEntries([
+      "official_wording", "effective_from", "effective_until", "region",
+      "unresolved_scope", "format", "event_tier", "card_numbers", "effect",
+    ].map((field) => [field, `${observationPointer}/${field}`])),
+    first_revision_id: "catrev_restore_acceptance",
+    last_observed_revision_id: "catrev_restore_acceptance",
+    current: true,
+    last_missing_revision_id: null,
+  };
+}
 
 function seedRepresentativeCatalogue(database) {
   const digest = "a".repeat(64);
@@ -290,7 +482,7 @@ function seedRepresentativeCatalogue(database) {
     ) VALUES (
       'catrev_restore_acceptance', 'product_alpha', 'one-piece', 'PRD-001',
       'Alpha Product', 'PRD-001 Alpha Product', '[]',
-      '{"id":"product_alpha","game":"one-piece"}'
+      '{"id":"product_alpha","game":"one-piece","official_code":"PRD-001","name":"Alpha Product","releases":[]}'
     );
     INSERT INTO legality_rules (
       id, official_id, supported_game, region, format, event_tier,
@@ -305,7 +497,11 @@ function seedRepresentativeCatalogue(database) {
       'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null',
       'Alpha is restricted.', '{"type":"ban"}', '["card_alpha"]',
       '["card_alpha"]', 'one-piece-en', 'snapshot_alpha', 'set_alpha',
-      'observation_alpha', '/observations/0', '{"effect":"/effect"}',
+      'observation_alpha', '/observations/0',
+      '${JSON.stringify(
+        validStoredLegalityRule("legality_alpha", ["card_alpha"])
+          .source_field_pointers,
+      )}',
       'catrev_restore_acceptance', 'catrev_restore_acceptance', 1
     );
     INSERT INTO revision_legality_rules (
@@ -316,7 +512,13 @@ function seedRepresentativeCatalogue(database) {
       'catrev_restore_acceptance', 'legality_alpha', 'one-piece',
       'EN-OCEANIA', 'standard', NULL, '2026-01-01', NULL, 'null',
       '["card_alpha"]',
-      '{"id":"legality_alpha","official_id":"official-legality-alpha","game":"one-piece","region":"EN-OCEANIA","format":"standard","event_tier":null,"effective_from":"2026-01-01","effective_until":null,"unresolved_scope":null,"official_wording":"Alpha is restricted.","effect":{"type":"ban"},"card_ids":["card_alpha"],"source_lineage":"one-piece-en","source_snapshot_id":"snapshot_alpha","source_observation_set_id":"set_alpha","source_observation_id":"observation_alpha","source_observation_pointer":"/observations/0","source_field_pointers":{"effect":"/effect"},"first_revision_id":"catrev_restore_acceptance","last_observed_revision_id":"catrev_restore_acceptance","current":true,"last_missing_revision_id":null}'
+      '${JSON.stringify(
+        validStoredLegalityRule(
+          "legality_alpha",
+          ["card_alpha"],
+          "Alpha is restricted.",
+        ),
+      )}'
     );
     INSERT INTO catalogue_query_revisions (catalogue_revision_id, state)
       VALUES ('catrev_restore_acceptance', 'available');

@@ -1467,7 +1467,7 @@ function validVerificationEvidence(
     return false;
   }
   const evidence = value as Record<string, unknown>;
-  return [
+  const validCounts = [
     "cards",
     "printings",
     "products",
@@ -1477,7 +1477,19 @@ function validVerificationEvidence(
     "search_chunks",
     "provenance",
     "audit_rows",
-  ].every((key) => Number.isSafeInteger(evidence[key]) && Number(evidence[key]) >= 0);
+  ].every((key) =>
+    Number.isSafeInteger(evidence[key]) && Number(evidence[key]) >= 0
+  );
+  const validRepresentativeDigests = [
+    "representative_product_digest",
+    "representative_legality_rule_digest",
+  ].every((key) =>
+    !Object.prototype.hasOwnProperty.call(evidence, key) ||
+    evidence[key] === null ||
+    (typeof evidence[key] === "string" &&
+      /^[a-f0-9]{64}$/u.test(evidence[key]))
+  );
+  return validCounts && validRepresentativeDigests;
 }
 
 function assertCompleteVerification(
