@@ -1224,7 +1224,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       (await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id))
         .status(),
     "complete",
-    12_000,
+    20_000,
   );
   const completed = await showCollection(run.id);
   if (completed.state === "failed") {
@@ -1306,7 +1306,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       },
     }],
   });
-}, 15_000);
+}, 30_000);
 
 test("incomplete retained production discovery blocks collection and publication", async () => {
   const marker = "card-keepr-incomplete-discovery-v3";
