@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -8,12 +7,15 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForResponse,
+  waitForRunState,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const portBase = 20_000 + (process.pid % 1_000) * 3;
-const ingestionPort = portBase;
-const sourcePort = portBase + 1;
-const apiPort = portBase + 2;
 const apiSchema = JSON.parse(
   readFileSync(
     resolve(
@@ -124,12 +126,10 @@ test("the public CLI fails closed for incomplete production source plans", async
     `ADMINISTRATION_KEY=${administrationKey}\n`,
     { mode: 0o600 },
   );
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: portBase + 120,
     migrate: true,
-    port: ingestionPort + 20,
     statePath: join(directory, "state"),
   });
   t.after(async () => {
@@ -137,7 +137,7 @@ test("the public CLI fails closed for incomplete production source plans", async
     await rm(directory, { recursive: true, force: true });
   });
   await waitForResponse(
-    `http://127.0.0.1:${ingestionPort + 20}/health`,
+    `${ingestion.url}/health`,
     ingestion,
     "fail-closed ingestion Worker",
     { authorization: `Bearer ${administrationKey}` },
@@ -154,7 +154,7 @@ test("the public CLI fails closed for incomplete production source plans", async
     ],
     {
       KEEPR_ADMINISTRATION_KEY: administrationKey,
-      KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort + 20}`,
+      KEEPR_INGESTION_URL: ingestion.url,
     },
   );
   assert.equal(result.code, 8, result.stderr);
@@ -209,21 +209,22 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
   ]);
 
-  const source = startWorker({
+  const source = await startWorker({
     config: sourceConfig,
-    inspectorPort: portBase + 101,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  let ingestion = startWorker({
+  let ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: portBase + 102,
     migrate: true,
-    port: ingestionPort,
     statePath,
   });
   let api = null;
+  // The API Worker is booted and stopped repeatedly against one published
+  // state; every boot after the first reuses the ports of the boot it
+  // replaces.
+  let apiPort;
+  let apiInspectorPort;
   t.after(async () => {
     await Promise.all([
       stopWorker(source),
@@ -234,12 +235,12 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   });
   await Promise.all([
     waitForResponse(
-      `http://127.0.0.1:${sourcePort}/contextual-legality-domain-asia`,
+      `${source.url}/contextual-legality-domain-asia`,
       source,
       "test-owned domain source",
     ),
     waitForResponse(
-      `http://127.0.0.1:${ingestionPort}/health`,
+      `${ingestion.url}/health`,
       ingestion,
       "ingestion Worker",
       { authorization: `Bearer ${administrationKey}` },
@@ -247,23 +248,38 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   ]);
   const administrationEnvironment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
   };
   const restartIngestion = async () => {
+    const { inspectorPort, port } = ingestion;
     await stopWorker(ingestion);
-    ingestion = startWorker({
+    ingestion = await startWorker({
       config: ingestionConfig,
       envFile: ingestionEnv,
-      inspectorPort: portBase + 102,
-      port: ingestionPort,
+      inspectorPort,
+      port,
       statePath,
     });
     await waitForResponse(
-      `http://127.0.0.1:${ingestionPort}/health`,
+      `${ingestion.url}/health`,
       ingestion,
       "restarted ingestion Worker",
       { authorization: `Bearer ${administrationKey}` },
     );
+  };
+  const startApi = async (description) => {
+    api = await startWorker({
+      config: apiConfig,
+      envFile: apiEnv,
+      inspectorPort: apiInspectorPort,
+      port: apiPort,
+      statePath,
+    });
+    apiPort = api.port;
+    apiInspectorPort = api.inspectorPort;
+    await waitForResponse(`${api.url}/health`, api, description, {
+      authorization: `Bearer ${apiKey}`,
+    });
   };
 
   const asia = await ingestAndReconcile({
@@ -419,30 +435,18 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   let revisionId = usExpandedRevisionId;
 
   await stopWorker(ingestion);
-  api = startWorker({
-    config: apiConfig,
-    envFile: apiEnv,
-    inspectorPort: portBase + 103,
-    port: apiPort,
-    statePath,
-  });
-  await waitForResponse(
-    `http://127.0.0.1:${apiPort}/health`,
-    api,
-    "API Worker after unrelated-lineage publication",
-    { authorization: `Bearer ${apiKey}` },
-  );
+  await startApi("API Worker after unrelated-lineage publication");
   const carriedAsiaStatus = await legalityStatus(
     cards.get("GD30-001"),
     ["--region", "EN-ASIA"],
     {
       KEEPR_API_KEY: apiKey,
-      KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
+      KEEPR_API_URL: api.url,
     },
   );
   assert.equal(carriedAsiaStatus.data[0].status, "legal");
   const expandedRelationshipsResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${usExpandedRevisionId}/components/relationships`,
+    `${api.url}/v1/catalogue-exports/${usExpandedRevisionId}/components/relationships`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(expandedRelationshipsResponse.status, 200);
@@ -614,21 +618,9 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
 
   await stopWorker(ingestion);
-  api = startWorker({
-    config: apiConfig,
-    envFile: apiEnv,
-    inspectorPort: portBase + 103,
-    port: apiPort,
-    statePath,
-  });
-  await waitForResponse(
-    `http://127.0.0.1:${apiPort}/health`,
-    api,
-    "API Worker at missing-rule revision",
-    { authorization: `Bearer ${apiKey}` },
-  );
+  await startApi("API Worker at missing-rule revision");
   const missingRuleResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${cards.get("GD30-001")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
+    `${api.url}/v1/legality-status?card_id=${cards.get("GD30-001")}&on=2026-07-30&format=standard&event_tier=championship&region=EN-ASIA`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   const missingRuleDocument = await missingRuleResponse.json();
@@ -637,11 +629,11 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     [],
     {
       KEEPR_API_KEY: apiKey,
-      KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
+      KEEPR_API_URL: api.url,
     },
   );
   const missingRulesResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${missingRevisionId}/components/legality-rules`,
+    `${api.url}/v1/catalogue-exports/${missingRevisionId}/components/legality-rules`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(missingRulesResponse.status, 200);
@@ -829,25 +821,13 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
 
   await stopWorker(ingestion);
-  api = startWorker({
-    config: apiConfig,
-    envFile: apiEnv,
-    inspectorPort: portBase + 103,
-    port: apiPort,
-    statePath,
-  });
-  await waitForResponse(
-    `http://127.0.0.1:${apiPort}/health`,
-    api,
-    "API Worker",
-    { authorization: `Bearer ${apiKey}` },
-  );
+  await startApi("API Worker");
   const apiEnvironment = {
     KEEPR_API_KEY: apiKey,
-    KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
+    KEEPR_API_URL: api.url,
   };
   const scopedStatusUrl =
-    `http://127.0.0.1:${apiPort}/v1/legality-status` +
+    `${api.url}/v1/legality-status` +
     `?card_id=${cards.get("GD30-001")}` +
     "&on=2026-07-30&format=standard" +
     "&event_tier=championship&region=EN-ASIA";
@@ -1063,7 +1043,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     `card_${"x".repeat(196)}`,
   ]) {
     const invalidCardResponse = await fetch(
-      `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${encodeURIComponent(invalidCardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
+      `${api.url}/v1/legality-status?card_id=${encodeURIComponent(invalidCardId)}&on=2026-07-30&format=standard&region=EN-ASIA`,
       { headers: { authorization: `Bearer ${apiKey}` } },
     );
     const invalidCardDocument = await invalidCardResponse.json();
@@ -1091,7 +1071,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   }
 
   const manifestResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}`,
+    `${api.url}/v1/catalogue-exports/${revisionId}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(manifestResponse.status, 200);
@@ -1103,13 +1083,13 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
 
   const exportResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
+    `${api.url}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(exportResponse.status, 200);
   const exportBytes = new Uint8Array(await exportResponse.arrayBuffer());
   const repeatedExportResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
+    `${api.url}/v1/catalogue-exports/${revisionId}/components/legality-rules`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(repeatedExportResponse.status, 200);
@@ -1124,7 +1104,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   );
   assert.ok(emptyComponent);
   const emptyComponentResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/${emptyComponent.name}`,
+    `${api.url}/v1/catalogue-exports/${revisionId}/components/${emptyComponent.name}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(emptyComponentResponse.status, 200);
@@ -1375,7 +1355,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   });
 
   const relationshipsResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}/components/relationships`,
+    `${api.url}/v1/catalogue-exports/${revisionId}/components/relationships`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(relationshipsResponse.status, 200);
@@ -1439,21 +1419,9 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   const latestMissingRevisionId =
     missingAgainPublication.resulting_revision_id;
   await stopWorker(ingestion);
-  api = startWorker({
-    config: apiConfig,
-    envFile: apiEnv,
-    inspectorPort: portBase + 103,
-    port: apiPort,
-    statePath,
-  });
-  await waitForResponse(
-    `http://127.0.0.1:${apiPort}/health`,
-    api,
-    "API Worker at repeated-missing revision",
-    { authorization: `Bearer ${apiKey}` },
-  );
+  await startApi("API Worker at repeated-missing revision");
   const latestRulesResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${latestMissingRevisionId}/components/legality-rules`,
+    `${api.url}/v1/catalogue-exports/${latestMissingRevisionId}/components/legality-rules`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(latestRulesResponse.status, 200);
@@ -1533,18 +1501,14 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
     ),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
   ]);
-  const source = startWorker({
+  const source = await startWorker({
     config: sourceConfig,
-    inspectorPort: portBase + 131,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: portBase + 132,
     migrate: true,
-    port: ingestionPort,
     statePath,
   });
   let api = null;
@@ -1558,12 +1522,12 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
   });
   await Promise.all([
     waitForResponse(
-      `http://127.0.0.1:${sourcePort}/don-legality`,
+      `${source.url}/don-legality`,
       source,
       "test-owned DON source",
     ),
     waitForResponse(
-      `http://127.0.0.1:${ingestionPort}/health`,
+      `${ingestion.url}/health`,
       ingestion,
       "DON ingestion Worker",
       { authorization: `Bearer ${administrationKey}` },
@@ -1571,7 +1535,7 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
   ]);
   const administrationEnvironment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
   };
   const reconciled = await ingestAndReconcile({
     adapter: "fixture-one-piece-json@3",
@@ -1596,21 +1560,19 @@ test("fixture-backed DON!! ingestion reaches the authenticated consumer boundary
   assert.equal(publication.publication_outcome, "revision");
 
   await stopWorker(ingestion);
-  api = startWorker({
+  api = await startWorker({
     config: apiConfig,
     envFile: apiEnv,
-    inspectorPort: portBase + 133,
-    port: apiPort,
     statePath,
   });
   await waitForResponse(
-    `http://127.0.0.1:${apiPort}/health`,
+    `${api.url}/health`,
     api,
     "DON API Worker",
     { authorization: `Bearer ${apiKey}` },
   );
   const response = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/legality-status?card_id=${don.id}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
+    `${api.url}/v1/legality-status?card_id=${don.id}&on=2026-07-30&format=standard&region=EN-OCEANIA`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   const document = await response.json();
@@ -1679,19 +1641,14 @@ test("authenticated publication serves repeatable contextual legality export byt
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
   ]);
 
-  const goldenPortBase = portBase + 10;
-  const source = startWorker({
+  const source = await startWorker({
     config: sourceConfig,
-    inspectorPort: portBase + 111,
-    port: goldenPortBase + 1,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: portBase + 112,
     migrate: true,
-    port: goldenPortBase,
     statePath,
   });
   let api = null;
@@ -1705,12 +1662,12 @@ test("authenticated publication serves repeatable contextual legality export byt
   });
   await Promise.all([
     waitForResponse(
-      `http://127.0.0.1:${goldenPortBase + 1}/contextual-legality-domain-asia`,
+      `${source.url}/contextual-legality-domain-asia`,
       source,
       "deterministic test-owned domain source",
     ),
     waitForResponse(
-      `http://127.0.0.1:${goldenPortBase}/health`,
+      `${ingestion.url}/health`,
       ingestion,
       "deterministic ingestion Worker",
       { authorization: `Bearer ${administrationKey}` },
@@ -1718,7 +1675,7 @@ test("authenticated publication serves repeatable contextual legality export byt
   ]);
   const administrationEnvironment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${goldenPortBase}`,
+    KEEPR_INGESTION_URL: ingestion.url,
   };
   const reconciled = await ingestAndReconcile({
     adapter: "fixture-gundam-en-asia-json@2",
@@ -1742,20 +1699,18 @@ test("authenticated publication serves repeatable contextual legality export byt
   assert.match(revisionId, /^catrev_/);
 
   await stopWorker(ingestion);
-  api = startWorker({
+  api = await startWorker({
     config: apiConfig,
     envFile: apiEnv,
-    inspectorPort: portBase + 113,
-    port: goldenPortBase + 2,
     statePath,
   });
   await waitForResponse(
-    `http://127.0.0.1:${goldenPortBase + 2}/health`,
+    `${api.url}/health`,
     api,
     "deterministic API Worker",
     { authorization: `Bearer ${apiKey}` },
   );
-  const exportUrl = `http://127.0.0.1:${goldenPortBase + 2}`;
+  const exportUrl = api.url;
   const authenticatedHeaders = { authorization: `Bearer ${apiKey}` };
   const manifestResponse = await fetch(
     `${exportUrl}/v1/catalogue-exports/${revisionId}`,
@@ -1905,6 +1860,9 @@ async function ingestAndReconcile({
     expectedRunState,
     environment,
     ingestion,
+    // Poll below the administration-rate budget instead of manufacturing a
+    // hot client.
+    { deadlineMs: 90_000, pollMs: 1_000 },
   );
   if (expectedRunState === "failed") return reached;
   const reconciliationUrl =
@@ -2167,31 +2125,6 @@ function canonicalRuleId(sourceLineage, officialId) {
   return `legality_rule_${digest}`;
 }
 
-async function waitForRunState(runId, expected, environment, worker) {
-  const deadline = Date.now() + 90_000;
-  let lastShown = "";
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", runId, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      lastShown = shown.stdout;
-      const document = JSON.parse(shown.stdout);
-      if (document.state === expected) return document;
-      if (document.state === "failed") {
-        throw new Error(`${shown.stdout}\n${worker.getOutput()}`);
-      }
-    }
-    // Workflow collection is asynchronous. Poll below the production
-    // administration-rate budget instead of manufacturing a hot client.
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
-  }
-  throw new Error(
-    `run ${runId} did not reach ${expected}\n${lastShown}\n${worker.getOutput()}`,
-  );
-}
-
 async function localConfig(source, directory, name, overrides = {}) {
   const config = JSON.parse(readFileSync(resolve(root, source), "utf8"));
   delete config.$schema;
@@ -2203,143 +2136,16 @@ async function localConfig(source, directory, name, overrides = {}) {
   if (Array.isArray(config.d1_databases)) {
     config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   }
+  // Immediate source pacing compresses this scenario's administration calls
+  // into a window far shorter than the production budget assumes.
+  const administrationRateLimit = config.ratelimits?.find(
+    ({ name }) => name === "ADMINISTRATION_RATE_LIMIT",
+  );
+  if (administrationRateLimit !== undefined) {
+    administrationRateLimit.simple.limit = 300;
+  }
   Object.assign(config, overrides);
   const path = join(directory, `${name}.wrangler.json`);
   await writeFile(path, JSON.stringify(config));
   return path;
-}
-
-function startWorker({
-  config,
-  envFile,
-  inspectorPort,
-  migrate = false,
-  port,
-  statePath,
-}) {
-  if (migrate) applyMigrations(config, statePath);
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      ...(envFile === undefined ? [] : ["--env-file", envFile]),
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output };
-}
-
-function applyMigrations(config, statePath) {
-  const result = spawnSync(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      statePath,
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        CI: "1",
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
-}
-
-async function waitForResponse(url, worker, name, headers = {}) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      throw new Error(
-        `${name} exited with ${worker.process.exitCode}\n${worker.getOutput()}`,
-      );
-    }
-    try {
-      const response = await fetch(url, { headers });
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`${name} did not become ready\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: { ...process.env, ...environment },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", rejectRun);
-    child.once("exit", (code) => {
-      resolveRun({ code, stdout, stderr });
-    });
-  });
 }

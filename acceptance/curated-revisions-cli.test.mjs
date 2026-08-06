@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { runCli as sharedRunCli } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -388,21 +388,7 @@ async function jsonServer(t, observed, document, status = 200) {
 }
 
 function runCli(arguments_, environment, secrets) {
-  return new Promise((resolveExit) => {
-    const child = spawn(process.execPath, [resolve(root, "cli/keepr.mjs"), ...arguments_], {
-      cwd: root,
-      env: { ...process.env, ...environment },
-      stdio: ["ignore", "pipe", "pipe", secrets === undefined ? "ignore" : "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    if (secrets !== undefined) child.stdio[3].end(JSON.stringify(secrets));
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
+  return sharedRunCli(arguments_, environment, { secrets });
 }
 
 const productionTarget = {

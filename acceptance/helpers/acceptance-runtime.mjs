@@ -1,89 +1,268 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { join, resolve } from "node:path";
+import { createServer } from "node:net";
+import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
 
-export async function applyMigrations(statePath) {
+// Allocate an ephemeral 127.0.0.1 port by binding port 0 and releasing it
+// (wrangler dev does not accept port 0 itself). The listener closes before
+// wrangler binds, so a small reuse race exists; allocations are deduplicated
+// process-wide so one file's workers never race each other.
+const allocatedPorts = new Set();
+
+export async function allocatePort() {
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const port = await new Promise((resolvePort, rejectPort) => {
+      const server = createServer();
+      server.unref();
+      server.once("error", rejectPort);
+      server.listen(0, "127.0.0.1", () => {
+        const { port: boundPort } = server.address();
+        server.close(() => resolvePort(boundPort));
+      });
+    });
+    if (!allocatedPorts.has(port)) {
+      allocatedPorts.add(port);
+      return port;
+    }
+  }
+  throw new Error("An unused local port could not be allocated.");
+}
+
+export async function applyMigrations(statePath, config) {
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
     [
       "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", "apps/ingestion/wrangler.jsonc", "--persist-to", statePath,
+      "--config", config ?? "apps/ingestion/wrangler.jsonc",
+      "--persist-to", statePath,
     ],
     { ...processEnvironment(statePath), CI: "1" },
   );
   assert.equal(result.code, 0, result.stderr || result.stdout);
 }
 
-export function startWorker({
+// Boot a local Worker. Ports are allocated at runtime unless passed, so
+// acceptance files can run concurrently. Each file must keep its own
+// --persist-to statePath (mkdtemp) so concurrent files never share state;
+// workers of one file share a dev registry directory placed beside the
+// statePath so cross-process service bindings still resolve, while files
+// stay isolated from each other's registries.
+//
+// pacingMode "immediate" (default) removes the production ~1s-per-fetch
+// source host pacing sleep via the SOURCE_HOST_PACING_MODE override read by
+// the ingestion Worker; pass "production" to keep production pacing.
+export async function startWorker({
   config,
   envFile,
   inspectorPort,
+  migrate = false,
+  pacingMode = "immediate",
   port,
+  registryPath,
   statePath,
+  vars = {},
 }) {
+  if (migrate) await applyMigrations(statePath, config);
+  const boundPort = port ?? await allocatePort();
+  const boundInspectorPort = inspectorPort ?? await allocatePort();
+  const boundRegistryPath = registryPath ??
+    join(dirname(statePath), "wrangler-registry");
+  const allVars = { SOURCE_HOST_PACING_MODE: pacingMode, ...vars };
   let output = "";
   const child = spawn(resolve(root, "node_modules/.bin/wrangler"), [
     "dev", "--config", config,
     ...(envFile === undefined ? [] : ["--env-file", envFile]),
-    "--local", "--ip", "127.0.0.1", "--port", String(port),
-    "--inspector-port", String(inspectorPort), "--persist-to", statePath,
+    "--local", "--ip", "127.0.0.1", "--port", String(boundPort),
+    "--inspector-port", String(boundInspectorPort),
+    "--persist-to", statePath,
+    ...Object.entries(allVars).flatMap(
+      ([key, value]) => ["--var", `${key}:${value}`],
+    ),
     "--log-level", "error", "--show-interactive-dev-session", "false",
   ], {
     cwd: root,
-    env: processEnvironment(statePath),
+    env: {
+      ...processEnvironment(statePath),
+      WRANGLER_REGISTRY_PATH: boundRegistryPath,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => output += chunk);
   child.stderr.on("data", (chunk) => output += chunk);
-  return { process: child, getOutput: () => output };
+  return {
+    process: child,
+    getOutput: () => output,
+    port: boundPort,
+    inspectorPort: boundInspectorPort,
+    url: `http://127.0.0.1:${boundPort}`,
+  };
 }
 
-export async function waitForHealth(url, key, worker) {
-  const deadline = Date.now() + 15_000;
+export async function waitForResponse(url, worker, description, headers) {
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
+    if (worker.process.exitCode !== null) {
+      throw new Error(`${description} exited\n${worker.getOutput()}`);
+    }
     try {
-      const response = await fetch(url, {
-        headers: { authorization: `Bearer ${key}` },
-      });
+      const response = await fetch(url, { headers });
       if (response.ok) return;
     } catch {
       // The local Worker has not started accepting requests yet.
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    await delay(100);
   }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
+  throw new Error(`${description} did not become ready\n${worker.getOutput()}`);
 }
 
+export function waitForHealth(url, key, worker) {
+  return waitForResponse(url, worker, "Worker", {
+    authorization: `Bearer ${key}`,
+  });
+}
+
+// Stop a Worker and wait until its process has actually exited, so a
+// follow-up boot may safely reuse the same port.
 export async function stopWorker(worker) {
   if (worker.process.exitCode !== null) return;
+  const exited = new Promise((resolveExit) =>
+    worker.process.once("exit", resolveExit)
+  );
   worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
+  await Promise.race([exited, delay(5_000)]);
+  if (worker.process.exitCode === null) {
+    worker.process.kill("SIGKILL");
+    await exited;
+  }
 }
 
-export function runCli(arguments_, environment) {
+// Run the repository CLI. "secrets" is delivered as JSON on file descriptor 3,
+// matching the --secrets-stdin-fd 3 contract the CLI documents.
+export function runCli(arguments_, environment, { secrets, stdin } = {}) {
   return runProcess(
     process.execPath,
     [resolve(root, "cli/keepr.mjs"), ...arguments_],
     { ...processEnvironment("/tmp"), ...environment },
+    { secrets, stdin },
   );
 }
 
-function runProcess(command, arguments_, environment) {
+// Apply a SQL file to the local CATALOGUE_DB behind statePath, so a test may
+// seed the state a Worker will later serve.
+export async function executeSql(statePath, file, config) {
+  const result = await runProcess(
+    resolve(root, "node_modules/.bin/wrangler"),
+    [
+      "d1", "execute", "CATALOGUE_DB", "--local",
+      "--config", config ?? "apps/ingestion/wrangler.jsonc",
+      "--persist-to", statePath,
+      "--file", file,
+    ],
+    { ...processEnvironment(statePath), CI: "1" },
+  );
+  assert.equal(result.code, 0, result.stderr || result.stdout);
+}
+
+// Read an ingestion administration document over HTTP, mirroring the CLI's
+// configuration (KEEPR_INGESTION_URL / KEEPR_ADMINISTRATION_KEY /
+// KEEPR_TEST_NOW). Returns null while unavailable so poll loops can retry
+// without spawning a CLI subprocess per iteration.
+export async function administrationDocument(pathname, environment) {
+  const base = environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788";
+  let response;
+  try {
+    response = await fetch(new URL(pathname, base), {
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        ...(environment.KEEPR_TEST_NOW === undefined
+          ? {}
+          : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+// Poll an administration document until the predicate accepts it. The
+// predicate may return true (done), false (keep polling), or a string
+// (fail immediately with that reason).
+export async function waitForAdministrationDocument(
+  pathname,
+  predicate,
+  environment,
+  worker,
+  { deadlineMs = 90_000, pollMs = 250, description = pathname } = {},
+) {
+  const deadline = Date.now() + deadlineMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    const document = await administrationDocument(pathname, environment);
+    if (document !== null) {
+      last = document;
+      const verdict = predicate(document);
+      if (verdict === true) return document;
+      if (typeof verdict === "string") {
+        throw new Error(
+          `${description}: ${verdict}\n${JSON.stringify(document)}\n` +
+            worker.getOutput(),
+        );
+      }
+    }
+    await delay(pollMs);
+  }
+  throw new Error(
+    `${description} did not reach the expected state\n` +
+      `${JSON.stringify(last)}\n${worker.getOutput()}`,
+  );
+}
+
+// Poll a collection run (CLI equivalent: keepr source show --json) until it
+// reaches the expected state. Fails fast when the run reaches "failed"
+// unless "failed" is the expected state.
+export function waitForRunState(runId, expected, environment, worker, options) {
+  return waitForAdministrationDocument(
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/evidence`,
+    (document) =>
+      document.state === expected ||
+      (document.state === "failed" && expected !== "failed"
+        ? `run ${runId} failed before reaching ${expected}`
+        : false),
+    environment,
+    worker,
+    { description: `run ${runId} → ${expected}`, ...options },
+  );
+}
+
+function delay(milliseconds) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+function runProcess(command, arguments_, environment, { secrets, stdin } = {}) {
   return new Promise((resolveExit) => {
     const child = spawn(command, arguments_, {
       cwd: root,
       env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [
+        stdin === undefined ? "ignore" : "pipe",
+        "pipe",
+        "pipe",
+        ...(secrets === undefined ? [] : ["pipe"]),
+      ],
     });
+    if (stdin !== undefined) child.stdin.end(stdin);
+    if (secrets !== undefined) child.stdio[3].end(JSON.stringify(secrets));
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");

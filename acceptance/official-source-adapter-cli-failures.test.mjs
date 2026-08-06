@@ -3,8 +3,14 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForResponse,
+  waitForRunState,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const failureCases = [
@@ -12,25 +18,21 @@ const failureCases = [
     name: "a missing required Official Source surface",
     path: "/raw-one-piece-failure-missing-surface",
     failure: "omission",
-    portOffset: 0,
   },
   {
     name: "an Official Source result cap",
     path: "/raw-one-piece-failure-result-cap",
     failure: "cap",
-    portOffset: 10,
   },
   {
     name: "unfinished Official Source pagination",
     path: "/raw-one-piece-failure-pagination",
     failure: "pagination",
-    portOffset: 20,
   },
   {
     name: "invalid One Piece type-specific nullability",
     path: "/raw-one-piece-failure-nullability",
     failure: "nullability",
-    portOffset: 30,
   },
 ];
 
@@ -44,8 +46,6 @@ for (const failureCase of failureCases) {
     const ingestionConfig = join(directory, "ingestion.wrangler.json");
     const planPath = join(directory, "source-plan.json");
     const ingestionState = join(directory, "ingestion-state");
-    const ingestionPort = 24_788 + failureCase.portOffset;
-    const sourcePort = 24_789 + failureCase.portOffset;
     await writeFile(
       ingestionEnv,
       `ADMINISTRATION_KEY=${administrationKey}\n`,
@@ -88,18 +88,14 @@ for (const failureCase of failureCases) {
       }),
     );
 
-    const source = startWorker({
+    const source = await startWorker({
       config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
-      inspectorPort: 25_229 + failureCase.portOffset,
-      port: sourcePort,
       statePath: join(directory, "source-state"),
     });
-    const ingestion = startWorker({
+    const ingestion = await startWorker({
       config: ingestionConfig,
       envFile: ingestionEnv,
-      inspectorPort: 25_230 + failureCase.portOffset,
       migrate: true,
-      port: ingestionPort,
       statePath: ingestionState,
     });
     t.after(async () => {
@@ -108,12 +104,12 @@ for (const failureCase of failureCases) {
     });
     await Promise.all([
       waitForResponse(
-        `http://127.0.0.1:${sourcePort}${failureCase.path}`,
+        `${source.url}${failureCase.path}`,
         source,
         "synthetic Official Source",
       ),
       waitForResponse(
-        `http://127.0.0.1:${ingestionPort}/health`,
+        `${ingestion.url}/health`,
         ingestion,
         "ingestion Worker",
         { authorization: `Bearer ${administrationKey}` },
@@ -122,7 +118,7 @@ for (const failureCase of failureCases) {
 
     const cliEnvironment = {
       KEEPR_ADMINISTRATION_KEY: administrationKey,
-      KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+      KEEPR_INGESTION_URL: ingestion.url,
     };
     const collected = await runCli(
       [
@@ -131,7 +127,7 @@ for (const failureCase of failureCases) {
         "--plan-file",
         planPath,
         "--idempotency-key",
-        `official-failure-${failureCase.portOffset}`,
+        `official-failure-${failureCase.failure}`,
         "--json",
       ],
       cliEnvironment,
@@ -163,10 +159,12 @@ for (const failureCase of failureCases) {
       `${resumed.stdout}\n${resumed.stderr}\n${ingestion.getOutput()}`,
     );
 
-    const failed = await waitForFailedRun(
+    const failed = await waitForRunState(
       run.id,
+      "failed",
       cliEnvironment,
       ingestion,
+      { deadlineMs: 90_000 },
     );
     assert.equal(failed.failure_code, "source_parse_failed");
     const snapshotUrls = failed.snapshots.map(({ request }) => request.url);
@@ -196,160 +194,4 @@ function exactOnePieceRequests() {
     id: "one-piece-en:discovery",
     url: "https://en.onepiece-cardgame.com/cardlist/",
   }];
-}
-
-async function waitForFailedRun(runId, environment, ingestion) {
-  const deadline = Date.now() + 90_000;
-  let lastDocument = null;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", runId, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      const document = JSON.parse(shown.stdout);
-      lastDocument = document;
-      if (document.state === "failed") return document;
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-  }
-  throw new Error(
-    `Ingestion Run ${runId} did not fail: ${JSON.stringify(lastDocument)}\n` +
-      ingestion.getOutput(),
-  );
-}
-
-function startWorker({
-  config,
-  envFile,
-  inspectorPort,
-  migrate = false,
-  port,
-  statePath,
-}) {
-  if (migrate) applyMigrations(config, statePath);
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      ...(envFile === undefined ? [] : ["--env-file", envFile]),
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output };
-}
-
-function applyMigrations(config, statePath) {
-  const result = spawnSync(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      statePath,
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        CI: "1",
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
-}
-
-async function waitForResponse(url, worker, name, headers = {}) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      throw new Error(
-        `${name} exited with ${worker.process.exitCode}\n${worker.getOutput()}`,
-      );
-    }
-    try {
-      const response = await fetch(url, { headers });
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`${name} did not become ready\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: { ...process.env, ...environment },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", rejectRun);
-    child.once("exit", (code) => {
-      resolveRun({ code, stdout, stderr });
-    });
-  });
 }

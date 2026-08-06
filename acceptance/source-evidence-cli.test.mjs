@@ -3,12 +3,16 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForResponse,
+  waitForRunState,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const ingestionPort = 18_789;
-const sourcePort = 18_790;
 
 test("the CLI audits real retained evidence through a locally emulated ingestion Worker", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-evidence-cli-"));
@@ -41,17 +45,13 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
-  const source = startWorker({
+  const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
-    inspectorPort: 19_232,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 19_231,
-    port: ingestionPort,
     statePath: join(directory, "ingestion-state"),
     migrate: true,
   });
@@ -61,12 +61,12 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   });
   await Promise.all([
     waitForResponse(
-      `http://127.0.0.1:${sourcePort}/success`,
+      `${source.url}/success`,
       source,
       "synthetic Official Source",
     ),
     waitForResponse(
-      `http://127.0.0.1:${ingestionPort}/health`,
+      `${ingestion.url}/health`,
       ingestion,
       "ingestion Worker",
       { authorization: `Bearer ${administrationKey}` },
@@ -75,7 +75,7 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
 
   const cliEnvironment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
   };
   const rejected = await collectResumeAndShow(
     "cli_rejected_evidence_001",
@@ -200,37 +200,9 @@ async function collectResumeAndShow(
   );
   assert.equal(resumed.code, 0, resumed.stderr);
 
-  const deadline = Date.now() + 20_000;
-  let lastDocument = null;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", run.id, "--json"],
-      environment,
-    );
-    if (
-      shown.code === 9 &&
-      parseCliErrorCode(shown.stdout) === "runtime_unavailable"
-    ) {
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-      continue;
-    }
-    assert.equal(
-      shown.code,
-      0,
-      `${shown.stdout}\n${shown.stderr}\n${ingestion.getOutput()}`,
-    );
-    const document = JSON.parse(shown.stdout);
-    lastDocument = document;
-    if (document.state === expectedState) return document;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-  }
-  throw new Error(
-    `Ingestion Run ${run.id} did not reach ${expectedState}: ${JSON.stringify({
-      state: lastDocument?.state,
-      failure_code: lastDocument?.failure_code,
-      warnings: lastDocument?.warnings,
-    })}\n${ingestion.getOutput()}`,
-  );
+  return waitForRunState(run.id, expectedState, environment, ingestion, {
+    deadlineMs: 20_000,
+  });
 }
 
 function exactOnePieceRequests() {
@@ -238,144 +210,4 @@ function exactOnePieceRequests() {
     id: "one-piece-en:discovery",
     url: "https://en.onepiece-cardgame.com/cardlist/",
   }];
-}
-
-function parseCliErrorCode(stdout) {
-  try {
-    return JSON.parse(stdout).code;
-  } catch {
-    return undefined;
-  }
-}
-
-function startWorker({
-  config,
-  envFile,
-  inspectorPort,
-  migrate = false,
-  port,
-  statePath,
-}) {
-  if (migrate) applyMigrations(config, statePath);
-  let output = "";
-  const arguments_ = [
-    "dev",
-    "--config",
-    config,
-    ...(envFile === undefined ? [] : ["--env-file", envFile]),
-    "--local",
-    "--ip",
-    "127.0.0.1",
-    "--port",
-    String(port),
-    "--inspector-port",
-    String(inspectorPort),
-    "--persist-to",
-    statePath,
-    "--log-level",
-    "error",
-    "--show-interactive-dev-session",
-    "false",
-  ];
-  const child = spawn(resolve(root, "node_modules/.bin/wrangler"), arguments_, {
-    cwd: root,
-    env: {
-      ...process.env,
-      WRANGLER_LOG_PATH: join(statePath, "logs"),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output };
-}
-
-function applyMigrations(config, statePath) {
-  const result = spawnSync(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      statePath,
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        CI: "1",
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
-}
-
-async function waitForResponse(url, worker, name, headers = {}) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      throw new Error(
-        `${name} exited with ${worker.process.exitCode}\n${worker.getOutput()}`,
-      );
-    }
-    try {
-      const response = await fetch(url, { headers });
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`${name} did not become ready\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: { ...process.env, ...environment },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", rejectRun);
-    child.once("exit", (code) => {
-      resolveRun({ code, stdout, stderr });
-    });
-  });
 }
