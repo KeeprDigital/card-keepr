@@ -14,7 +14,7 @@
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "c832fb49-abfc-48a4-80e3-f788b30d954f",
       "migrations_dir": "../../migrations"
     }
   ],

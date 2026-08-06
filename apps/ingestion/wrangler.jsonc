@@ -6,9 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "ADMINISTRATION_CLOCK_MODE": "system",
-    "CLOUDFLARE_ACCOUNT_ID": "0123456789abcdef0123456789abcdef",
-    "CATALOGUE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000001",
-    "DISPOSABLE_D1_DATABASE_ID": "00000000-0000-0000-0000-000000000002",
+    "CLOUDFLARE_ACCOUNT_ID": "3ec389380c7b82e6a172e6f351d4aad9",
+    "CATALOGUE_D1_DATABASE_ID": "c832fb49-abfc-48a4-80e3-f788b30d954f",
+    "DISPOSABLE_D1_DATABASE_ID": "720d71a4-bf57-4a88-b010-937786eddda4",
     "GITHUB_REPOSITORY_ID": "1313489088",
     "GITHUB_APP_ID": "0",
     "GITHUB_INSTALLATION_ID": "0",
@@ -56,7 +56,7 @@
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "c832fb49-abfc-48a4-80e3-f788b30d954f",
       "migrations_dir": "../../migrations"
     }
   ],
