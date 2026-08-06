@@ -229,6 +229,12 @@ export default defineConfig({
         },
         bindings: {
           SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
+          // The test suite is hermetic: it pins the placeholder resource
+          // identifiers its Cloudflare API mocks and fixtures assert on,
+          // independent of the provisioned production ids in wrangler.jsonc.
+          CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+          CATALOGUE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000001",
+          DISPOSABLE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000002",
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_KEY_REPLACEMENT:
             "vitest-administration-key-replacement-slot",
