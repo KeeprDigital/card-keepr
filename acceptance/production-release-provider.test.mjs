@@ -6,15 +6,27 @@ import {
   verifyProductionTarget,
 } from "../scripts/production-release-provider.mjs";
 
-const account = "0123456789abcdef0123456789abcdef";
+// The provider derives its expected target from the checked-in wrangler
+// configuration, so the acceptance fixture derives the same way instead of
+// pinning identifiers that drift when production resources are provisioned.
+const ingestionConfig = JSON.parse(
+  await readFile("apps/ingestion/wrangler.jsonc", "utf8"),
+);
+const account = ingestionConfig.vars.CLOUDFLARE_ACCOUNT_ID;
 const target = {
   cloudflare_account_id: account,
   worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
   d1_databases: [
-    { name: "card-keepr-catalogue", id: "00000000-0000-0000-0000-000000000001" },
-    { name: "card-keepr-disposable-verification", id: "00000000-0000-0000-0000-000000000002" },
+    {
+      name: "card-keepr-catalogue",
+      id: ingestionConfig.d1_databases[0].database_id,
+    },
+    {
+      name: "card-keepr-disposable-verification",
+      id: ingestionConfig.vars.DISPOSABLE_D1_DATABASE_ID,
+    },
   ],
-  r2_buckets: ["card-keepr-evidence", "card-keepr-printing-images", "card-keepr-catalogue-exports", "card-keepr-backups"],
+  r2_buckets: ingestionConfig.r2_buckets.map((binding) => binding.bucket_name),
 };
 const secrets = {
   "card-keepr-api": ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT", "CREDENTIAL_CONSUMER_PROOF_KEY"],
