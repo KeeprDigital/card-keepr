@@ -10,6 +10,7 @@ import {
   hostPacingDelay,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  sourceHostPacingMode,
   type CaptureTransportResult,
   type PreparedCaptureAttempt,
 } from "../../../src/catalogue/source-evidence-capture";
@@ -411,6 +412,8 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
       minimum_sequence_number: minimumSequenceNumber,
       maximum_sequence_number: maximumSequenceNumber,
     } = event.payload;
+    // Fails closed on unrecognized values before any capture work begins.
+    const pacingMode = sourceHostPacingMode(this.env.SOURCE_HOST_PACING_MODE);
     let stage = 0;
     for (;;) {
       const requests = await loadPendingShardRequests(
@@ -440,7 +443,7 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
             const pacingDelay = await step.do(
               `read pacing deadline for ${request.request_id}`,
               deterministicDatabaseStep,
-              () => hostPacingDelay(this.env.CATALOGUE_DB, hostname),
+              () => hostPacingDelay(this.env.CATALOGUE_DB, hostname, pacingMode),
             );
             if (pacingDelay > 0) {
               await step.sleep(`pace ${request.request_id}`, pacingDelay);
@@ -462,7 +465,8 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
               await step.do(
                 `advance pacing for ${request.request_id} attempt ${prepared.attempt_number}`,
                 deterministicDatabaseStep,
-                () => advanceHostPacing(this.env.CATALOGUE_DB, hostname),
+                () =>
+                  advanceHostPacing(this.env.CATALOGUE_DB, hostname, pacingMode),
               );
             }
             if (result.kind === "uploaded") {
