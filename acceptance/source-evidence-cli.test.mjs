@@ -175,7 +175,7 @@ async function collectResumeAndShow(
       plans: [{
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@2",
+        adapter_version: "one-piece-en@3",
         requests,
       }],
     }),

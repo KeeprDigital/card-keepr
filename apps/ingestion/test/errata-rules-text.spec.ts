@@ -370,7 +370,6 @@ describe("Errata rules-text lifecycle", () => {
         selected_games: ["one-piece"],
         idempotency_key: "legacy-candidate-without-errata",
       },
-      "2026-07-30T00:00:00.000Z",
     );
     const runId = requiredString(started, "id");
     const rejected = await post(`/v1/ingestion-runs/${runId}/rejection`, {
@@ -818,6 +817,34 @@ describe("Errata rules-text lifecycle", () => {
         ingestion_run_id: run.id,
       },
     ]);
+  });
+
+  test("a non-parallel Official Erratum fails closed unless it targets one exact Printing", async () => {
+    const seedRun = await collect(
+      "/reconciliation/dedicated-printing-erratum-seed",
+      "seed-nonparallel-card-erratum",
+    );
+    const seed = await reconcile(seedRun.id);
+    expect(seed.response.status).toBe(200);
+    expect((await approve(seed.document)).response.status).toBe(200);
+
+    const run = await collect(
+      "/reconciliation/dedicated-card-nonparallel-erratum",
+      "reject-nonparallel-card-erratum",
+      syntheticOfficialErrataSource,
+    );
+    const reconciled = await reconcile(run.id);
+    expect(reconciled.response.status).toBe(409);
+    expect(reconciled.document.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "retained_evidence_invalid",
+          detail: expect.stringContaining(
+            "non-parallel Official Erratum must target exactly one Printing",
+          ),
+        }),
+      ]),
+    );
   });
 
   test("a complete Errata observation warns when a published Erratum disappears without deleting it", async () => {

@@ -39,6 +39,10 @@ export class LegalityStatusProblem extends Error {
       | "invalid_legality_region"
       | "internal_error",
     message: string,
+    readonly invalidParameter: {
+      name: string;
+      reason: string;
+    } | null = null,
   ) {
     super(message);
   }
@@ -397,11 +401,19 @@ function parseQuery(url: URL): {
     "include",
   ]);
   for (const key of url.searchParams.keys()) {
-    if (!allowed.has(key) || url.searchParams.getAll(key).length !== 1) {
-      throw new LegalityStatusProblem(
-        400,
-        "invalid_parameter",
-        "The Legality Status query contains an unknown or duplicate parameter.",
+    if (!allowed.has(key)) {
+      if (key.length === 0) {
+        throw invalidQueryParameter(
+          "query",
+          "query parameter names must be non-empty.",
+        );
+      }
+      throw invalidQueryParameter(key, `${key} is not accepted.`);
+    }
+    if (url.searchParams.getAll(key).length !== 1) {
+      throw invalidQueryParameter(
+        key,
+        `${key} must be supplied exactly once.`,
       );
     }
   }
@@ -410,27 +422,21 @@ function parseQuery(url: URL): {
     cardId.length > 200 ||
     !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cardId)
   ) {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
+    throw invalidQueryParameter(
+      "card_id",
       "card_id must be an opaque identity of at most 200 characters.",
     );
   }
   const on = requiredParameter(url, "on");
   const format = requiredParameter(url, "format");
   if (!isIsoCalendarDate(on)) {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
-      "on must be a valid ISO date.",
-    );
+    throw invalidQueryParameter("on", "on must be a valid ISO date.");
   }
   const eventTier = optionalParameter(url, "event_tier");
   const include = optionalParameter(url, "include");
   if (include !== null && include !== "evidence") {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
+    throw invalidQueryParameter(
+      "include",
       "include must be exactly evidence when supplied.",
     );
   }
@@ -441,9 +447,8 @@ function parseQuery(url: URL): {
     rawRegion !== "EN-ASIA" &&
     rawRegion !== "EN-US"
   ) {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
+    throw invalidQueryParameter(
+      "region",
       "region must be EN-OCEANIA, EN-ASIA, or EN-US.",
     );
   }
@@ -460,11 +465,7 @@ function parseQuery(url: URL): {
 function requiredParameter(url: URL, name: string): string {
   const value = optionalParameter(url, name);
   if (value === null) {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
-      `${name} is required.`,
-    );
+    throw invalidQueryParameter(name, `${name} is required.`);
   }
   return value;
 }
@@ -473,11 +474,22 @@ function optionalParameter(url: URL, name: string): string | null {
   const value = url.searchParams.get(name);
   if (value === null) return null;
   if (value.length === 0 || value !== value.trim()) {
-    throw new LegalityStatusProblem(
-      400,
-      "invalid_parameter",
+    throw invalidQueryParameter(
+      name,
       `${name} must be a non-empty string.`,
     );
   }
   return value;
+}
+
+function invalidQueryParameter(
+  name: string,
+  reason: string,
+): LegalityStatusProblem {
+  return new LegalityStatusProblem(
+    400,
+    "invalid_parameter",
+    reason,
+    { name, reason },
+  );
 }

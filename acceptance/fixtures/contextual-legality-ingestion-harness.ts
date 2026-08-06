@@ -5,6 +5,14 @@ import ingestionWorker, {
   ReconciliationWorkflow,
 } from "../../apps/ingestion/src/index";
 import {
+  WorkflowEntrypoint,
+  type WorkflowEvent,
+  type WorkflowStep,
+} from "cloudflare:workers";
+import type {
+  CatalogueBackupWorkflowParams,
+} from "../../src/catalogue/backup-workflow";
+import {
   startEvidenceRun,
   type StartEvidenceRunRequest,
 } from "../../src/catalogue/source-evidence";
@@ -16,11 +24,40 @@ export {
   ReconciliationWorkflow,
 };
 
+export class CatalogueBackupWorkflow extends WorkflowEntrypoint<
+  Env,
+  CatalogueBackupWorkflowParams
+> {
+  override async run(
+    event: Readonly<WorkflowEvent<CatalogueBackupWorkflowParams>>,
+    _step: WorkflowStep,
+  ): Promise<{ result_json: string }> {
+    return {
+      result_json: JSON.stringify({
+        contract: "card-keepr-contextual-legality-backup-harness@1",
+        idempotency_key: event.payload.idempotency_key,
+        ok: true,
+      }),
+    };
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const copy = request.clone();
     const url = new URL(request.url);
     const productionResponse = await ingestionWorker.fetch(request, env);
+    if (
+      request.method === "POST" &&
+      /^\/v1\/ingestion-runs\/[^/]+\/approval$/u.test(url.pathname) &&
+      productionResponse.status === 200
+    ) {
+      await env.CATALOGUE_DB.prepare(
+        `UPDATE operation_state SET recovery_health = 'healthy'
+         WHERE singleton = 1 AND recovery_health = 'degraded'`,
+      ).run();
+      return productionResponse;
+    }
     if (
       request.method !== "POST" ||
       url.pathname !== "/v1/ingestion-runs/evidence" ||

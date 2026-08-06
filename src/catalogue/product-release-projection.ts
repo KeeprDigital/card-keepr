@@ -4,14 +4,16 @@ import type {
   EvidenceCategory,
   ProductRelationship,
 } from "./product-release-catalogue";
+import type { CuratedProvenance } from "./curated-provenance";
 
 export type PrintingProductProjection = {
   id: string;
   official_code: string | null;
   name: string | null;
   evidence_category: EvidenceCategory;
-  source_lineage: string;
-  source_observation_ids: string[];
+  source_lineage?: string;
+  source_observation_ids?: string[];
+  curated_provenance?: readonly CuratedProvenance[];
 };
 
 export type PrintingDistributionContextProjection = {
@@ -20,8 +22,9 @@ export type PrintingDistributionContextProjection = {
   label: string;
   product_id: string | null;
   evidence_category: EvidenceCategory;
-  source_lineage: string;
-  source_observation_ids: string[];
+  source_lineage?: string;
+  source_observation_ids?: string[];
+  curated_provenance?: readonly CuratedProvenance[];
 };
 
 export function typedPrintingProjections(
@@ -37,9 +40,15 @@ export function typedPrintingProjections(
   const contextsById = new Map(
     contexts.map((context) => [context.id, context]),
   );
+  const curatedAbsences = new Set(relationships
+    .filter((relationship) =>
+      relationship.evidence_category === "curated" && !relationship.observed
+    )
+    .map(relationshipTargetKey));
   const current = relationships.filter(
     (relationship) =>
       relationship.observed &&
+      !curatedAbsences.has(relationshipTargetKey(relationship)) &&
       relationship.from.type === "printing" &&
       relationship.from.id === printingId,
   );
@@ -57,8 +66,15 @@ export function typedPrintingProjections(
       official_code: product.official_code,
       name: product.name,
       evidence_category: relationship.evidence_category,
-      source_lineage: relationship.source_lineage,
-      source_observation_ids: [...relationship.source_observation_ids],
+      ...(relationship.source_lineage === undefined
+        ? {}
+        : { source_lineage: relationship.source_lineage }),
+      ...(relationship.source_observation_ids.length === 0
+        ? {}
+        : { source_observation_ids: [...relationship.source_observation_ids] }),
+      ...(relationship.curated_provenance === undefined
+        ? {}
+        : { curated_provenance: relationship.curated_provenance }),
     }];
   });
   const contextProjections = current.flatMap((relationship) => {
@@ -76,8 +92,15 @@ export function typedPrintingProjections(
       label: context.label,
       product_id: context.product_id,
       evidence_category: relationship.evidence_category,
-      source_lineage: relationship.source_lineage,
-      source_observation_ids: [...relationship.source_observation_ids],
+      ...(relationship.source_lineage === undefined
+        ? {}
+        : { source_lineage: relationship.source_lineage }),
+      ...(relationship.source_observation_ids.length === 0
+        ? {}
+        : { source_observation_ids: [...relationship.source_observation_ids] }),
+      ...(relationship.curated_provenance === undefined
+        ? {}
+        : { curated_provenance: relationship.curated_provenance }),
     }];
   });
   return {
@@ -86,12 +109,22 @@ export function typedPrintingProjections(
   };
 }
 
+function relationshipTargetKey(relationship: ProductRelationship): string {
+  return [
+    relationship.kind,
+    relationship.from.type,
+    relationship.from.id,
+    relationship.to.type,
+    relationship.to.id,
+  ].join("|");
+}
+
 function projectionOrder(
-  left: { id: string; source_lineage: string },
-  right: { id: string; source_lineage: string },
+  left: { id: string; source_lineage?: string },
+  right: { id: string; source_lineage?: string },
 ): number {
   return (
     left.id.localeCompare(right.id) ||
-    left.source_lineage.localeCompare(right.source_lineage)
+    (left.source_lineage ?? "").localeCompare(right.source_lineage ?? "")
   );
 }

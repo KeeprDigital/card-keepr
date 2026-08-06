@@ -21,10 +21,10 @@ import {
   compatiblePrintings,
   canonicalCardConflict,
   canonicalPrintingConflict,
+  gundamPrintingLineages,
+  gundamPrintingProductMemberships,
+  gundamCardLineages,
   existingCard,
-  hasCardObservationFromLineage,
-  hasOtherGundamLocaleEvidence,
-  hasPrintingLocatorFromLineage,
   printingFactsFormattingEquivalent,
   printingAtLocatorVariant,
   printingsAtLocator,
@@ -43,6 +43,12 @@ import {
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
 import { canonicalJson, sha256Text } from "./serialization";
+import {
+  applyPinnedCuratedRevisions,
+  CuratedRevisionSourceChangeError,
+  stripCuratedRevisionEffects,
+} from "./curated-revisions";
+import type { CuratedProvenance } from "./curated-provenance";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import {
   byteBoundedJsonArrays,
@@ -61,10 +67,15 @@ import {
   normalizedLegalityRuleLifecycle,
   resolveLegalityRuleCards,
 } from "./legality-rule";
+import {
+  reconcileDigimonCardAuthority,
+  type DigimonCardAuthority,
+} from "./digimon-reconciliation";
 
 type ActiveRunRow = {
   id: string;
   state: string;
+  selected_games_json: string;
   expected_current_revision_id: string;
   active_ingestion_run_id: string | null;
   recovery_health: string;
@@ -119,9 +130,44 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
 
   const diagnostics: Diagnostic[] = [];
+  const [
+    storedGundamLineages,
+    storedGundamCardLineages,
+    storedGundamProducts,
+  ] = await Promise.all([
+    gundamPrintingLineages(database),
+    gundamCardLineages(database),
+    gundamPrintingProductMemberships(database),
+  ]);
+  const currentGundamPrintingAuthorities = gundamLineagesByPrinting(
+    storedGundamLineages.filter(({ current }) => current === 1),
+  );
+  const historicalGundamPrintingProvenance = gundamLineagesByPrinting(
+    storedGundamLineages,
+  );
+  const publishedGundamCardLineages = gundamLineagesByCard(
+    storedGundamCardLineages.filter(({ current }) => current === 1),
+  );
+  const publishedGundamProducts = gundamProductsByPrinting(
+    storedGundamProducts,
+  );
+  const localGundamCardLineages = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  const candidateGundamPrintingProvenance = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  const localGundamProducts = new Map<string, Set<string>>();
+  const localPrintingCompatibility = new Map<
+    string,
+    PrintingCompatibility
+  >();
   const priorCandidate = await candidateAtRevision(
     database,
     run.expected_current_revision_id,
+    JSON.parse(run.selected_games_json) as SupportedGame[],
   );
   const cards = new Map<string, CatalogueCard>(
     priorCandidate?.cards.map((card) => [card.id, card]) ?? [],
@@ -133,6 +179,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCandidate?.printing_images?.map((image) => [image.id, image]) ?? [],
   );
   const localCardFacts = new Map<string, string>();
+  const localDigimonCardAuthorities = new Map<
+    string,
+    DigimonCardAuthority
+  >();
   const localPrintingFacts = new Map<
     string,
     Omit<CataloguePrinting, "id" | "card_id">
@@ -158,10 +208,22 @@ export async function reconcileRetainedCardPrintingEvidence(
     withdrawal: ProvenancedWithdrawal | null;
     sourceCardFactsJson: string | null;
   }[] = [];
-  const sourceWarnings: Record<string, unknown>[] = [];
+  const sourceWarnings: Record<string, unknown>[] = [
+    ...retained.countChangeWarnings,
+  ];
   const observedErrata: CatalogueErratum[] = [];
   const targetedCardIds = new Set<string>();
   const targetedPrintingIds = new Set<string>();
+  type RetainedObservation = (typeof retained.observations)[number];
+  const standaloneCardErrata = retained.observations.filter(
+    (observation): observation is Extract<
+      RetainedObservation,
+      { kind: "official_erratum" }
+    > =>
+      observation.kind === "official_erratum" &&
+      observation.target.type === "card" &&
+      observation.appliesToParallelPrintings,
+  );
 
   for (const observation of retained.observations) {
     if (observation.kind !== "card_printing") continue;
@@ -187,16 +249,39 @@ export async function reconcileRetainedCardPrintingEvidence(
       identityValue: proposedCard.official_identity.value,
     });
     const cardId = existing?.id ?? (await cardIdFor(proposedCard));
-    const currentCardErrata = await identifyRulesTextErrata({
-      game: proposedCard.game,
-      cardId,
-      printingId: null,
-      sourceLineage: observation.sourceLineage,
-      sourceObservationId: observation.sourceObservationId,
-      errata: observation.errata.filter(
-        (erratum) => erratum.targetType === "card",
+    const matchingStandaloneErrata = standaloneCardErrata.filter(
+      (erratum) =>
+        erratum.game === proposedCard.game &&
+        canonicalJson(erratum.target.officialIdentity) ===
+          canonicalJson(proposedCard.official_identity),
+    );
+    const currentCardErrata = (await Promise.all([
+      identifyRulesTextErrata({
+        game: proposedCard.game,
+        cardId,
+        printingId: null,
+        sourceLineage: observation.sourceLineage,
+        sourceObservationId: observation.sourceObservationId,
+        errata: observation.errata.filter(
+          (erratum) => erratum.targetType === "card",
+        ),
+      }),
+      ...matchingStandaloneErrata.map((erratum) =>
+        identifyRulesTextErrata({
+          game: proposedCard.game,
+          cardId,
+          printingId: null,
+          sourceLineage: erratum.sourceLineage,
+          sourceObservationId: erratum.sourceObservationId,
+          errata: [{
+            targetType: "card" as const,
+            effectiveFrom: erratum.effectiveFrom,
+            officialWording: erratum.officialWording,
+            correctedValue: erratum.correctedRulesText,
+          }],
+        })
       ),
-    });
+    ])).flat();
     observedErrata.push(...currentCardErrata);
     const currentEffectiveAuthority = currentCardErrata.some(
       (erratum) =>
@@ -215,15 +300,23 @@ export async function reconcileRetainedCardPrintingEvidence(
       });
     }
     const carriedCard = cards.get(cardId);
+    if (
+      observation.sourceLineage === "gundam-en-asia" ||
+      observation.sourceLineage === "gundam-en-us"
+    ) {
+      addGundamLineage(
+        localGundamCardLineages,
+        cardId,
+        observation.sourceLineage,
+      );
+    }
     const retainAsiaAuthority =
       proposedCard.game === "gundam" &&
       observation.sourceLineage === "gundam-en-us" &&
       carriedCard !== undefined &&
-      (await hasCardObservationFromLineage(
-        database,
-        cardId,
-        "gundam-en-asia",
-      ));
+      (publishedGundamCardLineages.get(cardId)?.has("gundam-en-asia") ===
+          true ||
+        localGundamCardLineages.get(cardId)?.has("gundam-en-asia") === true);
     let acceptedCard = proposedCard;
     if (retainAsiaAuthority) {
       const { id: _carriedId, ...authoritativeCard } = carriedCard;
@@ -262,11 +355,41 @@ export async function reconcileRetainedCardPrintingEvidence(
     } catch {
       // Final candidate derivation below is the single diagnostic authority.
     }
+    let digimonAuthorityConflict: string | null = null;
+    if (proposedCard.game === "digimon") {
+      const priorAuthority = localDigimonCardAuthorities.get(cardId);
+      const proposedIsBaseRecord = observation.variantKey === "base";
+      if (priorAuthority === undefined) {
+        localDigimonCardAuthorities.set(cardId, {
+          card: acceptedCanonicalCard,
+          hasBaseRecord: proposedIsBaseRecord,
+        });
+      } else {
+        const resolution = reconcileDigimonCardAuthority(
+          priorAuthority,
+          acceptedCanonicalCard,
+          proposedIsBaseRecord,
+          {
+            effectiveRulesText: currentEffectiveAuthority
+              ? "official_errata"
+              : "source_consensus",
+          },
+        );
+        if (resolution.kind === "conflict") {
+          digimonAuthorityConflict = resolution.detail;
+        } else {
+          acceptedCanonicalCard = resolution.authority.card;
+          localDigimonCardAuthorities.set(cardId, resolution.authority);
+        }
+      }
+    }
     const canonicalFacts = canonicalJson(acceptedCanonicalCard);
     const priorFacts = localCardFacts.get(cardId);
     if (
       publishedConflict !== null ||
-      (priorFacts !== undefined &&
+      digimonAuthorityConflict !== null ||
+      (proposedCard.game !== "digimon" &&
+        priorFacts !== undefined &&
         priorFacts !== canonicalFacts &&
         !retainAsiaAuthority)
     ) {
@@ -277,6 +400,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         candidate_printing_ids: [],
         detail:
           publishedConflict ??
+          digimonAuthorityConflict ??
           "Retained observations disagree on canonical Card facts and no deterministic authority rule resolves them.",
       });
     } else {
@@ -319,6 +443,45 @@ export async function reconcileRetainedCardPrintingEvidence(
       const matchIds = new Set(databaseMatches.map((match) => match.id));
       const localMatch = localCompatibility.get(compatibilityKey);
       if (localMatch !== undefined) matchIds.add(localMatch);
+      for (const [candidateId, candidateCompatibility] of
+        localPrintingCompatibility) {
+        if (isCompatible(candidateCompatibility, compatibility)) {
+          matchIds.add(candidateId);
+        }
+      }
+      const crossLocaleCandidates = observation.supportedGame === "gundam"
+        ? [...matchIds].filter((candidateId) => {
+            const observedLineages = new Set([
+              ...(historicalGundamPrintingProvenance.get(candidateId) ?? []),
+              ...(candidateGundamPrintingProvenance.get(candidateId) ?? []),
+            ]);
+            return observedLineages.size > 0 &&
+              !observedLineages.has(observation.sourceLineage as
+                | "gundam-en-asia"
+                | "gundam-en-us");
+          })
+        : [];
+      const corroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
+        (candidateId) => {
+          const knownProducts = new Set([
+            ...(publishedGundamProducts.get(candidateId) ?? []),
+            ...(localGundamProducts.get(candidateId) ?? []),
+          ]);
+          return observation.memberships.products.some((product) =>
+            knownProducts.has(product)
+          );
+        },
+      );
+      const uncorroboratedCrossLocaleCandidates = crossLocaleCandidates.filter(
+        (candidateId) =>
+          !corroboratedCrossLocaleCandidates.includes(candidateId),
+      );
+      uncorroboratedCrossLocaleCandidates.forEach((candidateId) =>
+        matchIds.delete(candidateId)
+      );
+      const missingProductCorroboration =
+        uncorroboratedCrossLocaleCandidates.length > 0 &&
+        matchIds.size === 0;
       const locatedConflict =
         (located !== null && !isCompatible(located, compatibility)) ||
         (localLocated !== undefined &&
@@ -334,6 +497,17 @@ export async function reconcileRetainedCardPrintingEvidence(
             "The retained locator contradicts the Card, Source Lineage, artwork, printed rules, rarity, or treatment of its existing Printing.",
         });
         printingId = locatedId;
+      } else if (missingProductCorroboration) {
+        printingId = [...uncorroboratedCrossLocaleCandidates].sort()[0]!;
+        diagnostics.push({
+          code: "printing_match_insufficient_evidence",
+          source_observation_id: observation.sourceObservationId,
+          locator,
+          candidate_printing_ids:
+            [...uncorroboratedCrossLocaleCandidates].sort(),
+          detail:
+            "Cross-locale Gundam Printing evidence requires a corroborating Product membership before two locale observations can merge.",
+        });
       } else if (
         !observation.artworkIdentityExplicit &&
         located === null &&
@@ -392,7 +566,23 @@ export async function reconcileRetainedCardPrintingEvidence(
         }
       }
       localCompatibility.set(compatibilityKey, printingId);
+      localPrintingCompatibility.set(printingId, compatibility);
       localLocators.set(locatorVariantKey, { compatibility, printingId });
+      if (
+        observation.sourceLineage === "gundam-en-asia" ||
+        observation.sourceLineage === "gundam-en-us"
+      ) {
+        addGundamLineage(
+          candidateGundamPrintingProvenance,
+          printingId,
+          observation.sourceLineage,
+        );
+        addGundamProducts(
+          localGundamProducts,
+          printingId,
+          observation.memberships.products,
+        );
+      }
       const carriedPrinting = printings.get(printingId);
       const publishedPrintingConflict = await canonicalPrintingConflict(
         database,
@@ -404,11 +594,13 @@ export async function reconcileRetainedCardPrintingEvidence(
         observation.supportedGame === "gundam" &&
         observation.sourceLineage === "gundam-en-us" &&
         carriedPrinting !== undefined &&
-        (await hasPrintingLocatorFromLineage(
-          database,
-          printingId,
+        (currentGundamPrintingAuthorities.get(printingId)?.has(
           "gundam-en-asia",
-        ));
+        ) ===
+            true ||
+          candidateGundamPrintingProvenance.get(printingId)?.has(
+            "gundam-en-asia",
+          ) === true);
       let acceptedPrinting = proposedPrinting;
       if (retainAsiaPrintingAuthority) {
         const {
@@ -488,22 +680,6 @@ export async function reconcileRetainedCardPrintingEvidence(
           );
         }
       }
-      if (
-        observation.supportedGame === "gundam" &&
-        !(await hasOtherGundamLocaleEvidence(
-          database,
-          printingId,
-          observation.sourceLineage,
-        ))
-      ) {
-        sourceWarnings.push({
-          code: "single_locale_gundam_printing",
-          printing_id: printingId,
-          source_lineage: observation.sourceLineage,
-          detail:
-            "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
-        });
-      }
     } else if (!observation.structurallyComplete) {
       diagnostics.push({
         code: "printing_match_insufficient_evidence",
@@ -572,12 +748,30 @@ export async function reconcileRetainedCardPrintingEvidence(
 
   for (const observation of retained.observations) {
     if (observation.kind !== "official_erratum") continue;
-    const matchingCards = priorCandidate?.cards.filter(
-      (card) =>
-        card.game === observation.game &&
-        canonicalJson(card.official_identity) ===
-          canonicalJson(observation.target.officialIdentity),
-    ) ?? [];
+    if (
+      observation.target.type === "card" &&
+      !observation.appliesToParallelPrintings
+    ) {
+      diagnostics.push({
+        code: "retained_evidence_invalid",
+        source_observation_id: observation.sourceObservationId,
+        locator: observation.sourceFragment,
+        candidate_printing_ids: [],
+        detail:
+          "A non-parallel Official Erratum must target exactly one Printing.",
+      });
+      continue;
+    }
+    const matchingCards = [...new Map(
+      [...cards.values(), ...(priorCandidate?.cards ?? [])]
+        .filter(
+          (card) =>
+            card.game === observation.game &&
+            canonicalJson(card.official_identity) ===
+              canonicalJson(observation.target.officialIdentity),
+        )
+        .map((card) => [card.id, card] as const),
+    ).values()];
     if (matchingCards.length !== 1) {
       diagnostics.push({
         code: "retained_evidence_invalid",
@@ -872,7 +1066,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       }
     })
     .sort((left, right) => left.id.localeCompare(right.id));
-  const candidate: CatalogueCandidate = {
+  let candidate: CatalogueCandidate = {
     contract: catalogueCandidateContract,
     selected_games: [
       ...new Set([
@@ -889,9 +1083,23 @@ export async function reconcileRetainedCardPrintingEvidence(
     printing_images: [...printingImages.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
-    products: productCatalogue.products,
-    distribution_contexts: productCatalogue.distribution_contexts,
-    product_relationships: productCatalogue.product_relationships,
+    products: productCatalogue.products.map((product) => ({
+      ...omitUndefinedCuratedProvenance(product),
+      releases: product.releases.map(omitUndefinedCuratedProvenance),
+    })),
+    distribution_contexts: productCatalogue.distribution_contexts.map(
+      omitUndefinedCuratedProvenance,
+    ),
+    product_relationships: productCatalogue.product_relationships.map(
+      (relationship) => {
+        const sanitized = omitUndefinedCuratedProvenance(relationship);
+        const { source_lineage: lineage, ...facts } = sanitized;
+        return {
+          ...facts,
+          ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        };
+      },
+    ),
     card_observed_games: [
       ...new Set(
         cardSurfaceObservations.map(
@@ -927,6 +1135,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     errata,
     legality_rules: candidateLegalityRules,
   };
+  candidate = omitUndefinedValues(candidate) as CatalogueCandidate;
   const cardPrintingPlans = plans.filter(
     (plan) => plan.observationKind === "card_printing",
   );
@@ -953,6 +1162,49 @@ export async function reconcileRetainedCardPrintingEvidence(
           retained.partitions.map(({ sourceLineage }) => sourceLineage),
         ),
       ].sort();
+  const resultingGundamLineages = new Map(
+    [...currentGundamPrintingAuthorities].map(([printingId, lineages]) =>
+      [printingId, new Set(lineages)] as const
+    ),
+  );
+  const affectedGundamPrintingIds = new Set<string>();
+  for (const sourceLineage of checkedSourceLineages) {
+    if (
+      sourceLineage !== "gundam-en-asia" &&
+      sourceLineage !== "gundam-en-us"
+    ) continue;
+    for (const [printingId, lineages] of resultingGundamLineages) {
+      if (lineages.delete(sourceLineage)) {
+        affectedGundamPrintingIds.add(printingId);
+      }
+    }
+  }
+  for (const plan of cardPrintingPlans) {
+    if (
+      plan.printingId === null ||
+      (plan.sourceLineage !== "gundam-en-asia" &&
+        plan.sourceLineage !== "gundam-en-us")
+    ) continue;
+    addGundamLineage(
+      resultingGundamLineages,
+      plan.printingId,
+      plan.sourceLineage,
+    );
+    affectedGundamPrintingIds.add(plan.printingId);
+  }
+  const gundamLineageWarnings = [...affectedGundamPrintingIds].flatMap(
+    (printingId) => {
+      const lineages = resultingGundamLineages.get(printingId);
+      if (lineages?.size !== 1) return [];
+      return [{
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: [...lineages][0]!,
+        detail:
+          "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
+      }];
+    },
+  );
   const plansByLineage = checkedSourceLineages.map(
     (sourceLineage) =>
       [
@@ -1003,6 +1255,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     ...new Map(
       [
         ...sourceWarnings,
+        ...gundamLineageWarnings,
         ...relationshipWarnings,
         ...disappearanceWarnings,
         ...cardWarnings,
@@ -1013,7 +1266,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   ].sort((left, right) =>
     canonicalJson(left).localeCompare(canonicalJson(right)),
   );
-  const candidateCatalogueDigest = await catalogueDataDigest(
+  let candidateCatalogueDigest = await catalogueDataDigest(
     database,
     candidate,
     plans,
@@ -1082,6 +1335,79 @@ export async function reconcileRetainedCardPrintingEvidence(
       warnings,
     };
   }
+  try {
+    candidate = await applyPinnedCuratedRevisions(
+      database,
+      runId,
+      candidate,
+      observedAt,
+      { deferSourceChangeFailure: true },
+    );
+  } catch (error) {
+    if (!(error instanceof CuratedRevisionSourceChangeError)) throw error;
+    candidate = error.candidate;
+    candidateCatalogueDigest = await catalogueDataDigest(
+      database,
+      candidate,
+      plans,
+      checkedSourceLineages,
+    );
+    const diagnostics = [...error.diagnostics].sort((left, right) =>
+      canonicalJson(left).localeCompare(canonicalJson(right)),
+    );
+    const digestPayloadJson = reconciliationDigestPayload({
+      candidate,
+      partitions: retained.partitions,
+      plans,
+      state: "failed",
+      publishable: false,
+      sourceObservationSetId: retained.observationSetId,
+      observedCards,
+      observedPrintings,
+      observedProducts: productCatalogue.observedProducts,
+      diagnostics,
+      warnings,
+    });
+    const candidateDigest = await sha256Text(digestPayloadJson);
+    await persistBlockedCandidate(database, {
+      runId,
+      observationSetId: retained.observationSetId,
+      sourceSnapshotId: retained.sourceSnapshotId,
+      sourceLineage: retained.sourceLineage,
+      partitions: retained.partitions,
+      plans,
+      diagnostics,
+      candidate,
+      digestPayloadJson,
+      candidateDigest,
+      candidateCatalogueDigest,
+      observedAt,
+      failureCode: "curated_revision_reconfirmation_required",
+      atomicStatements: error.atomicStatements,
+    });
+    return {
+      contract: "card-keepr-card-printing-reconciliation@2",
+      run_id: runId,
+      state: "failed",
+      publishable: false,
+      candidate_digest: candidateDigest,
+      expected_current_revision_id: run.expected_current_revision_id,
+      source_observation_set_id: retained.observationSetId,
+      cards: observedCards,
+      printings: observedPrintings,
+      products: productCatalogue.observedProducts,
+      errata: candidate.errata ?? [],
+      legality_rules: candidate.legality_rules ?? [],
+      diagnostics,
+      warnings,
+    };
+  }
+  candidateCatalogueDigest = await catalogueDataDigest(
+    database,
+    candidate,
+    plans,
+    checkedSourceLineages,
+  );
   const digestPayloadJson = reconciliationDigestPayload({
     candidate,
     partitions: retained.partitions,
@@ -1224,6 +1550,7 @@ function reconciliationDigestPayload(input: {
 async function candidateAtRevision(
   database: D1Database,
   revisionId: string,
+  selectedGames: readonly SupportedGame[],
 ): Promise<CatalogueCandidate | null> {
   const row = await database
     .prepare(
@@ -1235,14 +1562,14 @@ async function candidateAtRevision(
     .bind(revisionId)
     .first<{ ingestion_run_id: string; candidate_json: string }>();
   if (row === null) return null;
-  const candidate = JSON.parse(
+  const candidate = stripCuratedRevisionEffects(JSON.parse(
     await retainedPayload(
       database,
       row.ingestion_run_id,
       "candidate",
       row.candidate_json,
     ),
-  ) as CatalogueCandidate;
+  ) as CatalogueCandidate, selectedGames);
   const errata = candidate.errata ?? [];
   const provenanceByErratum = new Map<
     string,
@@ -1495,7 +1822,16 @@ function semanticCatalogueCandidate(
       game: product.game,
       official_code: product.official_code,
       name: product.name,
-      releases: product.releases,
+      releases: product.releases.map((release) => {
+        const { curated_provenance: provenance, ...facts } = release;
+        return {
+          ...facts,
+          ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+        };
+      }),
+      ...(Array.isArray(product.curated_provenance)
+        ? { curated_provenance: product.curated_provenance }
+        : {}),
       withdrawal:
         product.withdrawal === null
           ? null
@@ -1511,14 +1847,22 @@ function semanticCatalogueCandidate(
       })),
     })),
     distribution_contexts: (candidate.distribution_contexts ?? []).map(
-      ({ source_lineages: _lineages, ...context }) =>
-        context,
+      ({ source_lineages: _lineages, curated_provenance: provenance, ...context }) => ({
+        ...context,
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     product_relationships: (candidate.product_relationships ?? []).map(
       ({
         source_observation_ids: _observationIds,
+        source_lineage: lineage,
+        curated_provenance: provenance,
         ...relationship
-      }) => relationship,
+      }) => ({
+        ...relationship,
+        ...(lineage === undefined ? {} : { source_lineage: lineage }),
+        ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+      }),
     ),
     errata: (candidate.errata ?? []).map((erratum) =>
       JSON.parse(canonicalErratum(erratum))
@@ -1539,6 +1883,30 @@ function semanticCatalogueCandidate(
       return semanticRule;
     }),
   };
+}
+
+function omitUndefinedCuratedProvenance<T extends {
+  curated_provenance?: readonly CuratedProvenance[];
+}>(
+  value: T,
+): T {
+  const { curated_provenance: provenance, ...facts } = value;
+  return {
+    ...facts,
+    ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+  } as T;
+}
+
+function omitUndefinedValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitUndefinedValues);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, omitUndefinedValues(item)]),
+    );
+  }
+  return value;
 }
 
 function latestCapture(
@@ -1765,6 +2133,77 @@ function mergedPlanMemberships(
   }));
 }
 
+function gundamLineagesByPrinting(
+  rows: readonly {
+    printing_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current?: number;
+  }[],
+): Map<string, Set<"gundam-en-asia" | "gundam-en-us">> {
+  const grouped = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  for (const row of rows) {
+    addGundamLineage(grouped, row.printing_id, row.source_lineage);
+  }
+  return grouped;
+}
+
+function gundamLineagesByCard(
+  rows: readonly {
+    card_id: string;
+    source_lineage: "gundam-en-asia" | "gundam-en-us";
+    current?: number;
+  }[],
+): Map<string, Set<"gundam-en-asia" | "gundam-en-us">> {
+  const grouped = new Map<
+    string,
+    Set<"gundam-en-asia" | "gundam-en-us">
+  >();
+  for (const row of rows) {
+    addGundamLineage(grouped, row.card_id, row.source_lineage);
+  }
+  return grouped;
+}
+
+function gundamProductsByPrinting(
+  rows: readonly {
+    printing_id: string;
+    relationship_value: string;
+  }[],
+): Map<string, Set<string>> {
+  const grouped = new Map<string, Set<string>>();
+  for (const row of rows) {
+    addGundamProducts(
+      grouped,
+      row.printing_id,
+      [row.relationship_value],
+    );
+  }
+  return grouped;
+}
+
+function addGundamProducts(
+  grouped: Map<string, Set<string>>,
+  printingId: string,
+  products: readonly string[],
+): void {
+  const retained = grouped.get(printingId) ?? new Set<string>();
+  products.forEach((product) => retained.add(product));
+  grouped.set(printingId, retained);
+}
+
+function addGundamLineage(
+  grouped: Map<string, Set<"gundam-en-asia" | "gundam-en-us">>,
+  printingId: string,
+  sourceLineage: "gundam-en-asia" | "gundam-en-us",
+): void {
+  const lineages = grouped.get(printingId) ?? new Set();
+  lineages.add(sourceLineage);
+  grouped.set(printingId, lineages);
+}
+
 async function blockedResult(
   database: D1Database,
   runId: string,
@@ -1792,7 +2231,8 @@ async function requiredActiveParsingRun(
 ): Promise<ActiveRunRow> {
   const row = await database
     .prepare(
-      `SELECT run.id, run.state, run.expected_current_revision_id,
+      `SELECT run.id, run.state, run.selected_games_json,
+              run.expected_current_revision_id,
               operation.active_ingestion_run_id,
               operation.recovery_health
        FROM ingestion_runs AS run

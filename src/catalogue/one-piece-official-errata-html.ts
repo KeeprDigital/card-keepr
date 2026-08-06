@@ -3,13 +3,22 @@ import { AdministrationProblem } from "./administration-problem.mjs";
 export type OnePieceOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   game: "one-piece";
-  target: Readonly<{
-    type: "card";
-    official_identity: Readonly<{
-      kind: "card_number";
-      value: string;
-    }>;
-  }>;
+  target:
+    | Readonly<{
+        type: "card";
+        official_identity: Readonly<{
+          kind: "card_number";
+          value: string;
+        }>;
+      }>
+    | Readonly<{
+        type: "printing";
+        official_identity: Readonly<{
+          kind: "card_number";
+          value: string;
+        }>;
+        locator: string;
+      }>;
   published_on: string;
   effective_from: null;
   observed_printed_rules_text: string;
@@ -772,29 +781,35 @@ function parsedEntry(
     .sort((left, right) => left.ordinal - right.ordinal)
     .map(({ value }) => value)
     .join("\n");
+  const imageUrl = `${canonicalOrigin}${imagePath}`;
+  const appliesToParallelPrintings =
+    /\bAlso applies to parallel card version\./i.test(
+      normalizedText(entry.allTextParts),
+    );
+  const officialIdentity = {
+    kind: "card_number" as const,
+    value: identity[1]!,
+  };
   return {
     kind: "official_erratum",
     game: "one-piece",
-    target: {
-      type: "card",
-      official_identity: {
-        kind: "card_number",
-        value: identity[1]!,
-      },
-    },
+    target: appliesToParallelPrintings
+      ? { type: "card", official_identity: officialIdentity }
+      : {
+          type: "printing",
+          official_identity: officialIdentity,
+          locator: imageUrl,
+        },
     published_on: publishedOn,
     effective_from: null,
     observed_printed_rules_text: before,
     corrected_rules_text: after,
     official_wording: officialWording,
-    applies_to_parallel_printings:
-      /\bAlso applies to parallel card version\./i.test(
-        normalizedText(entry.allTextParts),
-      ),
+    applies_to_parallel_printings: appliesToParallelPrintings,
     source: {
       fragment: `#${sourceId}`,
       display_name: displayName,
-      image_url: `${canonicalOrigin}${imagePath}`,
+      image_url: imageUrl,
     },
     completeness: {
       structurally_complete: true,

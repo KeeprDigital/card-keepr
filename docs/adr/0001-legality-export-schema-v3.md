@@ -9,8 +9,23 @@ normalized discriminated `effect`, source provenance, and lifecycle directly
 on every Legality Rule. V3 also permits a nullable `effective_from` only when
 an unresolved rule carries explicit `unresolved_scope` dimensions, preventing
 an unknown interval or event tier from being serialized as an invented date or
-global scope. Existing v1 and v2 manifests and objects remain
-immutable and readable through the same revision-addressed API.
+global scope. Existing v1 and v2 manifests and objects remain immutable while
+retained and readable through the same revision-addressed API.
+
+## Amendment: guarded owner deletion
+
+Immutability prohibits rewriting a published package; it does not require its
+R2 bytes to be retained forever. An owner may delete a non-current Catalogue
+Export only through the guarded deletion contract: an immutable, expiring plan
+binds the verified manifest and exact object set, confirmation makes the
+package unavailable before manifest-last removal, and the plan, operation,
+tombstone, manifest digest, object-set digest, and known component identities
+remain retained. The current Catalogue Revision's export is protected. Known
+deleted URLs report `catalogue_export_deleted`; identities absent from the
+retained verification evidence remain `not_found`.
+
+This amendment does not remove Catalogue Revision history or the D1/query
+material retained for the current revision and its two immediate predecessors.
 
 The v3 component schema treats each effect as a closed discriminated shape:
 its discriminator fixes the matching export `kind`. An explicit unresolved
@@ -30,5 +45,6 @@ so the composition has one unambiguous schema major. Rule records require
 revision-bounded lifecycle shape used by relationships. Card-scoped rules
 continue to publish `legality-rule-card` relationships as supplemental
 navigation evidence. Separately named v1 and v2 manifest and record schemas
-remain checked in solely for immutable historical export artifacts; a new v3
-manifest never references them.
+remain checked in for retained verification and decoding of historical export
+artifacts, including evidence for an owner-deleted package; a new v3 manifest
+never references them.

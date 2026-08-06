@@ -393,7 +393,7 @@ export const scenarios = [
     name: "Production release blocks Curated Revision mutation",
     question:
       "Does a serialized production release prevent concurrent Curated Revision writes?",
-    initial: { activeReleaseId: "release_demo_active" },
+    initial: { activeProductionReleaseId: "release_demo_active" },
     steps: [
       step(createField, { accepted: false, code: "release_not_idle" })
     ]

@@ -105,6 +105,70 @@
         "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
       }
     },
+    "CatalogueBackupCommandRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_current_revision_id",
+        "idempotency_key"
+      ],
+      "properties": {
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CatalogueRecoveryBeginCommandRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "recovery_id",
+        "method",
+        "target_revision_id",
+        "target_bookmark",
+        "target_digest",
+        "backup_attempt_id",
+        "expected_current_revision_id",
+        "idempotency_key"
+      ],
+      "properties": {
+        "environment": { "const": "production" },
+        "recovery_id": { "$ref": "#/$defs/OpaqueId" },
+        "method": { "enum": ["time_travel", "replacement_database"] },
+        "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "target_bookmark": { "type": "string", "minLength": 1 },
+        "target_digest": { "$ref": "#/$defs/Sha256" },
+        "backup_attempt_id": { "$ref": "#/$defs/OpaqueId" },
+        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" },
+        "linked_operation_id": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CatalogueRecoveryVerifyCommandRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_digest", "idempotency_key"],
+      "properties": {
+        "target_digest": { "$ref": "#/$defs/Sha256" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CatalogueRecoveryAcceptCommandRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_restored_revision_id",
+        "target_digest",
+        "confirmation_recovery_id",
+        "idempotency_key"
+      ],
+      "properties": {
+        "expected_restored_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "target_digest": { "$ref": "#/$defs/Sha256" },
+        "confirmation_recovery_id": { "$ref": "#/$defs/OpaqueId" },
+        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
     "IngestionRun": {
       "type": "object",
       "additionalProperties": false,

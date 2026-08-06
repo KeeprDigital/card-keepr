@@ -312,7 +312,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     runtime,
   );
   const seededCard = seedReconciled.cards.find(
-    (candidate) => candidate.official_identity.value === "OP07-097",
+    (candidate) => candidate.official_identity.value === "OP03-047",
   );
   assert.notEqual(seededCard, undefined);
   const seededPrinting = seedReconciled.printings.find(
@@ -390,26 +390,30 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     runtime,
   );
   const card = reconciled.cards.find(
-    (candidate) => candidate.official_identity.value === "OP07-097",
-  );
-  const zeff = reconciled.cards.find(
     (candidate) => candidate.official_identity.value === "OP03-047",
   );
+  const vegapunk = reconciled.cards.find(
+    (candidate) => candidate.official_identity.value === "OP07-097",
+  );
   assert.notEqual(card, undefined);
-  assert.notEqual(zeff, undefined);
+  assert.notEqual(vegapunk, undefined);
   assert.equal(card.id, seededCard.id);
   const printing = seedReconciled.printings.find(
     (candidate) => candidate.card_id === card.id,
   );
   assert.notEqual(printing, undefined);
   assert.equal(printing.id, seededPrinting.id);
+  const vegapunkPrinting = seedReconciled.printings.find(
+    (candidate) => candidate.card_id === vegapunk.id,
+  );
+  assert.notEqual(vegapunkPrinting, undefined);
 
   const searched = await runCli(
     [
       "cards",
       "search",
       "--query",
-      "rest 1 of your DON!! cards: Select",
+      "and you may trash 2 cards",
       "--json",
     ],
     cliEnvironment,
@@ -471,7 +475,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const cardRead = await cardResponse.json();
   assert.match(
     cardRead.data.effective_rules_text,
-    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+    /and you may trash 2 cards/,
   );
   const cardIncluded = cardRead.included ?? [];
   assert.equal(
@@ -532,7 +536,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   assert.match(
     printingRead.data.printed_rules_text,
-    /DON!! cards Select up to 1 \{Egghead\}/,
+    /and trash 2 cards/,
   );
   assert.deepEqual(
     printingRead.data.lifecycle,
@@ -590,10 +594,10 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   ).find(
     (candidate) => candidate.target_id === card.id,
   );
-  const exportedZeffErratum = errataBytes.trim().split("\n").map((line) =>
+  const exportedVegapunkErratum = errataBytes.trim().split("\n").map((line) =>
     JSON.parse(line)
   ).find(
-    (candidate) => candidate.target_id === zeff.id,
+    (candidate) => candidate.target_id === vegapunkPrinting.id,
   );
   const exportedPrinting = printingsBytes.trim().split("\n").map((line) =>
     JSON.parse(line)
@@ -603,7 +607,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(exportedCard.id, card.id);
   assert.match(
     exportedCard.effective_rules_text,
-    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+    /and you may trash 2 cards/,
   );
   assert.deepEqual(exportedCard.lifecycle, seededExportedCard.lifecycle);
   assert.deepEqual(
@@ -615,23 +619,23 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(exportedErratum.effective_from, null);
   assert.match(
     exportedErratum.official_wording,
-    /^Note: This correction applies in every game format\.\nBefore: .+\nAfter: .+$/s,
+    /^\*Also applies to parallel card version\.\nBefore: .+\nAfter: .+$/s,
   );
   assert.match(
     exportedErratum.corrected_value,
-    /DON!! cards: Select up to 1 \{Egghead\} type card/,
-  );
-  assert.equal(exportedZeffErratum.target_type, "card");
-  assert.equal(exportedZeffErratum.target_id, zeff.id);
-  assert.equal(exportedZeffErratum.effective_from, null);
-  assert.match(
-    exportedZeffErratum.corrected_value,
     /and you may trash 2 cards/,
+  );
+  assert.equal(exportedVegapunkErratum.target_type, "printing");
+  assert.equal(exportedVegapunkErratum.target_id, vegapunkPrinting.id);
+  assert.equal(exportedVegapunkErratum.effective_from, null);
+  assert.match(
+    exportedVegapunkErratum.corrected_value,
+    /DON!! cards: Select up to 1 \{Egghead\} type card/,
   );
   assert.equal(exportedPrinting.id, printing.id);
   assert.match(
     exportedPrinting.printed_rules_text,
-    /DON!! cards Select up to 1 \{Egghead\}/,
+    /and trash 2 cards/,
   );
   assert.deepEqual(
     exportedPrinting.lifecycle,
@@ -744,7 +748,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   assert.match(
     refreshedCardRead.data.effective_rules_text,
-    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+    /and you may trash 2 cards/,
   );
   assert.deepEqual(
     refreshedCardRead.provenance["/data/effective_rules_text"],
@@ -801,6 +805,14 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     ),
     true,
   );
+  const omissionErratum = omissionCandidate.errata.find(
+    (candidate) => candidate.id === exportedErratum.id,
+  );
+  assert.notEqual(omissionErratum, undefined);
+  const omissionEvidenceIds = omissionErratum.provenance.map(
+    ({ source_observation_id }) => source_observation_id,
+  ).sort();
+  assert.deepEqual(omissionEvidenceIds, accumulatedErrataEvidenceIds);
   const omissionRevision = await approveCandidate(
     omissionRun.id,
     "approve-errata-without-vegapunk",
@@ -813,10 +825,16 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   assert.match(
     carriedCardRead.data.effective_rules_text,
-    /DON!! cards: Select up to 1 \{Egghead\} type card/,
+    /and you may trash 2 cards/,
+  );
+  const carriedEvidenceIds =
+    carriedCardRead.provenance["/data/effective_rules_text"];
+  assert.equal(
+    carriedEvidenceIds.length,
+    accumulatedErrataEvidenceIds.length + 1,
   );
   assert.deepEqual(
-    carriedCardRead.provenance["/data/effective_rules_text"],
+    carriedEvidenceIds.filter((id) => accumulatedErrataEvidenceIds.includes(id)),
     accumulatedErrataEvidenceIds,
   );
   const carriedCardsBytes = await exportComponent(
@@ -841,7 +859,7 @@ function digimonOfficialPlan() {
   return {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@3",
+    adapter_version: "digimon-en@4",
     requests: [{
       id: "digimon-en:discovery",
       url: "https://world.digimoncard.com/cards/index.php?search=true",

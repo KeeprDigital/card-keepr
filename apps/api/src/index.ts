@@ -2,8 +2,10 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { authenticateCredentialBearer } from "../../../src/http/authentication";
 import {
   CardReadProblem,
+  CatalogueExportReadProblem,
   catalogueExportComponentResponse,
   catalogueExportResponse,
+  catalogueExportsResponse,
   currentCardResponse,
   currentCatalogueStatus,
   currentPrintingResponse,
@@ -44,14 +46,13 @@ import {
   contextualLegalityStatusResponse,
   LegalityStatusProblem,
 } from "../../../src/catalogue/legality-status";
+import { withOperationalRequestLog } from "../../../src/http/operational-log";
 
-const apiWorker = {
-  async fetch(
-    request: Request,
-    env: Env,
-  ): Promise<Response> {
-    const requestId = crypto.randomUUID();
-
+async function handleApiRequest(
+  request: Request,
+  env: Env,
+  requestId: string,
+): Promise<Response> {
     try {
       const preflight = allowedPreflightResponse(
         request,
@@ -160,6 +161,9 @@ const apiWorker = {
                         ? "Catalogue integrity failure"
                         : "Invalid request",
                 detail: error.message,
+                extensions: error.invalidParameter === null
+                  ? undefined
+                  : { invalid_params: [error.invalidParameter] },
               }),
             );
           }
@@ -207,6 +211,7 @@ const apiWorker = {
           env.CATALOGUE_DB,
           env.PRINTING_IMAGES,
           decodeURIComponent(printingImageContentMatch[1]!),
+          requestId,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -242,8 +247,23 @@ const apiWorker = {
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportComponentMatch[1]!),
           decodeURIComponent(exportComponentMatch[2]!),
+          requestId,
         );
         if (response !== null) return withCorsHeaders(request, response);
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/v1/catalogue-exports"
+      ) {
+        return withCorsHeaders(
+          request,
+          await catalogueExportsResponse(
+            request,
+            env.CATALOGUE_DB,
+            env.CATALOGUE_EXPORTS,
+          ),
+        );
       }
 
       const exportMatch = /^\/v1\/catalogue-exports\/([^/]+)$/.exec(
@@ -251,6 +271,7 @@ const apiWorker = {
       );
       if (request.method === "GET" && exportMatch !== null) {
         const response = await catalogueExportResponse(
+          request,
           env.CATALOGUE_DB,
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportMatch[1]!),
@@ -299,6 +320,19 @@ const apiWorker = {
                 ? "Cursor revision unavailable"
                 : "Invalid Product request",
             detail: error.message,
+            ...(error.code === "cursor_revision_unavailable"
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/products" },
+                  },
+                }
+              : error.invalidParameter === null
+              ? {}
+              : {
+                  extensions: {
+                    invalid_params: [error.invalidParameter],
+                  },
+                }),
           }),
         );
       }
@@ -314,6 +348,19 @@ const apiWorker = {
                 ? "Cursor revision unavailable"
                 : "Invalid Printing request",
             detail: error.message,
+            ...(error.code === "cursor_revision_unavailable"
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/printings" },
+                  },
+                }
+              : error.invalidParameter === null
+              ? {}
+              : {
+                  extensions: {
+                    invalid_params: [error.invalidParameter],
+                  },
+                }),
           }),
         );
       }
@@ -341,14 +388,31 @@ const apiWorker = {
           }),
         );
       }
-      console.error(
-        JSON.stringify({
-          message: "request failed",
-          request_id: requestId,
-          route: new URL(request.url).pathname,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
+      if (error instanceof CatalogueExportReadProblem) {
+        return withCorsHeaders(
+          request,
+          problemResponse({
+            requestId,
+            status: error.status,
+            code: error.code,
+            title: error.status === 409
+              ? "Cursor revision unavailable"
+              : error.status === 410
+                ? "Catalogue Export deleted"
+              : error.code === "invalid_cursor"
+                ? "Invalid Catalogue Export cursor"
+                : "Invalid Catalogue Export request",
+            detail: error.message,
+            ...(error.status === 409
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/catalogue-exports" },
+                  },
+                }
+              : {}),
+          }),
+        );
+      }
       return withCorsHeaders(
         request,
         problemResponse({
@@ -360,6 +424,20 @@ const apiWorker = {
         }),
       );
     }
+}
+
+const apiWorker = {
+  async fetch(
+    request: Request,
+    env: Env,
+  ): Promise<Response> {
+    return withOperationalRequestLog(
+      "api",
+      request,
+      env,
+      (observedEnv, requestId) =>
+        handleApiRequest(request, observedEnv, requestId),
+    );
   },
 } satisfies ExportedHandler<Env>;
 

@@ -54,6 +54,67 @@ const run = {
     state: "failed",
     failure_code: "publication_cleanup_failed",
   },
+  operational_diagnostics: {
+    contract: "card-keepr-operational-diagnostics@1",
+    references: {
+      run_id: "run_cli_demo",
+      request_id: "request_cli_demo",
+      expected_catalogue_revision_id: "catrev_cli_demo",
+      resulting_catalogue_revision_id: "catrev_cli_demo",
+      candidate_digest: "a".repeat(64),
+      adapter_versions: ["one-piece-en@3"],
+      workflow: {
+        status_path: "/v1/ingestion-runs/run_cli_demo",
+        parent_id: "workflow_cli_demo",
+        child_ids: ["workflow_child_cli_demo"],
+      },
+      backup: {
+        status_path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+      recovery: { status_path: "/v1/status" },
+    },
+    terminal_evidence: {
+      state: "failed",
+      terminal_at: "2026-07-29T00:01:00.000Z",
+      failure: {
+        code: "source_unavailable",
+        retryability_code: "retryable_failure",
+        retryable: true,
+      },
+      warning_count: 1,
+      approval_decision_count: 1,
+      coverage: {
+        evidence_plan_count: 1,
+        source_snapshot_count: 7,
+        source_observation_set_count: 7,
+        fetch_attempt_count: 8,
+      },
+    },
+    retry: {
+      code: "evidence_collection_retry_available",
+      source_run_id: "run_cli_demo",
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+    },
+    diagnosis_sequence: [
+      { code: "check_status", method: "GET", path: "/v1/status" },
+      {
+        code: "inspect_run",
+        method: "GET",
+        path: "/v1/ingestion-runs/run_cli_demo",
+      },
+      {
+        code: "retry_evidence_collection",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+      },
+      {
+        code: "inspect_backup",
+        method: "GET",
+        path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+      },
+    ],
+  },
 };
 
 test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
@@ -86,6 +147,31 @@ test("guarded reconciliation and bounded search repair are normative administrat
     schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties,
     false,
   );
+  assert.deepEqual(
+    schema.$defs.CatalogueBackupCommandRequest.required,
+    ["expected_current_revision_id", "idempotency_key"],
+  );
+  assert.equal(
+    schema.$defs.CatalogueBackupCommandRequest.additionalProperties,
+    false,
+  );
+  assert.equal(
+    schema.$defs.CatalogueRecoveryBeginCommandRequest.additionalProperties,
+    false,
+  );
+  assert.deepEqual(
+    schema.$defs.CatalogueRecoveryVerifyCommandRequest.required,
+    ["target_digest", "idempotency_key"],
+  );
+  assert.deepEqual(
+    schema.$defs.CatalogueRecoveryAcceptCommandRequest.required,
+    [
+      "expected_restored_revision_id",
+      "target_digest",
+      "confirmation_recovery_id",
+      "idempotency_key",
+    ],
+  );
   const contract = await readFile(
     resolve(
       root,
@@ -95,6 +181,10 @@ test("guarded reconciliation and bounded search repair are normative administrat
   );
   assert.match(contract, /never executes reconciliation inline/);
   assert.match(contract, /one resumable, byte-bounded repair step/);
+  assert.match(contract, /backup create.*starts or observes.*Workflow/s);
+  assert.match(contract, /first non-terminal response is HTTP `202`/);
+  assert.match(contract, /exact replays observe the same.*HTTP `200`/s);
+  assert.match(contract, /CLI\s+exits `10` until the Workflow is complete/s);
 });
 
 test("CLI reconciliation requires explicit production selection and confirmation", async () => {
@@ -381,6 +471,499 @@ test("CLI production mutation requires exact resolved Cloudflare target confirma
   });
 });
 
+test("CLI Catalogue Export deletion preserves the prepared bindings and typed revision confirmation", async (t) => {
+  const requests = [];
+  const plan = {
+    contract: "card-keepr-catalogue-export-deletion-plan@1",
+    id: "plan-cli-export-delete",
+    catalogue_revision_id: "catrev_cli_previous",
+    manifest_digest: "a".repeat(64),
+    expected_current_revision_id: "catrev_cli_demo",
+    object_keys: [
+      "catalogue-exports/catrev_cli_previous/components/a.ndjson.gz",
+      "catalogue-exports/catrev_cli_previous/manifest.json",
+    ],
+    object_set_digest: "b".repeat(64),
+    dependencies: [],
+    plan_digest: "c".repeat(64),
+    created_at: "2026-08-05T00:00:00.000Z",
+    expires_at: "2026-08-05T00:15:00.000Z",
+  };
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        contract: "card-keepr-administration-status@1",
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+        repairable_catalogue_revision_ids: [
+          "catrev_cli_demo",
+          "catrev_cli_previous",
+        ],
+      }));
+      return;
+    }
+    if (request.url === "/v1/catalogue-export-deletion-plans") {
+      response.statusCode = 201;
+      response.end(JSON.stringify(plan));
+      return;
+    }
+    const deleting = {
+      contract: "card-keepr-catalogue-export-deletion@1",
+      id: "deletion-cli-export",
+      plan_id: plan.id,
+      state: "deleting",
+      catalogue_revision_id: plan.catalogue_revision_id,
+      object_set_digest: plan.object_set_digest,
+      completed_at: null,
+      failure_code: null,
+    };
+    if (request.method === "POST") {
+      response.statusCode = 202;
+      response.end(JSON.stringify(deleting));
+      return;
+    }
+    response.end(JSON.stringify({
+      ...deleting,
+      state: "deleted",
+      completed_at: "2026-08-05T00:02:00.000Z",
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+
+  const prepared = await runCli([
+    "catalogue-export", "deletion", "prepare",
+    "--catalogue-revision", plan.catalogue_revision_id,
+    "--manifest-digest", plan.manifest_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--plan-id", plan.id,
+    "--json",
+  ], environment);
+  assert.equal(prepared.code, 0, prepared.stderr);
+  assert.deepEqual(JSON.parse(prepared.stdout), plan);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletion-plans",
+    body: {
+      catalogue_revision_id: plan.catalogue_revision_id,
+      manifest_digest: plan.manifest_digest,
+      expected_current_revision_id: plan.expected_current_revision_id,
+      plan_id: plan.id,
+    },
+  });
+
+  const confirmation = JSON.stringify({
+    production_target: productionTarget,
+    plan_id: plan.id,
+    plan_digest: plan.plan_digest,
+    catalogue_revision_id: plan.catalogue_revision_id,
+    manifest_digest: plan.manifest_digest,
+    expected_current_revision_id: plan.expected_current_revision_id,
+    deletion_id: "deletion-cli-export",
+    idempotency_key: "deletion-cli-export-key",
+  });
+  const confirmed = await runCli([
+    "catalogue-export", "deletion", "confirm",
+    "--plan-id", plan.id,
+    "--plan-digest", plan.plan_digest,
+    "--catalogue-revision", plan.catalogue_revision_id,
+    "--manifest-digest", plan.manifest_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--confirm-revision", plan.catalogue_revision_id,
+    "--deletion-id", "deletion-cli-export",
+    "--idempotency-key", "deletion-cli-export-key",
+    "--environment", "production",
+    "--confirm", confirmation,
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(confirmed.code, 10, confirmed.stderr);
+  assert.deepEqual(JSON.parse(confirmed.stdout), {
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "deletion-cli-export",
+    plan_id: plan.id,
+    state: "deleting",
+    catalogue_revision_id: plan.catalogue_revision_id,
+    object_set_digest: plan.object_set_digest,
+    completed_at: null,
+    failure_code: null,
+  });
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletions",
+    body: {
+      plan_id: plan.id,
+      plan_digest: plan.plan_digest,
+      catalogue_revision_id: plan.catalogue_revision_id,
+      manifest_digest: plan.manifest_digest,
+      expected_current_revision_id: plan.expected_current_revision_id,
+      confirmation_revision_id: plan.catalogue_revision_id,
+      deletion_id: "deletion-cli-export",
+      idempotency_key: "deletion-cli-export-key",
+    },
+  });
+
+  const retryIdempotencyKey = "deletion-cli-export-retry";
+  const retryConfirmation = JSON.stringify({
+    production_target: productionTarget,
+    deletion_id: "deletion-cli-export",
+    object_set_digest: plan.object_set_digest,
+    expected_current_revision_id: plan.expected_current_revision_id,
+    idempotency_key: retryIdempotencyKey,
+  });
+  const retried = await runCli([
+    "catalogue-export", "deletion", "retry",
+    "--deletion-id", "deletion-cli-export",
+    "--object-set-digest", plan.object_set_digest,
+    "--expected-current-revision", plan.expected_current_revision_id,
+    "--idempotency-key", retryIdempotencyKey,
+    "--environment", "production",
+    "--confirm", retryConfirmation,
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(retried.code, 10, retried.stderr);
+  assert.deepEqual(JSON.parse(retried.stdout), JSON.parse(confirmed.stdout));
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/catalogue-export-deletions/deletion-cli-export/retry",
+    body: {
+      object_set_digest: plan.object_set_digest,
+      idempotency_key: retryIdempotencyKey,
+    },
+  });
+
+  const terminal = await runCli([
+    "catalogue-export", "deletion", "status",
+    "--deletion-id", "deletion-cli-export",
+    "--json",
+  ], environment);
+  assert.equal(terminal.code, 0, terminal.stderr);
+  assert.equal(JSON.parse(terminal.stdout).state, "deleted");
+});
+
+test("CLI backup create confirms the exact target before the operation", async (t) => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.statusCode = 201;
+    response.end(JSON.stringify({
+      contract: "card-keepr-catalogue-backup-workflow@1",
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+      workflow_instance_id: "backup-cli-workflow",
+      status: "complete",
+      output: {
+        contract: "card-keepr-catalogue-backup@1",
+        catalogue_revision_id: "catrev_cli_demo",
+        object_key: "d1-backups/catrev_cli_demo/backup.sql",
+        d1_bookmark: "bookmark-cli-backup",
+        verified: true,
+      },
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const result = await runCli([
+    "backup",
+    "create",
+    "--expected-current-revision",
+    "catrev_cli_demo",
+    "--idempotency-key",
+    "backup-cli-confirmed-target",
+    "--environment",
+    "production",
+    "--confirm",
+    JSON.stringify({
+      production_target: productionTarget,
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+    }),
+    "--yes",
+    "--json",
+  ], {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/backups",
+    body: {
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-cli-confirmed-target",
+    },
+  });
+});
+
+test("CLI recovery commands resolve and confirm exact production evidence", async (t) => {
+  const requests = [];
+  const targetDigest = "c".repeat(64);
+  const recovery = {
+    contract: "card-keepr-catalogue-recovery@1",
+    id: "recovery-cli-exact",
+    state: "validating",
+    target_revision_id: "catrev_cli_restored",
+    target_digest: targetDigest,
+    expected_current_revision_id: "catrev_cli_demo",
+  };
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.statusCode = request.method === "POST" ? 201 : 200;
+    response.end(JSON.stringify(recovery));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const beginBody = {
+    environment: "production",
+    recovery_id: recovery.id,
+    method: "time_travel",
+    target_revision_id: recovery.target_revision_id,
+    target_bookmark: "bookmark-cli-restored",
+    target_digest: targetDigest,
+    backup_attempt_id: "backup-cli-restored",
+    expected_current_revision_id: recovery.expected_current_revision_id,
+    idempotency_key: "recovery-cli-begin",
+  };
+  const begun = await runCli([
+    "recovery", "begin",
+    "--recovery-id", recovery.id,
+    "--method", "time_travel",
+    "--target-revision", recovery.target_revision_id,
+    "--target-bookmark", "bookmark-cli-restored",
+    "--target-digest", targetDigest,
+    "--backup-attempt-id", "backup-cli-restored",
+    "--expected-current-revision", recovery.expected_current_revision_id,
+    "--idempotency-key", "recovery-cli-begin",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      ...beginBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(begun.code, 0, begun.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/recoveries",
+    body: beginBody,
+  });
+
+  const inspected = await runCli([
+    "recovery", "inspect", "--recovery-id", recovery.id, "--json",
+  ], environment);
+  assert.equal(inspected.code, 0, inspected.stderr);
+  assert.equal(requests.at(-1).path, `/v1/recoveries/${recovery.id}`);
+
+  const verifyBody = {
+    target_digest: targetDigest,
+    idempotency_key: "recovery-cli-verify",
+  };
+  const verified = await runCli([
+    "recovery", "verify",
+    "--recovery-id", recovery.id,
+    "--target-digest", targetDigest,
+    "--idempotency-key", "recovery-cli-verify",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      recovery_id: recovery.id,
+      ...verifyBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(verified.code, 0, verified.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: `/v1/recoveries/${recovery.id}/verification`,
+    body: verifyBody,
+  });
+
+  const acceptBody = {
+    expected_restored_revision_id: recovery.target_revision_id,
+    target_digest: targetDigest,
+    confirmation_recovery_id: recovery.id,
+    idempotency_key: "recovery-cli-accept",
+  };
+  const accepted = await runCli([
+    "recovery", "accept",
+    "--recovery-id", recovery.id,
+    "--expected-restored-revision", recovery.target_revision_id,
+    "--target-digest", targetDigest,
+    "--confirmation-recovery-id", recovery.id,
+    "--idempotency-key", "recovery-cli-accept",
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      recovery_id: recovery.id,
+      ...acceptBody,
+    }),
+    "--yes", "--json",
+  ], environment);
+  assert.equal(accepted.code, 0, accepted.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: `/v1/recoveries/${recovery.id}/acceptance`,
+    body: acceptBody,
+  });
+});
+
+test("CLI backup status and retry preserve the exact failed-attempt evidence", async (t) => {
+  const requests = [];
+  const digest = "a".repeat(64);
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push({
+      method: request.method,
+      path: request.url,
+      body: body === "" ? null : JSON.parse(body),
+    });
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/status") {
+      response.end(JSON.stringify({
+        production_target: productionTarget,
+        safe_state: { current_revision_id: "catrev_cli_demo" },
+      }));
+      return;
+    }
+    response.end(JSON.stringify({
+      contract: "card-keepr-catalogue-backup-status@1",
+      idempotency_key: "backup-failed-exact",
+      state: "failed",
+      attempt_digest: digest,
+    }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const status = await runCli([
+    "backup", "status", "--attempt-id", "backup-failed-exact", "--json",
+  ], environment);
+  assert.equal(status.code, 0, status.stderr);
+  const revisionStatus = await runCli([
+    "backup", "status", "--catalogue-revision", "catrev_cli_demo", "--json",
+  ], environment);
+  assert.equal(revisionStatus.code, 0, revisionStatus.stderr);
+  const retry = await runCli([
+    "backup", "retry",
+    "--expected-current-revision", "catrev_cli_demo",
+    "--idempotency-key", "backup-retry-exact",
+    "--failed-attempt-id", "backup-failed-exact",
+    "--failed-attempt-digest", digest,
+    "--environment", "production",
+    "--confirm", JSON.stringify({
+      production_target: productionTarget,
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-retry-exact",
+      failed_attempt_id: "backup-failed-exact",
+      failed_attempt_digest: digest,
+    }),
+    "--yes",
+    "--json",
+  ], environment);
+  assert.equal(retry.code, 0, retry.stderr);
+  assert.deepEqual(JSON.parse(retry.stderr), {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: productionTarget,
+    current_catalogue_revision_id: "catrev_cli_demo",
+    expected_current_revision_id: "catrev_cli_demo",
+    idempotency_key: "backup-retry-exact",
+    failed_attempt_id: "backup-failed-exact",
+    failed_attempt_digest: digest,
+  });
+  assert.deepEqual(requests, [{
+    method: "GET",
+    path: "/v1/backups/backup-failed-exact",
+    body: null,
+  }, {
+    method: "GET",
+    path: "/v1/catalogue-revisions/catrev_cli_demo/backups",
+    body: null,
+  }, {
+    method: "GET",
+    path: "/v1/status",
+    body: null,
+  }, {
+    method: "POST",
+    path: "/v1/backups",
+    body: {
+      expected_current_revision_id: "catrev_cli_demo",
+      idempotency_key: "backup-retry-exact",
+      failed_attempt_id: "backup-failed-exact",
+      failed_attempt_digest: digest,
+    },
+  }]);
+});
+
 test("CLI reconciliation reports an accepted non-terminal Workflow with exit 10", async (t) => {
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -561,6 +1144,53 @@ test("CLI reconciliation exits zero for a terminal Workflow returned by the init
 
 test("CLI lifecycle commands expose safe diagnostics and exact mutation requests", async (t) => {
   const requests = [];
+  const rejectedRun = {
+    ...run,
+    id: "run_rejected_cli",
+    state: "rejected",
+    failure_code: null,
+    progress: {
+      completed_stages: ["planning", "collecting", "parsing", "reconciling"],
+      current_stage: "rejected",
+    },
+    operational_diagnostics: {
+      ...run.operational_diagnostics,
+      references: {
+        ...run.operational_diagnostics.references,
+        run_id: "run_rejected_cli",
+        request_id: "request_rejected_cli",
+      },
+      terminal_evidence: {
+        ...run.operational_diagnostics.terminal_evidence,
+        state: "rejected",
+        failure: {
+          code: "ingestion_run_rejected",
+          retryability_code: "retryable_rejection",
+          retryable: true,
+        },
+      },
+      retry: {
+        code: "ingestion_run_retry_available",
+        source_run_id: "run_rejected_cli",
+        method: "POST",
+        path: "/v1/ingestion-runs/run_rejected_cli/retry",
+      },
+      retry_available: true,
+      diagnosis_sequence: [
+        { code: "check_status", method: "GET", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          method: "GET",
+          path: "/v1/ingestion-runs/run_rejected_cli",
+        },
+        {
+          code: "retry_ingestion_run",
+          method: "POST",
+          path: "/v1/ingestion-runs/run_rejected_cli/retry",
+        },
+      ],
+    },
+  };
   const server = createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
@@ -614,6 +1244,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       );
       return;
     }
+    if (request.url === "/v1/ingestion-runs/run_rejected_cli") {
+      response.end(JSON.stringify(rejectedRun));
+      return;
+    }
     if (
       request.url ===
       "/v1/ingestion-runs/run_cli_demo/collection/resume"
@@ -648,6 +1282,10 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     status.stdout,
     /one-piece\/cards-and-printings: 2026-07-29T00:00:00.000Z/,
   );
+  assert.match(
+    status.stdout,
+    /Next: keepr run show --run-id run_cli_demo/,
+  );
 
   const shown = await runCli(
     ["run", "show", "--run-id", "run_cli_demo"],
@@ -665,6 +1303,41 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   assert.match(
     shown.stdout,
     /Resulting Catalogue Revision: catrev_cli_demo/,
+  );
+  assert.match(shown.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(shown.stdout, /retry-cli-demo/);
+  assert.match(shown.stdout, /Workflow: workflow_cli_demo/);
+  assert.match(shown.stdout, /Adapter versions: one-piece-en@3/);
+  assert.match(shown.stdout, new RegExp(`Candidate: ${"a".repeat(64)}`));
+  assert.match(
+    shown.stdout,
+    /Backup: \/v1\/catalogue-revisions\/catrev_cli_demo\/backups/,
+  );
+  assert.match(shown.stdout, /Recovery: \/v1\/status/);
+  assert.match(
+    shown.stdout,
+    /Retry: evidence_collection_retry_available \(run_cli_demo\)/,
+  );
+  assert.match(
+    shown.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_cli_demo\/collection\/retry/,
+  );
+  assert.match(shown.stdout, /Coverage: 7 snapshots, 7 observation sets, 8 attempts/);
+  assert.doesNotMatch(shown.stdout, /cli-test-key|source payload|proposal/iu);
+
+  const shownRejected = await runCli(
+    ["run", "show", "--run-id", "run_rejected_cli"],
+    environment,
+  );
+  assert.equal(shownRejected.code, 0, shownRejected.stderr);
+  assert.match(shownRejected.stdout, /Retry classification: retryable_rejection/);
+  assert.match(
+    shownRejected.stdout,
+    /Retry: ingestion_run_retry_available \(run_rejected_cli\)/,
+  );
+  assert.match(
+    shownRejected.stdout,
+    /Next: POST \/v1\/ingestion-runs\/run_rejected_cli\/retry/,
   );
 
   const requestCountBeforeRemovedMutation = requests.length;
@@ -768,6 +1441,20 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     environment,
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
+  const sourceRetried = await runCli(
+    [
+      "source",
+      "retry",
+      "--run-id",
+      "run_cli_demo",
+      "--idempotency-key",
+      "source-retry-cli-demo",
+    ],
+    environment,
+  );
+  assert.equal(sourceRetried.code, 0, sourceRetried.stderr);
+  assert.match(sourceRetried.stdout, /Request reference: request_cli_demo/);
+  assert.doesNotMatch(sourceRetried.stdout, /source-retry-cli-demo/);
   const resumed = await runCli(
     [
       "source",
@@ -783,7 +1470,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     0,
     "non-Workflow administration requests retain their established exit code",
   );
-  assert.deepEqual(requests.slice(-9), [
+  assert.deepEqual(requests.slice(-10), [
     {
       method: "GET",
       path: "/v1/ingestion-runs/run_cli_demo",
@@ -838,6 +1525,11 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
       body: {
         idempotency_key: "cleanup-cli-demo",
       },
+    },
+    {
+      method: "POST",
+      path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
+      body: { idempotency_key: "source-retry-cli-demo" },
     },
     {
       method: "POST",

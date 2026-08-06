@@ -1046,7 +1046,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "production-representable-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1105,7 +1105,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const conflicting = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "production-conflicting-shared-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1128,7 +1128,7 @@ test("production discovery retains literal stages and cannot freeze a Collection
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "production-staged-discovery-gap-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-staged-discovery-gap-v3",
@@ -1377,7 +1377,7 @@ test("the One Piece production release surface publishes release timing through 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "production-one-piece-release-timing-v2",
     requests: productionOnePieceReleaseTimingRequests(),
   });
@@ -1412,7 +1412,7 @@ test("the One Piece production release surface publishes release timing through 
   const changed = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "production-one-piece-unrecognized-release-v2",
     requests: productionOnePieceReleaseTimingRequests(
       "card-keepr-one-piece-unrecognized-release-v2",
@@ -1475,7 +1475,7 @@ test.each([
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: `production-unrepresentable-legality-v3-${marker}`,
     requests: productionFusionLegalityRequests(
       marker,
@@ -1829,7 +1829,7 @@ test.each([
     },
   },
   {
-    adapterVersion: "digimon-en@3",
+    adapterVersion: "digimon-en@4",
     lineage: "digimon-en",
     game: "digimon",
     surface: "restrictions-current",
@@ -2058,6 +2058,477 @@ test.each([
     });
   },
 );
+
+test("an Official Source field change requires exact reaffirmation before a fresh linked run", async () => {
+  const baseline = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain",
+    "curated-field-source-baseline",
+  );
+  const baselineCard = (
+    baseline.reconciled.cards as Array<Record<string, unknown>>
+  ).find((card) =>
+    (card.official_identity as Record<string, unknown>).value === "GD30-001"
+  );
+  if (baselineCard === undefined) {
+    throw new Error("The baseline GD30-001 Card is absent");
+  }
+  const published = await approve(
+    baseline.reconciled,
+    "publish-curated-field-source-baseline",
+  );
+  expect(published.response.status).toBe(200);
+  const currentRevisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const proposal = {
+    game: "gundam",
+    target: {
+      kind: "field",
+      entity_type: "card",
+      entity_id: requiredString(baselineCard, "id"),
+      path: "/name",
+    },
+    assertion: {
+      kind: "field",
+      value: "Owner-reviewed Card Name",
+    },
+    rationale: "The retained publication needs an owner-reviewed clarification.",
+    evidence: [{
+      kind: "owner_reference",
+      uri: "https://owner.example/review/gundam-card-name",
+      content_digest: "a".repeat(64),
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256(utf8(canonicalJson(
+      requiredString(baselineCard, "name"),
+    ))),
+    supersedes_revision_id: null,
+  };
+  const authored = await request("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    proposal,
+    proposal_digest: await sha256(utf8(canonicalJson(proposal))),
+    idempotency_key: "author-curated-field-source-baseline",
+  });
+  expect(authored.response.status).toBe(201);
+  const curatedRevisionId = requiredString(
+    authored.document,
+    "curated_revision_id",
+  );
+  const contentDigest = requiredString(authored.document, "content_digest");
+
+  const changed = await collectFixtureLegality(
+    "https://official-source.invalid/reconciliation/contextual-legality-domain?semantics=changed",
+    "curated-field-source-changed",
+    409,
+  );
+  expect(changed.reconciled).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [expect.objectContaining({
+      code: "curated_revision_reconfirmation_required",
+      curated_revision_id: curatedRevisionId,
+    })],
+  });
+
+  const shown = await request(
+    `/admin/v1/curated-revisions/${curatedRevisionId}`,
+  );
+  expect(shown.response.status).toBe(200);
+  const revision = shown.document.revision as Record<string, unknown>;
+  const conflict = revision.pending_conflict as Record<string, unknown>;
+  expect(revision).toMatchObject({
+    status: "reconfirmation_required",
+    event_version: 2,
+    pending_conflict: {
+      run_id: changed.runId,
+      previous_source_digest: proposal.reviewed_source_digest,
+      observed_source_digest: await sha256(utf8(canonicalJson(
+        "Changed Official Source Card Name",
+      ))),
+    },
+  });
+  expect(requiredString(conflict, "digest")).toBe(await sha256(utf8(
+    canonicalJson({
+      conflict_id: requiredString(conflict, "id"),
+      run_id: changed.runId,
+      revision_id: curatedRevisionId,
+      previous_source_digest: proposal.reviewed_source_digest,
+      observed_source_digest: requiredString(
+        conflict,
+        "observed_source_digest",
+      ),
+    }),
+  )));
+  expect(shown.document.events).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "authored", event_version: 1 }),
+    expect.objectContaining({
+      type: "source_change_detected",
+      event_version: 2,
+    }),
+  ]));
+
+  const blocked = await request(
+    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
+    { idempotency_key: "retry-curated-field-before-reaffirmation" },
+  );
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({
+    code: "curated_revision_reconfirmation_required",
+  });
+
+  const reaffirmed = await request(
+    `/admin/v1/curated-revisions/${curatedRevisionId}/reaffirm`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevisionId,
+      expected_event_version: 2,
+      conflict_digest: requiredString(conflict, "digest"),
+      rationale: "The assertion remains necessary after reviewing the new publication.",
+      idempotency_key: "reaffirm-curated-field-source-change",
+    },
+  );
+  expect(reaffirmed.response.status).toBe(200);
+  expect(reaffirmed.document).toMatchObject({
+    curated_revision_id: curatedRevisionId,
+    content_digest: contentDigest,
+    status: "active",
+    event_version: 3,
+  });
+
+  const fresh = await request(
+    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
+    { idempotency_key: "retry-curated-field-after-reaffirmation" },
+  );
+  expect(fresh.response.status).toBe(201);
+  expect(fresh.document).toMatchObject({
+    state: "collecting",
+    linked_run_id: changed.runId,
+  });
+  const freshRunId = requiredString(fresh.document, "id");
+  const resumed = await request(
+    `/v1/ingestion-runs/${freshRunId}/collection/resume`,
+    {},
+  );
+  expect(resumed.response.status).toBe(202);
+  await waitForState(freshRunId, "parsing");
+  const candidate = await reconcile(freshRunId);
+  expect(candidate.response.status).toBe(200);
+  const reaffirmedCard = (
+    candidate.document.cards as Array<Record<string, unknown>>
+  ).find((card) =>
+    (card.official_identity as Record<string, unknown>).value === "GD30-001"
+  );
+  expect(reaffirmedCard).toMatchObject({
+    name: proposal.assertion.value,
+    curated_provenance: [expect.objectContaining({
+      curated_revision_id: curatedRevisionId,
+      content_digest: contentDigest,
+      reviewed_source_value: "Changed Official Source Card Name",
+    })],
+  });
+  expect((await request(
+    `/v1/ingestion-runs/${freshRunId}/rejection`,
+    {
+      candidate_digest: requiredString(candidate.document, "candidate_digest"),
+      idempotency_key: "reject-curated-field-after-reaffirmation",
+    },
+  )).response.status).toBe(200);
+}, 45_000);
+
+test("an Official Source relationship change recovers through supersession and retirement", async () => {
+  const baseline = await collectFixtureOnePiece(
+    "https://official-source.invalid/reconciliation/product-typed-relationships",
+    "curated-relationship-source-baseline",
+  );
+  const published = await approve(
+    baseline.reconciled,
+    "publish-curated-relationship-source-baseline",
+  );
+  expect(published.response.status).toBe(200);
+  const currentRevisionId = requiredString(
+    published.document,
+    "resulting_revision_id",
+  );
+  const relationship = (
+    await exportedComponentRecords(currentRevisionId, "relationships")
+  ).find((candidate) => candidate.kind === "product-card");
+  if (relationship === undefined) {
+    throw new Error("The baseline product-card relationship is absent");
+  }
+  const target = {
+    kind: "relationship",
+    relationship_kind: "product-card",
+    from: relationship.from,
+    to: relationship.to,
+  };
+  const proposal = {
+    game: "one-piece",
+    target,
+    assertion: { kind: "relationship", presence: "absent" },
+    rationale: "The owner reviewed this derived relationship as absent.",
+    evidence: [{
+      kind: "owner_reference",
+      uri: "https://owner.example/review/product-card-relationship",
+      content_digest: "b".repeat(64),
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256(utf8(canonicalJson("present"))),
+    supersedes_revision_id: null,
+  };
+  const authored = await request("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    proposal,
+    proposal_digest: await sha256(utf8(canonicalJson(proposal))),
+    idempotency_key: "author-curated-relationship-source-baseline",
+  });
+  expect(authored.response.status).toBe(201);
+  const priorRevisionId = requiredString(
+    authored.document,
+    "curated_revision_id",
+  );
+
+  const changed = await collectFixtureOnePiece(
+    "https://official-source.invalid/reconciliation/product-typed-relationships-changed",
+    "curated-relationship-source-changed",
+    409,
+  );
+  expect(changed.reconciled).toMatchObject({
+    state: "failed",
+    publishable: false,
+    diagnostics: [expect.objectContaining({
+      code: "curated_revision_reconfirmation_required",
+      curated_revision_id: priorRevisionId,
+    })],
+  });
+  const priorShown = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}`,
+  );
+  const prior = priorShown.document.revision as Record<string, unknown>;
+  const conflict = prior.pending_conflict as Record<string, unknown>;
+  expect(prior).toMatchObject({
+    status: "reconfirmation_required",
+    event_version: 2,
+    pending_conflict: {
+      run_id: changed.runId,
+      previous_source_digest: proposal.reviewed_source_digest,
+      observed_source_digest: await sha256(utf8(canonicalJson("absent"))),
+    },
+  });
+
+  const replacementProposal = {
+    ...proposal,
+    assertion: { kind: "relationship", presence: "present" },
+    rationale: "The owner reviewed the missing relationship and requires it.",
+    reviewed_source_digest: requiredString(
+      conflict,
+      "observed_source_digest",
+    ),
+    supersedes_revision_id: priorRevisionId,
+  };
+  const invalidReplacement = {
+    ...replacementProposal,
+    reviewed_source_digest: "f".repeat(64),
+  };
+  const invalidReviewedSource = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevisionId,
+      expected_event_version: 2,
+      conflict_digest: requiredString(conflict, "digest"),
+      proposal: invalidReplacement,
+      proposal_digest: await sha256(utf8(canonicalJson(invalidReplacement))),
+      rationale: "Replace the exception after reviewing the changed source.",
+      idempotency_key: "reject-invalid-relationship-reviewed-source",
+    },
+  );
+  expect(invalidReviewedSource.response.status).toBe(409);
+  expect(invalidReviewedSource.document).toMatchObject({
+    code: "curated_revision_reviewed_source_mismatch",
+  });
+
+  const supersedeInput = {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    expected_event_version: 2,
+    conflict_digest: requiredString(conflict, "digest"),
+    proposal: replacementProposal,
+    proposal_digest: await sha256(utf8(canonicalJson(replacementProposal))),
+    rationale: "Replace the exception after reviewing the changed source.",
+    idempotency_key: "supersede-curated-relationship-source-change",
+  };
+  const superseded = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    supersedeInput,
+  );
+  expect(superseded.response.status).toBe(201);
+  const supersedeReplay = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    supersedeInput,
+  );
+  expect(supersedeReplay.response.status).toBe(200);
+  expect(supersedeReplay.document).toEqual(superseded.document);
+  const changedSupersedeReuse = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}/supersede`,
+    {
+      ...supersedeInput,
+      rationale: "A changed request must not reuse the accepted key.",
+      idempotency_key: "supersede-curated-relationship-source-change",
+    },
+  );
+  expect(changedSupersedeReuse.response.status).toBe(409);
+  expect(changedSupersedeReuse.document).toMatchObject({
+    code: "idempotency_conflict",
+  });
+  const replacementRevisionId = requiredString(
+    superseded.document,
+    "curated_revision_id",
+  );
+  expect(superseded.document).toMatchObject({
+    status: "active",
+    event_version: 1,
+    code: "curated_revision_superseded",
+  });
+  const supersededPrior = await request(
+    `/admin/v1/curated-revisions/${priorRevisionId}`,
+  );
+  expect(supersededPrior.document.revision).toMatchObject({
+    status: "superseded",
+    event_version: 3,
+  });
+
+  const afterSupersession = await request(
+    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
+    { idempotency_key: "retry-relationship-after-supersession" },
+  );
+  expect(afterSupersession.response.status).toBe(201);
+  expect(afterSupersession.document).toMatchObject({
+    state: "collecting",
+    linked_run_id: changed.runId,
+  });
+  const supersessionRunId = requiredString(afterSupersession.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${supersessionRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(supersessionRunId, "parsing");
+  const supersessionCandidate = await reconcile(supersessionRunId);
+  expect(supersessionCandidate.response.status).toBe(200);
+  const inspectedSupersession = await request(
+    `/v1/ingestion-runs/${supersessionRunId}/candidate`,
+  );
+  expect(inspectedSupersession.document).toMatchObject({
+    curated_revision_ids: [replacementRevisionId],
+    diff: {
+      curated_effects: [expect.objectContaining({
+        revision_id: replacementRevisionId,
+        target: expect.any(String),
+        assertion: replacementProposal.assertion,
+        evidence_category: "curated",
+      })],
+    },
+  });
+  const rejected = await request(
+    `/v1/ingestion-runs/${supersessionRunId}/rejection`,
+    {
+      candidate_digest: requiredString(
+        supersessionCandidate.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-relationship-after-supersession",
+    },
+  );
+  expect(rejected.response.status).toBe(200);
+
+  const replacementBeforeRetirement = await request(
+    `/admin/v1/curated-revisions/${replacementRevisionId}`,
+  );
+  expect(replacementBeforeRetirement.response.status).toBe(200);
+  const immutableReplacement = replacementBeforeRetirement.document
+    .revision as Record<string, unknown>;
+
+  const retired = await request(
+    `/admin/v1/curated-revisions/${replacementRevisionId}/retire`,
+    {
+      environment: "production",
+      expected_current_revision_id: currentRevisionId,
+      expected_event_version: 1,
+      conflict_digest: null,
+      rationale: "The changed Official Source no longer needs an exception.",
+      idempotency_key: "retire-curated-relationship-replacement",
+    },
+  );
+  expect(retired.response.status).toBe(200);
+  expect(retired.document).toMatchObject({
+    curated_revision_id: replacementRevisionId,
+    status: "retired",
+    event_version: 2,
+  });
+  const replacementAfterRetirement = await request(
+    `/admin/v1/curated-revisions/${replacementRevisionId}`,
+  );
+  expect(replacementAfterRetirement.response.status).toBe(200);
+  const retiredReplacement = replacementAfterRetirement.document
+    .revision as Record<string, unknown>;
+  expect({
+    id: retiredReplacement.id,
+    content: retiredReplacement.content,
+    content_digest: retiredReplacement.content_digest,
+    author: retiredReplacement.author,
+    created_at: retiredReplacement.created_at,
+  }).toEqual({
+    id: immutableReplacement.id,
+    content: immutableReplacement.content,
+    content_digest: immutableReplacement.content_digest,
+    author: immutableReplacement.author,
+    created_at: immutableReplacement.created_at,
+  });
+  expect(replacementAfterRetirement.document).toMatchObject({
+    revision: {
+      status: "retired",
+      event_version: 2,
+    },
+    events: [
+      expect.objectContaining({ type: "authored", event_version: 1 }),
+      expect.objectContaining({ type: "retired", event_version: 2 }),
+    ],
+  });
+
+  const afterRetirement = await request(
+    `/v1/ingestion-runs/${changed.runId}/collection/retry`,
+    { idempotency_key: "retry-relationship-after-retirement" },
+  );
+  expect(afterRetirement.response.status).toBe(201);
+  const retirementRunId = requiredString(afterRetirement.document, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${retirementRunId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(retirementRunId, "parsing");
+  const retirementCandidate = await reconcile(retirementRunId);
+  expect(retirementCandidate.response.status).toBe(200);
+  const inspectedRetirement = await request(
+    `/v1/ingestion-runs/${retirementRunId}/candidate`,
+  );
+  expect(inspectedRetirement.document).toMatchObject({
+    curated_revision_ids: [],
+    diff: { curated_effects: [] },
+  });
+  expect((await request(
+    `/v1/ingestion-runs/${retirementRunId}/rejection`,
+    {
+      candidate_digest: requiredString(
+        retirementCandidate.document,
+        "candidate_digest",
+      ),
+      idempotency_key: "reject-relationship-after-retirement",
+    },
+  )).response.status).toBe(200);
+}, 60_000);
 
 test("test-owned domain evidence publishes exact Legality Rules and keeps still-effective history applicable", async () => {
   const first = await collectFixtureLegality(
@@ -3145,6 +3616,40 @@ async function collectFixtureLegality(
   reconciled: Record<string, unknown>;
 }> {
   const runId = await collectFixtureLegalityEvidence(url, idempotencyKey);
+  const reconciled = await reconcile(runId);
+  expect(
+    reconciled.response.status,
+    JSON.stringify(reconciled.document),
+  ).toBe(expectedStatus);
+  return { runId, reconciled: reconciled.document };
+}
+
+async function collectFixtureOnePiece(
+  url: string,
+  idempotencyKey: string,
+  expectedStatus = 200,
+): Promise<{
+  runId: string;
+  reconciled: Record<string, unknown>;
+}> {
+  const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: idempotencyKey,
+    requests: [{
+      id: "cards-and-products",
+      method: "GET",
+      url,
+      headers: { accept: "application/json" },
+    }],
+  });
+  const runId = requiredString(started, "id");
+  expect((await request(
+    `/v1/ingestion-runs/${runId}/collection/resume`,
+    {},
+  )).response.status).toBe(202);
+  await waitForState(runId, "parsing");
   const reconciled = await reconcile(runId);
   expect(
     reconciled.response.status,

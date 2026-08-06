@@ -88,6 +88,35 @@ _Avoid_: Curated Revision, Source Snapshot, database version
 An immutable machine-readable package of normalized Catalogue Data for one Catalogue Revision, intended for offline use by Catalogue Consumers.
 _Avoid_: Source Snapshot, database backup, live API response
 
+**Backup Attempt**:
+An immutable record of one effort to preserve and prove recovery of a Catalogue Revision. A failed Backup Attempt may have at most one retry child, and only the latest failed leaf may be retried.
+_Avoid_: Mutable retry, Catalogue Export
+
+**Disposable Restore**:
+A temporary restoration used only to prove that a Backup Attempt can recover its Catalogue Revision.
+_Avoid_: Recovery operation, current catalogue
+
+**Catalogue Recovery**:
+An immutable, owner-accepted operation that restores the current catalogue from
+one exact verified Backup Attempt, either through its D1 Time Travel bookmark or
+through a replacement database. It is distinct from the Backup Attempt's
+Disposable Restore: that restore proves recoverability, while Catalogue Recovery
+changes the production catalogue and keeps mutation blocked until verification
+and explicit acceptance.
+_Avoid_: Backup Attempt, Disposable Restore, deployment
+
+**Restore Generation**:
+One clean Disposable Restore target within a Backup Attempt. A new generation supersedes an ambiguous or failed import instead of reusing its populated target.
+_Avoid_: Backup Attempt, database version
+
+**Restore Phase**:
+The durable stage of a Restore Generation from target preparation through import and verification.
+_Avoid_: Backup Attempt state, Ingestion Run state
+
+**Backup Retention**:
+The policy that preserves the newest successful Backup Attempt indefinitely and older dated successful Backup Attempts for the accepted period.
+_Avoid_: Attempt expiry, source retention
+
 **Product**:
 An official release grouping associated with Cards or Printings, such as a booster set, starter deck, or promotional release.
 _Avoid_: Marketplace listing, owned sealed product
@@ -95,6 +124,12 @@ _Avoid_: Marketplace listing, owned sealed product
 **Release**:
 A region-scoped availability event for a Product, expressed with the precision Bandai publishes.
 _Avoid_: Product, Distribution Context
+
+**Production Release**:
+One serialized, owner-dispatched deployment of compatible Card Keepr schema and
+Worker versions through the guarded production workflow. It is operational and
+must not be shortened to Release, which is a Product availability event.
+_Avoid_: Release, ordinary CI, unguarded deployment
 
 **Distribution Context**:
 An official context through which a Printing is made available, such as a Product, tournament pack, winner prize, or promotion.

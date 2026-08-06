@@ -169,12 +169,634 @@ const productionAdapterVersions = sourceAdapterRegistrations
   .map(({ adapterVersion }) => adapterVersion);
 
 const expectedProductionAdapterVersions = [
-  "digimon-en@3",
-  "fusion-world-en@3",
-  "gundam-en-asia@3",
-  "gundam-en-us@3",
-  "one-piece-en@2",
+  "digimon-en@4",
+  "fusion-world-en@4",
+  "gundam-en-asia@4",
+  "gundam-en-us@4",
+  "one-piece-en@3",
 ];
+
+test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const retained = requiredSourceAdapter(`${lineage}@3`);
+    const payload = rawSurfacePayload(lineage, "packages");
+    assert.ok(
+      parseRegisteredSurface(retained, "packages", payload).length > 0,
+      "V3 remains available for retained snapshot replay",
+    );
+
+    const complete = structuredClone(payload);
+    const detail = complete.card_details[0];
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    delete detail.printing.normalized_rarity;
+    complete.package_options = [
+      { value: "gd01", label: "GD01" },
+      { value: "starter", label: "Starter decks" },
+    ];
+    const entry = complete.result.partitions[0].entries[0];
+    complete.result.partitions = ["gd01", "starter"].map((name) => ({
+      bucket: `package=${name}`,
+      page: 1,
+      pages: 1,
+      total: 1,
+      has_next: false,
+      entries: [structuredClone(entry)],
+    }));
+
+    const observations = parseRegisteredSurface(current, "packages", complete);
+    assert.equal(
+      observations.filter(({ card }) => card !== undefined).length,
+      1,
+      "the same full locator is deterministically deduplicated across packages",
+    );
+    assert.equal(observations[0].printing.rarity.raw, "R");
+    assert.equal(observations[0].printing.rarity.normalized, "rare");
+    assert.match(
+      observations[0].identity_evidence.artwork_fingerprint,
+      /^official-artwork:/u,
+    );
+    assert.match(
+      observations[0].identity_evidence.printed_fields_digest,
+      /^printed-material:/u,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(
+          `<html>${officialPublisherPayloadScript(
+            lineage,
+            "packages",
+            complete,
+          )}</html>`,
+        ),
+        {
+          mediaType: "text/html",
+          url: current.requestUrlForSurface("packages"),
+          requestId: `${lineage}:packages`,
+        },
+      ),
+      /Gundam catalogue facts require an exact package leaf/iu,
+    );
+
+    const conflicting = structuredClone(complete);
+    conflicting.result.partitions[1].entries[0].number = "GD99-999";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", conflicting),
+      /full locator.*conflict/iu,
+    );
+    const unknownRarity = structuredClone(complete);
+    unknownRarity.card_details[0].printing.rarity = "Experimental Rare";
+    assert.throws(
+      () => parseRegisteredSurface(current, "packages", unknownRarity),
+      /Gundam rarity.*Experimental Rare/iu,
+    );
+  }
+});
+
+test("Digimon V4 alone accepts complete dynamic leaves and rejects catalogue facts above a leaf", () => {
+  const current = requiredSourceAdapter("digimon-en@4");
+  const retained = requiredSourceAdapter("digimon-en@3");
+  const payload = officialRawSurfacePayload("/digimon-en/card-list");
+  const publisherFacts = structuredClone(payload);
+  for (const detail of publisherFacts.card_popups) {
+    delete detail.artwork_fingerprint;
+    delete detail.printed_fields_digest;
+    delete detail.printing.normalized_rarity;
+  }
+  const document = (value) => Buffer.from(
+    `<html>${officialPublisherPayloadScript("digimon-en", "card-list", value)}</html>`,
+  );
+  const requestId = `digimon-en:listing:${"a".repeat(64)}`;
+  const exactLeaf =
+    "https://world.digimoncard.com/cards/index.php?search=true&category=all&cardcategory=digimon&colour=blue";
+  const intermediate =
+    "https://world.digimoncard.com/cards/index.php?search=true&category=all";
+
+  assert.ok(retained.parseBytes(document(payload), {
+    mediaType: "text/html",
+    url: retained.requestUrlForSurface("card-list"),
+    requestId: "digimon-en:card-list",
+  }).length > 0, "V3 must preserve acceptance of its pinned publisher shape");
+  assert.throws(
+    () => retained.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: exactLeaf,
+      requestId,
+    }),
+    /listing|surface|publication|publisher|identity|contract/iu,
+    "V3 must preserve its original dynamic-listing decoder behavior",
+  );
+  assert.throws(
+    () => current.parseBytes(document(payload), {
+      mediaType: "text/html",
+      url: exactLeaf,
+      requestId,
+    }),
+    /must not supply.*(?:artwork|digest|rarity)/iu,
+  );
+  const observations = current.parseBytes(document(publisherFacts), {
+    mediaType: "text/html",
+    url: exactLeaf,
+    requestId,
+  });
+  assert.ok(observations.length > 0);
+  assert.equal(observations[0].printing.rarity.normalized, "rare");
+  assert.match(
+    observations[0].identity_evidence.artwork_fingerprint,
+    /^official-artwork:/u,
+  );
+  assert.match(
+    observations[0].identity_evidence.printed_fields_digest,
+    /^printed-material:/u,
+  );
+  assert.throws(
+    () => current.parseBytes(document(publisherFacts), {
+      mediaType: "text/html",
+      url: intermediate,
+      requestId,
+    }),
+    /complete Digimon leaf/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(document(publisherFacts), {
+      mediaType: "text/html",
+      url: current.requestUrlForDiscovery(),
+      requestId: "digimon-en:discovery",
+    }),
+    /complete Digimon leaf/iu,
+  );
+});
+
+test("Digimon V4 parses every retained live popup Card and Printing at an exact leaf", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const bytes = Buffer.from(
+    '<div class="resultTxt">Result<span class="num">2</span>cards</div>' +
+      retained,
+  );
+  const observations = adapter.parseBytes(bytes, {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+    requestId: `digimon-en:listing:${"a".repeat(64)}`,
+  });
+
+  assert.equal(observations.length, 2);
+  assert.deepEqual(
+    observations.map(({ completeness, card, printing, identity_evidence, appearance_evidence }) => ({
+      completeness,
+      card,
+      printing,
+      identity_evidence: {
+        locator: identity_evidence.locator,
+        variant_key: identity_evidence.variant_key,
+      },
+      appearance_evidence,
+    })),
+    [false, true].map((alternativeArt, index) => ({
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+      card: {
+        game: "digimon",
+        official_identity: { kind: "card_number", value: "EX12-021" },
+        name: "Gabumon",
+        effective_rules_text:
+          "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+        game_data: {
+          profile: "digimon@1",
+          attributes: {
+            card_type: "digimon",
+            colours: ["blue"],
+            level: 3,
+            play_cost: 3,
+            use_cost: null,
+            dp: 2000,
+            form: "Rookie",
+            attribute: "Data",
+            traits: ["Reptile", "VB"],
+            digivolution_requirements: [{
+              index: 1,
+              from_level: 2,
+              colours: ["blue"],
+              cost: 0,
+              raw_condition: "Blue 0 from Lv.2",
+            }],
+            text_sections: [
+              {
+                kind: "special_digivolution_condition",
+                text: "[Digivolve] [Tsunomon]/Lv.2 w/[VB] trait: Cost 0",
+              },
+              {
+                kind: "effect",
+                text:
+                  "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+              },
+              {
+                kind: "inherited_effect",
+                text:
+                  "[When Attacking] [Once Per Turn] If your hand has 7 or fewer cards, ＜Draw 1＞.",
+              },
+            ],
+            dual_colours: [],
+            dual_cost: null,
+            link_dp: null,
+          },
+        },
+      },
+      printing: {
+        rarity: { raw: "U", normalized: "uncommon" },
+        printed_rules_text:
+          "[Start of Your Main Phase] By trashing 1 card with [Garurumon] in its name or the [VB] trait from your hand, ＜Draw 1＞ and gain 1 memory.",
+        game_data: {
+          profile: "digimon@1",
+          attributes: { alternative_art: alternativeArt },
+        },
+      },
+      identity_evidence: {
+        locator: index === 0 ? "EX12-021" : "EX12-021_P1",
+        variant_key: index === 0 ? "base" : "alternate-art-1",
+      },
+      appearance_evidence: {
+        images: [{
+          role: "front",
+          source_url: index === 0
+            ? "https://world.digimoncard.com/images/cardlist/card/EX12-021.png?260529"
+            : "https://world.digimoncard.com/images/cardlist/card/EX12-021_P1.png?260529",
+          artwork_fingerprint: index === 0
+            ? 'official-artwork:{"official_card_identity":"EX12-021","roles":["front"],"artwork_id":"ex12-021"}'
+            : 'official-artwork:{"official_card_identity":"EX12-021","roles":["front"],"artwork_id":"ex12-021_p1"}',
+        }],
+      },
+    })),
+  );
+
+  assert.throws(
+    () => adapter.parseBytes(
+      Buffer.from(
+        bytes.toString("utf8").replace(
+          '<dt class="cardInfoTit">Notes</dt>',
+          '<dt class="cardInfoTit">Future Target Scope</dt><dd class="cardInfoData">Alternate printings only</dd><dt class="cardInfoTit">Notes</dt>',
+        ),
+      ),
+      {
+        mediaType: "text/html; charset=UTF-8",
+        url:
+          "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+        requestId: `digimon-en:listing:${"b".repeat(64)}`,
+      },
+    ),
+    /Digimon Card List contains unknown field Future Target Scope/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(bytes, {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon",
+      requestId: `digimon-en:listing:${"c".repeat(64)}`,
+    }),
+    /complete Digimon leaf.*color facets/iu,
+  );
+});
+
+test("Digimon V4 rejects a retained live leaf whose declared Card count exceeds its popup inventory", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const secondRecord = retained.indexOf(
+    '<li class="image_lists_item data page-1">',
+    1,
+  );
+  assert.notEqual(secondRecord, -1);
+  const incompleteLeaf = `<div class="resultTxt">Result<span class="num">2</span>cards</div>${
+    retained.slice(0, secondRecord)
+  }`;
+
+  assert.throws(
+    () => adapter.parseBytes(new TextEncoder().encode(incompleteLeaf), {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+      requestId: `digimon-en:listing:${"d".repeat(64)}`,
+    }),
+    /declared and parsed.*differ/iu,
+  );
+});
+
+test("Digimon V4 requires an exact result count for every complete live leaf", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Option&color=Blue",
+    requestId: `digimon-en:listing:${"e".repeat(64)}`,
+  };
+
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode("<html><main>No cards found.</main></html>"),
+      context,
+    ),
+    /result count.*(?:missing|required|unavailable)/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        '<div class="resultTxt">Result<span class="num">1</span>card</div>',
+      ),
+      context,
+    ),
+    /declared and parsed.*differ/iu,
+  );
+  const [emptyLeaf] = adapter.parseBytes(
+    new TextEncoder().encode(
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    ),
+    context,
+  );
+  assert.deepEqual(emptyLeaf.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
+});
+
+test("Digimon V4 maps exact publisher Card Types with type-specific level nullability", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/digimon-en-card-list-popup-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const secondRecord = retained.indexOf(
+    '<li class="image_lists_item data page-1">',
+    1,
+  );
+  assert.notEqual(secondRecord, -1);
+  const singleRecord = retained.slice(0, secondRecord);
+  const parseType = (
+    publisherType,
+    { level = true, leafType = publisherType } = {},
+  ) => {
+    let popup = singleRecord.replace(
+      /<li class="cardType">\s*Digimon\s*<\/li>/u,
+      `<li class="cardType">${publisherType}</li>`,
+    );
+    if (!level) {
+      popup = popup.replace(
+        /\s*<li class="cardLv">\s*Lv\.3\s*<\/li>/u,
+        "",
+      );
+    }
+    const query = new URLSearchParams({
+      search: "true",
+      category: "522037",
+      cardcategory: leafType,
+      color: "Blue",
+    });
+    return adapter.parseBytes(
+      new TextEncoder().encode(
+        '<div class="resultTxt">Result<span class="num">1</span>card</div>' +
+          popup,
+      ),
+      {
+        mediaType: "text/html; charset=UTF-8",
+        url: `https://world.digimoncard.com/cards/index.php?${query}`,
+        requestId: `digimon-en:listing:${"f".repeat(64)}`,
+      },
+    )[0];
+  };
+
+  assert.deepEqual(
+    [
+      ["Digi-Egg", true],
+      ["Digimon", true],
+      ["Tamer", false],
+      ["Option", false],
+      ["Digimon/Option", true],
+    ].map(([publisherType, level]) => {
+      const observation = parseType(publisherType, { level });
+      return [
+        observation.card.game_data.attributes.card_type,
+        observation.card.game_data.attributes.level,
+      ];
+    }),
+    [
+      ["digi_egg", 3],
+      ["digimon", 3],
+      ["tamer", null],
+      ["option", null],
+      ["digimon_option", 3],
+    ],
+  );
+  assert.throws(
+    () => parseType("Future Card", { leafType: "Digimon" }),
+    /Card type.*unknown/iu,
+  );
+  assert.equal(
+    parseType("Option", { level: true }).card.game_data.attributes.level,
+    3,
+  );
+  assert.equal(
+    parseType("Digimon", { level: false }).card.game_data.attributes.level,
+    null,
+  );
+  const normalizedObservation = parseType("  dIgImOn/OpTiOn  ", {
+    leafType: " DIGIMON/OPTION ",
+  });
+  const normalizedType = normalizedObservation.card.game_data.attributes;
+  assert.deepEqual(
+    [normalizedType.card_type, normalizedType.level],
+    ["digimon_option", 3],
+  );
+  assert.deepEqual(
+    normalizedObservation.source_sidecar.raw.official_surfaces[0].document,
+    {
+      popup_id: "EX12-021",
+      publisher_card_type: "dIgImOn/OpTiOn",
+      publisher_level: "Lv.3",
+      leaf_cardcategory: " DIGIMON/OPTION ",
+      card_qa: [],
+    },
+  );
+  assert.throws(
+    () => {
+      const mismatched = singleRecord.replace(
+        /<li class="cardType">\s*Digimon\s*<\/li>/u,
+        '<li class="cardType">Option</li>',
+      ).replace(/\s*<li class="cardLv">\s*Lv\.3\s*<\/li>/u, "");
+      adapter.parseBytes(
+        new TextEncoder().encode(
+          '<div class="resultTxt">Result<span class="num">1</span>card</div>' +
+            mismatched,
+        ),
+        {
+          mediaType: "text/html; charset=UTF-8",
+          url:
+            "https://world.digimoncard.com/cards/index.php?search=true&category=522037&cardcategory=Digimon&color=Blue",
+          requestId: `digimon-en:listing:${"0".repeat(64)}`,
+        },
+      );
+    },
+    /Card Type.*leaf.*cardcategory/iu,
+  );
+});
+
+test("Digimon V4 normalizes exact standalone Official Errata", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const payload = officialRawSurfacePayload("/digimon-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    card_number: "BT99-001",
+    published_on: "2026-07-01",
+    effective_from: "2026-07-01",
+    observed_printed_rules_text: "Printed effect before correction.",
+    corrected_rules_text: "Corrected official effect.",
+    official_wording:
+      'Replace "Printed effect before correction." with "Corrected official effect."',
+    applies_to_parallel_printings: true,
+    source_fragment: "#BT99-001",
+    display_name: "BT99-001 Erratum",
+    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+  }];
+  const observations = adapter.parseBytes(
+    Buffer.from(`<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "digimon-en:errata",
+    },
+  );
+  assert.deepEqual(
+    observations.filter(({ kind }) => kind === "official_erratum"),
+    [{
+      kind: "official_erratum",
+      game: "digimon",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: "BT99-001" },
+      },
+      published_on: "2026-07-01",
+      effective_from: "2026-07-01",
+      observed_printed_rules_text: "Printed effect before correction.",
+      corrected_rules_text: "Corrected official effect.",
+      official_wording:
+        'Replace "Printed effect before correction." with "Corrected official effect."',
+      applies_to_parallel_printings: true,
+      source: {
+        fragment: "#BT99-001",
+        display_name: "BT99-001 Erratum",
+        image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+      },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    }],
+  );
+
+  payload.entries[0].future_target_scope = "Only alternate-art printings";
+  assert.throws(
+    () => adapter.parseBytes(
+      Buffer.from(
+        `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
+      ),
+      {
+        mediaType: "text/html",
+        url: adapter.requestUrlForSurface("errata"),
+        requestId: "digimon-en:errata",
+      },
+    ),
+    /Digimon Official Erratum.*unknown field future_target_scope/iu,
+  );
+});
+
+test("Digimon V4 preserves a standalone Official Erratum that explicitly removes Effective Rules Text", () => {
+  const adapter = requiredSourceAdapter("digimon-en@4");
+  const payload = officialRawSurfacePayload("/digimon-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    card_number: "BT99-001",
+    published_on: "2026-07-01",
+    effective_from: "2026-07-01",
+    observed_printed_rules_text: "Printed effect before removal.",
+    corrected_rules_text: null,
+    official_wording: "Remove the printed effect from this Card.",
+    applies_to_parallel_printings: true,
+    source_fragment: "#BT99-001",
+    display_name: "BT99-001 Erratum",
+    image_url: "https://world.digimoncard.com/images/cardlist/card/BT99-001.png",
+  }];
+
+  const observations = adapter.parseBytes(
+    Buffer.from(
+      `<html>${officialPublisherPayloadScript("digimon-en", "errata", payload)}</html>`,
+    ),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "digimon-en:errata",
+    },
+  );
+  assert.deepEqual(
+    observations.filter(({ kind }) => kind === "official_erratum")
+      .map(({ corrected_rules_text }) => corrected_rules_text),
+    [null],
+  );
+});
+
+test("the synthetic Digimon Worker isolates sequential and concurrent request scenarios", async () => {
+  const rootUrl =
+    "https://world.digimoncard.com/cards/index.php?search=true";
+  const errataUrl = "https://world.digimoncard.com/rule/errata_card/";
+  const responseText = async (url, userAgent) =>
+    await (await syntheticOfficialSource.fetch(new Request(url, {
+      headers: { "user-agent": userAgent },
+    }))).text();
+
+  await responseText(
+    rootUrl,
+    "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=card-list",
+  );
+  const unmarked = await responseText(
+    errataUrl,
+    "card-keepr-official-source/1; request-role=surface; request-surface=errata",
+  );
+  assert.doesNotMatch(
+    unmarked,
+    /Remove the printed effect/u,
+    "an unmarked request must not inherit an earlier request scenario",
+  );
+
+  const [complete, absent] = await Promise.all([
+    responseText(
+      errataUrl,
+      "card-keepr-acceptance-digimon/complete; request-role=surface; request-surface=errata",
+    ),
+    responseText(
+      errataUrl,
+      "card-keepr-acceptance-digimon/complete-no-errata; request-role=surface; request-surface=errata",
+    ),
+  ]);
+  assert.match(complete, /Remove the printed effect/u);
+  assert.doesNotMatch(absent, /Remove the printed effect/u);
+});
 
 function registeredProductionAdapters() {
   return productionAdapterVersions.map((adapterVersion) =>
@@ -202,7 +824,7 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[23]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[2-5]T/u);
   return { bytes, metadata };
 }
 
@@ -261,6 +883,80 @@ test("retained live One Piece policy bytes publish the complete current active l
         effective_from: "2026-04-10",
       },
     ],
+  );
+});
+
+test("retained live One Piece Card List series maps exactly once into Recording vocabulary", () => {
+  const current = requiredSourceAdapter("one-piece-en@3");
+  const historical = requiredSourceAdapter("one-piece-en@2");
+  const fixture = retainedOfficialSourceFixture("one-piece-en-card-list");
+  const rootUrl = current.requestUrlForSurface("card-list");
+  const rootContext = {
+    mediaType: fixture.metadata.content_type,
+    url: rootUrl,
+    requestId: "one-piece-en:card-list",
+  };
+  const rootObservations = current.parseBytes(fixture.bytes, rootContext);
+  const recordingOptions = rootObservations[0].source_sidecar.raw
+    .official_surfaces[0].document.recording_options;
+  const listings = current.discoverRequests(fixture.bytes, rootContext)
+    .filter(({ role }) => role === "listing");
+  const discoveredSeries = listings.map(({ url }) => {
+    const discovered = new URL(url);
+    assert.deepEqual([...discovered.searchParams.keys()], ["series"]);
+    return discovered.searchParams.get("series");
+  });
+  assert.deepEqual(
+    discoveredSeries,
+    recordingOptions.map(({ value }) => value).sort(),
+  );
+  assert.equal(new Set(discoveredSeries).size, discoveredSeries.length);
+  assert.equal(discoveredSeries.filter((value) => value === "569001").length, 1);
+
+  const leafContext = {
+    ...rootContext,
+    url: fixture.metadata.effective_url,
+    requestId: `one-piece-en:listing:${"c".repeat(64)}`,
+  };
+  const leaf = current.parseBytes(fixture.bytes, leafContext);
+  assert.equal(leaf.length, 1);
+  assert.equal(leaf[0].card.official_identity.value, "ST01-001");
+  assert.deepEqual(leaf[0].memberships.source_buckets, ["recording:569001"]);
+  assert.deepEqual(leaf[0].completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 1,
+    parsed_record_count: 1,
+  });
+  const leafRequests = current.discoverRequests(fixture.bytes, leafContext);
+  assert.equal(leafRequests.filter(({ role }) => role === "listing").length, 0);
+  assert.deepEqual(
+    leafRequests.filter(({ role, url }) =>
+      role === "image" && new URL(url).pathname.includes("/cardlist/card/")
+    ).map(({ url }) => url),
+    [
+      "https://en.onepiece-cardgame.com/images/cardlist/card/ST01-001.png?260731",
+    ],
+  );
+
+  assert.throws(
+    () => historical.parseBytes(fixture.bytes, rootContext),
+    /Card List Recording discovery is unavailable/iu,
+  );
+  const unknownVocabulary = Buffer.from(
+    fixture.bytes.toString("utf8")
+      .replace('name="series"', 'name="edition"')
+      .replace('id="series"', 'id="edition"'),
+  );
+  assert.throws(
+    () => current.parseBytes(unknownVocabulary, rootContext),
+    /Card List Recording discovery is unavailable/iu,
+  );
+  assert.equal(
+    current.discoverRequests(unknownVocabulary, rootContext)
+      .filter(({ role }) => role === "listing").length,
+    0,
   );
 });
 
@@ -807,7 +1503,7 @@ test("registered Fusion policy collection identities parse their retained curren
 });
 
 test("One Piece parser-failure markers survive retained discovery, staged listing, and final surface transport", async () => {
-  const adapter = requiredSourceAdapter("one-piece-en@2");
+  const adapter = requiredSourceAdapter("one-piece-en@3");
   const url = "https://en.onepiece-cardgame.com/cardlist/";
   for (const failure of ["cap", "pagination"]) {
     const marker = `card-keepr-acceptance-parser/${failure}`;
@@ -1023,13 +1719,33 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.equal(adapter.origin, "production");
     assert.equal(adapter.reconciliationCapability, "catalogue");
+    assert.deepEqual(
+      adapter.reconciliationAreas,
+      [
+        "one-piece-en@3",
+        "fusion-world-en@4",
+        "digimon-en@4",
+        "gundam-en-asia@4",
+        "gundam-en-us@4",
+      ].includes(
+        adapter.adapterVersion,
+      )
+        ? ["catalogue", "errata"]
+        : ["catalogue"],
+    );
     assert.equal(
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
     assert.match(
       adapter.parserContract,
-      /-raw-surfaces-with-legality@2$/u,
+      adapter.sourceLineage === "one-piece-en"
+        ? /-complete-catalogue@3$/u
+        : adapter.sourceLineage === "fusion-world-en"
+          ? /-raw-surfaces-with-legality-and-catalogue@3$/u
+          : adapter.sourceLineage === "digimon-en"
+            ? /-raw-surfaces-complete-catalogue@3$/u
+            : /-raw-surfaces-complete-catalogue@3$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -1129,7 +1845,10 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
     ));
 
     const validDetailUrl = new URL(root);
-    validDetailUrl.searchParams.set("detailSearch", "CK30");
+    validDetailUrl.searchParams.set(
+      "detailSearch",
+      adapter.sourceLineage === "fusion-world-en" ? "FB99-001_p2" : "CK30",
+    );
     const validDetail = validDetailUrl.href;
     const hostileOrigin = new URL(validDetail);
     hostileOrigin.hostname = `assets.${root.hostname}`;
@@ -1139,6 +1858,13 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       : adapter.sourceLineage === "gundam-en-us"
         ? hostilePath.pathname.replace("/en/", "/asia-en/")
         : `/outside-lineage${hostilePath.pathname}`;
+    const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
+    const gundamLeaf = adapter.sourceLineage.startsWith("gundam-en-");
+    const discoveryUrl = fusionLeaf
+      ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`
+      : gundamLeaf
+        ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?package=GD01`
+      : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(`
         <a href="${validDetail}">Card detail</a>
@@ -1147,8 +1873,10 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
       `),
       {
         mediaType: "text/html; charset=utf-8",
-        url: adapter.requestUrlForSurface(adapter.requiredSurfaces[0]),
-        requestId: `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
+        url: discoveryUrl,
+        requestId: fusionLeaf || gundamLeaf
+          ? `${adapter.sourceLineage}:listing:${"6".repeat(64)}`
+          : `${adapter.sourceLineage}:${adapter.requiredSurfaces[0]}`,
       },
     );
     assert.ok(requests.some(({ url }) => url === validDetail));
@@ -1285,6 +2013,31 @@ test("historical production adapter identities remain exact lookup-only contract
   }
 });
 
+test("Digimon V3 remains installed with its immutable parser digest for retained reparses", () => {
+  const adapter = requiredSourceAdapter("digimon-en@3");
+  assert.equal(adapter.parserContract, "digimon-en-raw-surfaces-with-legality@2");
+  assert.ok(!productionAdapterVersions.includes(adapter.adapterVersion));
+  const surface = "products";
+  const observations = adapter.parseBytes(
+    Buffer.from(
+      `<html>${officialPublisherPayloadScript(
+        "digimon-en",
+        surface,
+        officialRawSurfacePayload(`/digimon-en/${surface}`),
+      )}</html>`,
+    ),
+    {
+      mediaType: "text/html",
+      url: adapter.requestUrlForSurface(surface),
+      requestId: `digimon-en:${surface}`,
+    },
+  );
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(observations)).digest("hex"),
+    "a57968449b6be5a130d46424893680d38b1066eaa326d9ed82a51b422aefbee2",
+  );
+});
+
 test("historical production identities preserve their original JSON-LD observation bytes", () => {
   const golden = [
     ["one-piece-en@1", "one-piece-en", "b19ee89d92a3d519f3e4fb740720a063f716c0805f2a3a5b65197bd3d23b0299"],
@@ -1296,6 +2049,15 @@ test("historical production identities preserve their original JSON-LD observati
   for (const [adapterVersion, sourceLineage, digest] of golden) {
     const adapter = requiredSourceAdapter(adapterVersion);
     const surface = "products";
+    const payload = officialRawSurfacePayload(`/${sourceLineage}/${surface}`);
+    if (adapterVersion === "fusion-world-en@2") {
+      payload.result.partitions = [{
+        ...payload.result.partitions.find(
+          ({ bucket }) => bucket === "available",
+        ),
+        bucket: "all-products",
+      }];
+    }
     const publication = {
       "@context": "https://schema.org",
       "@type": "Dataset",
@@ -1303,7 +2065,7 @@ test("historical production identities preserve their original JSON-LD observati
       hasPart: [{
         "@type": "Dataset",
         identifier: `${sourceLineage}:${surface}`,
-        payload: officialRawSurfacePayload(`/${sourceLineage}/${surface}`),
+        payload,
       }],
     };
     const bytes = Buffer.from(
@@ -2823,6 +3585,13 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
   assert.equal(observations[0].identity_evidence.treatment, null);
   assert.equal(
+    Object.hasOwn(
+      observations[0].printing.game_data.attributes,
+      "illustration_types",
+    ),
+    false,
+  );
+  assert.equal(
     observations[0].identity_evidence.demonstrably_novel,
     false,
     "raw parser output cannot prove an appearance is novel before its image bytes are retained and verified",
@@ -2897,6 +3666,76 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       ({ value }) => value === "Textured Foil",
     ),
   );
+  const unfamiliarLabel = adapter.parseBytes(
+    new TextEncoder().encode(
+      html.replace(
+        '<div class="getInfo"><h3>Card Set(s)</h3>',
+        '<div><h3>New Optional Label</h3>Preserve me</div>' +
+          '<div class="getInfo"><h3>Card Set(s)</h3>',
+      ),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/",
+    },
+  )[0];
+  assert.ok(
+    unfamiliarLabel.source_sidecar.raw.official_surfaces[0].document
+      .raw_label_pairs.some(({ label, value }) =>
+        label === "New Optional Label" && value === "Preserve me"
+      ),
+  );
+  assert.ok(unfamiliarLabel.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Preserve me"
+  ));
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        html.replace(
+          "| <span>L</span> |",
+          "| <span>Experimental Rare</span> |",
+        ),
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+      },
+    ),
+    /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
+  );
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(
+        html.replace(
+          '<div class="cost"><h3>Life</h3>5</div>',
+          '<div class="cost"><h3>Life</h3>5</div>' +
+            '<div><h3>Cost</h3>1</div>',
+        ),
+      ),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: "https://en.onepiece-cardgame.com/cardlist/",
+      },
+    ),
+    /Leader.*cost.*null/iu,
+  );
+  const historicalRecording = requiredSourceAdapter("one-piece-en@2")
+    .parseBytes(bytes, {
+      mediaType: "text/html; charset=utf-8",
+      url: "https://en.onepiece-cardgame.com/cardlist/?recording=569114",
+      requestId: "one-piece-en:card-list",
+    });
+  assert.deepEqual(historicalRecording[0].memberships.source_buckets, [
+    "card-set:Test Set [OP99]",
+  ]);
+  const expandedRecording = adapter.parseBytes(bytes, {
+    mediaType: "text/html; charset=utf-8",
+    url: "https://en.onepiece-cardgame.com/cardlist/?series=569114",
+    requestId: `one-piece-en:listing:${"b".repeat(64)}`,
+  });
+  assert.deepEqual(expandedRecording[0].memberships.source_buckets, [
+    "recording:569114",
+  ]);
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
@@ -2904,7 +3743,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       requestId: "one-piece-en:card-list",
     }).some(({ role, url }) =>
       role === "listing" &&
-      new URL(url).searchParams.get("recording") === "569114"
+      new URL(url).searchParams.get("series") === "569114"
     ),
   );
 });
@@ -2941,6 +3780,10 @@ test("One Piece publisher data retains an explicit first Printing identity", () 
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
   const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+  payload.card_pages.forEach((card) => {
+    delete card.artwork_fingerprint;
+    delete card.printed_fields_digest;
+  });
   const observations = adapter.parseBytes(
     new TextEncoder().encode(
       `<html>${officialPublisherPayloadScript(
@@ -2965,6 +3808,1058 @@ test("One Piece publisher data retains an explicit first Printing identity", () 
   );
   assert.equal(observation.identity_evidence.locator, "/cards/OP99-001");
   assert.equal(observation.identity_evidence.treatment, null);
+  assert.match(
+    observation.identity_evidence.printed_fields_digest,
+    /printed-material:.*OP99-001/u,
+  );
+});
+
+test("the expanded One Piece adapter requires evidence and derives optional vocabulary", () => {
+  const historical = requiredSourceAdapter("one-piece-en@2");
+  const expanded = requiredSourceAdapter("one-piece-en@3");
+  assert.match(historical.parserContract, /raw-surfaces-with-legality@2$/u);
+  assert.match(expanded.parserContract, /complete-catalogue@3$/u);
+  const expandedCardListPayload = () => {
+    const value = officialRawSurfacePayload("/one-piece-en/card-list");
+    for (const card of value.card_pages) {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    }
+    return value;
+  };
+
+  const don = officialRawSurfacePayload("/one-piece-en/don-rules");
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        don,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /DON.*evidence|DON.*Card/iu,
+  );
+
+  const suppliedIdentity = officialRawSurfacePayload(
+    "/one-piece-en/card-list",
+  );
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "card-list",
+        suppliedIdentity,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    ),
+    /identity digest|artwork_fingerprint|printed_fields_digest/iu,
+  );
+
+  const payload = expandedCardListPayload();
+  delete payload.card_pages[0].printing.normalized_rarity;
+  payload.card_pages[0].printing.attributes.illustration_types = [
+    "Experimental foil vocabulary",
+  ];
+  const observations = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      payload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  );
+  const card = observations.find((observation) => observation.printing);
+  assert.equal(card.printing.rarity.raw, "L");
+  assert.equal(card.printing.rarity.normalized, "leader");
+  assert.equal(
+    Object.hasOwn(card.printing.game_data.attributes, "illustration_types"),
+    false,
+  );
+  assert.ok(card.source_sidecar.unmapped_optional_fields.some(
+    ({ value }) => value === "Experimental foil vocabulary",
+  ));
+
+  const absentIllustrationPayload = expandedCardListPayload();
+  delete absentIllustrationPayload.card_pages[0].printing.attributes
+    .illustration_types;
+  const absentIllustration = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      absentIllustrationPayload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  ).find((observation) => observation.printing);
+  assert.equal(
+    Object.hasOwn(
+      absentIllustration.printing.game_data.attributes,
+      "illustration_types",
+    ),
+    false,
+  );
+
+  const explicitIllustrationPayload = expandedCardListPayload();
+  explicitIllustrationPayload.card_pages[0].printing.attributes
+    .illustration_types = ["Animation"];
+  const explicitIllustration = expanded.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "card-list",
+      explicitIllustrationPayload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: expanded.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  ).find((observation) => observation.printing);
+  assert.deepEqual(
+    explicitIllustration.printing.game_data.attributes.illustration_types,
+    ["animation"],
+  );
+
+  const unknownRarityPayload = expandedCardListPayload();
+  unknownRarityPayload.card_pages[0].printing.rarity = "Experimental Rare";
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "card-list",
+        unknownRarityPayload,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("card-list"),
+        requestId: "one-piece-en:card-list",
+      },
+    ),
+    /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
+  );
+
+  for (const [category, cost, life, message] of [
+    ["Leader", "1", "5", /Leader.*cost.*null/iu],
+    ["Character", "1", "2", /Character.*life.*null/iu],
+  ]) {
+    const invalid = expandedCardListPayload();
+    Object.assign(invalid.card_pages[0], {
+      Category: category,
+      Cost: cost,
+      Life: life,
+    });
+    assert.throws(
+      () => expanded.parseBytes(
+        new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+          "one-piece-en",
+          "card-list",
+          invalid,
+        )}</html>`),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: expanded.requestUrlForSurface("card-list"),
+          requestId: "one-piece-en:card-list",
+        },
+      ),
+      message,
+    );
+  }
+
+  const policy = officialRawSurfacePayload("/one-piece-en/don-rules");
+  policy.don_card = {
+    functional_designation: "DON!!",
+    name: "DON!! Card",
+    Category: "DON!! Card",
+    Effect: "A rules-level resource Card.",
+  };
+  policy.publisher_note = "Optional policy vocabulary";
+  assert.throws(
+    () => expanded.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        policy,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: expanded.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /unknown field publisher_note/iu,
+  );
+});
+
+test("the expanded One Piece adapter emits exact typed Errata and rejects unrepresentable entries", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  const payload = officialRawSurfacePayload("/one-piece-en/errata");
+  payload.declared_record_count = 1;
+  payload.partition.total = 1;
+  payload.entries = [{
+    notice_id: "errata-op31-001",
+    card_number: "OP31-001",
+    card_name: "Complete One Piece Leader",
+    published_on: "2026-08-01",
+    effective_from: null,
+    before_text: "Give up to 1 rested DON!! card to this Leader.",
+    after_text: "Give up to 2 rested DON!! cards to this Leader.",
+    note: "This correction applies in every game format.",
+    applies_to_parallel_printings: true,
+    image_url:
+      "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
+  }];
+  const observations = adapter.parseBytes(
+    new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+      "one-piece-en",
+      "errata",
+      payload,
+    )}</html>`),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("errata"),
+      requestId: "one-piece-en:errata",
+    },
+  );
+  const erratum = observations.find(({ kind }) => kind === "official_erratum");
+  assert.deepEqual(erratum, {
+    kind: "official_erratum",
+    game: "one-piece",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "OP31-001" },
+    },
+    published_on: "2026-08-01",
+    effective_from: null,
+    observed_printed_rules_text:
+      "Give up to 1 rested DON!! card to this Leader.",
+    corrected_rules_text:
+      "Give up to 2 rested DON!! cards to this Leader.",
+    official_wording:
+      "Note: This correction applies in every game format.\n" +
+      "Before: Give up to 1 rested DON!! card to this Leader.\n" +
+      "After: Give up to 2 rested DON!! cards to this Leader.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#errata-op31-001",
+      display_name: "OP31-001 Complete One Piece Leader",
+      image_url:
+        "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-001.png",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  });
+
+  const arbitrary = structuredClone(payload);
+  arbitrary.entries = [{ publisher_note: "Apply an unknown correction." }];
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "errata",
+        arbitrary,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("errata"),
+        requestId: "one-piece-en:errata",
+      },
+    ),
+    /Erratum.*undeclared field|Erratum.*publisher_note/iu,
+  );
+});
+
+test("the expanded One Piece adapter rejects identity digests nested under Printing", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  for (const field of ["artwork_fingerprint", "printed_fields_digest"]) {
+    const payload = officialRawSurfacePayload("/one-piece-en/card-list");
+    for (const card of payload.card_pages) {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    }
+    payload.card_pages[0].printing[field] = `publisher-supplied-${field}`;
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+          "one-piece-en",
+          "card-list",
+          payload,
+        )}</html>`),
+        {
+          mediaType: "text/html; charset=utf-8",
+          url: adapter.requestUrlForSurface("card-list"),
+          requestId: "one-piece-en:card-list",
+        },
+      ),
+      new RegExp(`identity digest|${field}`, "iu"),
+    );
+  }
+});
+
+test("the expanded One Piece adapter closes the nested DON Card policy schema", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@3");
+  const payload = officialRawSurfacePayload("/one-piece-en/don-rules");
+  payload.don_card = {
+    functional_designation: "DON!!",
+    name: "DON!! Card",
+    Category: "DON!! Card",
+    Effect: "A rules-level resource Card.",
+    publisher_note: "Apply an unknown DON rule.",
+  };
+  assert.throws(
+    () => adapter.parseBytes(
+      new TextEncoder().encode(`<html>${officialPublisherPayloadScript(
+        "one-piece-en",
+        "don-rules",
+        payload,
+      )}</html>`),
+      {
+        mediaType: "text/html; charset=utf-8",
+        url: adapter.requestUrlForSurface("don-rules"),
+        requestId: "one-piece-en:don-rules",
+      },
+    ),
+    /DON.*undeclared field|DON.*publisher_note/iu,
+  );
+});
+
+test("active Fusion discovery preserves retained checkbox facet vocabulary", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const bytes = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ));
+  const requestsAt = (adapter, url) =>
+    adapter.discoverRequests(bytes, {
+      mediaType: "text/html; charset=UTF-8",
+      url,
+      requestId: url === adapter.requestUrlForSurface("card-search")
+        ? "fusion-world-en:card-search"
+        : `fusion-world-en:listing:${"f".repeat(64)}`,
+    }).filter(({ role }) => role === "listing");
+  const queryStrings = (requests) =>
+    requests.map(({ url }) => new URL(url).searchParams.toString());
+
+  assert.deepEqual(
+    queryStrings(requestsAt(current, current.requestUrlForSurface("card-search"))),
+    ["card_type%5B%5D=Battle", "card_type%5B%5D=Leader"],
+  );
+  const leader =
+    `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader`;
+  assert.deepEqual(queryStrings(requestsAt(current, leader)), [
+    "card_type%5B%5D=Leader&color%5B%5D=Blue",
+    "card_type%5B%5D=Leader&color%5B%5D=Red",
+  ]);
+  const red = `${leader}&color%5B%5D=Red`;
+  assert.deepEqual(queryStrings(requestsAt(current, red)), [
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=0",
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1",
+    "card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=2",
+  ]);
+  assert.deepEqual(
+    requestsAt(previous, previous.requestUrlForSurface("card-search")).filter(
+      ({ url }) => new URL(url).pathname === "/fw/en/cardlist/",
+    ),
+    [],
+  );
+});
+
+test("active Fusion card search schedules details only from a complete leaf", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const bytes = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ));
+  const requestsAt = (url, requestId) => current.discoverRequests(bytes, {
+    mediaType: "text/html; charset=UTF-8",
+    url,
+    requestId,
+  }).map(({ role, url: requestUrl }) => ({ role, url: requestUrl }));
+  const root = current.requestUrlForSurface("card-search");
+
+  assert.deepEqual(requestsAt(root, "fusion-world-en:card-search"), [
+    { role: "listing", url: `${root}?card_type%5B%5D=Battle` },
+    { role: "listing", url: `${root}?card_type%5B%5D=Leader` },
+  ]);
+  const leader = `${root}?card_type%5B%5D=Leader`;
+  assert.deepEqual(
+    requestsAt(leader, `fusion-world-en:listing:${"9".repeat(64)}`),
+    [
+      { role: "listing", url: `${leader}&color%5B%5D=Blue` },
+      { role: "listing", url: `${leader}&color%5B%5D=Red` },
+    ],
+  );
+  const red = `${leader}&color%5B%5D=Red`;
+  assert.deepEqual(
+    requestsAt(red, `fusion-world-en:listing:${"8".repeat(64)}`),
+    [
+      { role: "listing", url: `${red}&cost%5B%5D=0` },
+      { role: "listing", url: `${red}&cost%5B%5D=1` },
+      { role: "listing", url: `${red}&cost%5B%5D=2` },
+    ],
+  );
+  const leaf = `${red}&cost%5B%5D=1`;
+  assert.deepEqual(
+    requestsAt(leaf, `fusion-world-en:listing:${"7".repeat(64)}`),
+    [
+      {
+        role: "detail",
+        url:
+          "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001",
+      },
+      {
+        role: "detail",
+        url:
+          "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p1",
+      },
+    ],
+  );
+});
+
+test("active Fusion discovery derives full locators from retained data-src links", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+    requestId: `fusion-world-en:listing:${"e".repeat(64)}`,
+  };
+  const details = (adapter, document = html) =>
+    adapter.discoverRequests(new TextEncoder().encode(document), context)
+      .filter(({ role }) => role === "detail");
+  const locators = (document) =>
+    current.parseBytes(new TextEncoder().encode(document), context)
+      .flatMap(({ listing_identity_evidence }) =>
+        listing_identity_evidence === undefined
+          ? []
+          : [listing_identity_evidence.locator]
+      );
+
+  assert.deepEqual(details(current).map(({ url }) => url), [
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p1",
+  ]);
+  assert.deepEqual(locators(html), ["FB99-001", "FB99-001_p1"]);
+  assert.deepEqual(details(previous), []);
+
+  const variantAnchor = html.match(
+    /<a\b[^>]*\bdata-src="detail\.php\?card_no=FB99-001&amp;p=_p1"[^>]*>[\s\S]*?<\/a>/u,
+  )?.[0];
+  assert.ok(variantAnchor);
+  const duplicate = html.replace("</ul>", `${variantAnchor}</ul>`);
+  assert.equal(details(current, duplicate).length, 2);
+  assert.deepEqual(locators(duplicate), ["FB99-001", "FB99-001_p1"]);
+
+  const conflicting = html.replace(
+    "</ul>",
+    `${variantAnchor.replace(
+      'alt="FB99-001 Fusion Leader"',
+      'alt="FB99-999 Conflicting Leader"',
+    )}</ul>`,
+  );
+  assert.throws(
+    () => details(current, conflicting),
+    /full locator.*conflict/iu,
+  );
+  assert.throws(
+    () => locators(conflicting),
+    /full locator.*conflict/iu,
+  );
+
+  const unknownLocatorField = html.replace(
+    "&amp;p=_p1",
+    "&amp;p=_p1&amp;future_variant=_p2",
+  );
+  assert.throws(
+    () => details(current, unknownLocatorField),
+    /full locator.*unsupported.*query/iu,
+  );
+});
+
+test("active Fusion listings reconcile publisher totals to unique full locators", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+    requestId: `fusion-world-en:listing:${"d".repeat(64)}`,
+  };
+  assert.equal(
+    current.parseBytes(new TextEncoder().encode(html), context).length,
+    2,
+  );
+
+  const missingVariant = html.replace(
+    /\s*<li class="cardItem"><a\b[^>]*\bdata-src="detail\.php\?card_no=FB99-001&amp;p=_p1"[^>]*>[\s\S]*?<\/a><\/li>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingVariant),
+      context,
+    ),
+    /declared 2.*yielded 1 unique/iu,
+  );
+
+  const missingTotal = missingVariant.replace(
+    /\s*<div class="resultTxt">Result<span class="num">2<\/span>cards<\/div>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingTotal),
+      context,
+    ),
+    /complete.*leaf.*exact publisher total/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(missingTotal),
+      context,
+    ),
+  );
+});
+
+test("active Fusion listings retain exact empty leaves as truthful coverage", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"b".repeat(64)}`,
+  };
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const exactEmpty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+
+  const [observation] = current.parseBytes(
+    new TextEncoder().encode(exactEmpty),
+    context,
+  );
+  assert.deepEqual(observation.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
+  assert.equal(observation.listing_identity_evidence, undefined);
+
+  const ambiguousEmpty = exactEmpty.replace(
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    "<p>0 records</p>",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(ambiguousEmpty),
+      context,
+    ),
+    /complete.*leaf.*exact publisher total/iu,
+  );
+  const duplicatedTotal = exactEmpty.replace(
+    "</main>",
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div></main>',
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(duplicatedTotal),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  const duplicatedCount = exactEmpty.replace(
+    '<span class="num">0</span>',
+    '<span class="num">1</span><span class="num">0</span>',
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(duplicatedCount),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  const exactTotal =
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>';
+  for (const hiddenTotal of [
+    `<!--${exactTotal}-->`,
+    `<script type="text/template">${exactTotal}</script>`,
+    `<style>${exactTotal}</style>`,
+  ]) {
+    const hiddenOnly = exactEmpty.replace(exactTotal, hiddenTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${hiddenTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+    );
+  }
+  for (const unterminatedHiddenTotal of [
+    `<!--${exactTotal}`,
+    `<script type="text/template">${exactTotal}`,
+    `<style>${exactTotal}`,
+  ]) {
+    const hiddenThroughEof = exactEmpty.replace(
+      exactTotal,
+      unterminatedHiddenTotal,
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenThroughEof),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenThroughEof),
+        context,
+      ),
+    );
+  }
+  for (const structurallyHiddenTotal of [
+    `<template>${exactTotal}</template>`,
+    `<template><template></template>${exactTotal}</template>`,
+    `<template><!-- </template> -->${exactTotal}</template>`,
+    `<template><textarea></template></textarea>${exactTotal}</template>`,
+    `<script>ignored</script\u00a0>${exactTotal}</script>`,
+    `<template>ignored</template\u00a0>${exactTotal}</template>`,
+    `<section hidden>${exactTotal}</section>`,
+    `<section hidden/>${exactTotal}</section>`,
+    exactTotal.replace(
+      'class="resultTxt"',
+      'class="resultTxt" hidden',
+    ),
+    exactTotal.replace(
+      'class="resultTxt"',
+      'class="resultTxt"hidden',
+    ),
+  ]) {
+    const hiddenOnly = exactEmpty.replace(exactTotal, structurallyHiddenTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${structurallyHiddenTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+  }
+  for (const textModeElement of [
+    "textarea",
+    "title",
+    "xmp",
+    "iframe",
+    "noembed",
+  ]) {
+    const inertTotal =
+      `<${textModeElement}>${exactTotal}</${textModeElement}>`;
+    const hiddenOnly = exactEmpty.replace(exactTotal, inertTotal);
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    const hiddenAndReal = exactEmpty.replace(
+      exactTotal,
+      `${inertTotal}${exactTotal}`,
+    );
+    const [visibleObservation] = current.parseBytes(
+      new TextEncoder().encode(hiddenAndReal),
+      context,
+    );
+    assert.equal(visibleObservation.completeness.declared_record_count, 0);
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(hiddenOnly),
+        context,
+      ),
+    );
+  }
+  const plaintextTotal = exactEmpty.replace(
+    exactTotal,
+    `<plaintext>${exactTotal}`,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(plaintextTotal),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(plaintextTotal),
+      context,
+    ),
+  );
+  const quotedAttributeTotal =
+    `<section data-note='ignored > ${exactTotal}'>framing</section>`;
+  const quotedAttributeOnly = exactEmpty.replace(
+    exactTotal,
+    quotedAttributeTotal,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(quotedAttributeOnly),
+      context,
+    ),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+  const [quotedAttributeAndRealObservation] = current.parseBytes(
+    new TextEncoder().encode(exactEmpty.replace(
+      exactTotal,
+      `${quotedAttributeTotal}${exactTotal}`,
+    )),
+    context,
+  );
+  assert.equal(
+    quotedAttributeAndRealObservation.completeness.declared_record_count,
+    0,
+  );
+  for (const inexactClass of [
+    exactEmpty.replace('class="resultTxt"', 'class="not-resultTxt"'),
+    exactEmpty.replace('class="resultTxt"', 'class="resultTxt-extra"'),
+    exactEmpty.replace('class="num"', 'class="not-num"'),
+    exactEmpty.replace('class="num"', 'class="num-extra"'),
+    exactEmpty.replace('class="resultTxt"', 'data-class="resultTxt"'),
+    exactEmpty.replace('class="num"', 'data-class="num"'),
+    exactEmpty.replace(
+      'class="resultTxt"',
+      'data-note=\'ignored class="resultTxt"\'',
+    ),
+    exactEmpty.replace('class="resultTxt"', 'class="summary\u00a0resultTxt"'),
+    exactEmpty.replace('class="num"', 'class="label\u00a0num"'),
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(inexactClass),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(inexactClass),
+        context,
+      ),
+    );
+  }
+  const multiClassTotal = exactEmpty
+    .replace('class="resultTxt"', 'class="summary resultTxt active"')
+    .replace('class="num"', 'class="label num total"');
+  const [multiClassObservation] = current.parseBytes(
+    new TextEncoder().encode(multiClassTotal),
+    context,
+  );
+  assert.equal(multiClassObservation.completeness.declared_record_count, 0);
+  for (const htmlWhitespace of [" ", "\t", "\n", "\f", "\r"]) {
+    const asciiWhitespaceClasses = exactEmpty
+      .replace(
+        'class="resultTxt"',
+        `class="summary${htmlWhitespace}resultTxt"`,
+      )
+      .replace(
+        'class="num"',
+        `class="label${htmlWhitespace}num"`,
+      );
+    const [asciiWhitespaceObservation] = current.parseBytes(
+      new TextEncoder().encode(asciiWhitespaceClasses),
+      context,
+    );
+    assert.equal(
+      asciiWhitespaceObservation.completeness.declared_record_count,
+      0,
+    );
+  }
+  const visibleDataHidden = exactEmpty.replace(
+    'class="resultTxt"',
+    'class="resultTxt"data-hidden',
+  );
+  const [visibleDataHiddenObservation] = current.parseBytes(
+    new TextEncoder().encode(visibleDataHidden),
+    context,
+  );
+  assert.equal(
+    visibleDataHiddenObservation.completeness.declared_record_count,
+    0,
+  );
+  for (const visibleAttributeText of [
+    exactEmpty.replace(
+      'class="resultTxt"',
+      'class="resultTxt" data-note=\'ignored class="other"\'',
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<section data-note="not hidden here">${exactTotal}</section>`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<script>ignored</script \t>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<template>ignored</template \t>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<script>ignored</script/>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `<style>ignored</style/>${exactTotal}`,
+    ),
+  ]) {
+    const [visibleAttributeObservation] = current.parseBytes(
+      new TextEncoder().encode(visibleAttributeText),
+      context,
+    );
+    assert.equal(
+      visibleAttributeObservation.completeness.declared_record_count,
+      0,
+    );
+  }
+  for (const malformedDuplicate of [
+    exactEmpty.replace(
+      exactTotal,
+      `<div class="resultTxt">Result</div>${exactTotal}`,
+    ),
+    exactEmpty.replace(
+      exactTotal,
+      `${exactTotal}<div class="resultTxt">Result</div>`,
+    ),
+  ]) {
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(malformedDuplicate),
+        context,
+      ),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.doesNotThrow(
+      () => previous.parseBytes(
+        new TextEncoder().encode(malformedDuplicate),
+        context,
+      ),
+    );
+  }
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(exactEmpty),
+      context,
+    ),
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(duplicatedCount),
+      context,
+    ),
+  );
+});
+
+test("Fusion totals follow the HTML tree, not scanner-like markup", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"9".repeat(64)}`,
+  };
+  const total =
+    '<div class="resultTxt">Result<span class="num">0</span>cards</div>';
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const empty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      total,
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+  const parse = (markup) => current.parseBytes(
+    new TextEncoder().encode(empty.replace(total, markup)),
+    context,
+  );
+
+  for (const inertOnly of [
+    `<script><!--<script></script>${total}</script>`,
+    `<!bogus ${total}>`,
+  ]) {
+    assert.throws(
+      () => parse(inertOnly),
+      /complete.*leaf.*one exact publisher total/iu,
+    );
+    assert.equal(parse(`${inertOnly}${total}`)[0]
+      .completeness.declared_record_count, 0);
+  }
+  assert.throws(
+    () => parse(total.replace("<span", "<ſpan").replace("</span>", "</ſpan>")),
+    /complete.*leaf.*one exact publisher total/iu,
+  );
+
+  const rcdataWithInappropriateQuotedCandidate =
+    `<textarea></textareaX data='${total}</textarea>'>${total}</textarea>`;
+  assert.equal(
+    parse(rcdataWithInappropriateQuotedCandidate)[0]
+      .completeness.declared_record_count,
+    0,
+  );
+  assert.equal(
+    parse(total.replace("<span", "<SPAN").replace("</span>", "</SPAN>"))[0]
+      .completeness.declared_record_count,
+    0,
+  );
+});
+
+test("Fusion complete listing DOM parsing is bounded below the snapshot maximum", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url:
+      `${current.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Blue&cost%5B%5D=0`,
+    requestId: `fusion-world-en:listing:${"8".repeat(64)}`,
+  };
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const empty = retained
+    .replace(
+      '<div class="resultTxt">Result<span class="num">2</span>cards</div>',
+      '<div class="resultTxt">Result<span class="num">0</span>cards</div>',
+    )
+    .replace(/\s*<li class="cardItem">[\s\S]*?<\/li>/gu, "");
+  const maximumListingBytes = 1024 * 1024;
+  const atBoundary = empty + " ".repeat(
+    maximumListingBytes - Buffer.byteLength(empty),
+  );
+
+  assert.equal(Buffer.byteLength(atBoundary), maximumListingBytes);
+  assert.doesNotThrow(() =>
+    current.parseBytes(new TextEncoder().encode(atBoundary), context)
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(`${atBoundary}x`),
+      context,
+    ),
+    /complete listing HTML exceeds.*1048576-byte/iu,
+  );
+});
+
+test("Fusion intermediate listing discovery is not subject to the complete-leaf parser bound", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const root = current.requestUrlForSurface("card-search");
+  const url = `${root}?card_type%5B%5D=Leader`;
+  const retained = readFileSync(new URL(
+    "./fixtures/retained-official-source/fusion-world-en-card-list-live-fragment.html",
+    import.meta.url,
+  ), "utf8");
+  const oversizedIntermediate = retained + " ".repeat(
+    1024 * 1024 + 1 - Buffer.byteLength(retained),
+  );
+  const bytes = new TextEncoder().encode(oversizedIntermediate);
+  const context = {
+    mediaType: "text/html; charset=UTF-8",
+    url,
+    requestId: `fusion-world-en:listing:${"6".repeat(64)}`,
+  };
+
+  assert.equal(bytes.byteLength, 1024 * 1024 + 1);
+  assert.doesNotThrow(() => current.parseBytes(bytes, context));
+  assert.deepEqual(
+    current.discoverRequests(bytes, context)
+      .filter(({ role }) => role === "listing")
+      .map(({ url: requestUrl }) => requestUrl),
+    [
+      `${url}&color%5B%5D=Blue`,
+      `${url}&color%5B%5D=Red`,
+    ],
+  );
+});
+
+test("historical Fusion discovery does not learn bracketed facet names", () => {
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const capped = `<html>
+    <title>BANDAI DRAGON BALL CARD search</title>
+    <p>More than 1,000 results were capped</p>
+    <select name="card_type[]">
+      <option value="leader">Leader</option>
+      <option value="battle">Battle</option>
+    </select>
+  </html>`;
+  assert.throws(
+    () => previous.parseBytes(new TextEncoder().encode(capped), {
+      mediaType: "text/html; charset=UTF-8",
+      url: previous.requestUrlForSurface("card-search"),
+      requestId: `fusion-world-en:listing:${"c".repeat(64)}`,
+    }),
+    /leaf partition still displays/iu,
+  );
 });
 
 test("live split discovery follows each lineage's bounded staged hierarchy", () => {
@@ -2978,9 +4873,6 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   const onePieceRequests = onePiece.discoverRequests(
     encode(`
       <select id="series">
-        <option value="set-a">A</option><option value="set-b">B</option>
-      </select>
-      <select id="recording">
         <option value="101">A</option><option value="102">B</option>
       </select>
     `),
@@ -2992,7 +4884,7 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
   ).filter(({ role }) => role === "listing");
   assert.deepEqual(
     onePieceRequests.map(({ url }) => new URL(url).searchParams.toString()),
-    ["recording=101", "recording=102"],
+    ["series=101", "series=102"],
   );
 
   const fusion = byLineage("fusion-world-en");
@@ -3094,6 +4986,591 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
       }),
     /leaf partition still displays/iu,
   );
+});
+
+test("Gundam V4 visits every package option and schedules Card details only at a package leaf", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
+    const rootHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <select name="package">
+        <option value="all">All</option>
+        <option value="GD01">GD01</option>
+        <option value="ST01">ST01</option>
+      </select>
+      <a href="/${locale}/cards/index.php?detailSearch=GD01-001">Not a leaf</a>
+    </html>`;
+    const rootRequests = adapter.discoverRequests(
+      new TextEncoder().encode(rootHtml),
+      {
+        mediaType: "text/html",
+        url: rootUrl,
+        requestId: `${lineage}:packages`,
+      },
+    );
+    assert.deepEqual(
+      rootRequests.map(({ role, url }) => ({
+        role,
+        package: new URL(url).searchParams.get("package"),
+      })),
+      ["all", "GD01", "ST01"].map((packageValue) => ({
+        role: "listing",
+        package: packageValue,
+      })),
+    );
+
+    const leafUrl = `${rootUrl}?package=GD01`;
+    const leafHtml = `<html><title>BANDAI GUNDAM CARD LIST</title>
+      <a href="?package=GD01&page=2">Next</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Card</a>
+      <a data-card-number="GD01-001"
+         href="/${locale}/cards/index.php?detailSearch=GD01-001">Duplicate</a>
+    </html>`;
+    const leafContext = {
+      mediaType: "text/html",
+      url: leafUrl,
+      requestId: `${lineage}:listing:${"a".repeat(64)}`,
+    };
+    assert.deepEqual(
+      adapter.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).map(({ role, url }) => ({ role, url })),
+      [
+        { role: "detail", url: `${rootUrl}?detailSearch=GD01-001` },
+        { role: "listing", url: `${rootUrl}?package=GD01&page=2` },
+      ],
+    );
+    assert.doesNotThrow(() =>
+      adapter.parseBytes(new TextEncoder().encode(leafHtml), leafContext)
+    );
+    assert.equal(
+      previous.discoverRequests(
+        new TextEncoder().encode(leafHtml),
+        leafContext,
+      ).find(({ url }) => new URL(url).searchParams.has("page"))?.role,
+      "detail",
+      "V3 preserves its historical link classification",
+    );
+  }
+});
+
+test("retained Gundam package snapshots close publisher totals and dedupe full locators across the request plan", () => {
+  for (const { lineage, packageValue } of [
+    { lineage: "gundam-en-asia", packageValue: "619102" },
+    { lineage: "gundam-en-us", packageValue: "616102" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const rootUrl = adapter.requestUrlForSurface("packages");
+    const fixturePrefix = `./fixtures/retained-official-source/${lineage}-card-list`;
+    const rootBytes = readFileSync(new URL(
+      `${fixturePrefix}-root-live-fragment.html`,
+      import.meta.url,
+    ));
+    const packageBytes = readFileSync(new URL(
+      `${fixturePrefix}-package-live-fragment.html`,
+      import.meta.url,
+    ));
+    const rootContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: rootUrl,
+      requestId: `${lineage}:packages`,
+    };
+    const packageContext = {
+      mediaType: "text/html; charset=UTF-8",
+      url: `${rootUrl}?package=${packageValue}`,
+      requestId: `${lineage}:listing:${"b".repeat(64)}`,
+    };
+
+    const rootRequests = adapter.discoverRequests(rootBytes, rootContext);
+    assert.deepEqual(
+      rootRequests.filter(({ role }) => role === "listing")
+        .map(({ url }) => new URL(url).searchParams.get("package")),
+      lineage === "gundam-en-asia"
+        ? ["619101", "619102"]
+        : ["616101", "616102"],
+    );
+    const packageRequests = adapter.discoverRequests(
+      packageBytes,
+      packageContext,
+    );
+    const allDetailUrls = [...rootRequests, ...packageRequests]
+      .filter(({ role }) => role === "detail")
+      .map(({ url }) => url);
+    assert.equal(allDetailUrls.length, 4);
+    assert.equal(new Set(allDetailUrls).size, 2);
+
+    for (const [bytes, context] of [
+      [rootBytes, rootContext],
+      [packageBytes, packageContext],
+    ]) {
+      const [coverage] = adapter.parseBytes(bytes, context);
+      assert.deepEqual(coverage.completeness, {
+        declared_record_count: 2,
+        parsed_record_count: 2,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        structurally_complete: true,
+      });
+    }
+
+    const packageHtml = packageBytes.toString("utf8");
+    const nonterminalHtml = packageHtml
+      .replace('<span class="num">2</span>', '<span class="num">4</span>')
+      .replace(
+        '<div class="pager"></div>',
+        `<div class="pager"><a href="?package=${packageValue}&amp;page=2">2</a></div>`,
+      );
+    const [nonterminalCoverage] = adapter.parseBytes(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(nonterminalCoverage.completeness, {
+      declared_record_count: 4,
+      parsed_record_count: 2,
+      required_surfaces_complete: false,
+      partitions_complete: false,
+      structurally_complete: true,
+    });
+    const nonterminalRequests = adapter.discoverRequests(
+      new TextEncoder().encode(nonterminalHtml),
+      packageContext,
+    );
+    assert.deepEqual(
+      nonterminalRequests
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001`,
+        `${new URL("detail.php", rootUrl)}?detailSearch=GD02-001_p1`,
+      ],
+    );
+    assert.equal(
+      nonterminalRequests.some(({ role, url }) =>
+        role === "listing" &&
+        url === `${rootUrl}?package=${packageValue}&page=2`
+      ),
+      true,
+    );
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('value="' + packageValue + '"', 'value="wrong"'),
+        ),
+        packageContext,
+      ),
+      /selected package.*request/iu,
+    );
+    assert.throws(
+      () => adapter.parseBytes(
+        new TextEncoder().encode(
+          packageHtml.replace('<span class="num">2</span>', '<span class="num">3</span>'),
+        ),
+        packageContext,
+      ),
+      /publisher total.*full locators/iu,
+    );
+    const pagedBytes = new TextEncoder().encode(packageHtml.replace(
+      "</section>", '<input type="hidden" name="page" value="2"></section>',
+    ));
+    assert.doesNotThrow(
+      () => adapter.parseBytes(pagedBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=2`,
+      }),
+    );
+    assert.throws(
+      () => adapter.parseBytes(pagedBytes, {
+        ...packageContext,
+        url: `${packageContext.url}&page=3`,
+      }),
+      /selected page.*request/iu,
+    );
+    const partialTerminalBytes = new TextEncoder().encode(
+      packageHtml
+        .replace('<span class="num">2</span>', '<span class="num">4</span>')
+        .replace(
+          "</section>",
+          '<input type="hidden" name="page" value="2"></section>',
+        ),
+    );
+    const [partialTerminalCoverage] = adapter.parseBytes(
+      partialTerminalBytes,
+      { ...packageContext, url: `${packageContext.url}&page=2` },
+    );
+    assert.equal(
+      partialTerminalCoverage.completeness.required_surfaces_complete,
+      false,
+    );
+  }
+});
+
+test("digest-verified unchanged Gundam publisher listing bytes close their exact result", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-list-complete-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const context = {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:listing:${"d".repeat(64)}`,
+  };
+  const [coverage] = adapter.parseBytes(fixture.bytes, context);
+  assert.deepEqual(coverage.completeness, {
+    declared_record_count: 187,
+    parsed_record_count: 187,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    structurally_complete: true,
+  });
+  assert.equal(
+    adapter.discoverRequests(fixture.bytes, context)
+      .filter(({ role }) => role === "detail").length,
+    187,
+  );
+});
+
+test("retained Gundam detail snapshots bind base and alternate art to full locators", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const observations = ["base", "p2"].map((variant) => {
+      const suffix = variant === "base" ? "" : "_p2";
+      const bytes = readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-${variant}-live-fragment.html`,
+        import.meta.url,
+      ));
+      const detailContext = {
+        mediaType: "text/html; charset=UTF-8",
+        url:
+          `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038${suffix}`,
+        requestId:
+          `${lineage}:detail:${(variant === "base" ? "1" : "2").repeat(64)}`,
+      };
+      assert.equal(
+        adapter.discoverRequests(bytes, detailContext)
+          .filter(({ role }) => role === "image").length,
+        1,
+      );
+      return adapter.parseBytes(bytes, detailContext)[0];
+    });
+    assert.deepEqual(
+      observations.map((observation) => ({
+        card_number: observation.card.official_identity.value,
+        locator: observation.identity_evidence.locator,
+        variant: observation.identity_evidence.variant_key,
+        treatment: observation.identity_evidence.treatment,
+        rarity: observation.printing.rarity,
+        alternate_art:
+          observation.printing.game_data.attributes.alternate_art,
+      })),
+      [
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038",
+          variant: "base",
+          treatment: "standard",
+          rarity: { raw: "LR", normalized: "legend-rare" },
+          alternate_art: false,
+        },
+        {
+          card_number: "GD02-038",
+          locator: "GD02-038_p2",
+          variant: "_p2",
+          treatment: "alternate",
+          rarity: { raw: "LR ++", normalized: "legend-rare" },
+          alternate_art: true,
+        },
+      ],
+    );
+    assert.notEqual(
+      observations[0].identity_evidence.artwork_fingerprint,
+      observations[1].identity_evidence.artwork_fingerprint,
+    );
+    assert.deepEqual(observations[1].card.game_data.attributes, {
+      card_type: "unit",
+      colours: ["red"],
+      level: 7,
+      cost: 5,
+      block_icon: "1",
+      effect_text: "【Deploy】Official alternate effect.",
+      zone: "Space Earth",
+      traits: ["(Clan)"],
+      link_condition: "[Amate Yuzuriha (Machu)]",
+      ap: 5,
+      hp: 4,
+      series_titles: ["Mobile Suit Gundam GQuuuuuuX"],
+    });
+  }
+});
+
+test("digest-verified unchanged Gundam publisher dash remains raw and normalizes", () => {
+  const fixture = retainedOfficialSourceFixture(
+    "gundam-en-asia-card-detail-dash-live",
+  );
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  const [observation] = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: `gundam-en-asia:detail:${"4".repeat(64)}`,
+  });
+  assert.equal(
+    observation.card.game_data.attributes.link_condition,
+    null,
+  );
+  assert.equal(
+    observation.source_sidecar.raw.official_surfaces[0].document.Link,
+    "-",
+  );
+});
+
+test("synthetic Gundam dash-glyph variants normalize without changing raw evidence", () => {
+  for (const { lineage, locale } of [
+    { lineage: "gundam-en-asia", locale: "asia-en" },
+    { lineage: "gundam-en-us", locale: "en" },
+  ]) {
+    const adapter = requiredSourceAdapter(`${lineage}@4`);
+    const syntheticPlaceholderBytes = new TextEncoder().encode(
+      readFileSync(new URL(
+        `./fixtures/retained-official-source/${lineage}-card-detail-base-live-fragment.html`,
+        import.meta.url,
+      )).toString("utf8")
+        .replace('<div class="blockIcon">1</div>', '<div class="blockIcon">-</div>')
+        .replace('<dt>Zone</dt><dd>Space Earth</dd>', '<dt>Zone</dt><dd>—</dd>')
+        .replace(
+          '<dt>Link</dt><dd>[Amate Yuzuriha (Machu)]</dd>',
+          '<dt>Link</dt><dd>–</dd>',
+        ),
+    );
+    const [placeholderObservation] = adapter.parseBytes(
+      syntheticPlaceholderBytes,
+      {
+      mediaType: "text/html; charset=UTF-8",
+      url:
+        `https://www.gundam-gcg.com/${locale}/cards/detail.php?detailSearch=GD02-038`,
+      requestId: `${lineage}:detail:${"3".repeat(64)}`,
+      },
+    );
+    assert.deepEqual(
+      {
+        block_icon: placeholderObservation.card.game_data.attributes.block_icon,
+        zone: placeholderObservation.card.game_data.attributes.zone,
+        link_condition:
+          placeholderObservation.card.game_data.attributes.link_condition,
+      },
+      { block_icon: null, zone: null, link_condition: null },
+    );
+    const [syntheticRawSurface] =
+      placeholderObservation.source_sidecar.raw.official_surfaces;
+    assert.deepEqual(
+      {
+        block_icon: syntheticRawSurface.document["Block icon"],
+        zone: syntheticRawSurface.document.Zone,
+        link_condition: syntheticRawSurface.document.Link,
+      },
+      { block_icon: "-", zone: "—", link_condition: "–" },
+    );
+  }
+});
+
+test("active Gundam Errata is typed from both locale publications without changing V3", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    assert.equal(
+      current.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=news`,
+    );
+    assert.equal(
+      previous.requestUrlForSurface("errata"),
+      `https://www.gundam-gcg.com/${locale}/news/?subcategory=rules`,
+    );
+
+    const payload = rawSurfacePayload(lineage, "errata");
+    payload.declared_record_count = 1;
+    payload.partition.total = 1;
+    payload.entries = [{
+      entry_id: `gundam-${article}-gd04-067`,
+      card_number: "GD04-067",
+      published_on: "2026-04-10",
+      effective_from: "2026-04-10",
+      before: "from your trash.",
+      after: "from any player's trash.",
+      notice: "The corrected wording applies to the applicable cards.",
+      applies_to_parallel_printings: true,
+      image_url:
+        `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
+    }];
+    const observations = parseRegisteredSurface(current, "errata", payload);
+    assert.deepEqual(
+      observations.find(({ kind }) => kind === "official_erratum"),
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        effective_from: "2026-04-10",
+        observed_printed_rules_text: "from your trash.",
+        corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: The corrected wording applies to the applicable cards.",
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: `#gundam-${article}-gd04-067`,
+          display_name: "GD04-067",
+          image_url:
+            `https://www.gundam-gcg.com/gcg/bccard/${locale}/news/2026/04/GD04-067.webp`,
+        },
+        completeness: {
+          structurally_complete: true,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          declared_record_count: 1,
+          parsed_record_count: 1,
+        },
+      },
+    );
+
+    const unknown = structuredClone(payload);
+    unknown.entries[0].publisher_note = "unmodeled";
+    assert.throws(
+      () => parseRegisteredSurface(current, "errata", unknown),
+      /Gundam Erratum contains unknown field publisher_note/iu,
+    );
+    assert.doesNotThrow(() =>
+      parseRegisteredSurface(previous, "errata", unknown)
+    );
+  }
+});
+
+test("active Gundam discovers and parses ordinary official Errata articles", () => {
+  for (const { lineage, locale, article } of [
+    { lineage: "gundam-en-asia", locale: "asia-en", article: "01_236" },
+    { lineage: "gundam-en-us", locale: "en", article: "02_157" },
+  ]) {
+    const current = requiredSourceAdapter(`${lineage}@4`);
+    const previous = requiredSourceAdapter(`${lineage}@3`);
+    const listing = `<html><main>
+      <a href="/${locale}/news/ordinary.html"><span>Ordinary announcement</span></a>
+      <a href="/${locale}/news/${article}.html"><span>Apology for the errata and revision in card description of Phantom Aria [GD04]</span></a>
+      <a href="/${locale}/news/?subcategory=all&amp;tag=RULES&amp;page=1">Rules filter</a>
+      <a href="/${locale}/news/?subcategory=news&amp;page=2">Next NEWS page</a>
+    </main></html>`;
+    const context = {
+      mediaType: "text/html; charset=UTF-8",
+      url: current.requestUrlForSurface("errata"),
+      requestId: `${lineage}:errata`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "detail")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.deepEqual(
+      current.discoverRequests(new TextEncoder().encode(listing), context)
+        .filter(({ role }) => role === "listing")
+        .map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`],
+    );
+    const pageContext = {
+      ...context,
+      url: `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&page=2`,
+      requestId: `${lineage}:listing:${"f".repeat(64)}`,
+    };
+    assert.deepEqual(
+      current.discoverRequests(
+        new TextEncoder().encode(listing),
+        pageContext,
+      ).filter(({ role }) => role === "detail").map(({ url }) => url),
+      [`https://www.gundam-gcg.com/${locale}/news/${article}.html`],
+    );
+    assert.equal(
+      previous.discoverRequests(new TextEncoder().encode(listing), {
+        ...context,
+        url: previous.requestUrlForSurface("errata"),
+      }).some(({ url }) => url.endsWith(`/${article}.html`)),
+      false,
+    );
+
+    const englishHeading = lineage === "gundam-en-asia"
+      ? "<div class=\"text-area\"><h6>English Version</h6></div>"
+      : "";
+    const detail = `<html><main><div class="article"><section class="articleInner">
+      <div class="articleHead"><div class="articleDetail"><div class="date">April 10, 2026</div></div>
+      <h2>Apology for the errata and revision in card description of Phantom Aria [GD04]</h2></div>
+      <div class="articleBody"><div class="blocks">${englishHeading}
+      <div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>
+      <div class="card-image"><img src="/gcg/bccard/${locale}/news/2026/04/GD04-067.webp"></div>
+      <div class="text-area"><h5><span>Before</span></h5></div>
+      <div class="text-area"><p><span>from your trash.</span></p></div>
+      <div class="text-area"><h5><span>After</span></h5></div>
+      <div class="text-area"><p><span>from any player's trash.</span></p></div>
+      <div class="text-area"><p><strong>For the applicable cards, the above shall be regarded as the correct wording.</strong></p></div>
+      </div></div></section></div></main></html>`;
+    const [erratum] = current.parseBytes(new TextEncoder().encode(detail), {
+      mediaType: "text/html; charset=UTF-8",
+      url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+      requestId: `${lineage}:detail:${"e".repeat(64)}`,
+    });
+    assert.deepEqual(
+      {
+        kind: erratum.kind,
+        game: erratum.game,
+        target: erratum.target,
+        published_on: erratum.published_on,
+        effective_from: erratum.effective_from,
+        corrected_rules_text: erratum.corrected_rules_text,
+        official_wording: erratum.official_wording,
+        applies_to_parallel_printings:
+          erratum.applies_to_parallel_printings,
+      },
+      {
+        kind: "official_erratum",
+        game: "gundam",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: "GD04-067" },
+        },
+        published_on: "2026-04-10",
+        effective_from: null,
+        corrected_rules_text: "from any player's trash.",
+        official_wording:
+          "Before: from your trash.\n" +
+          "After: from any player's trash.\n" +
+          "Note: For the applicable cards, the above shall be regarded as the correct wording.",
+        applies_to_parallel_printings: true,
+      },
+    );
+    assert.throws(
+      () => current.parseBytes(
+        new TextEncoder().encode(detail.replace(
+          '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+          '<div class="text-area"><span style="font-size:1.25em;">GD01-001 Decoy</span></div>' +
+            '<div class="text-area"><span style="font-size:1.25em;">GD04-067 ∀ Gundam</span></div>',
+        )),
+        {
+          mediaType: "text/html; charset=UTF-8",
+          url: `https://www.gundam-gcg.com/${locale}/news/${article}.html`,
+          requestId: `${lineage}:detail:${"d".repeat(64)}`,
+        },
+      ),
+      /correction inventory is incomplete/iu,
+    );
+  }
 });
 
 test("Digimon staged discovery ignores only the known global header and retains one literal local Card List link", () => {
@@ -3248,7 +5725,7 @@ test("Fusion leaders require explicit role-owned faces and images", () => {
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   const html = `
-    <h1>Test Leader</h1>
+    <h1 data-card-id="FB99-001">Test Leader</h1>
     <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
     <dl><dt>Card Type</dt><dd>Leader</dd></dl>
     <dl><dt>Color</dt><dd>Red</dd></dl>
@@ -3575,32 +6052,57 @@ test("real Digimon and Gundam details close every known profile field and reject
   );
 
   const gundam = byLineage("gundam-en-asia");
-  const gundamObservation = gundam.parseBytes(
-    new TextEncoder().encode(`
-      <h1>Test Gundam Unit</h1>
-      <dl><dt>Card Number</dt><dd>GD99-001</dd></dl>
-      <dl><dt>Type</dt><dd>Unit</dd></dl>
-      <dl><dt>Color</dt><dd>Blue</dd></dl>
-      <dl><dt>Level</dt><dd>5</dd></dl>
-      <dl><dt>Cost</dt><dd>1,000</dd></dl>
-      <dl><dt>Effect</dt><dd>Unit effect</dd></dl>
+  const gundamHtml = `
+      <div class="cardNo">GD99-001</div>
+      <div class="rarity">R★</div>
+      <div class="blockIcon">03</div>
+      <h1 class="cardName">Test Gundam Unit</h1>
+      <div class="cardImage"><img src= "../../jp/images/cards/card/GD99-001.webp"></div>
+      <dl><dt>TYPE</dt><dd>Unit</dd></dl>
+      <dl><dt>COLOR</dt><dd>-</dd></dl>
+      <dl><dt>Lv.</dt><dd>5</dd></dl>
+      <dl><dt>COST</dt><dd>1,000</dd></dl>
+      <div class="cardDataRow overview"><div class="dataTxt">Unit effect</div></div>
       <dl><dt>AP</dt><dd>4,000</dd></dl>
       <dl><dt>HP</dt><dd>5,000</dd></dl>
-      <dl><dt>Alternate Art</dt><dd>Yes</dd></dl>
-      <img class="card-image" src="/asia-en/images/cards/GD99-001.png">
-    `),
+      <dl><dt>Zone</dt><dd>-</dd></dl>
+      <dl><dt>Trait</dt><dd>-</dd></dl>
+      <dl><dt>Link</dt><dd>-</dd></dl>
+      <dl><dt>Source Title</dt><dd>Test Series</dd></dl>
+    `;
+  const gundamDetailUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD99-001";
+  const gundamObservation = gundam.parseBytes(
+    new TextEncoder().encode(gundamHtml),
     {
       mediaType: "text/html",
-      url: "https://www.gundam-gcg.com/asia-en/cards/detail.php?card=GD99-001",
+      url: gundamDetailUrl,
       requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
     },
   )[0];
   assert.equal(gundamObservation.card.game_data.attributes.cost, 1000);
+  assert.deepEqual(gundamObservation.card.game_data.attributes.colours, []);
+  assert.equal(gundamObservation.card.game_data.attributes.block_icon, "03");
   assert.equal(gundamObservation.card.game_data.attributes.ap, 4000);
   assert.equal(gundamObservation.card.game_data.attributes.hp, 5000);
   assert.deepEqual(
     gundamObservation.printing.game_data.attributes,
-    { alternate_art: true },
+    { alternate_art: false },
+  );
+  assert.deepEqual(gundamObservation.printing.rarity, {
+    raw: "R★",
+    normalized: "rare",
+  });
+  assert.throws(
+    () => gundam.parseBytes(
+      new TextEncoder().encode(gundamHtml.replace("R★", "Experimental Rare")),
+      {
+        mediaType: "text/html",
+        url: gundamDetailUrl,
+        requestId: `gundam-en-asia:detail:${"e".repeat(64)}`,
+      },
+    ),
+    /Gundam rarity.*Experimental Rare/iu,
   );
 });
 
@@ -3641,16 +6143,20 @@ test("live Product indexes emit typed Products, classifications, and announced r
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-        <article class="booster">
+        <nav>
+          <a data-product-status="available" href="?status=available">Available</a>
+          <a data-product-status="coming-soon" href="?status=coming-soon">Coming Soon</a>
+        </nav>
+        <article class="booster" data-product-status="coming-soon">
           <a data-product-code="FB-BOOST-01"
              href="/fw/en/products/booster/fb-boost-01/">Booster Set 01</a>
           <span>Coming Soon</span>
         </article>
-        <article class="accessory">
+        <article class="accessory" data-product-status="available">
           <a data-product-code="FB-SLEEVE-01"
              href="/fw/en/products/accessory/fb-sleeve-01/">Official Sleeves</a>
         </article>
-        <article class="booster">
+        <article class="booster" data-product-status="available">
           <a href="/fw/en/products/booster/name-only/">
             Name-only Booster
           </a>
@@ -3712,11 +6218,16 @@ test("a Product URL slug cannot become a canonical official code but its authori
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-        <article class="booster">
+        <nav>
+          <a data-product-status="available" href="?status=available">Available</a>
+          <a data-product-status="coming-soon" href="?status=coming-soon">Coming Soon</a>
+        </nav>
+        <article class="booster" data-product-status="available">
           <a href="/fw/en/products/booster/presentation-only-slug/">
             Presentation-only Product
           </a>
         </article>
+        <li data-product-status="coming-soon">Coming Soon</li>
       </html>
     `),
     {
@@ -3929,7 +6440,7 @@ test("code-less structured Products and Releases retain name identity with valid
 });
 
 test("code-less named Products and Releases survive registered discovery surfaces", () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const payload = structuredClone(
     officialRawSurfacePayload("/fusion-world-en/card-search"),
   );
@@ -4075,24 +6586,36 @@ test("production coverage rejects keyword-only HTML without structural entries",
   }
 });
 
-test("production adapters discover staged detail, page, product, and image requests", () => {
+test("Fusion leaf and Product surfaces keep their discovery roles separate", () => {
   const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "fusion-world-en",
   );
   assert.ok(adapter);
-  const requests = adapter.discoverRequests(
+  const leafRequests = adapter.discoverRequests(
     new TextEncoder().encode(`
-      <a href="/fw/en/cardlist/detail.php?cardId=FB01-001">Card detail</a>
-      <a href="/fw/en/cardlist/?card_type=leader&colour=red&cost=1&page=2">Next</a>
-      <a href="/fw/en/products/booster/fb01/">Product detail</a>
-      <img src="/fw/images/cards/FB01-001-front.png">
+      <a href="javascript:void(0);"
+         data-src="detail.php?card_no=FB01-001">Card detail</a>
     `),
     {
       mediaType: "text/html; charset=utf-8",
-      url: adapter.requestUrlForSurface("card-search"),
-      requestId: "fusion-world-en:card-search",
+      url:
+        `${adapter.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+      requestId: `fusion-world-en:listing:${"5".repeat(64)}`,
     },
   );
+  const productRequests = adapter.discoverRequests(
+    new TextEncoder().encode(`
+      <a href="/fw/en/products/?page=2">Next</a>
+      <a href="/fw/en/products/booster/fb01/">Product detail</a>
+      <img src="/fw/images/products/FB01-box.png">
+    `),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: adapter.requestUrlForSurface("products"),
+      requestId: "fusion-world-en:products",
+    },
+  );
+  const requests = [...leafRequests, ...productRequests];
   assert.deepEqual(
     requests.map(({ role }) => role).sort(),
     ["detail", "image", "listing", "product_detail"],
@@ -4260,9 +6783,8 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
 });
 
 test("discovered Fusion facets require disjoint exact split-order leaves", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
   const incomplete = rawSurfacePayload("fusion-world-en", "card-search");
   incomplete.result.partitions.pop();
   assert.throws(
@@ -4289,32 +6811,491 @@ test("discovered Fusion facets require disjoint exact split-order leaves", () =>
     structuredClone(overlapping.result.partitions[0].entries[0]),
   );
   overlapping.result.partitions[1].total = 1;
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(adapter, "card-search", overlapping),
+  );
+  assert.throws(
+    () => parseRegisteredSurface(
+      previous,
+      "card-search",
+      withLegacyFusionCanonicalFields(overlapping),
+    ),
+    /leaf partitions overlap/iu,
+  );
+
+  overlapping.result.partitions[1].entries[0].number = "FB99-999";
   assert.throws(
     () => parseRegisteredSurface(adapter, "card-search", overlapping),
-    /leaf partitions overlap/iu,
+    /locator.*conflicts between leaf partitions/iu,
+  );
+
+  const conflictingWithinLeaf = rawSurfacePayload(
+    "fusion-world-en",
+    "card-search",
+  );
+  const conflictingEntry = structuredClone(
+    conflictingWithinLeaf.result.partitions[0].entries[0],
+  );
+  conflictingEntry.number = "FB99-999";
+  conflictingWithinLeaf.result.partitions[0].entries.push(conflictingEntry);
+  conflictingWithinLeaf.result.partitions[0].total = 2;
+  assert.throws(
+    () =>
+      parseRegisteredSurface(
+        adapter,
+        "card-search",
+        conflictingWithinLeaf,
+      ),
+    /full locator.*conflicts within leaf partition/iu,
+  );
+  assert.throws(
+    () =>
+      parseRegisteredSurface(
+        previous,
+        "card-search",
+        withLegacyFusionCanonicalFields(conflictingWithinLeaf),
+      ),
+    /do not prove complete coverage/iu,
   );
 });
 
+test("Fusion World detail identity must match its exact requested locator", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const mismatched = rawSurfacePayload("fusion-world-en", "card-search");
+  mismatched.detail_pages[0].card_number = "FB99-999";
+
+  assert.throws(
+    () => parseRegisteredSurface(adapter, "card-search", mismatched),
+    /full locator.*card number.*FB99-999/iu,
+  );
+  Object.assign(mismatched.detail_pages[0], {
+    profile: "fusion-world@1",
+    artwork_fingerprint: "legacy-artwork",
+    printed_fields_digest: "legacy-printed-fields",
+  });
+  mismatched.detail_pages[0].printing.normalized_rarity = null;
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(previous, "card-search", mismatched),
+  );
+});
+
+test("active Fusion structured details derive canonical fields from publisher facts", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const supplied = rawSurfacePayload("fusion-world-en", "card-search");
+  const suppliedDetail = supplied.detail_pages[0];
+  suppliedDetail.profile = "attacker-profile@9";
+  suppliedDetail.printing.normalized_rarity = "attacker-rarity";
+  suppliedDetail.artwork_fingerprint = "attacker-artwork";
+  suppliedDetail.printed_fields_digest = "attacker-printed-fields";
+  assert.throws(
+    () => parseRegisteredSurface(current, "card-search", supplied),
+    /caller-supplied canonical field.*profile/iu,
+  );
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(previous, "card-search", supplied),
+  );
+
+  const publisherOnly = structuredClone(supplied);
+  const publisherDetail = publisherOnly.detail_pages[0];
+  delete publisherDetail.profile;
+  delete publisherDetail.printing.normalized_rarity;
+  publisherDetail.printing.rarity = "Leader";
+  delete publisherDetail.artwork_fingerprint;
+  delete publisherDetail.printed_fields_digest;
+  const [observation] = parseRegisteredSurface(
+    current,
+    "card-search",
+    publisherOnly,
+  );
+  assert.equal(observation.card.game_data.profile, "fusion-world@1");
+  assert.equal(
+    observation.printing.rarity.normalized,
+    observation.printing.rarity.raw.toLowerCase(),
+  );
+  assert.match(
+    observation.identity_evidence.artwork_fingerprint,
+    /^official-artwork:.*"official_card_identity":"FB99-001"/u,
+  );
+  assert.match(
+    observation.identity_evidence.printed_fields_digest,
+    /^printed-material:.*"card_number":"FB99-001"/u,
+  );
+  assert.equal(
+    JSON.stringify(observation).includes("attacker-"),
+    false,
+  );
+});
+
+test("Fusion World Products prove every available and coming-soon status leaf", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const complete = rawSurfacePayload("fusion-world-en", "products");
+  const available = complete.result.partitions[0];
+  available.bucket = "available";
+  const comingSoon = structuredClone(available);
+  comingSoon.bucket = "coming-soon";
+  comingSoon.total = 0;
+  comingSoon.entries = [];
+  complete.result.partitions = [available, comingSoon];
+  assert.doesNotThrow(
+    () => parseRegisteredSurface(adapter, "products", complete),
+  );
+
+  for (const missingStatus of ["available", "coming-soon"]) {
+    const incomplete = structuredClone(complete);
+    incomplete.result.partitions = incomplete.result.partitions.filter(
+      ({ bucket }) => bucket !== missingStatus,
+    );
+    assert.throws(
+      () => parseRegisteredSurface(adapter, "products", incomplete),
+      new RegExp(`Product status leaves.*${missingStatus}`, "iu"),
+    );
+    assert.doesNotThrow(
+      () => parseRegisteredSurface(previous, "products", incomplete),
+    );
+  }
+});
+
+test("active Fusion HTML listings dedupe compatible locators and reject conflicts", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const context = {
+    mediaType: "text/html",
+    url:
+      "https://www.dbs-cardgame.com/fw/en/cardlist/?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1",
+    requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
+  };
+  const entry = (number, name) => `<article>
+    <a data-card-number="${number}"
+       href="/fw/en/cardlist/detail.php?cardId=FB99-001_p2">${name}</a>
+  </article>`;
+  const compatible = `<html><title>BANDAI DRAGON BALL CARD LIST</title>
+    <div class="resultTxt">Result<span class="num">1</span>cards</div>
+    ${entry("FB99-001", "Fusion Leader")}
+    ${entry("FB99-001", "Fusion Leader")}
+  </html>`;
+  assert.equal(
+    current.discoverRequests(new TextEncoder().encode(compatible), context)
+      .filter(({ role }) => role === "detail").length,
+    1,
+  );
+  const observations = current.parseBytes(
+    new TextEncoder().encode(compatible),
+    context,
+  );
+  assert.deepEqual(
+    observations.flatMap(({ listing_identity_evidence }) =>
+      listing_identity_evidence === undefined
+        ? []
+        : [listing_identity_evidence.locator]
+    ),
+    ["FB99-001_p2"],
+  );
+
+  const conflicting = compatible.replace(
+    entry("FB99-001", "Fusion Leader"),
+    entry("FB99-999", "Conflicting Leader"),
+  );
+  assert.throws(
+    () => current.discoverRequests(
+      new TextEncoder().encode(conflicting),
+      context,
+    ),
+    /full locator.*conflict/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(conflicting), context),
+    /full locator.*conflict/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.discoverRequests(
+      new TextEncoder().encode(conflicting),
+      context,
+    ),
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(new TextEncoder().encode(conflicting), context),
+  );
+});
+
+test("active Fusion HTML details bind base identity and variant to the full locator", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><main data-card-id="FB99-001_p2">
+    <h1>Variant Battle Card</h1>
+    <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
+    <dl><dt>Card Type</dt><dd>Battle</dd></dl>
+    <dl><dt>Color</dt><dd>Red</dd></dl>
+    <img class="card-image" src="/fw/images/cards/FB99-001_p2.png">
+  </main></html>`;
+  const context = {
+    mediaType: "text/html",
+    url:
+      "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?cardId=FB99-001_p2",
+    requestId: `fusion-world-en:detail:${"b".repeat(64)}`,
+  };
+  const observation = current.parseBytes(
+    new TextEncoder().encode(html),
+    context,
+  )[0];
+  assert.equal(observation.card.official_identity.value, "FB99-001");
+  assert.equal(observation.identity_evidence.locator, "FB99-001_p2");
+  assert.equal(observation.identity_evidence.variant_key, "_p2");
+  const [liveObservation] = current.parseBytes(
+    new TextEncoder().encode(html),
+    {
+      ...context,
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p2",
+    },
+  );
+  assert.equal(liveObservation.card.official_identity.value, "FB99-001");
+  assert.equal(liveObservation.identity_evidence.locator, "FB99-001_p2");
+  assert.equal(liveObservation.identity_evidence.variant_key, "_p2");
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(html), {
+      ...context,
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FB99-001&p=_p2&future_variant=_p3",
+    }),
+    /full locator.*unsupported.*query/iu,
+  );
+  assert.throws(
+    () => previous.parseBytes(new TextEncoder().encode(html), context),
+    /requested Card identity does not match/iu,
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(html.replace("FB99-001_p2\">", "FB99-001_p3\">")),
+      context,
+    ),
+    /full locator.*data-card-id.*match/iu,
+  );
+});
+
+test("active Fusion ordinary Errata emits exact typed correction authority", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><title>BANDAI DRAGON BALL CARD ERRATA</title><main>
+    <article class="erratum" data-erratum-id="fusion-world-erratum-fb99-001">
+      <dl>
+        <dt>Card Number</dt><dd>FB99-001</dd>
+        <dt>Published On</dt><dd>2026-07-15</dd>
+        <dt>Effective From</dt><dd>2026-07-15</dd>
+        <dt>Before</dt><dd>Official printed rules</dd>
+        <dt>After</dt><dd>Official corrected rules</dd>
+        <dt>Note</dt><dd>The corrected wording applies from the published date.</dd>
+      </dl>
+      <img src="https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png">
+    </article>
+  </main></html>`;
+  const context = {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("errata"),
+    requestId: "fusion-world-en:errata",
+  };
+  const [observation] = current.parseBytes(
+    new TextEncoder().encode(html),
+    context,
+  );
+  assert.deepEqual(
+    {
+      kind: observation.kind,
+      target: observation.target,
+      published_on: observation.published_on,
+      effective_from: observation.effective_from,
+      observed_printed_rules_text: observation.observed_printed_rules_text,
+      corrected_rules_text: observation.corrected_rules_text,
+    },
+    {
+      kind: "official_erratum",
+      target: {
+        type: "card",
+        official_identity: { kind: "card_number", value: "FB99-001" },
+      },
+      published_on: "2026-07-15",
+      effective_from: "2026-07-15",
+      observed_printed_rules_text: "Official printed rules",
+      corrected_rules_text: "Official corrected rules",
+    },
+  );
+  const unparsed = html.replace(
+    "</main>",
+    "<p>This correction applies only at selected events.</p></main>",
+  );
+  assert.throws(
+    () => current.parseBytes(new TextEncoder().encode(unparsed), context),
+    /unparsed Fusion World Errata wording/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(unparsed),
+      { ...context, url: previous.requestUrlForSurface("errata") },
+    ),
+  );
+});
+
+test("active Fusion HTML Products require available and coming-soon tabs", () => {
+  const current = requiredSourceAdapter("fusion-world-en@4");
+  const previous = requiredSourceAdapter("fusion-world-en@3");
+  const html = `<html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+    <nav>
+      <a data-product-status="available" href="/fw/en/products/?status=available">Available</a>
+      <a data-product-status="coming-soon" href="/fw/en/products/?status=coming-soon">Coming Soon</a>
+    </nav>
+    <article class="booster" data-product-status="available">
+      <a data-product-code="FB-LIVE-01" href="/fw/en/products/booster/live-01/">Live Product</a>
+    </article>
+    <article class="booster" data-product-status="coming-soon">
+      <a data-product-code="FB-SOON-02" href="/fw/en/products/booster/soon-02/">Future Product</a>
+      <span>Coming Soon</span>
+    </article>
+  </html>`;
+  const context = {
+    mediaType: "text/html",
+    url: current.requestUrlForSurface("products"),
+    requestId: "fusion-world-en:products",
+  };
+  assert.equal(current.parseBytes(new TextEncoder().encode(html), context).length, 2);
+  assert.deepEqual(
+    current.discoverRequests(new TextEncoder().encode(html), context)
+      .filter(({ url }) => new URL(url).searchParams.has("status"))
+      .map(({ url }) => new URL(url).searchParams.get("status"))
+      .sort(),
+    ["available", "coming-soon"],
+  );
+  const rootWithoutComingSoonEntry = html.replace(
+    /<article class="booster" data-product-status="coming-soon">[\s\S]*?<\/article>/u,
+    "",
+  );
+  assert.doesNotThrow(
+    () => current.parseBytes(
+      new TextEncoder().encode(rootWithoutComingSoonEntry),
+      context,
+    ),
+  );
+  const missingComingSoon = html.replace(
+    /<a data-product-status="coming-soon"[^>]*>Coming Soon<\/a>/u,
+    "",
+  );
+  assert.throws(
+    () => current.parseBytes(
+      new TextEncoder().encode(missingComingSoon),
+      context,
+    ),
+    /Product status tabs.*coming-soon/iu,
+  );
+  assert.doesNotThrow(
+    () => previous.parseBytes(
+      new TextEncoder().encode(missingComingSoon),
+      { ...context, url: previous.requestUrlForSurface("products") },
+    ),
+  );
+
+  const emptyComingSoon = `<html>
+    <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
+    <p>0 records</p>
+  </html>`;
+  const emptyContext = {
+    mediaType: "text/html",
+    url: `${current.requestUrlForSurface("products")}?status=coming-soon`,
+    requestId: `fusion-world-en:listing:${"e".repeat(64)}`,
+  };
+  const [emptyObservation] = current.parseBytes(
+    new TextEncoder().encode(emptyComingSoon),
+    emptyContext,
+  );
+  assert.deepEqual(emptyObservation.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 0,
+    parsed_record_count: 0,
+  });
+});
+
 function rawSurfacePayload(lineage, surface) {
-  return structuredClone(
+  const payload = structuredClone(
     officialRawSurfacePayload(`/${lineage}/${surface}`),
   );
+  if (lineage === "one-piece-en" && surface === "don-rules") {
+    payload.don_card = {
+      functional_designation: "DON!!",
+      name: "DON!! Card",
+      Category: "DON!! Card",
+      Effect: "A rules-level resource Card used to pay costs and increase power.",
+    };
+  }
+  return payload;
+}
+
+function withLegacyFusionCanonicalFields(payload) {
+  const legacy = structuredClone(payload);
+  for (const detail of legacy.detail_pages ?? []) {
+    Object.assign(detail, {
+      profile: "fusion-world@1",
+      artwork_fingerprint: "legacy-artwork",
+      printed_fields_digest: "legacy-printed-fields",
+    });
+    if (detail.printing !== undefined) {
+      detail.printing.normalized_rarity =
+        detail.printing.rarity?.toLowerCase() ?? null;
+    }
+  }
+  return legacy;
 }
 
 function parseRegisteredSurface(adapter, surface, payload) {
+  const completeDigimonLeaf =
+    adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
+  const completeGundamLeaf =
+    (adapter.adapterVersion === "gundam-en-asia@4" ||
+      adapter.adapterVersion === "gundam-en-us@4") && surface === "packages";
+  const publisherPayload = structuredClone(payload);
+  if (
+    adapter.adapterVersion === "one-piece-en@3" &&
+    surface === "card-list"
+  ) {
+    publisherPayload.card_pages.forEach((card) => {
+      delete card.artwork_fingerprint;
+      delete card.printed_fields_digest;
+    });
+  }
+  if (completeDigimonLeaf) {
+    for (const detail of publisherPayload.card_popups ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      delete detail.printing.normalized_rarity;
+    }
+  }
+  if (completeGundamLeaf) {
+    for (const detail of publisherPayload.card_details ?? []) {
+      delete detail.artwork_fingerprint;
+      delete detail.printed_fields_digest;
+      delete detail.printing.normalized_rarity;
+    }
+  }
   return adapter.parseBytes(
     new TextEncoder().encode(
       `<html><title>BANDAI ${adapter.supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
        ${officialPublisherPayloadScript(
         adapter.sourceLineage,
         surface,
-        payload,
+        publisherPayload,
       )}`,
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: adapter.requestUrlForSurface(surface),
-      requestId: `${adapter.sourceLineage}:${surface}`,
+      url: completeDigimonLeaf
+        ? `${adapter.requestUrlForSurface(surface)}&category=all&cardcategory=digimon&colour=blue`
+        : completeGundamLeaf
+          ? `${adapter.requestUrlForSurface(surface)}?package=all`
+        : adapter.requestUrlForSurface(surface),
+      requestId: completeDigimonLeaf || completeGundamLeaf
+        ? `${adapter.sourceLineage}:listing:${"f".repeat(64)}`
+        : `${adapter.sourceLineage}:${surface}`,
     },
   );
 }

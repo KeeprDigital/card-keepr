@@ -46,12 +46,21 @@ export function contextualLegalityFixtureDocument(
     | "omit-effective-until"
     | "resolved-card-order"
     | "operand-overlap" = "current",
+  semantics: "current" | "changed" = "current",
 ) {
   const cardNumbers =
     region === "EN-ASIA"
       ? ["GD30-001", "GD30-002", "GD30-003", "GD30-004"]
       : ["GD30-001"];
   const cards = cardNumbers.map(gundamObservation);
+  if (semantics === "changed") {
+    const card = cards.find((candidate) =>
+      candidate.card.official_identity.value === "GD30-001"
+    );
+    if (card !== undefined) {
+      card.card.name = "Changed Official Source Card Name";
+    }
+  }
   if (rulesVariant === "omitted") return { cards };
   const rules = legalityRules(region);
   const retainedRules = rulesVariant === "empty"

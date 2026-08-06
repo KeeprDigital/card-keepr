@@ -267,6 +267,7 @@ function changed(
     document !== undefined &&
     Object.entries(candidate).some(
       ([key, value]) =>
+        key !== "curated_provenance" &&
         canonicalJson(document[key]) !== canonicalJson(value),
     )
   );

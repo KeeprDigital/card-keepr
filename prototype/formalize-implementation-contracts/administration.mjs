@@ -102,7 +102,7 @@ function activeRun(state) {
   return state.active_run_id ? state.runs[state.active_run_id] : null;
 }
 
-function activeRelease(state) {
+function activeProductionRelease(state) {
   return state.release && !["succeeded", "failed"].includes(state.release.state)
     ? state.release
     : null;
@@ -498,7 +498,7 @@ export function transition(input, action) {
           "Publish or recover another Catalogue Revision before deleting this export."
         );
       }
-      if (activeRun(state) || activeRelease(state) || state.recovery.health !== "healthy") {
+      if (activeRun(state) || activeProductionRelease(state) || state.recovery.health !== "healthy") {
         return reject(
           state,
           action,
@@ -628,7 +628,7 @@ export function transition(input, action) {
       ) {
         return reject(state, action, "current_revision_mismatch", state.current_revision_id);
       }
-      if (activeRun(state) || activeRelease(state) || state.recovery.health !== "healthy") {
+      if (activeRun(state) || activeProductionRelease(state) || state.recovery.health !== "healthy") {
         return reject(state, action, "maintenance_not_idle", "Mutation gates remain closed.");
       }
       operation.state = "deleting";
@@ -638,7 +638,7 @@ export function transition(input, action) {
     }
 
     case "BEGIN_RECOVERY": {
-      if (activeRun(state) || activeRelease(state)) {
+      if (activeRun(state) || activeProductionRelease(state)) {
         return reject(state, action, "mutation_not_idle", "Ingestion and release must be idle.");
       }
       if (state.recovery.operation && !["accepted", "failed"].includes(state.recovery.operation.state)) {
@@ -694,7 +694,7 @@ export function transition(input, action) {
       if (action.environment !== "production") {
         return reject(state, action, "production_target_required", action.environment);
       }
-      if (activeRelease(state)) {
+      if (activeProductionRelease(state)) {
         return reject(state, action, "release_exists", state.release.id);
       }
       if (activeRun(state)) {

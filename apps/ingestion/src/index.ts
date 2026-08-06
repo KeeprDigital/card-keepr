@@ -13,6 +13,7 @@ import {
   assertBindingsAvailable,
   healthResponse,
 } from "../../../src/http/health";
+import { prepareProductionRelease } from "../../../src/catalogue/production-release";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
@@ -34,6 +35,22 @@ import {
 import {
   runGuardedCardSearchRepair,
 } from "../../../src/catalogue/card-search-repair-administration";
+import {
+  startOrObserveCatalogueBackupWorkflow,
+} from "../../../src/catalogue/backup-workflow";
+import {
+  catalogueBackupAttemptStatus,
+  catalogueRevisionBackupStatus,
+  publicationBackupReservation,
+} from "../../../src/catalogue/backup-recovery";
+import {
+  acceptCatalogueRecovery,
+  beginCatalogueRecovery,
+  enforceRecoveryRestoreGuard,
+  inspectCatalogueRecovery,
+  verifyCatalogueRecovery,
+} from "../../../src/catalogue/recovery";
+import { activeD1CredentialSlots } from "./backup-workflow";
 import { resumeEvidenceRun } from "./evidence-administration";
 import {
   CredentialRotationProblem,
@@ -46,17 +63,37 @@ import {
   credentialConsumerProofRequestHeader,
   handleCredentialConsumerProof,
 } from "../../../src/credentials/consumer-proof";
+import {
+  createCuratedRevision,
+  listCuratedRevisions,
+  reaffirmCuratedRevision,
+  retireCuratedRevision,
+  showCuratedRevision,
+  supersedeCuratedRevision,
+  validateCuratedRevision,
+} from "../../../src/catalogue/curated-revisions";
+import {
+  CatalogueExportDeletionProblem,
+  catalogueExportDeletionStatus,
+  confirmCatalogueExportDeletion,
+  prepareCatalogueExportDeletion,
+  retryCatalogueExportDeletion,
+} from "../../../src/catalogue/catalogue-export-deletion";
+import { withOperationalRequestLog } from "../../../src/http/operational-log";
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
 } from "./evidence-workflows";
 export { ReconciliationWorkflow } from "./reconciliation-workflow";
+export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { OfficialSourceTransport } from "./official-source-transport";
 
-const ingestionWorker = {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const requestId = crypto.randomUUID();
-
+async function handleIngestionRequest(
+  request: Request,
+  env: Env,
+  context: ExecutionContext | undefined,
+  requestId: string,
+): Promise<Response> {
     try {
       const consumerProof = await handleCredentialConsumerProof(
         request,
@@ -75,6 +112,7 @@ const ingestionWorker = {
               },
             }),
             env,
+            context,
           );
           await response.body?.cancel();
           return response.status === 200;
@@ -146,6 +184,106 @@ const ingestionWorker = {
         });
       }
       const observedAt = administrationObservedAt(request, env);
+      await enforceRecoveryRestoreGuard(env.CATALOGUE_DB);
+
+      if (request.method === "POST" && url.pathname === "/v1/production-releases") {
+        const body = await readAdministrationBody(request);
+        return Response.json(await prepareProductionRelease(
+          env.CATALOGUE_DB,
+          body,
+          productionTarget(env),
+          observedAt,
+        ), { status: 201 });
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/catalogue-export-deletion-plans"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "catalogue_revision_id",
+          "manifest_digest",
+          "expected_current_revision_id",
+          "plan_id",
+        ]);
+        const document = await prepareCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          {
+            catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
+            manifest_digest: requiredString(body, "manifest_digest"),
+            expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
+            plan_id: requiredString(body, "plan_id"),
+          },
+          observedAt,
+        );
+        return Response.json(document, { status: 201 });
+      }
+
+      if (
+        request.method === "POST" &&
+        url.pathname === "/v1/catalogue-export-deletions"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "plan_id",
+          "plan_digest",
+          "catalogue_revision_id",
+          "manifest_digest",
+          "expected_current_revision_id",
+          "confirmation_revision_id",
+          "deletion_id",
+          "idempotency_key",
+        ]);
+        const document = await confirmCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          {
+            plan_id: requiredString(body, "plan_id"),
+            plan_digest: requiredString(body, "plan_digest"),
+            catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
+            manifest_digest: requiredString(body, "manifest_digest"),
+            expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
+            confirmation_revision_id: requiredString(body, "confirmation_revision_id"),
+            deletion_id: requiredString(body, "deletion_id"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        );
+        return Response.json(document, {
+          status: catalogueExportDeletionResultStatus(document),
+        });
+      }
+
+      const exportDeletionRetryMatch =
+        /^\/v1\/catalogue-export-deletions\/([^/]+)\/retry$/.exec(url.pathname);
+      if (request.method === "POST" && exportDeletionRetryMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
+        const document = await retryCatalogueExportDeletion(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_EXPORTS,
+          decodeURIComponent(exportDeletionRetryMatch[1]!),
+          {
+            object_set_digest: requiredString(body, "object_set_digest"),
+            idempotency_key: requiredString(body, "idempotency_key"),
+          },
+          observedAt,
+        );
+        return Response.json(document, {
+          status: catalogueExportDeletionResultStatus(document),
+        });
+      }
+
+      const exportDeletionMatch =
+        /^\/v1\/catalogue-export-deletions\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && exportDeletionMatch !== null) {
+        return Response.json(await catalogueExportDeletionStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(exportDeletionMatch[1]!),
+        ));
+      }
 
       const credentialResponse = await handleCredentialAdministration(
         request,
@@ -169,6 +307,81 @@ const ingestionWorker = {
 
       if (
         request.method === "POST" &&
+        url.pathname === "/admin/v1/curated-revisions/validate"
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["proposal", "catalogue_revision_id"]);
+        return Response.json(await validateCuratedRevision(
+          env.CATALOGUE_DB,
+          body.proposal,
+          requiredString(body, "catalogue_revision_id"),
+        ));
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/admin/v1/curated-revisions"
+      ) {
+        const unexpected = [...url.searchParams.keys()].find(
+          (parameter) => !["game", "target", "status"].includes(parameter),
+        );
+        if (unexpected !== undefined) {
+          throw new AdministrationProblem(
+            422,
+            "invalid_parameter",
+            `${unexpected} is not accepted for this administration operation.`,
+          );
+        }
+        return Response.json(await listCuratedRevisions(env.CATALOGUE_DB, {
+          ...(url.searchParams.has("game")
+            ? { game: url.searchParams.get("game")! }
+            : {}),
+          ...(url.searchParams.has("target")
+            ? { target: url.searchParams.get("target")! }
+            : {}),
+          ...(url.searchParams.has("status")
+            ? { status: url.searchParams.get("status")! }
+            : {}),
+        }));
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/admin/v1/curated-revisions"
+      ) {
+        const result = await createCuratedRevision(
+          env.CATALOGUE_DB,
+          await readAdministrationBody(request),
+          observedAt,
+        );
+        return Response.json(result.document, {
+          status: result.created ? 201 : 200,
+        });
+      }
+      const curatedRevisionMutationMatch =
+        /^\/admin\/v1\/curated-revisions\/([^/]+)\/(reaffirm|supersede|retire)$/.exec(url.pathname);
+      if (request.method === "POST" && curatedRevisionMutationMatch !== null) {
+        const revisionId = decodeURIComponent(curatedRevisionMutationMatch[1]!);
+        const body = await readAdministrationBody(request);
+        const operation = curatedRevisionMutationMatch[2];
+        const result = operation === "reaffirm"
+          ? await reaffirmCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
+          : operation === "supersede"
+            ? await supersedeCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt)
+            : await retireCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt);
+        return Response.json(result.document, {
+          status: result.created && operation === "supersede" ? 201 : 200,
+        });
+      }
+      const curatedRevisionMatch =
+        /^\/admin\/v1\/curated-revisions\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && curatedRevisionMatch !== null) {
+        return Response.json(await showCuratedRevision(
+          env.CATALOGUE_DB,
+          decodeURIComponent(curatedRevisionMatch[1]!),
+        ));
+      }
+
+      if (
+        request.method === "POST" &&
         url.pathname === "/v1/ingestion-runs/evidence"
       ) {
         const body = await readAdministrationBody(request);
@@ -178,6 +391,7 @@ const ingestionWorker = {
             await startEvidenceRun(env.CATALOGUE_DB, {
               plans: requiredEvidencePlans(body, "plans"),
               idempotency_key: requiredString(body, "idempotency_key"),
+              operational_request_id: requestId,
             }),
             { status: 201 },
           );
@@ -195,6 +409,7 @@ const ingestionWorker = {
             source_lineage: requiredString(body, "source_lineage"),
             adapter_version: requiredString(body, "adapter_version"),
             idempotency_key: requiredString(body, "idempotency_key"),
+            operational_request_id: requestId,
             requests: requiredSourceRequests(body, "requests"),
           }),
           { status: 201 },
@@ -259,6 +474,190 @@ const ingestionWorker = {
         );
       }
 
+      const backupStatusMatch = /^\/v1\/backups\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && backupStatusMatch !== null) {
+        return Response.json(await catalogueBackupAttemptStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(backupStatusMatch[1]!),
+        ));
+      }
+
+      const revisionBackupsMatch =
+        /^\/v1\/catalogue-revisions\/([^/]+)\/backups$/.exec(url.pathname);
+      if (request.method === "GET" && revisionBackupsMatch !== null) {
+        return Response.json(await catalogueRevisionBackupStatus(
+          env.CATALOGUE_DB,
+          decodeURIComponent(revisionBackupsMatch[1]!),
+        ));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/backups") {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "expected_current_revision_id",
+          "idempotency_key",
+          "failed_attempt_id",
+          "failed_attempt_digest",
+        ]);
+        const result = await startOrObserveCatalogueBackupWorkflow(
+          env.CATALOGUE_DB,
+          env.CATALOGUE_BACKUP_WORKFLOW,
+          {
+            expected_current_revision_id: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotency_key: requiredString(body, "idempotency_key"),
+            ...(body.failed_attempt_id === undefined
+              ? {}
+              : {
+                failed_attempt_id: requiredString(body, "failed_attempt_id"),
+              }),
+            ...(body.failed_attempt_digest === undefined
+              ? {}
+              : {
+                failed_attempt_digest: requiredString(
+                  body,
+                  "failed_attempt_digest",
+                ),
+              }),
+          },
+          observedAt,
+        );
+        return Response.json(result.document, {
+          status:
+            result.created && result.document.status !== "complete"
+              ? 202
+              : 200,
+        });
+      }
+
+      const recoveryMatch = /^\/v1\/recoveries\/([^/]+)$/.exec(url.pathname);
+      if (request.method === "GET" && recoveryMatch !== null) {
+        return Response.json(await inspectCatalogueRecovery(
+          env.CATALOGUE_DB,
+          env.BACKUPS,
+          decodeURIComponent(recoveryMatch[1]!),
+        ));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/recoveries") {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "environment",
+          "recovery_id",
+          "method",
+          "target_revision_id",
+          "target_bookmark",
+          "target_digest",
+          "backup_attempt_id",
+          "expected_current_revision_id",
+          "idempotency_key",
+          "linked_operation_id",
+        ]);
+        if (requiredString(body, "environment") !== "production") {
+          throw new AdministrationProblem(
+            422,
+            "production_target_required",
+            "Catalogue recovery requires environment production.",
+          );
+        }
+        const method = requiredString(body, "method");
+        if (method !== "time_travel" && method !== "replacement_database") {
+          throw new AdministrationProblem(
+            422,
+            "invalid_recovery_method",
+            "method must be time_travel or replacement_database.",
+          );
+        }
+        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
+        const document = await beginCatalogueRecovery(
+          env.CATALOGUE_DB,
+          env.BACKUPS,
+          {
+            recoveryId: requiredString(body, "recovery_id"),
+            method,
+            targetRevisionId: requiredString(body, "target_revision_id"),
+            targetBookmark: requiredString(body, "target_bookmark"),
+            targetDigest: requiredString(body, "target_digest"),
+            backupAttemptId: requiredString(body, "backup_attempt_id"),
+            expectedCurrentRevisionId: requiredString(
+              body,
+              "expected_current_revision_id",
+            ),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            ...(body.linked_operation_id === undefined
+              ? {}
+              : {
+                linkedOperationId: requiredString(
+                  body,
+                  "linked_operation_id",
+                ),
+              }),
+            observedAt,
+            cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+            catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+            verificationToken: slots.verification === "a"
+              ? env.D1_VERIFICATION_TOKEN
+              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+          },
+        );
+        return Response.json(document, { status: 201 });
+      }
+
+      const recoveryVerificationMatch =
+        /^\/v1\/recoveries\/([^/]+)\/verification$/.exec(url.pathname);
+      if (request.method === "POST" && recoveryVerificationMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["target_digest", "idempotency_key"]);
+        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
+        return Response.json(await verifyCatalogueRecovery(
+          env.CATALOGUE_DB,
+          env.BACKUPS,
+          decodeURIComponent(recoveryVerificationMatch[1]!),
+          {
+            targetDigest: requiredString(body, "target_digest"),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            observedAt,
+            cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+            verificationToken: slots.verification === "a"
+              ? env.D1_VERIFICATION_TOKEN
+              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+          },
+        ));
+      }
+
+      const recoveryAcceptanceMatch =
+        /^\/v1\/recoveries\/([^/]+)\/acceptance$/.exec(url.pathname);
+      if (request.method === "POST" && recoveryAcceptanceMatch !== null) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "expected_restored_revision_id",
+          "target_digest",
+          "confirmation_recovery_id",
+          "idempotency_key",
+        ]);
+        return Response.json(await acceptCatalogueRecovery(
+          env.CATALOGUE_DB,
+          env.BACKUPS,
+          decodeURIComponent(recoveryAcceptanceMatch[1]!),
+          {
+            expectedRestoredRevisionId: requiredString(
+              body,
+              "expected_restored_revision_id",
+            ),
+            targetDigest: requiredString(body, "target_digest"),
+            confirmationRecoveryId: requiredString(
+              body,
+              "confirmation_recovery_id",
+            ),
+            idempotencyKey: requiredString(body, "idempotency_key"),
+            observedAt,
+            boundDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+          },
+        ));
+      }
+
       const reconciledPrintingMatch =
         /^\/v1\/reconciliation\/printings\/([^/]+)$/.exec(
           url.pathname,
@@ -308,6 +707,7 @@ const ingestionWorker = {
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceRetryMatch[1]!),
             requiredString(body, "idempotency_key"),
+            requestId,
           ),
           { status: 201 },
         );
@@ -383,29 +783,7 @@ const ingestionWorker = {
             env.CATALOGUE_DB,
             env.CATALOGUE_EXPORTS,
             observedAt,
-            {
-              cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
-              worker_scripts: [
-                "card-keepr-api",
-                "card-keepr-ingestion",
-              ],
-              d1_databases: [
-                {
-                  name: "card-keepr-catalogue",
-                  id: env.CATALOGUE_D1_DATABASE_ID,
-                },
-                {
-                  name: "card-keepr-disposable-verification",
-                  id: env.DISPOSABLE_D1_DATABASE_ID,
-                },
-              ],
-              r2_buckets: [
-                "card-keepr-evidence",
-                "card-keepr-printing-images",
-                "card-keepr-catalogue-exports",
-                "card-keepr-backups",
-              ],
-            },
+            productionTarget(env),
           ),
         );
       }
@@ -450,6 +828,55 @@ const ingestionWorker = {
             observedAt,
             env.PRINTING_IMAGES,
           );
+        if (
+          result.publication_outcome === "revision" &&
+          typeof result.resulting_revision_id === "string"
+        ) {
+          const reservation = await publicationBackupReservation(
+            result.resulting_revision_id,
+          );
+          const clockMode = String(env.ADMINISTRATION_CLOCK_MODE);
+          const dispatch = async () => {
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+              const observed = await startOrObserveCatalogueBackupWorkflow(
+                env.CATALOGUE_DB,
+                env.CATALOGUE_BACKUP_WORKFLOW,
+                {
+                  expected_current_revision_id:
+                    result.resulting_revision_id as string,
+                  idempotency_key: reservation.idempotencyKey,
+                },
+                observedAt,
+              );
+              if (
+                clockMode !== "request" ||
+                observed.document.status === "complete"
+              ) return;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            throw new Error(
+              "Publication backup did not complete in the test observation window.",
+            );
+          };
+          const reportDispatchFailure = (_error: unknown) => {
+            console.error(JSON.stringify({
+              contract: "card-keepr-operational-log@1",
+              event: "workflow.failed",
+              runtime: "ingestion",
+              failure_code: "catalogue_backup_dispatch_failed",
+              request_id: requestId,
+              workflow_step: "catalogue_backup_dispatch",
+              catalogue_revision_id: result.resulting_revision_id,
+              retry_count: 0,
+              retry_classification: "retryable",
+            }));
+          };
+          if (clockMode === "request") {
+            await dispatch().catch(reportDispatchFailure);
+          } else {
+            context?.waitUntil(dispatch().catch(reportDispatchFailure));
+          }
+        }
         return Response.json(result, {
           status: administrationResultStatus(result, 200),
         });
@@ -500,6 +927,7 @@ const ingestionWorker = {
               body,
               "idempotency_key",
             ),
+            operational_request_id: requestId,
           },
           observedAt,
         );
@@ -562,7 +990,8 @@ const ingestionWorker = {
     } catch (error) {
       if (
         error instanceof AdministrationProblem ||
-        error instanceof CredentialRotationProblem
+        error instanceof CredentialRotationProblem ||
+        error instanceof CatalogueExportDeletionProblem
       ) {
         return problemResponse({
           requestId,
@@ -572,14 +1001,6 @@ const ingestionWorker = {
           detail: error.message,
         });
       }
-      console.error(
-        JSON.stringify({
-          message: "request failed",
-          request_id: requestId,
-          route: new URL(request.url).pathname,
-          error: error instanceof Error ? error.message : "unknown error",
-        }),
-      );
       return problemResponse({
         requestId,
         status: 500,
@@ -588,6 +1009,21 @@ const ingestionWorker = {
         detail: "The administration request could not be completed.",
       });
     }
+}
+
+const ingestionWorker = {
+  async fetch(
+    request: Request,
+    env: Env,
+    context?: ExecutionContext,
+  ): Promise<Response> {
+    return withOperationalRequestLog(
+      "ingestion",
+      request,
+      env,
+      (observedEnv, requestId) =>
+        handleIngestionRequest(request, observedEnv, context, requestId),
+    );
   },
 } satisfies ExportedHandler<Env>;
 
@@ -617,6 +1053,21 @@ function requiredString(
     );
   }
   return value;
+}
+
+function productionTarget(env: Env) {
+  return {
+    cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
+    worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+    d1_databases: [
+      { name: "card-keepr-catalogue", id: env.CATALOGUE_D1_DATABASE_ID },
+      { name: "card-keepr-disposable-verification", id: env.DISPOSABLE_D1_DATABASE_ID },
+    ],
+    r2_buckets: [
+      "card-keepr-evidence", "card-keepr-printing-images",
+      "card-keepr-catalogue-exports", "card-keepr-backups",
+    ],
+  } as const;
 }
 
 function requiredStringArray(
@@ -799,6 +1250,15 @@ function administrationResultStatus(
     result.status === "in_progress"
     ? 202
     : completedStatus;
+}
+
+function catalogueExportDeletionResultStatus(
+  result: Record<string, unknown>,
+): number {
+  return result.contract === "card-keepr-catalogue-export-deletion@1" &&
+      result.state === "deleting"
+    ? 202
+    : 200;
 }
 
 async function hasEvidencePlan(

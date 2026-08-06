@@ -40,6 +40,10 @@ export function legalityRuleExportRecords(
     source_observation_ids: [rule.source_observation_id],
     source_observation_pointer: rule.source_observation_pointer,
     source_field_pointers: rule.source_field_pointers,
+    ...("curated_provenance" in rule &&
+        Array.isArray(rule.curated_provenance)
+      ? { curated_provenance: rule.curated_provenance }
+      : {}),
     lifecycle: normalizedLegalityRuleLifecycle(rule, revisionId),
   }));
 }

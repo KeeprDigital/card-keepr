@@ -12,7 +12,7 @@
     "test": "npm run test:workers && npm run test:acceptance",
     "test:workers": "npm run test:workers:api && npm run test:workers:ingestion",
     "test:workers:api": "vitest run --config apps/api/vitest.config.ts",
-    "test:workers:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
+    "test:workers:ingestion": "node scripts/test-workers-ingestion.mjs",
     "test:acceptance": "node --test --test-concurrency=1 acceptance/*.test.mjs",
     "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json",
     "types:generate": "node scripts/worker-types.mjs",
@@ -37,7 +37,14 @@
     "wrangler": "^4.114.0"
   },
   "dependencies": {
+    "entities": "8.0.0",
     "libsodium-wrappers": "^0.7.15",
-    "pako": "3.0.1"
+    "pako": "3.0.1",
+    "parse5": "8.0.1"
+  },
+  "overrides": {
+    "parse5": {
+      "entities": "8.0.0"
+    }
   }
 }

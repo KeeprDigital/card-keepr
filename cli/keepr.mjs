@@ -6,7 +6,6 @@ import {
   apiCapabilities,
   ingestionCapabilities,
 } from "../src/runtime-capabilities.mjs";
-import { runCredentialCommand } from "./credential-rotation.mjs";
 import { runCatalogueCommand } from "./catalogue.mjs";
 import {
   exitCodeForStatus,
@@ -14,6 +13,9 @@ import {
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
+import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
+import { validatedProductionTarget } from "./production-target.mjs";
+import { runProductionReleaseCommand } from "./production-release.mjs";
 
 export async function main(arguments_, environment) {
   const json = arguments_.includes("--json");
@@ -33,6 +35,9 @@ export async function main(arguments_, environment) {
       "/v1/status",
       "GET",
     );
+  }
+  if (isCommand(arguments_, "release", "production")) {
+    return runProductionReleaseCommand(arguments_.slice(2), environment, json);
   }
 
   if (isCommand(arguments_, "run", "start")) {
@@ -70,6 +75,38 @@ export async function main(arguments_, environment) {
       json,
     );
   }
+  if (isCommand(arguments_, "backup", "create")) {
+    return createBackup(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "backup", "status")) {
+    return backupStatus(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "backup", "retry")) {
+    return retryBackup(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "begin")) {
+    return beginRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "inspect")) {
+    return inspectRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "verify")) {
+    return verifyRecovery(arguments_.slice(2), environment, json);
+  }
+  if (isCommand(arguments_, "recovery", "accept")) {
+    return acceptRecovery(arguments_.slice(2), environment, json);
+  }
+  if (
+    arguments_[0] === "catalogue-export" &&
+    arguments_[1] === "deletion"
+  ) {
+    return catalogueExportDeletion(
+      arguments_[2],
+      arguments_.slice(3),
+      environment,
+      json,
+    );
+  }
   if (isCommand(arguments_, "source", "collect")) {
     return collectSource(arguments_.slice(2), environment, json);
   }
@@ -100,7 +137,15 @@ export async function main(arguments_, environment) {
     );
   }
   if (arguments_[0] === "credential") {
+    const { runCredentialCommand } = await import("./credential-rotation.mjs");
     return runCredentialCommand(
+      arguments_.slice(1),
+      environment,
+      json,
+    );
+  }
+  if (arguments_[0] === "curated-revision") {
+    return runCuratedRevisionCommand(
       arguments_.slice(1),
       environment,
       json,
@@ -458,6 +503,522 @@ async function repairCatalogueSearch(arguments_, environment, json) {
   );
 }
 
+async function createBackup(arguments_, environment, json) {
+  const options = parseOptions(
+    arguments_,
+    [
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ],
+    ["--yes"],
+  );
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null ||
+    expectedCurrentRevision === undefined ||
+    idempotencyKey === undefined ||
+    target === undefined ||
+    !options.flags.has("--yes")
+  ) {
+    return usageFailure(json);
+  }
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue backup requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/backups",
+    "POST",
+    {
+      expected_current_revision_id: expectedCurrentRevision,
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
+async function backupStatus(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--attempt-id",
+    "--catalogue-revision",
+  ]);
+  const attemptId = options.values["--attempt-id"];
+  const catalogueRevision = options.values["--catalogue-revision"];
+  if (
+    options.error !== null ||
+    (attemptId === undefined) === (catalogueRevision === undefined)
+  ) return usageFailure(json);
+  return administrationRequest(
+    environment,
+    json,
+    attemptId === undefined
+      ? `/v1/catalogue-revisions/${encodeURIComponent(catalogueRevision)}/backups`
+      : `/v1/backups/${encodeURIComponent(attemptId)}`,
+    "GET",
+  );
+}
+
+async function retryBackup(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--expected-current-revision",
+    "--idempotency-key",
+    "--failed-attempt-id",
+    "--failed-attempt-digest",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const expected = options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const failedAttemptId = options.values["--failed-attempt-id"];
+  const failedAttemptDigest = options.values["--failed-attempt-digest"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || expected === undefined ||
+    idempotencyKey === undefined || failedAttemptId === undefined ||
+    failedAttemptDigest === undefined || target === undefined ||
+    !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue backup retry requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(environment, json, expected);
+  if (typeof resolved === "number") return resolved;
+  writeResolvedBackupRetry(json, {
+    contract: "card-keepr-resolved-backup-retry@1",
+    production_target: resolved.productionTarget,
+    current_catalogue_revision_id: expected,
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
+  const confirmed = confirmProductionTarget(
+    json,
+    {
+      production_target: resolved.productionTarget,
+      expected_current_revision_id: expected,
+      idempotency_key: idempotencyKey,
+      failed_attempt_id: failedAttemptId,
+      failed_attempt_digest: failedAttemptDigest,
+    },
+    confirmation,
+  );
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(environment, json, "/v1/backups", "POST", {
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  });
+}
+
+async function catalogueExportDeletion(action, arguments_, environment, json) {
+  if (action === "prepare") {
+    const options = parseOptions(arguments_, [
+      "--catalogue-revision",
+      "--manifest-digest",
+      "--expected-current-revision",
+      "--plan-id",
+    ]);
+    const revision = options.values["--catalogue-revision"];
+    const manifest = options.values["--manifest-digest"];
+    const expected = options.values["--expected-current-revision"];
+    const planId = options.values["--plan-id"];
+    if (
+      options.error !== null || revision === undefined ||
+      manifest === undefined || expected === undefined || planId === undefined
+    ) return usageFailure(json);
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/catalogue-export-deletion-plans",
+      "POST",
+      {
+        catalogue_revision_id: revision,
+        manifest_digest: manifest,
+        expected_current_revision_id: expected,
+        plan_id: planId,
+      },
+    );
+  }
+  if (action === "status") {
+    const options = parseOptions(arguments_, ["--deletion-id"]);
+    const deletionId = options.values["--deletion-id"];
+    if (options.error !== null || deletionId === undefined) {
+      return usageFailure(json);
+    }
+    return administrationRequest(
+      environment,
+      json,
+      `/v1/catalogue-export-deletions/${encodeURIComponent(deletionId)}`,
+      "GET",
+    );
+  }
+  if (action === "confirm") {
+    const options = parseOptions(arguments_, [
+      "--plan-id",
+      "--plan-digest",
+      "--catalogue-revision",
+      "--manifest-digest",
+      "--expected-current-revision",
+      "--confirm-revision",
+      "--deletion-id",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ], ["--yes"]);
+    const values = options.values;
+    const required = [
+      "--plan-id", "--plan-digest", "--catalogue-revision",
+      "--manifest-digest", "--expected-current-revision",
+      "--confirm-revision", "--deletion-id", "--idempotency-key",
+      "--environment",
+    ];
+    if (
+      options.error !== null ||
+      required.some((name) => values[name] === undefined) ||
+      !options.flags.has("--yes")
+    ) return usageFailure(json);
+    if (values["--environment"] !== "production") {
+      return productionTargetFailure(
+        json,
+        "Catalogue Export deletion requires --environment production.",
+      );
+    }
+    const resolved = await resolveProductionStatus(
+      environment,
+      json,
+      values["--expected-current-revision"],
+    );
+    if (typeof resolved === "number") return resolved;
+    const confirmation = {
+      production_target: resolved.productionTarget,
+      plan_id: values["--plan-id"],
+      plan_digest: values["--plan-digest"],
+      catalogue_revision_id: values["--catalogue-revision"],
+      manifest_digest: values["--manifest-digest"],
+      expected_current_revision_id: values["--expected-current-revision"],
+      deletion_id: values["--deletion-id"],
+      idempotency_key: values["--idempotency-key"],
+    };
+    const confirmed = confirmProductionTarget(
+      json,
+      confirmation,
+      values["--confirm"],
+    );
+    if (confirmed !== 0) return confirmed;
+    return administrationRequest(
+      environment,
+      json,
+      "/v1/catalogue-export-deletions",
+      "POST",
+      {
+        plan_id: values["--plan-id"],
+        plan_digest: values["--plan-digest"],
+        catalogue_revision_id: values["--catalogue-revision"],
+        manifest_digest: values["--manifest-digest"],
+        expected_current_revision_id: values["--expected-current-revision"],
+        confirmation_revision_id: values["--confirm-revision"],
+        deletion_id: values["--deletion-id"],
+        idempotency_key: values["--idempotency-key"],
+      },
+    );
+  }
+  if (action === "retry") {
+    const options = parseOptions(arguments_, [
+      "--deletion-id",
+      "--object-set-digest",
+      "--expected-current-revision",
+      "--idempotency-key",
+      "--environment",
+      "--confirm",
+    ], ["--yes"]);
+    const values = options.values;
+    const required = [
+      "--deletion-id", "--object-set-digest", "--expected-current-revision",
+      "--idempotency-key", "--environment",
+    ];
+    if (
+      options.error !== null ||
+      required.some((name) => values[name] === undefined) ||
+      !options.flags.has("--yes")
+    ) return usageFailure(json);
+    if (values["--environment"] !== "production") {
+      return productionTargetFailure(
+        json,
+        "Catalogue Export deletion retry requires --environment production.",
+      );
+    }
+    const resolved = await resolveProductionStatus(
+      environment,
+      json,
+      values["--expected-current-revision"],
+    );
+    if (typeof resolved === "number") return resolved;
+    const confirmation = {
+      production_target: resolved.productionTarget,
+      deletion_id: values["--deletion-id"],
+      object_set_digest: values["--object-set-digest"],
+      expected_current_revision_id: values["--expected-current-revision"],
+      idempotency_key: values["--idempotency-key"],
+    };
+    const confirmed = confirmProductionTarget(
+      json,
+      confirmation,
+      values["--confirm"],
+    );
+    if (confirmed !== 0) return confirmed;
+    return administrationRequest(
+      environment,
+      json,
+      `/v1/catalogue-export-deletions/${encodeURIComponent(values["--deletion-id"])}/retry`,
+      "POST",
+      {
+        object_set_digest: values["--object-set-digest"],
+        idempotency_key: values["--idempotency-key"],
+      },
+    );
+  }
+  return usageFailure(json);
+}
+
+function writeResolvedBackupRetry(json, resolved) {
+  if (json) {
+    process.stderr.write(`${JSON.stringify(resolved)}\n`);
+    return;
+  }
+  process.stderr.write(
+    `Resolved backup retry ${JSON.stringify(resolved)}\n`,
+  );
+}
+
+async function beginRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--method",
+    "--target-revision",
+    "--target-bookmark",
+    "--target-digest",
+    "--backup-attempt-id",
+    "--expected-current-revision",
+    "--idempotency-key",
+    "--linked-operation-id",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const method = options.values["--method"];
+  const targetRevision = options.values["--target-revision"];
+  const targetBookmark = options.values["--target-bookmark"];
+  const targetDigest = options.values["--target-digest"];
+  const backupAttemptId = options.values["--backup-attempt-id"];
+  const expectedCurrentRevision =
+    options.values["--expected-current-revision"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const linkedOperationId = options.values["--linked-operation-id"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    !["time_travel", "replacement_database"].includes(method) ||
+    targetRevision === undefined || targetBookmark === undefined ||
+    targetDigest === undefined || backupAttemptId === undefined ||
+    expectedCurrentRevision === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery requires --environment production.",
+    );
+  }
+  const resolved = await resolveProductionStatus(
+    environment,
+    json,
+    expectedCurrentRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    environment: "production",
+    recovery_id: recoveryId,
+    method,
+    target_revision_id: targetRevision,
+    target_bookmark: targetBookmark,
+    target_digest: targetDigest,
+    backup_attempt_id: backupAttemptId,
+    expected_current_revision_id: expectedCurrentRevision,
+    idempotency_key: idempotencyKey,
+    ...(linkedOperationId === undefined
+      ? {}
+      : { linked_operation_id: linkedOperationId }),
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    "/v1/recoveries",
+    "POST",
+    request,
+  );
+}
+
+async function inspectRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, ["--recovery-id"]);
+  const recoveryId = options.values["--recovery-id"];
+  if (options.error !== null || recoveryId === undefined) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
+    "GET",
+  );
+}
+
+async function verifyRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--target-digest",
+    "--idempotency-key",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const targetDigest = options.values["--target-digest"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    targetDigest === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery verification requires --environment production.",
+    );
+  }
+  const resolved = await resolveRecoveryTarget(
+    environment,
+    json,
+    recoveryId,
+    targetDigest,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    target_digest: targetDigest,
+    idempotency_key: idempotencyKey,
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    recovery_id: recoveryId,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}/verification`,
+    "POST",
+    request,
+  );
+}
+
+async function acceptRecovery(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--recovery-id",
+    "--expected-restored-revision",
+    "--target-digest",
+    "--confirmation-recovery-id",
+    "--idempotency-key",
+    "--environment",
+    "--confirm",
+  ], ["--yes"]);
+  const recoveryId = options.values["--recovery-id"];
+  const expectedRestoredRevision =
+    options.values["--expected-restored-revision"];
+  const targetDigest = options.values["--target-digest"];
+  const confirmationRecoveryId =
+    options.values["--confirmation-recovery-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  const target = options.values["--environment"];
+  const confirmation = options.values["--confirm"];
+  if (
+    options.error !== null || recoveryId === undefined ||
+    expectedRestoredRevision === undefined || targetDigest === undefined ||
+    confirmationRecoveryId === undefined || idempotencyKey === undefined ||
+    target === undefined || !options.flags.has("--yes")
+  ) return usageFailure(json);
+  if (target !== "production") {
+    return productionTargetFailure(
+      json,
+      "Catalogue recovery acceptance requires --environment production.",
+    );
+  }
+  const resolved = await resolveRecoveryTarget(
+    environment,
+    json,
+    recoveryId,
+    targetDigest,
+    expectedRestoredRevision,
+  );
+  if (typeof resolved === "number") return resolved;
+  const request = {
+    expected_restored_revision_id: expectedRestoredRevision,
+    target_digest: targetDigest,
+    confirmation_recovery_id: confirmationRecoveryId,
+    idempotency_key: idempotencyKey,
+  };
+  const confirmed = confirmProductionTarget(json, {
+    production_target: resolved.productionTarget,
+    recovery_id: recoveryId,
+    ...request,
+  }, confirmation);
+  if (confirmed !== 0) return confirmed;
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}/acceptance`,
+    "POST",
+    request,
+  );
+}
+
 async function collectSource(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--game",
@@ -651,8 +1212,14 @@ async function administrationRequest(
       document.status !== "complete"
     ) ||
     (document.contract ===
+      "card-keepr-catalogue-backup-workflow@1" &&
+      document.status !== "complete"
+    ) ||
+    (document.contract ===
       "card-keepr-card-search-repair@1" &&
-      document.complete !== true);
+      document.complete !== true) ||
+    (document.contract === "card-keepr-catalogue-export-deletion@1" &&
+      document.state === "deleting" && observed.responseStatus === 202);
   return incomplete ? 10 : 0;
 }
 
@@ -802,6 +1369,61 @@ async function resolveSearchRepairTarget(
   return resolved;
 }
 
+async function resolveRecoveryTarget(
+  environment,
+  json,
+  recoveryId,
+  targetDigest,
+  expectedRestoredRevision,
+) {
+  const observed = await fetchAdministrationDocument(
+    environment,
+    `/v1/recoveries/${encodeURIComponent(recoveryId)}`,
+  );
+  const failed = writeObservedFailure(observed, json);
+  if (failed !== null) return failed;
+  const recovery = observed.document;
+  if (
+    recovery?.id !== recoveryId || recovery?.target_digest !== targetDigest ||
+    (expectedRestoredRevision !== undefined &&
+      recovery?.target_revision_id !== expectedRestoredRevision) ||
+    typeof recovery?.expected_current_revision_id !== "string"
+  ) {
+    return resolvedTargetFailure(
+      json,
+      "The production recovery operation does not match the supplied exact target evidence.",
+    );
+  }
+  const status = await fetchAdministrationDocument(environment, "/v1/status");
+  const failedStatus = writeObservedFailure(status, json);
+  if (failedStatus !== null) return failedStatus;
+  const currentRevision = status.document?.safe_state?.current_revision_id;
+  if (
+    currentRevision !== recovery.expected_current_revision_id &&
+    currentRevision !== recovery.target_revision_id
+  ) {
+    return resolvedTargetFailure(
+      json,
+      "Production does not resolve to either the recovery source or restored Catalogue Revision.",
+    );
+  }
+  const productionTarget = validatedProductionTarget(
+    status.document?.production_target,
+  );
+  if (productionTarget === null) {
+    return writeFailure(
+      json,
+      {
+        code: "invalid_administration_contract",
+        detail:
+          "Production status did not expose exact Cloudflare target identities.",
+      },
+      8,
+    );
+  }
+  return { productionTarget };
+}
+
 async function resolveProductionStatus(
   environment,
   json,
@@ -870,57 +1492,6 @@ function confirmProductionTarget(json, productionTarget, confirmation) {
     },
     3,
   );
-}
-
-function validatedProductionTarget(value) {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value) ||
-    !sameKeys(value, [
-      "cloudflare_account_id",
-      "worker_scripts",
-      "d1_databases",
-      "r2_buckets",
-    ]) ||
-    !/^[0-9a-f]{32}$/.test(value.cloudflare_account_id ?? "") ||
-    !sameStringArray(
-      value.worker_scripts,
-      ["card-keepr-api", "card-keepr-ingestion"],
-    ) ||
-    !sameStringArray(
-      value.r2_buckets,
-      [
-        "card-keepr-evidence",
-        "card-keepr-printing-images",
-        "card-keepr-catalogue-exports",
-        "card-keepr-backups",
-      ],
-    ) ||
-    !Array.isArray(value.d1_databases) ||
-    value.d1_databases.length !== 2
-  ) {
-    return null;
-  }
-  const expectedDatabaseNames = [
-    "card-keepr-catalogue",
-    "card-keepr-disposable-verification",
-  ];
-  for (const [index, database] of value.d1_databases.entries()) {
-    if (
-      database === null ||
-      typeof database !== "object" ||
-      Array.isArray(database) ||
-      !sameKeys(database, ["name", "id"]) ||
-      database.name !== expectedDatabaseNames[index] ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-        database.id ?? "",
-      )
-    ) {
-      return null;
-    }
-  }
-  return value;
 }
 
 function sameKeys(value, expected) {
@@ -999,7 +1570,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
@@ -1032,7 +1603,7 @@ function formatAdministrationResult(document) {
     document.state &&
     document.id
   ) {
-    return [
+    const lines = [
       `Ingestion Run ${document.id} evidence: ${document.state}`,
       formatCount(document.snapshots.length, "Source Snapshot"),
       formatCount(
@@ -1040,7 +1611,12 @@ function formatAdministrationResult(document) {
         "Source Observation set",
       ),
       formatCount(document.diagnostics.length, "diagnostic"),
-    ].join("; ");
+    ];
+    const requestId = safeDiagnosticReference(
+      document.operational_diagnostics?.references?.request_id,
+    );
+    if (requestId !== null) lines.push(`Request reference: ${requestId}`);
+    return lines.join("; ");
   }
   if (
     document.source_snapshot_id &&
@@ -1071,6 +1647,7 @@ function formatStatus(document) {
     `Active Ingestion Run: ${
       safeState.active_ingestion_run_id ?? "none"
     }`,
+    `Active Recovery: ${safeState.active_recovery_id ?? "none"}`,
   ];
   const diagnostics = document.diagnostics ?? {};
   lines.push(
@@ -1121,6 +1698,10 @@ function formatStatus(document) {
         })`,
       );
     }
+    const nextRunId = safeDiagnosticReference(recentRuns[0]?.id);
+    if (nextRunId !== null) {
+      lines.push(`Next: keepr run show --run-id ${nextRunId}`);
+    }
   }
   return lines.join("\n");
 }
@@ -1145,14 +1726,10 @@ function formatRun(document) {
     lines.push("Warnings: none");
   } else {
     for (const warning of warnings) {
-      lines.push(
-        `Warning: ${warning.code ?? "unspecified"}${
-          warning.detail ? ` — ${warning.detail}` : ""
-        }`,
-      );
+      lines.push(`Warning: ${safeMachineCode(warning.code) ?? "unspecified"}`);
     }
   }
-  lines.push(`Failure: ${document.failure_code ?? "none"}`);
+  lines.push(`Failure: ${safeMachineCode(document.failure_code) ?? "none"}`);
   const cleanup = document.publication_cleanup;
   lines.push(
     `Publication cleanup: ${
@@ -1186,7 +1763,152 @@ function formatRun(document) {
       document.resulting_revision_id ?? "none"
     }`,
   );
+  appendOperationalDiagnostics(lines, document.operational_diagnostics);
   return lines.join("\n");
+}
+
+function appendOperationalDiagnostics(lines, value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  const references = value.references;
+  if (
+    references === null || typeof references !== "object" ||
+    Array.isArray(references)
+  ) return;
+  lines.push(
+    `Request reference: ${
+      safeDiagnosticReference(references.request_id) ?? "none"
+    }`,
+  );
+  const workflow = references.workflow;
+  lines.push(
+    `Workflow: ${
+      workflow !== null && typeof workflow === "object" &&
+        !Array.isArray(workflow)
+        ? safeDiagnosticReference(workflow.parent_id) ?? "none"
+        : "none"
+    }`,
+  );
+  const adapters = Array.isArray(references.adapter_versions)
+    ? references.adapter_versions.flatMap((adapter) => {
+      const safe = safeDiagnosticReference(adapter);
+      return safe === null ? [] : [safe];
+    })
+    : [];
+  lines.push(`Adapter versions: ${adapters.length === 0 ? "none" : adapters.join(", ")}`);
+  lines.push(
+    `Candidate: ${
+      safeDiagnosticReference(references.candidate_digest) ?? "none"
+    }`,
+  );
+  const backup = references.backup;
+  lines.push(
+    `Backup: ${
+      backup !== null && typeof backup === "object" && !Array.isArray(backup)
+        ? safeDiagnosticPath(backup.status_path) ?? "none"
+        : "none"
+    }`,
+  );
+  const recovery = references.recovery;
+  lines.push(
+    `Recovery: ${
+      recovery !== null && typeof recovery === "object" &&
+        !Array.isArray(recovery)
+        ? safeDiagnosticPath(recovery.status_path) ?? "none"
+        : "none"
+    }`,
+  );
+  const retry = value.retry;
+  lines.push(
+    `Retry: ${
+      retry !== null && typeof retry === "object" && !Array.isArray(retry)
+        ? `${safeMachineCode(retry.code) ?? "unclassified"} (${
+          safeDiagnosticReference(retry.source_run_id) ?? "unknown"
+        })`
+        : "not available"
+    }`,
+  );
+  const terminalFailure = value.terminal_evidence?.failure;
+  if (
+    terminalFailure !== null && typeof terminalFailure === "object" &&
+    !Array.isArray(terminalFailure)
+  ) {
+    lines.push(
+      `Retry classification: ${
+        safeMachineCode(terminalFailure.retryability_code) ?? "unclassified"
+      }`,
+    );
+  }
+  const diagnosis = Array.isArray(value.diagnosis_sequence)
+    ? value.diagnosis_sequence.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        return [];
+      }
+      const method = safeDiagnosticMethod(entry.method);
+      const path = safeDiagnosticPath(entry.path);
+      const code = safeMachineCode(entry.code);
+      return method === null || path === null || code === null
+        ? []
+        : [{ method, path, code }];
+    })
+    : [];
+  for (const entry of diagnosis) {
+    lines.push(`Diagnosis: ${entry.method} ${entry.path} (${entry.code})`);
+  }
+  const retryMethod = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticMethod(retry.method)
+    : null;
+  const retryPath = retry !== null && typeof retry === "object" &&
+      !Array.isArray(retry)
+    ? safeDiagnosticPath(retry.path)
+    : null;
+  const next = retryMethod !== null && retryPath !== null
+    ? { method: retryMethod, path: retryPath }
+    : diagnosis[0];
+  if (next !== undefined && next !== null) {
+    lines.push(`Next: ${next.method} ${next.path}`);
+  }
+  const evidence = value.terminal_evidence;
+  const coverage = evidence !== null && typeof evidence === "object" &&
+      !Array.isArray(evidence) && evidence.coverage !== null &&
+      typeof evidence.coverage === "object" && !Array.isArray(evidence.coverage)
+    ? evidence.coverage
+    : {};
+  lines.push(
+    `Coverage: ${safeDiagnosticCount(coverage.source_snapshot_count)} snapshots, ${
+      safeDiagnosticCount(coverage.source_observation_set_count)
+    } observation sets, ${safeDiagnosticCount(coverage.fetch_attempt_count)} attempts`,
+  );
+}
+
+function safeDiagnosticReference(value) {
+  return typeof value === "string" && value.length <= 512 &&
+      /^[A-Za-z0-9][A-Za-z0-9_.:@-]*$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeMachineCode(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,127}$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeDiagnosticPath(value) {
+  return typeof value === "string" && value.length <= 1024 &&
+      /^\/v1\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/u.test(value)
+    ? value
+    : null;
+}
+
+function safeDiagnosticMethod(value) {
+  return value === "GET" || value === "POST" ? value : null;
+}
+
+function safeDiagnosticCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : "unknown";
 }
 
 async function checkRuntime(runtime) {

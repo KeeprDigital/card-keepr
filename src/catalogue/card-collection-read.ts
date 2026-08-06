@@ -1,6 +1,6 @@
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { problemResponse } from "../http/problem";
-import { cardSearchQuery } from "./card-search";
+import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 
 type CardRow = {
   summary_json: string;
@@ -17,6 +17,8 @@ const encoder = new TextEncoder();
 
 type CardCursor = {
   contract: "card-keepr-card-cursor@1";
+  route: "/v1/cards";
+  order: typeof cardCollectionOrder;
   revision_id: string;
   q: string | null;
   game: string | null;
@@ -29,6 +31,9 @@ type CardCursor = {
     id: string;
   };
 };
+
+const cardCollectionOrder =
+  "game,official_identity.kind,official_identity.value,id" as const;
 
 type CollectionFilters = {
   q: string | null;
@@ -49,7 +54,9 @@ export async function cardCollectionResponse(
   if (cursor === "invalid") return invalidCursor(requestId);
   if (
     cursor !== null &&
-    (cursor.q !== filters.q ||
+    (cursor.route !== url.pathname ||
+      cursor.order !== cardCollectionOrder ||
+      cursor.q !== filters.q ||
       cursor.game !== filters.game ||
       cursor.card_number !== filters.cardNumber ||
       cursor.limit !== filters.limit)
@@ -57,13 +64,12 @@ export async function cardCollectionResponse(
     return invalidCursor(requestId);
   }
   const current = await currentRevision(database);
-  const requestedCurrent =
-    cursor === null || cursor.revision_id === current.id;
-  const revision = requestedCurrent
-    ? await availableRevision(database, current.id)
-    : await availableRevision(database, cursor.revision_id);
+  const revision = await availableRevision(
+    database,
+    cursor?.revision_id ?? current.id,
+  );
   if (revision === null) {
-    return requestedCurrent
+    return cursor === null
       ? catalogueQueryUnavailable(requestId)
       : cursorUnavailable(requestId);
   }
@@ -91,6 +97,8 @@ export async function cardCollectionResponse(
       (queried.hasMore || truncated) && pageRows.length > 0
         ? encodeCursor({
             contract: "card-keepr-card-cursor@1",
+            route: "/v1/cards",
+            order: cardCollectionOrder,
             revision_id: revision.id,
             q: filters.q,
             game: filters.game,
@@ -133,9 +141,13 @@ async function queryCardPage(
   const rows: CardRow[] = [];
   let dataBytes = 2;
   let position = after;
+  const singleFtsRead = filters.q !== null &&
+    cardSearchFtsQuery(filters.q, revisionId) !== null;
   while (rows.length < filters.limit + 1) {
     const remaining = filters.limit + 1 - rows.length;
-    const rowLimit = Math.min(maximumRowsPerDatabaseRead, remaining);
+    const rowLimit = singleFtsRead
+      ? remaining
+      : Math.min(maximumRowsPerDatabaseRead, remaining);
     const query = cardCollectionPageQuery(
       revisionId,
       filters,
@@ -179,10 +191,27 @@ export function cardCollectionPageQuery(
   after: CardCursor["after"] | null,
   rowLimit = filters.limit + 1,
 ): { sql: string; bindings: (string | number)[] } {
-  const searched = filters.q !== null;
-  const conditions = [
-    `${searched ? "search" : "cards"}.catalogue_revision_id = ?`,
-  ];
+  const search = filters.q === null ? null : cardSearchQuery(filters.q);
+  if (filters.q !== null && search === null) {
+    throw new Error("The validated Card search query is unavailable.");
+  }
+  const ftsQuery = search === null
+    ? null
+    : cardSearchFtsQuery(search.text, revisionId);
+  const ftsSearch = search !== null && ftsQuery !== null;
+  const shortSearch = search !== null && ftsQuery === null;
+  if (ftsSearch) {
+    return ftsCardCollectionPageQuery(
+      revisionId,
+      filters,
+      search.text,
+      ftsQuery,
+      after,
+      rowLimit,
+    );
+  }
+  const orderTable = shortSearch ? "search" : "cards";
+  const conditions = ["cards.catalogue_revision_id = ?"];
   const bindings: (string | number)[] = [revisionId];
   if (filters.game !== null) {
     conditions.push("cards.sort_game = ?");
@@ -195,11 +224,7 @@ export function cardCollectionPageQuery(
     );
     bindings.push(filters.cardNumber);
   }
-  if (filters.q !== null) {
-    const search = cardSearchQuery(filters.q);
-    if (search === null) {
-      throw new Error("The validated Card search query is unavailable.");
-    }
+  if (shortSearch) {
     conditions.push(
       "search.term = ?",
       `EXISTS (
@@ -213,10 +238,9 @@ export function cardCollectionPageQuery(
     bindings.push(search.anchorTerm, search.text);
   }
   if (after !== null) {
-    const order = searched ? "search" : "cards";
     conditions.push(
-      `(${order}.sort_game, ${order}.sort_identity_kind,
-        ${order}.sort_identity_value, ${order}.sort_id)
+      `(${orderTable}.sort_game, ${orderTable}.sort_identity_kind,
+        ${orderTable}.sort_identity_value, ${orderTable}.sort_id)
        > (?, ?, ?, ?)`,
     );
     bindings.push(
@@ -230,12 +254,12 @@ export function cardCollectionPageQuery(
   return {
     sql:
       `SELECT cards.summary_json,
-              ${searched ? "search" : "cards"}.sort_game,
-              ${searched ? "search" : "cards"}.sort_identity_kind,
-              ${searched ? "search" : "cards"}.sort_identity_value,
-              ${searched ? "search" : "cards"}.sort_id
+              ${orderTable}.sort_game,
+              ${orderTable}.sort_identity_kind,
+              ${orderTable}.sort_identity_value,
+              ${orderTable}.sort_id
        FROM ${
-        searched
+        shortSearch
           ? `revision_card_search_terms AS search
              INDEXED BY revision_card_search_by_term
              JOIN revision_card_query_documents AS cards
@@ -244,13 +268,87 @@ export function cardCollectionPageQuery(
               AND cards.card_id = search.card_id`
           : `revision_card_query_documents AS cards
              INDEXED BY revision_card_query_documents_by_order`
-      }
+       }
        WHERE ${conditions.join("\nAND ")}
-       ORDER BY ${searched ? "search" : "cards"}.sort_game,
-                ${searched ? "search" : "cards"}.sort_identity_kind,
-                ${searched ? "search" : "cards"}.sort_identity_value,
-                ${searched ? "search" : "cards"}.sort_id
+       ORDER BY ${orderTable}.sort_game,
+                ${orderTable}.sort_identity_kind,
+                ${orderTable}.sort_identity_value,
+                ${orderTable}.sort_id
        LIMIT ?`,
+    bindings,
+  };
+}
+
+function ftsCardCollectionPageQuery(
+  revisionId: string,
+  filters: CollectionFilters,
+  searchText: string,
+  ftsQuery: string,
+  after: CardCursor["after"] | null,
+  rowLimit: number,
+): { sql: string; bindings: (string | number)[] } {
+  const conditions = [
+    "revision_card_search_fts MATCH ?",
+    "search.catalogue_revision_id = ?",
+    "instr(search.search_text, ?) > 0",
+    "filtered.catalogue_revision_id = ?",
+  ];
+  const bindings: (string | number)[] = [
+    ftsQuery,
+    revisionId,
+    searchText,
+    revisionId,
+  ];
+  if (filters.game !== null) {
+    conditions.push("filtered.sort_game = ?");
+    bindings.push(filters.game);
+  }
+  if (filters.cardNumber !== null) {
+    conditions.push(
+      "filtered.sort_identity_kind = 'card_number'",
+      "filtered.sort_identity_value = ?",
+    );
+    bindings.push(filters.cardNumber);
+  }
+  if (after !== null) {
+    conditions.push(
+      `(filtered.sort_game, filtered.sort_identity_kind,
+        filtered.sort_identity_value, filtered.sort_id)
+       > (?, ?, ?, ?)`,
+    );
+    bindings.push(
+      after.game,
+      after.identity_kind,
+      after.identity_value,
+      after.id,
+    );
+  }
+  bindings.push(rowLimit);
+  return {
+    sql:
+      `WITH search_candidates AS MATERIALIZED (
+         SELECT filtered.summary_json,
+                filtered.sort_game,
+                filtered.sort_identity_kind,
+                filtered.sort_identity_value,
+                filtered.sort_id
+         FROM revision_card_search_fts AS search
+         JOIN revision_card_query_documents AS filtered
+           ON filtered.catalogue_revision_id =
+                search.catalogue_revision_id
+          AND filtered.card_id = search.card_id
+         WHERE ${conditions.join("\nAND ")}
+         GROUP BY search.catalogue_revision_id, search.card_id
+         ORDER BY filtered.sort_game,
+                  filtered.sort_identity_kind,
+                  filtered.sort_identity_value,
+                  filtered.sort_id
+         LIMIT ?
+       )
+       SELECT summary_json, sort_game, sort_identity_kind,
+              sort_identity_value, sort_id
+       FROM search_candidates
+       ORDER BY sort_game, sort_identity_kind, sort_identity_value, sort_id`,
     bindings,
   };
 }
@@ -360,6 +458,9 @@ async function availableRevision(database: D1Database, id: string) {
        JOIN catalogue_query_revisions AS query
          ON query.catalogue_revision_id = revision.id
         AND query.state = 'available'
+       JOIN card_search_fts_state AS search_index
+         ON search_index.singleton = 1
+        AND search_index.state = 'ready'
        WHERE revision.id = ?`,
     )
     .bind(id)
@@ -410,7 +511,10 @@ function parseCursor(
     const after = value.after;
     if (
       value.contract !== "card-keepr-card-cursor@1" ||
+      value.route !== "/v1/cards" ||
+      value.order !== cardCollectionOrder ||
       typeof value.revision_id !== "string" ||
+      value.revision_id.length === 0 ||
       typeof value.limit !== "number" ||
       (value.q !== null && typeof value.q !== "string") ||
       (value.game !== null && typeof value.game !== "string") ||
@@ -419,9 +523,13 @@ function parseCursor(
       after === null ||
       typeof after !== "object" ||
       typeof after.game !== "string" ||
+      after.game.length === 0 ||
       typeof after.identity_kind !== "string" ||
+      after.identity_kind.length === 0 ||
       typeof after.identity_value !== "string" ||
-      typeof after.id !== "string"
+      after.identity_value.length === 0 ||
+      typeof after.id !== "string" ||
+      after.id.length === 0
     ) {
       throw new Error("invalid cursor");
     }

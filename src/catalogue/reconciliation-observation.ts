@@ -75,7 +75,7 @@ export type ParsedCardPrintingObservation = Readonly<{
 export type ParsedOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   sourceObservationId: string;
-  game: "one-piece";
+  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
   target:
     | Readonly<{
         type: "card";
@@ -89,7 +89,7 @@ export type ParsedOfficialErratumObservation = Readonly<{
   publishedOn: string;
   effectiveFrom: string | null;
   observedPrintedRulesText: string;
-  correctedRulesText: string;
+  correctedRulesText: string | null;
   officialWording: string;
   appliesToParallelPrintings: boolean;
   sourceFragment: string;
@@ -199,12 +199,30 @@ export function parseReconciliationObservation(
       record,
       new Set([
         "completeness",
+        "listing_identity_evidence",
         "product_release_catalogue",
         "source_sidecar",
       ]),
       "",
       warnings,
     );
+    if (record.listing_identity_evidence !== undefined) {
+      const listingIdentity = requiredRecord(
+        record.listing_identity_evidence,
+        "listing_identity_evidence",
+      );
+      if (
+        Object.keys(listingIdentity).some(
+          (field) => field !== "locator" && field !== "canonical",
+        ) ||
+        typeof listingIdentity.locator !== "string" ||
+        listingIdentity.locator.length === 0 ||
+        typeof listingIdentity.canonical !== "string" ||
+        listingIdentity.canonical.length === 0
+      ) {
+        throw new Error("listing_identity_evidence is invalid.");
+      }
+    }
     inspectSourceSidecar(
       sourceObservationId,
       "products-and-releases@1",
@@ -518,9 +536,15 @@ function parseOfficialErratumObservation(
     "completeness",
   ];
   assertOnlyFields(record, fields, "Official Erratum");
-  if (record.game !== "one-piece") {
+  if (
+    record.game !== "one-piece" &&
+    record.game !== "fusion-world" &&
+    record.game !== "digimon" &&
+    record.game !== "gundam"
+  ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
+  const game = record.game;
   const target = requiredRecord(record.target, "Official Erratum target");
   if (target.type !== "card" && target.type !== "printing") {
     throw new Error(
@@ -534,7 +558,7 @@ function parseOfficialErratumObservation(
       : ["type", "official_identity", "locator"],
     "Official Erratum target",
   );
-  const identity = parseOfficialIdentity(target.official_identity, "one-piece");
+  const identity = parseOfficialIdentity(target.official_identity, game);
   const targetLocator = target.type === "printing"
     ? requiredString(target.locator, "Official Erratum target locator")
     : null;
@@ -549,7 +573,14 @@ function parseOfficialErratumObservation(
     source.image_url,
     "Official Erratum source image_url",
   );
-  if (!imageUrl.startsWith("https://en.onepiece-cardgame.com/")) {
+  const imageOrigin = game === "one-piece"
+    ? "https://en.onepiece-cardgame.com/images/"
+    : game === "fusion-world"
+      ? "https://www.dbs-cardgame.com/fw/images/"
+      : game === "digimon"
+        ? "https://world.digimoncard.com/"
+        : "https://www.gundam-gcg.com/gcg/bccard/";
+  if (!imageUrl.startsWith(imageOrigin)) {
     throw new Error("Official Erratum image provenance is invalid.");
   }
   const fragment = requiredString(
@@ -591,7 +622,7 @@ function parseOfficialErratumObservation(
   return {
     kind: "official_erratum",
     sourceObservationId,
-    game: "one-piece",
+    game,
     target: targetLocator === null
       ? {
           type: "card",
@@ -611,10 +642,12 @@ function parseOfficialErratumObservation(
       record.observed_printed_rules_text,
       "Official Erratum observed_printed_rules_text",
     ),
-    correctedRulesText: requiredString(
-      record.corrected_rules_text,
-      "Official Erratum corrected_rules_text",
-    ),
+    correctedRulesText: record.corrected_rules_text === null
+      ? null
+      : requiredString(
+          record.corrected_rules_text,
+          "Official Erratum corrected_rules_text",
+        ),
     officialWording: requiredString(
       record.official_wording,
       "Official Erratum official_wording",

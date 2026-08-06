@@ -17,6 +17,11 @@ import {
   type SupportedGame,
 } from "./catalogue-candidate";
 import {
+  assertCuratedGamesUnblocked,
+  curatedRevisionInspectionForRun,
+  prepareCuratedRevisionRunStart,
+} from "./curated-revisions";
+import {
   compareSourceFreshness,
   isCatalogueSourceCheck,
   sourceFreshnessFromStorage,
@@ -24,7 +29,7 @@ import {
   sourceFreshnessStorageScope,
   type SourceFreshnessStorageRow,
 } from "./source-freshness";
-import { canonicalJson, sha256 } from "./serialization";
+import { canonicalJson, sha256, sha256Text } from "./serialization";
 import {
   reconciliationPublication,
   type PublicationEvidenceResource,
@@ -42,15 +47,21 @@ import { productReleasePublicationStatements } from "./product-release-publicati
 import { typedPrintingProjections } from "./product-release-projection";
 import {
   cardSearchChunks,
+  cardSearchFtsQuery,
   cardSearchTerms,
   cardSearchText,
 } from "./card-search";
 import {
   repairableCatalogueRevisionWindow,
 } from "./catalogue-revision-retention";
-import { requiredSourceAdapter } from "./source-adapters";
+import {
+  adapterReconciliationAreas,
+  requiredSourceAdapter,
+} from "./source-adapters";
 import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
+import { publicationBackupReservation } from "./backup-recovery";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -88,6 +99,7 @@ type RunRow = {
   expected_current_revision_id: string;
   linked_run_id: string | null;
   idempotency_key: string;
+  operational_request_id: string | null;
   candidate_digest: string | null;
   candidate_catalogue_digest: string | null;
   candidate_created_at: string | null;
@@ -119,6 +131,9 @@ type CatalogueStateRow = {
 
 type OperationStateRow = {
   active_ingestion_run_id: string | null;
+  active_production_release_id: string | null;
+  active_production_release_expires_at: string | null;
+  active_recovery_id: string | null;
   recovery_health: string;
 };
 
@@ -175,6 +190,7 @@ export type StartRunRequest = {
   fixture: string;
   selected_games: readonly string[];
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type ApproveRunRequest = {
@@ -190,6 +206,7 @@ export type RejectRunRequest = {
 
 export type RetryRunRequest = {
   idempotency_key: string;
+  operational_request_id?: string;
 };
 
 export type RetryPublicationCleanupRequest = {
@@ -225,8 +242,9 @@ export async function startFixtureRun(
       const candidate = await validatedCatalogueCandidate(request);
       return startPreparedRun(database, {
         candidate: candidate.candidate,
-        candidateDigest: candidate.digest,
+        selectedGames: candidate.candidate.selected_games,
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "start_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: null,
@@ -284,13 +302,11 @@ export async function retryRun(
         );
       }
       const candidate = parseCandidate(source);
-      const candidateDigest = await sha256(
-        new TextEncoder().encode(canonicalJson(candidate)),
-      );
       return startPreparedRun(database, {
         candidate,
-        candidateDigest,
+        selectedGames: parseSelectedGames(source.selected_games_json),
         idempotencyKey: request.idempotency_key,
+        operationalRequestId: request.operational_request_id ?? null,
         idempotencyOperation: "retry_ingestion_run",
         idempotencyRequestJson: requestJson,
         linkedRunId: source.id,
@@ -443,6 +459,69 @@ export async function administrationStatus(
       ...(active === null ? [] : [active.id]),
     ],
   );
+  const schema = await database.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  const recoveryBackup = await database.prepare(
+    `SELECT idempotency_key, d1_bookmark, manifest_sha256
+     FROM catalogue_backup_attempts
+     WHERE state = 'verified' AND catalogue_revision_id = ?
+       AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL
+     ORDER BY completed_at DESC LIMIT 1`,
+  ).bind(catalogue.current_revision_id).first<{
+    idempotency_key: string;
+    d1_bookmark: string;
+    manifest_sha256: string;
+  }>();
+  const retainedEvidence = await database.prepare(
+    `WITH RECURSIVE retained(revision_id, depth) AS (
+       SELECT revision.id, 0 FROM catalogue_state AS state
+       JOIN catalogue_revisions AS revision ON revision.id = state.current_revision_id
+       WHERE state.singleton = 1
+       UNION ALL
+       SELECT previous.id, retained.depth + 1 FROM retained
+       JOIN catalogue_revisions AS revision ON revision.id = retained.revision_id
+       JOIN catalogue_revisions AS previous
+         ON previous.id = revision.expected_previous_revision_id
+       WHERE retained.depth < 2
+     )
+     SELECT retained.revision_id, retained.depth,
+       CASE WHEN export.verified = 1 AND export.maintenance_state = 'available'
+         THEN 1 ELSE 0 END AS export_verified,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM catalogue_backup_attempts AS backup
+         WHERE backup.catalogue_revision_id = retained.revision_id
+           AND backup.state = 'verified' AND backup.d1_bookmark IS NOT NULL
+           AND backup.manifest_sha256 IS NOT NULL
+       ) THEN 1 ELSE 0 END AS recovery_verified
+     FROM retained LEFT JOIN catalogue_exports AS export
+       ON export.catalogue_revision_id = retained.revision_id
+     ORDER BY retained.depth`,
+  ).all<{ revision_id: string; depth: number; export_verified: number; recovery_verified: number }>();
+  const replacement = await database.prepare(
+    `SELECT id, target_revision_id, target_digest, restored_database_id, retained_database_id, verification_json
+     FROM catalogue_recovery_operations
+     WHERE state = 'awaiting_acceptance' AND method = 'replacement_database'
+     ORDER BY started_at DESC LIMIT 1`,
+  ).first<{ id: string; target_revision_id: string; target_digest: string; restored_database_id: string; retained_database_id: string; verification_json: string }>();
+  const activeProductionRelease = await database.prepare(
+    `SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
+            failure_code, roll_forward_required
+     FROM production_releases
+     WHERE state IN ('requested','preflight','migrating','deploying','smoke_testing')
+     LIMIT 1`,
+  ).first<Record<string, unknown>>();
+  const productionTargetDigest = await sha256Text(canonicalJson(productionTarget));
+  const retention = retainedEvidence.results.map((row) => ({
+    revision_id: row.revision_id,
+    depth: row.depth,
+    export_verified: row.export_verified === 1,
+    recovery_verified: row.recovery_verified === 1,
+  }));
+  const smokeTargets = await productionReleaseSmokeTargets(
+    database,
+    retention.map((item) => item.revision_id),
+  );
   return {
     contract: "card-keepr-administration-status@1",
     production_target: productionTarget,
@@ -450,9 +529,36 @@ export async function administrationStatus(
       current_revision_id: catalogue.current_revision_id,
       recovery_health: operation.recovery_health,
       active_ingestion_run_id: operation.active_ingestion_run_id,
+      active_production_release_id: operation.active_production_release_id,
+      active_recovery_id: operation.active_recovery_id,
       mutation_safe:
         operation.recovery_health === "healthy" &&
-        operation.active_ingestion_run_id === null,
+        operation.active_ingestion_run_id === null &&
+        !(operation.active_production_release_id !== null &&
+          operation.active_production_release_expires_at !== null &&
+          operation.active_production_release_expires_at > observedAt),
+    },
+    active_production_release: activeProductionRelease,
+    release_preflight: {
+      schema_migration_level: schema?.migration_level ?? 0,
+      production_target_digest: productionTargetDigest,
+      recovery_bookmark: recoveryBackup?.d1_bookmark ?? null,
+      recovery_backup_attempt_id: recoveryBackup?.idempotency_key ?? null,
+      recovery_manifest_digest: recoveryBackup?.manifest_sha256 ?? null,
+      retained_revision_evidence: retention,
+      retention_ready:
+        retention.length === 3 && retention.every((item) =>
+          item.export_verified && item.recovery_verified
+        ),
+      smoke_targets: smokeTargets,
+      replacement_handoff: replacement === null ? null : {
+        recovery_id: replacement.id,
+        target_revision_id: replacement.target_revision_id,
+        target_digest: replacement.target_digest,
+        replacement_database_id: replacement.restored_database_id,
+        retained_database_id: replacement.retained_database_id,
+        verified: replacement.verification_json !== null,
+      },
     },
     active_ingestion_run:
       active === null
@@ -493,18 +599,19 @@ export async function inspectCandidate(
   );
   assertOpaqueId(runId, "run_id");
   const row = await requiredRun(database, runId);
-  const blockedReconciliation =
+  const inspectableFailure =
     row.state === "failed" &&
     row.candidate_digest !== null &&
-    (await database
-      .prepare(
-        `SELECT 1 AS present
-         FROM reconciliation_contexts
-         WHERE ingestion_run_id = ?`,
-      )
-      .bind(row.id)
-      .first<{ present: number }>()) !== null;
-  if (row.state !== "awaiting_approval" && !blockedReconciliation) {
+    (row.failure_code === "curated_revision_reconfirmation_required" ||
+      (await database
+        .prepare(
+          `SELECT 1 AS present
+           FROM reconciliation_contexts
+           WHERE ingestion_run_id = ?`,
+        )
+        .bind(row.id)
+        .first<{ present: number }>()) !== null);
+  if (row.state !== "awaiting_approval" && !inspectableFailure) {
     throw new AdministrationProblem(
       409,
       "candidate_not_approvable",
@@ -525,6 +632,11 @@ export async function inspectCandidate(
     candidate,
     fallbackWarnings: parseWarnings(row.warnings_json),
   });
+  const curated = await curatedRevisionInspectionForRun(
+    database,
+    row.id,
+    candidate,
+  );
   return {
     run_id: row.id,
     candidate_digest: row.candidate_digest,
@@ -532,8 +644,143 @@ export async function inspectCandidate(
     candidate_created_at: row.candidate_created_at,
     approval_deadline: row.approval_deadline,
     progress: parseProgress(row.progress_json),
-    diff,
+    ...(curated === null ? {} : {
+      curated_revision_ids: curated.revision_ids,
+      curated_revision_set_digest: curated.set_digest,
+    }),
+    diff: {
+      ...diff,
+      curated_effects: curated?.effects ?? [],
+    },
   };
+}
+
+export async function productionReleaseSmokeTargets(
+  database: D1Database,
+  revisionIds: readonly string[],
+): Promise<Record<string, unknown> | null> {
+  if (revisionIds.length !== 3) return null;
+  const revisions = [];
+  for (const revisionId of revisionIds) {
+    const [cards, printings] = await Promise.all([
+      database.prepare(
+        `SELECT query.card_id,query.sort_game,query.sort_identity_kind,
+                query.sort_identity_value,query.sort_id,card.document_json
+         FROM revision_card_query_documents AS query
+         JOIN revision_cards AS card
+           ON card.catalogue_revision_id=query.catalogue_revision_id
+          AND card.card_id=query.card_id
+         WHERE query.catalogue_revision_id=?
+         ORDER BY sort_game,sort_identity_kind,sort_identity_value,sort_id LIMIT 2`,
+      ).bind(revisionId).all<{ card_id: string; sort_game: string; sort_identity_kind: string; sort_identity_value: string; sort_id: string; document_json: string }>(),
+      database.prepare(
+        `SELECT printing_id,card_id FROM revision_printings
+         WHERE catalogue_revision_id=? ORDER BY card_id,printing_id LIMIT 2`,
+      ).bind(revisionId).all<{ printing_id: string; card_id: string }>(),
+    ]);
+    if (cards.results.length !== 2 || printings.results.length !== 2) return null;
+    const firstCard = cards.results[0]!;
+    const representativeCard = cards.results[1]!;
+    const firstPrinting = printings.results[0]!;
+    const representativePrinting = printings.results[1]!;
+    const cardAfter = {
+      game: firstCard.sort_game,
+      identity_kind: firstCard.sort_identity_kind,
+      identity_value: firstCard.sort_identity_value,
+      id: firstCard.sort_id,
+    };
+    const searchQuery = releaseSmokeSearchQuery(
+      representativeCard.document_json,
+    );
+    if (searchQuery === null) return null;
+    const ftsQuery = cardSearchFtsQuery(searchQuery, revisionId);
+    if (ftsQuery === null) return null;
+    const indexed = await database.prepare(
+      `SELECT 1 AS present FROM revision_card_search_fts
+       WHERE revision_card_search_fts MATCH ?
+         AND catalogue_revision_id=? AND card_id=?
+         AND instr(search_text,?)>0 LIMIT 1`,
+    ).bind(
+      ftsQuery,
+      revisionId,
+      representativeCard.card_id,
+      searchQuery,
+    ).first<{ present: number }>();
+    if (indexed?.present !== 1) return null;
+    revisions.push({
+      revision_id: revisionId,
+      card_id: representativeCard.card_id,
+      printing_id: representativePrinting.printing_id,
+      search_query: searchQuery,
+      card_cursor: encodeReleaseCursor({
+        contract: "card-keepr-card-cursor@1", route: "/v1/cards",
+        order: "game,official_identity.kind,official_identity.value,id",
+        revision_id: revisionId, q: null, game: null, card_number: null,
+        limit: 50, after: cardAfter,
+      }),
+      search_cursor: encodeReleaseCursor({
+        contract: "card-keepr-card-cursor@1", route: "/v1/cards",
+        order: "game,official_identity.kind,official_identity.value,id",
+        revision_id: revisionId, q: searchQuery,
+        game: null, card_number: null, limit: 50, after: cardAfter,
+      }),
+      printing_cursor: encodeReleaseCursor({
+        route: "/v1/printings", ordering: "card-id,printing-id",
+        revision: revisionId,
+        filters: { card_id: null, game: null, rarity: null, product_id: null, release_region: null, limit: 50 },
+        last: { card_id: firstPrinting.card_id, id: firstPrinting.printing_id },
+      }),
+    });
+  }
+  const [currentExtras, unavailable] = await Promise.all([
+    database.prepare(
+      `SELECT
+       (SELECT image_id FROM revision_printing_images WHERE catalogue_revision_id=? ORDER BY image_id LIMIT 1) AS printing_image_id,
+       (SELECT json_extract(card_ids_json,'$[0]') FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_card_id,
+       (SELECT format FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_format,
+       (SELECT region FROM revision_legality_rules WHERE catalogue_revision_id=? AND json_array_length(card_ids_json)>0 ORDER BY legality_rule_id LIMIT 1) AS legality_region`,
+    ).bind(...Array(4).fill(revisionIds[0])).first<Record<string, string | null>>(),
+    database.prepare(
+      `SELECT catalogue_revision_id FROM catalogue_query_revisions
+       WHERE state='archived' ORDER BY catalogue_revision_id DESC LIMIT 1`,
+    ).first<{ catalogue_revision_id: string }>(),
+  ]);
+  if (currentExtras === null || unavailable === null ||
+      Object.values(currentExtras).some((value) => typeof value !== "string")) return null;
+  const staleAfter = (revisions[0] as { card_cursor: string }).card_cursor;
+  const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(staleAfter), (character) => character.charCodeAt(0)))) as Record<string, unknown>;
+  return {
+    revisions,
+    ...currentExtras,
+    stale_cursor: encodeReleaseCursor({ ...decoded, revision_id: unavailable.catalogue_revision_id }),
+    stale_revision_id: unavailable.catalogue_revision_id,
+  };
+}
+
+export function releaseSmokeSearchQuery(documentJson: string): string | null {
+  try {
+    const envelope = JSON.parse(documentJson) as Record<string, unknown>;
+    const card = isRecord(envelope.data) ? envelope.data : envelope;
+    if (!isRecord(card.official_identity) ||
+        typeof card.official_identity.value !== "string" ||
+        typeof card.name !== "string" ||
+        (card.effective_rules_text !== null && card.effective_rules_text !== undefined &&
+          typeof card.effective_rules_text !== "string")) return null;
+    const fields = JSON.parse(cardSearchText({
+      official_identity: { value: card.official_identity.value },
+      name: card.name,
+      effective_rules_text: card.effective_rules_text as string | null | undefined,
+    })) as string[];
+    const field = fields.find((item) => [...item].length >= 3);
+    return field === undefined ? null : [...field].slice(0, 64).join("");
+  } catch {
+    return null;
+  }
+}
+
+function encodeReleaseCursor(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  return btoa(String.fromCharCode(...bytes));
 }
 
 export async function approveRun(
@@ -1118,8 +1365,9 @@ async function startPreparedRun(
   database: D1Database,
   input: {
     candidate: CatalogueCandidate;
-    candidateDigest: string;
+    selectedGames: readonly SupportedGame[];
     idempotencyKey: string;
+    operationalRequestId: string | null;
     idempotencyOperation: string;
     idempotencyRequestJson: string;
     linkedRunId: string | null;
@@ -1146,34 +1394,50 @@ async function startPreparedRun(
       "Recovery blocks new Ingestion Runs.",
     );
   }
+  await assertCuratedGamesUnblocked(
+    database,
+    input.selectedGames,
+  );
 
   const startedAt = input.observedAt;
   const approvalDeadline = new Date(
     Date.parse(startedAt) + sevenDaysInMilliseconds,
   ).toISOString();
   const runId = `run_${crypto.randomUUID()}`;
-  const candidateJson = canonicalJson(input.candidate);
+  const curated = await prepareCuratedRevisionRunStart(
+    database,
+    runId,
+    input.selectedGames,
+    input.candidate,
+    startedAt,
+  );
+  const candidateJson = canonicalJson(curated.candidate);
+  const candidateDigest = await sha256(new TextEncoder().encode(candidateJson));
+  const curatedFailure = curated.failureCode !== null;
   const resultingRun = publicRun({
     id: runId,
-    state: "awaiting_approval",
-    selected_games_json: JSON.stringify(input.candidate.selected_games),
+    state: curatedFailure ? "failed" : "awaiting_approval",
+    selected_games_json: JSON.stringify(input.selectedGames),
     started_at: startedAt,
     expected_current_revision_id: catalogueState.current_revision_id,
     linked_run_id: input.linkedRunId,
     idempotency_key: input.idempotencyKey,
-    candidate_digest: input.candidateDigest,
-    candidate_catalogue_digest: input.candidateDigest,
+    operational_request_id: input.operationalRequestId,
+    candidate_digest: candidateDigest,
+    candidate_catalogue_digest: candidateDigest,
     candidate_created_at: startedAt,
     approval_deadline: approvalDeadline,
     approval_json: null,
     published_revision_id: null,
     export_manifest_digest: null,
-    terminal_at: null,
+    terminal_at: curatedFailure ? startedAt : null,
     candidate_json: candidateJson,
     approval_idempotency_key: null,
-    failure_code: null,
-    progress_json: JSON.stringify(progressFor("awaiting_approval")),
-    warnings_json: "[]",
+    failure_code: curated.failureCode,
+    progress_json: JSON.stringify(progressFor(
+      curatedFailure ? "failed" : "awaiting_approval",
+    )),
+    warnings_json: canonicalJson(curated.diagnostics),
     approval_history_json: "[]",
     publication_outcome: null,
     resulting_revision_id: null,
@@ -1184,6 +1448,7 @@ async function startPreparedRun(
     publication_manifest_digest: null,
     publication_writer_token: null,
   });
+  const curatedPinStatements = curated.statements;
 
   try {
     await database.batch([
@@ -1197,6 +1462,7 @@ async function startPreparedRun(
             expected_current_revision_id,
             linked_run_id,
             idempotency_key,
+            operational_request_id,
             candidate_digest,
             candidate_catalogue_digest,
             candidate_created_at,
@@ -1215,22 +1481,53 @@ async function startPreparedRun(
             resulting_revision_id,
             freshness_checked_at
           ) VALUES (
-            ?, 'planning', ?, ?, ?, ?, ?,
+            ?, 'planning', ?, ?, ?, ?, ?, ?,
             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, NULL,
-            NULL, ?, '[]', '[]', NULL, NULL, NULL
+            NULL, ?, ?, '[]', NULL, NULL, NULL
           )`,
         )
         .bind(
           runId,
-          JSON.stringify(input.candidate.selected_games),
+          JSON.stringify(input.selectedGames),
           startedAt,
           catalogueState.current_revision_id,
           input.linkedRunId,
           input.idempotencyKey,
+          input.operationalRequestId,
           candidateJson,
           JSON.stringify(progressFor("planning")),
+          canonicalJson(curated.diagnostics),
         ),
-      database
+      ...curatedPinStatements,
+      ...(curatedFailure
+        ? [database.prepare(
+          `UPDATE operation_state
+           SET active_ingestion_run_id = ?
+           WHERE singleton = 1
+             AND active_ingestion_run_id IS NULL
+             AND recovery_health <> 'blocked'`,
+        ).bind(runId), database.prepare(
+          `UPDATE ingestion_runs
+           SET state = 'failed',
+               candidate_digest = ?,
+               candidate_catalogue_digest = ?,
+               candidate_created_at = ?,
+               approval_deadline = ?,
+               terminal_at = ?,
+               failure_code = ?,
+               progress_json = ?
+           WHERE id = ? AND state = 'planning'`,
+        ).bind(
+          candidateDigest,
+          candidateDigest,
+          startedAt,
+          approvalDeadline,
+          startedAt,
+          curated.failureCode,
+          JSON.stringify(progressFor("failed")),
+          runId,
+        ), releaseRunLockStatement(database, runId)]
+        : [database
         .prepare(
           `UPDATE operation_state
           SET active_ingestion_run_id = ?
@@ -1254,13 +1551,13 @@ async function startPreparedRun(
           WHERE id = ? AND state = 'reconciling'`,
         )
         .bind(
-          input.candidateDigest,
-          input.candidateDigest,
+          candidateDigest,
+          candidateDigest,
           startedAt,
           approvalDeadline,
           JSON.stringify(progressFor("awaiting_approval")),
           runId,
-        ),
+        )]),
       ...idempotencyCompletionStatements(database, {
         key: input.idempotencyKey,
         operation: input.idempotencyOperation,
@@ -2134,6 +2431,7 @@ async function commitVerifiedPublication(
     input.run.publication_manifest_digest,
     "manifest digest",
   );
+  const publicationBackup = await publicationBackupReservation(revisionId);
   if (
     input.catalogueExport.manifest.manifest_sha256 !== manifestDigest ||
     input.catalogueExport.manifestKey !==
@@ -2515,6 +2813,24 @@ async function commitVerifiedPublication(
         input.completedAt,
         input.run.id,
       ),
+    database.prepare(
+      `INSERT INTO catalogue_backup_attempts (
+         idempotency_key, request_json, owner_token, catalogue_revision_id,
+         state, object_key, started_at, publication_ingestion_run_id
+       ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+    ).bind(
+      publicationBackup.idempotencyKey,
+      publicationBackup.requestJson,
+      publicationBackup.ownerToken,
+      revisionId,
+      publicationBackup.objectKey,
+      input.completedAt,
+      input.run.id,
+    ),
+    database.prepare(
+      `UPDATE operation_state SET recovery_health = 'degraded'
+       WHERE singleton = 1 AND recovery_health = 'healthy'`,
+    ),
     releaseRunLockStatement(database, input.run.id),
     ...idempotencyCompletionStatements(database, {
       key: idempotencyKey,
@@ -2931,12 +3247,6 @@ function publicationFailureProblem(error: unknown): AdministrationProblem {
       "The publication guards changed after approval was reserved.",
     );
   }
-  console.error(
-    JSON.stringify({
-      message: "Catalogue publication verification failed",
-      error: errorMessage(error),
-    }),
-  );
   return new AdministrationProblem(
     500,
     "export_verification_failed",
@@ -3649,7 +3959,10 @@ async function currentOperationState(
 ): Promise<OperationStateRow> {
   const state = await database
     .prepare(
-      `SELECT active_ingestion_run_id, recovery_health
+      `SELECT active_ingestion_run_id,
+              active_release_id AS active_production_release_id,
+              active_release_expires_at AS active_production_release_expires_at,
+              active_recovery_id, recovery_health
       FROM operation_state
       WHERE singleton = 1`,
     )
@@ -3796,7 +4109,9 @@ async function assertSuccessfulReplayCorrelation(
         typeof request.source_run_id === "string" &&
         run.linked_run_id === request.source_run_id &&
         run.idempotency_key === key &&
-        run.state === "awaiting_approval";
+        (run.state === "awaiting_approval" ||
+          run.state === "failed" &&
+          run.failure_code === "curated_revision_reconfirmation_required");
     } else if (prior.operation === "approve_ingestion_run") {
       correlated =
         hasOnlyKeys(request, [
@@ -4487,16 +4802,19 @@ async function checkedFreshnessAreasForRun(
   candidate: CatalogueCandidate,
   checkedAt: string,
 ): Promise<SourceFreshness[]> {
-  const area = await freshnessArea(database, runId);
-  if (area === null) return [];
-  if (area === "cards-and-printings") {
-    return checkedFreshnessAreas(games, candidate, checkedAt);
-  }
-  return games.map((game) => ({
-    game: game as SupportedGame,
-    area,
-    checked_at: checkedAt,
-  }));
+  const coverage = await freshnessCoverage(database, runId, games);
+  return [
+    ...checkedFreshnessAreas(
+      [...coverage.catalogue],
+      candidate,
+      checkedAt,
+    ),
+    ...[...coverage.errata].map((game) => ({
+      game,
+      area: "errata" as const,
+      checked_at: checkedAt,
+    })),
+  ];
 }
 
 function freshnessStatements(
@@ -4574,32 +4892,42 @@ function checkedFreshnessAreas(
   ];
 }
 
-async function freshnessArea(
+async function freshnessCoverage(
   database: D1Database,
   runId: string,
-): Promise<"cards-and-printings" | "errata" | null> {
-  const plans = await database
+  games: readonly string[],
+): Promise<Readonly<{
+  catalogue: ReadonlySet<SupportedGame>;
+  errata: ReadonlySet<SupportedGame>;
+}>> {
+  const observedAdapters = await database
     .prepare(
-      `SELECT DISTINCT adapter_version
-       FROM ingestion_evidence_plans
-       WHERE ingestion_run_id = ?
-       ORDER BY adapter_version`,
+      `SELECT DISTINCT
+         observation.adapter_version,
+         observation.supported_game
+       FROM source_observation_sets AS observation
+       JOIN source_snapshots AS snapshot
+         ON snapshot.id = observation.source_snapshot_id
+       WHERE snapshot.ingestion_run_id = ?
+       ORDER BY observation.supported_game, observation.adapter_version`,
     )
     .bind(runId)
-    .all<{ adapter_version: string }>();
-  if (plans.results.length === 0) return "cards-and-printings";
-  const coverage = new Set(
-    plans.results.map(({ adapter_version }) =>
-      requiredSourceAdapter(adapter_version).reconciliationCapability
-    ),
-  );
-  if (coverage.size !== 1) return null;
-  if (coverage.has("errata")) {
-    return "errata";
+    .all<{ adapter_version: string; supported_game: SupportedGame }>();
+  const selectedGames = new Set(games as readonly SupportedGame[]);
+  if (observedAdapters.results.length === 0) {
+    return { catalogue: selectedGames, errata: new Set() };
   }
-  return coverage.has("catalogue")
-    ? "cards-and-printings"
-    : null;
+  const catalogue = new Set<SupportedGame>();
+  const errata = new Set<SupportedGame>();
+  for (const observed of observedAdapters.results) {
+    if (!selectedGames.has(observed.supported_game)) continue;
+    const areas = adapterReconciliationAreas(
+      requiredSourceAdapter(observed.adapter_version),
+    );
+    if (areas.includes("catalogue")) catalogue.add(observed.supported_game);
+    if (areas.includes("errata")) errata.add(observed.supported_game);
+  }
+  return { catalogue, errata };
 }
 
 async function sourceFreshnessForExport(
@@ -4827,13 +5155,21 @@ function isCatalogueCandidate(
   for (const card of cards) {
     if (
       !isRecord(card) ||
-      !hasOnlyKeys(card, [
+      !hasRequiredAndAllowedKeys(card, [
       "id",
       "game",
       "official_identity",
       "name",
       "effective_rules_text",
       "game_data",
+      ], [
+      "id",
+      "game",
+      "official_identity",
+      "name",
+      "effective_rules_text",
+      "game_data",
+      "curated_provenance",
       ]) ||
       typeof card.id !== "string" ||
       !isSupportedGame(card.game) ||
@@ -4843,6 +5179,9 @@ function isCatalogueCandidate(
       !isRecord(card.official_identity) ||
       !hasOnlyKeys(card.official_identity, ["kind", "value"]) ||
       !validOfficialIdentity(card.official_identity, card.game) ||
+      (card.curated_provenance !== undefined &&
+        (!Array.isArray(card.curated_provenance) ||
+          !card.curated_provenance.every(isCuratedProvenance))) ||
       !isRecord(card.game_data) ||
       !hasOnlyKeys(card.game_data, ["profile", "attributes"]) ||
       card.game_data.profile !== `${card.game}@1` ||
@@ -4855,18 +5194,28 @@ function isCatalogueCandidate(
   const printingsValid = value.printings.every((printing) => {
     if (
       !isRecord(printing) ||
-      !hasOnlyKeys(printing, [
+      !hasRequiredAndAllowedKeys(printing, [
         "id",
         "card_id",
         "rarity",
         "printed_rules_text",
         "game_data",
+      ], [
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+        "curated_provenance",
       ]) ||
       typeof printing.id !== "string" ||
       typeof printing.card_id !== "string" ||
       !cardIds.has(printing.card_id) ||
       (printing.printed_rules_text !== null &&
         typeof printing.printed_rules_text !== "string") ||
+      (printing.curated_provenance !== undefined &&
+        (!Array.isArray(printing.curated_provenance) ||
+          !printing.curated_provenance.every(isCuratedProvenance))) ||
       !isRecord(printing.rarity) ||
       !hasOnlyKeys(printing.rarity, ["normalized", "raw"]) ||
       (printing.rarity.normalized !== null &&
@@ -4914,7 +5263,7 @@ function isCatalogueCandidate(
 function isCatalogueErratum(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, [
+    hasRequiredAndAllowedKeys(value, [
       "id",
       "game",
       "target_type",
@@ -4923,6 +5272,16 @@ function isCatalogueErratum(value: unknown): boolean {
       "official_wording",
       "corrected_value",
       "provenance",
+    ], [
+      "id",
+      "game",
+      "target_type",
+      "target_id",
+      "effective_from",
+      "official_wording",
+      "corrected_value",
+      "provenance",
+      "curated_provenance",
     ]) &&
     typeof value.id === "string" &&
     isSupportedGame(value.game) &&
@@ -4944,8 +5303,87 @@ function isCatalogueErratum(value: unknown): boolean {
         ]) &&
         typeof provenance.source_lineage === "string" &&
         typeof provenance.source_observation_id === "string",
-    )
+    ) &&
+    (value.curated_provenance === undefined ||
+      (Array.isArray(value.curated_provenance) &&
+        value.curated_provenance.length > 0 &&
+        value.curated_provenance.every(isCuratedProvenance)))
   );
+}
+
+function isCuratedProvenance(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "curated_revision_id",
+      "content_digest",
+      "target",
+      "rationale",
+      "evidence",
+      "author",
+      "reviewed_source_value",
+    ]) &&
+    typeof value.curated_revision_id === "string" &&
+    isOpaqueIdentity(value.curated_revision_id) &&
+    typeof value.content_digest === "string" &&
+    isSha256Digest(value.content_digest) &&
+    isCuratedTarget(value.target) &&
+    typeof value.rationale === "string" && value.rationale.length > 0 &&
+    Array.isArray(value.evidence) &&
+    value.evidence.length > 0 &&
+    value.evidence.every(isCuratedEvidence) &&
+    typeof value.author === "string" && value.author.length > 0 &&
+    Object.hasOwn(value, "reviewed_source_value")
+  );
+}
+
+function isCuratedTarget(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.kind === "field") {
+    return hasOnlyKeys(value, ["kind", "entity_type", "entity_id", "path"]) &&
+      ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"].includes(String(value.entity_type)) &&
+      typeof value.entity_id === "string" && isOpaqueIdentity(value.entity_id) &&
+      typeof value.path === "string" && value.path.startsWith("/");
+  }
+  if (value.kind !== "relationship" ||
+      !hasOnlyKeys(value, ["kind", "relationship_kind", "from", "to"]) ||
+      !isRecord(value.from) || !isRecord(value.to)) return false;
+  if (!hasOnlyKeys(value.from, ["type", "id"]) ||
+    !hasOnlyKeys(value.to, ["type", "id"]) ||
+    typeof value.from.id !== "string" || !isOpaqueIdentity(value.from.id) ||
+    typeof value.to.id !== "string" || !isOpaqueIdentity(value.to.id)) {
+    return false;
+  }
+  const expectedEndpoints: Readonly<Record<string, readonly [string, string]>> = {
+    "printing-product": ["printing", "product"],
+    "printing-distribution-context": ["printing", "distribution_context"],
+    "distribution-context-product": ["distribution_context", "product"],
+    "product-card": ["product", "card"],
+  };
+  const endpoints = expectedEndpoints[String(value.relationship_kind)];
+  return endpoints !== undefined &&
+    value.from.type === endpoints[0] && value.to.type === endpoints[1];
+}
+
+function isCuratedEvidence(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.kind === "source_observation") {
+    return hasOnlyKeys(value, ["kind", "id"]) &&
+      typeof value.id === "string" && isOpaqueIdentity(value.id);
+  }
+  return value.kind === "owner_reference" &&
+    hasOnlyKeys(value, ["kind", "uri", "content_digest"]) &&
+    typeof value.uri === "string" && isAbsoluteUri(value.uri) &&
+    typeof value.content_digest === "string" &&
+    isSha256Digest(value.content_digest);
+}
+
+function isAbsoluteUri(value: string): boolean {
+  try {
+    return new URL(value).protocol.length > 1;
+  } catch {
+    return false;
+  }
 }
 
 function validOfficialIdentity(
@@ -5096,9 +5534,21 @@ function validCompletedStageCount(
 }
 
 function isWarningDocument(value: unknown): value is Record<string, unknown> {
+  const curatedConflict = isRecord(value) &&
+    hasOnlyKeys(value, [
+      "code", "detail", "curated_revision_id", "conflict_id",
+      "conflict_digest",
+    ]) &&
+    value.code === "curated_revision_reconfirmation_required" &&
+    typeof value.curated_revision_id === "string" &&
+    isOpaqueIdentity(value.curated_revision_id) &&
+    typeof value.conflict_id === "string" &&
+    isOpaqueIdentity(value.conflict_id) &&
+    typeof value.conflict_digest === "string" &&
+    isSha256Digest(value.conflict_digest);
   return (
     isRecord(value) &&
-    (hasOnlyKeys(value, ["code", "detail"]) ||
+    (curatedConflict || hasOnlyKeys(value, ["code", "detail"]) ||
       hasOnlyKeys(value, ["code", "detail", "severity"])) &&
     typeof value.code === "string" &&
     value.code.length > 0 &&
@@ -5277,7 +5727,7 @@ function publicRun(
       "The persisted Ingestion Run document is inconsistent.",
     );
   }
-  return decodePublicRunDocument({
+  const document = decodePublicRunDocument({
     id: row.id,
     state: row.state,
     selected_games: selectedGames,
@@ -5304,6 +5754,13 @@ function publicRun(
     publication_reservation: publicPublicationReservation(row),
     publication_cleanup: publicPublicationCleanup(cleanup),
   });
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: row.operational_request_id,
+    }),
+  };
 }
 
 function publicPublicationReservation(
@@ -5380,7 +5837,8 @@ function decodePublicRunDocument(
     Object.keys(value).some(
       (key) =>
         !requiredKeys.includes(key) &&
-        key !== "export_manifest_digest",
+        key !== "export_manifest_digest" &&
+        key !== "operational_diagnostics",
     ) ||
     typeof value.id !== "string" ||
     !isOpaqueIdentity(value.id) ||
@@ -5438,8 +5896,15 @@ function decodePublicRunDocument(
     reservation,
     cleanup,
   });
-  return {
-    ...value,
+  const operationalRequestId = retainedOperationalRequestId(
+    value.operational_diagnostics,
+  );
+  const {
+    operational_diagnostics: _retainedOperationalDiagnostics,
+    ...retainedValue
+  } = value;
+  const document = {
+    ...retainedValue,
     progress,
     warnings,
     approval,
@@ -5447,6 +5912,26 @@ function decodePublicRunDocument(
     publication_reservation: reservation,
     publication_cleanup: cleanup,
   };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: operationalRequestId,
+    }),
+  };
+}
+
+function retainedOperationalRequestId(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const references = (value as Record<string, unknown>).references;
+  if (
+    references === null || typeof references !== "object" ||
+    Array.isArray(references)
+  ) return null;
+  const requestId = (references as Record<string, unknown>).request_id;
+  return typeof requestId === "string" ? requestId : null;
 }
 
 function decodePublicationReservation(

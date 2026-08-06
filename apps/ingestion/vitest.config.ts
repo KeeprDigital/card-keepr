@@ -17,6 +17,9 @@ import {
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
+import {
+  onePieceCompleteOfficialSourceResponse,
+} from "../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import digimonDiscovery from "../../acceptance/fixtures/retained-official-source/digimon-en-discovery.json";
 import fusionWorldDiscovery from "../../acceptance/fixtures/retained-official-source/fusion-world-en-discovery.json";
 import gundamAsiaDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-asia-discovery.json";
@@ -43,6 +46,13 @@ import {
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
+const currentSchemaMigrationLevel = Number.parseInt(
+  migrations.at(-1)?.name ?? "",
+  10,
+);
+if (!Number.isSafeInteger(currentSchemaMigrationLevel)) {
+  throw new Error("The current schema migration level could not be derived.");
+}
 const retryAttemptCounts = new Map<string, number>();
 const retainedProductionDiscoveryFixtures = {
   "one-piece-en": onePieceDiscovery,
@@ -51,6 +61,26 @@ const retainedProductionDiscoveryFixtures = {
   "gundam-en-asia": gundamAsiaDiscovery,
   "gundam-en-us": gundamUsDiscovery,
 } as const;
+
+function rewrittenOnePieceCompleteResponse(
+  request: Request,
+  markerPattern: RegExp,
+): Response | null {
+  const headers = new Headers(request.headers);
+  headers.set(
+    "user-agent",
+    (headers.get("user-agent") ?? "").replace(
+      markerPattern,
+      "card-keepr-one-piece-complete-v1",
+    ),
+  );
+  return onePieceCompleteOfficialSourceResponse(
+    new Request(request.url, {
+      method: request.method,
+      headers,
+    }),
+  );
+}
 
 type ProductionSourceLineage = keyof typeof retainedProductionDiscoveryFixtures;
 
@@ -83,6 +113,86 @@ function retainedProductionDiscoveryRoot(
     },
   });
 }
+
+function paginatedGundamCollectionResponse(
+  request: Request,
+  officialNavigation: string,
+): Response | null {
+  const url = new URL(request.url);
+  const markedScenario = productionSourceFixtureMarker(request.headers) ===
+    "card-keepr-gundam-pagination-v4";
+  if (
+    !markedScenario ||
+    (
+      !url.pathname.startsWith("/asia-en/") &&
+      !url.pathname.startsWith("/jp/images/cards/card/")
+    )
+  ) return null;
+  if (/^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname)) {
+    return new Response(new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    ]), { headers: { "content-type": "image/png" } });
+  }
+  if (url.pathname === "/asia-en/rules/") {
+    return new Response(`<html><title>BANDAI gundam CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
+      <main><h1>Restriction Rules</h1><p>0 records</p>
+      <article data-publication-empty="true">No restrictions are currently published.</article>
+      </main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  if (url.pathname === "/asia-en/cards/index.php") {
+    const selectedPackage = url.searchParams.get("package");
+    const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+    if (selectedPackage === null) {
+      return new Response(`<html><title>CARDS | GUNDAM CARD GAME</title>
+        ${officialNavigation}<main>
+        <a class="js-selectBtn-package" data-val="619102" href="javascript:void(0);">Dual Impact [GD02]</a>
+        </main></html>`, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    const locators = page === 1
+      ? ["GD02-001", "GD02-002"]
+      : ["GD02-002", "GD02-003", "GD02-004"];
+    const pageIdentity = page === 1
+      ? ""
+      : `<input type="hidden" name="page" value="${page}">`;
+    const pager = page === 1
+      ? '<div class="pager"><a href="?package=619102&amp;page=2">2</a></div>'
+      : '<div class="pager"></div>';
+    return new Response(`<html><title>CARDS | GUNDAM CARD GAME</title>
+      ${officialNavigation}<main><section>
+      <input type="hidden" name="package" value="619102">${pageIdentity}
+      <div class="resultTxt"><span class="num">4</span>cards found.</div>
+      <ul>${locators.map((locator) =>
+        `<li class="cardItem"><a data-src="detail.php?detailSearch=${locator}">Card</a></li>`
+      ).join("")}</ul>${pager}</section></main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  if (url.pathname === "/asia-en/cards/detail.php") {
+    const locator = url.searchParams.get("detailSearch");
+    if (locator === null || !/^GD02-00[1-4]$/u.test(locator)) return null;
+    return new Response(`<html><main><article class="article cardDetailPageCol">
+      <div class="cardNo">${locator}</div><div class="rarity">C</div><div class="blockIcon">-</div>
+      <h1 class="cardName">Paginated ${locator}</h1>
+      <div class="cardImage"><img src="../../jp/images/cards/card/${locator}.png"></div>
+      <dl><dt>Lv.</dt><dd>1</dd></dl><dl><dt>COST</dt><dd>1</dd></dl>
+      <dl><dt>COLOR</dt><dd>Blue</dd></dl><dl><dt>TYPE</dt><dd>UNIT</dd></dl>
+      <div class="cardDataRow overview"><div class="dataTxt isRegular">Official effect.</div></div>
+      <dl><dt>Zone</dt><dd>-</dd></dl><dl><dt>Trait</dt><dd>Test</dd></dl>
+      <dl><dt>Link</dt><dd>-</dd></dl><dl><dt>AP</dt><dd>1</dd></dl><dl><dt>HP</dt><dd>1</dd></dl>
+      <dl><dt>Source Title</dt><dd>Pagination Test</dd></dl>
+      <dl><dt>Where to get it</dt><dd>Dual Impact [GD02]</dd></dl>
+      </article></main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  return null;
+}
 let digimonArtworkVariant:
   | "base"
   | "base-reencoded"
@@ -91,6 +201,8 @@ let digimonArtworkVariant:
   | "alternate-two" = "base";
 const ambiguousD1Tables = new Map<string, string>();
 const unconfirmedD1Drops = new Set<string>();
+let disposableD1Generation = 0;
+let disposableD1DatabaseId = "00000000-0000-0000-0000-000000000002";
 const githubAppTestPrivateKey = generateKeyPairSync("rsa", {
   modulusLength: 2048,
 }).privateKey.export({
@@ -127,6 +239,9 @@ export default defineConfig({
             "vitest-d1-verification-token-active",
           D1_VERIFICATION_TOKEN_REPLACEMENT:
             "vitest-d1-verification-token-replacement",
+          D1_EXPORT_TOKEN: "vitest-d1-export-token-active",
+          D1_EXPORT_TOKEN_REPLACEMENT:
+            "vitest-d1-export-token-replacement",
           GITHUB_REPOSITORY_ID: "1313489088",
           GITHUB_APP_ID: "11111111",
           GITHUB_INSTALLATION_ID: "22222222",
@@ -136,6 +251,101 @@ export default defineConfig({
         },
         outboundService: async (request) => {
           const url = new URL(request.url);
+          const d1CollectionPath =
+            "/client/v4/accounts/0123456789abcdef0123456789abcdef/d1/database";
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "GET"
+          ) {
+            return Response.json({
+              success: true,
+              result: [{
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              }],
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname === d1CollectionPath && request.method === "POST"
+          ) {
+            disposableD1Generation += 1;
+            disposableD1DatabaseId =
+              `00000000-0000-4000-8000-${
+                String(disposableD1Generation).padStart(12, "0")
+              }`;
+            return Response.json({
+              success: true,
+              result: {
+                name: "card-keepr-disposable-verification",
+                uuid: disposableD1DatabaseId,
+              },
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.startsWith(`${d1CollectionPath}/`) &&
+            request.method === "DELETE"
+          ) {
+            return Response.json({ success: true, result: {} });
+          }
+          if (url.hostname === "vitest-d1-export.invalid") {
+            const body = "-- vitest D1 backup SQL\n";
+            return new Response(body, {
+              headers: { "content-length": String(Buffer.byteLength(body)) },
+            });
+          }
+          if (url.hostname === "vitest-d1-upload.invalid") {
+            const bytes = new Uint8Array(await request.arrayBuffer());
+            const etag = createHash("md5").update(bytes).digest("hex");
+            return new Response(null, { headers: { etag: `"${etag}"` } });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/export")
+          ) {
+            return Response.json({
+              success: true,
+              result: {
+                type: "export",
+                status: "complete",
+                success: true,
+                at_bookmark: "vitest-export-bookmark",
+                result: {
+                  filename: "vitest-catalogue.sql",
+                  signed_url: "https://vitest-d1-export.invalid/catalogue.sql",
+                },
+                messages: [],
+              },
+            });
+          }
+          if (
+            url.hostname === "api.cloudflare.com" &&
+            url.pathname.endsWith("/import")
+          ) {
+            const body = await request.clone().json<{
+              action?: string;
+            }>();
+            return Response.json({
+              success: true,
+              result: body.action === "init"
+                ? {
+                  type: "import",
+                  status: "upload",
+                  success: true,
+                  filename: "vitest-catalogue.sql",
+                  upload_url: "https://vitest-d1-upload.invalid/catalogue.sql",
+                  messages: [],
+                }
+                : {
+                  type: "import",
+                  status: "complete",
+                  success: true,
+                  at_bookmark: "vitest-restore-bookmark",
+                  messages: [],
+                },
+            });
+          }
           if (
             url.hostname === "api.cloudflare.com" &&
             url.pathname.endsWith("/query")
@@ -144,6 +354,59 @@ export default defineConfig({
               sql?: string;
               params?: string[];
             }>();
+            if (
+              request.headers.get("authorization") ===
+                "Bearer vitest-d1-verification-token-active"
+            ) {
+              let expected: Record<string, unknown> = {};
+              try {
+                expected = JSON.parse(body.params?.[1] ?? "{}") as
+                  Record<string, unknown>;
+              } catch {
+                // Non-verification reconstruction statements have no evidence.
+              }
+              return Response.json({
+                success: true,
+                result: [{
+                  success: true,
+                  results: body.sql?.includes(
+                      "SELECT catalogue.current_revision_id",
+                    )
+                    ? [{
+                      ...expected,
+                      current_revision_id:
+                        body.params?.[0] ?? "catrev_spine_000",
+                      schema_migration_level: currentSchemaMigrationLevel,
+                      card_search_state: "ready",
+                      card_search_fts_tables: 1,
+                      missing_fts_rows: 0,
+                      invalid_api_documents: 0,
+                      invalid_curated_provenance: 0,
+                      invalid_audit_rows: 0,
+                    }]
+                    : body.sql === "PRAGMA quick_check"
+                    ? [{ quick_check: "ok" }]
+                    : body.sql?.includes(
+                        "WITH expected_card(value) AS (SELECT ?)",
+                      )
+                    ? [{
+                      sort_game: "one-piece",
+                      sort_identity_kind: "card_number",
+                      sort_identity_value: "VITEST-001",
+                      sort_id: body.params?.[0],
+                      summary_json: JSON.stringify({
+                        id: body.params?.[0],
+                        game: "one-piece",
+                        official_identity: {
+                          kind: "card_number",
+                          value: "VITEST-001",
+                        },
+                      }),
+                    }]
+                    : [],
+                }],
+              });
+            }
             const table = /"(__keepr_probe_[0-9a-f]+)"/u.exec(
               body.sql ?? "",
             )?.[1];
@@ -413,10 +676,35 @@ export default defineConfig({
               request,
             );
             if (retainedDiscovery !== null) return retainedDiscovery;
+            const paginatedGundam = paginatedGundamCollectionResponse(
+              request,
+              officialNavigation,
+            );
+            if (paginatedGundam !== null) return paginatedGundam;
             const representableFusionLegality =
               productionRepresentableFusionLegalityResponse(request);
             if (representableFusionLegality !== null) {
               return representableFusionLegality;
+            }
+            if (officialLineage === "one-piece-en") {
+              const completeChildResponse =
+                onePieceCompleteOfficialSourceResponse(request);
+              if (completeChildResponse !== null) {
+                return completeChildResponse;
+              }
+              if (
+                artworkMarker === "card-keepr-official-source/1" &&
+                url.pathname.startsWith("/images/cardlist/card/OP31-")
+              ) {
+                const completeImageResponse =
+                  rewrittenOnePieceCompleteResponse(
+                    request,
+                    /^card-keepr-official-source\/1/u,
+                  );
+                if (completeImageResponse !== null) {
+                  return completeImageResponse;
+                }
+              }
             }
             if (
               artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
@@ -461,6 +749,30 @@ export default defineConfig({
                   },
                 );
               }
+            }
+            if (
+              artworkMarker?.startsWith("card-keepr-runtime-parser/") &&
+              officialLineage === "one-piece-en"
+            ) {
+              const completeResponse = rewrittenOnePieceCompleteResponse(
+                request,
+                /^card-keepr-runtime-parser\/[^;]+/u,
+              );
+              if (completeResponse !== null) return completeResponse;
+            }
+            if (
+              (
+                artworkMarker === "card-keepr-one-piece-release-timing-v2" ||
+                artworkMarker === "card-keepr-one-piece-unrecognized-release-v2"
+              ) &&
+              officialLineage === "one-piece-en" &&
+              url.pathname !== "/products/"
+            ) {
+              const completeResponse = rewrittenOnePieceCompleteResponse(
+                request,
+                /^card-keepr-one-piece-(?:release-timing|unrecognized-release)-v2/u,
+              );
+              if (completeResponse !== null) return completeResponse;
             }
             if (
               artworkMarker === "card-keepr-staged-discovery-gap-v3" &&
@@ -1003,12 +1315,17 @@ export default defineConfig({
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <article class="booster">
+                  <nav>
+                    <a data-product-status="available" href="#available">Available</a>
+                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
+                  </nav>
+                  <article class="booster" data-product-status="available">
                     <a data-product-code="FB-AUTHORITY"
                        href="/fw/en/products/booster/fb-authority/">
                       Conflicting Product Listing
                     </a>
                   </article>
+                  <article data-product-status="coming-soon">No coming-soon Product.</article>
                 </html>`,
                 {
                   headers: {
@@ -1032,12 +1349,17 @@ export default defineConfig({
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <article class="booster">
+                  <nav>
+                    <a data-product-status="available" href="#available">Available</a>
+                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
+                  </nav>
+                  <article class="booster" data-product-status="available">
                     <a ${code === "" ? "" : `data-product-code="${code}"`}
                        href="/fw/en/products/booster/fb-stable-${state}/">
                       Stable Product Identity
                     </a>
                   </article>
+                  <article data-product-status="coming-soon">No coming-soon Product.</article>
                 </html>`,
                 {
                   headers: {
@@ -1528,6 +1850,9 @@ export default defineConfig({
   ],
   test: {
     include: ["apps/ingestion/test/**/*.spec.ts"],
+    // Workflow bindings and failure-injection state outlive Vitest's per-file
+    // storage isolation, so files must not share a pool process.
+    maxWorkers: 1,
     hookTimeout: 30_000,
     testTimeout: 30_000,
   },
@@ -1538,6 +1863,25 @@ function reconciliationSourceDocument(
   surface: string,
   requestUrl: string,
 ) {
+  if (
+    /^observation-count-(?:100|124|149)$/u.test(scenario)
+  ) {
+    const count = Number(scenario.slice("observation-count-".length));
+    return {
+      cards: Array.from({ length: count }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP98-${String(index + 1).padStart(3, "0")}`,
+          name: `Observation count sentinel ${index + 1}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/count-sentinel-${index + 1}`,
+          lineageMarker: `count-sentinel-${index + 1}`,
+        })
+      ),
+    };
+  }
   if (scenario === "contextual-legality-one-piece-policy") {
     return onePiecePolicySourceDocument(surface, requestUrl);
   }
@@ -1662,7 +2006,8 @@ function reconciliationSourceDocument(
     );
   }
   if (scenario === "contextual-legality-domain") {
-    const rules = new URL(requestUrl).searchParams.get("rules");
+    const fixtureUrl = new URL(requestUrl);
+    const rules = fixtureUrl.searchParams.get("rules");
     return contextualLegalityFixtureDocument(
       "EN-ASIA",
       rules === "omitted" || rules === "empty" ||
@@ -1672,6 +2017,9 @@ function reconciliationSourceDocument(
           rules === "resolved-card-order" ||
           rules === "operand-overlap"
         ? rules
+        : "current",
+      fixtureUrl.searchParams.get("semantics") === "changed"
+        ? "changed"
         : "current",
     );
   }
@@ -2261,8 +2609,10 @@ function reconciliationSourceDocument(
   if (
     scenario === "dedicated-printing-erratum" ||
     scenario === "dedicated-printing-erratum-ambiguous" ||
-    scenario === "dedicated-printing-erratum-missing"
+    scenario === "dedicated-printing-erratum-missing" ||
+    scenario === "dedicated-card-nonparallel-erratum"
   ) {
+    const nonParallelCard = scenario === "dedicated-card-nonparallel-erratum";
     const locator = scenario === "dedicated-printing-erratum"
       ? "/official/dedicated-multi/base"
       : scenario === "dedicated-printing-erratum-ambiguous"
@@ -2272,16 +2622,24 @@ function reconciliationSourceDocument(
       cards: [{
         kind: "official_erratum",
         game: "one-piece",
-        target: {
-          type: "printing",
-          official_identity: {
-            kind: "card_number",
-            value: scenario === "dedicated-printing-erratum"
-              ? "OP05-006"
-              : "OP05-005",
-          },
-          locator,
-        },
+        target: nonParallelCard
+          ? {
+              type: "card",
+              official_identity: {
+                kind: "card_number",
+                value: "OP05-006",
+              },
+            }
+          : {
+              type: "printing",
+              official_identity: {
+                kind: "card_number",
+                value: scenario === "dedicated-printing-erratum"
+                  ? "OP05-006"
+                  : "OP05-005",
+              },
+              locator,
+            },
         published_on: "2026-07-31",
         effective_from: null,
         observed_printed_rules_text: "Official printed rules",
@@ -2291,12 +2649,13 @@ function reconciliationSourceDocument(
         applies_to_parallel_printings: false,
         source: {
           fragment: "#errata_fixture_printing",
-          display_name: scenario === "dedicated-printing-erratum"
+          display_name: scenario === "dedicated-printing-erratum" ||
+              nonParallelCard
             ? "OP05-006 Dedicated Printing Erratum Card"
             : "OP05-005 Multiple Printing Card",
           image_url:
             `https://en.onepiece-cardgame.com/images/rules/cards/${
-              scenario === "dedicated-printing-erratum"
+              scenario === "dedicated-printing-erratum" || nonParallelCard
                 ? "OP05-006"
                 : "OP05-005"
             }.png`,
@@ -3287,31 +3646,37 @@ function reconciliationSourceDocument(
   if (scenario.startsWith("gundam-printing-")) {
     const formatting = scenario.includes("-format-");
     const usSurface = scenario.includes("-us-");
+    const historicalProductConflict =
+      scenario.endsWith("-disappearance-us-product-conflict");
     const printingAuthorityConflict =
-      scenario ===
-      "gundam-printing-disappearance-us-printing-conflict";
+      scenario.endsWith("-disappearance-us-printing-conflict");
     const substantiveConflict =
       (scenario.includes("-conflict-") && usSurface) ||
       printingAuthorityConflict ||
-      scenario === "gundam-printing-disappearance-asia-conflict";
+      scenario.endsWith("-disappearance-asia-conflict");
     const authorityAfterDisappearance =
-      scenario === "gundam-printing-disappearance-us-conflict";
+      scenario.endsWith("-disappearance-us-conflict");
     const reverseAuthorityConflict =
-      scenario === "gundam-printing-disappearance-asia-conflict";
+      scenario.endsWith("-disappearance-asia-conflict");
     const cardNumber =
-      authorityAfterDisappearance || printingAuthorityConflict
-        ? "GD94-001"
-        : reverseAuthorityConflict
-          ? "GD91-001"
-          : formatting
-            ? scenario.endsWith("-asia-first") ||
-              scenario.endsWith("-us-second")
-              ? "GD94-001"
-              : "GD93-001"
-            : scenario.endsWith("-asia-first") ||
-                scenario.endsWith("-us-second")
-              ? "GD92-001"
-              : "GD91-001";
+      scenario.includes("-lifecycle-primary-")
+        ? "GD90-001"
+        : scenario.includes("-lifecycle-reverse-")
+          ? "GD89-001"
+          : authorityAfterDisappearance || printingAuthorityConflict ||
+          historicalProductConflict
+            ? "GD94-001"
+            : reverseAuthorityConflict
+              ? "GD91-001"
+              : formatting
+                ? scenario.endsWith("-asia-first") ||
+                  scenario.endsWith("-us-second")
+                  ? "GD94-001"
+                  : "GD93-001"
+                : scenario.endsWith("-asia-first") ||
+                    scenario.endsWith("-us-second")
+                  ? "GD92-001"
+                  : "GD91-001";
     return {
       cards: [
         printingObservation({
@@ -3362,7 +3727,9 @@ function reconciliationSourceDocument(
           variantKey: "base",
           lineageMarker: `gundam-printing-${cardNumber}`,
           memberships: {
-            products: [`product_${cardNumber.slice(0, 4).toLowerCase()}`],
+            products: [historicalProductConflict
+              ? `product_${cardNumber.slice(0, 4).toLowerCase()}_other`
+              : `product_${cardNumber.slice(0, 4).toLowerCase()}`],
             distribution_contexts: [],
             source_buckets: ["gundam-card-list"],
           },
@@ -3574,7 +3941,8 @@ function reconciliationSourceDocument(
                   distribution_contexts: ["championship-2026-pack"],
                   source_buckets: ["starter-deck-card-list"],
                 }
-            : scenario === "product-typed-relationships"
+            : scenario === "product-typed-relationships" ||
+                scenario === "product-typed-relationships-changed"
               ? {
                   products: ["CODE-X"],
                   distribution_contexts: ["typed-context"],
@@ -3735,7 +4103,10 @@ function productReleaseCatalogueForScenario(
       relationships: [],
     };
   }
-  if (scenario === "product-typed-relationships") {
+  if (
+    scenario === "product-typed-relationships" ||
+    scenario === "product-typed-relationships-changed"
+  ) {
     return {
       products: [
         {
@@ -3780,13 +4151,15 @@ function productReleaseCatalogueForScenario(
           evidence_category: "explicit",
           resolution: "explicit",
         },
-        {
-          kind: "product-card",
-          product_reference: { kind: "name", value: "CODE-X" },
-          card_reference: { kind: "current_card" },
-          evidence_category: "derived",
-          resolution: "deterministic",
-        },
+        ...(scenario === "product-typed-relationships-changed"
+          ? []
+          : [{
+              kind: "product-card",
+              product_reference: { kind: "name", value: "CODE-X" },
+              card_reference: { kind: "current_card" },
+              evidence_category: "derived",
+              resolution: "deterministic",
+            }]),
       ],
     };
   }

@@ -5,6 +5,7 @@ import {
 } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import ingestionWorker from "../src/index";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { fixtureCandidate } from "../../../src/catalogue/fixture";
 import { catalogueRevisionIdentity } from "../../../src/catalogue/idempotent-identities";
@@ -94,10 +95,10 @@ test("a legacy published run upgrades to the strict lifecycle representation wit
   const candidate = await fixtureCandidate("first-catalogue", [
     "one-piece",
   ]);
-  const candidateCreatedAt = "2026-07-29T01:00:00.000Z";
-  const approvedAt = "2026-07-29T01:01:00.000Z";
-  const terminalAt = "2026-07-29T01:02:00.000Z";
-  const deadline = "2026-08-05T01:00:00.000Z";
+  const candidateCreatedAt = "2099-07-29T01:00:00.000Z";
+  const approvedAt = "2099-07-29T01:01:00.000Z";
+  const terminalAt = "2099-07-29T01:02:00.000Z";
+  const deadline = "2099-08-05T01:00:00.000Z";
   const candidateDigest = candidate.digest;
   const manifestDigest = "b".repeat(64);
   const legacyApproval = {
@@ -909,6 +910,10 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
     started.document,
     "candidate_digest",
   );
+  const expectedRevision = requiredDocumentString(
+    started.document,
+    "expected_current_revision_id",
+  );
   const rejected = await administrationRequest(
     `/v1/ingestion-runs/${runId}/rejection`,
     {
@@ -934,6 +939,49 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
         "reconciling",
       ],
       current_stage: "rejected",
+    },
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: {
+        run_id: runId,
+        request_id: null,
+        expected_catalogue_revision_id: expectedRevision,
+        candidate_digest: digest,
+        adapter_versions: [],
+        workflow: {
+          status_path: `/v1/ingestion-runs/${runId}`,
+        },
+        backup: { status_path: null },
+        recovery: { status_path: "/v1/status" },
+      },
+      terminal_evidence: {
+        state: "rejected",
+        failure: {
+          code: "ingestion_run_rejected",
+          retryability_code: "retryable_rejection",
+          retryable: true,
+        },
+        warning_count: 0,
+        approval_decision_count: 1,
+      },
+      retry: {
+        code: "ingestion_run_retry_available",
+        source_run_id: runId,
+        method: "POST",
+        path: `/v1/ingestion-runs/${runId}/retry`,
+      },
+      retry_available: true,
+      diagnosis_sequence: [
+        { code: "check_status", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          path: `/v1/ingestion-runs/${runId}`,
+        },
+        {
+          code: "retry_ingestion_run",
+          path: `/v1/ingestion-runs/${runId}/retry`,
+        },
+      ],
     },
   });
 
@@ -2316,6 +2364,755 @@ test("an unchanged successful retry advances freshness without another revision 
   });
 });
 
+test("Catalogue Export deletion plans bind an exact immutable set and delete an older export manifest last", async () => {
+  const oldRevision = "catrev_delete_old";
+  const currentRevision = "catrev_delete_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_old",
+    "2026-08-05T00:00:00.000Z",
+  );
+  const current = await seedDeletionExport(
+    currentRevision,
+    "run_delete_current",
+    "2026-08-05T00:01:00.000Z",
+  );
+  await testEnv.CATALOGUE_EXPORTS.put(
+    "catalogue-exports/catrev_unrelated/retained.bin",
+    "retained",
+  );
+  await testEnv.EVIDENCE_OBJECTS.put(
+    "source-snapshots/export-deletion-retained.json",
+    "retained evidence",
+  );
+  await testEnv.BACKUPS.put(
+    "d1-backups/export-deletion-retained.sql",
+    "retained backup",
+  );
+  const unexpectedKey = `catalogue-exports/${oldRevision}/unexpected.bin`;
+  await testEnv.CATALOGUE_EXPORTS.put(unexpectedKey, "not in manifest");
+
+  testObservedAt = "2026-08-05T01:00:00.000Z";
+  const unsafe = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-unsafe",
+    },
+  );
+  expect(unsafe.response.status).toBe(409);
+  expect(unsafe.document).toMatchObject({ code: "unsafe_export_object_scope" });
+  await testEnv.CATALOGUE_EXPORTS.delete(unexpectedKey);
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-old",
+    },
+  );
+  expect(prepared.response.status).toBe(201);
+  expect(prepared.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion-plan@1",
+    id: "export-delete-plan-old",
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    object_keys: old.objectKeys,
+    object_set_digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    plan_digest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    created_at: "2026-08-05T01:00:00.000Z",
+    expires_at: "2026-08-05T01:15:00.000Z",
+    dependencies: expect.arrayContaining([
+      expect.objectContaining({
+        code: "catalogue_consumers_may_depend",
+        severity: "warning",
+      }),
+      expect.objectContaining({
+        code: "authenticated_urls_will_return_410",
+        severity: "warning",
+      }),
+    ]),
+  });
+
+  const currentPlan = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: currentRevision,
+      manifest_digest: current.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-current",
+    },
+  );
+  expect(currentPlan.response.status).toBe(201);
+  expect(currentPlan.document).toMatchObject({
+    dependencies: expect.arrayContaining([
+      expect.objectContaining({
+        code: "current_catalogue_revision",
+        severity: "blocking",
+      }),
+    ]),
+  });
+  const blockedCurrent = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: currentPlan.document.id,
+      plan_digest: currentPlan.document.plan_digest,
+      catalogue_revision_id: currentRevision,
+      manifest_digest: current.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: currentRevision,
+      deletion_id: "export-deletion-current",
+      idempotency_key: "export-deletion-current-key",
+    },
+  );
+  expect(blockedCurrent.response.status).toBe(409);
+  expect(blockedCurrent.document).toMatchObject({ code: "current_export_required" });
+
+  testObservedAt = "2026-08-05T01:15:00.000Z";
+  const expired = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-expired",
+      idempotency_key: "export-deletion-expired-key",
+    },
+  );
+  expect(expired.response.status).toBe(409);
+  expect(expired.document).toMatchObject({ code: "deletion_plan_expired" });
+  testObservedAt = "2026-08-05T01:01:00.000Z";
+
+  const confirmed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-old",
+      idempotency_key: "export-deletion-old-key",
+    },
+  );
+  expect(confirmed.response.status).toBe(200);
+  expect(confirmed.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "export-deletion-old",
+    plan_id: "export-delete-plan-old",
+    state: "deleted",
+    catalogue_revision_id: oldRevision,
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: null,
+    completed_at: expect.any(String),
+  });
+  await expect(
+    testEnv.CATALOGUE_EXPORTS.list({ prefix: `catalogue-exports/${oldRevision}/` }),
+  ).resolves.toMatchObject({ objects: [] });
+  await expect(
+    testEnv.CATALOGUE_EXPORTS.get(
+      "catalogue-exports/catrev_unrelated/retained.bin",
+    ),
+  ).resolves.not.toBeNull();
+  await expect(testEnv.EVIDENCE_OBJECTS.get(
+    "source-snapshots/export-deletion-retained.json",
+  )).resolves.not.toBeNull();
+  await expect(testEnv.BACKUPS.get(
+    "d1-backups/export-deletion-retained.sql",
+  )).resolves.not.toBeNull();
+  const replayed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-old",
+      idempotency_key: "export-deletion-old-key",
+    },
+  );
+  expect(replayed.response.status).toBe(200);
+  expect(replayed.document).toEqual(confirmed.document);
+});
+
+test("concurrent exact deletion confirmation executes R2 once and replays one response", async () => {
+  const oldRevision = "catrev_delete_concurrent_confirm";
+  const currentRevision = "catrev_delete_concurrent_confirm_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_concurrent_confirm",
+    "2026-08-05T01:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_concurrent_confirm_current",
+    "2026-08-05T01:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T01:30:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-concurrent-confirm",
+    },
+  );
+  const request = {
+    plan_id: prepared.document.id,
+    plan_digest: prepared.document.plan_digest,
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    confirmation_revision_id: oldRevision,
+    deletion_id: "export-deletion-concurrent-confirm",
+    idempotency_key: "export-deletion-concurrent-confirm-key",
+  };
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  const pausedBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      entered.resolve(undefined);
+      await release.promise;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const firstPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    request,
+    { ...testEnv, CATALOGUE_EXPORTS: pausedBucket },
+  );
+  await entered.promise;
+  let replayR2Calls = 0;
+  const replayBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      replayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const countedReplayDatabase = countDeletionResponseQueriesDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  const acceptedReplay = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    request,
+    {
+      ...testEnv,
+      CATALOGUE_DB: countedReplayDatabase.database,
+      CATALOGUE_EXPORTS: replayBucket,
+    },
+  );
+  expect(acceptedReplay.response.status).toBe(202);
+  expect(acceptedReplay.document).toMatchObject({
+    contract: "card-keepr-catalogue-export-deletion@1",
+    id: "export-deletion-concurrent-confirm",
+    state: "deleting",
+    completed_at: null,
+    failure_code: null,
+  });
+  expect(countedReplayDatabase.responseQueries()).toBeLessThanOrEqual(8);
+  expect(replayR2Calls).toBe(0);
+  release.resolve(undefined);
+  const first = await firstPromise;
+  expect(first.response.status).toBe(202);
+  expect(first.document).toEqual(acceptedReplay.document);
+  const laterReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    request,
+  );
+  expect(laterReplay.response.status).toBe(202);
+  expect(laterReplay.document).toEqual(acceptedReplay.document);
+  const status = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-concurrent-confirm",
+  );
+  expect(status.document).toMatchObject({
+    state: "deleted",
+    completed_at: expect.any(String),
+    failure_code: null,
+  });
+  expect(replayR2Calls).toBe(0);
+});
+
+test("a partial Catalogue Export deletion stays unavailable and retries only its original object set", async () => {
+  const oldRevision = "catrev_delete_partial";
+  const currentRevision = "catrev_delete_partial_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_partial",
+    "2026-08-05T02:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_partial_current",
+    "2026-08-05T02:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T03:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-partial",
+    },
+  );
+  const deletedKeys: string[] = [];
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      deletedKeys.push(String(key));
+      if (key === manifestKey) throw new Error("injected manifest delete failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.response.status).toBe(200);
+  expect(failed.document).toMatchObject({
+    state: "failed",
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: "deleted_object_set_mismatch",
+  });
+  expect(deletedKeys.at(-1)).toBe(manifestKey);
+  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
+
+  const status = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial",
+  );
+  expect(status.document).toEqual(failed.document);
+  const retryEntered = deferred<void>();
+  const releaseRetry = deferred<void>();
+  const pausedRetryBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      retryEntered.resolve(undefined);
+      await releaseRetry.promise;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const retryPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: pausedRetryBucket },
+  );
+  await retryEntered.promise;
+  const confirmationDuringRetry = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+  );
+  expect(confirmationDuringRetry.document).toEqual(failed.document);
+  let exactRetryReplayR2Calls = 0;
+  const exactRetryReplayBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      exactRetryReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const exactRetryReplayPromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: exactRetryReplayBucket },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(exactRetryReplayR2Calls).toBe(0);
+  let losingRetryR2Calls = 0;
+  const losingRetryBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      losingRetryR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const losingRetry = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-losing-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: losingRetryBucket },
+  );
+  expect(losingRetry.response.status).toBe(409);
+  expect(losingRetry.document).toMatchObject({
+    code: "export_deletion_not_failed",
+  });
+  expect(losingRetryR2Calls).toBe(0);
+  const concurrentExactRetry = await exactRetryReplayPromise;
+  expect(concurrentExactRetry.response.status).toBe(202);
+  expect(concurrentExactRetry.document).toMatchObject({
+    state: "deleting",
+    completed_at: null,
+    failure_code: null,
+  });
+  expect(exactRetryReplayR2Calls).toBe(0);
+  releaseRetry.resolve(undefined);
+  const retried = await retryPromise;
+  expect(retried.response.status).toBe(202);
+  expect(concurrentExactRetry.document).toEqual(retried.document);
+  const terminalStatus = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial",
+  );
+  expect(terminalStatus.document).toMatchObject({
+    state: "deleted",
+    object_set_digest: prepared.document.object_set_digest,
+    failure_code: null,
+  });
+  const retryReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-partial/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-partial-retry-key",
+    },
+  );
+  expect(retryReplay.response.status).toBe(202);
+  expect(retryReplay.document).toEqual(retried.document);
+  const confirmationReplay = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-partial",
+      idempotency_key: "export-deletion-partial-key",
+    },
+  );
+  expect(confirmationReplay.document).toEqual(failed.document);
+});
+
+test("an exact confirmation replay resumes an interrupted deleting operation", async () => {
+  const oldRevision = "catrev_delete_interrupted";
+  const currentRevision = "catrev_delete_interrupted_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_interrupted",
+    "2026-08-05T04:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_interrupted_current",
+    "2026-08-05T04:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T05:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-interrupted",
+    },
+  );
+  const request = {
+    plan_id: String(prepared.document.id),
+    plan_digest: String(prepared.document.plan_digest),
+    catalogue_revision_id: oldRevision,
+    manifest_digest: old.manifestDigest,
+    expected_current_revision_id: currentRevision,
+    confirmation_revision_id: oldRevision,
+    deletion_id: "export-deletion-interrupted",
+    idempotency_key: "export-deletion-interrupted-key",
+  };
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_export_deletions (
+         id, plan_id, state, catalogue_revision_id, manifest_digest,
+         expected_current_revision_id, object_set_digest, idempotency_key,
+         request_json, requested_at, completed_at, failure_code
+       ) VALUES (?, ?, 'deleting', ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`,
+    ).bind(
+      request.deletion_id,
+      request.plan_id,
+      oldRevision,
+      old.manifestDigest,
+      currentRevision,
+      prepared.document.object_set_digest,
+      request.idempotency_key,
+      canonicalJson(request),
+      testObservedAt,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_exports
+       SET maintenance_state = 'deleting', deletion_operation_id = ?
+       WHERE catalogue_revision_id = ?`,
+    ).bind(request.deletion_id, oldRevision),
+  ]);
+
+  const resumed = await administrationRequest(
+    "/v1/catalogue-export-deletions",
+    request,
+  );
+  expect(resumed.response.status).toBe(200);
+  expect(resumed.document).toMatchObject({
+    id: request.deletion_id,
+    state: "deleted",
+    object_set_digest: prepared.document.object_set_digest,
+  });
+  await expect(testEnv.CATALOGUE_EXPORTS.list({
+    prefix: `catalogue-exports/${oldRevision}/`,
+  })).resolves.toMatchObject({ objects: [] });
+});
+
+test("a stale Catalogue Export deletion retry stops R2 after lease takeover", async () => {
+  const oldRevision = "catrev_delete_lease_takeover";
+  const currentRevision = "catrev_delete_lease_takeover_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_lease_takeover",
+    "2026-08-05T05:30:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_lease_takeover_current",
+    "2026-08-05T05:31:00.000Z",
+  );
+  testObservedAt = "2026-08-05T06:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-lease-takeover",
+    },
+  );
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      if (key === manifestKey) throw new Error("injected deletion failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-lease-takeover",
+      idempotency_key: "export-deletion-lease-takeover-confirm",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.document).toMatchObject({ state: "failed" });
+
+  const pausedDatabase = pauseBeforeThirdDeletionBatchDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  let staleHeadCalls = 0;
+  let staleDeleteCalls = 0;
+  const staleBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      staleHeadCalls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      staleDeleteCalls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const retryRequest = {
+    object_set_digest: prepared.document.object_set_digest,
+    idempotency_key: "export-deletion-lease-takeover-retry",
+  };
+  const stalePromise = administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-lease-takeover/retry",
+    retryRequest,
+    {
+      ...testEnv,
+      CATALOGUE_DB: pausedDatabase.database,
+      CATALOGUE_EXPORTS: staleBucket,
+    },
+  );
+  await pausedDatabase.entered;
+  expect(staleHeadCalls).toBe(1);
+  expect(staleDeleteCalls).toBe(0);
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_export_deletions
+     SET execution_lease_expires_at = ? WHERE id = ?`,
+  ).bind(
+    "2026-08-05T05:59:59.000Z",
+    "export-deletion-lease-takeover",
+  ).run();
+
+  const winner = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-lease-takeover/retry",
+    retryRequest,
+  );
+  expect(winner.document).toMatchObject({ state: "deleted" });
+  pausedDatabase.release();
+  const stale = await stalePromise;
+  expect(stale.document).toEqual(winner.document);
+  expect(staleHeadCalls).toBe(1);
+  expect(staleDeleteCalls).toBe(0);
+});
+
+test("a crashed failed retry remains stable after another key succeeds", async () => {
+  const oldRevision = "catrev_delete_retry_crash";
+  const currentRevision = "catrev_delete_retry_crash_current";
+  const old = await seedDeletionExport(
+    oldRevision,
+    "run_delete_retry_crash",
+    "2026-08-05T06:00:00.000Z",
+  );
+  await seedDeletionExport(
+    currentRevision,
+    "run_delete_retry_crash_current",
+    "2026-08-05T06:01:00.000Z",
+  );
+  testObservedAt = "2026-08-05T07:00:00.000Z";
+  const prepared = await administrationRequest(
+    "/v1/catalogue-export-deletion-plans",
+    {
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      plan_id: "export-delete-plan-retry-crash",
+    },
+  );
+  const manifestKey = old.objectKeys.at(-1)!;
+  const failingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async delete(key) {
+      if (key === manifestKey) throw new Error("injected deletion failure");
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+  });
+  const failed = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions",
+    {
+      plan_id: prepared.document.id,
+      plan_digest: prepared.document.plan_digest,
+      catalogue_revision_id: oldRevision,
+      manifest_digest: old.manifestDigest,
+      expected_current_revision_id: currentRevision,
+      confirmation_revision_id: oldRevision,
+      deletion_id: "export-deletion-retry-crash",
+      idempotency_key: "export-deletion-retry-crash-confirm",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: failingBucket },
+  );
+  expect(failed.document).toMatchObject({ state: "failed" });
+
+  const crashDatabase = crashAfterRetryTerminalDatabase(
+    testEnv.CATALOGUE_DB,
+  );
+  const failedCrash = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-failed-key",
+    },
+    {
+      ...testEnv,
+      CATALOGUE_DB: crashDatabase,
+      CATALOGUE_EXPORTS: failingBucket,
+    },
+  );
+  expect(failedCrash.response.status).toBe(500);
+  await expect(testEnv.CATALOGUE_EXPORTS.head(manifestKey)).resolves.not.toBeNull();
+
+  const succeeded = await administrationRequest(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-success-key",
+    },
+  );
+  expect(succeeded.document).toMatchObject({
+    state: "deleted",
+    failure_code: null,
+  });
+
+  let failedReplayR2Calls = 0;
+  const observingFailedBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async head(key) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.head(key);
+    },
+    async delete(key) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.delete(key);
+    },
+    async list(options) {
+      failedReplayR2Calls += 1;
+      return testEnv.CATALOGUE_EXPORTS.list(options);
+    },
+  });
+  const failedReplay = await administrationRequestWithEnv(
+    "/v1/catalogue-export-deletions/export-deletion-retry-crash/retry",
+    {
+      object_set_digest: prepared.document.object_set_digest,
+      idempotency_key: "export-deletion-retry-crash-failed-key",
+    },
+    { ...testEnv, CATALOGUE_EXPORTS: observingFailedBucket },
+  );
+  expect(failedReplay.document).toEqual(failed.document);
+  expect(failedReplayR2Calls).toBe(0);
+});
+
 async function administrationRequest(
   pathname: string,
   body?: Record<string, unknown>,
@@ -2392,6 +3189,133 @@ async function administrationRequest(
     response,
     document: (await response.json()) as Record<string, unknown>,
   };
+}
+
+async function administrationRequestWithEnv(
+  pathname: string,
+  body: Record<string, unknown>,
+  requestEnv: Env,
+): Promise<{ response: Response; document: Record<string, unknown> }> {
+  const response = await ingestionWorker.fetch(
+    new Request(`https://card-keepr.invalid${pathname}`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "cf-connecting-ip": `192.0.2.${(requestSequence++ % 250) + 1}`,
+        "content-type": "application/json",
+        ...(testObservedAt === null
+          ? {}
+          : { "x-keepr-test-now": testObservedAt }),
+      },
+      body: JSON.stringify(body),
+    }),
+    requestEnv,
+  );
+  return {
+    response,
+    document: (await response.json()) as Record<string, unknown>,
+  };
+}
+
+async function seedDeletionExport(
+  revisionId: string,
+  runId: string,
+  publishedAt: string,
+): Promise<{ manifestDigest: string; objectKeys: string[] }> {
+  const candidate = await fixtureCandidate("first-catalogue", ["one-piece"]);
+  const digest = candidate.digest;
+  const previousRevisionId = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT current_revision_id FROM catalogue_state WHERE singleton = 1",
+  ).first<string>("current_revision_id");
+  if (previousRevisionId === null) throw new Error("missing catalogue state");
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         candidate_digest, candidate_created_at, approval_deadline,
+         approval_json, published_revision_id, export_manifest_digest,
+         terminal_at, candidate_json, approval_idempotency_key
+       ) VALUES (
+         ?, 'publishing', '["one-piece"]', ?, ?, NULL, ?, ?, ?,
+         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, ?, NULL
+       )`,
+    ).bind(
+      runId,
+      publishedAt,
+      previousRevisionId,
+      `${runId}-seed`,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: previousRevisionId,
+        approved_at: publishedAt,
+      }),
+      JSON.stringify(candidate.candidate),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1",
+    ).bind(runId),
+  ]);
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_revisions (
+       id, ingestion_run_id, published_at, content_digest,
+       expected_previous_revision_id, approved_candidate_digest
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    revisionId,
+    runId,
+    publishedAt,
+    digest,
+    previousRevisionId,
+    digest,
+  ).run();
+  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+  const componentKey = `catalogue-exports/${revisionId}/components/${digest}.ndjson.gz`;
+  const manifestWithPlaceholder = {
+    export_schema_major: 4,
+    catalogue_revision: { id: revisionId, content_sha256: digest },
+    components: [{
+      name: "cards",
+      compressed_sha256: digest,
+      compressed_bytes: revisionId.length,
+    }],
+    manifest_sha256: "0".repeat(64),
+  };
+  const manifestDigest = await sha256Text(
+    `${canonicalJson(manifestWithPlaceholder)}\n`,
+  );
+  const manifest = {
+    ...manifestWithPlaceholder,
+    manifest_sha256: manifestDigest,
+  };
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, revisionId);
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson(manifest)}\n`,
+  );
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_exports (
+         catalogue_revision_id, manifest_key, manifest_digest, verified
+       ) VALUES (?, ?, ?, 1)`,
+    ).bind(revisionId, manifestKey, manifestDigest),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs SET state = 'published', published_revision_id = ?,
+         resulting_revision_id = ?, publication_outcome = 'revision', terminal_at = ?
+       WHERE id = ?`,
+    ).bind(revisionId, revisionId, publishedAt, runId),
+    testEnv.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE active_ingestion_run_id = ?",
+    ).bind(runId),
+  ]);
+  return { manifestDigest, objectKeys: [componentKey, manifestKey] };
 }
 
 function startRun(
@@ -2491,6 +3415,9 @@ function deferred<T>(): {
 function proxyR2Bucket(
   bucket: R2Bucket,
   overrides: {
+    head?: (
+      ...arguments_: Parameters<R2Bucket["head"]>
+    ) => ReturnType<R2Bucket["head"]>;
     get?: (
       ...arguments_: Parameters<R2Bucket["get"]>
     ) => ReturnType<R2Bucket["get"]>;
@@ -2508,7 +3435,9 @@ function proxyR2Bucket(
   return new Proxy(bucket, {
     get(target, property) {
       const override =
-        property === "get"
+        property === "head"
+          ? overrides.head
+          : property === "get"
           ? overrides.get
           : property === "put"
           ? overrides.put
@@ -2522,4 +3451,100 @@ function proxyR2Bucket(
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
+}
+
+function crashAfterRetryTerminalDatabase(
+  database: D1Database,
+): D1Database {
+  let batchCount = 0;
+  let terminated = false;
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === "prepare") {
+        return (query: string) => {
+          if (terminated) {
+            throw new Error("injected termination after retry terminal commit");
+          }
+          return target.prepare(query);
+        };
+      }
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          batchCount += 1;
+          const result = await target.batch(statements);
+          if (batchCount === 6) {
+            terminated = true;
+            throw new Error("injected termination after retry terminal commit");
+          }
+          return result;
+        };
+      }
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+function countDeletionResponseQueriesDatabase(
+  database: D1Database,
+): { database: D1Database; responseQueries: () => number } {
+  let responseQueryCount = 0;
+  return {
+    database: new Proxy(database, {
+      get(target, property) {
+        if (property === "prepare") {
+          return (query: string) => {
+            if (
+              query.includes(
+                "SELECT confirmation_response_json FROM catalogue_export_deletions WHERE id = ?",
+              ) ||
+              query.includes(
+                "SELECT response_json FROM catalogue_export_deletion_retries WHERE idempotency_key = ? AND deletion_id = ?",
+              )
+            ) {
+              responseQueryCount += 1;
+            }
+            return target.prepare(query);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+    responseQueries: () => responseQueryCount,
+  };
+}
+
+function pauseBeforeThirdDeletionBatchDatabase(
+  database: D1Database,
+): {
+  database: D1Database;
+  entered: Promise<void>;
+  release: () => void;
+} {
+  let batchCount = 0;
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  return {
+    database: new Proxy(database, {
+      get(target, property) {
+        if (property === "batch") {
+          return async (statements: D1PreparedStatement[]) => {
+            batchCount += 1;
+            if (batchCount === 3) {
+              entered.resolve(undefined);
+              await release.promise;
+            }
+            return target.batch(statements);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }),
+    entered: entered.promise,
+    release() {
+      release.resolve(undefined);
+    },
+  };
 }

@@ -3,7 +3,7 @@ import {
   applyD1Migrations,
   type D1Migration,
 } from "cloudflare:test";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import {
   captureOperationIdentity,
   capturePreparedAttempt,
@@ -26,6 +26,9 @@ import {
   officialCollectionRequestsFromDiscovery,
 } from "../../../src/catalogue/source-evidence-model";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
+import {
+  validateGundamListingCollectionGraph,
+} from "../../../src/catalogue/reconciliation-evidence";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import {
   fusionWorldProductionCollectionRequests,
@@ -71,6 +74,200 @@ test("the administration authentication boundary runs in the Workers runtime", a
   });
 });
 
+test("evidence run diagnostics retain safe adapter, workflow, coverage, and retry references", async () => {
+  const records: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
+  const response = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      idempotency_key: "diagnostic-evidence-run",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  expect(response.status).toBe(201);
+  const run = await response.json<Record<string, unknown>>();
+  const requestLog = JSON.parse(records.at(-1) ?? "null") as {
+    request: { id: string };
+  };
+  expect(run).toMatchObject({
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: {
+        request_id: requestLog.request.id,
+        adapter_versions: ["one-piece-en@3"],
+        workflow: {
+          parent_id: null,
+          child_ids: [],
+        },
+        recovery: { status_path: "/v1/status" },
+      },
+      terminal_evidence: {
+        failure: null,
+        coverage: {
+          evidence_plan_count: 1,
+          source_snapshot_count: 0,
+          source_observation_set_count: 0,
+          fetch_attempt_count: 0,
+        },
+      },
+      retry: null,
+    },
+  });
+  const bundle = JSON.stringify(run.operational_diagnostics);
+  expect(bundle).not.toContain("diagnostic-evidence-run");
+  expect(bundle).not.toContain("authorization");
+  expect(bundle).not.toContain("fixture-official-source");
+});
+
+test("terminal evidence diagnostics expose collection retry guidance without a stale candidate path", async () => {
+  const records: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      idempotency_key: "terminal-evidence-diagnostics",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  const run = await created.json<{ id: string }>();
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_runs
+     SET state = 'failed', terminal_at = ?,
+         failure_code = 'source_request_retries_exhausted'
+     WHERE id = ?`,
+  ).bind("2026-08-05T00:00:00.000Z", run.id).run();
+  const shown = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}`,
+    "GET",
+  );
+  expect(shown.status).toBe(200);
+  const document = await shown.json<Record<string, unknown>>();
+  expect(document).toMatchObject({
+    operational_diagnostics: {
+      retry: {
+        code: "evidence_collection_retry_available",
+        source_run_id: run.id,
+        method: "POST",
+        path: `/v1/ingestion-runs/${run.id}/collection/retry`,
+      },
+      diagnosis_sequence: [
+        { code: "check_status", method: "GET", path: "/v1/status" },
+        {
+          code: "inspect_run",
+          method: "GET",
+          path: `/v1/ingestion-runs/${run.id}`,
+        },
+        {
+          code: "retry_evidence_collection",
+          method: "POST",
+          path: `/v1/ingestion-runs/${run.id}/collection/retry`,
+        },
+      ],
+    },
+  });
+  expect(JSON.stringify(document.operational_diagnostics)).not.toContain(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+  );
+  await env.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+  ).run();
+  const retried = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/retry`,
+    "POST",
+    { idempotency_key: "terminal-evidence-diagnostics-retry" },
+  );
+  expect(retried.status).toBe(201);
+  const retryDocument = await retried.json<Record<string, unknown>>();
+  const retryLog = records.map((record) => JSON.parse(record)).reverse().find(
+    (record: { request?: { route?: string; id?: string } }) =>
+      record.request?.route ===
+      "/v1/ingestion-runs/:ref/collection/retry",
+  );
+  expect(retryDocument).toMatchObject({
+    linked_run_id: run.id,
+    operational_diagnostics: {
+      references: { request_id: retryLog.request.id },
+    },
+  });
+  expect(JSON.stringify(retryDocument.operational_diagnostics)).not.toContain(
+    "terminal-evidence-diagnostics-retry",
+  );
+});
+
+test("published evidence diagnostics explicitly advertise no retry route", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@3",
+      idempotency_key: "published-evidence-diagnostics",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  const source = await created.json<{ id: string }>();
+  const run = { id: "run_published_evidence_diagnostics" };
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+    ),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, linked_run_id, idempotency_key,
+         operational_request_id, terminal_at, candidate_json
+       ) VALUES (
+         ?, 'published', '["one-piece"]', ?, 'catrev_spine_000', NULL, ?,
+         ?, ?, '{}'
+       )`,
+    ).bind(
+      run.id,
+      "2026-08-05T00:00:00.000Z",
+      "published-evidence-diagnostics-row",
+      "published-evidence-request",
+      "2026-08-05T00:00:00.000Z",
+    ),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_evidence_plans (
+         ingestion_run_id, source_lineage, supported_game,
+         game_profile_version, adapter_version, request_plan_json,
+         plan_origin
+       )
+       SELECT ?, source_lineage, supported_game, game_profile_version,
+              adapter_version, request_plan_json, plan_origin
+       FROM ingestion_evidence_plans WHERE ingestion_run_id = ?`,
+    ).bind(run.id, source.id),
+  ]);
+  const shown = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}`,
+    "GET",
+  );
+  expect(shown.status).toBe(200);
+  const document = await shown.json<Record<string, unknown>>();
+  expect(document).toMatchObject({
+    operational_diagnostics: {
+      retry_available: false,
+      retry: null,
+    },
+  });
+  const diagnostics = JSON.stringify(document.operational_diagnostics);
+  expect(diagnostics).not.toContain("/collection/retry");
+  expect(diagnostics).not.toContain(`/v1/ingestion-runs/${run.id}/retry`);
+});
+
 test("production source fixture selection is invariant under retries and reordering", () => {
   const discoveryHeaders = new Headers({
     accept: "text/html",
@@ -112,6 +309,277 @@ test("production source fixture selection is invariant under retries and reorder
     "user-agent":
       "card-keepr-representable-legality-v3; request-role=surface",
   }))).toBe("card-keepr-representable-legality-v3");
+});
+
+test("synthetic Bandai-shaped paginated Gundam observations close as one collection graph", async () => {
+  const adapter = requiredSourceAdapter("gundam-en-asia@4");
+  if (
+    adapter.requestUrlForSurface === undefined ||
+    adapter.parseBytes === undefined
+  ) throw new Error("Gundam live adapter is incomplete.");
+  const rootUrl = adapter.requestUrlForSurface("packages");
+  const parseBytes = adapter.parseBytes;
+  const page = async (
+    pageNumber: number,
+    terminal: boolean,
+    locators: readonly string[],
+    declaredTotal = 4,
+  ) => {
+    const url = pageNumber === 1
+      ? `${rootUrl}?package=619102`
+      : `${rootUrl}?package=619102&page=${pageNumber}`;
+    const pageIdentity = pageNumber === 1
+      ? ""
+      : `<input type="hidden" name="page" value="${pageNumber}">`;
+    const pager = terminal
+      ? '<div class="pager"></div>'
+      : `<div class="pager"><a href="?package=619102&amp;page=${pageNumber + 1}">${pageNumber + 1}</a></div>`;
+    const html = `<html><main><section>
+      <input type="hidden" name="package" value="619102">${pageIdentity}
+      <div class="resultTxt"><span class="num">${declaredTotal}</span>cards found.</div>
+      <ul>${locators.map((locator) =>
+        `<li class="cardItem"><a data-src="detail.php?detailSearch=${locator}">Card</a></li>`
+      ).join("")}</ul>${pager}</section></main></html>`;
+    const requestId =
+      `gundam-en-asia:listing:${String(pageNumber).repeat(64)}`;
+    return {
+      requestId,
+      requestUrl: url,
+      sourceLineage: "gundam-en-asia",
+      adapterVersion: "gundam-en-asia@4",
+      observations: await parseBytes(new TextEncoder().encode(html), {
+        mediaType: "text/html; charset=UTF-8",
+        url,
+        requestId,
+      }),
+    };
+  };
+  const first = await page(1, false, ["GD02-001", "GD02-002"]);
+  const second = await page(2, true, ["GD02-002", "GD02-003", "GD02-004"]);
+  expect(validateGundamListingCollectionGraph([first, second])).toEqual({
+    completeRequestIds: [first.requestId, second.requestId],
+    collections: [{
+      sourceLineage: "gundam-en-asia",
+      package: "619102",
+      declaredTotal: 4,
+      terminalPage: 2,
+      fullLocators: ["GD02-001", "GD02-002", "GD02-003", "GD02-004"],
+    }],
+  });
+  const third = await page(3, true, ["GD02-002", "GD02-003", "GD02-004"]);
+  expect(() => validateGundamListingCollectionGraph([
+    first,
+    third,
+  ])).toThrow(/page continuity/iu);
+  const nonterminalSecond = await page(
+    2,
+    false,
+    ["GD02-002", "GD02-003", "GD02-004"],
+  );
+  expect(() => validateGundamListingCollectionGraph([
+    first,
+    nonterminalSecond,
+  ])).toThrow(/terminal-page proof/iu);
+  const inconsistentTotalSecond = await page(
+    2,
+    true,
+    ["GD02-002", "GD02-003", "GD02-004"],
+    5,
+  );
+  expect(() => validateGundamListingCollectionGraph([
+    first,
+    inconsistentTotalSecond,
+  ])).toThrow(/publisher total/iu);
+});
+
+test("synthetic production transport captures Gundam pages and reconciles one complete graph", async () => {
+  const sourceLineage = "gundam-en-asia";
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "gundam",
+      source_lineage: sourceLineage,
+      adapter_version: "gundam-en-asia@4",
+      idempotency_key: "gundam-paginated-collection-graph-v4",
+      requests: officialSourceDiscoveryRequests(sourceLineage).map(
+        (request) => ({
+          ...request,
+          headers: {
+            ...request.headers,
+            "user-agent": "card-keepr-gundam-pagination-v4",
+          },
+        }),
+      ),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const resumed = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const completed = await waitForEvidenceRun(
+    run.id,
+    "awaiting_approval",
+    45_000,
+  );
+  if (completed.state === "failed") {
+    const failures = await env.CATALOGUE_DB.prepare(
+      `SELECT request_id, url, failure_code
+       FROM source_requests
+       WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
+       ORDER BY sequence_number`,
+    ).bind(run.id).all();
+    const terminal = await env.CATALOGUE_DB.prepare(
+      `SELECT result_json FROM reconciliation_terminal_results
+       WHERE ingestion_run_id = ?`,
+    ).bind(run.id).first<{ result_json: string }>();
+    throw new Error(JSON.stringify({
+      failure_code: completed.failure_code,
+      failures: failures.results,
+      reconciliation: terminal === null ? null : JSON.parse(terminal.result_json),
+    }));
+  }
+  expect(completed).toMatchObject({
+    state: "awaiting_approval",
+    failure_code: null,
+  });
+  const listingRequests = await env.CATALOGUE_DB.prepare(
+    `SELECT url
+     FROM source_requests
+     WHERE ingestion_run_id = ? AND request_role = 'listing'
+       AND url LIKE '%package=619102%'
+     ORDER BY url`,
+  ).bind(run.id).all<{ url: string }>();
+  expect(listingRequests.results.map(({ url }) => url)).toEqual([
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102&page=2",
+  ]);
+  const discoveredHeaders = await env.CATALOGUE_DB.prepare(
+    `SELECT request_role, request_headers_json
+     FROM source_requests
+     WHERE ingestion_run_id = ?
+       AND request_role IN ('listing', 'detail', 'image')
+       AND (
+         url LIKE '%package=619102%'
+         OR url LIKE '%detailSearch=GD02-00%'
+         OR url LIKE '%/GD02-00%.png'
+       )
+     ORDER BY sequence_number`,
+  ).bind(run.id).all<{
+    request_role: "listing" | "detail" | "image";
+    request_headers_json: string;
+  }>();
+  expect(discoveredHeaders.results).toHaveLength(10);
+  expect(discoveredHeaders.results.every(({ request_headers_json }) =>
+    productionSourceFixtureMarker(
+      new Headers(JSON.parse(request_headers_json)),
+    ) === "card-keepr-gundam-pagination-v4"
+  )).toBe(true);
+  const firstPageEvidence = await env.CATALOGUE_DB.prepare(
+    `SELECT observation.content_object_key
+     FROM source_requests AS request
+     JOIN source_snapshots AS snapshot
+       ON snapshot.id = request.source_snapshot_id
+     JOIN source_observation_sets AS observation
+       ON observation.source_snapshot_id = snapshot.id
+     WHERE request.ingestion_run_id = ?
+       AND request.url = ?`,
+  ).bind(
+    run.id,
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+  ).first<{ content_object_key: string }>();
+  const firstPageObject = await env.EVIDENCE_OBJECTS.get(
+    firstPageEvidence?.content_object_key ?? "",
+  );
+  expect(await firstPageObject?.json()).toMatchObject({
+    evidence_summary: {
+      declared_record_count: 4,
+      parsed_record_count: 2,
+      required_surfaces_complete: false,
+      partitions_complete: false,
+      structurally_complete: false,
+    },
+  });
+  const candidate = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/candidate`,
+    "GET",
+  );
+  expect(candidate.status).toBe(200);
+  await expect(candidate.json()).resolves.toMatchObject({
+    diff: {
+      summary: {
+        cards_added: 4,
+        printings_added: 4,
+      },
+    },
+  });
+}, 60_000);
+
+test("synthetic paginated Gundam transport requires its scenario marker", async () => {
+  const discoveryUrl = requiredSourceAdapter("gundam-en-asia@4")
+    .requestUrlForDiscovery?.();
+  if (discoveryUrl === undefined) {
+    throw new Error("Gundam discovery URL is unavailable.");
+  }
+  const listingUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102";
+  const detailUrl =
+    "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-001";
+  const imageUrl =
+    "https://www.gundam-gcg.com/jp/images/cards/card/GD02-001.png";
+  const activated = await env.OFFICIAL_SOURCE_TRANSPORT.fetch(discoveryUrl, {
+    headers: { "user-agent": "card-keepr-gundam-pagination-v4" },
+  });
+  expect(activated.status).toBe(200);
+  await activated.body?.cancel();
+  const [unmarked, mismatchedDetail, mismatchedImage] = await Promise.all([
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl)
+      .then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=detail",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
+      headers: {
+        "user-agent": "unrelated-scenario; request-role=image",
+      },
+    }),
+  ]);
+  expect(unmarked).not.toContain('<span class="num">4</span>cards found.');
+  expect(mismatchedDetail).not.toContain("Paginated GD02-001");
+  expect(mismatchedImage.headers.get("content-type")).not.toBe("image/png");
+  const [
+    marked,
+    markedDetail,
+    markedImage,
+  ] = await Promise.all([
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(listingUrl, {
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=listing",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(detailUrl, {
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=detail",
+      },
+    }).then((response) => response.text()),
+    env.OFFICIAL_SOURCE_TRANSPORT.fetch(imageUrl, {
+      headers: {
+        "user-agent":
+          "card-keepr-gundam-pagination-v4; request-role=image",
+      },
+    }),
+  ]);
+  expect(marked).toContain('<span class="num">4</span>cards found.');
+  expect(markedDetail).toContain("Paginated GD02-001");
+  expect(markedImage.headers.get("content-type")).toBe("image/png");
 });
 
 test("every pinned aggregate adapter retains its immutable parser contract", () => {
@@ -213,8 +681,8 @@ test.each([
 );
 
 test("authenticated reparse requires the exact Digimon snapshot capture version even when versions share URL authority", async () => {
-  const current = requiredSourceAdapter("digimon-en@3");
-  const historical = requiredSourceAdapter("digimon-en@2");
+  const current = requiredSourceAdapter("digimon-en@4");
+  const historical = requiredSourceAdapter("digimon-en@3");
   const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
   const historicalCardListUrl = historical.requestUrlForSurface?.(
     "card-list",
@@ -223,13 +691,28 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
     throw new Error("Digimon versioned URL contracts are unavailable");
   }
   expect(currentDiscoveryUrl).toBe(historicalCardListUrl);
-  const created = await administrationRequest(
+  const superseded = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
     {
       supported_game: "digimon",
       source_lineage: "digimon-en",
       adapter_version: "digimon-en@3",
+      idempotency_key: "reject-superseded-digimon-v3-source",
+      requests: officialSourceDiscoveryRequests("digimon-en"),
+    },
+  );
+  expect(superseded.status).toBe(422);
+  await expect(superseded.json()).resolves.toMatchObject({
+    code: "adapter_not_supported",
+  });
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "digimon",
+      source_lineage: "digimon-en",
+      adapter_version: "digimon-en@4",
       idempotency_key: "digimon-exact-capture-version-source",
       requests: officialSourceDiscoveryRequests("digimon-en"),
     },
@@ -257,13 +740,13 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
   );
   if (snapshot === undefined) throw new Error("retained Digimon snapshot missing");
   try {
-    expect(snapshot.adapter_version).toBe("digimon-en@3");
+    expect(snapshot.adapter_version).toBe("digimon-en@4");
 
     const mismatched = await administrationRequest(
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@2",
+        adapter_version: "digimon-en@3",
         idempotency_key: "digimon-mismatched-capture-version-reparse",
       },
     );
@@ -276,14 +759,14 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         idempotency_key: "digimon-exact-capture-version-reparse",
       },
     );
     expect(exact.status).toBe(201);
     await expect(exact.json()).resolves.toMatchObject({
       source_snapshot_id: snapshot.id,
-      adapter_version: "digimon-en@3",
+      adapter_version: "digimon-en@4",
     });
   } finally {
     await waitForWorkflowStatus(
@@ -393,7 +876,7 @@ function fusionWorldDiscoveryRecords() {
 }
 
 test("final Official Source requests keep discovery evidence immutable while exposing a deterministic fixture role", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
@@ -419,7 +902,7 @@ test("final Official Source requests keep discovery evidence immutable while exp
 });
 
 test("final Official Source requests canonicalize injected reserved routing metadata", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -437,7 +920,7 @@ test("final Official Source requests canonicalize injected reserved routing meta
 });
 
 test("the exact live Fusion final request selects and parses the representable legality fixture", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -496,7 +979,7 @@ test("the exact live Fusion final request selects and parses the representable l
 });
 
 test("final Official Source collection identities enforce the URL byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const withFirstUrl = (url: string) => records.map((record, index) =>
     index === 0
@@ -522,7 +1005,7 @@ test("final Official Source collection identities enforce the URL byte bound", a
 });
 
 test("final Official Source collection identities enforce the merged-header byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@3");
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const records = fusionWorldDiscoveryRecords();
   const headerBase = utf8(canonicalJson({
     accept: "text/html",
@@ -720,7 +1203,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_auto_reconcile_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },
@@ -741,7 +1224,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       (await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id))
         .status(),
     "complete",
-    12_000,
+    20_000,
   );
   const completed = await showCollection(run.id);
   if (completed.state === "failed") {
@@ -787,7 +1270,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   expect(retainedObservation.status).toBe(200);
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     observations: [{
       value: {
         observation_type: "official_surface_evidence",
@@ -823,7 +1306,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
       },
     }],
   });
-}, 15_000);
+}, 30_000);
 
 test("incomplete retained production discovery blocks collection and publication", async () => {
   const marker = "card-keepr-incomplete-discovery-v3";
@@ -833,7 +1316,7 @@ test("incomplete retained production discovery blocks collection and publication
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_incomplete_discovery_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -869,7 +1352,7 @@ test("notice-link-only production legality evidence fails closed before stale ru
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_notice_only_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -901,7 +1384,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "source_parent_large_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -1646,7 +2129,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const first = await resumeCollection(firstRun.id);
   const firstSnapshot = first.snapshots[0];
   if (firstSnapshot === undefined) throw new Error("missing first snapshot");
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
 
   const differentRepresentationRun = await createCollection(
     "source_collection_cache_language_changed_001",
@@ -1661,7 +2144,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
     http: { status: 200 },
     reused_source_snapshot_id: null,
   });
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
 
   const revalidatedRun = await createCollection(
     "source_collection_cache_second_001",
@@ -1674,7 +2157,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   if (revalidatedSnapshot === undefined) {
     throw new Error("missing revalidated snapshot");
   }
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
   expect(revalidatedSnapshot).toMatchObject({
     http: { status: 304 },
     reused_source_snapshot_id: firstSnapshot.id,
@@ -1741,7 +2224,7 @@ test("adapter registrations stay constrained while mismatched production identit
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@2",
+      adapter_version: "one-piece-en@3",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -1820,6 +2303,18 @@ test.each([
       expect(created.status).toBe(201);
       const run = await created.json<{ id: string }>();
       const terminal = await resumeCollection(run.id, 20_000);
+      if (terminal.failure_code !== "source_parse_failed") {
+        const failures = await env.CATALOGUE_DB.prepare(
+          `SELECT request_id, state, failure_code
+           FROM source_requests
+           WHERE ingestion_run_id = ? AND failure_code IS NOT NULL
+           ORDER BY sequence_number`,
+        ).bind(run.id).all();
+        throw new Error(JSON.stringify({
+          failure_code: terminal.failure_code,
+          source_failures: failures.results,
+        }));
+      }
       expect(terminal).toMatchObject({
         state: "failed",
         failure_code: "source_parse_failed",
@@ -2371,7 +2866,7 @@ function exactOnePiecePlan(idempotencyKey: string) {
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: idempotencyKey,
     requests: officialSourceDiscoveryRequests("one-piece-en").map(
       (request) => ({ ...request }),
@@ -2478,7 +2973,7 @@ async function resumeCollection(
 
 async function waitForEvidenceRun(
   runId: string,
-  expectedState: "parsing" | "failed" | null = null,
+  expectedState: "parsing" | "awaiting_approval" | "failed" | null = null,
   timeoutMs = 8_000,
 ): Promise<CollectionDocument> {
   const deadline = Date.now() + timeoutMs;
@@ -2487,6 +2982,8 @@ async function waitForEvidenceRun(
     if (
       expectedState === null
         ? current.state === "parsing" || current.state === "failed"
+        : expectedState === "awaiting_approval"
+          ? current.state === "awaiting_approval" || current.state === "failed"
         : current.state === expectedState
     ) {
       return current;
@@ -2500,7 +2997,7 @@ async function waitForEvidenceRun(
   }
 }
 
-function releaseActiveRunForNextScenario(): Promise<D1Result<unknown>> {
+function clearActiveRunForNextScenario(): Promise<D1Result<unknown>> {
   return env.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();

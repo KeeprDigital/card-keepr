@@ -28,6 +28,8 @@ export type SourceAdapterRegistration = Readonly<{
     | Readonly<{ kind: "exact-url"; url: string }>
     | Readonly<{ kind: "synthetic-fixture" }>;
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
+  reconciliationAreas?: readonly ("catalogue" | "errata")[];
+  inheritDiscoveryRequestHeaders?: boolean;
   parse?: (
     document: unknown,
   ) => readonly unknown[] | Promise<readonly unknown[]>;
@@ -197,6 +199,21 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         origin: "production" as const,
         requestSurface: { kind: "credential-free-https" as const },
         reconciliationCapability: "catalogue" as const,
+        reconciliationAreas: [
+          "one-piece-en@3",
+          "fusion-world-en@4",
+          "digimon-en@4",
+          "gundam-en-asia@4",
+          "gundam-en-us@4",
+        ].includes(adapter.adapterVersion)
+          ? ["catalogue", "errata"] as const
+          : ["catalogue"] as const,
+        inheritDiscoveryRequestHeaders:
+          [
+            "digimon-en@4",
+            "gundam-en-asia@4",
+            "gundam-en-us@4",
+          ].includes(adapter.adapterVersion),
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
@@ -400,13 +417,24 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     })),
   );
 
+const activeOfficialRawAdapterVersions = new Set(
+  [
+    ...new Map(
+      officialRawAdapterContracts.map((adapter) => [
+        adapter.sourceLineage,
+        adapter.adapterVersion,
+      ]),
+    ).values(),
+  ],
+);
+
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     installedSourceAdapterRegistrations.filter((adapter) =>
       adapter.origin !== "production" ||
       adapter.reconciliationCapability !== "catalogue" ||
       typeof adapter.parseBytes !== "function" ||
-      adapter.parserContract.endsWith("-raw-surfaces-with-legality@2")
+      activeOfficialRawAdapterVersions.has(adapter.adapterVersion)
     ),
   );
 
@@ -435,6 +463,17 @@ export function requiredSourceAdapter(
     );
   }
   return adapter;
+}
+
+export function adapterReconciliationAreas(
+  adapter: SourceAdapterRegistration,
+): readonly ("catalogue" | "errata")[] {
+  if (adapter.reconciliationAreas !== undefined) {
+    return adapter.reconciliationAreas;
+  }
+  return adapter.reconciliationCapability === "unavailable"
+    ? []
+    : [adapter.reconciliationCapability];
 }
 
 export function requiredActiveSourceAdapter(

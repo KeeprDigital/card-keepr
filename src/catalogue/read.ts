@@ -3,6 +3,7 @@ import {
   parsePublicationInstant,
 } from "../http/catalogue";
 import { ifNoneMatch } from "../http/conditional";
+import { problemResponse } from "../http/problem";
 import { canonicalJson, sha256Text } from "./serialization";
 import {
   canonicalDetailSelf,
@@ -57,9 +58,11 @@ type ExportRow = {
   published_at: string;
   manifest_key: string;
   manifest_digest: string;
+  maintenance_state: "available" | "deleting" | "deleted";
 };
 
 type ExportManifest = {
+  export_schema_major: number;
   catalogue_revision: {
     id: string;
     content_sha256: string;
@@ -71,6 +74,255 @@ type ExportManifest = {
     compressed_bytes: number;
   }[];
 };
+
+export class CatalogueExportReadProblem extends Error {
+  constructor(
+    readonly status: 400 | 409 | 410,
+    readonly code:
+      | "invalid_parameter"
+      | "invalid_cursor"
+      | "cursor_revision_unavailable"
+      | "catalogue_export_deleted",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function catalogueExportsResponse(
+  request: Request,
+  database: D1Database,
+  bucket: R2Bucket,
+): Promise<Response> {
+  const url = new URL(request.url);
+  assertCatalogueExportCollectionParameters(url);
+  const state = await database
+    .prepare(
+      `SELECT current_revision_id, published_at
+       FROM catalogue_state WHERE singleton = 1`,
+    )
+    .first<CatalogueStateRow>();
+  if (state === null) throw new Error("Catalogue state is unavailable");
+  const limit = catalogueExportCollectionLimit(url.searchParams.get("limit"));
+  const cursor = decodeCatalogueExportCursor(url.searchParams.get("after"));
+  if (cursor !== null && cursor.limit !== limit) {
+    throw new CatalogueExportReadProblem(
+      400,
+      "invalid_cursor",
+      "The Catalogue Export cursor does not match the requested limit.",
+    );
+  }
+  const revisionId = cursor?.revision_id ?? state.current_revision_id;
+  const revision = revisionId === state.current_revision_id
+    ? { published_at: state.published_at }
+    : await database
+      .prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?")
+      .bind(revisionId)
+      .first<{ published_at: string }>();
+  if (revision === null) {
+    throw new CatalogueExportReadProblem(
+      409,
+      "cursor_revision_unavailable",
+      "The Catalogue Export cursor revision is unavailable.",
+    );
+  }
+  const exports = await database
+    .prepare(
+      `WITH RECURSIVE pinned_revision(id) AS (
+         SELECT ?
+         UNION ALL
+         SELECT revision.expected_previous_revision_id
+         FROM catalogue_revisions AS revision
+         JOIN pinned_revision ON revision.id = pinned_revision.id
+       )
+       SELECT export.catalogue_revision_id, revision.published_at,
+              export.manifest_key, export.manifest_digest,
+              export.maintenance_state
+       FROM catalogue_exports AS export
+       JOIN catalogue_revisions AS revision
+         ON revision.id = export.catalogue_revision_id
+       JOIN pinned_revision AS pinned
+         ON pinned.id = export.catalogue_revision_id
+       WHERE export.verified = 1
+         AND export.maintenance_state = 'available'
+         AND (
+           ? IS NULL OR revision.published_at < ? OR (
+             revision.published_at = ? AND
+             export.catalogue_revision_id < ?
+           )
+         )
+       ORDER BY revision.published_at DESC,
+                export.catalogue_revision_id DESC
+       LIMIT ?`,
+    )
+    .bind(
+      revisionId,
+      cursor?.after.published_at ?? null,
+      cursor?.after.published_at ?? "",
+      cursor?.after.published_at ?? "",
+      cursor?.after.catalogue_revision_id ?? "",
+      limit + 1,
+    )
+    .all<ExportRow>();
+  const selected = exports.results.slice(0, limit);
+  const data = await Promise.all(selected.map(async (exportRow) => {
+    const verified = await loadVerifiedExportManifest(
+      database,
+      bucket,
+      exportRow.catalogue_revision_id,
+    );
+    if (verified === null) {
+      throw new Error("Verified Catalogue Export is unavailable");
+    }
+    return {
+      type: "catalogue_export",
+      catalogue_revision_id: exportRow.catalogue_revision_id,
+      export_schema_major: verified.manifest.export_schema_major,
+      published_at: exportRow.published_at,
+      manifest_sha256: exportRow.manifest_digest,
+      links: {
+        self:
+          `/v1/catalogue-exports/${encodeURIComponent(exportRow.catalogue_revision_id)}`,
+      },
+    };
+  }));
+  const next = exports.results.length > limit
+    ? encodeCatalogueExportCursor({
+        contract: "card-keepr-catalogue-export-cursor@1",
+        route: "/v1/catalogue-exports",
+        order: "published_at:desc,catalogue_revision_id:desc",
+        revision_id: revisionId,
+        limit,
+        after: {
+          published_at: selected.at(-1)!.published_at,
+          catalogue_revision_id:
+            selected.at(-1)!.catalogue_revision_id,
+        },
+      })
+    : null;
+  const document = {
+    data,
+    meta: {
+      catalogue_revision_id: revisionId,
+      published_at: revision.published_at,
+    },
+    page: { limit, next_cursor: next },
+    links: { self: `${url.pathname}${url.search}` },
+  };
+  const etag = `"${await sha256Text(canonicalJson(document))}"`;
+  const headers = revisionHeaders(revisionId, etag);
+  if (ifNoneMatch(request, etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  return Response.json(document, { headers });
+}
+
+type CatalogueExportCursor = {
+  contract: "card-keepr-catalogue-export-cursor@1";
+  route: "/v1/catalogue-exports";
+  order: "published_at:desc,catalogue_revision_id:desc";
+  revision_id: string;
+  limit: number;
+  after: {
+    published_at: string;
+    catalogue_revision_id: string;
+  };
+};
+
+function encodeCatalogueExportCursor(cursor: CatalogueExportCursor): string {
+  return btoa(JSON.stringify(cursor))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+}
+
+function decodeCatalogueExportCursor(value: string | null): CatalogueExportCursor | null {
+  if (value === null) return null;
+  try {
+    if (!/^[A-Za-z0-9_-]+$/u.test(value)) throw new Error("invalid base64url");
+    const decoded = value.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = decoded + "=".repeat((4 - decoded.length % 4) % 4);
+    const parsed: unknown = JSON.parse(atob(padded));
+    if (!isCatalogueExportCursor(parsed)) throw new Error("invalid shape");
+    return parsed;
+  } catch {
+    throw new CatalogueExportReadProblem(
+      400,
+      "invalid_cursor",
+      "The Catalogue Export cursor is invalid.",
+    );
+  }
+}
+
+function isCatalogueExportCursor(value: unknown): value is CatalogueExportCursor {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const cursor = value as Record<string, unknown>;
+  const after = cursor.after;
+  return Object.keys(cursor).sort().join(",") ===
+      "after,contract,limit,order,revision_id,route" &&
+    cursor.contract === "card-keepr-catalogue-export-cursor@1" &&
+    cursor.route === "/v1/catalogue-exports" &&
+    cursor.order === "published_at:desc,catalogue_revision_id:desc" &&
+    typeof cursor.revision_id === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(cursor.revision_id) &&
+    Number.isInteger(cursor.limit) &&
+    Number(cursor.limit) >= 1 && Number(cursor.limit) <= 100 &&
+    after !== null && typeof after === "object" && !Array.isArray(after) &&
+    Object.keys(after).sort().join(",") ===
+      "catalogue_revision_id,published_at" &&
+    typeof (after as Record<string, unknown>).published_at === "string" &&
+    !Number.isNaN(Date.parse(
+      (after as Record<string, string>).published_at!,
+    )) &&
+    typeof (after as Record<string, unknown>).catalogue_revision_id ===
+      "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(
+      (after as Record<string, string>).catalogue_revision_id!,
+    );
+}
+
+function assertCatalogueExportCollectionParameters(url: URL): void {
+  for (const key of url.searchParams.keys()) {
+    if (key !== "limit" && key !== "after") {
+      throw new CatalogueExportReadProblem(
+        400,
+        "invalid_parameter",
+        `Catalogue Export query parameter ${key || "<empty>"} is invalid.`,
+      );
+    }
+  }
+  for (const key of ["limit", "after"]) {
+    if (url.searchParams.getAll(key).length > 1) {
+      throw new CatalogueExportReadProblem(
+        400,
+        "invalid_parameter",
+        `Catalogue Export query parameter ${key} must be supplied once.`,
+      );
+    }
+  }
+}
+
+function catalogueExportCollectionLimit(value: string | null): number {
+  if (value === null) return 50;
+  if (!/^[1-9][0-9]*$/u.test(value)) {
+    throw new CatalogueExportReadProblem(
+      400,
+      "invalid_parameter",
+      "Catalogue Export limit must be an integer from 1 through 100.",
+    );
+  }
+  const limit = Number(value);
+  if (limit > 100) {
+    throw new CatalogueExportReadProblem(
+      400,
+      "invalid_parameter",
+      "Catalogue Export limit must be an integer from 1 through 100.",
+    );
+  }
+  return limit;
+}
 
 export async function currentCatalogueStatus(database: D1Database) {
   const [state, freshness] = await Promise.all([
@@ -235,6 +487,7 @@ export async function printingImageContentResponse(
   database: D1Database,
   bucket: R2Bucket,
   imageId: string,
+  requestId: string,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -277,12 +530,19 @@ export async function printingImageContentResponse(
         row.content_byte_length,
       );
   if (range === "unsatisfiable") {
-    baseHeaders.set(
-      "content-range",
-      `bytes */${row.content_byte_length}`,
-    );
-    baseHeaders.set("cache-control", "no-store");
-    return new Response(null, { status: 416, headers: baseHeaders });
+    return problemResponse({
+      requestId,
+      status: 416,
+      code: "range_not_satisfiable",
+      title: "Range not satisfiable",
+      detail: "The requested Printing Image byte range is not satisfiable.",
+      headers: {
+        "accept-ranges": "bytes",
+        "content-range": `bytes */${row.content_byte_length}`,
+        etag,
+        "x-catalogue-revision": row.current_revision_id,
+      },
+    });
   }
   const object =
     isHead
@@ -342,6 +602,7 @@ function detailEnvelope(documentJson: string): DetailEnvelope {
 }
 
 export async function catalogueExportResponse(
+  request: Request,
   database: D1Database,
   bucket: R2Bucket,
   revisionId: string,
@@ -353,6 +614,13 @@ export async function catalogueExportResponse(
   );
   if (verifiedExport === null) return null;
   const { exportRow, manifest } = verifiedExport;
+  const headers = revisionHeaders(
+    exportRow.catalogue_revision_id,
+    exportRow.manifest_digest,
+  );
+  if (ifNoneMatch(request, `"${exportRow.manifest_digest}"`)) {
+    return new Response(null, { status: 304, headers });
+  }
   return Response.json(
     {
       data: manifest,
@@ -365,10 +633,7 @@ export async function catalogueExportResponse(
       },
     },
     {
-      headers: revisionHeaders(
-        exportRow.catalogue_revision_id,
-        exportRow.manifest_digest,
-      ),
+      headers,
     },
   );
 }
@@ -379,7 +644,28 @@ export async function catalogueExportComponentResponse(
   bucket: R2Bucket,
   revisionId: string,
   componentName: string,
+  requestId: string,
 ): Promise<Response | null> {
+  const exportRow = await findExport(database, revisionId);
+  if (exportRow === null) return null;
+  if (exportRow.maintenance_state !== "available") {
+    const knownComponent = await database.prepare(
+      `SELECT 1 AS present
+       FROM catalogue_exports AS export
+       JOIN catalogue_export_deletions AS deletion
+         ON deletion.id = export.deletion_operation_id
+       JOIN catalogue_export_deletion_plans AS plan
+         ON plan.id = deletion.plan_id
+       JOIN json_each(plan.component_names_json) AS component
+       WHERE export.catalogue_revision_id = ? AND component.value = ?`,
+    ).bind(revisionId, componentName).first();
+    if (knownComponent === null) return null;
+    throw new CatalogueExportReadProblem(
+      410,
+      "catalogue_export_deleted",
+      "This known Catalogue Export component has been deleted.",
+    );
+  }
   const verifiedExport = await loadVerifiedExportManifest(
     database,
     bucket,
@@ -393,53 +679,76 @@ export async function catalogueExportComponentResponse(
   if (component === undefined) return null;
 
   const etag = `"${component.compressed_sha256}"`;
+  const baseHeaders = new Headers({
+    "accept-ranges": "bytes",
+    "cache-control": "private, max-age=31536000, immutable",
+    etag,
+    "x-catalogue-revision": revisionId,
+  });
+  const key = `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`;
+  const verifiedObject = await verifyExportComponentObject(
+    bucket,
+    key,
+    component.compressed_bytes,
+    component.compressed_sha256,
+  );
+  if (verifiedObject === null) {
+    return unavailableCatalogueExportComponent(requestId);
+  }
   if (ifNoneMatch(request, etag)) {
     return new Response(null, {
       status: 304,
-      headers: {
-        etag,
-        "x-catalogue-revision": revisionId,
-        "cache-control": "private, max-age=31536000, immutable",
-      },
+      headers: baseHeaders,
     });
   }
 
-  const key = `catalogue-exports/${revisionId}/components/${component.compressed_sha256}.ndjson.gz`;
-  const range = parseRange(
-    request.headers.get("range"),
-    component.compressed_bytes,
-  );
+  const range = request.method === "HEAD"
+    ? null
+    : parseRange(
+        request.headers.get("range"),
+        component.compressed_bytes,
+      );
   if (range === "unsatisfiable") {
-    return new Response(null, {
+    return problemResponse({
+      requestId,
       status: 416,
+      code: "range_not_satisfiable",
+      title: "Range not satisfiable",
+      detail: "The requested Catalogue Export component byte range is not satisfiable.",
       headers: {
+        "accept-ranges": "bytes",
         "content-range": `bytes */${component.compressed_bytes}`,
+        etag,
         "x-catalogue-revision": revisionId,
-        "cache-control": "no-store",
       },
     });
   }
   const object =
     request.method === "HEAD"
-      ? await bucket.head(key)
+      ? null
       : await bucket.get(key, range === null ? {} : { range });
-  if (object === null) {
-    throw new Error("Verified Catalogue Export component is unavailable");
+  if (
+    request.method !== "HEAD" &&
+    !exportComponentReadMatches(
+      object,
+      verifiedObject.etag,
+      component.compressed_bytes,
+      component.compressed_sha256,
+    )
+  ) {
+    return unavailableCatalogueExportComponent(requestId);
   }
 
   const partial = range !== null;
   const responseLength = partial
     ? range.length
     : component.compressed_bytes;
-  const headers = new Headers({
-    "accept-ranges": "bytes",
-    "cache-control": "private, max-age=31536000, immutable",
+  const headers = new Headers(baseHeaders);
+  Object.entries({
     "content-disposition": `attachment; filename="${componentName}.ndjson.gz"`,
     "content-length": String(responseLength),
     "content-type": "application/octet-stream",
-    etag,
-    "x-catalogue-revision": revisionId,
-  });
+  }).forEach(([name, value]) => headers.set(name, value));
   if (partial) {
     headers.set(
       "content-range",
@@ -455,6 +764,76 @@ export async function catalogueExportComponentResponse(
   );
 }
 
+async function verifyExportComponentObject(
+  bucket: R2Bucket,
+  key: string,
+  expectedBytes: number,
+  expectedSha256: string,
+): Promise<{ etag: string } | null> {
+  const metadata = await bucket.head(key);
+  if (metadata === null || metadata.size !== expectedBytes) return null;
+  const metadataChecksum = metadata.checksums.toJSON().sha256;
+  if (metadataChecksum !== undefined) {
+    return metadataChecksum === expectedSha256
+      ? { etag: metadata.etag }
+      : null;
+  }
+  const object = await bucket.get(key);
+  if (
+    object === null ||
+    object.size !== expectedBytes ||
+    object.etag !== metadata.etag
+  ) {
+    return null;
+  }
+  const objectChecksum = object.checksums.toJSON().sha256;
+  if (objectChecksum !== undefined) {
+    return objectChecksum === expectedSha256
+      ? { etag: object.etag }
+      : null;
+  }
+  return await readableSha256(object.body) === expectedSha256
+    ? { etag: object.etag }
+    : null;
+}
+
+function exportComponentReadMatches(
+  object: R2Object | null,
+  verifiedEtag: string,
+  expectedBytes: number,
+  expectedSha256: string,
+): object is R2ObjectBody {
+  if (
+    object === null ||
+    object.size !== expectedBytes ||
+    object.etag !== verifiedEtag
+  ) {
+    return false;
+  }
+  const checksum = object.checksums.toJSON().sha256;
+  return checksum === undefined || checksum === expectedSha256;
+}
+
+async function readableSha256(
+  readable: ReadableStream<Uint8Array>,
+): Promise<string> {
+  const digest = new crypto.DigestStream("SHA-256");
+  await readable.pipeTo(digest);
+  return [...new Uint8Array(await digest.digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function unavailableCatalogueExportComponent(requestId: string): Response {
+  return problemResponse({
+    requestId,
+    status: 404,
+    code: "not_found",
+    title: "Not found",
+    detail: "The Catalogue Export component is unavailable.",
+  });
+}
+
 async function findExport(
   database: D1Database,
   revisionId: string,
@@ -465,7 +844,8 @@ async function findExport(
         export.catalogue_revision_id,
         revision.published_at,
         export.manifest_key,
-        export.manifest_digest
+        export.manifest_digest,
+        export.maintenance_state
       FROM catalogue_exports AS export
       JOIN catalogue_revisions AS revision
         ON revision.id = export.catalogue_revision_id
@@ -485,14 +865,29 @@ async function loadVerifiedExportManifest(
 } | null> {
   const exportRow = await findExport(database, revisionId);
   if (exportRow === null) return null;
+  if (exportRow.maintenance_state !== "available") {
+    throw new CatalogueExportReadProblem(
+      410,
+      "catalogue_export_deleted",
+      "This known Catalogue Export has been deleted.",
+    );
+  }
   const object = await bucket.get(exportRow.manifest_key);
   if (object === null || object.size > 1_048_576) {
     throw new Error("Verified Catalogue Export manifest is unavailable");
   }
-  const manifest = await object.json<ExportManifest>();
+  const text = await object.text();
+  const manifest = JSON.parse(text) as ExportManifest;
+  const canonicalManifest = `${canonicalJson(manifest)}\n`;
+  const selfDigest = await sha256Text(`${canonicalJson({
+    ...manifest,
+    manifest_sha256: "0".repeat(64),
+  })}\n`);
   if (
+    text !== canonicalManifest ||
     manifest.catalogue_revision.id !== exportRow.catalogue_revision_id ||
-    manifest.manifest_sha256 !== exportRow.manifest_digest
+    manifest.manifest_sha256 !== exportRow.manifest_digest ||
+    selfDigest !== exportRow.manifest_digest
   ) {
     throw new Error("Verified Catalogue Export manifest changed");
   }

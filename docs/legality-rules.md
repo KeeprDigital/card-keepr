@@ -11,11 +11,11 @@ The following production Catalogue adapters are installed for bounded,
 credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
-- `one-piece-en@2`
-- `fusion-world-en@3`
-- `digimon-en@3`
-- `gundam-en-asia@3`
-- `gundam-en-us@3`
+- `one-piece-en@3`
+- `fusion-world-en@4`
+- `digimon-en@4`
+- `gundam-en-asia@4`
+- `gundam-en-us@4`
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
@@ -33,13 +33,19 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-The earlier production versions (`one-piece-en@1`, `fusion-world-en@2`,
-`digimon-en@2`, and both Gundam `@2` versions) remain registered with their
-original parser contracts only for explicit reprocessing of retained Source
-Snapshots. New production Evidence Plans accept only the active registrations
-listed above. Reprocessing retained bytes through an earlier identity cannot
-gain Legality Rule observations; a non-empty legality sidecar still fails
-closed. Synthetic fixture adapters follow the same
+`digimon-en@4` explicitly owns both Catalogue and standalone Official Errata
+reconciliation areas. A successful run records freshness independently for
+`cards-and-printings` and `errata`; neither area is inferred from the adapter
+version string.
+
+The earlier production versions (`one-piece-en@1`, `one-piece-en@2`,
+`fusion-world-en@2`, `fusion-world-en@3`,
+`digimon-en@2`, `digimon-en@3`, and both Gundam `@2` and `@3` versions) remain
+registered with their original parser contracts only for explicit reprocessing
+of retained Source Snapshots. New production Evidence Plans accept only the
+active registrations listed above. Reprocessing retained bytes through an
+earlier identity cannot gain Legality Rule observations; a non-empty legality
+sidecar still fails closed. Synthetic fixture adapters follow the same
 append-only rule: One Piece `@3` and the other games' `@2` versions are the
 legality-aware identities, while prior fixture versions retain their original
 behavior.
@@ -56,9 +62,12 @@ combined run to the first plan's lineage.
 
 The required legality scope is discovery, legality Card details, current
 Legality Rules, and Legality history. The One Piece adapter additionally
-requires block-policy, release-timing, and DON-rule surfaces. A surface may be
-split across multiple uniquely identified URLs. This contract does not claim
-complete Product, general Card catalogue, or Errata coverage. Planning rejects
+requires every Recording leaf, Product, Release, block-policy, release-timing,
+DON-rule, and Errata surface. Its `@3` contract claims complete One Piece Card,
+Printing, Product, Release, Legality Rule, and Errata coverage while making no
+comprehensive DON!! Printing claim. Other game adapters retain their narrower
+legality-oriented coverage. A surface may be split across multiple uniquely
+identified URLs. Planning rejects
 origins and locale paths outside the adapter's Official Source authority. Live
 discovery must enumerate the request identity, surface name, and exact URL of
 every collection request, and reconciliation verifies that graph against the
@@ -155,15 +164,22 @@ uncertainty yields `indeterminate` when no definitive rule decides the result;
 definitive exclusions still take precedence while retaining the uncertainty
 in the audit. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
-`relationships` component. Newly generated exports use schema major 3 and
-retain `official_id`, source lineage and observation IDs, lifecycle, and each
-rule's complete normalized `effect`, including every operand and unresolved
-reason, plus nullable `effective_from` and explicit `unresolved_scope`.
+`relationships` component. Newly generated exports use schema major 4, the
+`card-keepr-catalogue-export-manifest@4` format, the canonical
+`https://card-keepr.invalid/schemas/catalogue-export-manifest@4` manifest
+schema URI, and component schema URIs rooted at
+`https://card-keepr.invalid/schemas/catalogue-export-record@4` with the exact
+record `$defs` fragment. They retain `official_id`, source lineage and
+observation IDs, lifecycle, and each rule's complete normalized `effect`,
+including every operand and unresolved reason, plus nullable `effective_from`
+and explicit `unresolved_scope`.
 Lifecycle on the rule itself states whether it is current and
 preserves its observation boundaries, including for globally applicable rules
 whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
-Historical schema-major-1 and schema-major-2 artifacts remain byte-identical,
-immutable, and readable through their explicitly versioned schemas.
+Historical schema-major-1, schema-major-2, and schema-major-3 artifacts remain
+byte-identical, immutable, and readable through their explicitly versioned
+schemas; retained major-3 exports continue to use their recorded v3 manifest
+and record URIs.
 
 Each revision materializes indexed applicability for every Card-scoped rule
 and one explicit `all_cards` row for a genuinely global rule. The authenticated
@@ -172,6 +188,9 @@ the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
-Migration `0008_legality_rules.sql` adds canonical provenance retention and
-the revision-scoped rule snapshot used by the API. Apply it before deploying
-either Worker.
+Migrations `0009_one_piece_complete_catalogue.sql`,
+`0010_fusion_world_complete_catalogue.sql`,
+`0011_digimon_complete_catalogue.sql`, and
+`0012_gundam_dual_lineage_complete_catalogue.sql` register the complete One
+Piece, Fusion World, Digimon, and Gundam adapters after
+`0008_legality_rules.sql`. Apply all five before deploying either Worker.

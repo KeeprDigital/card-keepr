@@ -7,17 +7,22 @@ component for every component declared by that schema version. Empty components
 are present with zero records. A successful no-change Ingestion Run produces no
 export.
 
-New exports use manifest schema major 3 and every component advertises its
-canonical record schema major 3 URI. The `legality-rules` component's
+New exports use manifest schema major 4 with the
+`card-keepr-catalogue-export-manifest@4` format and canonical
+`https://card-keepr.invalid/schemas/catalogue-export-manifest@4` manifest
+schema URI. Every component advertises its canonical
+`https://card-keepr.invalid/schemas/catalogue-export-record@4` URI with its
+exact record `$defs` fragment. The `legality-rules` component's
 `LegalityRuleRecord` retains both the Official Source
 identity, the exact normalized discriminated `effect` with every operand,
 source lineage and observation provenance, and rule lifecycle. The lifecycle is
 carried on the rule itself so rules without affected Card IDs remain auditable;
 card-scoped rules additionally retain their `legality-rule-card` relationships.
-Separately named schema-major-1 and schema-major-2 manifests and record schemas
-remain byte-identical and available for revision-addressed historical
-artifacts; they are never referenced by a new v3 manifest or rewritten during
-the upgrade.
+Major 4 additionally carries discriminated curated targets and evidence and
+requires closed relationship endpoints. Separately named schema-major-1,
+schema-major-2, and schema-major-3 manifests and record schemas remain
+byte-identical and available for revision-addressed historical artifacts; they
+are never referenced by a new v4 manifest or rewritten during the upgrade.
 
 Identifiers that are serialized as provenance are stable products of the
 public idempotent operation. Production Source Evidence run IDs are a
@@ -37,7 +42,7 @@ conflict.
 Each component contains exactly one JSON object per line, validated against the
 `record_schema` URI recorded in its manifest entry.
 
-The v3 component order is:
+The v4 component order is:
 
 1. `supported-games`
 2. `game-profiles`
@@ -56,12 +61,14 @@ The v3 component order is:
 Export schema majors are immutable compatibility contracts. Major 2 added
 Product, Release, Distribution Context, and typed game-profile properties to
 major 1. Major 3 adds the complete normalized Legality Rule `effect`, source
-provenance, and lifecycle required for exact contextual legality. Publishers
-emit `card-keepr-catalogue-export-manifest@3` and
-`catalogue-export-record@3` component schema URIs. Consumers must select a
+provenance, and lifecycle required for exact contextual legality. Major 4 adds
+strictly typed curated provenance and curated relationship records without
+changing the immutable major-3 contract. Publishers emit
+`card-keepr-catalogue-export-manifest@4` and
+`catalogue-export-record@4` component schema URIs. Consumers must select a
 decoder by `export_schema_major` and URI and must never validate a component
-with a different major. The historical major-1 and major-2 schemas remain
-checked in byte-identically for revision-addressed exports.
+with a different major. The historical major-1, major-2, and major-3 schemas
+remain checked in byte-identically for revision-addressed exports.
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are

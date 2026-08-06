@@ -1,7 +1,10 @@
 import { canonicalJson, sha256 } from "./serialization";
 import { parseReconciliationObservation } from "./reconciliation-model";
 import type { SupportedGame } from "./catalogue-candidate";
-import { requiredSourceAdapter } from "./source-adapters";
+import {
+  adapterReconciliationAreas,
+  requiredSourceAdapter,
+} from "./source-adapters";
 import { evidencePlanForRequest } from "./source-evidence-repository";
 import {
   parseEvidencePlans,
@@ -70,6 +73,12 @@ type CollectionPlanRow = {
 
 type EvidencePlanRow = {
   request_plan_json: string;
+};
+
+type PriorObservationCountRow = {
+  request_id: string;
+  source_lineage: string;
+  observation_count: number;
 };
 
 export type RetainedLegalityScope = {
@@ -487,11 +496,13 @@ export async function retainedReconciliationObservation(
             row.plan_origin === "production",
           ),
         );
-        assertObservationAuthority(
-          parsed,
-          requiredSourceAdapter(row.adapter_version)
-            .reconciliationCapability,
+        const adapter = requiredSourceAdapter(row.adapter_version);
+        const sourceSurface = sourceSurfaceForRequest(
+          request,
+          requestsById,
+          row,
         );
+        assertObservationAuthority(parsed, adapter, sourceSurface);
         merged.push({
           ...parsed,
           sourceObservationSetId: row.observation_set_id,
@@ -499,11 +510,7 @@ export async function retainedReconciliationObservation(
           sourceCapturedAt: row.retrieved_at,
           sourceLineage: row.source_lineage,
           sourceRequestRole: request.request_role,
-          sourceSurface: sourceSurfaceForRequest(
-            request,
-            requestsById,
-            row,
-          ),
+          sourceSurface,
           supportedGame: supportedGame(row.supported_game),
           structurallyComplete: true,
         });
@@ -542,6 +549,11 @@ export async function retainedReconciliationObservation(
     gameProfileVersion: row.game_profile_version,
     adapterVersion: row.adapter_version,
   }));
+  const countChangeWarnings = await sourceObservationCountChangeWarnings(
+    database,
+    runId,
+    orderedRows,
+  );
   return {
     observationSetId: first.observation_set_id,
     sourceSnapshotId: first.source_snapshot_id,
@@ -550,6 +562,7 @@ export async function retainedReconciliationObservation(
     reconciliationCapability:
       requiredSourceAdapter(first.adapter_version).reconciliationCapability,
     structurallyComplete: true,
+    countChangeWarnings,
     partitions,
     evidencePlans: evidencePlans.map((plan) => {
       return {
@@ -570,6 +583,61 @@ export async function retainedReconciliationObservation(
       left.sourceLineage.localeCompare(right.sourceLineage)
     ),
   };
+}
+
+async function sourceObservationCountChangeWarnings(
+  database: D1Database,
+  runId: string,
+  currentRows: readonly EvidenceRow[],
+): Promise<Record<string, unknown>[]> {
+  const prior = await database
+    .prepare(
+      `SELECT snapshots.request_id, snapshots.source_lineage,
+              observations.observation_count
+       FROM catalogue_revisions AS prior_revision
+       JOIN source_snapshots AS snapshots
+         ON snapshots.ingestion_run_id = prior_revision.ingestion_run_id
+       JOIN source_observation_sets AS observations
+         ON observations.source_snapshot_id = snapshots.id
+       JOIN source_parse_operations AS parse
+         ON parse.id = observations.parse_operation_id
+       WHERE parse.intent = 'collection'
+         AND snapshots.ingestion_run_id <> ?
+       ORDER BY prior_revision.published_at DESC, prior_revision.id DESC,
+                snapshots.source_lineage, snapshots.request_id`,
+    )
+    .bind(runId)
+    .all<PriorObservationCountRow>();
+  const priorCounts = new Map<string, number>();
+  for (const row of prior.results) {
+    const key = `${row.source_lineage}\u0000${row.request_id}`;
+    if (!priorCounts.has(key)) priorCounts.set(key, row.observation_count);
+  }
+  return currentRows.flatMap((row) => {
+    const previousCount = priorCounts.get(
+      `${row.source_lineage}\u0000${row.request_id}`,
+    );
+    const threshold = previousCount === undefined
+      ? null
+      : Math.max(25, Math.ceil(previousCount * 0.2));
+    const absoluteDelta = previousCount === undefined
+      ? null
+      : Math.abs(row.observation_count - previousCount);
+    return previousCount === undefined || threshold === null ||
+        absoluteDelta === null || absoluteDelta < threshold
+      ? []
+      : [{
+          code: "source_observation_count_changed",
+          source_lineage: row.source_lineage,
+          request_id: row.request_id,
+          previous_count: previousCount,
+          current_count: row.observation_count,
+          absolute_delta: absoluteDelta,
+          warning_threshold: threshold,
+          detail:
+            `Official Source request ${row.request_id} changed by ${absoluteDelta} parsed observations since the prior published snapshot, meeting the review threshold of ${threshold}.`,
+        }];
+  });
 }
 
 function assertRetainedLegalityPublicationIdentity(
@@ -776,7 +844,9 @@ function isLegalitySurface(
   surface: string,
 ): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    (adapter.adapterVersion === "one-piece-en@2" && surface === "releases");
+    (["one-piece-en@2", "one-piece-en@3"].includes(
+      adapter.adapterVersion,
+    ) && surface === "releases");
 }
 
 function rawOfficialSurfaceRecords(
@@ -893,6 +963,179 @@ function sourceSurfaceForRequest(
   return current.request_id.slice(prefix.length);
 }
 
+export type GundamListingCollectionGraphInput = Readonly<{
+  requestId: string;
+  requestUrl: string;
+  sourceLineage: string;
+  adapterVersion: string;
+  observations: readonly unknown[];
+}>;
+
+export function validateGundamListingCollectionGraph(
+  inputs: readonly GundamListingCollectionGraphInput[],
+): {
+  completeRequestIds: string[];
+  collections: {
+    sourceLineage: string;
+    package: string | null;
+    declaredTotal: number;
+    terminalPage: number;
+    fullLocators: string[];
+  }[];
+} {
+  type Page = {
+    requestId: string;
+    sourceLineage: string;
+    package: string | null;
+    page: number;
+    terminal: boolean;
+    declaredTotal: number;
+    fullLocators: string[];
+  };
+  const grouped = new Map<string, Page[]>();
+  for (const input of inputs) {
+    if (
+      input.adapterVersion !== "gundam-en-asia@4" &&
+      input.adapterVersion !== "gundam-en-us@4"
+    ) continue;
+    const retained = input.observations.flatMap((wrapped) => {
+      const observation = isRecord(wrapped) && isRecord(wrapped.value)
+        ? wrapped.value
+        : wrapped;
+      if (!isRecord(observation) || !isRecord(observation.source_sidecar)) {
+        return [];
+      }
+      const raw = observation.source_sidecar.raw;
+      if (!isRecord(raw) || !Array.isArray(raw.official_surfaces)) return [];
+      return raw.official_surfaces.flatMap((surface) => {
+        if (
+          !isRecord(surface) ||
+          surface.source_lineage !== input.sourceLineage ||
+          surface.surface !== "listing" ||
+          !isRecord(surface.document) ||
+          !("terminal_page" in surface.document)
+        ) return [];
+        return [{ observation, document: surface.document }];
+      });
+    });
+    if (retained.length === 0) continue;
+    if (retained.length !== 1) {
+      throw new Error(
+        "A Gundam listing request retained duplicate collection proofs.",
+      );
+    }
+    const { observation, document } = retained[0]!;
+    const selectedPackage = document.selected_package;
+    const selectedPage = document.selected_page;
+    const declaredTotal = document.declared_total;
+    const fullLocators = document.full_locators;
+    if (
+      (selectedPackage !== null &&
+        (typeof selectedPackage !== "string" || selectedPackage.length === 0)) ||
+      !Number.isSafeInteger(selectedPage) || Number(selectedPage) < 1 ||
+      !Number.isSafeInteger(declaredTotal) || Number(declaredTotal) < 0 ||
+      !Array.isArray(fullLocators) ||
+      !fullLocators.every((locator) =>
+        typeof locator === "string" && locator.length > 0
+      ) ||
+      new Set(fullLocators).size !== fullLocators.length ||
+      typeof document.terminal_page !== "boolean"
+    ) {
+      throw new Error("A retained Gundam listing collection proof is invalid.");
+    }
+    const url = new URL(input.requestUrl);
+    const requestedPackages = url.searchParams.getAll("package");
+    const requestedPages = url.searchParams.getAll("page");
+    const requestedPackage = requestedPackages[0] ?? null;
+    const requestedPage = Number.parseInt(requestedPages[0] ?? "1", 10);
+    if (
+      requestedPackages.length > 1 ||
+      requestedPages.length > 1 ||
+      requestedPackage !== selectedPackage ||
+      requestedPage !== selectedPage
+    ) {
+      throw new Error(
+        "A retained Gundam listing collection proof conflicts with its request identity.",
+      );
+    }
+    const completeness = observation.completeness;
+    const individuallyComplete = document.terminal_page === true &&
+      fullLocators.length === declaredTotal;
+    if (
+      !isRecord(completeness) ||
+      completeness.structurally_complete !== true ||
+      completeness.declared_record_count !== declaredTotal ||
+      completeness.parsed_record_count !== fullLocators.length ||
+      completeness.required_surfaces_complete !== individuallyComplete ||
+      completeness.partitions_complete !== individuallyComplete
+    ) {
+      throw new Error(
+        "A retained Gundam listing page overstates its individual completeness.",
+      );
+    }
+    const key = canonicalJson([input.sourceLineage, selectedPackage]);
+    grouped.set(key, [
+      ...(grouped.get(key) ?? []),
+      {
+        requestId: input.requestId,
+        sourceLineage: input.sourceLineage,
+        package: selectedPackage,
+        page: Number(selectedPage),
+        terminal: document.terminal_page,
+        declaredTotal: Number(declaredTotal),
+        fullLocators: fullLocators as string[],
+      },
+    ]);
+  }
+  const completeRequestIds = new Set<string>();
+  const collections = [...grouped.values()].map((pages) => {
+    const ordered = [...pages].sort((left, right) => left.page - right.page);
+    const pageNumbers = new Set(ordered.map(({ page }) => page));
+    const terminal = ordered.filter(({ terminal }) => terminal);
+    const lastPage = ordered.at(-1)!.page;
+    if (
+      pageNumbers.size !== ordered.length ||
+      ordered[0]!.page !== 1 ||
+      terminal.length !== 1 ||
+      terminal[0]!.page !== lastPage ||
+      ordered.some(({ page }, index) => page !== index + 1)
+    ) {
+      throw new Error(
+        "A retained Gundam listing collection has incomplete page continuity or terminal-page proof.",
+      );
+    }
+    const declaredTotals = new Set(
+      ordered.map(({ declaredTotal }) => declaredTotal),
+    );
+    if (declaredTotals.size !== 1) {
+      throw new Error(
+        "A retained Gundam listing collection disagrees on its publisher total.",
+      );
+    }
+    const declaredTotal = ordered[0]!.declaredTotal;
+    const fullLocators = [...new Set(
+      ordered.flatMap(({ fullLocators }) => fullLocators),
+    )].sort();
+    if (fullLocators.length !== declaredTotal) {
+      throw new Error(
+        "A retained Gundam listing collection does not close its publisher total across pages.",
+      );
+    }
+    ordered.forEach(({ requestId }) => completeRequestIds.add(requestId));
+    return {
+      sourceLineage: ordered[0]!.sourceLineage,
+      package: ordered[0]!.package,
+      declaredTotal,
+      terminalPage: lastPage,
+      fullLocators,
+    };
+  }).sort((left, right) => canonicalJson(left).localeCompare(canonicalJson(right)));
+  return {
+    completeRequestIds: [...completeRequestIds].sort(),
+    collections,
+  };
+}
+
 function assertClosedRequestGraph(
   requests: readonly PlannedRequestRow[],
   rows: readonly EvidenceRow[],
@@ -902,12 +1145,31 @@ function assertClosedRequestGraph(
       observation_count: number;
       declared_record_count: number;
       parsed_record_count: number;
+      structurally_complete: boolean;
+      required_surfaces_complete: boolean;
+      partitions_complete: boolean;
     };
   }[],
 ): void {
+  const gundamListingGraph = validateGundamListingCollectionGraph(
+    requests.map((request, index) => ({
+      requestId: request.request_id,
+      requestUrl: request.url,
+      sourceLineage: rows[index]!.source_lineage,
+      adapterVersion: rows[index]!.adapter_version,
+      observations: documents[index]!.observations,
+    })),
+  );
+  const aggregateCompleteGundamRequests = new Set(
+    gundamListingGraph.completeRequestIds,
+  );
   const byId = new Map(requests.map((request) => [request.request_id, request]));
   const rootSurfaces = new Map<string, Set<string>>();
-  const listingLocators = new Map<string, string>();
+  const listingLocators = new Map<string, {
+    requestId: string;
+    semantic: string;
+    canonical: string | null;
+  }>();
   const listingPages = new Map<string, Set<number>>();
   requests.forEach((request, index) => {
     const row = rows[index]!;
@@ -915,8 +1177,16 @@ function assertClosedRequestGraph(
     if (
       document.evidenceSummary.observation_count !==
         document.observations.length ||
-      document.evidenceSummary.declared_record_count !==
-        document.evidenceSummary.parsed_record_count
+      (
+        (
+          document.evidenceSummary.structurally_complete !== true ||
+          document.evidenceSummary.required_surfaces_complete !== true ||
+          document.evidenceSummary.partitions_complete !== true ||
+          document.evidenceSummary.declared_record_count !==
+            document.evidenceSummary.parsed_record_count
+        ) &&
+        !aggregateCompleteGundamRequests.has(request.request_id)
+      )
     ) {
       throw new Error(
         `Source Request ${request.request_id} has incomplete declared/parsed count closure.`,
@@ -983,17 +1253,40 @@ function assertClosedRequestGraph(
     if (request.request_role === "listing") {
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
-        const identity = observation.value.identity_evidence;
+        const strictFusionIdentity = row.adapter_version ===
+            "fusion-world-en@4"
+          ? observation.value.listing_identity_evidence
+          : undefined;
+        const identity = strictFusionIdentity ??
+          observation.value.identity_evidence;
         if (!isRecord(identity) || typeof identity.locator !== "string") {
           continue;
         }
-        const prior = listingLocators.get(identity.locator);
-        if (prior !== undefined && prior !== request.request_id) {
-          throw new Error(
-            `Official Source leaf partitions overlap at locator ${identity.locator}.`,
-          );
+        const locatorKey = `${row.source_lineage}:${identity.locator}`;
+        const semantic = compatibleListingObservationSemantic(
+          observation.value,
+        );
+        const canonical = typeof identity.canonical === "string"
+          ? identity.canonical
+          : null;
+        const prior = listingLocators.get(locatorKey);
+        if (prior !== undefined && prior.requestId !== request.request_id) {
+          const compatible = adapter.adapterVersion === "one-piece-en@3"
+            ? prior.semantic === semantic
+            : adapter.adapterVersion === "fusion-world-en@4"
+              ? prior.canonical === canonical
+              : false;
+          if (!compatible) {
+            throw new Error(
+              `Official Source leaf partitions overlap at locator ${identity.locator}.`,
+            );
+          }
         }
-        listingLocators.set(identity.locator, request.request_id);
+        listingLocators.set(locatorKey, {
+          requestId: prior?.requestId ?? request.request_id,
+          semantic,
+          canonical,
+        });
       }
       const url = new URL(request.url);
       const pageEntry = [...url.searchParams.entries()].find(([key]) =>
@@ -1015,6 +1308,25 @@ function assertClosedRequestGraph(
       }
     }
   });
+  for (const collection of gundamListingGraph.collections) {
+    const retainedDetails = new Set(
+      requests.flatMap((request, index) => {
+        if (
+          rows[index]!.source_lineage !== collection.sourceLineage ||
+          request.request_role !== "detail"
+        ) return [];
+        const locator = new URL(request.url).searchParams.get("detailSearch");
+        return locator === null ? [] : [locator];
+      }),
+    );
+    if (
+      collection.fullLocators.some((locator) => !retainedDetails.has(locator))
+    ) {
+      throw new Error(
+        "A complete Gundam listing collection omitted a retained Card detail request.",
+      );
+    }
+  }
   for (const [partition, pages] of listingPages) {
     const ordered = [...pages].sort((left, right) => left - right);
     const firstPage = ordered[0]!;
@@ -1046,6 +1358,17 @@ function assertClosedRequestGraph(
       );
     }
   }
+}
+
+function compatibleListingObservationSemantic(
+  observation: Record<string, unknown>,
+): string {
+  const {
+    memberships: _memberships,
+    source_sidecar: _sourceSidecar,
+    ...semantic
+  } = observation;
+  return canonicalJson(semantic);
 }
 
 async function attachRetainedPrintingImages(
@@ -1279,16 +1602,23 @@ function base64(bytes: Uint8Array): string {
 
 function assertObservationAuthority(
   observation: ReturnType<typeof parseReconciliationObservation>,
-  coverage: ReturnType<
-    typeof requiredSourceAdapter
-  >["reconciliationCapability"],
+  adapter: ReturnType<typeof requiredSourceAdapter>,
+  sourceSurface: string | undefined,
 ): void {
-  const errataOnly = coverage === "errata";
+  const coverage = adapterReconciliationAreas(adapter);
+  const errataOnly = adapter.reconciliationCapability === "errata";
+  const catalogueErratum =
+    adapter.reconciliationCapability === "catalogue" &&
+    adapter.origin === "production" &&
+    sourceSurface === "errata" &&
+    (coverage.includes("errata") ||
+      adapter.reconciliationAreas === undefined);
   if (
-    (observation.kind === "official_erratum") !== errataOnly ||
+    (observation.kind === "official_erratum"
+      ? !errataOnly && !catalogueErratum
+      : errataOnly) ||
     (observation.kind === "card_printing" &&
-      observation.errata.length > 0 &&
-      coverage !== "catalogue")
+      !coverage.includes("catalogue"))
   ) {
     throw new Error(
       "Retained Erratum authority conflicts with its exact Source Adapter coverage.",
@@ -1360,6 +1690,9 @@ async function retainedObservationDocument(
     observation_count: number;
     declared_record_count: number;
     parsed_record_count: number;
+    structurally_complete: boolean;
+    required_surfaces_complete: boolean;
+    partitions_complete: boolean;
   };
 }> {
   const object = await evidenceObjects.get(row.content_object_key);
@@ -1402,6 +1735,9 @@ async function retainedObservationDocument(
       observation_count: number;
       declared_record_count: number;
       parsed_record_count: number;
+      structurally_complete: boolean;
+      required_surfaces_complete: boolean;
+      partitions_complete: boolean;
     },
   };
 }
@@ -1413,14 +1749,15 @@ function validEvidenceSummary(
 ): boolean {
   if (!isRecord(value) || !Array.isArray(observations)) return false;
   return (
-    value.structurally_complete === true &&
-    value.required_surfaces_complete === true &&
-    value.partitions_complete === true &&
+    typeof value.structurally_complete === "boolean" &&
+    typeof value.required_surfaces_complete === "boolean" &&
+    typeof value.partitions_complete === "boolean" &&
     observationCount === observations.length &&
     value.observation_count === observationCount &&
-    Number.isInteger(value.declared_record_count) &&
-    Number.isInteger(value.parsed_record_count) &&
-    value.declared_record_count === value.parsed_record_count
+    Number.isSafeInteger(value.declared_record_count) &&
+    Number(value.declared_record_count) >= 0 &&
+    Number.isSafeInteger(value.parsed_record_count) &&
+    Number(value.parsed_record_count) >= 0
   );
 }
 

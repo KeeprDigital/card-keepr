@@ -3,12 +3,13 @@ import {
   env,
   type D1Migration,
 } from "cloudflare:test";
+import { installWorkflowIsolation } from "./workflow-isolation";
 import {
   exports,
   type WorkflowEvent,
   type WorkflowStep,
 } from "cloudflare:workers";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   compareSourceFreshness,
@@ -23,6 +24,9 @@ import {
 import {
   reconcileRetainedCardPrintingEvidence,
 } from "../../../src/catalogue/card-printing-reconciliation";
+import {
+  parseReconciliationObservation,
+} from "../../../src/catalogue/reconciliation-observation";
 import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
   startOrObserveReconciliationWorkflow,
@@ -48,6 +52,10 @@ import {
   runReconciliationWorkflow,
 } from "../src/reconciliation-workflow";
 import ingestionWorker from "../src/index";
+import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-workflow";
+import { currentCatalogueStatus } from "../../../src/catalogue/read";
+
+installWorkflowIsolation();
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
@@ -62,6 +70,37 @@ test("registered Source metadata rejects unowned stored Legality freshness scope
     checked_at: "2026-08-02T00:00:00.000Z",
   })).toThrow(/registered ownership/);
 });
+
+test("retained Gundam Official Errata crosses the reconciliation boundary", () => {
+  expect(() => parseReconciliationObservation("srcobs_gundam_erratum", {
+    kind: "official_erratum",
+    game: "gundam",
+    target: {
+      type: "card",
+      official_identity: { kind: "card_number", value: "GD04-067" },
+    },
+    published_on: "2026-04-10",
+    effective_from: null,
+    observed_printed_rules_text: "from your trash.",
+    corrected_rules_text: "from any player's trash.",
+    official_wording:
+      "Before: from your trash.\nAfter: from any player's trash.",
+    applies_to_parallel_printings: true,
+    source: {
+      fragment: "#gundam-02_157-gd04-067",
+      display_name: "GD04-067",
+      image_url:
+        "https://www.gundam-gcg.com/gcg/bccard/en/news/2026/04/GD04-067.webp",
+    },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  })).not.toThrow();
+});
 let requestSequence = 0;
 
 beforeEach(async () => {
@@ -69,6 +108,41 @@ beforeEach(async () => {
     testEnv.CATALOGUE_DB,
     testEnv.TEST_MIGRATIONS,
   );
+});
+
+afterEach(async () => {
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed',
+           terminal_at = COALESCE(candidate_created_at, started_at),
+           failure_code = CASE WHEN state = 'publishing'
+             THEN 'publication_abandoned'
+             ELSE 'test_cleanup_active_run'
+           END,
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = (
+         SELECT active_ingestion_run_id FROM operation_state
+         WHERE singleton = 1
+       ) AND state IN (
+         'planning', 'collecting', 'parsing', 'reconciling',
+         'awaiting_approval', 'publishing'
+       )`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL,
+           active_production_release_id = NULL,
+           active_production_release_expires_at = NULL,
+           recovery_health = 'healthy'
+       WHERE singleton = 1`,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE curated_revisions
+       SET status = 'retired', event_version = event_version + 1
+       WHERE status IN ('active', 'reconfirmation_required')`,
+    ),
+  ]);
 });
 
 test("reconciliation is Workflow-owned and exact replays observe one bound instance", async () => {
@@ -451,6 +525,10 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
 });
 
 test("reconciliation commit success survives lost step output without repeating semantic work", async () => {
+  const operationalRecords: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    operationalRecords.push(String(value));
+  });
   const run = await collect(
     "/reconciliation/base",
     "workflow-output-loss-recovery",
@@ -464,22 +542,25 @@ test("reconciliation commit success survives lost step output without repeating 
     do: async (
       name: string,
       _config: unknown,
-      callback: () => Promise<string>,
+      callback: (context: unknown) => Promise<string>,
     ) => {
       if (
         name ===
           "reconcile retained Card, Printing, and Erratum evidence"
       ) {
         reconciliationAttempts += 1;
-        await callback();
+        await callback({ step: { name, count: 2 }, attempt: 3 });
         reconciliationAttempts += 1;
       }
-      return callback();
+      return callback({ step: { name, count: 2 }, attempt: 3 });
     },
   } as unknown as WorkflowStep;
   const output = await runReconciliationWorkflow(
     testEnv,
     {
+      instanceId: "workflow-reconciliation-correlation",
+      workflowName: "reconciliation-workflow",
+      timestamp: new Date("2026-07-31T01:00:00.000Z"),
       payload: {
         ingestion_run_id: run.id,
         expected_current_revision_id: expectedCurrentRevisionId,
@@ -491,6 +572,29 @@ test("reconciliation commit success survives lost step output without repeating 
   );
 
   expect(reconciliationAttempts).toBe(2);
+  const workflowRecord = operationalRecords.map((record) => JSON.parse(record))
+    .find((record) =>
+      record.event === "workflow.step.completed" &&
+      record.request?.id === "workflow-reconciliation-correlation"
+    );
+  expect(workflowRecord).toMatchObject({
+    contract: "card-keepr-operational-log@1",
+    runtime: "ingestion",
+    request: {
+      id: "workflow-reconciliation-correlation",
+      method: "WORKFLOW",
+      route: "/workflows/reconciliation-workflow",
+    },
+    status: 200,
+    workflow: {
+      step: "reconcile retained Card, Printing, and Erratum evidence",
+      step_count: 2,
+    },
+    retry: { count: 2, classification: "not_applicable" },
+    cache: { status: "unknown" },
+    d1: { prepared_statements: expect.any(Number) },
+  });
+  expect(workflowRecord.duration_ms).toEqual(expect.any(Number));
   expect(JSON.parse(output.result_json)).toMatchObject({
     contract: "card-keepr-reconciliation-workflow-result@1",
     run_id: run.id,
@@ -1175,6 +1279,45 @@ test("retained immutable evidence publishes stable identities and warns when ear
   });
 });
 
+test("parsed observation count warnings use the normative absolute threshold", async () => {
+  const firstRun = await collect(
+    "/reconciliation/observation-count-100",
+    "observation-count-first",
+  );
+  const first = await reconcile(firstRun.id);
+  expect(first.response.status).toBe(200);
+  expect((await approve(first.document)).response.status).toBe(200);
+
+  const secondRun = await collect(
+    "/reconciliation/observation-count-124",
+    "observation-count-second",
+  );
+  const second = await reconcile(secondRun.id);
+  expect(second.response.status).toBe(200);
+  expect(second.document.warnings).not.toContainEqual(
+    expect.objectContaining({
+      code: "source_observation_count_changed",
+    }),
+  );
+  expect((await approve(second.document)).response.status).toBe(200);
+
+  const thirdRun = await collect(
+    "/reconciliation/observation-count-149",
+    "observation-count-third",
+  );
+  const third = await reconcile(thirdRun.id);
+  expect(third.response.status).toBe(200);
+  expect(third.document.warnings).toContainEqual(expect.objectContaining({
+    code: "source_observation_count_changed",
+    source_lineage: "one-piece-en",
+    request_id: "cards",
+    previous_count: 124,
+    current_count: 149,
+    absolute_delta: 25,
+    warning_threshold: 25,
+  }));
+});
+
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {
   const run = await collectRequests(
     [
@@ -1563,7 +1706,7 @@ test("immutable Observation Set counts, not an observation novelty assertion, de
       {
         code: "retained_evidence_invalid",
         detail: expect.stringContaining(
-          "Source Observation Set provenance is invalid",
+          "incomplete declared/parsed count closure",
         ),
       },
     ],
@@ -1706,11 +1849,128 @@ test.each([
   },
 );
 
+test("a partial-game publication carries an unselected curation and its immutable ledger forward", async () => {
+  const digimonSource = {
+    game: "digimon",
+    lineage: "digimon-en",
+    adapter: "fixture-digimon-json@1",
+  };
+  const initial = await collect(
+    "/reconciliation/profile-digimon",
+    `partial-curation-initial-${crypto.randomUUID()}`,
+    digimonSource,
+  );
+  const initialReconciled = await reconcile(initial.id);
+  const initialPublication = await approve(initialReconciled.document);
+  expect(initialPublication.response.status).toBe(200);
+  const initialRevision = requiredString(
+    initialPublication.document,
+    "resulting_revision_id",
+  );
+  const officialCard = requiredFirst(initialReconciled.document, "cards");
+  const officialName = requiredString(officialCard, "name");
+  const retainedEvidence = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT source_observation_id FROM reconciliation_candidates
+     WHERE ingestion_run_id = ? ORDER BY source_observation_id LIMIT 1`,
+  ).bind(initial.id).first<{ source_observation_id: string }>();
+  expect(retainedEvidence?.source_observation_id).toMatch(/^srcobs_/u);
+  const proposal = {
+    game: "digimon",
+    target: {
+      kind: "field",
+      entity_type: "card",
+      entity_id: requiredString(officialCard, "id"),
+      path: "/name",
+    },
+    assertion: { kind: "field", value: "Owner-reviewed Digimon Name" },
+    rationale: "Preserve this Digimon correction across partial refreshes.",
+    evidence: [{
+      kind: "source_observation",
+      id: retainedEvidence!.source_observation_id,
+    }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: await sha256(
+      new TextEncoder().encode(canonicalJson(officialName)),
+    ),
+    supersedes_revision_id: null,
+  };
+  const created = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: initialRevision,
+    proposal,
+    proposal_digest: await sha256(
+      new TextEncoder().encode(canonicalJson(proposal)),
+    ),
+    idempotency_key: `partial-curation-create-${crypto.randomUUID()}`,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const curatedRevisionId = requiredString(
+    created.document,
+    "curated_revision_id",
+  );
+
+  const curatedRun = await collect(
+    "/reconciliation/profile-digimon",
+    `partial-curation-apply-${crypto.randomUUID()}`,
+    digimonSource,
+  );
+  const curatedCandidate = await reconcile(curatedRun.id);
+  expect(requiredFirst(curatedCandidate.document, "cards")).toMatchObject({
+    name: "Owner-reviewed Digimon Name",
+    curated_provenance: [{ curated_revision_id: curatedRevisionId }],
+  });
+  const curatedPublication = await approve(curatedCandidate.document);
+  expect(curatedPublication.response.status).toBe(200);
+  const curatedCatalogueRevision = requiredString(
+    curatedPublication.document,
+    "resulting_revision_id",
+  );
+
+  const partialRun = await collect(
+    "/reconciliation/base",
+    `partial-curation-one-piece-${crypto.randomUUID()}`,
+  );
+  const partialCandidate = await reconcile(partialRun.id);
+  const partialPublication = await approve(partialCandidate.document);
+  expect(partialPublication.response.status).toBe(200);
+  const partialCatalogueRevision = requiredString(
+    partialPublication.document,
+    "resulting_revision_id",
+  );
+  const [before, after, ledger] = await Promise.all([
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT document_json FROM revision_cards
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(curatedCatalogueRevision, requiredString(officialCard, "id"))
+      .first<{ document_json: string }>(),
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT document_json FROM revision_cards
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(partialCatalogueRevision, requiredString(officialCard, "id"))
+      .first<{ document_json: string }>(),
+    testEnv.CATALOGUE_DB.prepare(
+      `SELECT curated_revision_id FROM catalogue_curated_provenance
+       WHERE catalogue_revision_id = ? AND curated_revision_id = ?`,
+    ).bind(partialCatalogueRevision, curatedRevisionId)
+      .first<{ curated_revision_id: string }>(),
+  ]);
+  expect(JSON.parse(after?.document_json ?? "{}")).toEqual(
+    JSON.parse(before?.document_json ?? "{}"),
+  );
+  expect(JSON.parse(after?.document_json ?? "{}")).toMatchObject({
+    data: {
+      name: "Owner-reviewed Digimon Name",
+      curated_provenance: [{ curated_revision_id: curatedRevisionId }],
+    },
+  });
+  expect(ledger).toEqual({ curated_revision_id: curatedRevisionId });
+}, 60_000);
+
 test("production adapters retain parser-bound coverage proof for reconciliation", async () => {
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1745,7 +2005,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@2",
+    adapter_version: "fusion-world-en@3",
     idempotency_key: "reject-superseded-production-adapter",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1755,7 +2015,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "active-adapter-retained-reparse-source",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -1777,14 +2037,14 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const reparsed = await post(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     {
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key: "capturing-adapter-retained-reparse",
     },
   );
   expect(reparsed.response.status).toBe(201);
   expect(reparsed.document).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
   });
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {
@@ -1815,7 +2075,7 @@ test("complete image evidence publishes an unidentified artwork once without col
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@3",
+      adapter_version: "digimon-en@4",
       idempotency_key: `digimon-artwork-digest-${variant}`,
       requests,
     });
@@ -1927,7 +2187,7 @@ test("production Evidence Plans bind discovery identity to its exact Official So
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "forged-production-surface-url",
     requests,
   });
@@ -2369,7 +2629,38 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     requiredFirst(asia.document, "printings"),
     "id",
   );
+  expect(asia.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   await approve(asia.document);
+
+  const productMismatchRun = await collect(
+    "/reconciliation/gundam-cross-product-conflict",
+    "reconcile-gundam-product-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const productMismatch = await reconcile(productMismatchRun.id);
+  expect(productMismatch.response.status).toBe(409);
+  expect(productMismatch.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({
+      code: "printing_match_insufficient_evidence",
+      candidate_printing_ids: [printingId],
+      detail: expect.stringContaining("Product"),
+    })]),
+  );
+  expect(productMismatch.document).not.toMatchObject({
+    publishable: true,
+  });
 
   const usRun = await collect(
     "/reconciliation/gundam-cross-us",
@@ -2384,6 +2675,14 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
   expect(requiredFirst(us.document, "printings")).toMatchObject({
     id: printingId,
   });
+  expect(us.document.warnings).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+      }),
+    ]),
+  );
   await approve(us.document);
   const lifecycle = await get(
     `/v1/reconciliation/printings/${printingId}`,
@@ -2428,6 +2727,15 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     },
   );
   const usMissing = await reconcile(usMissingRun.id);
+  expect(usMissing.document.warnings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "single_locale_gundam_printing",
+        printing_id: printingId,
+        source_lineage: "gundam-en-asia",
+      }),
+    ]),
+  );
   const inspected = await get(
     `/v1/ingestion-runs/${usMissingRun.id}/candidate`,
   );
@@ -2523,32 +2831,21 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     ],
   });
 
-  for (const [scenario, key] of [
-    [
-      "gundam-cross-product-conflict",
-      "reconcile-gundam-product-conflict",
-    ],
-    [
-      "gundam-cross-variant-conflict",
-      "reconcile-gundam-variant-conflict",
-    ],
-  ] as const) {
-    const mismatchRun = await collect(
-      `/reconciliation/${scenario}`,
-      key,
-      {
-        game: "gundam",
-        lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
-      },
-    );
-    const mismatch = await reconcile(mismatchRun.id);
-    expect(mismatch.response.status).toBe(200);
-    expect(requiredFirst(mismatch.document, "printings")).toMatchObject({
-      id: printingId,
-    });
-    await approve(mismatch.document);
-  }
+  const variantMismatchRun = await collect(
+    "/reconciliation/gundam-cross-variant-conflict",
+    "reconcile-gundam-variant-conflict",
+    {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@1",
+    },
+  );
+  const variantMismatch = await reconcile(variantMismatchRun.id);
+  expect(variantMismatch.response.status).toBe(200);
+  expect(requiredFirst(variantMismatch.document, "printings")).toMatchObject({
+    id: printingId,
+  });
+  await approve(variantMismatch.document);
 }, 30_000);
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
@@ -2643,7 +2940,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
   );
 });
 
-test("historical Gundam authority survives complete disappearance in both locale orders", async () => {
+test("historical Gundam locators survive disappearance without retaining stale Card authority", async () => {
   const asiaOptions = {
     game: "gundam",
     lineage: "gundam-en-asia",
@@ -2656,7 +2953,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   } as const;
 
   const asiaRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-first",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-asia-first",
     "historical-authority-asia-first",
     asiaOptions,
   );
@@ -2690,25 +2987,42 @@ test("historical Gundam authority survives complete disappearance in both locale
     },
   });
 
+  const historicalProductConflictRun = await collect(
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-product-conflict",
+    "historical-provenance-us-product-conflict",
+    usOptions,
+  );
+  const historicalProductConflict = await reconcile(
+    historicalProductConflictRun.id,
+  );
+  expect(historicalProductConflict.response.status).toBe(409);
+  expect(historicalProductConflict.document.diagnostics).toEqual(
+    expect.arrayContaining([expect.objectContaining({
+      code: "printing_match_insufficient_evidence",
+      candidate_printing_ids: [printingId],
+      detail: expect.stringContaining("Product"),
+    })]),
+  );
+
   const usEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-us-second",
+    "/reconciliation/gundam-printing-lifecycle-primary-format-us-second",
     "historical-authority-us-equivalent",
     usOptions,
   );
   const usEquivalent = await reconcile(usEquivalentRun.id);
   expect(requiredFirst(usEquivalent.document, "cards")).toMatchObject({
     id: cardId,
-    name: "Printing authority",
+    name: "  Printing   authority  ",
     effective_rules_text: "Official effective rules",
     game_data: {
       profile: "gundam@1",
-      attributes: { effect_text: "Official effect" },
+      attributes: { effect_text: "  Official   effect  " },
     },
   });
   expect(requiredFirst(usEquivalent.document, "printings")).toMatchObject({
     id: printingId,
-    rarity: { raw: "L", normalized: "leader" },
-    printed_rules_text: "Official printed rules",
+    rarity: { raw: "  L  ", normalized: "leader" },
+    printed_rules_text: "  Official   printed rules  ",
     game_data: {
       profile: "gundam@1",
       attributes: { alternate_art: false },
@@ -2724,7 +3038,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   ).toContainEqual(
     expect.objectContaining({
       id: cardId,
-      name: "Printing authority",
+      name: "  Printing   authority  ",
       effective_rules_text: "Official effective rules",
     }),
   );
@@ -2733,8 +3047,8 @@ test("historical Gundam authority survives complete disappearance in both locale
   ).toContainEqual(
     expect.objectContaining({
       id: printingId,
-      rarity: { raw: "L", normalized: "leader" },
-      printed_rules_text: "Official printed rules",
+      rarity: { raw: "  L  ", normalized: "leader" },
+      printed_rules_text: "  Official   printed rules  ",
     }),
   );
   const corroborated = await get(
@@ -2750,35 +3064,50 @@ test("historical Gundam authority survives complete disappearance in both locale
   });
 
   const usConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-conflict",
     "historical-authority-us-conflict",
     usOptions,
   );
   const usConflict = await reconcile(usConflictRun.id);
-  expect(usConflict.response.status).toBe(409);
-  expect(usConflict.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "canonical_card_conflict" }),
-    ]),
-  );
+  expect(usConflict.response.status).toBe(200);
+  expect(requiredFirst(usConflict.document, "cards")).toMatchObject({
+    id: cardId,
+    name: "Contradictory historical-authority Card",
+    game_data: {
+      attributes: {
+        effect_text: "Substantively different Card effect",
+      },
+    },
+  });
+  await post(`/v1/ingestion-runs/${usConflictRun.id}/rejection`, {
+    candidate_digest: requiredString(usConflict.document, "candidate_digest"),
+    idempotency_key: "reject-absent-asia-card-authority",
+  });
   const usPrintingConflictRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-us-printing-conflict",
+    "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
     usOptions,
   );
   const usPrintingConflict = await reconcile(usPrintingConflictRun.id);
-  expect(usPrintingConflict.response.status).toBe(409);
-  expect(usPrintingConflict.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "printing_match_contradictory",
-        candidate_printing_ids: [printingId],
-      }),
-    ]),
-  );
+  expect(usPrintingConflict.response.status).toBe(200);
+  expect(requiredFirst(usPrintingConflict.document, "printings")).toMatchObject({
+    id: printingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Substantively different printed rules",
+    game_data: {
+      attributes: { alternate_art: true },
+    },
+  });
+  await post(`/v1/ingestion-runs/${usPrintingConflictRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      usPrintingConflict.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-us-printing-evolution",
+  });
 
   const usFirstRun = await collect(
-    "/reconciliation/gundam-printing-format-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-us-first",
     "historical-authority-us-first",
     usOptions,
   );
@@ -2800,7 +3129,7 @@ test("historical Gundam authority survives complete disappearance in both locale
   const usMissing = await reconcile(usMissingRun.id);
   await approve(usMissing.document);
   const asiaEquivalentRun = await collect(
-    "/reconciliation/gundam-printing-format-asia-second",
+    "/reconciliation/gundam-printing-lifecycle-reverse-format-asia-second",
     "historical-authority-asia-equivalent",
     asiaOptions,
   );
@@ -2822,11 +3151,19 @@ test("historical Gundam authority survives complete disappearance in both locale
   await approve(asiaEquivalent.document);
 
   const reverseConflictUsRun = await collect(
-    "/reconciliation/gundam-printing-conflict-us-first",
+    "/reconciliation/gundam-printing-lifecycle-reverse-conflict-us-first",
     "historical-authority-conflict-us-first",
     usOptions,
   );
   const reverseConflictUs = await reconcile(reverseConflictUsRun.id);
+  const reverseConflictCardId = requiredString(
+    requiredFirst(reverseConflictUs.document, "cards"),
+    "id",
+  );
+  const reverseConflictPrintingId = requiredString(
+    requiredFirst(reverseConflictUs.document, "printings"),
+    "id",
+  );
   await approve(reverseConflictUs.document);
   const reverseConflictMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
@@ -2838,17 +3175,29 @@ test("historical Gundam authority survives complete disappearance in both locale
   );
   await approve(reverseConflictMissing.document);
   const reverseConflictAsiaRun = await collect(
-    "/reconciliation/gundam-printing-disappearance-asia-conflict",
+    "/reconciliation/gundam-printing-lifecycle-reverse-disappearance-asia-conflict",
     "historical-authority-conflict-asia-second",
     asiaOptions,
   );
   const reverseConflictAsia = await reconcile(reverseConflictAsiaRun.id);
-  expect(reverseConflictAsia.response.status).toBe(409);
-  expect(reverseConflictAsia.document.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ code: "canonical_card_conflict" }),
-    ]),
-  );
+  expect(reverseConflictAsia.response.status).toBe(200);
+  expect(requiredFirst(reverseConflictAsia.document, "cards")).toMatchObject({
+    id: reverseConflictCardId,
+    name: "Contradictory historical-authority Card",
+  });
+  expect(requiredFirst(reverseConflictAsia.document, "printings")).toMatchObject({
+    id: reverseConflictPrintingId,
+    rarity: { raw: "Leader Rare", normalized: "leader" },
+    printed_rules_text: "Different substantive Asia printed rules",
+    game_data: { attributes: { alternate_art: true } },
+  });
+  await post(`/v1/ingestion-runs/${reverseConflictAsiaRun.id}/rejection`, {
+    candidate_digest: requiredString(
+      reverseConflictAsia.document,
+      "candidate_digest",
+    ),
+    idempotency_key: "reject-current-asia-printing-evolution",
+  });
 }, 45_000);
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
@@ -4616,7 +4965,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@2",
+    adapter_version: "one-piece-en@3",
     idempotency_key: "blocked-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -4661,9 +5010,49 @@ test("recovery health gates fixture evidence injection and reconciliation before
   });
 }, 60_000);
 
+test("degraded recovery permits evidence collection starts and retries while blocked recovery does not", async () => {
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",
+  ).run();
+  const started = await post("/v1/ingestion-runs/evidence", {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "one-piece-en@3",
+    idempotency_key: "degraded-recovery-start",
+    requests: officialSourceDiscoveryRequests("one-piece-en"),
+  });
+  expect(started.response.status).toBe(201);
+  expect(started.document).toMatchObject({ state: "collecting" });
+
+  const sourceRunId = requiredString(started.document, "id");
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE ingestion_runs
+       SET state = 'failed', terminal_at = started_at,
+           failure_code = 'synthetic_retry_source',
+           progress_json = json_set(progress_json, '$.current_stage', 'failed')
+       WHERE id = ?`,
+    ).bind(sourceRunId),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state
+       SET active_ingestion_run_id = NULL, recovery_health = 'degraded'
+       WHERE singleton = 1`,
+    ),
+  ]);
+  const retried = await post(
+    `/v1/ingestion-runs/${sourceRunId}/collection/retry`,
+    { idempotency_key: "degraded-recovery-retry" },
+  );
+  expect(retried.response.status).toBe(201);
+  expect(retried.document).toMatchObject({
+    state: "collecting",
+    linked_run_id: sourceRunId,
+  });
+});
+
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";
-  const adapterVersion = "gundam-en-asia@3";
+  const adapterVersion = "gundam-en-asia@4";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
     plans: [{
       supported_game: "gundam",
@@ -4689,6 +5078,92 @@ test("a partial Gundam refresh accepts one selected production lineage independe
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();
 });
+
+test("publication stays readable while its immutable degraded backup blocks the next approval", async () => {
+  const firstRun = await collect(
+    "/reconciliation/base",
+    "publication-backup-degraded-first",
+  );
+  const firstCandidate = await reconcile(firstRun.id);
+  const failingWorkflow = {
+    async create() {
+      throw new Error("synthetic backup dispatch outage");
+    },
+    async get() {
+      throw new Error("synthetic backup dispatch outage");
+    },
+  } as unknown as Workflow<CatalogueBackupWorkflowParams>;
+  const publicEnv = {
+    ...testEnv,
+    CATALOGUE_BACKUP_WORKFLOW: failingWorkflow,
+  } as unknown as Env;
+  const approvalResponse = await ingestionWorker.fetch(
+    new Request(
+      `https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          "content-type": "application/json",
+          "cf-connecting-ip": "203.0.113.240",
+        },
+        body: JSON.stringify({
+          candidate_digest: requiredString(
+            firstCandidate.document,
+            "candidate_digest",
+          ),
+          expected_current_revision_id: requiredString(
+            firstCandidate.document,
+            "expected_current_revision_id",
+          ),
+          idempotency_key: "publication-backup-degraded-approval",
+        }),
+      },
+    ),
+    publicEnv,
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    } as unknown as ExecutionContext,
+  );
+  expect(approvalResponse.status).toBe(200);
+  const published = await approvalResponse.json<Record<string, unknown>>();
+  const revisionId = requiredString(published, "resulting_revision_id");
+  const statusResponse = await ingestionWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/status", {
+      headers: {
+        authorization: "Bearer vitest-administration-key",
+        "cf-connecting-ip": "203.0.113.241",
+      },
+    }),
+    publicEnv,
+  );
+  expect(await statusResponse.json()).toMatchObject({
+    safe_state: {
+      current_revision_id: revisionId,
+      recovery_health: "degraded",
+    },
+  });
+  await expect(currentCatalogueStatus(testEnv.CATALOGUE_DB)).resolves
+    .toMatchObject({
+      revisionId,
+    });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'healthy' WHERE singleton = 1",
+  ).run();
+  const secondRun = await collect(
+    "/reconciliation/profile-one-piece",
+    "publication-backup-degraded-second",
+  );
+  const secondCandidate = await reconcile(secondRun.id);
+  await testEnv.CATALOGUE_DB.prepare(
+    "UPDATE operation_state SET recovery_health = 'degraded' WHERE singleton = 1",
+  ).run();
+  const blocked = await approve(secondCandidate.document);
+  expect(blocked.response.status).toBe(409);
+  expect(blocked.document).toMatchObject({ code: "recovery_not_verified" });
+}, 60_000);
 
 test("a complete Product fixture publishes separated release and distribution records atomically", async () => {
   const run = await collect(
@@ -4991,7 +5466,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@3",
+    adapter_version: "fusion-world-en@4",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });
@@ -5053,7 +5528,7 @@ test("a registered code-less Product refresh preserves its established code", as
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@3",
+      adapter_version: "fusion-world-en@4",
       idempotency_key:
         `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,
@@ -5140,7 +5615,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@3",
+    adapter_version: "digimon-en@4",
     idempotency_key: `registered-product-fuzzy-${crypto.randomUUID()}`,
     requests,
   });

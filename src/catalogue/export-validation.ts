@@ -1,14 +1,16 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json" with { type: "json" };
-import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json" with { type: "json" };
+import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json" with { type: "json" };
+import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v4.schema.json" with { type: "json" };
+import historicalRecordSchemaV3 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json" with { type: "json" };
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
+ajv.addSchema(historicalRecordSchemaV3);
 const validateManifest = ajv.compile(manifestSchema);
 const validateRecord = ajv.compile(recordSchema);
 const componentValidators = new Map<string, ValidateFunction>(
-  [
+  [3, 4].flatMap((major) => [
     "SupportedGameRecord",
     "GameProfileRecord",
     "CardRecord",
@@ -22,9 +24,9 @@ const componentValidators = new Map<string, ValidateFunction>(
     "RelationshipRecord",
   ].map((definition) => {
     const uri =
-      `https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/${definition}`;
+      `https://card-keepr.invalid/schemas/catalogue-export-record@${major}#/$defs/${definition}`;
     return [uri, requiredValidator(uri)];
-  }),
+  })),
 );
 
 export function verifyExportManifest(manifest: unknown): void {

@@ -13,6 +13,11 @@ import {
 } from "./source-evidence-model";
 import type { SourceAdapterRegistration } from "./source-adapters";
 import { evidenceRunIdentity } from "./idempotent-identities";
+import {
+  curatedRevisionSetForRun,
+  curatedRevisionPinStatementsForNewRun,
+} from "./curated-revisions";
+import { operationalDiagnostics } from "./operational-diagnostics";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -22,6 +27,7 @@ export type IngestionEvidenceRow = {
   expected_current_revision_id: string;
   linked_run_id: string | null;
   idempotency_key: string;
+  operational_request_id: string | null;
   terminal_at: string | null;
   source_lineage: string;
   supported_game: string;
@@ -33,6 +39,13 @@ export type IngestionEvidenceRow = {
   child_workflow_ids_json: string | null;
   collection_completed_at: string | null;
   failure_code: string | null;
+  candidate_digest: string | null;
+  progress_json: string;
+  warnings_json: string;
+  approval_history_json: string;
+  published_revision_id: string | null;
+  resulting_revision_id: string | null;
+  publication_outcome: string | null;
 };
 
 export type EvidenceRequestRow = {
@@ -150,7 +163,7 @@ export async function startEvidenceRun(
     )
     .first<{ current_revision_id: string; recovery_health: string }>();
   if (catalogue === null) throw new Error("Catalogue state is unavailable");
-  assertRecoveryHealthy(catalogue.recovery_health);
+  assertRecoveryAvailable(catalogue.recovery_health);
   const statements: D1PreparedStatement[] = [
     await ingestionRunInsert(database, {
       runId,
@@ -160,7 +173,14 @@ export async function startEvidenceRun(
       startedAt,
       linkedRunId: null,
       idempotencyKey: request.idempotency_key,
+      operationalRequestId: request.operational_request_id ?? null,
     }),
+    ...(await curatedRevisionPinStatementsForNewRun(
+      database,
+      runId,
+      [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+      startedAt,
+    )),
     database
       .prepare(
         `INSERT INTO ingestion_evidence_plans (
@@ -184,7 +204,7 @@ export async function startEvidenceRun(
         `UPDATE operation_state
          SET active_ingestion_run_id = ?
          WHERE singleton = 1
-           AND recovery_health = 'healthy'
+           AND recovery_health <> 'blocked'
            AND active_ingestion_run_id IS NULL`,
       )
       .bind(runId),
@@ -206,6 +226,9 @@ export async function startEvidenceRun(
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
+    }
+    if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
+      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
     }
     if (
       errorMessage(error).includes(
@@ -241,6 +264,7 @@ export async function retryEvidenceRun(
   database: D1Database,
   sourceRunId: string,
   idempotencyKey: string,
+  operationalRequestId: string,
 ): Promise<Record<string, unknown>> {
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
@@ -270,7 +294,7 @@ export async function retryEvidenceRun(
     )
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
-  assertRecoveryHealthy(operation.recovery_health);
+  assertRecoveryAvailable(operation.recovery_health);
   const runId = await evidenceRunIdentity(idempotencyKey);
   const startedAt = new Date().toISOString();
   try {
@@ -283,7 +307,14 @@ export async function retryEvidenceRun(
         startedAt,
         linkedRunId: source.id,
         idempotencyKey,
+        operationalRequestId,
       }),
+      ...(await curatedRevisionPinStatementsForNewRun(
+        database,
+        runId,
+        [...new Set(plans.map(({ supported_game }) => supported_game))].sort(),
+        startedAt,
+      )),
       database
         .prepare(
           `INSERT INTO ingestion_evidence_plans (
@@ -307,7 +338,7 @@ export async function retryEvidenceRun(
           `UPDATE operation_state
            SET active_ingestion_run_id = ?
            WHERE singleton = 1
-             AND recovery_health = 'healthy'
+             AND recovery_health <> 'blocked'
              AND active_ingestion_run_id IS NULL`,
         )
         .bind(runId),
@@ -317,6 +348,9 @@ export async function retryEvidenceRun(
     await throwIfAnotherRunActive(database);
     if (errorMessage(error).includes("active_ingestion_run")) {
       throw activeRunProblem();
+    }
+    if (errorMessage(error).includes("curated_revision_reconfirmation_required")) {
+      throw new AdministrationProblem(409, "curated_revision_reconfirmation_required", "A Curated Revision for a selected Supported Game requires reconfirmation.");
     }
     if (
       errorMessage(error).includes(
@@ -341,12 +375,12 @@ export async function retryEvidenceRun(
   return showEvidenceRun(database, runId);
 }
 
-function assertRecoveryHealthy(recoveryHealth: string): void {
-  if (recoveryHealth !== "healthy") {
+function assertRecoveryAvailable(recoveryHealth: string): void {
+  if (recoveryHealth === "blocked") {
     throw new AdministrationProblem(
       409,
       "recovery_not_verified",
-      "Recovery is not healthy, so evidence ingestion is blocked.",
+      "An active Backup Attempt blocks evidence ingestion.",
     );
   }
 }
@@ -358,7 +392,7 @@ async function throwIfRecoveryBlocked(database: D1Database): Promise<void> {
     )
     .first<{ recovery_health: string }>();
   if (operation === null) throw new Error("Operation state is unavailable.");
-  assertRecoveryHealthy(operation.recovery_health);
+  assertRecoveryAvailable(operation.recovery_health);
 }
 
 async function throwIfAnotherRunActive(database: D1Database): Promise<void> {
@@ -1001,7 +1035,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -1042,8 +1076,9 @@ export async function showEvidenceRun(
         content_digest: string;
         created_at: string;
       }>(),
+    curatedRevisionSetForRun(database, runId),
   ]);
-  return {
+  const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
     selected_games: JSON.parse(run.selected_games_json),
@@ -1071,6 +1106,10 @@ export async function showEvidenceRun(
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
+    ...(curatedSet === null ? {} : {
+      curated_revision_ids: curatedSet.revision_ids,
+      curated_revision_set_digest: curatedSet.set_digest,
+    }),
     workflow: {
       parent_id: run.parent_workflow_id,
       child_ids:
@@ -1092,6 +1131,21 @@ export async function showEvidenceRun(
       retry_after_ms: row.retry_after_ms,
       diagnostic: row.diagnostic,
     })),
+  };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      operational_request_id: run.operational_request_id,
+      candidate_digest: run.candidate_digest,
+      progress: JSON.parse(run.progress_json),
+      warnings: JSON.parse(run.warnings_json),
+      approval_history: JSON.parse(run.approval_history_json),
+      terminal_at: run.terminal_at,
+      published_revision_id: run.published_revision_id,
+      resulting_revision_id: run.resulting_revision_id,
+      publication_outcome: run.publication_outcome,
+    }),
   };
 }
 
@@ -1158,6 +1212,7 @@ async function ingestionRunInsert(
     startedAt: string;
     linkedRunId: string | null;
     idempotencyKey: string;
+    operationalRequestId?: string | null;
   },
 ): Promise<D1PreparedStatement> {
   const baseValues = [
@@ -1166,6 +1221,7 @@ async function ingestionRunInsert(
     input.startedAt,
     input.linkedRunId,
     input.idempotencyKey,
+    input.operationalRequestId ?? null,
   ];
   if (await supportsLifecycleV2(database)) {
     return database
@@ -1173,19 +1229,20 @@ async function ingestionRunInsert(
         `INSERT INTO ingestion_runs (
           id, state, selected_games_json, started_at,
           expected_current_revision_id, linked_run_id, idempotency_key,
+          operational_request_id,
           candidate_digest, candidate_created_at, approval_deadline,
           approval_json, published_revision_id, export_manifest_digest,
           terminal_at, candidate_json, approval_idempotency_key,
           progress_json, warnings_json, approval_history_json
         ) SELECT
-          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
+          ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
           NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL,
           '{"completed_stages":["planning"],"current_stage":"collecting"}',
           '[]', '[]'
         FROM catalogue_state AS catalogue
         JOIN operation_state AS operation ON operation.singleton = 1
         WHERE catalogue.singleton = 1
-          AND operation.recovery_health = 'healthy'
+          AND operation.recovery_health <> 'blocked'
           AND operation.active_ingestion_run_id IS NULL`,
       )
       .bind(...baseValues);
@@ -1195,16 +1252,17 @@ async function ingestionRunInsert(
       `INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
         expected_current_revision_id, linked_run_id, idempotency_key,
+        operational_request_id,
         candidate_digest, candidate_created_at, approval_deadline,
         approval_json, published_revision_id, export_manifest_digest,
         terminal_at, candidate_json, approval_idempotency_key
       ) SELECT
-        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?,
+        ?, 'collecting', ?, ?, catalogue.current_revision_id, ?, ?, ?,
         NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{}', NULL
       FROM catalogue_state AS catalogue
       JOIN operation_state AS operation ON operation.singleton = 1
       WHERE catalogue.singleton = 1
-        AND operation.recovery_health = 'healthy'
+        AND operation.recovery_health <> 'blocked'
         AND operation.active_ingestion_run_id IS NULL`,
     )
     .bind(...baseValues);

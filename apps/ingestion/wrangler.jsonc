@@ -33,6 +33,11 @@
       "name": "card-keepr-reconciliation",
       "binding": "RECONCILIATION_WORKFLOW",
       "class_name": "ReconciliationWorkflow"
+    },
+    {
+      "name": "card-keepr-catalogue-backup",
+      "binding": "CATALOGUE_BACKUP_WORKFLOW",
+      "class_name": "CatalogueBackupWorkflow"
     }
   ],
   "services": [

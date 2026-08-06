@@ -29,6 +29,9 @@ published date separate from `effective_from`: a dated page heading does not
 invent an official applicability date, so `effective_from` remains `null`
 unless the source explicitly supplies one. `Before:` is observed Printed Rules
 Text evidence; `After:` is the correction used to derive Effective Rules Text.
+When Bandai does not state that a notice applies to parallel card versions, the
+retained correction-image URL is the exact Printing locator; reconciliation
+must match that locator in the expected published Catalogue Revision.
 
 Each Erratum object conforms to
 [`official-errata.schema.json`](./official-errata.schema.json):

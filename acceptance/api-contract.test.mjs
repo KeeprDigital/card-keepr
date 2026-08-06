@@ -15,6 +15,7 @@ test("historical export schemas remain byte-identical to their fixed points", as
     ["catalogue-export-record-v1.schema.json", "07f524d9506388e454bd0ca36a554a9cb61fdc8b798f0f53c770b24e036f32e0", "catalogue-export-record@1"],
     ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
     ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
+    ["catalogue-export-record.schema.json", "cb9b7ef626dad9473f641d567167379a4edfba5572153b55c9dbabb0ab1d1f62", "catalogue-export-record@3"],
   ]) {
     const bytes = await readFile(resolve(
       root,
@@ -23,6 +24,73 @@ test("historical export schemas remain byte-identical to their fixed points", as
     assert.equal(createHash("sha256").update(bytes).digest("hex"), digest);
     assert.equal(JSON.parse(bytes.toString("utf8")).$id.endsWith(id), true);
   }
+});
+
+test("curated catalogue exports use a new schema major", async () => {
+  const [record, manifest] = await Promise.all([
+    "catalogue-export-record-v4.schema.json",
+    "catalogue-export-manifest-v4.schema.json",
+  ].map((name) => readFile(resolve(
+    root,
+    "prototype/formalize-implementation-contracts/schemas",
+    name,
+  ), "utf8").then(JSON.parse)));
+  assert.equal(record.$id.endsWith("catalogue-export-record@4"), true);
+  assert.equal(manifest.$id.endsWith("catalogue-export-manifest@4"), true);
+  assert.equal(manifest.properties.export_schema_major.const, 4);
+  assert.ok(manifest.$defs.CardsComponent.allOf[1].properties.record_schema
+    .const.includes("catalogue-export-record@4"));
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(record);
+  const validateRelationship = ajv.getSchema(
+    `${record.$id}#/$defs/RelationshipRecord`,
+  );
+  const endpointCases = [
+    ["printing-distribution-context", "printing", "distribution_context"],
+    ["printing-product", "printing", "product"],
+    ["distribution-context-product", "distribution_context", "product"],
+    ["product-card", "product", "card"],
+    ["erratum-target", "erratum", "printing"],
+    ["legality-rule-card", "legality_rule", "card"],
+  ];
+  for (const [kind, from, to] of endpointCases) {
+    assert.equal(validateRelationship({
+      type: "relationship",
+      id: `relationship_${kind}`,
+      kind,
+      from: { type: from, id: "from_1" },
+      to: { type: to, id: "to_1" },
+      evidence_category: "explicit",
+      source_lineage: "official-source",
+      source_observation_ids: ["srcobs_1"],
+      relationship_value: "value",
+      lifecycle: {
+        first_revision_id: "catrev_1",
+        last_observed_revision_id: "catrev_1",
+        current: true,
+        last_missing_revision_id: null,
+      },
+    }), true, `${kind}: ${ajv.errorsText(validateRelationship.errors)}`);
+  }
+  assert.equal(validateRelationship({
+    type: "relationship",
+    id: "relationship_wrong_pair",
+    kind: "product-card",
+    from: { type: "printing", id: "from_1" },
+    to: { type: "card", id: "to_1" },
+    evidence_category: "explicit",
+    source_lineage: "official-source",
+    source_observation_ids: ["srcobs_1"],
+    relationship_value: "value",
+    lifecycle: {
+      first_revision_id: "catrev_1",
+      last_observed_revision_id: "catrev_1",
+      current: true,
+      last_missing_revision_id: null,
+    },
+  }), false);
 });
 
 test("Product detail documents invalid include requests", async () => {
@@ -88,6 +156,9 @@ test("Legality Status documents and validates base and evidence representations"
     },
   };
   assert.equal(validate(base), true, JSON.stringify(validate.errors));
+  const emptyEventTier = structuredClone(base);
+  emptyEventTier.data[0].event_tier = "";
+  assert.equal(validate(emptyEventTier), false);
   const evidence = {
     ...base,
     included: [{
@@ -103,6 +174,92 @@ test("Legality Status documents and validates base and evidence representations"
     },
   };
   assert.equal(validate(evidence), true, JSON.stringify(validate.errors));
+});
+
+test("Card browsing documents and validates collection, detail, and problem representations", async () => {
+  const [openapi, schema] = await Promise.all([
+    readFile(
+      resolve(root, "prototype/formalize-implementation-contracts/openapi.json"),
+      "utf8",
+    ).then(JSON.parse),
+    readFile(
+      resolve(
+        root,
+        "prototype/formalize-implementation-contracts/schemas/api.schema.json",
+      ),
+      "utf8",
+    ).then(JSON.parse),
+  ]);
+  assert.deepEqual(
+    openapi.paths["/cards"].get.responses["200"].content["application/json"].schema,
+    { $ref: "./schemas/api.schema.json#/$defs/CardCollection" },
+  );
+  assert.deepEqual(openapi.paths["/cards"].get.responses["400"], {
+    $ref: "#/components/responses/InvalidRequest",
+  });
+  assert.deepEqual(openapi.paths["/cards"].get.responses["409"], {
+    $ref: "#/components/responses/CursorUnavailable",
+  });
+  assert.deepEqual(
+    openapi.paths["/cards/{card_id}"].get.responses["200"].content["application/json"].schema,
+    { $ref: "./schemas/api.schema.json#/$defs/CardDocument" },
+  );
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(schema);
+  const validateCollection = ajv.getSchema(
+    `${schema.$id}#/$defs/CardCollection`,
+  );
+  const validateDetail = ajv.getSchema(`${schema.$id}#/$defs/CardDocument`);
+  const validateProblem = ajv.getSchema(`${schema.$id}#/$defs/Problem`);
+  const card = {
+    type: "card",
+    id: "card_test",
+    game: "one-piece",
+    official_identity: { kind: "card_number", value: "OP01-001" },
+    name: "Test Card",
+    game_data: { profile: "one-piece@1", attributes: {} },
+    lifecycle: {
+      first_revision_id: "catrev_test",
+      last_observed_revision_id: "catrev_test",
+      withdrawn: false,
+    },
+    links: { self: "/v1/cards/card_test" },
+  };
+  const meta = {
+    catalogue_revision_id: "catrev_test",
+    published_at: "2026-08-01T00:00:00.000Z",
+  };
+  assert.equal(validateCollection({
+    data: [card],
+    meta,
+    page: { limit: 50, next_cursor: null },
+    links: { self: "/v1/cards" },
+  }), true, JSON.stringify(validateCollection.errors));
+
+  const detail = {
+    data: { ...card, effective_rules_text: null, printing_ids: [] },
+    meta,
+    links: { self: "/v1/cards/card_test" },
+  };
+  assert.equal(validateDetail(detail), true, JSON.stringify(validateDetail.errors));
+  assert.equal(validateDetail({ ...detail, included: [] }), true,
+    JSON.stringify(validateDetail.errors));
+  assert.equal(validateDetail({
+    ...detail,
+    provenance: { "/data/effective_rules_text": ["srcobs_test"] },
+  }), false, "provenance must identify resources in included");
+
+  assert.equal(validateProblem({
+    type: "/problems/cursor-revision-unavailable",
+    title: "Cursor Revision Unavailable",
+    status: 409,
+    code: "cursor_revision_unavailable",
+    detail: "Restart browsing from the current revision.",
+    request_id: "req_test",
+    links: { collection: "/v1/cards" },
+  }), true, JSON.stringify(validateProblem.errors));
 });
 
 test("export schema major 3 carries typed Product, Release, and Legality projections", async () => {

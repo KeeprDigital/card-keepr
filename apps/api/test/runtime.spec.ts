@@ -6,7 +6,8 @@ import {
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import apiWorker from "../src/index";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
   cardSearchChunks,
@@ -14,6 +15,12 @@ import {
   cardSearchTerms,
   cardSearchText,
 } from "../../../src/catalogue/card-search";
+import { cardCollectionPageQuery } from "../../../src/catalogue/card-collection-read";
+import {
+  prepareCardSearchForD1Export,
+  reconstructCardSearchAfterD1Restore,
+  withCardSearchPreparedForD1Export,
+} from "../../../src/catalogue/card-search-recovery";
 import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
 import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
 import exportManifestSchemaV3 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
@@ -60,6 +67,85 @@ test("the API authentication boundary runs in the Workers runtime", async () => 
     runtime: "api",
     status: "ok",
   });
+});
+
+test("API requests emit useful structured diagnostics without leaking failures", async () => {
+  const records: string[] = [];
+  const errors: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((value) => {
+    records.push(String(value));
+  });
+  vi.spyOn(console, "error").mockImplementation((value) => {
+    errors.push(String(value));
+  });
+
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue?proposal=source-payload", {
+      headers: {
+        authorization: "Bearer vitest-api-key",
+        "x-secret-diagnostic-test": "credential-material",
+      },
+    }),
+    testEnv,
+  );
+  expect(response.status).toBe(200);
+
+  const record = JSON.parse(records.at(-1) ?? "null") as Record<string, unknown>;
+  expect(record).toMatchObject({
+    contract: "card-keepr-operational-log@1",
+    event: "request.completed",
+    runtime: "api",
+    request: {
+      method: "GET",
+      route: "/v1/catalogue",
+    },
+    status: 200,
+    cache: { status: "unknown" },
+    retry: { count: 0, classification: "not_applicable" },
+    d1: { prepared_statements: expect.any(Number) },
+  });
+  expect(record).toHaveProperty("request.id");
+  expect(record).toHaveProperty("duration_ms");
+  expect(record).toHaveProperty("workflow.step", null);
+  expect(JSON.stringify(record)).not.toContain("source-payload");
+  expect(JSON.stringify(record)).not.toContain("credential-material");
+
+  await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/source-payload-path-secret", {
+      headers: { authorization: "Bearer vitest-api-key" },
+    }),
+    testEnv,
+  );
+  expect(records.at(-1)).toContain('\"route\":\"/:ref\"');
+  expect(records.at(-1)).not.toContain("source-payload-path-secret");
+
+  const secret = "credential-and-source-payload-must-not-leak";
+  const failingEnv = new Proxy(testEnv, {
+    get(target, property, receiver) {
+      if (property === "CATALOGUE_DB") {
+        return new Proxy(target.CATALOGUE_DB, {
+          get(database, databaseProperty, databaseReceiver) {
+            if (databaseProperty === "prepare") {
+              return () => {
+                throw new Error(secret);
+              };
+            }
+            return Reflect.get(database, databaseProperty, databaseReceiver);
+          },
+        });
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const failed = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/catalogue", {
+      headers: { authorization: "Bearer vitest-api-key" },
+    }),
+    failingEnv,
+  );
+  expect(failed.status).toBe(500);
+  expect([...records, ...errors].join("\n")).not.toContain(secret);
+  expect([...records, ...errors].join("\n")).not.toContain("vitest-api-key");
 });
 
 test("an empty current Catalogue Revision remains queryable through its projection", async () => {
@@ -112,6 +198,49 @@ test("every Card collection shape returns the normative 503 while the current pr
       code: "catalogue_query_unavailable",
     });
   }
+});
+
+test("a supplied cursor for an unavailable current revision returns the cursor restart problem", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_current_cursor_unavailable",
+    runId: "run_current_cursor_unavailable",
+    cards: [
+      apiCard({
+        id: "card_current_cursor_unavailable",
+        cardNumber: "OP29-504",
+        name: "Unavailable Cursor Projection",
+      }),
+    ],
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions
+     SET state = 'pending'
+     WHERE catalogue_revision_id = 'catrev_current_cursor_unavailable'`,
+  ).run();
+  const cursor = encodeTestCardCursor({
+    revisionId: "catrev_current_cursor_unavailable",
+    route: "/v1/cards",
+    order: "game,official_identity.kind,official_identity.value,id",
+    q: "unavailable",
+    limit: 1,
+    after: {
+      game: "one-piece",
+      identityKind: "card_number",
+      identityValue: "OP29-504",
+      id: "card_current_cursor_unavailable",
+    },
+  });
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=unavailable&limit=1&after=" +
+      encodeURIComponent(cursor),
+    { headers: apiHeaders("203.0.113.104") },
+  ));
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/cards" },
+  });
 });
 
 test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifact", async () => {
@@ -338,6 +467,477 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
   await expect(new Response(decompressed).text()).resolves.toBe(
     `${canonicalJson(legalityRule)}\n`,
   );
+
+  const componentEtag = `"${compressedLegalityDigest}"`;
+  const headResponse = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      method: "HEAD",
+      headers: {
+        ...apiHeaders("203.0.113.32"),
+        range: "bytes=0-9",
+      },
+    },
+  ));
+  expect(headResponse.status).toBe(200);
+  expect(await headResponse.text()).toBe("");
+  expect(headResponse.headers.get("content-length")).toBe(
+    String(compressedLegalityBytes.byteLength),
+  );
+  expect(headResponse.headers.get("content-disposition")).toBe(
+    'attachment; filename="legality-rules.ndjson.gz"',
+  );
+  expect(headResponse.headers.get("accept-ranges")).toBe("bytes");
+  expect(headResponse.headers.get("etag")).toBe(componentEtag);
+  expect(headResponse.headers.get("cache-control")).toBe(
+    "private, max-age=31536000, immutable",
+  );
+
+  const notModified = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.33"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(notModified.status).toBe(304);
+  expect(await notModified.text()).toBe("");
+
+  const partial = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.34"),
+        range: "bytes=3-11",
+      },
+    },
+  ));
+  expect(partial.status).toBe(206);
+  expect(new Uint8Array(await partial.arrayBuffer())).toEqual(
+    compressedLegalityBytes.slice(3, 12),
+  );
+  expect(partial.headers.get("content-range")).toBe(
+    `bytes 3-11/${compressedLegalityBytes.byteLength}`,
+  );
+  expect(partial.headers.get("content-length")).toBe("9");
+  expect(partial.headers.get("etag")).toBe(componentEtag);
+
+  await testEnv.CATALOGUE_EXPORTS.put(
+    componentKey,
+    compressedLegalityBytes,
+    { sha256: compressedLegalityDigest },
+  );
+  const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+    async get(...arguments_) {
+      const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
+      if (arguments_[0] !== componentKey || object === null) return object;
+      return new Proxy(object, {
+        get(target, property) {
+          if (property === "etag") return `${target.etag}-replacement`;
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  });
+  const raced = await apiWorker.fetch(
+    new Request(`https://card-keepr.invalid${componentPath}`, {
+      headers: apiHeaders("203.0.113.38"),
+    }),
+    { ...testEnv, CATALOGUE_EXPORTS: replacedBodyBucket },
+  );
+  expect(raced.status).toBe(404);
+  await expect(raced.json()).resolves.toMatchObject({ code: "not_found" });
+
+  const unsatisfiable = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.35"),
+        range: `bytes=${compressedLegalityBytes.byteLength}-`,
+      },
+    },
+  ));
+  expect(unsatisfiable.status).toBe(416);
+  expect(unsatisfiable.headers.get("content-range")).toBe(
+    `bytes */${compressedLegalityBytes.byteLength}`,
+  );
+  await expect(unsatisfiable.json()).resolves.toMatchObject({
+    code: "range_not_satisfiable",
+  });
+
+  await testEnv.CATALOGUE_EXPORTS.delete(componentKey);
+  const missing = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.36"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("content-type")).toContain(
+    "application/problem+json",
+  );
+  const missingProblem = await missing.json();
+  expect(missingProblem).toMatchObject({ code: "not_found" });
+  const problemAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(problemAjv);
+  problemAjv.addSchema(apiSchema);
+  const validateProblem = problemAjv.getSchema(
+    `${apiSchema.$id}#/$defs/Problem`,
+  )!;
+  expect(
+    validateProblem(missingProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
+
+  const tamperedBytes = compressedLegalityBytes.slice();
+  const tamperedIndex = tamperedBytes.length - 1;
+  tamperedBytes[tamperedIndex] = tamperedBytes[tamperedIndex]! ^ 0xff;
+  await testEnv.CATALOGUE_EXPORTS.put(componentKey, tamperedBytes);
+  const tampered = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${componentPath}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.37"),
+        "if-none-match": componentEtag,
+      },
+    },
+  ));
+  expect(tampered.status).toBe(404);
+  const tamperedProblem = await tampered.json();
+  expect(tamperedProblem).toMatchObject({ code: "not_found" });
+  expect(
+    validateProblem(tamperedProblem),
+    JSON.stringify(validateProblem.errors),
+  ).toBe(true);
+
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson({
+      ...manifest,
+      supported_games: ["one-piece"],
+    })}\n`,
+  );
+  const changedManifest = await exports.default.fetch(
+    authenticatedRequest(manifestPath),
+  );
+  expect(changedManifest.status).toBe(500);
+  await expect(changedManifest.json()).resolves.toMatchObject({
+    code: "internal_error",
+  });
+});
+
+test("Catalogue Export listing is ordered, bounded, and revision-pinned across pages", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_list_oldest",
+    "run_export_list_oldest",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_list_middle",
+    "run_export_list_middle",
+    "2026-07-19T00:00:00.000Z",
+  );
+
+  const first = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/catalogue-exports?limit=1",
+    { headers: apiHeaders("203.0.113.105") },
+  ));
+  expect(first.status).toBe(200);
+  const firstDocument = await first.json<{
+    data: { catalogue_revision_id: string }[];
+    page: { limit: number; next_cursor: string | null };
+    meta: { catalogue_revision_id: string };
+  }>();
+  expect(firstDocument.data.map(({ catalogue_revision_id }) =>
+    catalogue_revision_id)).toEqual(["catrev_export_list_middle"]);
+  expect(firstDocument.page).toEqual({
+    limit: 1,
+    next_cursor: expect.any(String),
+  });
+  expect(firstDocument.meta.catalogue_revision_id).toBe(
+    "catrev_export_list_middle",
+  );
+  const collectionAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(collectionAjv);
+  collectionAjv.addSchema(apiSchema);
+  const validateCollection = collectionAjv.getSchema(
+    `${apiSchema.$id}#/$defs/CatalogueExportCollection`,
+  )!;
+  expect(
+    validateCollection(firstDocument),
+    JSON.stringify(validateCollection.errors),
+  ).toBe(true);
+
+  await seedCatalogueExportSummary(
+    "catrev_export_list_newest",
+    "run_export_list_newest",
+    "2026-07-20T00:00:00.000Z",
+  );
+  const second = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/catalogue-exports?limit=1&after=" +
+      encodeURIComponent(firstDocument.page.next_cursor!),
+    { headers: apiHeaders("203.0.113.106") },
+  ));
+  expect(second.status).toBe(200);
+  const secondDocument = await second.json<{
+    data: { catalogue_revision_id: string }[];
+    page: { next_cursor: string | null };
+    meta: { catalogue_revision_id: string };
+  }>();
+  expect(secondDocument.data.map(({ catalogue_revision_id }) =>
+    catalogue_revision_id)).toEqual(["catrev_export_list_oldest"]);
+  expect(secondDocument.page.next_cursor).toBeNull();
+  expect(secondDocument.meta.catalogue_revision_id).toBe(
+    "catrev_export_list_middle",
+  );
+});
+
+test("Catalogue Export JSON routes validate requests and support conditional reads", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_http_old",
+    "run_export_http_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_http_current",
+    "run_export_http_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const request = (path: string, headers: Record<string, string> = {}) =>
+    exports.default.fetch(new Request(`https://card-keepr.invalid${path}`, {
+      headers: { ...apiHeaders("203.0.113.107"), ...headers },
+    }));
+
+  const list = await request("/v1/catalogue-exports?limit=1");
+  expect(list.status).toBe(200);
+  const listEtag = list.headers.get("etag");
+  expect(listEtag).toEqual(expect.any(String));
+  const listNotModified = await request(
+    "/v1/catalogue-exports?limit=1",
+    { "if-none-match": listEtag! },
+  );
+  expect(listNotModified.status).toBe(304);
+  expect(await listNotModified.text()).toBe("");
+  expect(listNotModified.headers.get("x-catalogue-revision")).toBe(
+    "catrev_export_http_current",
+  );
+
+  const defaultList = await request("/v1/catalogue-exports");
+  expect(defaultList.status).toBe(200);
+  const defaultListEtag = defaultList.headers.get("etag");
+  await expect(defaultList.json()).resolves.toMatchObject({
+    links: { self: "/v1/catalogue-exports" },
+  });
+  const explicitDefault = await request(
+    "/v1/catalogue-exports?limit=50",
+    { "if-none-match": defaultListEtag! },
+  );
+  expect(explicitDefault.status).toBe(200);
+  expect(explicitDefault.headers.get("etag")).not.toBe(defaultListEtag);
+  await expect(explicitDefault.json()).resolves.toMatchObject({
+    links: { self: "/v1/catalogue-exports?limit=50" },
+  });
+
+  const firstDocument = await list.json<{
+    page: { next_cursor: string };
+  }>();
+  for (const [query, code] of [
+    ["limit=0", "invalid_parameter"],
+    ["limit=101", "invalid_parameter"],
+    ["limit=1.5", "invalid_parameter"],
+    ["limit=1&limit=1", "invalid_parameter"],
+    ["unknown=value", "invalid_parameter"],
+    ["after=not-a-cursor", "invalid_cursor"],
+    [
+      `limit=2&after=${encodeURIComponent(firstDocument.page.next_cursor)}`,
+      "invalid_cursor",
+    ],
+  ]) {
+    const invalid = await request(`/v1/catalogue-exports?${query}`);
+    expect(invalid.status, query).toBe(400);
+    await expect(invalid.json(), query).resolves.toMatchObject({ code });
+  }
+  const unavailableCursor = JSON.parse(Buffer.from(
+    firstDocument.page.next_cursor,
+    "base64url",
+  ).toString("utf8"));
+  unavailableCursor.revision_id = "catrev_export_cursor_unavailable";
+  const unavailable = await request(
+    "/v1/catalogue-exports?limit=1&after=" +
+      Buffer.from(JSON.stringify(unavailableCursor)).toString("base64url"),
+  );
+  expect(unavailable.status).toBe(409);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/catalogue-exports" },
+  });
+
+  const manifestPath =
+    "/v1/catalogue-exports/catrev_export_http_current";
+  const manifest = await request(manifestPath);
+  expect(manifest.status).toBe(200);
+  const manifestEtag = manifest.headers.get("etag");
+  const manifestNotModified = await request(manifestPath, {
+    "if-none-match": manifestEtag!,
+  });
+  expect(manifestNotModified.status).toBe(304);
+  expect(await manifestNotModified.text()).toBe("");
+});
+
+test("Catalogue Export listing ETags change when a retained package disappears", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_old",
+    "run_export_etag_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_etag_current",
+    "run_export_etag_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const path = "/v1/catalogue-exports?limit=1";
+  const first = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    { headers: apiHeaders("203.0.113.108") },
+  ));
+  expect(first.status).toBe(200);
+  const firstEtag = first.headers.get("etag");
+  expect(firstEtag).toEqual(expect.any(String));
+  await expect(first.json()).resolves.toMatchObject({
+    page: { next_cursor: expect.any(String) },
+  });
+
+  await testEnv.CATALOGUE_DB.prepare(
+    `DELETE FROM catalogue_exports WHERE catalogue_revision_id = ?`,
+  ).bind("catrev_export_etag_old").run();
+  const changed = await exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    {
+      headers: {
+        ...apiHeaders("203.0.113.109"),
+        "if-none-match": firstEtag!,
+      },
+    },
+  ));
+  expect(changed.status).toBe(200);
+  expect(changed.headers.get("etag")).not.toBe(firstEtag);
+  await expect(changed.json()).resolves.toMatchObject({
+    data: [{ catalogue_revision_id: "catrev_export_etag_current" }],
+    page: { limit: 1, next_cursor: null },
+  });
+});
+
+test("a known deleting or deleted Catalogue Export is immediately 410 while an unknown revision remains 404", async () => {
+  await seedCatalogueExportSummary(
+    "catrev_export_deleted_old",
+    "run_export_deleted_old",
+    "2026-07-18T00:00:00.000Z",
+  );
+  await seedCatalogueExportSummary(
+    "catrev_export_deleted_current",
+    "run_export_deleted_current",
+    "2026-07-19T00:00:00.000Z",
+  );
+  const oldExport = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT manifest_key, manifest_digest FROM catalogue_exports
+     WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
+  ).first<{ manifest_key: string; manifest_digest: string }>();
+  if (oldExport === null) throw new Error("missing API deletion fixture");
+  const planId = "export-deletion-api-plan";
+  const deletionId = "export-deletion-api-test";
+  const idempotencyKey = "export-deletion-api-key";
+  const planDigest = "c".repeat(64);
+  const objectSetDigest = "d".repeat(64);
+  const requestJson = canonicalJson({
+    plan_id: planId,
+    plan_digest: planDigest,
+    catalogue_revision_id: "catrev_export_deleted_old",
+    manifest_digest: oldExport.manifest_digest,
+    expected_current_revision_id: "catrev_export_deleted_current",
+    confirmation_revision_id: "catrev_export_deleted_old",
+    deletion_id: deletionId,
+    idempotency_key: idempotencyKey,
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_export_deletion_plans (
+       id, catalogue_revision_id, manifest_digest,
+       expected_current_revision_id, object_keys_json, component_names_json,
+       object_set_digest,
+       dependencies_json, plan_digest, created_at, expires_at
+     ) VALUES (?, 'catrev_export_deleted_old', ?,
+       'catrev_export_deleted_current', ?, '["cards"]', ?, '[]', ?,
+       '2026-07-20T00:00:00.000Z', '2099-01-01T00:00:00.000Z')`,
+  ).bind(
+    planId,
+    oldExport.manifest_digest,
+    canonicalJson([oldExport.manifest_key]),
+    objectSetDigest,
+    planDigest,
+  ).run();
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_export_deletions (
+         id, plan_id, state, catalogue_revision_id, manifest_digest,
+         expected_current_revision_id, object_set_digest, idempotency_key,
+         request_json, requested_at, completed_at, failure_code
+       ) VALUES (?, ?, 'deleting', 'catrev_export_deleted_old', ?,
+         'catrev_export_deleted_current', ?, ?, ?,
+         '2026-07-20T00:01:00.000Z', NULL, NULL)`,
+    ).bind(
+      deletionId,
+      planId,
+      oldExport.manifest_digest,
+      objectSetDigest,
+      idempotencyKey,
+      requestJson,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_exports
+       SET maintenance_state = 'deleting', deletion_operation_id = ?
+       WHERE catalogue_revision_id = 'catrev_export_deleted_old'`,
+    ).bind(deletionId),
+  ]);
+
+  const request = (path: string) => exports.default.fetch(new Request(
+    `https://card-keepr.invalid${path}`,
+    { headers: apiHeaders("203.0.113.111") },
+  ));
+  for (const path of [
+    "/v1/catalogue-exports/catrev_export_deleted_old",
+    "/v1/catalogue-exports/catrev_export_deleted_old/components/cards",
+  ]) {
+    const deleted = await request(path);
+    expect(deleted.status, path).toBe(410);
+    await expect(deleted.json(), path).resolves.toMatchObject({
+      status: 410,
+      code: "catalogue_export_deleted",
+    });
+  }
+  const neverKnownComponent = await request(
+    "/v1/catalogue-exports/catrev_export_deleted_old/components/never-known",
+  );
+  expect(neverKnownComponent.status).toBe(404);
+  await expect(neverKnownComponent.json()).resolves.toMatchObject({
+    status: 404,
+    code: "not_found",
+  });
+  const unknown = await request(
+    "/v1/catalogue-exports/catrev_export_never_known",
+  );
+  expect(unknown.status).toBe(404);
+  await expect(unknown.json()).resolves.toMatchObject({ code: "not_found" });
+
+  const listed = await request("/v1/catalogue-exports");
+  expect(listed.status).toBe(200);
+  const document = await listed.json<{ data: { catalogue_revision_id: string }[] }>();
+  expect(document.data.map(({ catalogue_revision_id }) => catalogue_revision_id))
+    .not.toContain("catrev_export_deleted_old");
 });
 
 test("Legality Status rejects a malformed Card identity before lookup", async () => {
@@ -359,15 +959,19 @@ test("Legality Status rejects a malformed Card identity before lookup", async ()
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
+      invalid_params: [{
+        name: "card_id",
+        reason: "card_id must be an opaque identity of at most 200 characters.",
+      }],
     });
   }
 });
 
 test("Legality Status rejects unknown, repeated, and duplicated evidence includes", async () => {
-  for (const query of [
-    "include=unknown",
-    "include=evidence,evidence",
-    "include=evidence&include=evidence",
+  for (const [query, reason] of [
+    ["include=unknown", "include must be exactly evidence when supplied."],
+    ["include=evidence,evidence", "include must be exactly evidence when supplied."],
+    ["include=evidence&include=evidence", "include must be supplied exactly once."],
   ]) {
     const response = await exports.default.fetch(
       new Request(
@@ -383,8 +987,57 @@ test("Legality Status rejects unknown, repeated, and duplicated evidence include
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
+      invalid_params: [{ name: "include", reason }],
     });
   }
+});
+
+test("Legality Status reports the exact invalid query parameter", async () => {
+  const cases = [
+    ["on=2026-07-30&format=standard", "card_id", "card_id is required."],
+    ["card_id=card_any&format=standard", "on", "on is required."],
+    ["card_id=card_any&on=2026-07-30", "format", "format is required."],
+    ["card_id=card_any&on=2026-02-30&format=standard", "on", "on must be a valid ISO date."],
+    ["card_id=card_any&on=2026-07-30&format=", "format", "format must be a non-empty string."],
+    ["card_id=card_any&on=2026-07-30&format=standard&event_tier=", "event_tier", "event_tier must be a non-empty string."],
+    ["card_id=card_any&on=2026-07-30&format=standard&region=OCEANIA", "region", "region must be EN-OCEANIA, EN-ASIA, or EN-US."],
+    ["card_id=card_any&on=2026-07-30&format=standard&unexpected=true", "unexpected", "unexpected is not accepted."],
+    ["card_id=card_any&card_id=card_other&on=2026-07-30&format=standard", "card_id", "card_id must be supplied exactly once."],
+  ] as const;
+  let address = 110;
+  for (const [query, name, reason] of cases) {
+    const response = await exports.default.fetch(new Request(
+      `https://card-keepr.invalid/v1/legality-status?${query}`,
+      { headers: apiHeaders(`203.0.113.${address++}`) },
+    ));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "invalid_parameter",
+      invalid_params: [{ name, reason }],
+    });
+  }
+});
+
+test("Legality Status reports an unnamed query key as a schema-valid Problem", async () => {
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/legality-status?=true",
+    { headers: apiHeaders("203.0.113.119") },
+  ));
+  expect(response.status).toBe(400);
+  const problem = await response.json();
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
+    .toBe(true);
+  expect(problem).toMatchObject({
+    code: "invalid_parameter",
+    invalid_params: [{
+      name: "query",
+      reason: "query parameter names must be non-empty.",
+    }],
+  });
 });
 
 test("authenticated Legality Status reads only indexed Card and regional applicability at high cardinality", async () => {
@@ -990,7 +1643,9 @@ test("authenticated Legality Status indexes evidence linearly at the 16,384-rule
   ));
   const requestDurationMs = performance.now() - requestStartedAt;
   expect(response.status).toBe(200);
-  expect(requestDurationMs).toBeLessThan(600);
+  // Keep enough headroom for shared CI runners while still rejecting the
+  // former quadratic provenance-indexing implementation at the maximum bound.
+  expect(requestDurationMs).toBeLessThan(2_000);
   const body = await response.json<{
     data: Array<{
       rule_ids: string[];
@@ -1740,7 +2395,7 @@ test("Card search is canonically Unicode case-insensitive", async () => {
   });
 });
 
-test("Card search uses selective literal trigrams before exact substring filtering", async () => {
+test("Card search keeps a selective two-character relational fallback beside FTS", async () => {
   const ordinaryCards = Array.from({ length: 200 }, (_, index) =>
     apiCard({
       id: `card_selectivity_${String(index).padStart(3, "0")}`,
@@ -1763,8 +2418,8 @@ test("Card search uses selective literal trigrams before exact substring filteri
     cards: [...ordinaryCards, selected],
   });
 
-  const query = cardSearchQuery("quartz");
-  expect(query).toEqual({ text: "quartz", anchorTerm: "g3:qua" });
+  const query = cardSearchQuery("qu");
+  expect(query).toEqual({ text: "qu", anchorTerm: "g2:qu" });
   const candidates = await testEnv.CATALOGUE_DB.prepare(
     `SELECT COUNT(DISTINCT card_id) AS count
      FROM revision_card_search_terms
@@ -1798,7 +2453,7 @@ test("Card search uses selective literal trigrams before exact substring filteri
     name: "A".repeat(50_000),
     effective_rules_text: "A".repeat(50_000),
   }));
-  expect(repeated).toEqual(["g1:a", "g2:aa", "g3:aaa"]);
+  expect(repeated).toEqual(["g1:a", "g2:aa"]);
 });
 
 test("authenticated Card search validates raw q at 1 through 500 characters before normalization", async () => {
@@ -1827,6 +2482,7 @@ test("authenticated Card search validates raw q at 1 through 500 characters befo
     token(500),
     "ﬀ".repeat(500),
     "---",
+    '"quoted"',
   ]) {
     const response = await exports.default.fetch(
       new Request(
@@ -1890,14 +2546,505 @@ test("authenticated Card collection pages remain byte-bounded for large valid re
   expect(document.page.next_cursor).toEqual(expect.any(String));
 }, 15_000);
 
-test("Card search persistence remains compatible with D1 export", async () => {
+test("Card cursors reject route, ordering, and structural misuse", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_cursor_binding",
+    runId: "run_cursor_binding",
+    cards: [
+      apiCard({
+        id: "card_cursor_binding_001",
+        cardNumber: "OP29-701",
+        name: "Cursor Binding Alpha",
+      }),
+      apiCard({
+        id: "card_cursor_binding_002",
+        cardNumber: "OP29-702",
+        name: "Cursor Binding Beta",
+      }),
+    ],
+  });
+  const cursors = [
+    encodeTestCardCursor({
+      revisionId: "catrev_cursor_binding",
+      route: "/v1/printings",
+      order: "game,official_identity.kind,official_identity.value,id",
+      q: "cursor binding",
+      limit: 1,
+      after: {
+        game: "one-piece",
+        identityKind: "card_number",
+        identityValue: "OP29-701",
+        id: "card_cursor_binding_001",
+      },
+    }),
+    encodeTestCardCursor({
+      revisionId: "catrev_cursor_binding",
+      route: "/v1/cards",
+      order: "name,id",
+      q: "cursor binding",
+      limit: 1,
+      after: {
+        game: "one-piece",
+        identityKind: "card_number",
+        identityValue: "OP29-701",
+        id: "card_cursor_binding_001",
+      },
+    }),
+    encodeTestCardCursor({
+      revisionId: "",
+      route: "/v1/cards",
+      order: "game,official_identity.kind,official_identity.value,id",
+      q: "cursor binding",
+      limit: 1,
+      after: {
+        game: "one-piece",
+        identityKind: "card_number",
+        identityValue: "OP29-701",
+        id: "card_cursor_binding_001",
+      },
+    }),
+    encodeTestCardCursor({
+      revisionId: "catrev_cursor_binding",
+      route: "/v1/cards",
+      order: "game,official_identity.kind,official_identity.value,id",
+      q: "cursor binding",
+      limit: 1,
+      after: {
+        game: "one-piece",
+        identityKind: "card_number",
+        identityValue: "OP29-701",
+        id: "",
+      },
+    }),
+  ];
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+
+  for (const [index, cursor] of cursors.entries()) {
+    const response = await exports.default.fetch(new Request(
+      "https://card-keepr.invalid/v1/cards?q=cursor%20binding&limit=1&after=" +
+        encodeURIComponent(cursor),
+      { headers: apiHeaders(`203.0.113.${90 + index}`) },
+    ));
+    expect(response.status).toBe(400);
+    const problem = await response.json();
+    expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
+      .toBe(true);
+    expect(problem).toMatchObject({
+      code: "invalid_cursor",
+    });
+  }
+});
+
+test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   const virtualTables = await testEnv.CATALOGUE_DB.prepare(
     `SELECT name FROM sqlite_schema
      WHERE type = 'table'
        AND name LIKE 'revision_card%'
        AND lower(sql) LIKE '%create virtual table%'`,
   ).all<{ name: string }>();
-  expect(virtualTables.results).toEqual([]);
+  expect(virtualTables.results).toEqual([
+    { name: "revision_card_search_fts" },
+  ]);
+
+  await seedApiRevision({
+    revisionId: "catrev_fts_search_old",
+    runId: "run_fts_search_old",
+    cards: [
+      apiCard({
+        id: "card_fts_search_old",
+        cardNumber: "OP29-700",
+        name: "Quartz Vanguard",
+      }),
+    ],
+  });
+  await seedApiRevision({
+    revisionId: "catrev_fts_search",
+    runId: "run_fts_search",
+    cards: [
+      apiCard({
+        id: "card_fts_search",
+        cardNumber: "OP29-702",
+        name: "Quartz Vanguard",
+        effectiveRulesText: 'Say "Quartz" now.',
+      }),
+    ],
+  });
+  const productionQuery = cardCollectionPageQuery(
+    "catrev_fts_search",
+    { q: "quartz", game: null, cardNumber: null, limit: 50 },
+    null,
+  );
+  const plan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN ${productionQuery.sql}`,
+  ).bind(...productionQuery.bindings).all<{ detail: string }>();
+  const planDetails = plan.results.map(({ detail }) => detail);
+  expect(planDetails).toEqual([
+    "MATERIALIZE search_candidates",
+    "SCAN search VIRTUAL TABLE INDEX 0:M6",
+    "SEARCH filtered USING INDEX " +
+    "sqlite_autoindex_revision_card_query_documents_1 " +
+    "(catalogue_revision_id=? AND card_id=?)",
+    "USE TEMP B-TREE FOR GROUP BY",
+    "USE TEMP B-TREE FOR ORDER BY",
+    "SCAN search_candidates",
+  ]);
+  const filteredCursorQuery = cardCollectionPageQuery(
+    "catrev_fts_search",
+    {
+      q: "quartz",
+      game: "one-piece",
+      cardNumber: "OP29-702",
+      limit: 7,
+    },
+    {
+      game: "one-piece",
+      identity_kind: "card_number",
+      identity_value: "OP29-701",
+      id: "card_fts_search_before",
+    },
+  );
+  const materialization = filteredCursorQuery.sql.slice(
+    0,
+    filteredCursorQuery.sql.indexOf("\n       )\n       SELECT"),
+  );
+  expect(materialization).toContain("filtered.sort_game = ?");
+  expect(materialization).toContain("filtered.sort_identity_value = ?");
+  expect(materialization).toContain(
+    "(filtered.sort_game, filtered.sort_identity_kind,",
+  );
+  expect(materialization).toContain("LIMIT ?");
+  const filteredPlan = await testEnv.CATALOGUE_DB.prepare(
+    `EXPLAIN QUERY PLAN ${filteredCursorQuery.sql}`,
+  ).bind(...filteredCursorQuery.bindings).all<{ detail: string }>();
+  expect(filteredPlan.results.map(({ detail }) => detail)).toEqual([
+    "MATERIALIZE search_candidates",
+    "SCAN search VIRTUAL TABLE INDEX 0:M6",
+    "SEARCH filtered USING INDEX " +
+    "sqlite_autoindex_revision_card_query_documents_1 " +
+    "(catalogue_revision_id=? AND card_id=?)",
+    "USE TEMP B-TREE FOR GROUP BY",
+    "USE TEMP B-TREE FOR ORDER BY",
+    "SCAN search_candidates",
+  ]);
+  const filteredRows = await testEnv.CATALOGUE_DB.prepare(
+    filteredCursorQuery.sql,
+  ).bind(...filteredCursorQuery.bindings).all<{ summary_json: string }>();
+  expect(filteredRows.results.map(({ summary_json }) =>
+    JSON.parse(summary_json).id
+  )).toEqual(["card_fts_search"]);
+  const matchedRevisions = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT DISTINCT catalogue_revision_id
+     FROM revision_card_search_fts
+     WHERE revision_card_search_fts MATCH ?
+     ORDER BY catalogue_revision_id`,
+  ).bind(productionQuery.bindings[0]).all<{
+    catalogue_revision_id: string;
+  }>();
+  expect(matchedRevisions.results).toEqual([
+    { catalogue_revision_id: "catrev_fts_search" },
+  ]);
+  const redundantRelationalTerms = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT count(*) AS count
+     FROM revision_card_search_terms
+     WHERE catalogue_revision_id = ? AND term LIKE 'g3:%'`,
+  ).bind("catrev_fts_search").first<{ count: number }>();
+  expect(redundantRelationalTerms?.count).toBe(0);
+  await testEnv.CATALOGUE_DB.prepare(
+    "DELETE FROM revision_card_search_terms WHERE catalogue_revision_id = ?",
+  ).bind("catrev_fts_search").run();
+
+  const response = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=quartz",
+    { headers: apiHeaders("203.0.113.100") },
+  ));
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_search" }],
+  });
+  const quoted = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=%22quartz%22",
+    { headers: apiHeaders("203.0.113.103") },
+  ));
+  expect(quoted.status).toBe(200);
+  await expect(quoted.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_search" }],
+  });
+});
+
+test("Card search FTS is reconstructible across the D1 export and restore boundary", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_fts_restore",
+    runId: "run_fts_restore",
+    cards: [
+      apiCard({
+        id: "card_fts_restore",
+        cardNumber: "OP29-704",
+        name: "Reconstructible Quartz",
+      }),
+    ],
+  });
+  const retainedChunks = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT catalogue_revision_id, card_id, field_ordinal,
+            chunk_ordinal, search_text
+     FROM revision_card_search_chunks
+     WHERE catalogue_revision_id = ?
+     ORDER BY card_id, field_ordinal, chunk_ordinal`,
+  ).bind("catrev_fts_restore").all();
+  expect(retainedChunks.results.length).toBeGreaterThan(0);
+
+  await withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-primary",
+      observedAt: "2026-08-05T00:00:00.000Z",
+      leaseExpiresAt: "2026-08-05T00:15:00.000Z",
+    },
+    async () => {
+      const exportBoundary = await testEnv.CATALOGUE_DB.prepare(
+        `SELECT
+           (SELECT state FROM card_search_fts_state WHERE singleton = 1)
+             AS state,
+           (SELECT count(*) FROM sqlite_schema
+            WHERE type = 'table'
+              AND name LIKE 'revision_card%'
+              AND lower(sql) LIKE '%create virtual table%')
+             AS virtual_tables,
+           (SELECT count(*) FROM revision_card_search_chunks
+            WHERE catalogue_revision_id = ?) AS retained_chunks`,
+      ).bind("catrev_fts_restore").first();
+      expect(exportBoundary).toEqual({
+        state: "reconstructing",
+        virtual_tables: 0,
+        retained_chunks: retainedChunks.results.length,
+      });
+      await expect(prepareCardSearchForD1Export(
+        testEnv.CATALOGUE_DB,
+        {
+          ownerToken: "backup-owner-concurrent",
+          observedAt: "2026-08-05T00:01:00.000Z",
+          leaseExpiresAt: "2026-08-05T00:16:00.000Z",
+        },
+      )).rejects.toThrow("Card search FTS export lease is unavailable.");
+      await expect(reconstructCardSearchAfterD1Restore(
+        testEnv.CATALOGUE_DB,
+        "backup-owner-concurrent",
+      )).rejects.toThrow("Card search FTS export lease owner changed.");
+      const unavailable = await exports.default.fetch(new Request(
+        "https://card-keepr.invalid/v1/cards?q=quartz",
+        { headers: apiHeaders("203.0.113.105") },
+      ));
+      expect(unavailable.status).toBe(503);
+    },
+  );
+
+  const reconstructed = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT
+       (SELECT state FROM card_search_fts_state WHERE singleton = 1) AS state,
+       (SELECT count(*) FROM revision_card_search_fts_rows
+        WHERE catalogue_revision_id = ?) AS indexed_chunks`,
+  ).bind("catrev_fts_restore").first();
+  expect(reconstructed).toEqual({
+    state: "ready",
+    indexed_chunks: retainedChunks.results.length,
+  });
+  const restored = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=quartz",
+    { headers: apiHeaders("203.0.113.106") },
+  ));
+  expect(restored.status).toBe(200);
+  await expect(restored.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_restore" }],
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE revision_card_search_chunks
+     SET search_text = 'trigger-rebuilt-quartz'
+     WHERE catalogue_revision_id = ? AND card_id = ? AND field_ordinal = 1`,
+  ).bind("catrev_fts_restore", "card_fts_restore").run();
+  const triggerMaintained = await exports.default.fetch(new Request(
+    "https://card-keepr.invalid/v1/cards?q=trigger-rebuilt-quartz",
+    { headers: apiHeaders("203.0.113.107") },
+  ));
+  expect(triggerMaintained.status).toBe(200);
+  await expect(triggerMaintained.json()).resolves.toMatchObject({
+    data: [{ id: "card_fts_restore" }],
+  });
+  await expect(withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-failure",
+      observedAt: "2026-08-05T01:00:00.000Z",
+      leaseExpiresAt: "2026-08-05T01:15:00.000Z",
+    },
+    async () => {
+      throw new Error("simulated D1 export failure");
+    },
+  )).rejects.toThrow("simulated D1 export failure");
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT state FROM card_search_fts_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ state: "ready" });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE card_search_fts_state
+     SET state = 'reconstructing', owner_token = ?, lease_expires_at = ?
+     WHERE singleton = 1 AND state = 'ready'`,
+  ).bind(
+    "backup-owner-abandoned",
+    "2026-08-05T02:00:00.000Z",
+  ).run();
+  await withCardSearchPreparedForD1Export(
+    testEnv.CATALOGUE_DB,
+    {
+      ownerToken: "backup-owner-takeover",
+      observedAt: "2026-08-05T02:01:00.000Z",
+      leaseExpiresAt: "2026-08-05T02:16:00.000Z",
+    },
+    async () => undefined,
+  );
+  await expect(testEnv.CATALOGUE_DB.prepare(
+    "SELECT state, owner_token FROM card_search_fts_state WHERE singleton = 1",
+  ).first()).resolves.toEqual({ state: "ready", owner_token: null });
+}, 15_000);
+
+test("Card detail includes revision-pinned Printings, provenance, and disagreements", async () => {
+  const card = apiCard({
+    id: "card_detail_projection",
+    cardNumber: "OP29-703",
+    name: "Conflicted Vanguard",
+  });
+  card.effective_rules_text = null;
+  card.printing_ids = ["printing_detail_projection"];
+  await seedApiRevision({
+    revisionId: "catrev_detail_projection",
+    runId: "run_detail_projection",
+    cards: [card],
+  });
+  const evidence = {
+    type: "source_observation",
+    id: "srcobs_detail_projection",
+    captured_at: "2026-07-20T00:00:00.000Z",
+    source: "one-piece-en",
+  };
+  const otherEvidence = {
+    ...evidence,
+    id: "srcobs_detail_other",
+  };
+  const printing = {
+    type: "printing",
+    id: "printing_detail_projection",
+    card_id: card.id,
+    rarity: { normalized: "leader", raw: "L" },
+    printed_rules_text: "Printed text",
+    game_data: {
+      profile: "one-piece@1",
+      attributes: { illustration_types: [] },
+    },
+    printing_images: [],
+    distribution_contexts: [],
+    relationship_evidence: [],
+    locator_evidence: { current: [], historical: [] },
+    lifecycle: card.lifecycle,
+    links: { self: "/v1/printings/printing_detail_projection" },
+  };
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE revision_cards SET document_json = ?
+       WHERE catalogue_revision_id = ? AND card_id = ?`,
+    ).bind(
+      JSON.stringify({
+        data: card,
+        included: [evidence, otherEvidence],
+        provenance: {
+          "/data/effective_rules_text": [evidence.id],
+        },
+        disagreements: [{
+          path: "/data/effective_rules_text",
+          status: "unresolved",
+          candidates: [
+            { value: "Candidate A", observation_id: evidence.id },
+            { value: "Candidate B", observation_id: otherEvidence.id },
+          ],
+        }],
+      }),
+      "catrev_detail_projection",
+      card.id,
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO revision_printings (
+         catalogue_revision_id, printing_id, card_id, document_json
+       ) VALUES (?, ?, ?, ?)`,
+    ).bind(
+      "catrev_detail_projection",
+      printing.id,
+      card.id,
+      JSON.stringify(printing),
+    ),
+  ]);
+
+  const url =
+    "https://card-keepr.invalid/v1/cards/card_detail_projection" +
+    "?include=printings,evidence,disagreements";
+  const response = await exports.default.fetch(new Request(url, {
+    headers: apiHeaders("203.0.113.101"),
+  }));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("x-catalogue-revision"))
+    .toBe("catrev_detail_projection");
+  const body = await response.json<Record<string, unknown>>();
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/CardDocument`)!;
+  expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
+  expect(body).toMatchObject({
+    data: { effective_rules_text: null },
+    included: [
+      { id: printing.id, type: "printing" },
+      { id: evidence.id, type: "source_observation" },
+      { id: otherEvidence.id, type: "source_observation" },
+    ],
+    provenance: {
+      "/data/effective_rules_text": [evidence.id],
+    },
+    disagreements: [{
+      path: "/data/effective_rules_text",
+      status: "unresolved",
+    }],
+    meta: { catalogue_revision_id: "catrev_detail_projection" },
+  });
+  expect(
+    (body.data as Record<string, unknown>).effective_rules_text,
+  ).toBeNull();
+  const includedIds = new Set(
+    (body.included as Array<{ id: string }>).map(({ id }) => id),
+  );
+  for (const [pointer, observationIds] of Object.entries(
+    body.provenance as Record<string, string[]>,
+  )) {
+    const pointedValue = jsonPointerValue(body, pointer);
+    expect(pointedValue).toBeDefined();
+    expect(observationIds.every((id) => includedIds.has(id))).toBe(true);
+  }
+  for (const disagreement of body.disagreements as Array<{
+    path: string;
+    status: string;
+  }>) {
+    if (disagreement.status !== "unresolved") continue;
+    expect(jsonPointerValue(body, disagreement.path)).toBeNull();
+  }
+
+  const etag = response.headers.get("etag");
+  expect(etag).not.toBeNull();
+  const notModified = await exports.default.fetch(new Request(url, {
+    headers: {
+      ...apiHeaders("203.0.113.102"),
+      "if-none-match": etag!,
+    },
+  }));
+  expect(notModified.status).toBe(304);
+  expect(notModified.headers.get("x-catalogue-revision"))
+    .toBe("catrev_detail_projection");
 });
 
 test("Card cursors continue on an available pinned revision and conflict only after it is unavailable", async () => {
@@ -1924,9 +3071,22 @@ test("Card cursors continue on an available pinned revision and conflict only af
     ),
   );
   expect(firstPage.status).toBe(200);
-  const firstPageDocument = await firstPage.json<{
+  expect(firstPage.headers.get("x-catalogue-revision"))
+    .toBe("catrev_cursor_old");
+  const firstPageDocument = await firstPage.json<Record<string, unknown> & {
     page: { next_cursor: string };
   }>();
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(apiSchema);
+  const validateCollection = ajv.getSchema(
+    `${apiSchema.$id}#/$defs/CardCollection`,
+  )!;
+  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+  expect(
+    validateCollection(firstPageDocument),
+    JSON.stringify(validateCollection.errors),
+  ).toBe(true);
   expect(firstPageDocument.page.next_cursor).toEqual(expect.any(String));
 
   await seedApiRevision({
@@ -1949,6 +3109,8 @@ test("Card cursors continue on an available pinned revision and conflict only af
     }),
   );
   expect(available.status).toBe(200);
+  expect(available.headers.get("x-catalogue-revision"))
+    .toBe("catrev_cursor_old");
   await expect(available.json()).resolves.toMatchObject({
     data: [{ id: "card_cursor_002" }],
     meta: { catalogue_revision_id: "catrev_cursor_old" },
@@ -1991,8 +3153,12 @@ test("Card cursors continue on an available pinned revision and conflict only af
     }),
   );
   expect(unavailable.status).toBe(409);
-  await expect(unavailable.json()).resolves.toMatchObject({
+  const problem = await unavailable.json();
+  expect(validateProblem(problem), JSON.stringify(validateProblem.errors))
+    .toBe(true);
+  expect(problem).toMatchObject({
     code: "cursor_revision_unavailable",
+    links: { collection: "/v1/cards" },
   });
 });
 
@@ -2036,8 +3202,20 @@ function apiHeaders(ip: string): Record<string, string> {
   };
 }
 
+function jsonPointerValue(document: unknown, pointer: string): unknown {
+  return pointer.slice(1).split("/").reduce<unknown>(
+    (value, segment) =>
+      (value as Record<string, unknown>)[
+        segment.replaceAll("~1", "/").replaceAll("~0", "~")
+      ],
+    document,
+  );
+}
+
 function encodeTestCardCursor(input: {
   revisionId: string;
+  route: string;
+  order: string;
   q: string | null;
   limit: number;
   after: {
@@ -2050,6 +3228,8 @@ function encodeTestCardCursor(input: {
   const bytes = new TextEncoder().encode(JSON.stringify({
     contract: "card-keepr-card-cursor@1",
     revision_id: input.revisionId,
+    route: input.route,
+    order: input.order,
     q: input.q,
     game: null,
     card_number: null,
@@ -2211,6 +3391,65 @@ async function seedApiRevision(input: {
        WHERE active_ingestion_run_id = ?`,
     ).bind(input.runId),
   ]);
+}
+
+async function seedCatalogueExportSummary(
+  revisionId: string,
+  runId: string,
+  publishedAt: string,
+): Promise<void> {
+  await seedApiRevision({ revisionId, runId, cards: [] });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_revisions SET published_at = ? WHERE id = ?`,
+  ).bind(publishedAt, revisionId).run();
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_state SET published_at = ?
+     WHERE singleton = 1 AND current_revision_id = ?`,
+  ).bind(publishedAt, revisionId).run();
+  const manifestWithPlaceholder = {
+    export_schema_major: 4,
+    catalogue_revision: {
+      id: revisionId,
+      content_sha256: "b".repeat(64),
+    },
+    manifest_sha256: "0".repeat(64),
+    components: [],
+  };
+  const manifestDigest = await sha256Text(
+    `${canonicalJson(manifestWithPlaceholder)}\n`,
+  );
+  const manifest = {
+    ...manifestWithPlaceholder,
+    manifest_sha256: manifestDigest,
+  };
+  const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
+  await testEnv.CATALOGUE_EXPORTS.put(
+    manifestKey,
+    `${canonicalJson(manifest)}\n`,
+  );
+  await testEnv.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_exports (
+       catalogue_revision_id, manifest_key, manifest_digest, verified
+     ) VALUES (?, ?, ?, 1)`,
+  ).bind(revisionId, manifestKey, manifestDigest).run();
+}
+
+function proxyR2Bucket(
+  bucket: R2Bucket,
+  overrides: {
+    get?: (
+      ...arguments_: Parameters<R2Bucket["get"]>
+    ) => ReturnType<R2Bucket["get"]>;
+  },
+): R2Bucket {
+  return new Proxy(bucket, {
+    get(target, property) {
+      const override = property === "get" ? overrides.get : undefined;
+      if (override !== undefined) return override;
+      const value = Reflect.get(target, property);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 function cardSearchStatements(

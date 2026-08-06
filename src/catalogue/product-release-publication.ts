@@ -260,10 +260,19 @@ export async function productReleaseLifecyclePlan(
     relationships: Object.fromEntries(
       relationships.map((relationship) => {
         const existing = existingRelationships.get(relationship.id);
+        if (relationship.evidence_category === "curated") {
+          return [relationship.id, {
+            first_revision_id: revisionId,
+            last_observed_revision_id: revisionId,
+            current: relationship.observed,
+            last_missing_revision_id: relationship.observed ? null : revisionId,
+          }];
+        }
         const lineageObserved =
           observedLineages.size === 0
             ? observedGames.has(relationship.game)
-            : observedLineages.has(relationship.source_lineage);
+            : relationship.source_lineage !== undefined &&
+              observedLineages.has(relationship.source_lineage);
         const disappeared =
           !relationship.observed &&
           observedGames.has(relationship.game) &&
@@ -314,6 +323,10 @@ export function productReleasePublicationStatements(
       releases: product.releases.map(
         ({ product_id: _productId, ...release }) => release,
       ),
+      ...("curated_provenance" in product &&
+          Array.isArray(product.curated_provenance)
+        ? { curated_provenance: product.curated_provenance }
+        : {}),
       lifecycle,
       links: { self: `/v1/products/${product.id}` },
     };
@@ -343,8 +356,15 @@ export function productReleasePublicationStatements(
           from: relationship.from,
           to: relationship.to,
           evidence_category: relationship.evidence_category,
-          source_lineage: relationship.source_lineage,
-          source_observation_ids: relationship.source_observation_ids,
+          ...(relationship.source_lineage === undefined
+            ? {}
+            : { source_lineage: relationship.source_lineage }),
+          ...(relationship.source_observation_ids.length === 0
+            ? {}
+            : { source_observation_ids: relationship.source_observation_ids }),
+          ...(relationship.curated_provenance === undefined
+            ? {}
+            : { curated_provenance: relationship.curated_provenance }),
           relationship_value: relationship.relationship_value,
           lifecycle,
         },
@@ -430,11 +450,15 @@ export function productReleasePublicationStatements(
     ),
     ...statements(
       database,
-      (candidate.distribution_contexts ?? []).map((context) => ({
-        ...context,
-        source_lineages_json: JSON.stringify(context.source_lineages ?? []),
-        current: context.observed ? 1 : 0,
-      })),
+      (candidate.distribution_contexts ?? []).map((context) => {
+        const { curated_provenance: provenance, ...facts } = context;
+        return {
+          ...facts,
+          ...(Array.isArray(provenance) ? { curated_provenance: provenance } : {}),
+          source_lineages_json: JSON.stringify(context.source_lineages ?? []),
+          current: context.observed ? 1 : 0,
+        };
+      }),
       `INSERT INTO reconciled_distribution_contexts (
          id, supported_game, context_key, kind, label, product_id,
          evidence_category, source_lineages_json, current
@@ -458,7 +482,9 @@ export function productReleasePublicationStatements(
     ),
     ...statements(
       database,
-      relationshipDocuments.map(({ relationship, lifecycle, document }) => ({
+      relationshipDocuments.filter(({ relationship }) =>
+        relationship.evidence_category !== "curated"
+      ).map(({ relationship, lifecycle, document }) => ({
         id: relationship.id,
         game: relationship.game,
         kind: relationship.kind,
@@ -519,10 +545,10 @@ export function productReleasePublicationStatements(
         supported_game: product.game,
         official_code: product.official_code,
         name: product.name,
-        search_text: [product.official_code, product.name]
-          .filter((value): value is string => value !== null)
-          .join("\n")
-          .toLocaleLowerCase(),
+        search_text: productSearchText(
+          product.official_code,
+          product.name,
+        ),
         release_regions_json: JSON.stringify(
           product.releases.map(({ region }) => region),
         ),
@@ -547,10 +573,10 @@ export function productReleasePublicationStatements(
       database,
       productDocuments.map(({ product }) => ({
         product_id: product.id,
-        search_text: [product.official_code, product.name]
-          .filter((value): value is string => value !== null)
-          .join("\n")
-          .toLocaleLowerCase(),
+        search_text: productSearchText(
+          product.official_code,
+          product.name,
+        ),
       })),
       `INSERT INTO revision_products_fts (
          catalogue_revision_id, product_id, search_text
@@ -575,6 +601,17 @@ export function productReleasePublicationStatements(
       revisionId,
     ),
   ];
+}
+
+function productSearchText(
+  officialCode: string | null,
+  name: string | null,
+): string {
+  return [officialCode, name]
+    .filter((value): value is string => value !== null)
+    .join("\n")
+    .normalize("NFKC")
+    .toLocaleLowerCase("en");
 }
 
 async function rowsById<T extends { id: string }>(

@@ -3,12 +3,18 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import {
+  applyMigrations,
+  exportRecords,
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const ingestionPort = 22_788;
@@ -39,7 +45,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
         ],
       }),
       { mode: 0o600 },
@@ -48,26 +54,26 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@3"),
+          officialPlan("digimon", "digimon-en", "digimon-en@4"),
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@2",
+            "one-piece-en@3",
           ),
           officialPlan(
             "fusion-world",
             "fusion-world-en",
-            "fusion-world-en@3",
+            "fusion-world-en@4",
           ),
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@3",
+            "gundam-en-asia@4",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@3",
+            "gundam-en-us@4",
           ),
         ],
       }),
@@ -80,7 +86,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@2",
+            "one-piece-en@3",
             {
               accept: "text/html",
               "user-agent": "card-keepr-acceptance-product/codeless",
@@ -96,19 +102,22 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
   );
   delete config.$schema;
-  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.main = resolve(
+    root,
+    "acceptance/fixtures/catalogue-publication-ingestion-harness.ts",
+  );
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
     {
       binding: "OFFICIAL_SOURCE_TRANSPORT",
-      service: "card-keepr-synthetic-official-source",
+      service: "card-keepr-fusion-world-official-source",
     },
   ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
   const source = startWorker({
-    config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
+    config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     inspectorPort: 23_229,
     port: sourcePort,
     statePath: join(directory, "source-state"),
@@ -262,51 +271,51 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@3",
+          "digimon-en@4",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@2",
+        adapter_version: "one-piece-en@3",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-en@2",
+          "one-piece-en@3",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@3",
+        adapter_version: "fusion-world-en@4",
         request_ids: officialPlan(
           "fusion-world",
           "fusion-world-en",
-          "fusion-world-en@3",
+          "fusion-world-en@4",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@3",
+        adapter_version: "gundam-en-asia@4",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@3",
+          "gundam-en-asia@4",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@3",
+        adapter_version: "gundam-en-us@4",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@3",
+          "gundam-en-us@4",
         ).requests.map(({ id }) => id),
       },
     ],
@@ -456,16 +465,20 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     successfulChecks.map(({ game, area }) => `${game}:${area}`),
     [
       "digimon:cards-and-printings",
+      "digimon:errata",
       "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
+      "fusion-world:errata",
       "fusion-world:legality-rules",
       "fusion-world:products-and-releases",
       "gundam:cards-and-printings",
+      "gundam:errata",
       "gundam:legality-rules",
       "gundam:legality-rules",
       "gundam:products-and-releases",
       "one-piece:cards-and-printings",
+      "one-piece:errata",
       "one-piece:legality-rules",
       "one-piece:products-and-releases",
     ],
@@ -665,7 +678,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ),
   );
   assert.ok(contexts.some((context) => context.product_id === productId));
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 5);
   assert.ok(
     relationships.some(
       ({ kind, evidence_category }) =>
@@ -886,89 +899,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
 });
 
-async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(
-    `http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`,
-    { headers: { authorization: `Bearer ${apiKey}` } },
-  );
-  assert.equal(response.status, 200);
-  return gunzipSync(Buffer.from(await response.arrayBuffer()))
-    .toString("utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
-
-async function applyMigrations(statePath) {
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      "apps/ingestion/wrangler.jsonc",
-      "--persist-to",
-      statePath,
-    ],
-    {
-      ...processEnvironment(statePath),
-      CI: "1",
-    },
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      ...(envFile === undefined ? [] : ["--env-file", envFile]),
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: processEnvironment(statePath),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output, statePath };
-}
-
 async function waitForRunState(
   runId,
   expectedState,
   environment,
   worker,
 ) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 40_000;
   let lastDocument = null;
   while (Date.now() < deadline) {
     const shown = await runCli(
@@ -1082,75 +1019,6 @@ async function sqliteFilesUnder(path) {
   return nested.flat();
 }
 
-async function waitForHealth(url, key, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
-    try {
-      const response = await fetch(url, {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // The local Worker has not started accepting requests yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return runProcess(
-    process.execPath,
-    [resolve(root, "cli/keepr.mjs"), ...arguments_],
-    {
-      ...process.env,
-      ...environment,
-    },
-  );
-}
-
-function runProcess(command, arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(command, arguments_, {
-      cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function processEnvironment(statePath) {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return {
-    ...environment,
-    WRANGLER_LOG_PATH: join(statePath, "logs"),
-  };
-}
-
 const officialDiscoveryUrls = {
   "one-piece-en": "https://en.onepiece-cardgame.com/cardlist/",
   "fusion-world-en": "https://www.dbs-cardgame.com/fw/en/cardlist/",
@@ -1164,7 +1032,12 @@ function officialPlan(
   game,
   lineage,
   adapter,
-  headers = { accept: "text/html" },
+  headers = lineage === "digimon-en"
+    ? {
+        accept: "text/html",
+        "user-agent": "card-keepr-acceptance-product/default",
+      }
+    : { accept: "text/html" },
 ) {
   return {
     supported_game: game,

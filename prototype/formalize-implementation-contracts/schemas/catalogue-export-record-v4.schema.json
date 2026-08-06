@@ -1,0 +1,1082 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-record@4",
+  "title": "Card Keepr Catalogue Export record",
+  "oneOf": [
+    { "$ref": "#/$defs/SupportedGameRecord" },
+    { "$ref": "#/$defs/GameProfileRecord" },
+    { "$ref": "#/$defs/CardRecord" },
+    { "$ref": "#/$defs/PrintingRecord" },
+    { "$ref": "#/$defs/PrintingImageRecord" },
+    { "$ref": "#/$defs/ProductRecord" },
+    { "$ref": "#/$defs/ReleaseRecord" },
+    { "$ref": "#/$defs/DistributionContextRecord" },
+    { "$ref": "#/$defs/ErratumRecord" },
+    { "$ref": "#/$defs/LegalityRuleRecord" },
+    { "$ref": "#/$defs/RelationshipRecord" }
+  ],
+  "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam"]
+    },
+    "Locale": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
+    },
+    "Date": {
+      "type": "string",
+      "format": "date"
+    },
+    "NullableDate": {
+      "oneOf": [{ "$ref": "#/$defs/Date" }, { "type": "null" }]
+    },
+    "Text": {
+      "type": "string"
+    },
+    "NullableText": {
+      "oneOf": [{ "$ref": "#/$defs/Text" }, { "type": "null" }]
+    },
+    "CuratedEntityReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
+        },
+        "id": { "$ref": "#/$defs/OpaqueId" }
+      }
+    },
+    "CuratedFieldTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entity_type", "entity_id", "path"],
+      "properties": {
+        "kind": { "const": "field" },
+        "entity_type": {
+          "enum": ["card", "printing", "product", "release", "distribution_context", "erratum", "legality_rule"]
+        },
+        "entity_id": { "$ref": "#/$defs/OpaqueId" },
+        "path": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "CuratedRelationshipTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "relationship_kind", "from", "to"],
+      "properties": {
+        "kind": { "const": "relationship" },
+        "relationship_kind": {
+          "enum": ["printing-product", "printing-distribution-context", "distribution-context-product", "product-card"]
+        },
+        "from": { "$ref": "#/$defs/CuratedEntityReference" },
+        "to": { "$ref": "#/$defs/CuratedEntityReference" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "relationship_kind": { "const": "printing-product" },
+            "from": { "properties": { "type": { "const": "printing" } } },
+            "to": { "properties": { "type": { "const": "product" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "printing-distribution-context" },
+            "from": { "properties": { "type": { "const": "printing" } } },
+            "to": { "properties": { "type": { "const": "distribution_context" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "distribution-context-product" },
+            "from": { "properties": { "type": { "const": "distribution_context" } } },
+            "to": { "properties": { "type": { "const": "product" } } }
+          }
+        },
+        {
+          "properties": {
+            "relationship_kind": { "const": "product-card" },
+            "from": { "properties": { "type": { "const": "product" } } },
+            "to": { "properties": { "type": { "const": "card" } } }
+          }
+        }
+      ]
+    },
+    "CuratedEvidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "source_observation" },
+            "id": { "$ref": "#/$defs/OpaqueId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "uri", "content_digest"],
+          "properties": {
+            "kind": { "const": "owner_reference" },
+            "uri": { "type": "string", "format": "uri" },
+            "content_digest": { "$ref": "#/$defs/Sha256" }
+          }
+        }
+      ]
+    },
+    "CuratedProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["curated_revision_id", "content_digest", "target", "rationale", "evidence", "author", "reviewed_source_value"],
+      "properties": {
+        "curated_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "content_digest": { "$ref": "#/$defs/Sha256" },
+        "target": {
+          "oneOf": [
+            { "$ref": "#/$defs/CuratedFieldTarget" },
+            { "$ref": "#/$defs/CuratedRelationshipTarget" }
+          ]
+        },
+        "rationale": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/CuratedEvidence" } },
+        "author": { "type": "string", "minLength": 1 },
+        "reviewed_source_value": true
+      }
+    },
+    "CuratedProvenanceCollection": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/CuratedProvenance" }
+    },
+    "Lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_revision_id", "last_observed_revision_id", "withdrawn"],
+      "properties": {
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "withdrawn": { "type": "boolean" },
+        "withdrawal": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["revision_id", "evidence"],
+              "properties": {
+                "revision_id": { "$ref": "#/$defs/OpaqueId" },
+                "evidence": { "type": "object" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "LocatorEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_lineage",
+        "locator",
+        "variant_key",
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "locator": { "type": "string", "minLength": 1 },
+        "variant_key": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "LocatorEvidenceCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "historical"],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        },
+        "historical": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LocatorEvidence" }
+        }
+      }
+    },
+    "RelationshipLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_revision_id",
+        "last_observed_revision_id",
+        "current",
+        "last_missing_revision_id"
+      ],
+      "properties": {
+        "first_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "last_observed_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "current": { "type": "boolean" },
+        "last_missing_revision_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "OfficialIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "card_number" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "functional_designation" },
+            "value": { "const": "DON!!" }
+          }
+        }
+      ]
+    },
+    "GameData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "attributes"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Validated by the named accepted Game Profile."
+        }
+      }
+    },
+    "Rarity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized", "raw"],
+      "properties": {
+        "normalized": { "$ref": "#/$defs/NullableText" },
+        "raw": { "$ref": "#/$defs/NullableText" }
+      }
+    },
+    "SupportedGameRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "key", "name", "supported_locales", "game_profile"],
+      "properties": {
+        "type": { "const": "supported_game" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "key": { "$ref": "#/$defs/SupportedGame" },
+        "name": { "type": "string", "minLength": 1 },
+        "supported_locales": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Locale" }
+        },
+        "game_profile": { "type": "string", "minLength": 1 }
+      }
+    },
+    "GameProfileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "profile", "game", "schema"],
+      "properties": {
+        "type": { "const": "game_profile" },
+        "profile": { "type": "string", "minLength": 1 },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "schema": { "type": "object" }
+      }
+    },
+    "CardRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "official_identity",
+        "name",
+        "effective_rules_text",
+        "game_data",
+        "lifecycle"
+      ],
+      "properties": {
+        "type": { "const": "card" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "official_identity": { "$ref": "#/$defs/OfficialIdentity" },
+        "name": { "type": "string", "minLength": 1 },
+        "effective_rules_text": { "$ref": "#/$defs/NullableText" },
+        "game_data": { "$ref": "#/$defs/GameData" },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" }
+      }
+    },
+    "PrintingProductProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "official_code",
+        "name",
+        "evidence_category"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "official_code": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "name": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/OpaqueId" },
+          "uniqueItems": true
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["source_lineage", "source_observation_ids"],
+          "properties": {
+            "evidence_category": { "enum": ["explicit", "derived"] },
+            "source_observation_ids": { "minItems": 1 }
+          }
+        },
+        {
+          "required": ["curated_provenance"],
+          "not": { "required": ["source_lineage"] },
+          "properties": { "evidence_category": { "const": "curated" } }
+        }
+      ]
+    },
+    "PrintingDistributionContextProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "product_id",
+        "evidence_category"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "kind": {
+          "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"]
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "product_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        },
+        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/OpaqueId" },
+          "uniqueItems": true
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["source_lineage", "source_observation_ids"],
+          "properties": {
+            "evidence_category": { "enum": ["explicit", "derived"] },
+            "source_observation_ids": { "minItems": 1 }
+          }
+        },
+        {
+          "required": ["curated_provenance"],
+          "not": { "required": ["source_lineage"] },
+          "properties": { "evidence_category": { "const": "curated" } }
+        }
+      ]
+    },
+    "PrintingRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+        "locator_evidence",
+        "lifecycle"
+      ],
+      "properties": {
+        "type": { "const": "printing" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "card_id": { "$ref": "#/$defs/OpaqueId" },
+        "rarity": { "$ref": "#/$defs/Rarity" },
+        "printed_rules_text": { "$ref": "#/$defs/NullableText" },
+        "game_data": {
+          "oneOf": [{ "$ref": "#/$defs/GameData" }, { "type": "null" }]
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "products": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PrintingProductProjection" }
+        },
+        "distribution_contexts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PrintingDistributionContextProjection"
+          }
+        },
+        "locator_evidence": {
+          "$ref": "#/$defs/LocatorEvidenceCollection"
+        },
+        "source_lineages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" }
+      }
+    },
+    "PrintingImageRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "printing_id",
+        "role",
+        "media_type",
+        "width",
+        "height",
+        "content_sha256",
+        "content_url"
+      ],
+      "properties": {
+        "type": { "const": "printing_image" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "printing_id": { "$ref": "#/$defs/OpaqueId" },
+        "role": { "enum": ["front", "back", "other"] },
+        "media_type": { "type": "string", "pattern": "^image/" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "content_sha256": { "$ref": "#/$defs/Sha256" },
+        "content_url": {
+          "type": "string",
+          "pattern": "^/v1/printing-images/[^/]+/content$"
+        }
+      }
+    },
+    "ProductRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "official_code", "name", "lifecycle"],
+      "properties": {
+        "type": { "const": "product" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "official_code": { "$ref": "#/$defs/NullableText" },
+        "name": { "$ref": "#/$defs/NullableText" },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "lifecycle": { "$ref": "#/$defs/Lifecycle" }
+      }
+    },
+    "ReleaseRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "product_id",
+        "event_key",
+        "region",
+        "date",
+        "status"
+      ],
+      "properties": {
+        "type": { "const": "release" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "event_key": { "$ref": "#/$defs/OpaqueId" },
+        "product_id": { "$ref": "#/$defs/OpaqueId" },
+        "region": { "$ref": "#/$defs/Locale" },
+        "date": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["precision", "value"],
+          "properties": {
+            "precision": { "enum": ["day", "month", "quarter", "year", "unknown"] },
+            "value": { "$ref": "#/$defs/NullableText" }
+          }
+        },
+        "status": {
+          "oneOf": [
+            { "enum": ["announced", "released"] },
+            { "type": "null" }
+          ]
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
+      }
+    },
+    "DistributionContextRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "kind", "label", "product_id"],
+      "properties": {
+        "type": { "const": "distribution_context" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "kind": { "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
+        "label": { "type": "string", "minLength": 1 },
+        "product_id": {
+          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
+      }
+    },
+    "ErratumRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "target_type",
+        "target_id",
+        "effective_from",
+        "official_wording",
+        "corrected_value"
+      ],
+      "properties": {
+        "type": { "const": "erratum" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "target_type": { "enum": ["card", "printing"] },
+        "target_id": { "$ref": "#/$defs/OpaqueId" },
+        "effective_from": { "$ref": "#/$defs/NullableDate" },
+        "official_wording": { "type": "string", "minLength": 1 },
+        "corrected_value": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" }
+      }
+    },
+    "LegalityRegion": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US"]
+    },
+    "LegalityRuleSourcePointer": {
+      "type": "string",
+      "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+$"
+    },
+    "LegalityRuleSourceFieldPointers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "official_wording",
+        "effective_from",
+        "effective_until",
+        "unresolved_scope",
+        "region",
+        "format",
+        "event_tier",
+        "card_numbers",
+        "effect"
+      ],
+      "properties": {
+        "official_wording": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/official_wording$"
+        },
+        "effective_from": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effective_from$"
+        },
+        "effective_until": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effective_until$"
+        },
+        "unresolved_scope": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/unresolved_scope$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/region$"
+        },
+        "format": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/format$"
+        },
+        "event_tier": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/event_tier$"
+        },
+        "card_numbers": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/card_numbers$"
+        },
+        "effect": {
+          "type": "string",
+          "pattern": "^/observations/[0-9]+/value/legality_rules/[0-9]+/effect$"
+        }
+      }
+    },
+    "LegalityRuleEffect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "eligible" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": { "const": "ban" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "maximum_copies"],
+          "properties": {
+            "type": { "const": "copy_limit" },
+            "maximum_copies": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "with_card_ids"],
+          "properties": {
+            "type": { "const": "prohibited_combination" },
+            "with_card_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/OpaqueId" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "attribute", "includes_any"],
+          "properties": {
+            "type": { "const": "membership" },
+            "attribute": { "type": "string", "minLength": 1 },
+            "includes_any": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "eligible_blocks"],
+          "properties": {
+            "type": { "const": "rotation" },
+            "eligible_blocks": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "legal_from"],
+          "properties": {
+            "type": { "const": "release_timing" },
+            "legal_from": { "$ref": "#/$defs/Date" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "reason"],
+          "properties": {
+            "type": { "const": "unresolved" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "LegalityRuleRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "official_id",
+        "game",
+        "region",
+        "format",
+        "event_tier",
+        "effective_from",
+        "effective_until",
+        "unresolved_scope",
+        "kind",
+        "effect",
+        "card_ids",
+        "official_wording",
+        "source_lineage",
+        "source_observation_ids",
+        "source_observation_pointer",
+        "source_field_pointers",
+        "lifecycle"
+      ],
+      "properties": {
+        "type": { "const": "legality_rule" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "official_id": { "$ref": "#/$defs/OpaqueId" },
+        "game": { "$ref": "#/$defs/SupportedGame" },
+        "region": { "$ref": "#/$defs/LegalityRegion" },
+        "format": { "type": "string", "minLength": 1 },
+        "event_tier": { "$ref": "#/$defs/NullableText" },
+        "effective_from": { "$ref": "#/$defs/NullableDate" },
+        "effective_until": { "$ref": "#/$defs/NullableDate" },
+        "unresolved_scope": {
+          "oneOf": [
+            { "type": "null" },
+            { "const": { "dimensions": ["effective_interval"] } },
+            { "const": { "dimensions": ["event_tier"] } },
+            {
+              "const": {
+                "dimensions": ["effective_interval", "event_tier"]
+              }
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "eligible",
+            "restricted",
+            "not_legal",
+            "combination",
+            "conditional",
+            "rotation",
+            "release",
+            "indeterminate"
+          ]
+        },
+        "effect": { "$ref": "#/$defs/LegalityRuleEffect" },
+        "card_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "official_wording": { "type": "string", "minLength": 1 },
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "source_observation_pointer": {
+          "$ref": "#/$defs/LegalityRuleSourcePointer"
+        },
+        "source_field_pointers": {
+          "$ref": "#/$defs/LegalityRuleSourceFieldPointers"
+        },
+        "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "kind": { "const": "eligible" },
+                "effect": {
+                  "properties": { "type": { "const": "eligible" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "not_legal" },
+                "effect": {
+                  "properties": { "type": { "const": "ban" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "restricted" },
+                "effect": {
+                  "properties": { "type": { "const": "copy_limit" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "combination" },
+                "effect": {
+                  "properties": {
+                    "type": { "const": "prohibited_combination" }
+                  }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "conditional" },
+                "effect": {
+                  "properties": { "type": { "const": "membership" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "rotation" },
+                "effect": {
+                  "properties": { "type": { "const": "rotation" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "release" },
+                "effect": {
+                  "properties": { "type": { "const": "release_timing" } }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "indeterminate" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "unresolved_scope": { "type": "null" },
+                "effective_from": { "$ref": "#/$defs/Date" }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": { "dimensions": ["effective_interval"] }
+                },
+                "effective_from": { "type": "null" },
+                "effective_until": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": { "dimensions": ["event_tier"] }
+                },
+                "effective_from": { "$ref": "#/$defs/Date" },
+                "event_tier": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "unresolved_scope": {
+                  "const": {
+                    "dimensions": ["effective_interval", "event_tier"]
+                  }
+                },
+                "effective_from": { "type": "null" },
+                "effective_until": { "type": "null" },
+                "event_tier": { "type": "null" },
+                "effect": {
+                  "properties": { "type": { "const": "unresolved" } }
+                },
+                "card_ids": { "minItems": 1 }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "RelationshipRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "kind",
+        "from",
+        "to",
+        "evidence_category",
+        "relationship_value",
+        "lifecycle"
+      ],
+      "properties": {
+        "type": { "const": "relationship" },
+        "id": { "$ref": "#/$defs/OpaqueId" },
+        "kind": {
+          "enum": [
+            "printing-distribution-context",
+            "printing-product",
+            "distribution-context-product",
+            "product-card",
+            "erratum-target",
+            "legality-rule-card"
+          ]
+        },
+        "from": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "id": { "$ref": "#/$defs/OpaqueId" }
+          }
+        },
+        "to": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "id": { "$ref": "#/$defs/OpaqueId" }
+          }
+        },
+        "evidence_category": { "enum": ["explicit", "derived", "curated"] },
+        "source_lineage": { "type": "string", "minLength": 1 },
+        "curated_provenance": { "$ref": "#/$defs/CuratedProvenanceCollection" },
+        "source_observation_ids": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/OpaqueId" }
+        },
+        "relationship_value": { "type": "string", "minLength": 1 },
+        "lifecycle": { "$ref": "#/$defs/RelationshipLifecycle" }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": ["source_lineage", "source_observation_ids"],
+              "properties": {
+                "evidence_category": { "enum": ["explicit", "derived"] },
+                "source_observation_ids": { "minItems": 1 }
+              }
+            },
+            {
+              "required": ["curated_provenance"],
+              "not": { "required": ["source_lineage"] },
+              "properties": { "evidence_category": { "const": "curated" } }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "kind": { "const": "printing-distribution-context" },
+                "from": { "properties": { "type": { "const": "printing" } } },
+                "to": { "properties": { "type": { "const": "distribution_context" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "printing-product" },
+                "from": { "properties": { "type": { "const": "printing" } } },
+                "to": { "properties": { "type": { "const": "product" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "distribution-context-product" },
+                "from": { "properties": { "type": { "const": "distribution_context" } } },
+                "to": { "properties": { "type": { "const": "product" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "product-card" },
+                "from": { "properties": { "type": { "const": "product" } } },
+                "to": { "properties": { "type": { "const": "card" } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "erratum-target" },
+                "from": { "properties": { "type": { "const": "erratum" } } },
+                "to": { "properties": { "type": { "enum": ["card", "printing"] } } }
+              }
+            },
+            {
+              "properties": {
+                "kind": { "const": "legality-rule-card" },
+                "from": { "properties": { "type": { "const": "legality_rule" } } },
+                "to": { "properties": { "type": { "const": "card" } } }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
