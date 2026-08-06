@@ -420,12 +420,12 @@ function mutationGate(state, action) {
   if (state.active_run_id !== null) {
     return reject(state, action, "ingestion_not_idle", state.active_run_id);
   }
-  if (state.operational.active_release_id !== null) {
+  if (state.operational.active_production_release_id !== null) {
     return reject(
       state,
       action,
       "release_not_idle",
-      state.operational.active_release_id
+      state.operational.active_production_release_id
     );
   }
   if (state.operational.recovery_health === "blocked") {
@@ -499,7 +499,7 @@ export function createInitialState({
   now = Date.parse("2026-07-28T00:00:00.000Z"),
   currentRevisionId = "catrev_demo_001",
   recoveryHealth = "healthy",
-  activeReleaseId = null
+  activeProductionReleaseId = null
 } = {}) {
   return {
     contract: contractVersion,
@@ -507,7 +507,7 @@ export function createInitialState({
     current_revision_id: currentRevisionId,
     operational: {
       recovery_health: recoveryHealth,
-      active_release_id: activeReleaseId
+      active_production_release_id: activeProductionReleaseId
     },
     active_run_id: null,
     runs: {},
@@ -599,12 +599,12 @@ export function transition(input, action) {
       if (state.operational.recovery_health === "blocked") {
         return reject(state, action, "recovery_in_progress", "Ingestion is blocked.");
       }
-      if (state.operational.active_release_id !== null) {
+      if (state.operational.active_production_release_id !== null) {
         return reject(
           state,
           action,
           "release_not_idle",
-          state.operational.active_release_id
+          state.operational.active_production_release_id
         );
       }
       const games = [...new Set(action.games ?? [])].sort();

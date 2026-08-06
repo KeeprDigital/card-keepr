@@ -38,6 +38,10 @@ export class PrintingCollectionReadProblem extends Error {
       | "invalid_cursor"
       | "cursor_revision_unavailable",
     message: string,
+    readonly invalidParameter: Readonly<{
+      name: string;
+      reason: string;
+    }> | null = null,
   ) {
     super(message);
   }
@@ -63,10 +67,13 @@ export async function currentPrintingsResponse(
   const productId = optionalSingle(url, "product_id");
   const releaseRegion = optionalSingle(url, "release_region");
   if (game !== null && !supportedGames.has(game)) {
-    throw invalidParameter("Printing Supported Game is invalid.");
+    throw invalidParameter("game", "Printing Supported Game is invalid.");
   }
   if (releaseRegion !== null && !releaseRegions.has(releaseRegion)) {
-    throw invalidParameter("Printing Release region is invalid.");
+    throw invalidParameter(
+      "release_region",
+      "Printing Release region is invalid.",
+    );
   }
   const filters = {
     card_id: cardId,
@@ -83,7 +90,12 @@ export async function currentPrintingsResponse(
       ? { published_at: state.published_at }
       : await database
           .prepare(
-            `SELECT published_at FROM catalogue_revisions WHERE id = ?`,
+            `SELECT revision.published_at
+             FROM catalogue_revisions AS revision
+             JOIN catalogue_query_revisions AS query
+               ON query.catalogue_revision_id = revision.id
+              AND query.state = 'available'
+             WHERE revision.id = ?`,
           )
           .bind(revisionId)
           .first<{ published_at: string }>();
@@ -263,7 +275,7 @@ function parseLimit(value: string | null): number {
   if (value === null) return 50;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-    throw invalidParameter("Printing page limit is invalid.");
+    throw invalidParameter("limit", "Printing page limit is invalid.");
   }
   return parsed;
 }
@@ -273,7 +285,7 @@ function optionalSingle(url: URL, name: string): string | null {
   if (values.length === 0) return null;
   const value = values[0]!;
   if (values.length !== 1 || value.length < 1 || value.length > 500) {
-    throw invalidParameter(`Printing ${name} filter is invalid.`);
+    throw invalidParameter(name, `Printing ${name} filter is invalid.`);
   }
   return value;
 }
@@ -286,7 +298,7 @@ function normalizedRarity(value: string | null): string | null {
     normalized.length > 100 ||
     !/^[a-z0-9_-]+$/u.test(normalized)
   ) {
-    throw invalidParameter("Printing rarity filter is invalid.");
+    throw invalidParameter("rarity", "Printing rarity filter is invalid.");
   }
   return normalized;
 }
@@ -368,11 +380,15 @@ function canonicalSelf(
   return serialized.length === 0 ? pathname : `${pathname}?${serialized}`;
 }
 
-function invalidParameter(message: string): PrintingCollectionReadProblem {
+function invalidParameter(
+  name: string,
+  message: string,
+): PrintingCollectionReadProblem {
   return new PrintingCollectionReadProblem(
     400,
     "invalid_parameter",
     message,
+    { name, reason: message },
   );
 }
 

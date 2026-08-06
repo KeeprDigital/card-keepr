@@ -122,8 +122,8 @@ test("replacement release state is rehydrated into a distinct blocked database b
 
   replacement.exec(seedSql);
   assert.deepEqual(
-    { ...replacement.prepare("SELECT active_ingestion_run_id,active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
-    { active_ingestion_run_id: null, active_release_id: "release-47", recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+    { ...replacement.prepare("SELECT active_ingestion_run_id,active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: null, active_production_release_id: "release-47", recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
   );
   assert.deepEqual(
     replacement.prepare("SELECT id,state FROM catalogue_recovery_operations ORDER BY started_at").all().map((row) => ({ ...row })),
@@ -145,8 +145,8 @@ test("replacement release state is rehydrated into a distinct blocked database b
   replacement.exec(await readFile(join(directory, "binding.sql"), "utf8"));
   replacement.exec(await readFile(join(directory, "smoke.sql"), "utf8"));
   assert.deepEqual(
-    { ...replacement.prepare("SELECT active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
-    { active_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+    { ...replacement.prepare("SELECT active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_production_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
   );
   assert.equal(replacement.prepare("SELECT state FROM catalogue_recovery_operations WHERE id='recovery-replacement'").get().state, "awaiting_acceptance");
   assert.deepEqual(
@@ -159,16 +159,16 @@ test("replacement release state is rehydrated into a distinct blocked database b
   failedReplacement.exec(await readFile(join(directory, "failed.sql"), "utf8"));
   failedReplacement.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
   assert.deepEqual(
-    { ...failedReplacement.prepare("SELECT active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
-    { active_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
+    { ...failedReplacement.prepare("SELECT active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_production_release_id: null, recovery_health: "blocked", active_recovery_id: "recovery-replacement", recovery_restore_guard: "blocked" },
   );
   assert.equal(failedReplacement.prepare("SELECT state FROM production_releases WHERE id='release-47'").get().state, "failed");
 
   competingReplacement.exec("UPDATE operation_state SET active_ingestion_run_id='competing-ingestion' WHERE singleton=1");
   assert.throws(() => competingReplacement.exec(seedSql), /malformed JSON/u);
   assert.deepEqual(
-    { ...competingReplacement.prepare("SELECT active_ingestion_run_id,active_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
-    { active_ingestion_run_id: "competing-ingestion", active_release_id: null, recovery_health: "healthy", active_recovery_id: null, recovery_restore_guard: "clear" },
+    { ...competingReplacement.prepare("SELECT active_ingestion_run_id,active_release_id AS active_production_release_id,recovery_health,active_recovery_id,recovery_restore_guard FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: "competing-ingestion", active_production_release_id: null, recovery_health: "healthy", active_recovery_id: null, recovery_restore_guard: "clear" },
   );
 });
 
@@ -217,12 +217,92 @@ test("failure evidence and cleanup survive both 0018 and 0019 schemas", async (t
     }
     database.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
     assert.deepEqual(
-      { ...database.prepare("SELECT active_ingestion_run_id,active_release_id FROM operation_state WHERE singleton=1").get() },
-      { active_ingestion_run_id: null, active_release_id: null },
+      { ...database.prepare("SELECT active_ingestion_run_id,active_release_id AS active_production_release_id FROM operation_state WHERE singleton=1").get() },
+      { active_ingestion_run_id: null, active_production_release_id: null },
     );
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%'").get().count, 0);
     database.close();
   }
+});
+
+test("Production Release lease vocabulary expands compatibly after migration 0020", async (t) => {
+  const database = await realDatabaseThrough0020();
+  t.after(() => database.close());
+  const legacyExpiry = "2026-08-05T01:00:00.000Z";
+  database.prepare(
+    `UPDATE operation_state
+     SET active_release_id = ?, active_release_expires_at = ?
+     WHERE singleton = 1`,
+  ).run("release-legacy", legacyExpiry);
+
+  database.exec(await readFile(
+    "migrations/0021_production_release_lease_vocabulary.sql",
+    "utf8",
+  ));
+  assert.deepEqual(
+    { ...database.prepare(
+      `SELECT active_release_id, active_release_expires_at,
+              active_production_release_id,
+              active_production_release_expires_at
+       FROM operation_state WHERE singleton = 1`,
+    ).get() },
+    {
+      active_release_id: "release-legacy",
+      active_release_expires_at: legacyExpiry,
+      active_production_release_id: "release-legacy",
+      active_production_release_expires_at: legacyExpiry,
+    },
+  );
+  assert.equal(
+    database.prepare(
+      "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+    ).get().migration_level,
+    21,
+  );
+
+  const productionExpiry = "2026-08-05T02:00:00.000Z";
+  database.prepare(
+    `UPDATE operation_state
+     SET active_production_release_id = ?,
+         active_production_release_expires_at = ?
+     WHERE singleton = 1`,
+  ).run("release-production", productionExpiry);
+  assert.deepEqual(
+    { ...database.prepare(
+      `SELECT active_release_id, active_release_expires_at
+       FROM operation_state WHERE singleton = 1`,
+    ).get() },
+    {
+      active_release_id: "release-production",
+      active_release_expires_at: productionExpiry,
+    },
+  );
+
+  const oldWorkerExpiry = "2026-08-05T03:00:00.000Z";
+  database.prepare(
+    `UPDATE operation_state
+     SET active_release_id = ?, active_release_expires_at = ?
+     WHERE singleton = 1`,
+  ).run("release-old-worker", oldWorkerExpiry);
+  assert.deepEqual(
+    { ...database.prepare(
+      `SELECT active_production_release_id,
+              active_production_release_expires_at
+       FROM operation_state WHERE singleton = 1`,
+    ).get() },
+    {
+      active_production_release_id: "release-old-worker",
+      active_production_release_expires_at: oldWorkerExpiry,
+    },
+  );
+  assert.throws(
+    () => database.exec(
+      `UPDATE operation_state
+       SET active_production_release_id = NULL
+       WHERE singleton = 1`,
+    ),
+    /production_release_lease_invalid/u,
+  );
 });
 
 test("zero-row phase transitions are observable and cannot release the fence", async (t) => {
@@ -422,6 +502,16 @@ function liveGateDatabase(environment) {
 async function realDatabaseThrough0018() {
   const database = new DatabaseSync(":memory:");
   for (const migration of (await readdir("migrations")).sort().filter((name) => name < "0019_")) {
+    database.exec(await readFile(join("migrations", migration), "utf8"));
+  }
+  return database;
+}
+
+async function realDatabaseThrough0020() {
+  const database = new DatabaseSync(":memory:");
+  for (const migration of (await readdir("migrations")).sort().filter(
+    (name) => name < "0021_",
+  )) {
     database.exec(await readFile(join("migrations", migration), "utf8"));
   }
   return database;

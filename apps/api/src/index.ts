@@ -326,7 +326,13 @@ async function handleApiRequest(
                     links: { collection: "/v1/products" },
                   },
                 }
-              : {}),
+              : error.invalidParameter === null
+              ? {}
+              : {
+                  extensions: {
+                    invalid_params: [error.invalidParameter],
+                  },
+                }),
           }),
         );
       }
@@ -342,6 +348,19 @@ async function handleApiRequest(
                 ? "Cursor revision unavailable"
                 : "Invalid Printing request",
             detail: error.message,
+            ...(error.code === "cursor_revision_unavailable"
+              ? {
+                  extensions: {
+                    links: { collection: "/v1/printings" },
+                  },
+                }
+              : error.invalidParameter === null
+              ? {}
+              : {
+                  extensions: {
+                    invalid_params: [error.invalidParameter],
+                  },
+                }),
           }),
         );
       }

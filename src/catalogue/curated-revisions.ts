@@ -191,17 +191,17 @@ export async function createCuratedRevision(
     throw new AdministrationProblem(409, "curated_revision_content_digest_mismatch", "The supplied proposal digest does not match the canonical proposal.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, active_release_id, active_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; active_release_expires_at: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_production_release_id: string | null; active_production_release_expires_at: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
   }
-  if (operation?.active_release_id !== null &&
-    operation?.active_release_expires_at !== null &&
-    operation.active_release_expires_at > observedAt) {
+  if (operation?.active_production_release_id !== null &&
+    operation?.active_production_release_expires_at !== null &&
+    operation.active_production_release_expires_at > observedAt) {
     throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const proposal = structuralProposal(input.proposal);
@@ -1249,17 +1249,17 @@ async function existingRevisionMutation(
     throw new AdministrationProblem(409, "current_revision_mismatch", "The expected current Catalogue Revision is stale.");
   }
   const operation = await database.prepare(
-    "SELECT active_ingestion_run_id, active_release_id, active_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
-  ).first<{ active_ingestion_run_id: string | null; active_release_id: string | null; active_release_expires_at: string | null; recovery_health: string }>();
+    "SELECT active_ingestion_run_id, active_release_id AS active_production_release_id, active_release_expires_at AS active_production_release_expires_at, recovery_health FROM operation_state WHERE singleton = 1",
+  ).first<{ active_ingestion_run_id: string | null; active_production_release_id: string | null; active_production_release_expires_at: string | null; recovery_health: string }>();
   if (operation?.recovery_health === "blocked") {
     throw new AdministrationProblem(409, "recovery_in_progress", "Recovery blocks Curated Revision mutation.");
   }
   if (operation?.active_ingestion_run_id !== null) {
     throw new AdministrationProblem(409, "active_ingestion_run", "An active Ingestion Run blocks Curated Revision mutation.");
   }
-  if (operation?.active_release_id !== null &&
-    operation?.active_release_expires_at !== null &&
-    operation.active_release_expires_at > observedAt) {
+  if (operation?.active_production_release_id !== null &&
+    operation?.active_production_release_expires_at !== null &&
+    operation.active_production_release_expires_at > observedAt) {
     throw new AdministrationProblem(409, "release_not_idle", "An active production release blocks Curated Revision mutation.");
   }
   const row = await database.prepare("SELECT * FROM curated_revisions WHERE id = ?")

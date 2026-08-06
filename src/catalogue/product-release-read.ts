@@ -41,6 +41,10 @@ export class ProductReadProblem extends Error {
       | "invalid_cursor"
       | "cursor_revision_unavailable",
     message: string,
+    readonly invalidParameter: Readonly<{
+      name: string;
+      reason: string;
+    }> | null = null,
   ) {
     super(message);
   }
@@ -71,6 +75,10 @@ export async function currentProductResponse(
         400,
         "invalid_parameter",
         "Product include projection is invalid.",
+        {
+          name: "include",
+          reason: "Product include projection is invalid.",
+        },
       ),
   );
   const envelope = productEnvelope(row.document_json);
@@ -372,6 +380,10 @@ function ftsQuery(value: string): string {
       400,
       "invalid_parameter",
       "Product search query has no searchable terms.",
+      {
+        name: "q",
+        reason: "Product search query has no searchable terms.",
+      },
     );
   }
   return tokens.map((token) => `"${token.replaceAll("\"", "\"\"")}"*`)
@@ -439,6 +451,7 @@ function parseQuery(url: URL): string | null {
       400,
       "invalid_parameter",
       "Product search query is invalid.",
+      { name: "q", reason: "Product search query is invalid." },
     );
   }
   return q;
@@ -452,6 +465,10 @@ function singleParameter(url: URL, name: string): string | null {
       400,
       "invalid_parameter",
       `Product ${name} parameter is repeated.`,
+      {
+        name,
+        reason: `Product ${name} parameter is repeated.`,
+      },
     );
   }
   return values[0]!;
@@ -494,6 +511,7 @@ function parseLimit(value: string | null): number {
       400,
       "invalid_parameter",
       "Product page limit is invalid.",
+      { name: "limit", reason: "Product page limit is invalid." },
     );
   }
   return parsed;
@@ -508,6 +526,7 @@ function assertFilter(game: string | null, region: string | null): void {
       400,
       "invalid_parameter",
       "Product game is invalid.",
+      { name: "game", reason: "Product game is invalid." },
     );
   }
   if (
@@ -518,6 +537,10 @@ function assertFilter(game: string | null, region: string | null): void {
       400,
       "invalid_parameter",
       "Product Release region is invalid.",
+      {
+        name: "release_region",
+        reason: "Product Release region is invalid.",
+      },
     );
   }
 }

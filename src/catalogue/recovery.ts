@@ -199,7 +199,8 @@ export async function beginCatalogueRecovery(
   }
   const state = await database.prepare(
     `SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
-            operation.active_release_id, operation.active_release_expires_at,
+            operation.active_release_id AS active_production_release_id,
+            operation.active_release_expires_at AS active_production_release_expires_at,
             operation.recovery_health, operation.active_recovery_id
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = 1
@@ -207,8 +208,8 @@ export async function beginCatalogueRecovery(
   ).first<{
     current_revision_id: string;
     active_ingestion_run_id: string | null;
-    active_release_id: string | null;
-    active_release_expires_at: string | null;
+    active_production_release_id: string | null;
+    active_production_release_expires_at: string | null;
     recovery_health: string;
     active_recovery_id: string | null;
   }>();
@@ -219,7 +220,7 @@ export async function beginCatalogueRecovery(
       "The expected current Catalogue Revision is stale.",
     );
   }
-  if (state.active_ingestion_run_id !== null || activeRelease(state, input.observedAt)) {
+  if (state.active_ingestion_run_id !== null || activeProductionRelease(state, input.observedAt)) {
     throw new AdministrationProblem(
       409,
       "mutation_not_idle",
@@ -1401,16 +1402,16 @@ function idempotencyReused(): AdministrationProblem {
   );
 }
 
-function activeRelease(
+function activeProductionRelease(
   state: Readonly<{
-    active_release_id: string | null;
-    active_release_expires_at: string | null;
+    active_production_release_id: string | null;
+    active_production_release_expires_at: string | null;
   }>,
   observedAt: string,
 ): boolean {
-  return state.active_release_id !== null &&
-    state.active_release_expires_at !== null &&
-    state.active_release_expires_at > observedAt;
+  return state.active_production_release_id !== null &&
+    state.active_production_release_expires_at !== null &&
+    state.active_production_release_expires_at > observedAt;
 }
 
 function validateBeginInput(input: BeginCatalogueRecoveryInput): void {

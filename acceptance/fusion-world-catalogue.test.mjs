@@ -66,7 +66,10 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
   );
   delete config.$schema;
-  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.main = resolve(
+    root,
+    "acceptance/fixtures/catalogue-publication-ingestion-harness.ts",
+  );
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [{

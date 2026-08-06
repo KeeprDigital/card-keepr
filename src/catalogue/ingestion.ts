@@ -131,8 +131,8 @@ type CatalogueStateRow = {
 
 type OperationStateRow = {
   active_ingestion_run_id: string | null;
-  active_release_id: string | null;
-  active_release_expires_at: string | null;
+  active_production_release_id: string | null;
+  active_production_release_expires_at: string | null;
   active_recovery_id: string | null;
   recovery_health: string;
 };
@@ -504,7 +504,7 @@ export async function administrationStatus(
      WHERE state = 'awaiting_acceptance' AND method = 'replacement_database'
      ORDER BY started_at DESC LIMIT 1`,
   ).first<{ id: string; target_revision_id: string; target_digest: string; restored_database_id: string; retained_database_id: string; verification_json: string }>();
-  const activeRelease = await database.prepare(
+  const activeProductionRelease = await database.prepare(
     `SELECT id, state, expected_head_sha, api_version_id, ingestion_version_id,
             failure_code, roll_forward_required
      FROM production_releases
@@ -529,16 +529,16 @@ export async function administrationStatus(
       current_revision_id: catalogue.current_revision_id,
       recovery_health: operation.recovery_health,
       active_ingestion_run_id: operation.active_ingestion_run_id,
-      active_release_id: operation.active_release_id,
+      active_production_release_id: operation.active_production_release_id,
       active_recovery_id: operation.active_recovery_id,
       mutation_safe:
         operation.recovery_health === "healthy" &&
         operation.active_ingestion_run_id === null &&
-        !(operation.active_release_id !== null &&
-          operation.active_release_expires_at !== null &&
-          operation.active_release_expires_at > observedAt),
+        !(operation.active_production_release_id !== null &&
+          operation.active_production_release_expires_at !== null &&
+          operation.active_production_release_expires_at > observedAt),
     },
-    active_production_release: activeRelease,
+    active_production_release: activeProductionRelease,
     release_preflight: {
       schema_migration_level: schema?.migration_level ?? 0,
       production_target_digest: productionTargetDigest,
@@ -3959,8 +3959,10 @@ async function currentOperationState(
 ): Promise<OperationStateRow> {
   const state = await database
     .prepare(
-      `SELECT active_ingestion_run_id, active_release_id,
-              active_release_expires_at, active_recovery_id, recovery_health
+      `SELECT active_ingestion_run_id,
+              active_release_id AS active_production_release_id,
+              active_release_expires_at AS active_production_release_expires_at,
+              active_recovery_id, recovery_health
       FROM operation_state
       WHERE singleton = 1`,
     )

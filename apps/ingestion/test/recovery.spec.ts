@@ -33,7 +33,7 @@ const completeVerification: RestoredCatalogueVerification = {
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   await testEnv.CATALOGUE_DB.prepare(
-    "UPDATE operation_state SET active_recovery_id = NULL, active_ingestion_run_id = NULL, active_release_id = NULL, active_release_expires_at = NULL WHERE singleton = 1 AND recovery_health = 'healthy'",
+    "UPDATE operation_state SET active_recovery_id = NULL, active_ingestion_run_id = NULL, active_production_release_id = NULL, active_production_release_expires_at = NULL WHERE singleton = 1 AND recovery_health = 'healthy'",
   ).run();
   await retainVerifiedBackup(
     "recovery-source",

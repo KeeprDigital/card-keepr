@@ -390,12 +390,12 @@
     "OperationalState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["recovery_health", "active_release_id"],
+      "required": ["recovery_health", "active_production_release_id"],
       "properties": {
         "recovery_health": {
           "enum": ["healthy", "degraded", "blocked"]
         },
-        "active_release_id": {
+        "active_production_release_id": {
           "oneOf": [
             { "$ref": "#/$defs/OpaqueId" },
             { "type": "null" }

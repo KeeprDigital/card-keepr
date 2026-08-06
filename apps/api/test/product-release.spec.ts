@@ -801,11 +801,11 @@ test("Printing detail validates and binds optional evidence representations", as
 });
 
 test("Product query and include parameters reject invalid public representations", async () => {
-  for (const path of [
-    "/v1/products?q=",
-    `/v1/products?q=${"x".repeat(501)}`,
-    "/v1/products/product_st15?include=evidence,evidence",
-  ]) {
+  for (const [path, name] of [
+    ["/v1/products?q=", "q"],
+    [`/v1/products?q=${"x".repeat(501)}`, "q"],
+    ["/v1/products/product_st15?include=evidence,evidence", "include"],
+  ] as const) {
     const response = await api(path);
     expect(response.status).toBe(400);
     expect(response.headers.get("content-type")).toContain(
@@ -817,6 +817,7 @@ test("Product query and include parameters reject invalid public representations
       status: 400,
       code: "invalid_parameter",
       detail: expect.any(String),
+      invalid_params: [{ name, reason: expect.any(String) }],
       request_id: expect.any(String),
     });
   }
@@ -1525,18 +1526,36 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     meta: { catalogue_revision_id: "catrev_products" },
   });
 
-  for (const path of [
-    "/v1/printings?release_region=not-a-region",
-    "/v1/printings?game=not-a-game",
-    "/v1/printings?rarity=",
-    "/v1/printings?card_id=",
-    "/v1/printings?game=one-piece&game=one-piece",
-    "/v1/printings?limit=0",
-  ]) {
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions SET state = 'archived'
+     WHERE catalogue_revision_id = 'catrev_products'`,
+  ).run();
+  const unavailable = await api(
+    `/v1/printings?game=one-piece&limit=1&after=${encodeURIComponent(cursor)}`,
+  );
+  expect(unavailable.status).toBe(409);
+  await expect(unavailable.json()).resolves.toMatchObject({
+    code: "cursor_revision_unavailable",
+    links: { collection: "/v1/printings" },
+  });
+  await testEnv.CATALOGUE_DB.prepare(
+    `UPDATE catalogue_query_revisions SET state = 'available'
+     WHERE catalogue_revision_id = 'catrev_products'`,
+  ).run();
+
+  for (const [path, name] of [
+    ["/v1/printings?release_region=not-a-region", "release_region"],
+    ["/v1/printings?game=not-a-game", "game"],
+    ["/v1/printings?rarity=", "rarity"],
+    ["/v1/printings?card_id=", "card_id"],
+    ["/v1/printings?game=one-piece&game=one-piece", "game"],
+    ["/v1/printings?limit=0", "limit"],
+  ] as const) {
     const response = await api(path);
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
+      invalid_params: [{ name, reason: expect.any(String) }],
     });
   }
   const invalidCursor = await api(

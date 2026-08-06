@@ -102,7 +102,10 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"),
   );
   delete config.$schema;
-  config.main = resolve(root, "apps/ingestion/src/index.ts");
+  config.main = resolve(
+    root,
+    "acceptance/fixtures/catalogue-publication-ingestion-harness.ts",
+  );
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
@@ -470,6 +473,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "fusion-world:legality-rules",
       "fusion-world:products-and-releases",
       "gundam:cards-and-printings",
+      "gundam:errata",
       "gundam:legality-rules",
       "gundam:legality-rules",
       "gundam:products-and-releases",

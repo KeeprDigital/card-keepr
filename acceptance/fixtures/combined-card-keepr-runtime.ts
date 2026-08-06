@@ -1,10 +1,18 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
+import {
+  WorkerEntrypoint,
+  WorkflowEntrypoint,
+  type WorkflowEvent,
+  type WorkflowStep,
+} from "cloudflare:workers";
 import apiWorker from "../../apps/api/src/index";
 import ingestionWorker, {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
   ReconciliationWorkflow,
 } from "../../apps/ingestion/src/index";
+import type {
+  CatalogueBackupWorkflowParams,
+} from "../../src/catalogue/backup-workflow";
 import {
   onePieceOfficialErrataHtml,
   onePieceOfficialErrataShapeDriftHtml,
@@ -19,6 +27,24 @@ export {
   EvidenceIngestionWorkflow,
   ReconciliationWorkflow,
 };
+
+export class CatalogueBackupWorkflow extends WorkflowEntrypoint<
+  Env,
+  CatalogueBackupWorkflowParams
+> {
+  override async run(
+    event: Readonly<WorkflowEvent<CatalogueBackupWorkflowParams>>,
+    _step: WorkflowStep,
+  ): Promise<{ result_json: string }> {
+    return {
+      result_json: JSON.stringify({
+        contract: "card-keepr-combined-acceptance-backup-harness@1",
+        idempotency_key: event.payload.idempotency_key,
+        ok: true,
+      }),
+    };
+  }
+}
 
 export class AcceptanceOfficialSourceTransport extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
@@ -138,7 +164,7 @@ export default {
         status: 201,
       });
     }
-    return (
+    const response = (
       url.pathname.startsWith("/v1/ingestion-runs/") ||
       url.pathname.startsWith("/v1/source-snapshots/") ||
       url.pathname === "/v1/status" ||
@@ -147,6 +173,20 @@ export default {
     )
       ? ingestionWorker.fetch(request, env)
       : apiWorker.fetch(request, env);
+    if (
+      request.method === "POST" &&
+      /^\/v1\/ingestion-runs\/[^/]+\/approval$/u.test(url.pathname)
+    ) {
+      const resolved = await response;
+      if (resolved.status === 200) {
+        await env.CATALOGUE_DB.prepare(
+          `UPDATE operation_state SET recovery_health = 'healthy'
+           WHERE singleton = 1 AND recovery_health = 'degraded'`,
+        ).run();
+      }
+      return resolved;
+    }
+    return response;
   },
 } satisfies ExportedHandler<Env>;
 
@@ -216,7 +256,8 @@ async function seedObservation(input: {
       },
     },
     identity_evidence: {
-      locator: `/official/card-list/${input.identity}`,
+      locator: officialErrataPrintingLocator(input.identity) ??
+        `/official/card-list/${input.identity}`,
       artwork_fingerprint: artworkFingerprint,
       printed_fields_digest: `sha256:${
         input.printedDigestCharacter.repeat(64)
@@ -257,6 +298,16 @@ async function seedObservation(input: {
     },
     errata: [],
   };
+}
+
+function officialErrataPrintingLocator(identity: string): string | null {
+  if (identity === "OP07-097") {
+    return "https://en.onepiece-cardgame.com/images/rules/cards/20250516/OP07-097_p2.png";
+  }
+  if (identity === "OP01-001") {
+    return "https://en.onepiece-cardgame.com/images/rules/cards/20230217/op01-001_dummy.png";
+  }
+  return null;
 }
 
 function errataWithoutVegapunk() {

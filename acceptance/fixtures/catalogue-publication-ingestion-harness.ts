@@ -1,0 +1,58 @@
+import {
+  WorkflowEntrypoint,
+  type WorkflowEvent,
+  type WorkflowStep,
+} from "cloudflare:workers";
+import ingestionWorker, {
+  EvidenceHostWorkflow,
+  EvidenceIngestionWorkflow,
+  OfficialSourceTransport,
+  ReconciliationWorkflow,
+} from "../../apps/ingestion/src/index";
+import type {
+  CatalogueBackupWorkflowParams,
+} from "../../src/catalogue/backup-workflow";
+
+export {
+  EvidenceHostWorkflow,
+  EvidenceIngestionWorkflow,
+  OfficialSourceTransport,
+  ReconciliationWorkflow,
+};
+
+export class CatalogueBackupWorkflow extends WorkflowEntrypoint<
+  Env,
+  CatalogueBackupWorkflowParams
+> {
+  override async run(
+    event: Readonly<WorkflowEvent<CatalogueBackupWorkflowParams>>,
+    _step: WorkflowStep,
+  ): Promise<{ result_json: string }> {
+    return {
+      result_json: JSON.stringify({
+        contract: "card-keepr-catalogue-publication-backup-harness@1",
+        idempotency_key: event.payload.idempotency_key,
+        ok: true,
+      }),
+    };
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const response = await ingestionWorker.fetch(request, env);
+    if (
+      request.method === "POST" &&
+      /^\/v1\/ingestion-runs\/[^/]+\/approval$/u.test(
+        new URL(request.url).pathname,
+      ) &&
+      response.status === 200
+    ) {
+      await env.CATALOGUE_DB.prepare(
+        `UPDATE operation_state SET recovery_health = 'healthy'
+         WHERE singleton = 1 AND recovery_health = 'degraded'`,
+      ).run();
+    }
+    return response;
+  },
+} satisfies ExportedHandler<Env>;

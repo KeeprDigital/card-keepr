@@ -2129,7 +2129,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const first = await resumeCollection(firstRun.id);
   const firstSnapshot = first.snapshots[0];
   if (firstSnapshot === undefined) throw new Error("missing first snapshot");
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
 
   const differentRepresentationRun = await createCollection(
     "source_collection_cache_language_changed_001",
@@ -2144,7 +2144,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
     http: { status: 200 },
     reused_source_snapshot_id: null,
   });
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
 
   const revalidatedRun = await createCollection(
     "source_collection_cache_second_001",
@@ -2157,7 +2157,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   if (revalidatedSnapshot === undefined) {
     throw new Error("missing revalidated snapshot");
   }
-  await releaseActiveRunForNextScenario();
+  await clearActiveRunForNextScenario();
   expect(revalidatedSnapshot).toMatchObject({
     http: { status: 304 },
     reused_source_snapshot_id: firstSnapshot.id,
@@ -2997,7 +2997,7 @@ async function waitForEvidenceRun(
   }
 }
 
-function releaseActiveRunForNextScenario(): Promise<D1Result<unknown>> {
+function clearActiveRunForNextScenario(): Promise<D1Result<unknown>> {
   return env.CATALOGUE_DB.prepare(
     "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
   ).run();

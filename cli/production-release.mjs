@@ -39,7 +39,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
   const ordinaryMutationSafe = safe?.mutation_safe === true && safe?.recovery_health === "healthy";
   const replacementMutationSafe = replacement !== null && safe?.recovery_health === "blocked" &&
     safe?.active_recovery_id === replacement.recovery_id &&
-    safe?.active_ingestion_run_id === null && safe?.active_release_id === null;
+    safe?.active_ingestion_run_id === null && safe?.active_production_release_id === null;
   if (target === null || safe?.current_revision_id !== expectedRevision ||
       (!ordinaryMutationSafe && !replacementMutationSafe) ||
       preflight?.schema_migration_level !== expectedLevel ||

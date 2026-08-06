@@ -6038,13 +6038,20 @@ function onePieceOfficialErrataObservations(value: unknown): unknown[] {
     if (!officialUrl("one-piece-en", parsedImageUrl, "image")) {
       throw new Error("One Piece Erratum image URL is invalid.");
     }
+    const target = entry.applies_to_parallel_printings
+      ? {
+          type: "card" as const,
+          official_identity: { kind: "card_number", value: cardNumber },
+        }
+      : {
+          type: "printing" as const,
+          official_identity: { kind: "card_number", value: cardNumber },
+          locator: imageUrl,
+        };
     return {
       kind: "official_erratum",
       game: "one-piece",
-      target: {
-        type: "card",
-        official_identity: { kind: "card_number", value: cardNumber },
-      },
+      target,
       published_on: publishedOn,
       effective_from: effectiveFrom,
       observed_printed_rules_text: before,

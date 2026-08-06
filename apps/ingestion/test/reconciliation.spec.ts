@@ -132,8 +132,8 @@ afterEach(async () => {
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE operation_state
        SET active_ingestion_run_id = NULL,
-           active_release_id = NULL,
-           active_release_expires_at = NULL,
+           active_production_release_id = NULL,
+           active_production_release_expires_at = NULL,
            recovery_health = 'healthy'
        WHERE singleton = 1`,
     ),

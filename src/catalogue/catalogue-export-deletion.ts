@@ -53,8 +53,8 @@ type DeletionRow = {
 type OperationState = {
   current_revision_id: string;
   active_ingestion_run_id: string | null;
-  active_release_id: string | null;
-  active_release_expires_at: string | null;
+  active_production_release_id: string | null;
+  active_production_release_expires_at: string | null;
   recovery_health: string;
 };
 
@@ -919,7 +919,8 @@ async function assertMaintenanceIdle(
 ): Promise<void> {
   const state = await database.prepare(
     `SELECT catalogue.current_revision_id, operation.active_ingestion_run_id,
-            operation.active_release_id, operation.active_release_expires_at,
+            operation.active_release_id AS active_production_release_id,
+            operation.active_release_expires_at AS active_production_release_expires_at,
             operation.recovery_health
      FROM catalogue_state AS catalogue
      JOIN operation_state AS operation ON operation.singleton = catalogue.singleton
@@ -928,12 +929,12 @@ async function assertMaintenanceIdle(
   if (state === null || state.current_revision_id !== expectedCurrentRevisionId) {
     throw problem(409, "current_revision_mismatch", "The expected current Catalogue Revision has changed.");
   }
-  const releaseActive = state.active_release_id !== null &&
-    state.active_release_expires_at !== null &&
-    state.active_release_expires_at > observedAt;
+  const productionReleaseActive = state.active_production_release_id !== null &&
+    state.active_production_release_expires_at !== null &&
+    state.active_production_release_expires_at > observedAt;
   if (
     state.active_ingestion_run_id !== null ||
-    releaseActive ||
+    productionReleaseActive ||
     state.recovery_health !== "healthy"
   ) {
     throw problem(409, "maintenance_not_idle", "Ingestion and release must be idle and recovery must be healthy.");

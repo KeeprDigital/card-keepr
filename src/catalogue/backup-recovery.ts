@@ -47,6 +47,7 @@ export type D1BackupProvider = Readonly<{
     expectedRevisionId: string;
     expectedSchemaMigrationLevel: number;
     expected: CatalogueVerificationEvidence;
+    expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
   }>): Promise<RestoredCatalogueVerification>;
 }>;
 
@@ -70,6 +71,11 @@ export type CatalogueVerificationEvidence = Readonly<{
   representative_curated_revision_id: string | null;
   representative_curated_revision_digest: string | null;
   publication_ingestion_run_id: string | null;
+}>;
+
+export type CatalogueRepresentativeDocuments = Readonly<{
+  representative_product_document_json: string | null;
+  representative_legality_rule_document_json: string | null;
 }>;
 
 export type RestoredCatalogueVerification = Readonly<{
@@ -523,7 +529,10 @@ export async function createVerifiedCatalogueBackup(
       "Catalogue backup requires idle ingestion.",
     );
   }
-  const expectedVerification = await captureCatalogueVerificationEvidence(
+  const {
+    expected: expectedVerification,
+    representativeDocuments: expectedRepresentativeDocuments,
+  } = await captureCatalogueVerificationEvidenceWithDocuments(
     database,
     input.expectedCurrentRevisionId,
   );
@@ -733,6 +742,7 @@ export async function createVerifiedCatalogueBackup(
         expectedRevisionId: input.expectedCurrentRevisionId,
         expectedSchemaMigrationLevel: schemaMigrationLevel,
         expected: expectedVerification,
+        expectedRepresentativeDocuments,
       });
       assertCompleteRestoredVerification(restoredVerification);
     }
@@ -872,12 +882,25 @@ export async function captureCatalogueVerificationEvidence(
   database: D1Database,
   revisionId: string,
 ): Promise<CatalogueVerificationEvidence> {
+  return (await captureCatalogueVerificationEvidenceWithDocuments(
+    database,
+    revisionId,
+  )).expected;
+}
+
+async function captureCatalogueVerificationEvidenceWithDocuments(
+  database: D1Database,
+  revisionId: string,
+): Promise<Readonly<{
+  expected: CatalogueVerificationEvidence;
+  representativeDocuments: CatalogueRepresentativeDocuments;
+}>> {
   const row = await database.prepare(verificationEvidenceSql()).bind(
     revisionId,
     "capture",
-  ).first<CatalogueVerificationEvidence & RepresentativeDocumentEvidence>();
+  ).first<CatalogueVerificationEvidence & CatalogueRepresentativeDocuments>();
   if (row === null) throw new Error("Catalogue verification evidence is unavailable.");
-  return {
+  const expected = {
     cards: row.cards,
     printings: row.printings,
     products: row.products,
@@ -903,6 +926,15 @@ export async function captureCatalogueVerificationEvidence(
       row.representative_curated_revision_digest,
     publication_ingestion_run_id: row.publication_ingestion_run_id,
   };
+  return {
+    expected,
+    representativeDocuments: {
+      representative_product_document_json:
+        row.representative_product_document_json,
+      representative_legality_rule_document_json:
+        row.representative_legality_rule_document_json,
+    },
+  };
 }
 
 type VerificationQuery = (
@@ -910,22 +942,21 @@ type VerificationQuery = (
   params?: readonly unknown[],
 ) => Promise<Record<string, unknown>[]>;
 
-type RepresentativeDocumentEvidence = Readonly<{
-  representative_product_document_json: string | null;
-  representative_legality_rule_document_json: string | null;
-}>;
-
 async function verifyRestoredCatalogueQueries(
   query: VerificationQuery,
   input: Readonly<{
     expectedRevisionId: string;
     expectedSchemaMigrationLevel: number;
     expected: CatalogueVerificationEvidence;
+    expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
   }>,
 ): Promise<RestoredCatalogueVerification> {
   const [row] = await query(verificationEvidenceSql(), [
     input.expectedRevisionId,
-    canonicalJson(input.expected),
+    canonicalJson({
+      ...input.expected,
+      ...input.expectedRepresentativeDocuments,
+    }),
   ]);
   const [integrity] = await query("PRAGMA quick_check");
   const expected = input.expected;
@@ -940,7 +971,11 @@ async function verifyRestoredCatalogueQueries(
     );
   let representativeDocuments = false;
   try {
-    representativeDocuments = await validRepresentativeDocuments(row, expected);
+    representativeDocuments = await validRepresentativeDocuments(
+      row,
+      expected,
+      input.expectedRepresentativeDocuments,
+    );
   } catch {
     representativeDocuments = false;
   }
@@ -1022,6 +1057,7 @@ async function verifyRestoredCatalogueQueries(
 async function validRepresentativeDocuments(
   row: Record<string, unknown> | undefined,
   expected: CatalogueVerificationEvidence,
+  sourceDocuments?: CatalogueRepresentativeDocuments,
 ): Promise<boolean> {
   if (row === undefined) return false;
   const productDocument = nullableDocumentJson(
@@ -1030,6 +1066,13 @@ async function validRepresentativeDocuments(
   const legalityRuleDocument = nullableDocumentJson(
     row.representative_legality_rule_document_json,
   );
+  if (
+    sourceDocuments !== undefined &&
+    (productDocument !==
+        sourceDocuments.representative_product_document_json ||
+      legalityRuleDocument !==
+        sourceDocuments.representative_legality_rule_document_json)
+  ) return false;
   if (expected.representative_product_id === null) {
     if (productDocument !== null) return false;
   } else {
