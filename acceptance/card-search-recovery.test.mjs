@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import {
@@ -11,8 +12,9 @@ import {
 const root = resolve(import.meta.dirname, "..");
 
 test("D1 backup export restores the reconstructible Card FTS index", async () => {
-  const source = new DatabaseSync(":memory:");
-  const restored = new DatabaseSync(":memory:");
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-fts-restore-"));
+  const source = new DatabaseSync(join(directory, "source.sqlite"));
+  let restored;
   try {
     await applyMigrations(source);
     source.exec("PRAGMA foreign_keys = OFF");
@@ -53,8 +55,8 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
       1,
     );
 
-    const exported = source.serialize();
-    restored.deserialize(exported);
+    source.prepare("VACUUM INTO ?").run(join(directory, "restored.sqlite"));
+    restored = new DatabaseSync(join(directory, "restored.sqlite"));
     executeAtomically(
       restored,
       reconstructCardSearchAfterD1RestoreStatements,
@@ -83,8 +85,9 @@ test("D1 backup export restores the reconstructible Card FTS index", async () =>
       "catrev_backup_restore",
     );
   } finally {
-    restored.close();
+    restored?.close();
     source.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
