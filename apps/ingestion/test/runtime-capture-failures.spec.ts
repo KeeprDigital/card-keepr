@@ -217,7 +217,7 @@ test("adapter registrations stay constrained while mismatched production identit
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@4",
+      adapter_version: "one-piece-en@5",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -435,7 +435,7 @@ async function retainProductionSnapshot(
        ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
          '2026-08-07T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
          'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@5', NULL)`,
+         'fusion-world-en@6', NULL)`,
     ).bind(
       snapshotId,
       runId,
@@ -459,7 +459,7 @@ test("production discovery that proves no collection surface fails its last disc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@5",
+      adapter_version: "fusion-world-en@6",
       idempotency_key: "official_collection_plan_empty_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },

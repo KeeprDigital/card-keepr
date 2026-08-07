@@ -96,6 +96,11 @@ export default {
           },
         });
       }
+      const accessoryDetail = gundamAccessoryDetailResponse(
+        officialLineage,
+        url,
+      );
+      if (accessoryDetail !== null) return accessoryDetail;
       const digimonPartition = digimonPartitionResponse(
         url,
         officialScenarioMarker,
@@ -252,6 +257,50 @@ function retainedOfficialDiscovery(lineage, request) {
     productionSourceFixtureRole(request.headers) !== "retained-discovery"
   ) return null;
   return retainedDiscoveryResponse(fixture);
+}
+
+// The live Gundam product listings link accessory publications, and the
+// restructured product-detail contract fetches and classifies them from their
+// retained markup instead of dropping them by URL vocabulary. The page carries
+// the exact publisher-suffixed title and the single matching heading the
+// contract demands.
+const gundamAccessoryPath = "/products/deck-case02.html";
+const gundamAccessoryTitle = "Official Card Case Set 02";
+
+function gundamAccessoryLocale(lineage) {
+  return lineage === "gundam-en-asia" ? "/asia-en" : "/en";
+}
+
+function gundamAccessoryDetailResponse(lineage, url) {
+  if (!lineage.startsWith("gundam-")) return null;
+  if (
+    url.pathname !== `${gundamAccessoryLocale(lineage)}${gundamAccessoryPath}`
+  ) return null;
+  return new Response(
+    `<html><title>${gundamAccessoryTitle} | GUNDAM CARD GAME Official Website</title>${
+      officialBandaiNavigationHeader(lineage)
+    }<main>
+      <h2 class="mvColTitle">${gundamAccessoryTitle}</h2>
+      <p>A card case set that publishes no Cards.</p>
+    </main></html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: `"${lineage}-accessory-deck-case02-v1"`,
+      },
+    },
+  );
+}
+
+function gundamProductListingLinks(lineage, requestUrl) {
+  if (
+    !lineage.startsWith("gundam-") ||
+    requestUrl === undefined ||
+    !/\/products\/list\.php$/u.test(requestUrl.pathname)
+  ) return "";
+  return `<main><a href="${gundamAccessoryLocale(lineage)}${
+    gundamAccessoryPath
+  }">${gundamAccessoryTitle}</a></main>`;
 }
 
 function digimonPartitionResponse(url, marker) {
@@ -452,6 +501,8 @@ function officialBandaiDataset(
   return `<html><title>BANDAI ${supportedGame} CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>${
     officialBandaiNavigationHeader(lineage)
   }${officialBandaiStageNavigation(lineage, requestUrl)}${
+    gundamProductListingLinks(lineage, requestUrl)
+  }${
     digimonCompleteDiscoveryFacets(lineage, surface, parserSignal)
   }${
     gundamCompleteDiscoveryFacets(lineage, surface, requestUrl)

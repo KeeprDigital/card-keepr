@@ -1392,10 +1392,8 @@ export default defineConfig({
             ) {
               return new Response(
                 `<html>
-                  <h1>Authoritative Product Detail</h1>
-                  <dl>
-                    <dt>Product Code</dt><dd>FB-AUTHORITY</dd>
-                  </dl>
+                  <title>Authoritative Product Detail [FB-AUTHORITY] | Dragon Ball Super Card Game Fusion World - Official Web Site</title>
+                  <h1>DRAGON BALL SUPER CARD GAME FUSION WORLD</h1>
                 </html>`,
                 {
                   headers: {
@@ -1414,17 +1412,13 @@ export default defineConfig({
               const state = url.pathname.match(
                 /fb-stable-(coded|codeless)/u,
               )?.[1];
-              const code = state === "codeless"
-                ? ""
-                : "FB-STABLE";
+              // The linked detail page publishes its own bracketed identity,
+              // so the listing entry stays the only evidence for FB-STABLE and
+              // the code-less refresh matches exactly one published Product.
               return new Response(
                 `<html>
-                  <h1>Stable Product Identity</h1>
-                  ${
-                    code === ""
-                      ? ""
-                      : `<dl><dt>Product Code</dt><dd>${code}</dd></dl>`
-                  }
+                  <title>Linked Detail Publication [FB-DETAIL] | Dragon Ball Super Card Game Fusion World - Official Web Site</title>
+                  <h1>DRAGON BALL SUPER CARD GAME FUSION WORLD</h1>
                 </html>`,
                 {
                   headers: {

@@ -20,7 +20,7 @@ import {
 installRuntimeSuite();
 
 test("synthetic Bandai-shaped paginated Gundam observations close as one collection graph", async () => {
-  const adapter = requiredSourceAdapter("gundam-en-asia@5");
+  const adapter = requiredSourceAdapter("gundam-en-asia@6");
   if (
     adapter.requestUrlForSurface === undefined ||
     adapter.parseBytes === undefined
@@ -54,7 +54,7 @@ test("synthetic Bandai-shaped paginated Gundam observations close as one collect
       requestId,
       requestUrl: url,
       sourceLineage: "gundam-en-asia",
-      adapterVersion: "gundam-en-asia@5",
+      adapterVersion: "gundam-en-asia@6",
       observations: await parseBytes(new TextEncoder().encode(html), {
         mediaType: "text/html; charset=UTF-8",
         url,
@@ -108,7 +108,7 @@ test("synthetic production transport captures Gundam pages and reconciles one co
     {
       supported_game: "gundam",
       source_lineage: sourceLineage,
-      adapter_version: "gundam-en-asia@5",
+      adapter_version: "gundam-en-asia@6",
       idempotency_key: "gundam-paginated-collection-graph-v4",
       requests: officialSourceDiscoveryRequests(sourceLineage).map(
         (request) => ({
@@ -228,7 +228,7 @@ test("synthetic production transport captures Gundam pages and reconciles one co
 }, 60_000);
 
 test("synthetic paginated Gundam transport requires its scenario marker", async () => {
-  const discoveryUrl = requiredSourceAdapter("gundam-en-asia@5")
+  const discoveryUrl = requiredSourceAdapter("gundam-en-asia@6")
     .requestUrlForDiscovery?.();
   if (discoveryUrl === undefined) {
     throw new Error("Gundam discovery URL is unavailable.");

@@ -16,6 +16,14 @@ export function productionSourceFixtureRole(
   return role === undefined ? "retained-discovery" : "surface";
 }
 
+export function productionSourceFixtureIsProductDetail(
+  headers: Headers,
+): boolean {
+  return /(?:^|;\s*)request-role=product_detail(?:;|$)/u.test(
+    headers.get("user-agent") ?? "",
+  );
+}
+
 export function productionSourceFixtureMarker(
   headers: Headers,
 ): string | null {
@@ -123,12 +131,54 @@ function productionFusionCardSearchLeaf(
   );
 }
 
+// Live product detail pages publish their identity through an exactly
+// publisher-suffixed document title, so the generic production stage fixture
+// serves that shape for every product_detail request. The title stays free of
+// bracketed codes and of the accessory vocabulary, which keeps the derived
+// Product code-less and name-referenced.
+const officialProductTitleSuffix: Record<string, string> = {
+  "one-piece-en": "｜ONE PIECE CARD GAME - Official Web Site",
+  "digimon-en": "｜Digimon Card Game",
+  "fusion-world-en":
+    " | Dragon Ball Super Card Game Fusion World - Official Web Site",
+  "gundam-en-asia": " | GUNDAM CARD GAME Official Website",
+  "gundam-en-us": " | GUNDAM CARD GAME Official Website",
+};
+
+const officialProductStageTitle = "Official Bandai Product Publication";
+
+function productionOfficialProductDetailResponse(
+  lineage: string,
+  url: URL,
+): Response {
+  const suffix = officialProductTitleSuffix[lineage] ?? "";
+  return new Response(
+    `<html><title>${officialProductStageTitle}${suffix}</title>
+      <h1>BANDAI CARD GAMES</h1>${
+      lineage.startsWith("gundam-")
+        ? `<h2 class="mvColTitle">${officialProductStageTitle}</h2>`
+        : ""
+    }
+      <main><article data-publication-empty="true">No published entries.</article></main>
+    </html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: `"official-product-detail-${url.pathname.replaceAll("/", "-")}"`,
+      },
+    },
+  );
+}
+
 export function productionOfficialStageResponse(
   lineage: string,
   request: Request,
   officialNavigation: string,
 ): Response {
   const url = new URL(request.url);
+  if (productionSourceFixtureIsProductDetail(request.headers)) {
+    return productionOfficialProductDetailResponse(lineage, url);
+  }
   if (lineage === "fusion-world-en") {
     const cardSearchLeaf = productionFusionCardSearchLeaf(
       url,
