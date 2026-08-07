@@ -13,11 +13,32 @@ export function liveOfficialLegalityDocument(
     game === "one-piece" &&
     sourceLineage === "one-piece-en" &&
     surface === "restrictions" &&
-    new URL(requestUrl).href ===
-      "https://en.onepiece-cardgame.com/rules/restriction/" &&
+    [
+      // The pre-restructure URL now 302s to the news publication; both
+      // identities carry the same retained document.
+      "https://en.onepiece-cardgame.com/rules/restriction/",
+      "https://en.onepiece-cardgame.com/news/restriction.html",
+    ].includes(new URL(requestUrl).href) &&
     /<title>Banned\/Restricted Card Addition Notice \| ONE PIECE CARD GAME - Official Web Site<\/title>/u.test(html)
   ) {
     return { surface, document: onePieceCurrentRestrictions(html) };
+  }
+  if (
+    game === "one-piece" &&
+    sourceLineage === "one-piece-en" &&
+    surface === "block-policy" &&
+    new URL(requestUrl).href ===
+      "https://en.onepiece-cardgame.com/topics/013.php" &&
+    /<title>Introduction of the Block Number System − TOPICS｜ONE PIECE CARD GAME - Official Web Site<\/title>/u.test(html) &&
+    /Introduction of the Block Number System/u.test(html)
+  ) {
+    // The live Block Number publication introduces the numbering system
+    // starting 2026-04-01 without publishing any block restriction rule;
+    // it proves an exactly empty policy surface.
+    return {
+      surface,
+      document: { entries: [], declared_record_count: 0 },
+    };
   }
   if (
     game === "fusion-world" &&

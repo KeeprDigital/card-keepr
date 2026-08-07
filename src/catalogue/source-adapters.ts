@@ -202,26 +202,34 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         reconciliationAreas: [
           "one-piece-en@3",
           "one-piece-en@4",
+          "one-piece-en@5",
           "fusion-world-en@4",
           "digimon-en@4",
           "digimon-en@5",
+          "digimon-en@6",
           "gundam-en-asia@4",
           "gundam-en-asia@5",
+          "gundam-en-asia@6",
           "gundam-en-us@4",
           "gundam-en-us@5",
+          "gundam-en-us@6",
         ].includes(adapter.adapterVersion)
           ? ["catalogue", "errata"] as const
           // The live Fusion World EN site no longer publishes an errata
-          // surface, so fusion-world-en@5 registers catalogue-only coverage.
+          // surface, so fusion-world-en@5 and later register catalogue-only
+          // coverage.
           : ["catalogue"] as const,
         inheritDiscoveryRequestHeaders:
           [
             "digimon-en@4",
             "digimon-en@5",
+            "digimon-en@6",
             "gundam-en-asia@4",
             "gundam-en-asia@5",
+            "gundam-en-asia@6",
             "gundam-en-us@4",
             "gundam-en-us@5",
+            "gundam-en-us@6",
           ].includes(adapter.adapterVersion),
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,

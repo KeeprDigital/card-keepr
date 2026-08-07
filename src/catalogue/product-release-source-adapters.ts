@@ -235,6 +235,20 @@ const restructuredAdapterVersions = new Map([
   ["gundam-en-us", "gundam-en-us@5"],
 ]);
 
+// 2026-08-07 production feedback (#55): the live product detail pages of all
+// four games no longer publish their titles through the frozen h1 grammar,
+// and the Gundam listings sweep accessory pages. This generation re-registers
+// every lineage with a live product-detail parser that promotes only
+// card-associated publications to Products and retains accessory pages as
+// explicit non-card evidence.
+const liveProductAdapterVersions = new Map([
+  ["one-piece-en", "one-piece-en@5"],
+  ["fusion-world-en", "fusion-world-en@6"],
+  ["digimon-en", "digimon-en@6"],
+  ["gundam-en-asia", "gundam-en-asia@6"],
+  ["gundam-en-us", "gundam-en-us@6"],
+]);
+
 function restructuredRequiredSurfaces(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
@@ -306,6 +320,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           catalogueComplete: false,
           completeDigimonCatalogue: false,
           restructured: false,
+          restructuredProducts: false,
         },
         {
           ...definition,
@@ -322,6 +337,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           catalogueComplete: false,
           completeDigimonCatalogue: false,
           restructured: false,
+          restructuredProducts: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -333,6 +349,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               catalogueComplete: false,
               completeDigimonCatalogue: false,
               restructured: false,
+              restructuredProducts: false,
             }]
           : []),
         ...(definition.sourceLineage === "fusion-world-en"
@@ -350,6 +367,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               catalogueComplete: true,
               completeDigimonCatalogue: false,
               restructured: false,
+              restructuredProducts: false,
             }]
           : []),
         ...(definition.sourceLineage === "digimon-en"
@@ -367,6 +385,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               catalogueComplete: false,
               completeDigimonCatalogue: true,
               restructured: false,
+              restructuredProducts: false,
             }]
           : []),
         ...(completeGundamAdapterVersions.has(definition.sourceLineage)
@@ -398,6 +417,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               catalogueComplete: true,
               completeDigimonCatalogue: false,
               restructured: false,
+              restructuredProducts: false,
             }]
           : []),
         {
@@ -450,6 +470,59 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           completeDigimonCatalogue:
             definition.sourceLineage === "digimon-en",
           restructured: true,
+          restructuredProducts: false,
+        },
+        {
+          ...definition,
+          imagePathnamePrefixes:
+            definition.sourceLineage === "gundam-en-asia"
+              ? [
+                  ...definition.imagePathnamePrefixes,
+                  "/jp/images/cards/card/",
+                  "/gcg/bccard/asia-en/",
+                ]
+              : definition.sourceLineage === "gundam-en-us"
+                ? [
+                    ...definition.imagePathnamePrefixes,
+                    "/jp/images/cards/card/",
+                    "/gcg/bccard/en/",
+                  ]
+                : definition.imagePathnamePrefixes,
+          documentPathnamePrefixes:
+            definition.sourceLineage === "one-piece-en"
+              ? [
+                  ...definition.documentPathnamePrefixes,
+                  "/news/",
+                  "/topics/",
+                ]
+              : definition.documentPathnamePrefixes,
+          adapterVersion: liveProductAdapterVersions.get(
+            definition.sourceLineage,
+          )!,
+          requiredSurfaces: restructuredRequiredSurfaces(
+            definition.sourceLineage,
+            definition.requiredSurfaces,
+          ),
+          urls: restructuredBandaiSurfaceUrls(
+            definition.sourceLineage,
+            activeBandaiSurfaceUrls(
+              definition.sourceLineage,
+              definition.urls,
+              definition.sourceLineage.startsWith("gundam-"),
+            ),
+          ),
+          parserContract:
+            `${definition.sourceLineage}-restructured-complete-catalogue@5`,
+          legalityAware: true,
+          expandedOnePieceCatalogue:
+            definition.sourceLineage === "one-piece-en",
+          catalogueComplete:
+            definition.sourceLineage === "fusion-world-en" ||
+            definition.sourceLineage.startsWith("gundam-"),
+          completeDigimonCatalogue:
+            definition.sourceLineage === "digimon-en",
+          restructured: true,
+          restructuredProducts: true,
         },
       ];
       return versions.map((version) =>
@@ -482,6 +555,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.catalogueComplete,
                 version.completeDigimonCatalogue,
                 version.restructured,
+                version.restructuredProducts,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -500,6 +574,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.catalogueComplete,
               version.completeDigimonCatalogue,
               version.restructured,
+              version.restructuredProducts,
             )
             : historicalBandaiRequestDiscoveryV1(
               version.format,
@@ -801,6 +876,7 @@ function bandaiRequestDiscovery(
   catalogueComplete = false,
   completeDigimonCatalogue = false,
   restructured = false,
+  restructuredProducts = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -1025,6 +1101,7 @@ function bandaiRequestDiscovery(
               catalogueComplete,
               completeDigimonCatalogue,
               restructured,
+              restructuredProducts,
             );
       if (role === null) continue;
       if (
@@ -1716,6 +1793,7 @@ function discoveredHtmlRole(
   catalogueComplete = false,
   completeDigimonCatalogue = false,
   restructured = false,
+  restructuredProducts = false,
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
@@ -1758,7 +1836,12 @@ function discoveredHtmlRole(
     initialSurface === "releases" ||
     /\/products?\//iu.test(target)
   ) {
-    if (nonCardProductClassification(target) !== null) return null;
+    // The live product-detail model fetches accessory pages and classifies
+    // them from their retained markup instead of silently skipping them by
+    // URL vocabulary.
+    if (!restructuredProducts && nonCardProductClassification(target) !== null) {
+      return null;
+    }
     if (
       catalogueComplete &&
       format === "fusion-world" &&
@@ -2109,6 +2192,7 @@ function legalityAwareBandaiSnapshotDecoder(
   catalogueComplete = false,
   completeDigimonCatalogue = false,
   restructured = false,
+  restructuredProducts = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
@@ -2118,6 +2202,7 @@ function legalityAwareBandaiSnapshotDecoder(
     catalogueComplete,
     completeDigimonCatalogue,
     restructured,
+    restructuredProducts,
   });
 }
 
@@ -2135,6 +2220,7 @@ function bandaiSnapshotDecoder(
     catalogueComplete?: boolean;
     completeDigimonCatalogue?: boolean;
     restructured?: boolean;
+    restructuredProducts?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -2396,11 +2482,18 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "product_detail") {
       return [
-        parseBandaiProductDetailV2(
-          html,
-          sourceLineage,
-          context.url,
-        ),
+        profile.restructuredProducts === true
+          ? parseBandaiProductDetailV3(
+            html,
+            format,
+            sourceLineage,
+            context.url,
+          )
+          : parseBandaiProductDetailV2(
+            html,
+            sourceLineage,
+            context.url,
+          ),
       ];
     }
     if (
@@ -5443,6 +5536,198 @@ function parseBandaiProductDetailV2(
   requestUrl: string,
 ): Record<string, unknown> {
   return parseBandaiProductDetailFrozenV1(html, sourceLineage, requestUrl);
+}
+
+function parseBandaiProductDetailV3(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const pairs = htmlLabelPairs(html);
+  const field = (...names: string[]): string | null =>
+    firstLabelValue(pairs, names);
+  const title = liveOfficialProductTitle(html, format, sourceLineage);
+  const nonCardClassification = nonCardProductClassificationV2(
+    `${requestUrl} ${title}`,
+  );
+  const rawDocument = {
+    document_title: title,
+    ...Object.fromEntries(pairs.map(({ label, value }) => [label, value])),
+  };
+  if (nonCardClassification !== null) {
+    return attachRawSurfaceEvidenceV1(
+      {
+        completeness: completeObservation(),
+        product_release_catalogue: {
+          products: [],
+          distribution_contexts: [{
+            key:
+              `non-card:${nonCardClassification}:${
+                title.normalize("NFC").trim().toLocaleLowerCase()
+              }`,
+            kind: "other",
+            label: nonCardClassification,
+            evidence_category: "explicit",
+          }],
+          relationships: [],
+        },
+      },
+      sourceLineage,
+      "product-detail",
+      rawDocument,
+      true,
+      ["document_title", "Product Code"],
+    );
+  }
+  const code = liveOfficialProductCode(title);
+  const product = { code, title };
+  const releaseDateText =
+    field("Release Date", "Available Date", "On Sale") ??
+    liveInlineOfficialReleaseDate(html);
+  const releaseStatus = field("Status");
+  const releases = new Map<string, Record<string, unknown>[]>();
+  if (releaseDateText !== null) {
+    const releaseEvidence = liveOfficialReleaseDateEvidence(releaseDateText);
+    const date = normalizedOfficialReleaseDate(releaseEvidence.date);
+    releases.set(productMapKey(product), [{
+      event_key: productEventKey("product-release", product),
+      region: releaseEvidence.region ??
+        normalizedOfficialRegion(
+          field("Region", "Market", "Territory"),
+          sourceLineage,
+        ),
+      precision: date.precision,
+      date: date.value,
+      status: normalizedOfficialReleaseStatus(releaseStatus),
+    }]);
+  }
+  const observation = productOnlyObservation(
+    product,
+    releases,
+    { revision: "captured-by-policy-surface", entries: [] },
+    { revision: "captured-by-policy-surface", entries: [] },
+  );
+  return attachRawSurfaceEvidenceV1(
+    observation,
+    sourceLineage,
+    "product-detail",
+    rawDocument,
+    true,
+    [
+      "document_title",
+      "Product Code",
+      ...(officialReleaseDateNeedsSchemaReview(releaseDateText)
+        ? []
+        : ["Release Date", "Available Date", "On Sale"]),
+      "Region",
+      "Market",
+      "Territory",
+      ...(officialReleaseStatusNeedsSchemaReview(releaseStatus)
+        ? []
+        : ["Status"]),
+    ],
+  );
+}
+
+function liveOfficialProductTitle(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+): string {
+  // The live product pages publish their identity through the document
+  // title with an exact per-publisher suffix; the leading <h1> is the site
+  // logo on every current page.
+  const rawTitle = htmlText(
+    html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "",
+  );
+  const suffix = format === "one-piece"
+    ? /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*ONE PIECE CARD GAME - Official Web Site$/u
+    : format === "digimon"
+      ? /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*Digimon Card Game$/u
+      : format === "fusion-world"
+        ? /\s*[|｜]\s*Dragon Ball Super Card Game Fusion World - Official Web Site$/u
+        : /\s*[|｜]\s*GUNDAM CARD GAME Official Website$/u;
+  if (!suffix.test(rawTitle)) {
+    throw new Error(
+      `${sourceLineage} Product detail is missing its official title.`,
+    );
+  }
+  const title = rawTitle.replace(suffix, "").trim();
+  if (title.length === 0) {
+    throw new Error(
+      `${sourceLineage} Product detail is missing its official title.`,
+    );
+  }
+  if (format === "gundam") {
+    const headings = [
+      ...html.matchAll(
+        /<h2 class="(?:mvColTitle|titleColInnerHead)">([\s\S]*?)<\/h2>/gu,
+      ),
+    ].map((match) => htmlText(match[1]!));
+    if (headings.length !== 1 || headings[0] !== title) {
+      throw new Error(
+        `${sourceLineage} Product detail heading does not match its official title.`,
+      );
+    }
+  }
+  return title;
+}
+
+function liveOfficialProductCode(title: string): string | null {
+  return title.match(/\[([A-Z0-9][A-Z0-9-]{0,15})\]$/u)?.[1] ?? null;
+}
+
+function liveInlineOfficialReleaseDate(html: string): string | null {
+  const match = html.match(/Release Date:\s*([^<]+)</iu);
+  if (match === null) return null;
+  const value = htmlText(match[1]!);
+  return value.length === 0 ? null : value;
+}
+
+function liveOfficialReleaseDateEvidence(value: string): {
+  date: string;
+  region: "EN-OCEANIA" | null;
+} {
+  // The live Digimon product pages publish region-scoped release rows such
+  // as "Europe/Oceania: December 10, 2021 (*Asmodee UK/Blackfire Stores:
+  // January 21, 2021)"; store-level parentheticals are annotations, not
+  // publisher release events.
+  let normalized = value.normalize("NFC")
+    .replace(/\(\*[^)]*\)/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  let region: "EN-OCEANIA" | null = null;
+  const scoped = normalized.match(/^Europe\/Oceania:\s*(.*)$/iu);
+  if (scoped !== null) {
+    region = "EN-OCEANIA";
+    normalized = scoped[1]!.trim();
+  }
+  return { date: liveOfficialReleaseDateText(normalized), region };
+}
+
+function liveOfficialReleaseDateText(value: string): string {
+  const normalized = value.normalize("NFC").trim();
+  // Live publisher shorthand: "2027.1.30", "September 25,2026", and
+  // "December, 10 2021".
+  const dotted = normalized.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/u);
+  if (dotted !== null) {
+    return `${dotted[1]}-${dotted[2]!.padStart(2, "0")}-${
+      dotted[3]!.padStart(2, "0")
+    }`;
+  }
+  return normalized
+    .replace(/^([A-Za-z]+ \d{1,2}),(\d{4})$/u, "$1, $2")
+    .replace(/^([A-Za-z]+),\s*(\d{1,2})\s+(\d{4})$/u, "$1 $2, $3");
+}
+
+function nonCardProductClassificationV2(value: string): "accessory" | null {
+  // The 2026-08 live listings publish deck cases alongside the previously
+  // modelled accessory vocabulary.
+  return nonCardProductClassification(value) !== null ||
+      /(?:card cases?|deck[ _-]?cases?)/iu.test(value)
+    ? "accessory"
+    : null;
 }
 
 function normalizedOfficialRegion(
