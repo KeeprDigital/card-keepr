@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { join } from "node:path";
 import test from "node:test";
+import {
+  applyMigrations,
+  executeSql,
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./helpers/acceptance-runtime.mjs";
 
-const root = resolve(import.meta.dirname, "..");
-const ingestionPort = 27_896;
-const inspectorPort = 27_897;
 const currentRevisionId = "catrev_cli_source_baseline";
 const sourceRunId = "run_cli_source_changed";
 const observedAt = "2026-08-05T05:06:07.000Z";
@@ -74,21 +78,24 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     { mode: 0o600 },
   );
   await applyMigrations(statePath);
-  await executeSql(
-    statePath,
-    directory,
-    "baseline.sql",
-    baselineSql(),
-  );
+  await seedSql(statePath, directory, "baseline.sql", baselineSql());
 
-  let ingestion = startWorker({ environmentFile, statePath });
+  let ingestion = await startWorker({
+    config: "apps/ingestion/wrangler.jsonc",
+    envFile: environmentFile,
+    statePath,
+  });
   t.after(async () => {
     await stopWorker(ingestion);
     await rm(directory, { recursive: true, force: true });
   });
-  await waitForHealth(administrationKey, ingestion);
+  await waitForHealth(
+    `${ingestion.url}/health`,
+    administrationKey,
+    ingestion,
+  );
   const cliEnvironment = {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
   const statusResult = await runCli(["status", "--json"], cliEnvironment);
@@ -141,7 +148,9 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     "--confirm", createConfirmation,
     "--secrets-stdin-fd", "3",
     "--yes", "--json",
-  ], cliEnvironment, { administration_key: administrationKey });
+  ], cliEnvironment, {
+    secrets: { administration_key: administrationKey },
+  });
   assert.equal(
     createdResult.code,
     0,
@@ -150,15 +159,23 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
   const created = JSON.parse(createdResult.stdout);
   assert.equal(created.status, "active");
 
+  const restartedPort = ingestion.port;
+  const restartedInspectorPort = ingestion.inspectorPort;
   await stopWorker(ingestion);
-  await executeSql(
+  await seedSql(statePath, directory, "source-change.sql", sourceRunSql());
+  // The restart keeps the ports the CLI environment already points at.
+  ingestion = await startWorker({
+    config: "apps/ingestion/wrangler.jsonc",
+    envFile: environmentFile,
+    inspectorPort: restartedInspectorPort,
+    port: restartedPort,
     statePath,
-    directory,
-    "source-change.sql",
-    sourceRunSql(),
+  });
+  await waitForHealth(
+    `${ingestion.url}/health`,
+    administrationKey,
+    ingestion,
   );
-  ingestion = startWorker({ environmentFile, statePath });
-  await waitForHealth(administrationKey, ingestion);
 
   const conflictedResult = await runCli([
     "run", "retry",
@@ -180,7 +197,9 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     "--revision-id", created.curated_revision_id,
     "--secrets-stdin-fd", "3",
     "--json",
-  ], cliEnvironment, { administration_key: administrationKey });
+  ], cliEnvironment, {
+    secrets: { administration_key: administrationKey },
+  });
   assert.equal(shownResult.code, 0, shownResult.stderr);
   const shown = JSON.parse(shownResult.stdout).revision;
   assert.equal(shown.status, "reconfirmation_required");
@@ -230,7 +249,9 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     "--confirm", reaffirmConfirmation,
     "--secrets-stdin-fd", "3",
     "--yes", "--json",
-  ], cliEnvironment, { administration_key: administrationKey });
+  ], cliEnvironment, {
+    secrets: { administration_key: administrationKey },
+  });
   assert.equal(
     reaffirmedResult.code,
     0,
@@ -390,130 +411,8 @@ function sqlJson(value) {
   return `'${JSON.stringify(value).replaceAll("'", "''")}'`;
 }
 
-async function applyMigrations(statePath) {
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", "apps/ingestion/wrangler.jsonc", "--persist-to", statePath,
-    ],
-    processEnvironment(statePath, { CI: "1" }),
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-async function executeSql(statePath, directory, filename, sql) {
+async function seedSql(statePath, directory, filename, sql) {
   const file = join(directory, filename);
   await writeFile(file, sql, { mode: 0o600 });
-  const result = await runProcess(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1", "execute", "CATALOGUE_DB", "--local",
-      "--config", "apps/ingestion/wrangler.jsonc", "--persist-to", statePath,
-      "--file", file,
-    ],
-    processEnvironment(statePath, { CI: "1" }),
-  );
-  assert.equal(result.code, 0, result.stderr || result.stdout);
-}
-
-function startWorker({ environmentFile, statePath }) {
-  let output = "";
-  const child = spawn(resolve(root, "node_modules/.bin/wrangler"), [
-    "dev", "--config", "apps/ingestion/wrangler.jsonc",
-    "--env-file", environmentFile,
-    "--local", "--ip", "127.0.0.1", "--port", String(ingestionPort),
-    "--inspector-port", String(inspectorPort), "--persist-to", statePath,
-    "--log-level", "error", "--show-interactive-dev-session", "false",
-  ], {
-    cwd: root,
-    env: processEnvironment(statePath),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => output += chunk);
-  child.stderr.on("data", (chunk) => output += chunk);
-  return { process: child, getOutput: () => output };
-}
-
-async function waitForHealth(key, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) throw new Error(worker.getOutput());
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:${ingestionPort}/health`,
-        { headers: { authorization: `Bearer ${key}` } },
-      );
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Worker did not become healthy\n${worker.getOutput()}`);
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment, secrets) {
-  return new Promise((resolveExit) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: { ...processEnvironment(""), ...environment },
-        stdio: [
-          "ignore", "pipe", "pipe",
-          secrets === undefined ? "ignore" : "pipe",
-        ],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => stdout += chunk);
-    child.stderr.on("data", (chunk) => stderr += chunk);
-    if (secrets !== undefined) child.stdio[3].end(JSON.stringify(secrets));
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function runProcess(command, arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(command, arguments_, {
-      cwd: root,
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => stdout += chunk);
-    child.stderr.on("data", (chunk) => stderr += chunk);
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
-function processEnvironment(statePath, extra = {}) {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return {
-    ...environment,
-    ...(statePath === "" ? {} : { WRANGLER_LOG_PATH: join(statePath, "logs") }),
-    ...extra,
-  };
+  await executeSql(statePath, file);
 }

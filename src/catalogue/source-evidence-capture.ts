@@ -120,10 +120,29 @@ export async function captureOperationIdentity(
   };
 }
 
+export type SourceHostPacingMode = "production" | "immediate";
+
+// Test-only pacing override. Production deployments pin the variable to
+// "production" (also the default when unset); test harnesses may opt in to
+// "immediate" so simulated fetches skip the ~1s-per-request host pacing
+// sleep. Any other value fails closed.
+export function sourceHostPacingMode(
+  value: string | undefined,
+): SourceHostPacingMode {
+  if (value === undefined || value === "production") return "production";
+  if (value === "immediate") return "immediate";
+  throw new Error(
+    "SOURCE_HOST_PACING_MODE must be \"production\" or \"immediate\", got " +
+      `${JSON.stringify(value)}.`,
+  );
+}
+
 export async function hostPacingDelay(
   database: D1Database,
   hostname: string,
+  mode: SourceHostPacingMode = "production",
 ): Promise<number> {
+  if (mode === "immediate") return 0;
   const row = await database
     .prepare(
       "SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?",
@@ -137,8 +156,11 @@ export async function hostPacingDelay(
 export async function advanceHostPacing(
   database: D1Database,
   hostname: string,
+  mode: SourceHostPacingMode = "production",
 ): Promise<void> {
-  const next = new Date(Date.now() + 1000 + jitter(250)).toISOString();
+  const next = new Date(
+    Date.now() + (mode === "immediate" ? 0 : 1000 + jitter(250)),
+  ).toISOString();
   await database
     .prepare(
       `INSERT INTO source_host_pacing (

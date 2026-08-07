@@ -14,9 +14,6 @@ import {
 } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const apiPort = 26_787;
-const ingestionPort = 26_788;
-const sourcePort = 26_789;
 
 // Every request-scoped operational log event must carry exactly these fields:
 // correlation and health metadata, and nothing else (no payloads, no
@@ -105,24 +102,18 @@ test("operational logs and diagnostics retain correlation fields without leaking
   await writeFile(ingestionConfig, JSON.stringify(config));
   await Promise.all([applyMigrations(apiState), applyMigrations(ingestionState)]);
 
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 26_887,
-    port: apiPort,
     statePath: apiState,
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 26_888,
-    port: ingestionPort,
     statePath: ingestionState,
   });
-  const source = startWorker({
+  const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
-    inspectorPort: 26_889,
-    port: sourcePort,
     statePath: sourceState,
   });
   t.after(async () => {
@@ -135,17 +126,17 @@ test("operational logs and diagnostics retain correlation fields without leaking
   });
   await Promise.all([
     waitForHealth(
-      `http://127.0.0.1:${apiPort}/health`,
+      `${api.url}/health`,
       secrets.API_BEARER_KEY,
       api,
     ),
     waitForHealth(
-      `http://127.0.0.1:${ingestionPort}/health`,
+      `${ingestion.url}/health`,
       secrets.ADMINISTRATION_KEY,
       ingestion,
     ),
     waitForHealth(
-      `http://127.0.0.1:${sourcePort}/success`,
+      `${source.url}/success`,
       "no-credential-required",
       source,
     ),
@@ -161,7 +152,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   // 1. Authentication failures on both runtimes with forged bearer tokens.
   const apiRejection = await capture(
     "API auth-failure response",
-    await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+    await fetch(`${api.url}/v1/catalogue`, {
       headers: { authorization: `Bearer ${forgedApiToken}` },
     }),
   );
@@ -171,7 +162,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
 
   const ingestionRejection = await capture(
     "ingestion auth-failure response",
-    await fetch(`http://127.0.0.1:${ingestionPort}/v1/status`, {
+    await fetch(`${ingestion.url}/v1/status`, {
       headers: { authorization: `Bearer ${forgedAdministrationToken}` },
     }),
   );
@@ -190,7 +181,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   };
   const started = await capture(
     "evidence run creation response",
-    await fetch(`http://127.0.0.1:${ingestionPort}/v1/ingestion-runs/evidence`, {
+    await fetch(`${ingestion.url}/v1/ingestion-runs/evidence`, {
       method: "POST",
       headers: administrationHeaders,
       body: JSON.stringify({
@@ -219,7 +210,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const resumed = await capture(
     "evidence run resume response",
     await fetch(
-      `http://127.0.0.1:${ingestionPort}/v1/ingestion-runs/${
+      `${ingestion.url}/v1/ingestion-runs/${
         encodeURIComponent(runId)
       }/collection/resume`,
       { method: "POST", headers: administrationHeaders },
@@ -228,7 +219,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   assert.equal(resumed.status, 202, JSON.stringify(resumed.body));
 
   const failedRun = await waitForFailedRun(
-    `http://127.0.0.1:${ingestionPort}/v1/ingestion-runs/${
+    `${ingestion.url}/v1/ingestion-runs/${
       encodeURIComponent(runId)
     }`,
     secrets.ADMINISTRATION_KEY,
@@ -263,13 +254,13 @@ test("operational logs and diagnostics retain correlation fields without leaking
   // 3. Status diagnostics over HTTP and the CLI.
   const status = await capture(
     "status response",
-    await fetch(`http://127.0.0.1:${ingestionPort}/v1/status`, {
+    await fetch(`${ingestion.url}/v1/status`, {
       headers: { authorization: `Bearer ${secrets.ADMINISTRATION_KEY}` },
     }),
   );
   assert.equal(status.status, 200);
   const cliStatus = await runCli(["status", "--json"], {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: secrets.ADMINISTRATION_KEY,
   });
   assert.equal(cliStatus.code, 0, cliStatus.stderr);

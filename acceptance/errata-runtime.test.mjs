@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import test from "node:test";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+  waitForRunState,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const runtimePort = 18_793;
 
 test("the repository CLI rejects Official Errata authority outside the documented Bandai surface", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-authority-"));
@@ -25,28 +30,20 @@ test("the repository CLI rejects Official Errata authority outside the documente
     ),
     writeRuntimeConfig(runtimeConfig),
   ]);
-  applyMigrations(runtimeConfig, statePath);
-  const port = runtimePort + 1;
-  const runtime = startWorker({
+  const runtime = await startWorker({
     config: runtimeConfig,
     envFile: environmentFile,
-    inspectorPort: 19_235,
-    port,
+    migrate: true,
     statePath,
   });
   t.after(async () => {
     await stopWorker(runtime);
     await rm(directory, { recursive: true, force: true });
   });
-  await waitForHealth(
-    runtime,
-    port,
-    apiKey,
-    "Errata authority runtime",
-  );
+  await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
   const environment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+    KEEPR_INGESTION_URL: runtime.url,
   };
   const result = await runCli(
     [
@@ -140,23 +137,20 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
       "AcceptanceShapeDriftOfficialSourceTransport",
     ),
   ]);
-  applyMigrations(runtimeConfig, statePath);
-  const port = runtimePort + 2;
-  const runtime = startWorker({
+  const runtime = await startWorker({
     config: runtimeConfig,
     envFile: environmentFile,
-    inspectorPort: 19_236,
-    port,
+    migrate: true,
     statePath,
   });
   t.after(async () => {
     await stopWorker(runtime);
     await rm(directory, { recursive: true, force: true });
   });
-  await waitForHealth(runtime, port, apiKey, "Errata drift runtime");
+  await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
   const environment = {
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${port}`,
+    KEEPR_INGESTION_URL: runtime.url,
   };
   const run = await collectSource(
     {
@@ -173,7 +167,13 @@ test("Bandai Errata HTML shape drift fails closed through the CLI and Worker sea
     environment,
   );
   assert.equal(resumed.code, 0, resumed.stderr);
-  const failed = await waitForFailedRun(run.id, environment, runtime);
+  const failed = await waitForRunState(
+    run.id,
+    "failed",
+    environment,
+    runtime,
+    { deadlineMs: 20_000 },
+  );
   assert.equal(failed.failure_code, "source_parse_failed");
   assert.equal(failed.observation_sets.length, 0);
 });
@@ -214,26 +214,23 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
       { mode: 0o600 },
     ),
   ]);
-  applyMigrations(runtimeConfig, statePath);
-
-  const runtime = startWorker({
+  const runtime = await startWorker({
     config: runtimeConfig,
     envFile: environmentFile,
-    inspectorPort: 19_234,
-    port: runtimePort,
+    migrate: true,
     statePath,
   });
   t.after(async () => {
     await stopWorker(runtime);
     await rm(directory, { recursive: true, force: true });
   });
-  await waitForHealth(runtime, runtimePort, apiKey, "combined runtime");
+  await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
 
   const cliEnvironment = {
     KEEPR_API_KEY: apiKey,
-    KEEPR_API_URL: `http://127.0.0.1:${runtimePort}`,
+    KEEPR_API_URL: runtime.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${runtimePort}`,
+    KEEPR_INGESTION_URL: runtime.url,
   };
   const initialStatus = await runCli(["status", "--json"], cliEnvironment);
   assert.equal(initialStatus.code, 0, initialStatus.stderr);
@@ -325,10 +322,14 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     seededCardsBytes,
     seededPrintingsBytes,
   ] = await Promise.all([
-    apiJson(`/v1/cards/${seededCard.id}?include=evidence`, apiKey),
-    apiJson(`/v1/printings/${seededPrinting.id}?include=evidence`, apiKey),
-    exportComponent(seededRevision, "cards", apiKey),
-    exportComponent(seededRevision, "printings", apiKey),
+    apiJson(runtime.url, `/v1/cards/${seededCard.id}?include=evidence`, apiKey),
+    apiJson(
+      runtime.url,
+      `/v1/printings/${seededPrinting.id}?include=evidence`,
+      apiKey,
+    ),
+    exportComponent(runtime.url, seededRevision, "cards", apiKey),
+    exportComponent(runtime.url, seededRevision, "printings", apiKey),
   ]);
   const seededExportedCard = seededCardsBytes.trim().split("\n").map(
     (line) => JSON.parse(line),
@@ -339,6 +340,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.notEqual(seededExportedCard, undefined);
   assert.notEqual(seededExportedPrinting, undefined);
   const seededManifest = await apiJson(
+    runtime.url,
     `/v1/catalogue-exports/${seededRevision}`,
     apiKey,
   );
@@ -427,17 +429,19 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.notEqual(luffy, undefined);
   for (const query of ["uffy", "ＵＦＦＹ", "op01-001"]) {
     const result = await apiJson(
+      runtime.url,
       `/v1/cards?q=${encodeURIComponent(query)}`,
       apiKey,
     );
     assert.equal(result.data.some((candidate) => candidate.id === luffy.id), true);
   }
-  const oneCharacter = await apiJson("/v1/cards?q=D", apiKey);
+  const oneCharacter = await apiJson(runtime.url, "/v1/cards?q=D", apiKey);
   assert.equal(
     oneCharacter.data.some((candidate) => candidate.id === luffy.id),
     true,
   );
   const punctuationMustRemainExact = await apiJson(
+    runtime.url,
     `/v1/cards?q=${encodeURIComponent("DON cards")}`,
     apiKey,
   );
@@ -448,24 +452,25 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     false,
   );
   const fieldsMustNotBeConcatenated = await apiJson(
+    runtime.url,
     `/v1/cards?q=${encodeURIComponent("OP01-001 Monkey")}`,
     apiKey,
   );
   assert.equal(fieldsMustNotBeConcatenated.data.length, 0);
   const maximumQuery = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/cards?q=${"x".repeat(500)}`,
+    `${runtime.url}/v1/cards?q=${"x".repeat(500)}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(maximumQuery.status, 200, await maximumQuery.text());
   const oversizedQuery = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/cards?q=${"x".repeat(501)}`,
+    `${runtime.url}/v1/cards?q=${"x".repeat(501)}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   assert.equal(oversizedQuery.status, 400);
   assert.equal((await oversizedQuery.json()).code, "invalid_parameter");
 
   const cardResponse = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}` +
+    `${runtime.url}/v1/cards/${card.id}` +
       "?include=printings,evidence,disagreements",
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
@@ -511,7 +516,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const cardEtag = cardResponse.headers.get("etag");
   assert.notEqual(cardEtag, null);
   const conditionalCard = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}` +
+    `${runtime.url}/v1/cards/${card.id}` +
       "?include=printings,evidence,disagreements",
     {
       headers: {
@@ -524,13 +529,14 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.equal(conditionalCard.status, 304, conditionalCardBody);
   assert.equal(conditionalCardBody, "");
   const invalidCardInclude = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/cards/${card.id}?include=unknown`,
+    `${runtime.url}/v1/cards/${card.id}?include=unknown`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   const invalidCardIncludeBody = await invalidCardInclude.json();
   assert.equal(invalidCardInclude.status, 400);
   assert.equal(invalidCardIncludeBody.code, "invalid_parameter");
   const printingRead = await apiJson(
+    runtime.url,
     `/v1/printings/${printing.id}?include=evidence`,
     apiKey,
   );
@@ -557,6 +563,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   assert.deepEqual(printingRead.included, seededPrintingRead.included);
   assert.deepEqual(printingRead.provenance, seededPrintingRead.provenance);
   const manifest = await apiJson(
+    runtime.url,
     `/v1/catalogue-exports/${revisionId}`,
     apiKey,
   );
@@ -579,10 +586,10 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
 
   const [cardsBytes, printingsBytes, errataBytes, relationshipBytes] =
     await Promise.all([
-    exportComponent(revisionId, "cards", apiKey),
-    exportComponent(revisionId, "printings", apiKey),
-    exportComponent(revisionId, "errata", apiKey),
-    exportComponent(revisionId, "relationships", apiKey),
+    exportComponent(runtime.url, revisionId, "cards", apiKey),
+    exportComponent(runtime.url, revisionId, "printings", apiKey),
+    exportComponent(runtime.url, revisionId, "errata", apiKey),
+    exportComponent(runtime.url, revisionId, "relationships", apiKey),
   ]);
   const exportedCard = cardsBytes.trim().split("\n").map((line) =>
     JSON.parse(line)
@@ -743,6 +750,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   );
   assert.notEqual(refreshRevision, repeatedRevision);
   const refreshedCardRead = await apiJson(
+    runtime.url,
     `/v1/cards/${card.id}?include=evidence`,
     apiKey,
   );
@@ -755,11 +763,13 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     accumulatedErrataEvidenceIds,
   );
   const refreshedCardsBytes = await exportComponent(
+    runtime.url,
     refreshRevision,
     "cards",
     apiKey,
   );
   const refreshedRelationshipsBytes = await exportComponent(
+    runtime.url,
     refreshRevision,
     "relationships",
     apiKey,
@@ -820,6 +830,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     runtime,
   );
   const carriedCardRead = await apiJson(
+    runtime.url,
     `/v1/cards/${card.id}?include=evidence`,
     apiKey,
   );
@@ -838,6 +849,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     accumulatedErrataEvidenceIds,
   );
   const carriedCardsBytes = await exportComponent(
+    runtime.url,
     omissionRevision,
     "cards",
     apiKey,
@@ -962,7 +974,9 @@ async function resumeAndWait(runId, environment, runtime) {
     environment,
   );
   assert.equal(resumed.code, 0, resumed.stderr);
-  return waitForRunState(runId, "parsing", environment, runtime);
+  return waitForRunState(runId, "parsing", environment, runtime, {
+    deadlineMs: 20_000,
+  });
 }
 
 async function reconcileAndWait(
@@ -1070,99 +1084,9 @@ async function writeRuntimeConfig(
   await writeFile(destination, JSON.stringify(config));
 }
 
-function applyMigrations(config, statePath) {
-  const result = spawnSync(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      statePath,
-    ],
-    {
-      cwd: root,
-      env: {
-        ...processEnvWithoutSecrets(),
-        CI: "1",
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      "--env-file",
-      envFile,
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: {
-        ...processEnvWithoutSecrets(),
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  return { process: child, getOutput: () => output };
-}
-
-async function waitForHealth(worker, port, key, name) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      throw new Error(`${name} exited\n${worker.getOutput()}`);
-    }
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // Wrangler has not started accepting requests.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`${name} did not become healthy\n${worker.getOutput()}`);
-}
-
-async function apiJson(pathname, apiKey) {
+async function apiJson(baseUrl, pathname, apiKey) {
   const response = await fetch(
-    `http://127.0.0.1:${runtimePort}${pathname}`,
+    `${baseUrl}${pathname}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   const text = await response.text();
@@ -1170,92 +1094,13 @@ async function apiJson(pathname, apiKey) {
   return JSON.parse(text);
 }
 
-async function waitForRunState(id, expected, environment, runtime) {
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", id, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      const document = JSON.parse(shown.stdout);
-      if (document.state === expected) return document;
-      if (document.state === "failed") {
-        throw new Error(`${shown.stdout}\n${runtime.getOutput()}`);
-      }
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Run ${id} did not reach ${expected}\n${runtime.getOutput()}`);
-}
-
-async function waitForFailedRun(id, environment, runtime) {
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", id, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      const document = JSON.parse(shown.stdout);
-      if (document.state === "failed") return document;
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`Run ${id} did not fail closed\n${runtime.getOutput()}`);
-}
-
-async function exportComponent(revisionId, component, apiKey) {
+async function exportComponent(baseUrl, revisionId, component, apiKey) {
   const response = await fetch(
-    `http://127.0.0.1:${runtimePort}/v1/catalogue-exports/${revisionId}/components/${component}`,
+    `${baseUrl}/v1/catalogue-exports/${revisionId}/components/${component}`,
     { headers: { authorization: `Bearer ${apiKey}` } },
   );
   if (response.status !== 200) {
     assert.equal(response.status, 200, await response.text());
   }
   return gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8");
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveRun) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: { ...processEnvWithoutSecrets(), ...environment },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => {
-      resolveRun({ code, stdout, stderr });
-    });
-  });
-}
-
-function processEnvWithoutSecrets() {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return environment;
 }

@@ -11,12 +11,11 @@ import {
   startWorker,
   stopWorker,
   waitForHealth,
+  waitForRunState,
 } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const ingestionPort = 24_788;
-const apiPort = 24_789;
-const sourcePort = 24_790;
+const runStateDeadline = { deadlineMs: 25_000 };
 const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
 const failClosedCases = [
   "capped-leaf",
@@ -78,17 +77,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   }];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
-  const source = startWorker({
+  const source = await startWorker({
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
-    inspectorPort: 25_229,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 25_230,
-    port: ingestionPort,
     statePath,
   });
   t.after(async () => {
@@ -96,19 +91,11 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
-    waitForHealth(
-      `http://127.0.0.1:${sourcePort}/catalogue-discovery`,
-      "",
-      source,
-    ),
-    waitForHealth(
-      `http://127.0.0.1:${ingestionPort}/health`,
-      administrationKey,
-      ingestion,
-    ),
+    waitForHealth(`${source.url}/catalogue-discovery`, "", source),
+    waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion),
   ]);
   const cliEnvironment = {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
   for (const [index, failureCase] of failClosedCases.entries()) {
@@ -129,6 +116,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "failed",
       cliEnvironment,
       ingestion,
+      runStateDeadline,
     );
     assert.equal(rejected.failure_code, "source_parse_failed", failureCase);
   }
@@ -149,7 +137,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     cliEnvironment,
   );
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(runId, "awaiting_approval", cliEnvironment, ingestion);
+  await waitForRunState(
+    runId,
+    "awaiting_approval",
+    cliEnvironment,
+    ingestion,
+    runStateDeadline,
+  );
 
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", runId, "--json"],
@@ -199,6 +193,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     "awaiting_approval",
     cliEnvironment,
     ingestion,
+    runStateDeadline,
   );
   const errataInspected = await runCli(
     ["candidate", "inspect", "--run-id", errataRunId, "--json"],
@@ -221,25 +216,16 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const revisionId = JSON.parse(errataApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 25_231,
-    port: apiPort,
     statePath,
   });
   t.after(() => stopWorker(api));
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
   const headers = { authorization: `Bearer ${apiKey}` };
-  const catalogueResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue`,
-    { headers },
-  );
+  const catalogueResponse = await fetch(`${api.url}/v1/catalogue`, { headers });
   assert.equal(catalogueResponse.status, 200);
   const catalogue = await catalogueResponse.json();
   assert.deepEqual(
@@ -276,7 +262,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "distribution-contexts",
       "relationships",
     ].map((component) =>
-      exportRecords(apiPort, apiKey, revisionId, component)
+      exportRecords(api.port, apiKey, revisionId, component)
     ));
   assert.equal(cards.length, 1);
   assert.equal(printings.length, 1);
@@ -333,11 +319,11 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   );
   const [cardCollection, printingCollection, productCollection, legalityStatus] =
     await Promise.all([
-      authenticatedApiJson(apiPort, apiKey, "/v1/cards"),
-      authenticatedApiJson(apiPort, apiKey, "/v1/printings"),
-      authenticatedApiJson(apiPort, apiKey, "/v1/products"),
+      authenticatedApiJson(api.port, apiKey, "/v1/cards"),
+      authenticatedApiJson(api.port, apiKey, "/v1/printings"),
+      authenticatedApiJson(api.port, apiKey, "/v1/products"),
       authenticatedApiJson(
-        apiPort,
+        api.port,
         apiKey,
         `/v1/legality-status?card_id=${encodeURIComponent(card.id)}` +
           "&on=2026-08-04&format=standard&region=EN-OCEANIA",
@@ -440,24 +426,4 @@ async function authenticatedApiJson(port, apiKey, path) {
     assert.fail(`${path}: ${response.status} ${await response.text()}`);
   }
   return response.json();
-}
-
-async function waitForRunState(runId, expectedState, environment, worker) {
-  const deadline = Date.now() + 25_000;
-  let last = null;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", runId, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      last = JSON.parse(shown.stdout);
-      if (last.state === expectedState) return last;
-      if (last.state === "failed") break;
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-  }
-  throw new Error(
-    `Run did not reach ${expectedState}: ${JSON.stringify(last)}\n${worker.getOutput()}`,
-  );
 }

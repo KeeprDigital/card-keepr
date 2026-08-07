@@ -11,12 +11,10 @@ import {
   startWorker,
   stopWorker,
   waitForHealth,
+  waitForRunState as awaitRunState,
 } from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const ingestionPort = 28_788;
-const apiPort = 28_789;
-const sourcePort = 28_790;
 
 test("the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(
@@ -56,17 +54,13 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   }];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
-  const source = startWorker({
+  const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
-    inspectorPort: 29_229,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  let ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 29_230,
-    port: ingestionPort,
     statePath,
   });
   let api = null;
@@ -79,19 +73,11 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
-    waitForHealth(
-      `http://127.0.0.1:${sourcePort}/catalogue-discovery`,
-      "",
-      source,
-    ),
-    waitForHealth(
-      `http://127.0.0.1:${ingestionPort}/health`,
-      administrationKey,
-      ingestion,
-    ),
+    waitForHealth(`${source.url}/catalogue-discovery`, "", source),
+    waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion),
   ]);
   const cliEnvironment = {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
 
@@ -229,7 +215,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   );
   assert.notEqual(exactLeafObservationSet, undefined);
   const exactLeafEvidenceResponse = await fetch(
-    `http://127.0.0.1:${ingestionPort}/v1/source-observation-sets/${exactLeafObservationSet.id}/content`,
+    `${ingestion.url}/v1/source-observation-sets/${exactLeafObservationSet.id}/content`,
     { headers: { authorization: `Bearer ${administrationKey}` } },
   );
   assert.equal(exactLeafEvidenceResponse.status, 200);
@@ -303,21 +289,15 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
-  api = startWorker({
+  api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 29_231,
-    port: apiPort,
     statePath,
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
   const headers = { authorization: `Bearer ${apiKey}` };
   const manifestResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue-exports/${revisionId}`,
+    `${api.url}/v1/catalogue-exports/${revisionId}`,
     { headers },
   );
   assert.equal(manifestResponse.status, 200);
@@ -334,14 +314,14 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     "the combined adapter must refresh its catalogue and standalone Errata areas",
   );
   const cardsResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/cards?game=digimon&card_number=BT99-001`,
+    `${api.url}/v1/cards?game=digimon&card_number=BT99-001`,
     { headers },
   );
   assert.equal(cardsResponse.status, 200);
   const cardsDocument = await cardsResponse.json();
   assert.equal(cardsDocument.data.length, 1);
   const detailResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/cards/${cardsDocument.data[0].id}?include=printings`,
+    `${api.url}/v1/cards/${cardsDocument.data[0].id}?include=printings`,
     { headers },
   );
   assert.equal(detailResponse.status, 200);
@@ -397,7 +377,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
 
   const [cards, printings, relationships, errata] = await Promise.all(
     ["cards", "printings", "relationships", "errata"].map((component) =>
-      exportRecords(apiPort, apiKey, revisionId, component)
+      exportRecords(api.port, apiKey, revisionId, component)
     ),
   );
   assert.equal(cards.length, 1);
@@ -453,44 +433,23 @@ function digimonPlan(marker) {
   };
 }
 
+// A run that never reaches its expected state is diagnosed with the candidate
+// inspection the CLI would have produced, which names the blocking evidence.
 async function waitForRunState(runId, expectedState, environment, worker) {
-  const deadline = Date.now() + 30_000;
-  let lastDocument = null;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", runId, "--json"],
+  try {
+    return await awaitRunState(runId, expectedState, environment, worker, {
+      deadlineMs: 30_000,
+    });
+  } catch (error) {
+    const inspected = await runCli(
+      ["candidate", "inspect", "--run-id", runId, "--json"],
       environment,
     );
-    if (shown.code === 0) {
-      lastDocument = JSON.parse(shown.stdout);
-      if (lastDocument.state === expectedState) return lastDocument;
-      if (lastDocument.state === "failed") {
-        const inspected = await runCli(
-          ["candidate", "inspect", "--run-id", runId, "--json"],
-          environment,
-        );
-        lastDocument.candidate_inspection = inspected.code === 0
-          ? JSON.parse(inspected.stdout)
-          : { code: inspected.code, stdout: inspected.stdout };
-        break;
-      }
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+    error.message += `\ncandidate inspection: ${JSON.stringify(
+      inspected.code === 0
+        ? JSON.parse(inspected.stdout)
+        : { code: inspected.code, stdout: inspected.stdout },
+    )}`;
+    throw error;
   }
-  const summary = lastDocument === null
-    ? null
-    : {
-        state: lastDocument.state,
-        failure_code: lastDocument.failure_code,
-        failure_detail: lastDocument.failure_detail,
-        warnings: lastDocument.warnings,
-        snapshot_urls: lastDocument.snapshots?.map((snapshot) =>
-          snapshot.request?.url
-        ),
-        candidate_inspection: lastDocument.candidate_inspection,
-      };
-  throw new Error(
-    `Run did not reach ${expectedState}: ${JSON.stringify(summary)}\n` +
-      worker.getOutput(),
-  );
 }

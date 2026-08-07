@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import test from "node:test";
+import { runCli } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const productionTarget = {
@@ -1614,33 +1614,3 @@ test("CLI Card search uses the authenticated catalogue HTTP seam", async (t) => 
     authorization: "Bearer cli-api-test-key",
   });
 });
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          ...environment,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => {
-      resolveExit({ code, stdout, stderr });
-    });
-  });
-}

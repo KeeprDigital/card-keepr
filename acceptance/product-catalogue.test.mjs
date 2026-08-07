@@ -14,12 +14,10 @@ import {
   startWorker,
   stopWorker,
   waitForHealth,
+  waitForRunState as awaitRunState,
 } from "./fixtures/catalogue-runtime-harness.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const ingestionPort = 22_788;
-const apiPort = 22_789;
-const sourcePort = 22_790;
 
 test("the CLI publishes separated Product catalogue data consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(
@@ -116,17 +114,13 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   ];
   await writeFile(ingestionConfig, JSON.stringify(config));
 
-  const source = startWorker({
+  const source = await startWorker({
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
-    inspectorPort: 23_229,
-    port: sourcePort,
     statePath: join(directory, "source-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 23_230,
-    port: ingestionPort,
     statePath,
   });
   t.after(async () => {
@@ -134,19 +128,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     await rm(directory, { recursive: true, force: true });
   });
   await Promise.all([
-    waitForHealth(
-      `http://127.0.0.1:${sourcePort}/catalogue-discovery`,
-      "",
-      source,
-    ),
-    waitForHealth(
-      `http://127.0.0.1:${ingestionPort}/health`,
-      administrationKey,
-      ingestion,
-    ),
+    waitForHealth(`${source.url}/catalogue-discovery`, "", source),
+    waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion),
   ]);
   const cliEnvironment = {
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
   const collected = await runCli(
@@ -177,6 +163,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "awaiting_approval",
     cliEnvironment,
     ingestion,
+    statePath,
   );
   const inspected = await runCli(
     ["candidate", "inspect", "--run-id", collectedRun.id, "--json"],
@@ -338,6 +325,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "awaiting_approval",
     cliEnvironment,
     ingestion,
+    statePath,
   );
   const multiInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", multiRun.id, "--json"],
@@ -406,6 +394,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "awaiting_approval",
     cliEnvironment,
     ingestion,
+    statePath,
   );
   const carryInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", carryRun.id, "--json"],
@@ -439,24 +428,15 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   revisionId = JSON.parse(carryApproved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 23_231,
-    port: apiPort,
     statePath,
   });
   t.after(() => stopWorker(api));
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
   const headers = { authorization: `Bearer ${apiKey}` };
-  const catalogueResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/catalogue`,
-    { headers },
-  );
+  const catalogueResponse = await fetch(`${api.url}/v1/catalogue`, { headers });
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
   const successfulChecks =
@@ -489,7 +469,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     ),
   );
   const publishedProducts = await exportRecords(
-    apiPort,
+    api.port,
     apiKey,
     revisionId,
     "products",
@@ -504,7 +484,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.ok(cardBearing);
   const productId = productOnly.id;
   const productResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/products/${productId}?include=evidence`,
+    `${api.url}/v1/products/${productId}?include=evidence`,
     { headers },
   );
   assert.equal(productResponse.status, 200);
@@ -540,7 +520,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     /^srcobs_/u,
   );
   const printingResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/printings/${printingId}`,
+    `${api.url}/v1/printings/${printingId}`,
     { headers },
   );
   assert.equal(printingResponse.status, 200);
@@ -606,7 +586,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "cards",
       "printings",
     ].map((component) =>
-      exportRecords(apiPort, apiKey, revisionId, component),
+      exportRecords(api.port, apiKey, revisionId, component),
     ),
   );
   const exportSchema = JSON.parse(
@@ -656,7 +636,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
   const establishedOnePiece = currentOnePiece;
   const establishedOnePieceResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/products/${establishedOnePiece.id}?include=evidence`,
+    `${api.url}/v1/products/${establishedOnePiece.id}?include=evidence`,
     { headers },
   );
   assert.equal(establishedOnePieceResponse.status, 200);
@@ -745,7 +725,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "gundam-en-us",
   ]);
   const gundamPrintingResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/printings/${gundamPrinting.id}?include=evidence`,
+    `${api.url}/v1/printings/${gundamPrinting.id}?include=evidence`,
     { headers },
   );
   assert.equal(gundamPrintingResponse.status, 200);
@@ -775,16 +755,16 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
 
   await stopWorker(api);
-  const provenanceIngestion = startWorker({
+  const provenanceIngestion = await startWorker({
     config: ingestionConfig,
     envFile: ingestionEnv,
-    inspectorPort: 23_230,
-    port: ingestionPort,
+    inspectorPort: ingestion.inspectorPort,
+    port: ingestion.port,
     statePath,
   });
   t.after(() => stopWorker(provenanceIngestion));
   await waitForHealth(
-    `http://127.0.0.1:${ingestionPort}/health`,
+    `${provenanceIngestion.url}/health`,
     administrationKey,
     provenanceIngestion,
   );
@@ -816,6 +796,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "awaiting_approval",
     cliEnvironment,
     provenanceIngestion,
+    statePath,
   );
   const provenanceInspectionResult = await runCli(
     ["candidate", "inspect", "--run-id", provenanceRun.id, "--json"],
@@ -854,21 +835,17 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     JSON.parse(provenanceApproved.stdout).resulting_revision_id;
   await stopWorker(provenanceIngestion);
 
-  const provenanceApi = startWorker({
+  const provenanceApi = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 23_231,
-    port: apiPort,
+    inspectorPort: api.inspectorPort,
+    port: api.port,
     statePath,
   });
   t.after(() => stopWorker(provenanceApi));
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    provenanceApi,
-  );
+  await waitForHealth(`${provenanceApi.url}/health`, apiKey, provenanceApi);
   const codeLessProducts = await exportRecords(
-    apiPort,
+    provenanceApi.port,
     apiKey,
     codeLessRevisionId,
     "products",
@@ -882,7 +859,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     "the R2 export keeps the established Product identity across a code-less refresh",
   );
   const codeLessOnePieceResponse = await fetch(
-    `http://127.0.0.1:${apiPort}/v1/products/${codeLessOnePiece.id}?include=evidence`,
+    `${provenanceApi.url}/v1/products/${codeLessOnePiece.id}?include=evidence`,
     { headers },
   );
   assert.equal(codeLessOnePieceResponse.status, 200);
@@ -899,42 +876,25 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   );
 });
 
+// A run that never reaches its expected state is diagnosed against the
+// persisted collection tables, which record why each request stalled.
 async function waitForRunState(
   runId,
   expectedState,
   environment,
   worker,
+  statePath,
 ) {
-  const deadline = Date.now() + 40_000;
-  let lastDocument = null;
-  while (Date.now() < deadline) {
-    const shown = await runCli(
-      ["source", "show", "--run-id", runId, "--json"],
-      environment,
-    );
-    if (shown.code === 0) {
-      const document = JSON.parse(shown.stdout);
-      lastDocument = document;
-      if (document.state === expectedState) return document;
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  try {
+    return await awaitRunState(runId, expectedState, environment, worker, {
+      deadlineMs: 40_000,
+    });
+  } catch (error) {
+    error.message += `\npersisted: ${JSON.stringify(
+      await persistedRunDiagnostics(statePath, runId),
+    )}`;
+    throw error;
   }
-  throw new Error(
-    `Run did not reach ${expectedState}: ${JSON.stringify({
-      state: lastDocument?.state,
-      failure_code: lastDocument?.failure_code,
-      warnings: lastDocument?.warnings,
-      snapshot_urls: lastDocument?.snapshots?.map(({ request }) => request.url),
-      diagnostic_outcomes: lastDocument?.diagnostics?.map(
-        ({ request_id, outcome }) => ({ request_id, outcome }),
-      ),
-      evidence_plan_request_ids: lastDocument?.evidence_plans?.map(
-        ({ requests }) => requests.map(({ id }) => id),
-      ),
-      persisted: await persistedRunDiagnostics(worker.statePath, runId),
-    })}\n` +
-      worker.getOutput(),
-  );
 }
 
 async function persistedRunDiagnostics(statePath, runId) {

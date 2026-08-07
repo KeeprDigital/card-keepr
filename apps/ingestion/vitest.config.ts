@@ -9,7 +9,7 @@ import {
   generateKeyPairSync,
   timingSafeEqual,
 } from "node:crypto";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -46,6 +46,11 @@ import {
 const migrations = await readD1Migrations(
   resolve(import.meta.dirname, "../../migrations"),
 );
+// KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts suite (scheduled /
+// manually dispatched CI job) and keeps production source-host pacing so
+// stress measurements stay production-faithful. The default suite runs with
+// the immediate pacing override instead of sleeping ~1s per simulated fetch.
+const stressSuite = process.env.KEEPR_TEST_SUITE === "stress";
 const currentSchemaMigrationLevel = Number.parseInt(
   migrations.at(-1)?.name ?? "",
   10,
@@ -223,6 +228,13 @@ export default defineConfig({
             apiCredentialConsumerTestResponse,
         },
         bindings: {
+          SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
+          // The test suite is hermetic: it pins the placeholder resource
+          // identifiers its Cloudflare API mocks and fixtures assert on,
+          // independent of the provisioned production ids in wrangler.jsonc.
+          CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+          CATALOGUE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000001",
+          DISPOSABLE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000002",
           ADMINISTRATION_KEY: "vitest-administration-key",
           ADMINISTRATION_KEY_REPLACEMENT:
             "vitest-administration-key-replacement-slot",
@@ -1849,10 +1861,17 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ["apps/ingestion/test/**/*.spec.ts"],
-    // Workflow bindings and failure-injection state outlive Vitest's per-file
-    // storage isolation, so files must not share a pool process.
-    maxWorkers: 1,
+    include: stressSuite
+      ? ["apps/ingestion/test/**/*.stress.spec.ts"]
+      : ["apps/ingestion/test/**/*.spec.ts"],
+    exclude: stressSuite
+      ? [...configDefaults.exclude]
+      : [...configDefaults.exclude, "**/*.stress.spec.ts"],
+    // Failure-injection state in this config's outbound mock is shared across
+    // pool processes, and reconciliation files race Workerd polling deadlines
+    // when over-parallelized; two workers match the retired shard runner's
+    // proven concurrency.
+    maxWorkers: 2,
     hookTimeout: 30_000,
     testTimeout: 30_000,
   },

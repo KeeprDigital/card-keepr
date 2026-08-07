@@ -3,14 +3,17 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+} from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const apiPort = 18_787;
-const ingestionPort = 18_788;
 const apiSchema = JSON.parse(
   readFileSync(
     resolve(
@@ -48,149 +51,6 @@ const validateCatalogue = ajv.getSchema(
   `${apiSchema.$id}#/$defs/CatalogueDocument`,
 );
 
-async function waitForHealth(url, key, runtime, worker) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    if (worker.process.exitCode !== null) {
-      throw new Error(
-        `${runtime} Worker exited with code ${worker.process.exitCode}`,
-      );
-    }
-    try {
-      const response = await fetch(url, {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      if (response.ok) return;
-    } catch {
-      // The local Worker has not started accepting requests yet.
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-  }
-  throw new Error(`${runtime} Worker did not become healthy`);
-}
-
-function startWorker({ config, envFile, inspectorPort, port, statePath }) {
-  applyMigrations(config, statePath);
-  let output = "";
-  const child = spawn(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "dev",
-      "--config",
-      config,
-      "--env-file",
-      envFile,
-      "--local",
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--inspector-port",
-      String(inspectorPort),
-      "--persist-to",
-      statePath,
-      "--log-level",
-      "error",
-      "--show-interactive-dev-session",
-      "false",
-    ],
-    {
-      cwd: root,
-      env: {
-        ...processEnvWithoutSecrets(),
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  child.on("error", (error) => {
-    output += `${error.message}\n`;
-  });
-  return { process: child, getOutput: () => output };
-}
-
-function applyMigrations(config, statePath) {
-  const result = spawnSync(
-    resolve(root, "node_modules/.bin/wrangler"),
-    [
-      "d1",
-      "migrations",
-      "apply",
-      "CATALOGUE_DB",
-      "--local",
-      "--config",
-      config,
-      "--persist-to",
-      statePath,
-    ],
-    {
-      cwd: root,
-      env: {
-        ...processEnvWithoutSecrets(),
-        CI: "1",
-        WRANGLER_LOG_PATH: join(statePath, "logs"),
-      },
-      encoding: "utf8",
-    },
-  );
-  if (result.status !== 0) {
-    throw new Error(result.stderr || result.stdout);
-  }
-}
-
-function processEnvWithoutSecrets() {
-  const environment = { ...process.env };
-  delete environment.KEEPR_API_KEY;
-  delete environment.KEEPR_ADMINISTRATION_KEY;
-  return environment;
-}
-
-async function stopWorker(worker) {
-  if (worker.process.exitCode !== null) return;
-  worker.process.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => worker.process.once("exit", resolveExit)),
-    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
-  ]);
-  if (worker.process.exitCode === null) worker.process.kill("SIGKILL");
-}
-
-function runCli(arguments_, environment) {
-  return new Promise((resolveExit) => {
-    const child = spawn(
-      process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
-      {
-        cwd: root,
-        env: {
-          ...processEnvWithoutSecrets(),
-          ...environment,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("exit", (code) => resolveExit({ code, stdout, stderr }));
-  });
-}
-
 test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   const testDirectory = await mkdtemp(join(tmpdir(), "card-keepr-health-"));
   const apiKey = crypto.randomUUID();
@@ -204,18 +64,16 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
     }),
   ]);
 
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_229,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: "apps/ingestion/wrangler.jsonc",
     envFile: ingestionEnv,
-    inspectorPort: 19_230,
-    port: ingestionPort,
+    migrate: true,
     statePath: join(testDirectory, "ingestion-state"),
   });
   t.after(async () => {
@@ -224,18 +82,8 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
 
   try {
     await Promise.all([
-      waitForHealth(
-        `http://127.0.0.1:${apiPort}/health`,
-        apiKey,
-        "API",
-        api,
-      ),
-      waitForHealth(
-        `http://127.0.0.1:${ingestionPort}/health`,
-        administrationKey,
-        "ingestion",
-        ingestion,
-      ),
+      waitForHealth(`${api.url}/health`, apiKey, api),
+      waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion),
     ]);
   } catch (error) {
     throw new Error(
@@ -244,8 +92,8 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   }
 
   const cliEnvironment = {
-    KEEPR_API_URL: `http://127.0.0.1:${apiPort}`,
-    KEEPR_INGESTION_URL: `http://127.0.0.1:${ingestionPort}`,
+    KEEPR_API_URL: api.url,
+    KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_API_KEY: apiKey,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
@@ -294,10 +142,10 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   );
 
   const [apiRejectsAdminKey, ingestionRejectsApiKey] = await Promise.all([
-    fetch(`http://127.0.0.1:${apiPort}/health`, {
+    fetch(`${api.url}/health`, {
       headers: { authorization: `Bearer ${administrationKey}` },
     }),
-    fetch(`http://127.0.0.1:${ingestionPort}/health`, {
+    fetch(`${ingestion.url}/health`, {
       headers: { authorization: `Bearer ${apiKey}` },
     }),
   ]);
@@ -334,24 +182,18 @@ test("the API accepts an unauthenticated preflight for an exact allowed origin",
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_231,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+  const response = await fetch(`${api.url}/v1/catalogue`, {
     method: "OPTIONS",
     headers: {
       origin: "http://localhost:3000",
@@ -382,24 +224,18 @@ test("the API rejects a browser origin that only prefixes the allowed origin", a
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_232,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+  const response = await fetch(`${api.url}/v1/catalogue`, {
     headers: {
       authorization: `Bearer ${apiKey}`,
       origin: "http://localhost:3000.evil.example",
@@ -423,24 +259,18 @@ test("an allowed browser origin receives a CORS-shaped authentication problem", 
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_233,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+  const response = await fetch(`${api.url}/v1/catalogue`, {
     headers: { origin: "http://localhost:3000" },
   });
   const problem = await response.json();
@@ -464,26 +294,20 @@ test("catalogue requests return a stable problem after the per-IP limit", async 
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_234,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
   let response;
   for (let requestNumber = 1; requestNumber <= 301; requestNumber += 1) {
-    response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+    response = await fetch(`${api.url}/v1/catalogue`, {
       headers: {
         authorization: `Bearer ${apiKey}`,
         "cf-connecting-ip": "192.0.2.10",
@@ -504,26 +328,20 @@ test("Printing Image requests use their independent per-IP limit", async (t) => 
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_235,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
   const request = (clientIp) =>
     fetch(
-      `http://127.0.0.1:${apiPort}/v1/printing-images/image_test/content`,
+      `${api.url}/v1/printing-images/image_test/content`,
       {
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -565,26 +383,20 @@ test("administration requests return a stable problem after the per-IP limit", a
     `ADMINISTRATION_KEY=${administrationKey}\n`,
     { mode: 0o600 },
   );
-  const ingestion = startWorker({
+  const ingestion = await startWorker({
     config: "apps/ingestion/wrangler.jsonc",
     envFile: ingestionEnv,
-    inspectorPort: 19_236,
-    port: ingestionPort,
+    migrate: true,
     statePath: join(testDirectory, "ingestion-state"),
   });
   t.after(async () => {
     await stopWorker(ingestion);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${ingestionPort}/health`,
-    administrationKey,
-    "ingestion",
-    ingestion,
-  );
+  await waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion);
 
   let response;
   for (let requestNumber = 1; requestNumber <= 31; requestNumber += 1) {
-    response = await fetch(`http://127.0.0.1:${ingestionPort}/health`, {
+    response = await fetch(`${ingestion.url}/health`, {
       headers: {
         authorization: `Bearer ${administrationKey}`,
         "cf-connecting-ip": "192.0.2.30",
@@ -605,24 +417,18 @@ test("authenticated API responses expose the accepted browser headers", async (t
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_237,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+  const response = await fetch(`${api.url}/v1/catalogue`, {
     headers: {
       authorization: `Bearer ${apiKey}`,
       origin: "http://localhost:3000",
@@ -657,24 +463,18 @@ test("a preflight cannot request a method outside the accepted CORS contract", a
   const apiKey = crypto.randomUUID();
   const apiEnv = join(testDirectory, "api.env");
   await writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 });
-  const api = startWorker({
+  const api = await startWorker({
     config: "apps/api/wrangler.jsonc",
     envFile: apiEnv,
-    inspectorPort: 19_238,
-    port: apiPort,
+    migrate: true,
     statePath: join(testDirectory, "api-state"),
   });
   t.after(async () => {
     await stopWorker(api);
   });
-  await waitForHealth(
-    `http://127.0.0.1:${apiPort}/health`,
-    apiKey,
-    "API",
-    api,
-  );
+  await waitForHealth(`${api.url}/health`, apiKey, api);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/v1/catalogue`, {
+  const response = await fetch(`${api.url}/v1/catalogue`, {
     method: "OPTIONS",
     headers: {
       origin: "http://localhost:3000",
