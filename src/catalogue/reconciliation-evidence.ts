@@ -844,7 +844,7 @@ function isLegalitySurface(
   surface: string,
 ): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    (["one-piece-en@2", "one-piece-en@3"].includes(
+    (["one-piece-en@2", "one-piece-en@3", "one-piece-en@4"].includes(
       adapter.adapterVersion,
     ) && surface === "releases");
 }
@@ -996,7 +996,9 @@ export function validateGundamListingCollectionGraph(
   for (const input of inputs) {
     if (
       input.adapterVersion !== "gundam-en-asia@4" &&
-      input.adapterVersion !== "gundam-en-us@4"
+      input.adapterVersion !== "gundam-en-asia@5" &&
+      input.adapterVersion !== "gundam-en-us@4" &&
+      input.adapterVersion !== "gundam-en-us@5"
     ) continue;
     const retained = input.observations.flatMap((wrapped) => {
       const observation = isRecord(wrapped) && isRecord(wrapped.value)
@@ -1254,7 +1256,8 @@ function assertClosedRequestGraph(
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
         const strictFusionIdentity = row.adapter_version ===
-            "fusion-world-en@4"
+              "fusion-world-en@4" ||
+            row.adapter_version === "fusion-world-en@5"
           ? observation.value.listing_identity_evidence
           : undefined;
         const identity = strictFusionIdentity ??
@@ -1271,9 +1274,13 @@ function assertClosedRequestGraph(
           : null;
         const prior = listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
-          const compatible = adapter.adapterVersion === "one-piece-en@3"
+          const compatible = ["one-piece-en@3", "one-piece-en@4"].includes(
+              adapter.adapterVersion,
+            )
             ? prior.semantic === semantic
-            : adapter.adapterVersion === "fusion-world-en@4"
+            : ["fusion-world-en@4", "fusion-world-en@5"].includes(
+                adapter.adapterVersion,
+              )
               ? prior.canonical === canonical
               : false;
           if (!compatible) {

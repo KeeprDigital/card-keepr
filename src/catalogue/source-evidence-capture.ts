@@ -716,6 +716,32 @@ export async function parseCapturedRequest(
           discovery.discoveryObservationSetId,
           complete,
         );
+      } else {
+        // A catalogue-complete adapter whose finished discovery derives an
+        // empty Official Source Collection Plan must fail closed here with a
+        // specific code instead of reporting structural completeness and
+        // dying much later at printing reconciliation.
+        const outstanding = await database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM source_requests
+             WHERE ingestion_run_id = ?
+               AND request_id LIKE ?
+               AND request_id != ?
+               AND state IN ('pending', 'captured')`,
+          )
+          .bind(
+            run.id,
+            `${evidencePlan.source_lineage}:%`,
+            sourceRequest.request_id,
+          )
+          .first<{ count: number }>();
+        if (outstanding === null || outstanding.count === 0) {
+          throw new AdministrationProblem(
+            422,
+            "official_collection_plan_empty",
+            "Official Source discovery completed without deriving any Official Source Collection Plan requests.",
+          );
+        }
       }
     }
     await database
