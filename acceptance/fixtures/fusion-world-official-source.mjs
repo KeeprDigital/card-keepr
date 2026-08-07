@@ -7,6 +7,10 @@ import {
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
 const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
+// fusion-world-en@5 partitions the card search by publisher category
+// ("Filter by series") instead of card_type/colour/cost checkboxes.
+const selectedCategory = "583301";
+const siblingCategory = "583302";
 let activeScenarioMarker = fixtureMarker;
 
 export default {
@@ -35,43 +39,25 @@ export default {
       requestUrl.pathname === "/fw/en/cardlist/detail.php" &&
       requestRole === "detail"
     ) {
-      return htmlResponse(response, fusionWorldCardDetailPage(scenarioMarker));
+      return htmlResponse(
+        response,
+        fusionWorldCardDetailPage(requestUrl, scenarioMarker),
+      );
     }
     if (
       !marker?.startsWith(fixtureMarker) ||
       ![
-        "card-search",
         "products",
         "releases",
         "legality-current",
         "legality-history",
-        "errata",
       ].includes(surface) ||
-      (surface === "errata" && marker !== `${fixtureMarker}-errata`) ||
       !response.headers.get("content-type")?.startsWith("text/html")
     ) {
       return response;
     }
 
     const html = await response.text();
-    if (surface === "errata" && marker === `${fixtureMarker}-errata`) {
-      return htmlResponse(
-        response,
-        `<html><title>BANDAI DRAGON BALL CARD ERRATA</title><main>
-          <article class="erratum" data-erratum-id="fusion-world-erratum-fb99-001">
-            <dl>
-              <dt>Card Number</dt><dd>FB99-001</dd>
-              <dt>Published On</dt><dd>2026-07-15</dd>
-              <dt>Effective From</dt><dd>2026-07-15</dd>
-              <dt>Before</dt><dd>Official printed rules</dd>
-              <dt>After</dt><dd>Official corrected rules</dd>
-              <dt>Note</dt><dd>The corrected wording applies from the published date.</dd>
-            </dl>
-            <img src="https://www.dbs-cardgame.com/fw/images/FB99-001-errata.png">
-          </article>
-        </main></html>`,
-      );
-    }
     const script = html.match(new RegExp(
       `<script type="application/json" id="fusion-world-card-game-${surface}-data">([\\s\\S]*?)</script>`,
       "u",
@@ -79,9 +65,7 @@ export default {
     if (script === null) return response;
 
     const payload = JSON.parse(script[1]);
-    if (surface === "card-search") {
-      completeCardSearchPayload(payload, marker);
-    } else if (surface === "products") {
+    if (surface === "products") {
       payload.result.partitions
         .find(({ bucket }) => bucket === "coming-soon")
         .entries.push(comingSoonProduct());
@@ -100,9 +84,7 @@ export default {
         },
       });
       payload.events.partitions[0].total += 1;
-    } else if (
-      surface === "legality-current" || surface === "legality-history"
-    ) {
+    } else {
       payload.declared_record_count = 1;
       payload.partition.total = 1;
       payload.entries = [fusionWorldLegalityRule(surface)];
@@ -117,105 +99,152 @@ export default {
   },
 };
 
-function completeCardSearchPayload(payload, marker) {
-  const detail = payload.detail_pages[0];
-  const locator = `${detail.card_number}_p2`;
-  detail.detail_path = locator;
-  detail.variant = "_p2";
-  payload.result.partitions[0].entries[0].detail = locator;
-
-  const repeated = structuredClone(payload.result.partitions[0].entries[0]);
-  payload.result.partitions[1].entries = [repeated];
-  payload.result.partitions[1].total = 1;
-
-  if (marker === `${fixtureMarker}-capped-leaf`) {
-    payload.result.partitions[0].result_cap = "Too many search results";
-  } else if (marker === `${fixtureMarker}-mismatched-detail`) {
-    detail.card_number = "FB99-999";
-  } else if (marker === `${fixtureMarker}-missing-leader-face`) {
-    detail.image_urls = detail.image_urls.filter(({ role }) => role !== "back");
-  } else if (marker === `${fixtureMarker}-conflicting-locator`) {
-    const conflicting = structuredClone(
-      payload.result.partitions[0].entries[0],
-    );
-    conflicting.number = "FB99-999";
-    payload.result.partitions[0].entries.push(conflicting);
-    payload.result.partitions[0].total = 2;
-  }
-}
-
 function fusionWorldCardSearchPage(url, marker) {
-  const facets = `<section class="searchColSet">
-    <input type="checkbox" name="card_type[]" value="Leader">
-    <input type="checkbox" name="color[]" value="Red">
-    <input type="checkbox" name="cost[]" value="1">
-  </section>`;
-  const completeLeaf =
-    url.searchParams.getAll("card_type[]").length === 1 &&
-    url.searchParams.getAll("color[]").length === 1 &&
-    url.searchParams.getAll("cost[]").length === 1;
+  const category = url.searchParams.get("category[0]");
+  const completeLeaf = url.searchParams.get("search") === "true" &&
+    category !== null;
   if (!completeLeaf) {
     return `<html><title>BANDAI DRAGON BALL CARD search</title>
-      ${facets}<main><article>Official card search filters.</article></main>
+      ${categoryFacet([selectedCategory, siblingCategory], null)}
+      <main><article>Official card search filters.</article></main>
     </html>`;
   }
-  const entry = (number, label) => `<li class="cardItem">
-    <a href="javascript:void(0);" data-card-number="${number}"
-       data-src="detail.php?card_no=FB99-001&amp;p=_p2">
-      <img src="../../images/cards/card/noimage.webp"
-           data-src="../../images/cards/card/en/FB99-001_p2.webp"
-           alt="${number} ${label}">
-    </a>
-  </li>`;
-  const conflicting = marker === `${fixtureMarker}-conflicting-locator`
-    ? entry("FB99-999", "Conflicting Leader")
-    : "";
-  const cap = marker === `${fixtureMarker}-capped-leaf`
-    ? "<p>More than 1,000 results were capped</p>"
-    : "";
-  return `<html><title>BANDAI DRAGON BALL CARD search</title>${facets}
-    <main>${cap}<div class="resultTxt">Result<span class="num">1</span>cards</div>
-      <ul>${entry("FB99-001", "Fusion Leader")}${conflicting}</ul>
+  const capped = marker === `${fixtureMarker}-capped-leaf` &&
+    category === siblingCategory;
+  const conflicting = marker === `${fixtureMarker}-conflicting-locator` &&
+    category === selectedCategory;
+  const entries = [
+    listingEntry("FB99-001", "_p2", "Fusion Leader"),
+    ...(conflicting
+      // The same full locator claimed by a second, disagreeing Card number.
+      ? [listingEntry("FB99-001", "_p2", "Conflicting Leader", "FB99-999")]
+      : []),
+  ];
+  // A capped leaf still offers no further category to descend into, so its
+  // result cap can never be resolved by another request.
+  const categories = capped ? [siblingCategory] : [
+    selectedCategory,
+    siblingCategory,
+  ];
+  return `<html><title>BANDAI DRAGON BALL CARD search</title>
+    ${categoryFacet(categories, category)}
+    <main>
+      ${capped ? "<p>More than 1,000 results were capped</p>" : ""}
+      <div class="resultCol" id="cardResult">
+        <div class="resultTxt">Result<span class="num">1</span>cards</div>
+        <div class="cardCol"><ul>${entries.join("")}</ul></div>
+      </div>
     </main>
   </html>`;
 }
 
-function fusionWorldCardDetailPage(marker) {
+function categoryFacet(categories, active) {
+  const labels = {
+    [selectedCategory]: "STORY BOOSTER 99 [FB99]",
+    [siblingCategory]: "MANGA BOOSTER 99 [SB99]",
+  };
+  const option = (value) =>
+    `<li><a href="javascript:void(0);" data-val="${value}" class="${
+      value === active ? "is-active" : ""
+    }">${labels[value]}</a></li>`;
+  return `<section class="searchColSet searchColSet-product">
+      <h5>Filter by series</h5>
+      <div class="filterList"><ul class="filterListItems">
+        <li><a href="javascript:void(0);" data-val="" class="">ALL</a></li>
+        ${categories.map(option).join("")}
+      </ul></div>
+    </section>`;
+}
+
+function listingEntry(cardNumber, variant, name, altCardNumber = cardNumber) {
+  return `<li class="cardItem"><a href="javascript:void(0);" data-fancybox="cards" data-type="iframe" data-src="detail.php?card_no=${cardNumber}&amp;p=${variant}" class="cardStr"><img class="lazy" src="../../images/cards/card/noimage.webp" data-src="../../images/cards/card/en/${cardNumber}_f${variant}.webp" alt="${altCardNumber} ${name}"></a></li>`;
+}
+
+function fusionWorldCardDetailPage(url, marker) {
   const cardNumber = marker === `${fixtureMarker}-mismatched-detail`
     ? "FB99-999"
-    : "FB99-001";
-  const back = marker === `${fixtureMarker}-missing-leader-face`
+    : url.searchParams.get("card_no") ?? "FB99-001";
+  const variant = url.searchParams.get("p") ?? "";
+  const backImage = marker === `${fixtureMarker}-missing-leader-face`
     ? ""
-    : `<section class="card-face" data-face="back">
-        <img src="/fw/images/cards/FB99-001_p2-back.png">
-        <dl><dt>Name</dt><dd>Fusion Leader Back</dd></dl>
-        <dl><dt>Power</dt><dd>15000</dd></dl>
-        <dl><dt>Special Trait</dt><dd>Test</dd></dl>
-        <dl><dt>Skill</dt><dd>Official back skill</dd></dl>
-      </section>`;
-  return `<html><main data-card-id="FB99-001_p2">
-    <h1>Fusion Leader</h1>
-    <dl><dt>Card Number</dt><dd>${cardNumber}</dd></dl>
-    <dl><dt>Card Type</dt><dd>Leader</dd></dl>
-    <dl><dt>Color</dt><dd>Red</dd></dl>
-    <dl><dt>Cost</dt><dd>1</dd></dl>
-    <dl><dt>Specified Cost</dt><dd>Red 1</dd></dl>
-    <dl><dt>Power</dt><dd>10000</dd></dl>
-    <dl><dt>Combo Power</dt><dd>5000</dd></dl>
-    <dl><dt>Special Trait</dt><dd>Test</dd></dl>
-    <dl><dt>Effect</dt><dd>Official printed rules</dd></dl>
-    <a href="/fw/en/products/" data-product-code="FB-RAW-01">
-      Fusion World Raw Product
-    </a>
-    <section class="card-face" data-face="front">
-      <img src="/fw/images/cards/FB99-001_p2-front.png">
-      <dl><dt>Name</dt><dd>Fusion Leader Front</dd></dl>
-      <dl><dt>Power</dt><dd>10000</dd></dl>
-      <dl><dt>Special Trait</dt><dd>Test</dd></dl>
-      <dl><dt>Skill</dt><dd>Official front skill</dd></dl>
-    </section>
-    ${back}
-  </main></html>`;
+    : `<div class="cardImageImg img-back">
+                  <img src="../../images/cards/card/en/FB99-001_b${variant}.webp" alt="FB99-001 Fusion Leader">
+                </div>`;
+  return `<html><title>BANDAI DRAGON BALL CARD detail</title>
+  <main class="mainCol"><article class="article cardDetailPageCol">
+    <div class="cardDetailPageContent">
+      <div class="cardNoCol">
+        <div class="cardNo">${cardNumber}</div>
+        <div class="rarity">L</div>
+        <div class="frontBack">FRONT</div>
+      </div>
+      <div class="nameCol">
+        <h1 class="cardName is-back">Fusion Leader Back</h1>
+        <h1 class="cardName is-front">Fusion Leader Front</h1>
+      </div>
+      <div class="cardCol"><div class="cardColInner"><div class="cardColBox">
+        <div class="cardImage mode-front">
+          <div class="cardImageImg img-front">
+            <img src="../../images/cards/card/en/FB99-001_f${variant}.webp" alt="FB99-001 Fusion Leader">
+          </div>
+          ${backImage}
+        </div>
+      </div></div></div>
+      <div class="cardDataCol"><div class="cardData">
+        <div class="cardDataRow">
+          <div class="cardDataCell">
+            <h6>Card type</h6>
+            <div class="data">LEADER</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Color</h6>
+            <div class="data color-red"><div class="colValue" data-color="Red">Red</div></div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Cost</h6>
+            <div class="data">1</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Specified cost</h6>
+            <div class="data costIconCol"><span class="costIcon costIcon-red">R</span></div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Power</h6>
+            <div class="data is-front">10000</div>
+            <div class="data is-back">15000</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Combo power</h6>
+            <div class="data">5000</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell isTraits">
+            <h6>Special Traits</h6>
+            <div class="data is-front">Test</div>
+            <div class="data is-back">Test</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell isSkills">
+            <h6>Skills</h6>
+            <div class="data dataSmall is-front dataEffect">Official front skill</div>
+            <div class="data dataSmall is-back dataEffect">Official back skill</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell">
+            <h6>Where to get it</h6>
+            <div class="data dataSmall">Fusion World Raw Product</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="informationCol">
+        <h4>Products</h4>
+        <div class="productsCol"><div class="productName">Fusion World Raw Product</div></div>
+      </div>
+    </div>
+  </article></main></html>`;
 }
 
 function comingSoonProduct() {

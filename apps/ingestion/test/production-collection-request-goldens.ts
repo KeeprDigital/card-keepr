@@ -9,7 +9,8 @@ export const fusionWorldProductionCollectionRequests = [
   {
     id: "fusion-world-en:card-search",
     method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+    url:
+      "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     headers: { accept: "text/html" },
   },
   {
@@ -38,18 +39,12 @@ export const fusionWorldProductionCollectionRequests = [
       "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
     headers: { accept: "text/html" },
   },
-  {
-    id: "fusion-world-en:errata",
-    method: "GET",
-    url: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
-    headers: { accept: "text/html" },
-  },
 ] satisfies readonly ProductionCollectionRequest[];
 export const onePieceProductionCollectionRequests = [
   {
     id: "one-piece-en:card-list",
     method: "GET",
-    url: "https://en.onepiece-cardgame.com/cardlist/",
+    url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
     headers: { accept: "text/html" },
   },
   {
@@ -67,13 +62,13 @@ export const onePieceProductionCollectionRequests = [
   {
     id: "one-piece-en:restrictions",
     method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/restriction/",
+    url: "https://en.onepiece-cardgame.com/news/restriction.html",
     headers: { accept: "text/html" },
   },
   {
     id: "one-piece-en:block-policy",
     method: "GET",
-    url: "https://en.onepiece-cardgame.com/rules/block_icon/",
+    url: "https://en.onepiece-cardgame.com/topics/013.php",
     headers: { accept: "text/html" },
   },
   {

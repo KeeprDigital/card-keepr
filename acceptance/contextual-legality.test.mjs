@@ -146,7 +146,7 @@ test("the public CLI fails closed for incomplete production source plans", async
     [
       "source", "collect", "--game", "gundam",
       "--lineage", "gundam-en-asia",
-      "--adapter", "gundam-en-asia@4",
+      "--adapter", "gundam-en-asia@5",
       "--request-id", "discovery",
       "--url", "https://www.gundam-gcg.com/asia-en/contextual-legality",
       "--idempotency-key", "acceptance-undemonstrated-json",

@@ -1,7 +1,10 @@
 # Retained Bandai Official Source bytes
 
 These fixtures were captured from the public URLs recorded in each JSON file
-through 2026-08-05 Australia/Melbourne time. `body_base64` is either the complete
+through 2026-08-05 Australia/Melbourne time; the `*-restructured-*`,
+`*-hub`, `*-errata-listing`, `*-card-detail-*`, and `*-bt01-leaf` fixtures
+were captured on 2026-08-07 UTC for the 2026-08 site-restructure adapter
+generation (issue #55). `body_base64` is either the complete
 unchanged HTTP response body (`range_start = 0` and
 `range_end_exclusive = full_body_size`) or an unchanged byte range containing
 the complete publisher `<header>` or one complete parseable publication
@@ -28,6 +31,47 @@ from the exact live leaf
 It is a focused publisher HTML fragment used to prove that the registered
 adapter consumes both the base and alternate-art Printing markup; line endings
 and trailing whitespace are normalized for the repository fixture.
+
+The 2026-08-07 restructured-generation captures are complete unchanged
+response bodies fetched cold with a plain polite user agent and no redirect
+following:
+
+- `one-piece-en-restructured-discovery.json` retains the full live
+  `/cardlist/?series=569116` page (the publisher's redirect target for
+  `/cardlist/`): the duplicated header/footer navigation, the `series`
+  facet used for Recording enumeration, all 155 inline Card modals — one of
+  which (`OP16-020`) prints an explicit `-` Event cost — and the SP CARD
+  rarity vocabulary.
+- `one-piece-en-rules-hub.json` retains the `/rules/` hub that now links
+  restrictions at `/news/restriction.html` and the Block Number System at
+  `/topics/013.php` (its `/rules/block_icon/` page returns 404);
+  `one-piece-en-block-policy-topic.json` retains that topics page.
+- `fusion-world-en-restructured-card-search.json` retains the full live
+  category leaf `/fw/en/cardlist/?search=true&category[0]=583301` with its
+  "Filter by series" category enumeration, the 172-card listing, and its
+  `detail.php?card_no=…` anchors. The three `fusion-world-en-card-detail-*`
+  fixtures retain the live Leader front/back, `_p1` variant, and Battle
+  detail pages. The live site publishes no EN errata surface:
+  `/fw/en/rules/errata-card/` now returns 404 (see the historical negative
+  evidence note above).
+- `digimon-en-restructured-card-search.json` retains the live
+  `/cards/index.php?search=true` root (the `/cardlist/` navigation target
+  now redirects through `/cards/`); `digimon-en-card-list-bt01-leaf.json`
+  retains a complete BT-01 leaf whose vanilla Digimon Cards publish no
+  effect row and whose record count is proven structurally by `page-N`
+  markers (the live leaves render no "Result N cards" total);
+  `digimon-en-rules-hub.json` retains the `/rule/` hub with its pinned
+  restriction and errata links.
+- `gundam-en-asia-restructured-card-search.json` and
+  `gundam-en-us-restructured-card-search.json` retain the live card search
+  roots, which render an explicit "Please specify your search criteria."
+  empty state plus the per-locale package enumeration instead of a card
+  listing. `gundam-en-asia-news-hub.json` / `gundam-en-us-news-hub.json`
+  retain the news hubs whose subcategory tabs (not errata-labeled links)
+  now identify the errata listing, and
+  `gundam-en-asia-errata-listing.json` retains the pinned
+  `/news/?subcategory=news&tag=all&page=1` listing with its errata article
+  and pagination anchors.
 
 The live policy expectations intentionally follow the published scope rather
 than capture time or article recency:

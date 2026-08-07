@@ -124,15 +124,15 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   assert.deepEqual(
     successful.snapshots.map(({ request }) => request.url),
     [
-      "https://en.onepiece-cardgame.com/cardlist/",
-      "https://en.onepiece-cardgame.com/cardlist/",
+      "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      "https://en.onepiece-cardgame.com/cardlist/?series=569116",
       "https://en.onepiece-cardgame.com/products/",
       "https://en.onepiece-cardgame.com/rules/",
-      "https://en.onepiece-cardgame.com/cardlist/",
+      "https://en.onepiece-cardgame.com/cardlist/?series=569116",
       "https://en.onepiece-cardgame.com/products/",
       "https://en.onepiece-cardgame.com/products/",
-      "https://en.onepiece-cardgame.com/rules/restriction/",
-      "https://en.onepiece-cardgame.com/rules/block_icon/",
+      "https://en.onepiece-cardgame.com/news/restriction.html",
+      "https://en.onepiece-cardgame.com/topics/013.php",
       "https://en.onepiece-cardgame.com/rules/errata_card/",
       "https://en.onepiece-cardgame.com/rules/",
       "https://en.onepiece-cardgame.com/images/OP99-001.png",
@@ -175,7 +175,7 @@ async function collectResumeAndShow(
       plans: [{
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@3",
+        adapter_version: "one-piece-en@4",
         requests,
       }],
     }),
@@ -208,6 +208,6 @@ async function collectResumeAndShow(
 function exactOnePieceRequests() {
   return [{
     id: "one-piece-en:discovery",
-    url: "https://en.onepiece-cardgame.com/cardlist/",
+    url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
   }];
 }

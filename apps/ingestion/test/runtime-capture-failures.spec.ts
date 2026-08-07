@@ -2,10 +2,20 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   captureOperationIdentity,
+  parseCapturedRequest,
 } from "../../../src/catalogue/source-evidence-capture";
 import {
   installedSourceAdapterRegistrations,
 } from "../../../src/catalogue/source-adapters";
+import {
+  officialSourceDiscoveryRequests,
+} from "../../../src/catalogue/product-release-source-adapters";
+import {
+  pendingEvidenceRequests,
+  requiredEvidenceRun,
+} from "../../../src/catalogue/source-evidence-repository";
+import { sha256, utf8 } from "../../../src/catalogue/serialization";
+import retainedFusionWorldDiscovery from "../../../acceptance/fixtures/retained-official-source/fusion-world-en-restructured-card-search.json";
 import {
   administrationRequest,
   clearActiveRunForNextScenario,
@@ -207,7 +217,7 @@ test("adapter registrations stay constrained while mismatched production identit
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@3",
+      adapter_version: "one-piece-en@4",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {
@@ -390,3 +400,133 @@ test("body streaming failures are durable diagnostics with bounded retries", asy
     { attempt_number: 4, outcome: "body_failure" },
   ]);
 }, 15_000);
+
+// Retain one captured Official Source response so the capture path can parse
+// it without a live publisher fetch.
+async function retainProductionSnapshot(
+  runId: string,
+  requestId: string,
+  url: string,
+  bytes: Uint8Array,
+): Promise<string> {
+  const digest = await sha256(bytes);
+  const snapshotId = `srcsnap_${digest}`;
+  const fetchId = `srcfetch_${digest}`;
+  const objectKey = `source-snapshots/${snapshotId}.bin`;
+  await env.EVIDENCE_OBJECTS.put(objectKey, bytes);
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_fetch_attempts (
+         id, ingestion_run_id, request_id, attempt_number,
+         requested_at, completed_at, outcome, http_status,
+         response_headers_json, retry_after_ms, diagnostic
+       ) VALUES (?, ?, ?, 1, '2026-08-07T00:00:00.000Z',
+         '2026-08-07T00:00:01.000Z', 'success', 200, '{}', NULL, NULL)`,
+    ).bind(fetchId, runId, requestId),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_snapshots (
+         id, ingestion_run_id, request_id, fetch_attempt_id,
+         request_method, request_url, request_headers_json,
+         representation_fingerprint, response_vary_json, retrieved_at,
+         http_status, response_headers_json, media_type, content_digest,
+         content_byte_length, content_object_key, source_lineage,
+         supported_game, game_profile_version, adapter_version,
+         reused_source_snapshot_id
+       ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
+         '2026-08-07T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
+         'fusion-world-en', 'fusion-world', 'fusion-world@1',
+         'fusion-world-en@5', NULL)`,
+    ).bind(
+      snapshotId,
+      runId,
+      requestId,
+      fetchId,
+      url,
+      JSON.stringify({ accept: "text/html" }),
+      digest,
+      digest,
+      bytes.byteLength,
+      objectKey,
+    ),
+  ]);
+  return snapshotId;
+}
+
+test("production discovery that proves no collection surface fails its last discovery stage closed", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@5",
+      idempotency_key: "official_collection_plan_empty_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en"),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<{ id: string }>();
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("discovery root request is absent");
+
+  // The retained discovery root proves its publisher navigation, so it plans
+  // its stage requests and cannot yet freeze a Collection Plan.
+  await parseCapturedRequest(
+    env.CATALOGUE_DB,
+    env.EVIDENCE_OBJECTS,
+    storedRun,
+    root,
+    await retainProductionSnapshot(
+      run.id,
+      root.request_id,
+      root.url,
+      Buffer.from(retainedFusionWorldDiscovery.body_base64, "base64"),
+    ),
+  );
+
+  const staged = await pendingEvidenceRequests(env.CATALOGUE_DB, run.id);
+  const cards = staged.find(({ request_id }) =>
+    request_id.startsWith("fusion-world-en:listing:cards:")
+  );
+  if (cards === undefined) throw new Error("cards discovery stage is absent");
+  // Every other discovery stage completes without proving a collection
+  // surface, leaving the cards stage as the run's last outstanding request.
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE source_requests SET state = 'observed'
+     WHERE ingestion_run_id = ? AND request_id != ?`,
+  ).bind(run.id, cards.request_id).run();
+
+  const stageSnapshotId = await retainProductionSnapshot(
+    run.id,
+    cards.request_id,
+    cards.url,
+    utf8("<html><title>BANDAI DRAGON BALL CARD LIST</title><main>Cards</main></html>"),
+  );
+  await expect(parseCapturedRequest(
+    env.CATALOGUE_DB,
+    env.EVIDENCE_OBJECTS,
+    storedRun,
+    cards,
+    stageSnapshotId,
+  )).resolves.toMatchObject({
+    kind: "done",
+    failure_code: "official_collection_plan_empty",
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT request_id, state, failure_code FROM source_requests
+     WHERE ingestion_run_id = ? AND failure_code IS NOT NULL`,
+  ).bind(run.id).all()).resolves.toMatchObject({
+    results: [{
+      request_id: cards.request_id,
+      state: "failed",
+      failure_code: "official_collection_plan_empty",
+    }],
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM official_source_collection_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    count: 0,
+  });
+});

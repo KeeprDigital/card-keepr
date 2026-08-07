@@ -46,10 +46,11 @@ test("the owner publishes a complete Fusion World source for authenticated consu
         plans: [{
           supported_game: "fusion-world",
           source_lineage: "fusion-world-en",
-          adapter_version: "fusion-world-en@4",
+          adapter_version: "fusion-world-en@5",
           requests: [{
             id: "fusion-world-en:discovery",
-            url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+            url:
+              "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
             headers: {
               accept: "text/html",
               "user-agent": fixtureMarker,
@@ -168,52 +169,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     "--json",
   ], cliEnvironment);
   assert.equal(approved.code, 0, `${approved.stderr}\n${ingestion.getOutput()}`);
-  const firstRevisionId = JSON.parse(approved.stdout).resulting_revision_id;
-
-  const errataPlan = JSON.parse(await readFile(planPath, "utf8"));
-  errataPlan.plans[0].requests[0].headers["user-agent"] = `${fixtureMarker}-errata`;
-  await writeFile(planPath, JSON.stringify(errataPlan), { mode: 0o600 });
-  const errataCollected = await runCli([
-    "source", "collect", "--plan-file", planPath,
-    "--idempotency-key", "fusion-world-issue-32-errata-collect", "--json",
-  ], cliEnvironment);
-  assert.equal(
-    errataCollected.code,
-    0,
-    `${errataCollected.stderr}\n${ingestion.getOutput()}`,
-  );
-  const errataRunId = JSON.parse(errataCollected.stdout).id;
-  const errataResumed = await runCli(
-    ["source", "resume", "--run-id", errataRunId, "--json"],
-    cliEnvironment,
-  );
-  assert.equal(errataResumed.code, 0, errataResumed.stderr);
-  await waitForRunState(
-    errataRunId,
-    "awaiting_approval",
-    cliEnvironment,
-    ingestion,
-    runStateDeadline,
-  );
-  const errataInspected = await runCli(
-    ["candidate", "inspect", "--run-id", errataRunId, "--json"],
-    cliEnvironment,
-  );
-  assert.equal(errataInspected.code, 0, errataInspected.stderr);
-  const errataCandidate = JSON.parse(errataInspected.stdout);
-  const errataApproved = await runCli([
-    "run", "approve", "--run-id", errataRunId,
-    "--candidate-digest", errataCandidate.candidate_digest,
-    "--expected-current-revision", firstRevisionId,
-    "--idempotency-key", "fusion-world-issue-32-errata-approve",
-    "--yes", "--json",
-  ], cliEnvironment);
-  assert.equal(
-    errataApproved.code,
-    0,
-    `${errataApproved.stderr}\n${ingestion.getOutput()}`,
-  );
-  const revisionId = JSON.parse(errataApproved.stdout).resulting_revision_id;
+  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
   await stopWorker(ingestion);
 
   const api = await startWorker({
@@ -234,10 +190,10 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       .map(({ area }) => area),
     [
       "cards-and-printings",
-      "errata",
       "legality-rules",
       "products-and-releases",
     ],
+    "fusion-world-en@5 publishes no errata area: the live site retired it",
   );
 
   const [
@@ -268,13 +224,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   assert.equal(printings.length, 1);
   assert.equal(products.length, 2);
   assert.equal(releases.length, 2);
-  assert.equal(errata.length, 1);
+  assert.equal(errata.length, 0);
   assert.equal(legalityRules.length, 2);
-  assert.equal(distributionContexts.length, 2);
+  assert.equal(distributionContexts.length, 1);
 
   const card = cards[0];
   assert.equal(card.official_identity.value, "FB99-001");
-  assert.equal(card.effective_rules_text, "Official corrected rules");
+  assert.equal(card.effective_rules_text, "Official front skill");
   assert.deepEqual(card.game_data, {
     profile: "fusion-world@1",
     attributes: {
@@ -285,7 +241,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       power: 10000,
       combo_power: 5000,
       traits: ["Test"],
-      skills: [{ kind: "ordinary", text: "Official printed rules" }],
+      skills: [{ kind: "ordinary", text: "Official front skill" }],
       leader_faces: [
         {
           role: "front",
@@ -305,7 +261,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     },
   });
   assert.equal(JSON.stringify(card.game_data).includes("FB99-001_p2"), false);
-  assert.equal(printings[0].printed_rules_text, "Official printed rules");
+  assert.equal(printings[0].printed_rules_text, "Official front skill");
   assert.deepEqual(
     printings[0].locator_evidence.current.map(({ locator }) => locator),
     ["FB99-001_p2"],
@@ -384,18 +340,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   assert.ok(distributionContexts.some(
     ({ product_id }) => product_id === comingSoonProduct.id,
   ));
-  for (const kind of [
-    "printing-product",
-    "product-card",
-    "printing-distribution-context",
-    "distribution-context-product",
-    "legality-rule-card",
-  ]) {
-    assert.ok(relationships.some((relationship) => relationship.kind === kind));
-  }
-  assert.equal(errata[0].target_id, card.id);
-  assert.equal(errata[0].effective_from, "2026-07-15");
-  assert.equal(errata[0].corrected_value, "Official corrected rules");
+  // fusion-world-en@5 detail pages carry no publisher product code, so a
+  // Printing binds to its "Where to get it" source bucket instead of a
+  // Product; only the publisher's own Product surfaces relate to Products.
+  assert.deepEqual(
+    [...new Set(relationships.map(({ kind }) => kind))].sort(),
+    ["distribution-context-product", "legality-rule-card"],
+  );
 });
 
 async function setPlanMarker(planPath, marker) {

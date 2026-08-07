@@ -32,6 +32,9 @@ import {
 
 installRuntimeSuite();
 
+const fusionWorldDiscoveryUrl =
+  officialSourceDiscoveryRequests("fusion-world-en")[0]!.url;
+
 test("a successful Official Source response is snapshotted before parsing", async () => {
   const created = await fixtureEvidenceRequest(
     {
@@ -180,7 +183,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@4",
+      adapter_version: "fusion-world-en@5",
       idempotency_key: "source_parent_auto_reconcile_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },
@@ -247,29 +250,26 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   expect(retainedObservation.status).toBe(200);
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
-    adapter_version: "fusion-world-en@4",
+    adapter_version: "fusion-world-en@5",
     observations: [{
       value: {
         observation_type: "official_surface_evidence",
         source_lineage: "fusion-world-en",
         surface: "discovery",
         records: ([
-          ["cards", "/fw/en/cardlist/"],
+          ["cards", "/fw/en/cardlist/?search=true&category%5B0%5D=583301"],
           ["products", "/fw/en/products/"],
           ["rules", "/fw/en/news/01_31.html"],
         ] as const).map(([key, resolution]) => ({
           id: `fusion-world-en:discovery-seed:${key}`,
           surface: `@seed:${key}`,
           method: "GET",
-          url: new URL(
-            resolution,
-            "https://www.dbs-cardgame.com/fw/en/cardlist/",
-          ).href,
+          url: new URL(resolution, fusionWorldDiscoveryUrl).href,
           headers: { accept: "text/html" },
           discovered_from: {
             kind: "publisher_navigation",
             label: key === "products" ? "all products" : key,
-            url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+            url: fusionWorldDiscoveryUrl,
             resolution,
           },
         })),
@@ -293,7 +293,7 @@ test("incomplete retained production discovery blocks collection and publication
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@4",
+      adapter_version: "fusion-world-en@5",
       idempotency_key: "source_parent_incomplete_discovery_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -329,7 +329,7 @@ test("notice-link-only production legality evidence fails closed before stale ru
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@4",
+      adapter_version: "fusion-world-en@5",
       idempotency_key: "source_parent_notice_only_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -361,7 +361,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@4",
+      adapter_version: "fusion-world-en@5",
       idempotency_key: "source_parent_large_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({

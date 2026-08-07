@@ -1,5 +1,7 @@
 const marker = "card-keepr-one-piece-complete-v1";
 const errataMarker = "card-keepr-one-piece-complete-errata-v1";
+// one-piece-en@4 pins its discovery root at the live series redirect target.
+const discoveryRootSeries = "569116";
 
 export function onePieceCompleteOfficialSourceResponse(request) {
   const url = new URL(request.url);
@@ -24,6 +26,13 @@ export function onePieceCompleteOfficialSourceResponse(request) {
   }
   if (url.hostname !== "en.onepiece-cardgame.com") return null;
 
+  if (
+    role === null &&
+    url.pathname === "/cardlist/" &&
+    recording === discoveryRootSeries
+  ) {
+    return discoveryRoot();
+  }
   if (role === null) return null;
   if (isCompleteRecordingLeaf) return recordingLeaf(recording);
 
@@ -76,10 +85,7 @@ function recordingLeaf(recording) {
 function cardListRoot() {
   return new Response(
     `<html><title>BANDAI ONE PIECE CARD LIST</title>
-      <select name="series" id="series">
-        <option value="2201">Starter Recording</option>
-        <option value="2202">Booster Recording</option>
-      </select>
+      ${seriesSelect()}
       <div class="countCol">0 results</div>
     </html>`,
     {
@@ -89,6 +95,54 @@ function cardListRoot() {
       },
     },
   );
+}
+
+// one-piece-en@4 makes the pinned series leaf its own discovery root: the
+// publisher navigation is repeated once in the header and once in the footer,
+// and the cards seed resolves through the series redirect back to this page.
+function discoveryRoot() {
+  const navigation = `<nav class="gnaviCol uniweb-translation-mask"><ul class="menuColList">
+        <li class="menuColListItem">
+          <a class="menuColListLink" href="/cardlist/">
+            <span class="menuColListLinkTit">FIND CARDS</span>
+          </a>
+        </li>
+        <li class="menuColListItem">
+          <a class="menuColListLink" href="/products/">
+            <span class="menuColListLinkTit">ALL PRODUCTS</span>
+          </a>
+        </li>
+        <li class="menuColListItem">
+          <a class="menuColListLink" href="/rules/">
+            <span class="menuColListLinkTit">RULES</span>
+            <span class="menuColListLinkTxt">Rules and important updates</span>
+          </a>
+        </li>
+      </ul></nav>`;
+  return new Response(
+    `<html><title>BANDAI ONE PIECE CARD LIST</title>
+      <header class="headerCol js-header uniweb-translation-mask">
+        <div class="headerColInner"><div class="headerColInnerWrap">${navigation}</div></div>
+      </header>
+      ${seriesSelect()}
+      <div class="countCol">0 results</div>
+      <footer class="footerCol"><div class="footerColInner">${navigation}</div></footer>
+    </html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: '"one-piece-complete-discovery-root"',
+      },
+    },
+  );
+}
+
+function seriesSelect() {
+  return `<select name="series" id="series">
+        <option value="${discoveryRootSeries}">Live Recording</option>
+        <option value="2201">Starter Recording</option>
+        <option value="2202">Booster Recording</option>
+      </select>`;
 }
 
 function liveCard(number) {
@@ -128,8 +182,8 @@ function discoveryStage(url) {
       : "BANDAI ONE PIECE CARD RULES";
   const navigation = url.pathname === "/rules/"
     ? `<nav aria-label="Rules publications">
-        <a href="/rules/restriction/">Restriction Cards</a>
-        <a href="/rules/block_icon/">Block Policy</a>
+        <a href="/news/restriction.html">Restriction Cards</a>
+        <a href="/topics/013.php">Block Policy</a>
         <a href="/rules/errata_card/">Errata Cards</a>
       </nav>`
     : "";

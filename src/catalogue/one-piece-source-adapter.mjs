@@ -32,6 +32,9 @@ const rarities = new Map([
   ["sec", "secret-rare"],
   ["p", "promo"],
   ["sp", "special"],
+  // The live Card List prints the special rarity as "SP CARD"
+  // (verified 2026-08-07 on the OP-16 series listing).
+  ["sp card", "special"],
   ["tr", "treasure-rare"],
 ]);
 

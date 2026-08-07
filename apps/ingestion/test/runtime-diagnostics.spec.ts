@@ -38,7 +38,7 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@3",
+      adapter_version: "one-piece-en@4",
       idempotency_key: "diagnostic-evidence-run",
       requests: officialSourceDiscoveryRequests("one-piece-en"),
     },
@@ -53,7 +53,7 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
       contract: "card-keepr-operational-diagnostics@1",
       references: {
         request_id: requestLog.request.id,
-        adapter_versions: ["one-piece-en@3"],
+        adapter_versions: ["one-piece-en@4"],
         workflow: {
           parent_id: null,
           child_ids: [],
@@ -89,7 +89,7 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@3",
+      adapter_version: "one-piece-en@4",
       idempotency_key: "terminal-evidence-diagnostics",
       requests: officialSourceDiscoveryRequests("one-piece-en"),
     },
@@ -166,7 +166,7 @@ test("published evidence diagnostics explicitly advertise no retry route", async
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@3",
+      adapter_version: "one-piece-en@4",
       idempotency_key: "published-evidence-diagnostics",
       requests: officialSourceDiscoveryRequests("one-piece-en"),
     },

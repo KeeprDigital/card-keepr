@@ -191,6 +191,10 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.deepEqual(
     cardListSnapshots.map(({ request }) => request.url),
     [
+      // digimon-en@5 fetches the card search directly: the discovery root,
+      // its cards navigation stage, and the card-list surface all pin the
+      // same live URL before the facets close the exact leaf.
+      "https://world.digimoncard.com/cards/index.php?search=true",
       "https://world.digimoncard.com/cards/index.php?search=true",
       "https://world.digimoncard.com/cards/index.php?search=true",
       "https://world.digimoncard.com/cards/index.php?search=true&category=booster",
@@ -205,7 +209,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     )?.observation_count;
   assert.deepEqual(
     cardListSnapshots.map(observationCount),
-    [1, 0, 1, 1, 3],
+    [1, 1, 0, 1, 1, 3],
     "only the exact Colour leaf may supply catalogue records, including both required popups",
   );
   const exactLeafSnapshot = cardListSnapshots.at(-1);
@@ -420,7 +424,7 @@ function digimonPlan(marker) {
     plans: [{
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@4",
+      adapter_version: "digimon-en@5",
       requests: [{
         id: "digimon-en:discovery",
         url: "https://world.digimoncard.com/cards/index.php?search=true",

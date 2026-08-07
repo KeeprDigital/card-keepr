@@ -115,7 +115,7 @@ test.each([
 );
 
 test("authenticated reparse requires the exact Digimon snapshot capture version even when versions share URL authority", async () => {
-  const current = requiredSourceAdapter("digimon-en@4");
+  const current = requiredSourceAdapter("digimon-en@5");
   const historical = requiredSourceAdapter("digimon-en@3");
   const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
   const historicalCardListUrl = historical.requestUrlForSurface?.(
@@ -131,8 +131,8 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
     {
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@3",
-      idempotency_key: "reject-superseded-digimon-v3-source",
+      adapter_version: "digimon-en@4",
+      idempotency_key: "reject-superseded-digimon-v4-source",
       requests: officialSourceDiscoveryRequests("digimon-en"),
     },
   );
@@ -146,7 +146,7 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
     {
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@4",
+      adapter_version: "digimon-en@5",
       idempotency_key: "digimon-exact-capture-version-source",
       requests: officialSourceDiscoveryRequests("digimon-en"),
     },
@@ -174,13 +174,13 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
   );
   if (snapshot === undefined) throw new Error("retained Digimon snapshot missing");
   try {
-    expect(snapshot.adapter_version).toBe("digimon-en@4");
+    expect(snapshot.adapter_version).toBe("digimon-en@5");
 
     const mismatched = await administrationRequest(
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@3",
+        adapter_version: "digimon-en@4",
         idempotency_key: "digimon-mismatched-capture-version-reparse",
       },
     );
@@ -193,14 +193,14 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@4",
+        adapter_version: "digimon-en@5",
         idempotency_key: "digimon-exact-capture-version-reparse",
       },
     );
     expect(exact.status).toBe(201);
     await expect(exact.json()).resolves.toMatchObject({
       source_snapshot_id: snapshot.id,
-      adapter_version: "digimon-en@4",
+      adapter_version: "digimon-en@5",
     });
   } finally {
     await waitForWorkflowStatus(

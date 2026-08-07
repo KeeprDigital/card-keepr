@@ -224,6 +224,76 @@ const completeGundamAdapterVersions = new Map([
   ["gundam-en-us", "gundam-en-us@4"],
 ]);
 
+// 2026-08 Bandai site restructure: every lineage re-registers against the
+// live URL shapes verified on 2026-08-06/07. These versions are immutable
+// contracts layered on top of the frozen earlier generations.
+const restructuredAdapterVersions = new Map([
+  ["one-piece-en", "one-piece-en@4"],
+  ["fusion-world-en", "fusion-world-en@5"],
+  ["digimon-en", "digimon-en@5"],
+  ["gundam-en-asia", "gundam-en-asia@5"],
+  ["gundam-en-us", "gundam-en-us@5"],
+]);
+
+function restructuredRequiredSurfaces(
+  sourceLineage: string,
+  requiredSurfaces: readonly string[],
+): readonly string[] {
+  // The live Fusion World EN site no longer publishes a Card Errata surface:
+  // /fw/en/rules/errata-card/ returns 404 and no navigation, rules, or FAQ
+  // page links an errata publication. The restructured contract models that
+  // reality instead of pinning a dead URL.
+  return sourceLineage === "fusion-world-en"
+    ? requiredSurfaces.filter((surface) => surface !== "errata")
+    : requiredSurfaces;
+}
+
+function restructuredBandaiSurfaceUrls(
+  sourceLineage: string,
+  urls: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  if (sourceLineage === "one-piece-en") {
+    return {
+      ...urls,
+      // /cardlist/ now 302s to ./?series=<latest>; the discovery root pins
+      // the live redirect target, and remaining Recordings are enumerated
+      // from its series facet.
+      "card-list": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      // /rules/restriction/ now 302s to the news publication and
+      // /rules/block_icon/ is gone; the rules hub links these live pages.
+      restrictions: "https://en.onepiece-cardgame.com/news/restriction.html",
+      "block-policy": "https://en.onepiece-cardgame.com/topics/013.php",
+    };
+  }
+  if (sourceLineage === "fusion-world-en") {
+    const { errata: _droppedErrata, ...remaining } = urls;
+    return {
+      ...remaining,
+      // /fw/en/cardlist/ now 302s to its default category leaf; further
+      // categories are enumerated from the "Filter by series" facet.
+      "card-search":
+        "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+      "legality-current":
+        "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      "legality-history":
+        "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+    };
+  }
+  if (
+    sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us"
+  ) {
+    const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+    return {
+      ...urls,
+      // The live news hub filters through subcategory tabs; errata and
+      // correction articles are published under the NEWS tab.
+      errata:
+        `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&tag=all&page=1`,
+    };
+  }
+  return urls;
+}
+
 export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] =
   Object.freeze(
     rawContractDefinitions.flatMap((definition) => {
@@ -235,6 +305,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           expandedOnePieceCatalogue: false,
           catalogueComplete: false,
           completeDigimonCatalogue: false,
+          restructured: false,
         },
         {
           ...definition,
@@ -250,6 +321,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           expandedOnePieceCatalogue: false,
           catalogueComplete: false,
           completeDigimonCatalogue: false,
+          restructured: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -260,6 +332,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               expandedOnePieceCatalogue: true,
               catalogueComplete: false,
               completeDigimonCatalogue: false,
+              restructured: false,
             }]
           : []),
         ...(definition.sourceLineage === "fusion-world-en"
@@ -276,6 +349,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               expandedOnePieceCatalogue: false,
               catalogueComplete: true,
               completeDigimonCatalogue: false,
+              restructured: false,
             }]
           : []),
         ...(definition.sourceLineage === "digimon-en"
@@ -292,6 +366,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               expandedOnePieceCatalogue: false,
               catalogueComplete: false,
               completeDigimonCatalogue: true,
+              restructured: false,
             }]
           : []),
         ...(completeGundamAdapterVersions.has(definition.sourceLineage)
@@ -322,8 +397,60 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               expandedOnePieceCatalogue: false,
               catalogueComplete: true,
               completeDigimonCatalogue: false,
+              restructured: false,
             }]
           : []),
+        {
+          ...definition,
+          imagePathnamePrefixes:
+            definition.sourceLineage === "gundam-en-asia"
+              ? [
+                  ...definition.imagePathnamePrefixes,
+                  "/jp/images/cards/card/",
+                  "/gcg/bccard/asia-en/",
+                ]
+              : definition.sourceLineage === "gundam-en-us"
+                ? [
+                    ...definition.imagePathnamePrefixes,
+                    "/jp/images/cards/card/",
+                    "/gcg/bccard/en/",
+                  ]
+                : definition.imagePathnamePrefixes,
+          documentPathnamePrefixes:
+            definition.sourceLineage === "one-piece-en"
+              ? [
+                  ...definition.documentPathnamePrefixes,
+                  "/news/",
+                  "/topics/",
+                ]
+              : definition.documentPathnamePrefixes,
+          adapterVersion: restructuredAdapterVersions.get(
+            definition.sourceLineage,
+          )!,
+          requiredSurfaces: restructuredRequiredSurfaces(
+            definition.sourceLineage,
+            definition.requiredSurfaces,
+          ),
+          urls: restructuredBandaiSurfaceUrls(
+            definition.sourceLineage,
+            activeBandaiSurfaceUrls(
+              definition.sourceLineage,
+              definition.urls,
+              definition.sourceLineage.startsWith("gundam-"),
+            ),
+          ),
+          parserContract:
+            `${definition.sourceLineage}-restructured-complete-catalogue@4`,
+          legalityAware: true,
+          expandedOnePieceCatalogue:
+            definition.sourceLineage === "one-piece-en",
+          catalogueComplete:
+            definition.sourceLineage === "fusion-world-en" ||
+            definition.sourceLineage.startsWith("gundam-"),
+          completeDigimonCatalogue:
+            definition.sourceLineage === "digimon-en",
+          restructured: true,
+        },
       ];
       return versions.map((version) =>
         Object.freeze({
@@ -354,6 +481,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.expandedOnePieceCatalogue,
                 version.catalogueComplete,
                 version.completeDigimonCatalogue,
+                version.restructured,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -371,6 +499,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.expandedOnePieceCatalogue,
               version.catalogueComplete,
               version.completeDigimonCatalogue,
+              version.restructured,
             )
             : historicalBandaiRequestDiscoveryV1(
               version.format,
@@ -671,6 +800,7 @@ function bandaiRequestDiscovery(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  restructured = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -684,6 +814,7 @@ function bandaiRequestDiscovery(
         sourceLineage,
         requiredSurfaces,
         urls,
+        restructured,
       ).map((record) => ({
         role: "listing" as const,
         discoveryKey: record.surface.slice("@seed:".length),
@@ -735,14 +866,18 @@ function bandaiRequestDiscovery(
         current,
         expandedOnePieceCatalogue,
         catalogueComplete,
+        restructured,
       ).map((url) => ({
         role: "listing" as const,
         url,
         headers: officialDiscoveredRequestHeaders("listing"),
       }));
-      if (!fusionWorldCompleteListingLeaf(current)) return partitions;
+      const completeLeaf = restructured
+        ? fusionWorldRestructuredListingLeaf(current)
+        : fusionWorldCompleteListingLeaf(current);
+      if (!completeLeaf) return partitions;
       fusionWorldHtmlListingEntries(discoveryHtml, context.url, sourceLineage);
-      return [...new Map(
+      const details = [...new Map(
         [...discoveryHtml.matchAll(/<a\b([^>]*)>/giu)].flatMap((match) => {
           const anchor = fusionWorldListingAnchor(
             match[1]!,
@@ -758,6 +893,10 @@ function bandaiRequestDiscovery(
               }] as const];
         }),
       ).values()].sort((left, right) => left.url.localeCompare(right.url));
+      // The restructured card-search root is itself the default category
+      // leaf: it both enumerates the remaining category partitions and
+      // yields its own Card detail follow-ups.
+      return restructured ? [...partitions, ...details] : details;
     }
     const structuredSurface = dynamicStructuredSurface(
       dynamicRole,
@@ -794,7 +933,7 @@ function bandaiRequestDiscovery(
     if (
       completeGundamCatalogue &&
       (initialSurface === "errata" ||
-        gundamErrataListingUrl(current, sourceLineage))
+        gundamErrataListingUrl(current, sourceLineage, restructured))
     ) {
       candidates.push(
         ...gundamErrataArticleUrls(
@@ -813,7 +952,7 @@ function bandaiRequestDiscovery(
         dynamicRole === "listing") &&
       !(completeGundamCatalogue &&
         (initialSurface === "errata" ||
-          gundamErrataListingUrl(current, sourceLineage)))
+          gundamErrataListingUrl(current, sourceLineage, restructured)))
     ) {
       candidates.push(
         ...discoveredPartitionRequests(
@@ -822,6 +961,7 @@ function bandaiRequestDiscovery(
           current,
           expandedOnePieceCatalogue,
           catalogueComplete,
+          restructured,
         ).map(
           (url) => ({
             role: "listing" as const,
@@ -884,6 +1024,7 @@ function bandaiRequestDiscovery(
               resolved,
               catalogueComplete,
               completeDigimonCatalogue,
+              restructured,
             );
       if (role === null) continue;
       if (
@@ -963,7 +1104,23 @@ function discoveredPartitionRequests(
   current: URL,
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
+  restructured = false,
 ): string[] {
+  if (restructured && format === "fusion-world") {
+    // The live Fusion World card search partitions by publisher category
+    // ("Filter by series"); the currently selected category is already
+    // served by the requested leaf itself.
+    const currentCategory = current.searchParams.get("category[0]");
+    return fusionPublisherCategoryOptions(html)
+      .filter((category) => category !== currentCategory)
+      .map((category) => {
+        const target = new URL(current);
+        target.search = "";
+        target.searchParams.set("search", "true");
+        target.searchParams.set("category[0]", category);
+        return target.href;
+      });
+  }
   if (
     catalogueComplete &&
     format === "gundam" &&
@@ -1048,6 +1205,7 @@ function discoveredPartitionRequests(
     current,
     expandedOnePieceCatalogue,
     catalogueComplete && format === "fusion-world",
+    restructured,
   );
   if (stage === null) return [];
   return stage.options.map((value) => {
@@ -1184,12 +1342,46 @@ function fusionWorldCompleteListingLeaf(url: URL): boolean {
         url.searchParams.getAll("colour[]").length === 1;
 }
 
+function fusionWorldRestructuredListingLeaf(url: URL): boolean {
+  // The live card search serves one complete category listing per request:
+  // exactly ?search=true with one publisher category identifier.
+  const categories = url.searchParams.getAll("category[0]");
+  return url.searchParams.getAll("search").length === 1 &&
+    url.searchParams.get("search") === "true" &&
+    categories.length === 1 &&
+    /^\d+$/u.test(categories[0]!) &&
+    [...url.searchParams.keys()].every((key) =>
+      key === "search" || key === "category[0]"
+    );
+}
+
+function fusionPublisherCategoryOptions(html: string): string[] {
+  const sections = [...html.matchAll(
+    /<section\b[^>]*\bclass=["'][^"']*\bsearchColSet-product\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/giu,
+  )];
+  if (sections.length === 0) {
+    throw new Error(
+      "Official Source Fusion World category discovery is unavailable.",
+    );
+  }
+  const options = sections.flatMap((section) =>
+    [...section[1]!.matchAll(/<a\b([^>]*)>/giu)].flatMap((match) => {
+      const value = htmlAttribute(match[1]!, "data-val")?.trim();
+      return value === undefined || value.length === 0 || !/^\d+$/u.test(value)
+        ? []
+        : [value];
+    })
+  );
+  return [...new Set(options)];
+}
+
 function nextPartitionFacet(
   format: DiscoveryFormat,
   facets: readonly { key: string; options: string[] }[],
   current: URL,
   expandedOnePieceCatalogue = false,
   bracketedFusionFacets = false,
+  restructured = false,
 ): { key: string; options: string[] } | null {
   const find = (keys: readonly string[]) =>
     facets.find(({ key }) =>
@@ -1204,10 +1396,15 @@ function nextPartitionFacet(
     const recording = find([
       expandedOnePieceCatalogue ? "series" : "recording",
     ]);
-    if (recording === null || current.searchParams.has(recording.key)) {
-      return null;
-    }
-    const numeric = recording.options.filter((value) => /^\d+$/u.test(value));
+    if (recording === null) return null;
+    const selected = current.searchParams.getAll(recording.key);
+    if (!restructured && selected.length > 0) return null;
+    if (restructured && selected.length > 1) return null;
+    // The restructured discovery root is itself pinned to one live series
+    // leaf, so the remaining Recordings are enumerated around it.
+    const numeric = recording.options.filter((value) =>
+      /^\d+$/u.test(value) && !selected.includes(value)
+    );
     return numeric.length === 0
       ? null
       : { key: recording.key, options: numeric };
@@ -1518,6 +1715,7 @@ function discoveredHtmlRole(
   url: URL,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  restructured = false,
 ): "listing" | "detail" | "product_detail" | null {
   const target = `${url.pathname}${url.search}`;
   if (
@@ -1534,7 +1732,9 @@ function discoveredHtmlRole(
     (initialSurface === "errata" ||
       /^\/(?:asia-en|en)\/news\/$/u.test(url.pathname))
   ) {
-    return gundamErrataListingUrl(url) ? "listing" : null;
+    return gundamErrataListingUrl(url, undefined, restructured)
+      ? "listing"
+      : null;
   }
   if (
     catalogueComplete &&
@@ -1644,19 +1844,29 @@ function gundamErrataArticleUrl(
 function gundamErrataListingUrl(
   url: URL,
   sourceLineage?: string,
+  restructured = false,
 ): boolean {
   const locale = sourceLineage === undefined
     ? "(?:asia-en|en)"
     : sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
   const keys = [...url.searchParams.keys()];
   const pages = url.searchParams.getAll("page");
+  const tags = url.searchParams.getAll("tag");
   return url.origin === "https://www.gundam-gcg.com" &&
     new RegExp(`^/${locale}/news/$`, "u").test(url.pathname) &&
     url.searchParams.getAll("subcategory").length === 1 &&
     url.searchParams.get("subcategory") === "news" &&
     (pages.length === 0 ||
       (pages.length === 1 && /^[1-9]\d*$/u.test(pages[0]!))) &&
-    keys.every((key) => key === "subcategory" || key === "page");
+    // The restructured news hub appends an explicit all-tags filter to its
+    // subcategory tabs.
+    (restructured
+      ? tags.length === 0 || (tags.length === 1 && tags[0] === "all")
+      : tags.length === 0) &&
+    keys.every((key) =>
+      key === "subcategory" || key === "page" ||
+      (restructured && key === "tag")
+    );
 }
 
 function nonCardProductClassification(value: string): "accessory" | null {
@@ -1898,6 +2108,7 @@ function legalityAwareBandaiSnapshotDecoder(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  restructured = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
@@ -1906,6 +2117,7 @@ function legalityAwareBandaiSnapshotDecoder(
     expandedOnePieceCatalogue,
     catalogueComplete,
     completeDigimonCatalogue,
+    restructured,
   });
 }
 
@@ -1922,6 +2134,7 @@ function bandaiSnapshotDecoder(
     expandedOnePieceCatalogue?: boolean;
     catalogueComplete?: boolean;
     completeDigimonCatalogue?: boolean;
+    restructured?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -1967,6 +2180,7 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         requiredSurfaces,
         urls,
+        profile.restructured === true,
       );
       return [{
         observation_type: "official_surface_evidence",
@@ -1994,6 +2208,7 @@ function bandaiSnapshotDecoder(
         sourceLineage,
         discoveryKey,
         requiredSurfaces,
+        profile.restructured === true,
       );
       return [{
         observation_type: "official_surface_evidence",
@@ -2034,8 +2249,11 @@ function bandaiSnapshotDecoder(
     if (
       profile.catalogueComplete === true &&
       format === "fusion-world" &&
-      dynamicRole === "listing" &&
-      fusionWorldCompleteListingLeaf(new URL(context.url)) &&
+      (profile.restructured === true
+        ? (dynamicRole === "listing" || surface === "card-search") &&
+          fusionWorldRestructuredListingLeaf(new URL(context.url))
+        : dynamicRole === "listing" &&
+          fusionWorldCompleteListingLeaf(new URL(context.url))) &&
       bytes.byteLength > maximumFusionCompleteListingHtmlBytes
     ) {
       throw new Error(
@@ -2156,11 +2374,17 @@ function bandaiSnapshotDecoder(
       }
       return [
         profile.catalogueComplete === true && format === "fusion-world"
-          ? parseFusionWorldCardDetailV3(
-            html,
-            sourceLineage,
-            context.url,
-          )
+          ? profile.restructured === true
+            ? parseFusionWorldCardDetailV4(
+              html,
+              sourceLineage,
+              context.url,
+            )
+            : parseFusionWorldCardDetailV3(
+              html,
+              sourceLineage,
+              context.url,
+            )
           : parseBandaiCardDetailV2(
               html,
               format,
@@ -2217,7 +2441,9 @@ function bandaiSnapshotDecoder(
         digimonPopupRecordCount(html) > 0)
     ) {
       assertCompleteDigimonLeafUrl(context.url);
-      return parseDigimonCardListPopupHtmlV4(html, context.url);
+      return profile.restructured === true
+        ? parseDigimonCardListPopupHtmlV5(html, context.url)
+        : parseDigimonCardListPopupHtmlV4(html, context.url);
     }
     const completeGundamListing = profile.catalogueComplete === true &&
         format === "gundam" &&
@@ -2228,6 +2454,29 @@ function bandaiSnapshotDecoder(
           sourceLineage,
         )
       : null;
+    if (
+      profile.restructured === true &&
+      profile.catalogueComplete === true &&
+      format === "gundam" &&
+      structuredSurface === requiredSurfaces[0] &&
+      completeGundamListing === null
+    ) {
+      // The live card search renders no listing at all until a package is
+      // selected. The bare search root must prove its empty state and its
+      // package enumeration; a package leaf that fails to render its listing
+      // is unmodelled drift and must fail the parse.
+      if (new URL(context.url).searchParams.has("package")) {
+        throw new Error(
+          "Official Source Gundam package leaf did not render its card listing.",
+        );
+      }
+      return [parseRestructuredGundamPackagesRoot(
+        html,
+        sourceLineage,
+        surface,
+        context.url,
+      )];
+    }
     const parsed =
       completeGundamListing !== null
         ? completeGundamListingCoverage(
@@ -2242,6 +2491,7 @@ function bandaiSnapshotDecoder(
             html,
             context.url,
             profile.expandedOnePieceCatalogue === true,
+            profile.restructured === true,
           )
         : parseBandaiSurfaceCoverageV2(
             html,
@@ -2258,6 +2508,7 @@ function bandaiSnapshotDecoder(
               (isLegalityPolicySurface(surface) ||
                 isStructurallyEmptyFusionErrata),
             profile.catalogueComplete === true,
+            profile.restructured === true,
           );
     const liveLegalityDocument = liveLegality?.document ?? null;
     const legalityObservation = profile.parseLegality &&
@@ -2586,7 +2837,12 @@ function knownPublisherNavigationLinks(sourceLineage: string): Set<string> {
     "restrictions-history": "previous restriction history",
   };
   const allowed = new Set<string>();
-  for (const seed of bandaiDiscoverySeeds(sourceLineage)) {
+  for (
+    const seed of [
+      ...bandaiDiscoverySeeds(sourceLineage),
+      ...bandaiDiscoverySeeds(sourceLineage, true),
+    ]
+  ) {
     allowed.add(`${seed.label}\u0000${new URL(seed.url).href}`);
     for (const [surface, resolution] of Object.entries(seed.resolutions)) {
       const label = labelsBySurface[surface];
@@ -2621,6 +2877,7 @@ function bandaiDiscoveryRecords(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
   urls: Readonly<Record<string, string>>,
+  restructured = false,
 ): Array<{
   id: string;
   surface: string;
@@ -2642,8 +2899,8 @@ function bandaiDiscoveryRecords(
       "Official Source discovery must retain exactly one publisher header.",
     );
   }
-  const seeds = bandaiDiscoverySeeds(sourceLineage);
-  const framing = exactPublisherDiscoveryFraming(sourceLineage);
+  const seeds = bandaiDiscoverySeeds(sourceLineage, restructured);
+  const framing = exactPublisherDiscoveryFraming(sourceLineage, restructured);
   if (
     headers[0]![1]!.trim() !== framing.headerAttributes ||
     !framing.container.test(html)
@@ -2663,7 +2920,7 @@ function bandaiDiscoveryRecords(
     if (anchor === undefined || !anchor.pattern.test(html)) {
       continue;
     }
-    if (countPatternMatches(html, anchor.pattern) !== 1) {
+    if (countPatternMatches(html, anchor.pattern) !== (anchor.occurrences ?? 1)) {
       throw new Error(
         `Official Source discovery duplicates the ${seed.id} navigation link.`,
       );
@@ -2714,6 +2971,7 @@ type ExactDiscoveryFraming = Readonly<{
   seeds: Readonly<Record<string, Readonly<{
     pattern: RegExp;
     resolution: string;
+    occurrences?: number;
   }>>>;
 }>;
 
@@ -2724,7 +2982,14 @@ function countPatternMatches(html: string, pattern: RegExp): number {
 
 function exactPublisherDiscoveryFraming(
   sourceLineage: string,
+  restructured = false,
 ): ExactDiscoveryFraming {
+  if (restructured) {
+    return restructuredPublisherDiscoveryFraming(
+      sourceLineage,
+      exactPublisherDiscoveryFraming(sourceLineage),
+    );
+  }
   if (sourceLineage === "one-piece-en") {
     return {
       headerAttributes: 'class="headerCol js-header uniweb-translation-mask"',
@@ -2810,12 +3075,64 @@ function exactPublisherDiscoveryFraming(
   };
 }
 
+function restructuredPublisherDiscoveryFraming(
+  sourceLineage: string,
+  framing: ExactDiscoveryFraming,
+): ExactDiscoveryFraming {
+  const reseed = (
+    id: string,
+    patch: Readonly<{ resolution?: string; occurrences?: number }>,
+  ): Readonly<Record<string, Readonly<{
+    pattern: RegExp;
+    resolution: string;
+    occurrences?: number;
+  }>>> => ({
+    ...framing.seeds,
+    [id]: { ...framing.seeds[id]!, ...patch },
+  });
+  if (sourceLineage === "one-piece-en") {
+    // The live pages repeat the publisher navigation once in the header and
+    // once in the footer; the cards link now resolves through the
+    // publisher's series redirect.
+    return {
+      ...framing,
+      seeds: Object.fromEntries(
+        Object.entries(framing.seeds).map(([id, anchor]) => [id, {
+          ...anchor,
+          occurrences: 2,
+          ...(id === "cards"
+            ? { resolution: "/cardlist/?series=569116" }
+            : {}),
+        }]),
+      ),
+    };
+  }
+  if (sourceLineage === "fusion-world-en") {
+    return {
+      ...framing,
+      seeds: reseed("cards", {
+        resolution: "/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+      }),
+    };
+  }
+  if (sourceLineage === "digimon-en") {
+    return {
+      ...framing,
+      seeds: reseed("cards", {
+        resolution: "/cards/index.php?search=true",
+      }),
+    };
+  }
+  return framing;
+}
+
 function bandaiDiscoveryStageRecords(
   html: string,
   requestUrl: string,
   sourceLineage: string,
   discoveryKey: string,
   requiredSurfaces: readonly string[],
+  restructured = false,
 ): Array<{
   id: string;
   surface: string;
@@ -2829,7 +3146,7 @@ function bandaiDiscoveryStageRecords(
     resolution: string;
   };
 }> {
-  const seed = bandaiDiscoverySeeds(sourceLineage).find(
+  const seed = bandaiDiscoverySeeds(sourceLineage, restructured).find(
     ({ id }) => id === discoveryKey,
   );
   if (seed === undefined) {
@@ -2919,13 +3236,22 @@ function bandaiDiscoveryStageRecords(
         "Fusion World policy discovery contains an unrecognized sibling publication.",
       );
     }
-    const surfaces = discoverySurfacesForStageLink(
-      sourceLineage,
-      discoveryKey,
-      label,
-      resolved,
-      digimonHasExplicitHistoryLink,
-    );
+    // Restructured contracts pin each promised surface to the exact URL its
+    // seed resolution names; label heuristics no longer create records.
+    const surfaces = restructured
+      ? Object.entries(seed.resolutions)
+        .filter(([, resolution]) =>
+          resolution !== "" &&
+          new URL(resolution, seed.url).href === resolved.href
+        )
+        .map(([surface]) => surface)
+      : discoverySurfacesForStageLink(
+        sourceLineage,
+        discoveryKey,
+        label,
+        resolved,
+        digimonHasExplicitHistoryLink,
+      );
     for (const surface of surfaces) {
       if (!requiredSurfaces.includes(surface)) continue;
       if (
@@ -2935,6 +3261,12 @@ function bandaiDiscoveryStageRecords(
         continue;
       }
       if (records.has(surface)) {
+        // Live publisher pages repeat their navigation for desktop and
+        // mobile; an identical repeated link is tolerated by restructured
+        // contracts while a conflicting one stays a hard failure.
+        if (restructured && records.get(surface)!.url === resolved.href) {
+          continue;
+        }
         throw new Error(
           `Official Source discovery duplicates the ${surface} surface link.`,
         );
@@ -2945,11 +3277,23 @@ function bandaiDiscoveryStageRecords(
         resolved.href,
         {
           kind: "publisher_navigation",
-          label: label.toLocaleLowerCase(),
+          label: label.toLocaleLowerCase() || seed.label,
           url: current.href,
           resolution: decodeHtmlText(href),
         },
       ));
+    }
+  }
+  if (restructured) {
+    // A catalogue-complete adapter that cannot prove one of its promised
+    // surfaces would otherwise derive an empty Official Source Collection
+    // Plan and fail much later at reconciliation; fail the parse instead.
+    for (const surface of Object.keys(seed.resolutions)) {
+      if (!records.has(surface)) {
+        throw new Error(
+          `Official Source ${discoveryKey} discovery stage did not retain the ${surface} surface link.`,
+        );
+      }
     }
   }
   return [...records.values()].sort((left, right) =>
@@ -3099,7 +3443,10 @@ function discoverySurfacesForStageLink(
   return [];
 }
 
-function bandaiDiscoverySeeds(sourceLineage: string): ReadonlyArray<{
+function bandaiDiscoverySeeds(
+  sourceLineage: string,
+  restructured = false,
+): ReadonlyArray<{
   id: string;
   label: string;
   url: string;
@@ -3231,7 +3578,74 @@ function bandaiDiscoverySeeds(sourceLineage: string): ReadonlyArray<{
       `Official Source discovery has no navigation grammar for ${sourceLineage}.`,
     );
   }
-  return seeds;
+  return restructured
+    ? seeds.map((seed) => restructuredDiscoverySeed(sourceLineage, seed))
+    : seeds;
+}
+
+function restructuredDiscoverySeed(
+  sourceLineage: string,
+  seed: {
+    id: string;
+    label: string;
+    url: string;
+    resolutions: Readonly<Record<string, string>>;
+  },
+): {
+  id: string;
+  label: string;
+  url: string;
+  resolutions: Readonly<Record<string, string>>;
+} {
+  if (sourceLineage === "one-piece-en" && seed.id === "cards") {
+    return {
+      ...seed,
+      url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      resolutions: { "card-list": "" },
+    };
+  }
+  if (sourceLineage === "one-piece-en" && seed.id === "rules") {
+    return {
+      ...seed,
+      resolutions: {
+        restrictions: "../news/restriction.html",
+        "block-policy": "../topics/013.php",
+        errata: "errata_card/",
+        "don-rules": "",
+      },
+    };
+  }
+  if (sourceLineage === "fusion-world-en" && seed.id === "cards") {
+    return {
+      ...seed,
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+      resolutions: { "card-search": "" },
+    };
+  }
+  if (sourceLineage === "fusion-world-en" && seed.id === "rules") {
+    const { errata: _droppedErrata, ...resolutions } = seed.resolutions;
+    return { ...seed, resolutions };
+  }
+  if (sourceLineage === "digimon-en" && seed.id === "cards") {
+    return {
+      ...seed,
+      url: "https://world.digimoncard.com/cards/index.php?search=true",
+      resolutions: { "card-list": "" },
+    };
+  }
+  if (sourceLineage.startsWith("gundam-") && seed.id === "cards") {
+    // The live find-cards page is the card search itself; there is no
+    // longer a separate index.php link to prove.
+    return { ...seed, resolutions: { packages: "" } };
+  }
+  if (sourceLineage.startsWith("gundam-") && seed.id === "news") {
+    return {
+      ...seed,
+      resolutions: { errata: "?subcategory=news&tag=all&page=1" },
+    };
+  }
+  return seed;
 }
 
 function bandaiPublisherPayload(
@@ -3483,6 +3897,7 @@ function parseOnePieceBandaiCardListV1(
   html: string,
   requestUrl: string,
   expandedOnePieceCatalogue = false,
+  restructured = false,
 ): ParsedBandaiSurface {
   const recordingSelect = expandedOnePieceCatalogue
     ? html.match(
@@ -3634,7 +4049,12 @@ function parseOnePieceBandaiCardListV1(
       ? integerOrNull(field("Life"))
       : cardType === "leader" ? integerOrNull(field("Life")) : null;
     if (expandedOnePieceCatalogue) {
-      assertOnePieceTypeNullability(cardType, cost, life);
+      assertOnePieceTypeNullability(
+        cardType,
+        cost,
+        life,
+        restructured ? field("Cost") : null,
+      );
     }
     const detail = {
       path: locator,
@@ -3755,6 +4175,7 @@ function assertOnePieceTypeNullability(
   cardType: string,
   cost: number | null,
   life: number | null,
+  printedCost: string | null = null,
 ): void {
   if (cardType === "leader" && cost !== null) {
     throw new Error("One Piece Leader cost must be null.");
@@ -3762,7 +4183,13 @@ function assertOnePieceTypeNullability(
   if (cardType !== "leader" && life !== null) {
     throw new Error(`One Piece ${cardType} life must be null.`);
   }
-  if (cardType !== "leader" && cost === null) {
+  // The live publisher prints an explicit "-" cost for some Event Cards
+  // (verified 2026-08-07 on OP16-020); an entirely missing cost field is
+  // still unmodelled drift.
+  if (
+    cardType !== "leader" && cost === null &&
+    printedCost?.normalize("NFC").trim() !== "-"
+  ) {
     throw new Error(`One Piece ${cardType} cost must be non-null.`);
   }
   if (cardType === "leader" && life === null) {
@@ -3847,6 +4274,355 @@ function parseFusionWorldCardDetailV3(
     request.href,
     "path-v2",
   );
+}
+
+function parseFusionWorldCardDetailV4(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const request = new URL(requestUrl);
+  const requestedLocator = fusionWorldFullLocatorFromUrl(request, true);
+  if (requestedLocator === null) {
+    throw new Error("Fusion World detail request has no full locator.");
+  }
+  const identity = fusionWorldLocatorIdentity(requestedLocator);
+  const cardNumberMatches = [...html.matchAll(
+    /<div\b[^>]*\bclass=["']cardNo["'][^>]*>([\s\S]*?)<\/div>/giu,
+  )];
+  if (cardNumberMatches.length !== 1) {
+    throw new Error("Fusion World Card detail is missing its Card Number.");
+  }
+  const cardNumber = htmlText(cardNumberMatches[0]![1]!);
+  if (identity.cardNumber !== cardNumber.normalize("NFC").trim()) {
+    throw new Error(
+      `Fusion World full locator ${requestedLocator} does not match Card number ${cardNumber}.`,
+    );
+  }
+  const rarityMatches = [...html.matchAll(
+    /<div\b[^>]*\bclass=["']rarity["'][^>]*>([\s\S]*?)<\/div>/giu,
+  )];
+  if (rarityMatches.length !== 1) {
+    throw new Error("Fusion World Card detail is missing its rarity.");
+  }
+  const rarity = htmlText(rarityMatches[0]![1]!);
+  const cells = fusionWorldDetailCells(html);
+  const cellFor = (label: string) =>
+    cells.find((cell) =>
+      cell.label.localeCompare(label, undefined, { sensitivity: "accent" }) ===
+        0
+    ) ?? null;
+  const requiredCell = (label: string) => {
+    const cell = cellFor(label);
+    if (cell === null) {
+      throw new Error(`Fusion World Card detail is missing its ${label}.`);
+    }
+    return cell;
+  };
+  const cardType = htmlText(requiredCell("Card type").shared ?? "");
+  if (cardType.length === 0) {
+    throw new Error("Fusion World Card detail is missing its Card type.");
+  }
+  const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
+  const leader = normalizedType === "leader";
+  const colourCell = requiredCell("Color");
+  const colourTokens = [...(colourCell.shared ?? "").matchAll(
+    /\bdata-color=["']([^"']+)["']/giu,
+  )].map((match) => decodeHtmlText(match[1]!));
+  const colourValue = colourTokens.length > 0
+    ? colourTokens.join("/")
+    : htmlText(colourCell.shared ?? "");
+  const colours = colourValue === "-"
+    ? ["colourless"]
+    : colourValues(colourValue);
+  if (colours.length === 0) {
+    throw new Error("Fusion World Card detail is missing its Color.");
+  }
+  const cost = integerOrNull(htmlText(requiredCell("Cost").shared ?? ""));
+  const specifiedCostCell = requiredCell("Specified cost");
+  const specifiedCostIcons = [...(specifiedCostCell.shared ?? "").matchAll(
+    /<span\b[^>]*\bclass=["'][^"']*\bcostIcon-(red|blue|green|yellow|black)\b[^"']*["'][^>]*>/giu,
+  )].map((match) => match[1]!.toLocaleLowerCase());
+  if (
+    specifiedCostIcons.length === 0 &&
+    htmlText(specifiedCostCell.shared ?? "") !== "-"
+  ) {
+    throw new Error(
+      "Fusion World Card detail specified cost is unrecognized.",
+    );
+  }
+  const specifiedCost = [
+    ...specifiedCostIcons
+      .reduce((counts, colour) => {
+        counts.set(colour, (counts.get(colour) ?? 0) + 1);
+        return counts;
+      }, new Map<string, number>())
+      .entries(),
+  ].map(([colour, count]) => ({ colour, count }));
+  const powerCell = requiredCell("Power");
+  const comboPower = integerOrNull(
+    htmlText(requiredCell("Combo power").shared ?? ""),
+  );
+  const traitsCell = requiredCell("Special Traits");
+  const skillsCell = requiredCell("Skills");
+  const whereToGet = htmlText(requiredCell("Where to get it").shared ?? "");
+  if (whereToGet.length === 0) {
+    throw new Error(
+      "Fusion World Card detail is missing its Where to get it evidence.",
+    );
+  }
+  const faceValue = (
+    cell: { shared: string | null; front: string | null; back: string | null },
+    role: "front" | "back",
+  ): string | null => {
+    const value = role === "front" ? cell.front : cell.back;
+    return value ?? cell.shared;
+  };
+  const faceNames = fusionWorldDetailNames(html);
+  const faceImages = fusionWorldDetailImages(
+    html,
+    sourceLineage,
+    requestUrl,
+    leader,
+  );
+  const faces = leader
+    ? (["front", "back"] as const).map((role) => {
+        const name = role === "front" ? faceNames.front : faceNames.back;
+        const imageUrl = faceImages[role];
+        const skills = faceValue(skillsCell, role);
+        if (name === null || imageUrl === undefined || skills === null) {
+          throw new Error(
+            `Fusion World Leader ${role} face evidence is incomplete.`,
+          );
+        }
+        return {
+          role,
+          name: htmlText(name),
+          power: integerOrNull(htmlText(faceValue(powerCell, role) ?? "")),
+          traits: textValues(htmlText(faceValue(traitsCell, role) ?? "")),
+          skills: htmlText(skills),
+          imageUrl,
+        };
+      })
+    : null;
+  const name = leader
+    ? faces![0]!.name
+    : htmlText(faceNames.single ?? "");
+  if (name.length === 0) {
+    throw new Error("Fusion World Card detail is missing its Card name.");
+  }
+  const rules = leader ? faces![0]!.skills : htmlText(skillsCell.shared ?? "");
+  if (rules.length === 0) {
+    throw new Error("Fusion World Card detail is missing its Skills.");
+  }
+  const imageEvidence = leader
+    ? faces!.map(({ role, imageUrl }) => ({ role, source_url: imageUrl }))
+    : [{ role: "front" as const, source_url: faceImages.single! }];
+  const power = leader
+    ? faces![0]!.power
+    : integerOrNull(htmlText(powerCell.shared ?? ""));
+  const traits = leader
+    ? faces![0]!.traits
+    : textValues(htmlText(traitsCell.shared ?? ""));
+  const attributes = {
+    card_type: normalizedType,
+    colours,
+    cost,
+    specified_cost: specifiedCost,
+    power,
+    combo_power: comboPower,
+    traits,
+    skills: [{ kind: "ordinary", text: rules }],
+    ...(leader
+      ? {
+          leader_faces: faces!.map((face) => ({
+            role: face.role,
+            name: face.name,
+            power: face.power,
+            traits: face.traits,
+            skills: face.skills,
+          })),
+        }
+      : {}),
+  };
+  const artworkFingerprint = officialArtworkFingerprint(
+    cardNumber,
+    imageEvidence.map(({ role }) => role),
+    null,
+  );
+  const detail = {
+    path: requestedLocator,
+    number: cardNumber,
+    title: name,
+    rules,
+    profile: "fusion-world@1",
+    attributes,
+    product_codes: [],
+    fuzzy_product_labels: [],
+    distribution: {
+      code: `card-set:${whereToGet}`,
+      kind: "source_bucket",
+      label: whereToGet,
+    },
+    printing: {
+      rarity: rarity.length === 0 ? null : rarity,
+      normalizedRarity: rarity.length === 0 ? null : rarity.toLowerCase(),
+      attributes: {},
+    },
+    treatment: null,
+    printed_rules: rules,
+    variant: identity.variant,
+    artwork_fingerprint: artworkFingerprint,
+    printed_fields_digest: `printed-material:${
+      JSON.stringify(stableValue({ rules, attributes }))
+    }`,
+    image: imageEvidence[0]!.source_url,
+    images: imageEvidence.map(({ role, source_url }) => ({
+      role,
+      source_url,
+      artwork_fingerprint: artworkFingerprint,
+    })),
+  };
+  const observation = cardObservation(
+    detail,
+    [],
+    new Map(),
+    { revision: "captured-by-policy-surface", entries: [] },
+    { revision: "captured-by-policy-surface", entries: [] },
+    "fusion-world",
+  );
+  const document = {
+    card_number: cardNumber,
+    rarity,
+    ...Object.fromEntries(
+      cells.map((cell) => [
+        cell.label,
+        htmlText(cell.shared ?? `${cell.front ?? ""} ${cell.back ?? ""}`),
+      ]),
+    ),
+  };
+  return attachRawSurfaceEvidenceV1(
+    observation,
+    sourceLineage,
+    "card-detail",
+    document,
+    true,
+    [
+      "card_number",
+      "rarity",
+      "Card type",
+      "Color",
+      "Cost",
+      "Specified cost",
+      "Power",
+      "Combo power",
+      "Special Traits",
+      "Skills",
+      "Where to get it",
+    ],
+  );
+}
+
+function fusionWorldDetailCells(html: string): {
+  label: string;
+  shared: string | null;
+  front: string | null;
+  back: string | null;
+}[] {
+  const cellStarts = [...html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bcardDataCell\b[^"']*["'][^>]*>/giu,
+  )].map((match) => match.index);
+  const boundary = html.search(
+    /<div\b[^>]*\bclass=["'][^"']*\binformationCol\b[^"']*["'][^>]*>/iu,
+  );
+  return cellStarts.map((start, index) => {
+    const chunk = html.slice(
+      start,
+      cellStarts[index + 1] ?? (boundary >= 0 ? boundary : html.length),
+    );
+    const label = htmlText(
+      requiredHtmlMatch(
+        chunk,
+        /<h6\b[^>]*>([\s\S]*?)<\/h6>/iu,
+        "Fusion World Card data label",
+      )[1]!,
+    );
+    let shared: string | null = null;
+    let front: string | null = null;
+    let back: string | null = null;
+    for (const value of chunk.matchAll(
+      /<div\b[^>]*\bclass=["']([^"']*\bdata\b[^"']*)["'][^>]*>([\s\S]*?)<\/div>/giu,
+    )) {
+      const classes = value[1]!.split(/\s+/u);
+      if (classes.includes("is-front")) front = value[2]!;
+      else if (classes.includes("is-back")) back = value[2]!;
+      else if (shared === null) shared = value[2]!;
+    }
+    return { label, shared: shared ?? front, front, back };
+  });
+}
+
+function fusionWorldDetailNames(html: string): {
+  single: string | null;
+  front: string | null;
+  back: string | null;
+} {
+  let single: string | null = null;
+  let front: string | null = null;
+  let back: string | null = null;
+  for (const match of html.matchAll(
+    /<h1\b[^>]*\bclass=["']([^"']*\bcardName\b[^"']*)["'][^>]*>([\s\S]*?)<\/h1>/giu,
+  )) {
+    const classes = match[1]!.split(/\s+/u);
+    if (classes.includes("is-front")) front = match[2]!;
+    else if (classes.includes("is-back")) back = match[2]!;
+    else single = match[2]!;
+  }
+  return { single: single ?? front, front, back };
+}
+
+function fusionWorldDetailImages(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+  leader: boolean,
+): { single?: string; front?: string; back?: string } {
+  const resolveOfficialImage = (raw: string): string => {
+    const resolved = new URL(decodeHtmlText(raw), requestUrl);
+    if (!officialUrl(sourceLineage, resolved, "image")) {
+      throw new Error(
+        "Fusion World Card detail image is outside registered authority.",
+      );
+    }
+    return resolved.href;
+  };
+  if (!leader) {
+    const image = html.match(
+      /<div\b[^>]*\bclass=["'][^"']*\bcardImage\b[^"']*["'][^>]*>\s*<img\b[^>]*\bsrc=["']([^"']+)["']/iu,
+    );
+    if (image === null) {
+      throw new Error("Fusion World Card detail has no Printing Image URL.");
+    }
+    return { single: resolveOfficialImage(image[1]!) };
+  }
+  const faces: { front?: string; back?: string } = {};
+  for (const match of html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bimg-(front|back)\b[^"']*["'][^>]*>\s*<img\b[^>]*\bsrc=["']([^"']+)["']/giu,
+  )) {
+    const role = match[1]!.toLowerCase() as "front" | "back";
+    if (faces[role] !== undefined) {
+      throw new Error(
+        `Fusion World Leader ${role} face requires exactly one role-specific image.`,
+      );
+    }
+    faces[role] = resolveOfficialImage(match[2]!);
+  }
+  if (faces.front === undefined || faces.back === undefined) {
+    throw new Error(
+      "Fusion World Leader requires explicit front and back face images.",
+    );
+  }
+  return faces;
 }
 
 function fusionWorldLocatorIdentity(value: string): {
@@ -4896,6 +5672,7 @@ function parseBandaiSurfaceCoverageV2(
   url: string,
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete = false,
+  restructured = false,
 ): ParsedBandaiSurface {
   return parseBandaiSurfaceCoverageByContract(
     html,
@@ -4905,6 +5682,71 @@ function parseBandaiSurfaceCoverageV2(
     url,
     acceptPublisherDeclaredEmpty,
     catalogueComplete,
+    restructured,
+  );
+}
+
+function parseRestructuredGundamPackagesRoot(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  const errorSections = [...html.matchAll(
+    /<section\b[^>]*\bclass=["'][^"']*\berrorCol\b[^"']*["'][^>]*>([\s\S]*?)<\/section>/giu,
+  )];
+  if (errorSections.length !== 1) {
+    throw new Error(
+      "Official Source Gundam card search root did not retain its empty search state.",
+    );
+  }
+  const errorTitle = htmlText(
+    requiredHtmlMatch(
+      errorSections[0]![1]!,
+      /<h4\b[^>]*\bclass=["'][^"']*\berrorTit\b[^"']*["'][^>]*>([\s\S]*?)<\/h4>/iu,
+      "Official Source Gundam card search empty state",
+    )[1]!,
+  );
+  if (errorTitle !== "Please specify your search criteria.") {
+    throw new Error(
+      "Official Source Gundam card search root empty state is unrecognized.",
+    );
+  }
+  const packageOptions = gundamPublisherPackageOptions(html);
+  if (packageOptions.length === 0) {
+    throw new Error(
+      "Official Source Gundam card search root enumerates no packages.",
+    );
+  }
+  return attachRawSurfaceEvidenceV1(
+    {
+      completeness: completeObservation(
+        packageOptions.length,
+        packageOptions.length,
+      ),
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    },
+    sourceLineage,
+    surface,
+    {
+      source_lineage: sourceLineage,
+      surface,
+      url: requestUrl,
+      empty_search_state: errorTitle,
+      package_options: [...packageOptions].sort(),
+    },
+    true,
+    [
+      "source_lineage",
+      "surface",
+      "url",
+      "empty_search_state",
+      "package_options",
+    ],
   );
 }
 
@@ -4972,10 +5814,26 @@ function parseBandaiSurfaceCoverageByContract(
   url: string,
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete: boolean,
+  restructured = false,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
+  const restructuredFusionLeafSurface = restructured &&
+    catalogueComplete &&
+    format === "fusion-world" &&
+    (surface === "listing" || surface === "card-search") &&
+    fusionWorldRestructuredListingLeaf(new URL(url));
+  if (
+    restructured && catalogueComplete && format === "fusion-world" &&
+    surface === "card-search" &&
+    fusionPublisherCategoryOptions(html).length === 0
+  ) {
+    throw new Error(
+      "Official Source Fusion World card search enumerates no categories.",
+    );
+  }
   const fusionListingEntries = catalogueComplete &&
-      format === "fusion-world" && surface === "listing"
+      format === "fusion-world" &&
+      (surface === "listing" || restructuredFusionLeafSurface)
     ? fusionWorldHtmlListingEntries(html, url, sourceLineage)
     : [];
   if (
@@ -4988,6 +5846,7 @@ function parseBandaiSurfaceCoverageByContract(
       new URL(url),
       false,
       catalogueComplete,
+      restructured,
     ).length === 0
   ) {
     throw new Error(
@@ -5030,12 +5889,15 @@ function parseBandaiSurfaceCoverageByContract(
   const publicationEntryMatches = [...html.matchAll(
     /<(article|li|tr)\b([^>]*)>([\s\S]*?)<\/\1>/giu,
   )];
-  const completeFusionListingLeaf = catalogueComplete &&
-    format === "fusion-world" &&
-    surface === "listing" &&
-    fusionWorldCompleteListingLeaf(new URL(url));
+  const completeFusionListingLeaf = restructured
+    ? restructuredFusionLeafSurface
+    : catalogueComplete &&
+      format === "fusion-world" &&
+      surface === "listing" &&
+      fusionWorldCompleteListingLeaf(new URL(url));
   const fusionListingDeclaredCount = catalogueComplete &&
-      format === "fusion-world" && surface === "listing"
+      format === "fusion-world" &&
+      (surface === "listing" || restructuredFusionLeafSurface)
     ? visibleFusionPublisherCount(html)
     : null;
   const declaredCount = fusionListingDeclaredCount ?? html.match(
@@ -6591,7 +7453,64 @@ function parseDigimonCardListPopupHtmlV4(
   html: string,
   requestUrl: string,
 ): Record<string, unknown>[] {
-  const declaredRecordCount = digimonDeclaredRecordCount(html);
+  return parseDigimonCardListPopupHtmlByContract(
+    html,
+    requestUrl,
+    digimonDeclaredRecordCount(html),
+  );
+}
+
+function parseDigimonCardListPopupHtmlV5(
+  html: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  // The restructured live leaves render every popup record server-side with
+  // client-side page markers and no separate "Result N cards" total.
+  return parseDigimonCardListPopupHtmlByContract(
+    html,
+    requestUrl,
+    digimonStructuralRecordCount(html),
+    true,
+  );
+}
+
+function digimonStructuralRecordCount(html: string): number {
+  const pagers = [...html.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\bpaging\b[^"']*["'][^>]*>/giu,
+  )];
+  if (pagers.length < 1 || pagers.length > 2) {
+    throw new Error(
+      "Official Digimon Card List paging container is unavailable.",
+    );
+  }
+  const pages = [...html.matchAll(
+    /<li\b[^>]*\bclass=["']([^"']*\bimage_lists_item\b[^"']*\bdata\b[^"']*)["'][^>]*>/giu,
+  )].map((match) => {
+    const page = match[1]!.match(/\bpage-(\d+)\b/u);
+    if (page === null) {
+      throw new Error(
+        "Official Digimon Card List record is missing its page marker.",
+      );
+    }
+    return Number.parseInt(page[1]!, 10);
+  });
+  const distinctPages = new Set(pages);
+  for (let page = 1; page <= distinctPages.size; page += 1) {
+    if (!distinctPages.has(page)) {
+      throw new Error(
+        "Official Digimon Card List page markers are not contiguous.",
+      );
+    }
+  }
+  return pages.length;
+}
+
+function parseDigimonCardListPopupHtmlByContract(
+  html: string,
+  requestUrl: string,
+  declaredRecordCount: number,
+  optionalEffect = false,
+): Record<string, unknown>[] {
   const leafPublisherCardType = requiredText(
     new URL(requestUrl).searchParams.get("cardcategory"),
     "Official Digimon leaf cardcategory",
@@ -6794,10 +7713,15 @@ function parseDigimonCardListPopupHtmlV4(
           raw_condition: value,
         };
       });
-    const effect = requiredText(
-      field("[Effect]", "Effect"),
-      "Official Digimon Card effect",
-    );
+    // The live BT-01 listing (verified 2026-08-07) publishes vanilla Digimon
+    // Cards without any effect row; restructured contracts retain them with
+    // empty printed rules instead of failing the leaf.
+    const effect = optionalEffect
+      ? field("[Effect]", "Effect") ?? ""
+      : requiredText(
+        field("[Effect]", "Effect"),
+        "Official Digimon Card effect",
+      );
     const textSectionPairs = pairs.map(({ label, value }) => ({
       label: new Map([
         ["[Effect]", "Effect"],
@@ -6881,6 +7805,7 @@ function parseDigimonCardListPopupHtmlV4(
       imageFields: [{ role: "front", value: imageUrl.href }],
       preserveFuzzyProductLabels: true,
       derivePrintingIdentity: true,
+      allowEmptyRules: optionalEffect,
     });
     const observation = cardObservation(
       detail,
@@ -7982,6 +8907,7 @@ function canonicalDetail(
     imageFields: readonly { role: string; value: unknown }[];
     preserveFuzzyProductLabels?: boolean;
     derivePrintingIdentity?: boolean;
+    allowEmptyRules?: boolean;
   },
 ): Record<string, unknown> {
   const printing =
@@ -8002,7 +8928,10 @@ function canonicalDetail(
   }
   const path = requiredText(raw[mapping.path], "Official Card locator");
   const number = requiredText(raw[mapping.number], "Official Card number");
-  const rules = requiredText(raw[mapping.rules], "Official Card rules");
+  const rules = mapping.allowEmptyRules === true &&
+      raw[mapping.rules] === ""
+    ? null
+    : requiredText(raw[mapping.rules], "Official Card rules");
   const artworkFingerprint = printing === undefined
     ? null
     : mapping.artworkFingerprint ??
@@ -8070,19 +8999,25 @@ function canonicalDetail(
               ? mapping.printingAttributes ?? {}
               : printing.attributes ?? {},
           },
-          printed_rules: requiredText(
-            raw.printed_rules,
-            "Official printed rules",
-          ),
+          printed_rules: mapping.allowEmptyRules === true &&
+              raw.printed_rules === ""
+            ? null
+            : requiredText(
+              raw.printed_rules,
+              "Official printed rules",
+            ),
           variant: requiredText(raw.variant, "Official Printing variant"),
           artwork_fingerprint: artworkFingerprint,
           printed_fields_digest: mapping.printedFieldsDigest ??
             (mapping.derivePrintingIdentity === true
               ? `printed-material:${JSON.stringify(stableValue({
-                  rules: requiredText(
-                    raw.printed_rules,
-                    "Official printed rules",
-                  ),
+                  rules: mapping.allowEmptyRules === true &&
+                      raw.printed_rules === ""
+                    ? null
+                    : requiredText(
+                      raw.printed_rules,
+                      "Official printed rules",
+                    ),
                   rarity: mapping.normalizedRarity !== undefined
                     ? mapping.normalizedRarity
                     : printing.rarity ?? null,

@@ -325,10 +325,10 @@ function completePlan(userAgent) {
     plans: [{
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@3",
+      adapter_version: "one-piece-en@4",
       requests: [{
         id: "one-piece-en:discovery",
-        url: "https://en.onepiece-cardgame.com/cardlist/",
+        url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
         headers: { accept: "text/html", "user-agent": userAgent },
       }],
     }],
