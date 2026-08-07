@@ -49,3 +49,7 @@ INSERT INTO source_adapter_versions (
     'gundam-en-us-restructured-complete-catalogue@4',
     'production'
   );
+
+UPDATE catalogue_schema_state
+SET migration_level = 22
+WHERE singleton = 1 AND migration_level = 21;
