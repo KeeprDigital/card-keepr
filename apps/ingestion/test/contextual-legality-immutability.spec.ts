@@ -1041,7 +1041,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@4",
+    adapter_version: "fusion-world-en@5",
     idempotency_key: "production-representable-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1100,7 +1100,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const conflicting = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@4",
+    adapter_version: "fusion-world-en@5",
     idempotency_key: "production-conflicting-shared-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1123,7 +1123,7 @@ test("production discovery retains literal stages and cannot freeze a Collection
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@4",
+    adapter_version: "fusion-world-en@5",
     idempotency_key: "production-staged-discovery-gap-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-staged-discovery-gap-v3",
@@ -1159,7 +1159,8 @@ test("production discovery retains literal stages and cannot freeze a Collection
   expect(staged.results).toEqual(expect.arrayContaining([
     {
       parent_request_id: "fusion-world-en:discovery",
-      url: "https://www.dbs-cardgame.com/fw/en/cardlist/",
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
       request_role: "listing",
     },
     {
@@ -1372,7 +1373,7 @@ test("the One Piece production release surface publishes release timing through 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@3",
+    adapter_version: "one-piece-en@4",
     idempotency_key: "production-one-piece-release-timing-v2",
     requests: productionOnePieceReleaseTimingRequests(),
   });
@@ -1407,7 +1408,7 @@ test("the One Piece production release surface publishes release timing through 
   const changed = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@3",
+    adapter_version: "one-piece-en@4",
     idempotency_key: "production-one-piece-unrecognized-release-v2",
     requests: productionOnePieceReleaseTimingRequests(
       "card-keepr-one-piece-unrecognized-release-v2",

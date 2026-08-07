@@ -45,6 +45,12 @@ import ingestionWorker from "../src/index";
 
 installReconciliationSuite();
 
+// A candidate expires seven days after the instant it was reconciled at, so an
+// approval decision taken on the wall clock stops reaching a reconciliation
+// pinned to a fixed calendar date once that week elapses. Scenarios that pin
+// the reconciliation instant take their decision on the same clock.
+const reconciledAt = "2026-07-31T01:00:00.000Z";
+
 test("registered Source metadata rejects unowned stored Legality freshness scopes", () => {
   expect(() => sourceFreshnessFromStorage({
     game: "gundam",
@@ -264,6 +270,7 @@ test("a Workflow that terminalizes during initial HTTP creation returns 200", as
         candidate_digest: requiredString(output, "candidate_digest"),
         idempotency_key: "reject-workflow-terminal-on-http-create",
       },
+      { "x-keepr-test-now": reconciledAt },
     )).response.status,
   ).toBe(200);
 });
@@ -362,6 +369,7 @@ test("an exact reconciliation replay observes without creating or executing the 
       candidate_digest: requiredString(output, "candidate_digest"),
       idempotency_key: "reject-observe-only-workflow-replay",
     },
+    { "x-keepr-test-now": reconciledAt },
   );
   expect(rejected.response.status).toBe(200);
   expect(rejected.document).toMatchObject({
@@ -461,6 +469,7 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
         candidate_digest: requiredString(reconciled, "candidate_digest"),
         idempotency_key: "reject-workflow-create-loss-recovery",
       },
+      { "x-keepr-test-now": reconciledAt },
     )).response.status,
   ).toBe(200);
 });
@@ -552,6 +561,7 @@ test("reconciliation commit success survives lost step output without repeating 
         candidate_digest: requiredString(durable, "candidate_digest"),
         idempotency_key: "reject-workflow-output-loss-recovery",
       },
+      { "x-keepr-test-now": reconciledAt },
     )).response.status,
   ).toBe(200);
 });
@@ -643,6 +653,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
         candidate_digest: candidateDigest,
         idempotency_key: "reject-workflow-complete-output-recovery",
       },
+      { "x-keepr-test-now": reconciledAt },
     )).response.status,
   ).toBe(200);
 });

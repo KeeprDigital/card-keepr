@@ -161,7 +161,7 @@ export function exactOnePiecePlan(idempotencyKey: string) {
   return {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@3",
+    adapter_version: "one-piece-en@4",
     idempotency_key: idempotencyKey,
     requests: officialSourceDiscoveryRequests("one-piece-en").map(
       (request) => ({ ...request }),

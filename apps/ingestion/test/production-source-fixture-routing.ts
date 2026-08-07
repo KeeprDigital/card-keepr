@@ -87,12 +87,55 @@ export function productionRepresentableFusionLegalityResponse(
   );
 }
 
+// The restructured Fusion World card search serves one complete category
+// listing per request. The synthetic leaf offers only the category the
+// request already selected, so discovery derives no further partitions and
+// the collection graph closes on the pinned surface alone.
+function productionFusionCardSearchLeaf(
+  url: URL,
+  officialNavigation: string,
+): Response | null {
+  const categories = url.searchParams.getAll("category[0]");
+  if (
+    url.hostname !== "www.dbs-cardgame.com" ||
+    url.pathname !== "/fw/en/cardlist/" ||
+    url.searchParams.get("search") !== "true" ||
+    categories.length !== 1 ||
+    !/^\d+$/u.test(categories[0]!) ||
+    [...url.searchParams.keys()].some((key) =>
+      key !== "search" && key !== "category[0]"
+    )
+  ) return null;
+  return new Response(
+    `<html><title>Official Bandai DRAGON BALL CARD LIST publication</title>${officialNavigation}<main>
+      <section class="searchColSet-product">
+        <a href="javascript:void(0);" data-val="${categories[0]}">Filter by series</a>
+      </section>
+      <div class="resultTxt">Result<span class="num">0</span>cards</div>
+      <article data-publication-empty="true">No published entries.</article>
+    </main></html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        etag: `"official-fusion-card-search-${categories[0]}"`,
+      },
+    },
+  );
+}
+
 export function productionOfficialStageResponse(
   lineage: string,
   request: Request,
   officialNavigation: string,
 ): Response {
   const url = new URL(request.url);
+  if (lineage === "fusion-world-en") {
+    const cardSearchLeaf = productionFusionCardSearchLeaf(
+      url,
+      officialNavigation,
+    );
+    if (cardSearchLeaf !== null) return cardSearchLeaf;
+  }
   const fusionProductCoverage =
     lineage === "fusion-world-en" && url.pathname === "/fw/en/products/"
       ? `<nav aria-label="Product status">
@@ -118,7 +161,9 @@ export function productionOfficialStageResponse(
           url.hostname === "en.onepiece-cardgame.com" &&
           (
             url.pathname === "/rules/restriction/" ||
+            url.pathname === "/news/restriction.html" ||
             url.pathname === "/rules/block_icon/" ||
+            url.pathname === "/topics/013.php" ||
             url.pathname === "/rules/"
           )
         )
@@ -138,8 +183,8 @@ function productionOfficialStageNavigation(lineage: string, url: URL): string {
   const path = `${url.pathname}${url.search}`;
   if (lineage === "one-piece-en" && path === "/rules/") {
     return `<nav aria-label="Rules publications">
-      <a href="/rules/restriction/">Restriction Cards</a>
-      <a href="/rules/block_icon/">Block Policy</a>
+      <a href="/news/restriction.html">Restriction Cards</a>
+      <a href="/topics/013.php">Block Policy</a>
       <a href="/rules/errata_card/">Errata Cards</a>
     </nav>`;
   }
@@ -147,7 +192,6 @@ function productionOfficialStageNavigation(lineage: string, url: URL): string {
     return `<nav aria-label="Rules publications">
       <a href="/fw/en/news/01_305.html">Current banned and limited cards</a>
       <a href="/fw/en/news/01_399.html">Previous restriction history</a>
-      <a href="/fw/en/rules/errata-card/">Errata Cards</a>
     </nav>`;
   }
   if (lineage === "digimon-en" && path === "/cardlist/") {
@@ -164,7 +208,7 @@ function productionOfficialStageNavigation(lineage: string, url: URL): string {
     return `<nav><a href="index.php">Find Cards</a></nav>`;
   }
   if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
-    return `<nav><a href="?subcategory=rules">Errata and corrections</a></nav>`;
+    return `<nav><a href="?subcategory=news&amp;tag=all&amp;page=1">NEWS</a></nav>`;
   }
   return "";
 }

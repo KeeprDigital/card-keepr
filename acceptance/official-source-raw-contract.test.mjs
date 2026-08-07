@@ -34,13 +34,14 @@ const expectedSurfaces = {
     "errata",
     "don-rules",
   ],
+  // The restructured Fusion World EN contract drops "errata": the publisher
+  // retired /fw/en/rules/errata-card/ and publishes no replacement.
   "fusion-world-en": [
     "card-search",
     "products",
     "releases",
     "legality-current",
     "legality-history",
-    "errata",
   ],
   "digimon-en": [
     "card-list",
@@ -68,23 +69,21 @@ const expectedSurfaces = {
 
 const expectedSurfaceUrls = {
   "one-piece-en": {
-    "card-list": "https://en.onepiece-cardgame.com/cardlist/",
+    "card-list": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
     products: "https://en.onepiece-cardgame.com/products/",
     releases: "https://en.onepiece-cardgame.com/products/",
-    restrictions: "https://en.onepiece-cardgame.com/rules/restriction/",
-    "block-policy": "https://en.onepiece-cardgame.com/rules/block_icon/",
+    restrictions: "https://en.onepiece-cardgame.com/news/restriction.html",
+    "block-policy": "https://en.onepiece-cardgame.com/topics/013.php",
     errata: "https://en.onepiece-cardgame.com/rules/errata_card/",
     "don-rules": "https://en.onepiece-cardgame.com/rules/",
   },
   "fusion-world-en": {
-    "card-search": "https://www.dbs-cardgame.com/fw/en/cardlist/",
+    "card-search":
+      "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     products: "https://www.dbs-cardgame.com/fw/en/products/",
     releases: "https://www.dbs-cardgame.com/fw/en/products/",
-    "legality-current":
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    "legality-history":
-      "https://www.dbs-cardgame.com/fw/en/rules/banned-limited-cards/",
-    errata: "https://www.dbs-cardgame.com/fw/en/rules/errata-card/",
+    "legality-current": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+    "legality-history": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
   },
   "digimon-en": {
     "card-list": "https://world.digimoncard.com/cards/index.php?search=true",
@@ -101,30 +100,34 @@ const expectedSurfaceUrls = {
     products: "https://www.gundam-gcg.com/asia-en/products/list.php",
     releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
     legality: "https://www.gundam-gcg.com/asia-en/rules/",
-    errata: "https://www.gundam-gcg.com/asia-en/news/?subcategory=rules",
+    errata:
+      "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
   },
   "gundam-en-us": {
     packages: "https://www.gundam-gcg.com/en/cards/index.php",
     products: "https://www.gundam-gcg.com/en/products/list.php",
     releases: "https://www.gundam-gcg.com/en/products/list.php",
     legality: "https://www.gundam-gcg.com/en/rules/",
-    errata: "https://www.gundam-gcg.com/en/news/?subcategory=rules",
+    errata:
+      "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
   },
 };
 
+// The restructured navigation resolves each cards seed through the
+// publisher's live redirect target instead of the retired bare index.
 const expectedDiscoveryLinks = {
   "one-piece-en": [
-    ["FIND CARDS", "/cardlist/"],
+    ["FIND CARDS", "/cardlist/?series=569116"],
     ["ALL PRODUCTS", "/products/"],
     ["RULES", "/rules/"],
   ],
   "fusion-world-en": [
-    ["CARDS", "/fw/en/cardlist/"],
+    ["CARDS", "/fw/en/cardlist/?search=true&category%5B0%5D=583301"],
     ["ALL PRODUCTS", "/fw/en/products/"],
     ["RULES", "/fw/en/news/01_31.html"],
   ],
   "digimon-en": [
-    ["CARD LIST", "/cardlist/"],
+    ["CARD LIST", "/cards/index.php?search=true"],
     ["PRODUCTS", "/products/"],
     ["RULES", "/rule/"],
   ],
@@ -169,11 +172,11 @@ const productionAdapterVersions = sourceAdapterRegistrations
   .map(({ adapterVersion }) => adapterVersion);
 
 const expectedProductionAdapterVersions = [
-  "digimon-en@4",
-  "fusion-world-en@4",
-  "gundam-en-asia@4",
-  "gundam-en-us@4",
-  "one-piece-en@3",
+  "digimon-en@5",
+  "fusion-world-en@5",
+  "gundam-en-asia@5",
+  "gundam-en-us@5",
+  "one-piece-en@4",
 ];
 
 test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
@@ -824,14 +827,17 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[2-5]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-0[2-7]T/u);
   return { bytes, metadata };
 }
 
+// Discovery roots retained at each active adapter's discovery request URL.
+// The Gundam find-cards roots kept their URL across the restructure, so their
+// original captures remain the exact discovery evidence.
 const retainedDiscoveryFixtures = {
-  "one-piece-en": "one-piece-en-discovery",
-  "fusion-world-en": "fusion-world-en-discovery",
-  "digimon-en": "digimon-en-discovery",
+  "one-piece-en": "one-piece-en-restructured-discovery",
+  "fusion-world-en": "fusion-world-en-restructured-card-search",
+  "digimon-en": "digimon-en-restructured-card-search",
   "gundam-en-asia": "gundam-en-asia-discovery",
   "gundam-en-us": "gundam-en-us-discovery",
 };
@@ -1413,7 +1419,9 @@ test("the exact Fusion listing fixture dispatch closes its staged surfaces", asy
     observations.flatMap(({ records }) => records ?? []).map(({ surface }) =>
       surface
     ),
-    ["legality-current", "legality-history", "errata"],
+    // The publisher retired the Fusion World errata surface, so the rules
+    // stage now closes on its two legality publications alone.
+    ["legality-current", "legality-history"],
   );
 });
 
@@ -1505,10 +1513,13 @@ test("registered Fusion policy collection identities parse their retained curren
 test("One Piece parser-failure markers survive retained discovery, staged listing, and final surface transport", async () => {
   const adapter = requiredSourceAdapter("one-piece-en@3");
   const url = "https://en.onepiece-cardgame.com/cardlist/";
+  // The retained discovery root now lives behind the publisher's series
+  // redirect; staged listing requests must never be answered with it.
+  const rootUrl = "https://en.onepiece-cardgame.com/cardlist/?series=569116";
   for (const failure of ["cap", "pagination"]) {
     const marker = `card-keepr-acceptance-parser/${failure}`;
     const responseForRole = (role) => syntheticOfficialSource.fetch(
-      new Request(url, {
+      new Request(role === null ? rootUrl : url, {
         headers: {
           "user-agent": role === null
             ? marker
@@ -1721,36 +1732,35 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     assert.equal(adapter.reconciliationCapability, "catalogue");
     assert.deepEqual(
       adapter.reconciliationAreas,
-      [
-        "one-piece-en@3",
-        "fusion-world-en@4",
-        "digimon-en@4",
-        "gundam-en-asia@4",
-        "gundam-en-us@4",
-      ].includes(
-        adapter.adapterVersion,
-      )
-        ? ["catalogue", "errata"]
-        : ["catalogue"],
+      // Fusion World's restructured contract owns no errata surface, so it
+      // reconciles catalogue evidence alone.
+      adapter.adapterVersion === "fusion-world-en@5"
+        ? ["catalogue"]
+        : ["catalogue", "errata"],
     );
     assert.equal(
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
+    assert.equal(
+      adapter.parserContract,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@4`,
+    );
     assert.match(
       adapter.parserContract,
-      adapter.sourceLineage === "one-piece-en"
-        ? /-complete-catalogue@3$/u
-        : adapter.sourceLineage === "fusion-world-en"
-          ? /-raw-surfaces-with-legality-and-catalogue@3$/u
-          : adapter.sourceLineage === "digimon-en"
-            ? /-raw-surfaces-complete-catalogue@3$/u
-            : /-raw-surfaces-complete-catalogue@3$/u,
+      /-restructured-complete-catalogue@4$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
       adapter.requiredSurfaces,
       expectedSurfaces[adapter.sourceLineage],
+    );
+    assert.deepEqual(
+      Object.fromEntries(adapter.requiredSurfaces.map((surface) => [
+        surface,
+        adapter.requestUrlForSurface(surface),
+      ])),
+      expectedSurfaceUrls[adapter.sourceLineage],
     );
     const requests = officialSourceDiscoveryRequests(adapter.sourceLineage);
     assert.deepEqual(
@@ -1793,12 +1803,11 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       (observation) => observation.records ?? [],
     );
     assert.ok(
-      discoveryRecords.every(({ discovered_from }) =>
-        retainedHtml.includes(
-          discovered_from.resolution,
-        )
+      discoveryRecords.every(({ url, discovered_from }) =>
+        retainedHtml.includes(discovered_from.resolution) ||
+        url === requests[0].url
       ),
-      `${adapter.sourceLineage} discovery may only emit URLs literally retained in the source bytes`,
+      `${adapter.sourceLineage} discovery may only emit URLs literally retained in the source bytes or the retained request URL itself`,
     );
     assert.deepEqual(
       discoveryRecords.map(({ discovered_from: _derivation, ...record }) => record),
@@ -1860,13 +1869,22 @@ test("production registrations and dynamic discovery enforce exact lineage URL a
         : `/outside-lineage${hostilePath.pathname}`;
     const fusionLeaf = adapter.sourceLineage === "fusion-world-en";
     const gundamLeaf = adapter.sourceLineage.startsWith("gundam-en-");
+    // The restructured Fusion World card-search URL is already a complete
+    // category leaf, and every leaf must enumerate the publisher categories.
     const discoveryUrl = fusionLeaf
-      ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`
+      ? adapter.requestUrlForSurface(adapter.requiredSurfaces[0])
       : gundamLeaf
         ? `${adapter.requestUrlForSurface(adapter.requiredSurfaces[0])}?package=GD01`
       : adapter.requestUrlForSurface(adapter.requiredSurfaces[0]);
+    const publisherFacets = fusionLeaf
+      ? `<section class="searchColSet-product">
+           <a data-val="583301">Series 583301</a>
+           <a data-val="583302">Series 583302</a>
+         </section>`
+      : "";
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(`
+        ${publisherFacets}
         <a href="${validDetail}">Card detail</a>
         <a href="${hostileOrigin.href}">Wrong subdomain</a>
         <a href="${hostilePath.href}">Wrong locale path</a>
@@ -3508,6 +3526,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   const adapter = registeredProductionAdapters().find(
     ({ sourceLineage }) => sourceLineage === "one-piece-en",
   );
+  const cardListUrl = adapter.requestUrlForSurface("card-list");
   const html = `
       <select id="series">
         <option value="569114">BOOSTER PACK -TEST- [OP99]</option>
@@ -3547,7 +3566,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     bytes,
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: adapter.requestUrlForSurface("card-list"),
     },
   );
   assert.equal(observations.length, 1);
@@ -3567,9 +3586,11 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     observations[0].card.game_data.attributes.trigger_text,
     "Official trigger",
   );
+  // A pinned Recording leaf owns its membership: the bucket follows the
+  // requested series rather than the printed Card Set label.
   assert.deepEqual(
     observations[0].memberships.source_buckets,
-    ["card-set:Test Set [OP99]"],
+    ["recording:569116"],
   );
   assert.deepEqual(
     observations[0].product_release_catalogue.distribution_contexts,
@@ -3609,7 +3630,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
     },
   );
   assert.equal(
@@ -3627,7 +3648,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
     },
   );
   assert.equal(
@@ -3640,7 +3661,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
     },
   );
   assert.equal(
@@ -3657,7 +3678,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
     },
   )[0];
   assert.equal(unfamiliarTreatment.identity_evidence.treatment, null);
@@ -3676,7 +3697,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     ),
     {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
     },
   )[0];
   assert.ok(
@@ -3698,7 +3719,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       ),
       {
         mediaType: "text/html; charset=utf-8",
-        url: "https://en.onepiece-cardgame.com/cardlist/",
+        url: cardListUrl,
       },
     ),
     /One Piece rarity.*Experimental Rare|Experimental Rare.*rarity/iu,
@@ -3714,7 +3735,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
       ),
       {
         mediaType: "text/html; charset=utf-8",
-        url: "https://en.onepiece-cardgame.com/cardlist/",
+        url: cardListUrl,
       },
     ),
     /Leader.*cost.*null/iu,
@@ -3739,7 +3760,7 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   assert.ok(
     adapter.discoverRequests(bytes, {
       mediaType: "text/html; charset=utf-8",
-      url: "https://en.onepiece-cardgame.com/cardlist/",
+      url: cardListUrl,
       requestId: "one-piece-en:card-list",
     }).some(({ role, url }) =>
       role === "listing" &&
@@ -4887,37 +4908,43 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
     ["series=101", "series=102"],
   );
 
+  // The live Fusion World card search partitions by publisher category
+  // alone; every category is one complete listing leaf.
   const fusion = byLineage("fusion-world-en");
-  const facets = `
-    <select name="card_type">
-      <option value="leader">Leader</option><option value="battle">Battle</option>
-    </select>
-    <select name="colour">
-      <option value="red">Red</option><option value="blue">Blue</option>
-    </select>
-    <select name="cost">
-      <option value="1">1</option><option value="2">2</option>
-    </select>
+  const fusionCategories = (...values) => `
+    <section class="searchColSet-product">
+      ${values.map((value) => `<a data-val="${value}">Series ${value}</a>`).join("")}
+    </section>
   `;
-  const fusionRoot = fusion.discoverRequests(encode(facets), {
-    mediaType: "text/html",
-    url: fusion.requestUrlForSurface("card-search"),
-    requestId: "fusion-world-en:card-search",
-  }).filter(({ role }) => role === "listing");
+  const fusionRoot = fusion.discoverRequests(
+    encode(fusionCategories("583301", "583302", "583303")),
+    {
+      mediaType: "text/html",
+      url: fusion.requestUrlForSurface("card-search"),
+      requestId: "fusion-world-en:card-search",
+    },
+  ).filter(({ role }) => role === "listing");
   assert.deepEqual(
     fusionRoot.map(({ url }) => new URL(url).searchParams.toString()),
-    ["card_type=battle", "card_type=leader"],
-  );
-  const fusionColour = fusion.discoverRequests(encode(facets), {
-    mediaType: "text/html",
-    url: `${fusion.requestUrlForSurface("card-search")}?card_type=leader`,
-    requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
-  }).filter(({ role }) => role === "listing");
-  assert.deepEqual(
-    fusionColour.map(({ url }) => new URL(url).searchParams.toString()),
     [
-      "card_type=leader&colour=blue",
-      "card_type=leader&colour=red",
+      "search=true&category%5B0%5D=583302",
+      "search=true&category%5B0%5D=583303",
+    ],
+  );
+  const fusionSibling = fusion.discoverRequests(
+    encode(fusionCategories("583301", "583302", "583303")),
+    {
+      mediaType: "text/html",
+      url:
+        "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583302",
+      requestId: `fusion-world-en:listing:${"a".repeat(64)}`,
+    },
+  ).filter(({ role }) => role === "listing");
+  assert.deepEqual(
+    fusionSibling.map(({ url }) => new URL(url).searchParams.toString()),
+    [
+      "search=true&category%5B0%5D=583301",
+      "search=true&category%5B0%5D=583303",
     ],
   );
 
@@ -4963,25 +4990,25 @@ test("live split discovery follows each lineage's bounded staged hierarchy", () 
     ["digimon", "option"],
   );
 
-  const cappedIntermediate = `
+  const cappedListing = (...categories) => `
     <html><title>BANDAI DRAGON BALL CARD search</title>
       <p>More than 1,000 results were capped</p>
-      ${facets}
+      ${fusionCategories(...categories)}
+      <div class="resultTxt">Result<span class="num">0</span>cards</div>
     </html>
   `;
   assert.doesNotThrow(() =>
-    fusion.parseBytes(encode(cappedIntermediate), {
+    fusion.parseBytes(encode(cappedListing("583301", "583302")), {
       mediaType: "text/html",
-      url: `${fusion.requestUrlForSurface("card-search")}?card_type=leader`,
+      url: fusion.requestUrlForSurface("card-search"),
       requestId: `fusion-world-en:listing:${"8".repeat(64)}`,
     })
   );
   assert.throws(
     () =>
-      fusion.parseBytes(encode(cappedIntermediate), {
+      fusion.parseBytes(encode(cappedListing("583301")), {
         mediaType: "text/html",
-        url:
-          `${fusion.requestUrlForSurface("card-search")}?card_type=leader&colour=red&cost=1`,
+        url: fusion.requestUrlForSurface("card-search"),
         requestId: `fusion-world-en:listing:${"7".repeat(64)}`,
       }),
     /leaf partition still displays/iu,
@@ -5700,11 +5727,16 @@ test("known publisher navigation cannot manufacture catalogue detail requests", 
   for (const adapter of registeredProductionAdapters()) {
     const surface = adapter.requiredSurfaces[0];
     assert.ok(surface);
+    // Fusion World's restructured leaf must still enumerate its own
+    // category; only the currently served one proves no further partition.
+    const publisherFacets = adapter.sourceLineage === "fusion-world-en"
+      ? '<section class="searchColSet-product"><a data-val="583301">Series</a></section>'
+      : "";
     const requests = adapter.discoverRequests(
       new TextEncoder().encode(
         `<html><title>BANDAI Official Card List</title>${
           officialBandaiNavigationHeader(adapter.sourceLineage)
-        }</html>`,
+        }${publisherFacets}</html>`,
       ),
       {
         mediaType: "text/html; charset=utf-8",
@@ -5720,10 +5752,10 @@ test("known publisher navigation cannot manufacture catalogue detail requests", 
   }
 });
 
+// The V4 publisher detail markup is retained evidence; the restructured live
+// detail shape is proven by the retained Leader capture below.
 test("Fusion leaders require explicit role-owned faces and images", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  const adapter = requiredSourceAdapter("fusion-world-en@4");
   const html = `
     <h1 data-card-id="FB99-001">Test Leader</h1>
     <dl><dt>Card Number</dt><dd>FB99-001</dd></dl>
@@ -6108,10 +6140,12 @@ test("real Digimon and Gundam details close every known profile field and reject
 
 test("every production lineage preserves its synthetic publisher-contract examples", () => {
   for (const adapter of registeredProductionAdapters()) {
-    const surface = adapter.requiredSurfaces.find(
-      (candidate) => candidate !== "card-list",
-    );
-    assert.ok(surface);
+    // A publication surface that carries no catalogue or legality parser of
+    // its own; Fusion World publishes no errata surface any more.
+    const surface = adapter.requiredSurfaces.includes("errata")
+      ? "errata"
+      : "releases";
+    assert.ok(adapter.requiredSurfaces.includes(surface));
     const observations = adapter.parseBytes(
       new TextEncoder().encode(`
         <html>
@@ -6593,13 +6627,15 @@ test("Fusion leaf and Product surfaces keep their discovery roles separate", () 
   assert.ok(adapter);
   const leafRequests = adapter.discoverRequests(
     new TextEncoder().encode(`
+      <section class="searchColSet-product">
+        <a data-val="583301">Filter by series</a>
+      </section>
       <a href="javascript:void(0);"
          data-src="detail.php?card_no=FB01-001">Card detail</a>
     `),
     {
       mediaType: "text/html; charset=utf-8",
-      url:
-        `${adapter.requestUrlForSurface("card-search")}?card_type%5B%5D=Leader&color%5B%5D=Red&cost%5B%5D=1`,
+      url: adapter.requestUrlForSurface("card-search"),
       requestId: `fusion-world-en:listing:${"5".repeat(64)}`,
     },
   );
@@ -7216,6 +7252,596 @@ test("active Fusion HTML Products require available and coming-soon tabs", () =>
   });
 });
 
+const restructuredStageDigest = "0".repeat(64);
+
+function retainedRestructuredParse(adapter, slug, context) {
+  const fixture = retainedOfficialSourceFixture(slug);
+  return {
+    fixture,
+    observations: adapter.parseBytes(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      ...context,
+    }),
+  };
+}
+
+function retainedRestructuredRequests(adapter, slug, context) {
+  const fixture = retainedOfficialSourceFixture(slug);
+  return adapter.discoverRequests(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    ...context,
+  });
+}
+
+function stageRecordSummaries(observations) {
+  return observations.flatMap(({ records }) => records ?? []).map((
+    { id, surface, url },
+  ) => ({ id, surface, url }));
+}
+
+test("the restructured One Piece discovery root repeats every publisher navigation link", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@4");
+  const request = officialSourceDiscoveryRequests("one-piece-en")[0];
+  const fixture = retainedOfficialSourceFixture(
+    "one-piece-en-restructured-discovery",
+  );
+  assert.equal(fixture.metadata.source_url, request.url);
+  const html = fixture.bytes.toString("utf8");
+  const navigationAnchor = (label) =>
+    `<span class="menuColListLinkTit">${label}</span>`;
+  for (const label of ["FIND CARDS", "ALL PRODUCTS", "RULES"]) {
+    assert.equal(
+      html.split(navigationAnchor(label)).length - 1,
+      2,
+      `${label} must be retained in both the header and the footer`,
+    );
+  }
+  const records = stageRecordSummaries(
+    adapter.parseBytes(fixture.bytes, {
+      mediaType: fixture.metadata.content_type,
+      url: request.url,
+      requestId: request.id,
+    }),
+  );
+  assert.deepEqual(records, [
+    {
+      id: "one-piece-en:discovery-seed:cards",
+      surface: "@seed:cards",
+      url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+    },
+    {
+      id: "one-piece-en:discovery-seed:products",
+      surface: "@seed:products",
+      url: "https://en.onepiece-cardgame.com/products/",
+    },
+    {
+      id: "one-piece-en:discovery-seed:rules",
+      surface: "@seed:rules",
+      url: "https://en.onepiece-cardgame.com/rules/",
+    },
+  ]);
+
+  const footer = html.lastIndexOf(navigationAnchor("FIND CARDS"));
+  const singleCopy = `${html.slice(0, footer)}${
+    navigationAnchor("FIND CARD")
+  }${html.slice(footer + navigationAnchor("FIND CARDS").length)}`;
+  assert.throws(
+    () =>
+      adapter.parseBytes(new TextEncoder().encode(singleCopy), {
+        mediaType: fixture.metadata.content_type,
+        url: request.url,
+        requestId: request.id,
+      }),
+    /discovery/iu,
+    "a single navigation copy is not the retained live discovery root",
+  );
+});
+
+test("the restructured One Piece Card List leaf retains every live Card and its printed dash cost", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@4");
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "one-piece-en-restructured-discovery",
+    {
+      url: adapter.requestUrlForSurface("card-list"),
+      requestId: "one-piece-en:card-list",
+    },
+  );
+  assert.equal(fixture.metadata.http_status, 200);
+  assert.equal(observations.length, 155);
+  const document =
+    observations[0].source_sidecar.raw.official_surfaces[0].document;
+  assert.equal(document.page, "card-list");
+  assert.equal(document.declared_record_count, 155);
+  assert.equal(document.recording_options.length, 59);
+  assert.deepEqual(
+    [...new Set(observations.flatMap(
+      ({ memberships }) => memberships.source_buckets,
+    ))],
+    ["recording:569116"],
+  );
+
+  // The live Event Card prints an explicit "-" cost, which is retained as a
+  // Card without a cost rather than as a missing field.
+  const event = observations.find(
+    ({ card }) => card.official_identity.value === "OP16-020",
+  );
+  assert.ok(event);
+  assert.equal(event.card.game_data.attributes.card_type, "event");
+  assert.equal(event.card.game_data.attributes.cost, null);
+
+  const special = observations.filter(
+    ({ printing }) => printing.rarity.normalized === "special",
+  );
+  assert.equal(special.length, 6);
+  assert.deepEqual(
+    [...new Set(special.map(({ printing }) => printing.rarity.raw))],
+    ["SP CARD"],
+  );
+});
+
+test("restructured One Piece rules discovery pins every published policy surface", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@4");
+  const { observations } = retainedRestructuredParse(
+    adapter,
+    "one-piece-en-rules-hub",
+    {
+      url: "https://en.onepiece-cardgame.com/rules/",
+      requestId: `one-piece-en:listing:rules:${restructuredStageDigest}`,
+    },
+  );
+  assert.deepEqual(stageRecordSummaries(observations), [
+    {
+      id: "one-piece-en:restrictions",
+      surface: "restrictions",
+      url: "https://en.onepiece-cardgame.com/news/restriction.html",
+    },
+    {
+      id: "one-piece-en:block-policy",
+      surface: "block-policy",
+      url: "https://en.onepiece-cardgame.com/topics/013.php",
+    },
+    {
+      id: "one-piece-en:errata",
+      surface: "errata",
+      url: "https://en.onepiece-cardgame.com/rules/errata_card/",
+    },
+    {
+      id: "one-piece-en:don-rules",
+      surface: "don-rules",
+      url: "https://en.onepiece-cardgame.com/rules/",
+    },
+  ]);
+  for (const surface of ["restrictions", "block-policy", "errata"]) {
+    assert.equal(
+      stageRecordSummaries(observations).find(
+        (record) => record.surface === surface,
+      ).url,
+      adapter.requestUrlForSurface(surface),
+    );
+  }
+});
+
+test("the restructured Fusion World card search closes its category leaf and schedules every detail", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@5");
+  const url = adapter.requestUrlForSurface("card-search");
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "fusion-world-en-restructured-card-search",
+    { url, requestId: "fusion-world-en:card-search" },
+  );
+  assert.equal(fixture.metadata.source_url, url);
+  assert.equal(observations.length, 172);
+  assert.equal(observations[0].listing_identity_evidence.locator, "E-148");
+  assert.equal(
+    new Set(observations.map(
+      ({ listing_identity_evidence }) => listing_identity_evidence.locator,
+    )).size,
+    172,
+  );
+
+  const staged = retainedRestructuredRequests(
+    adapter,
+    "fusion-world-en-restructured-card-search",
+    { url, requestId: "fusion-world-en:card-search" },
+  );
+  const listings = staged.filter(({ role }) => role === "listing");
+  const details = staged.filter(({ role }) => role === "detail");
+  assert.equal(listings.length, 26);
+  assert.equal(details.length, 172);
+  assert.equal(
+    listings[0].url,
+    "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583010",
+  );
+  assert.ok(
+    listings.every(({ url: listingUrl }) =>
+      new URL(listingUrl).searchParams.get("category[0]") !== "583301"
+    ),
+    "the requested category is already served by this leaf",
+  );
+  assert.equal(
+    details[0].url,
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148",
+  );
+});
+
+test("restructured Fusion World details retain Leader faces, variants, and Battle Card facts", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@5");
+  const detail = (slug, url) =>
+    retainedRestructuredParse(adapter, slug, {
+      url,
+      requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+    }).observations[0];
+
+  const leader = detail(
+    "fusion-world-en-card-detail-leader",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001",
+  );
+  assert.equal(leader.identity_evidence.locator, "ST01-001");
+  assert.equal(leader.identity_evidence.variant_key, "base");
+  assert.equal(leader.card.game_data.attributes.card_type, "leader");
+  assert.deepEqual(
+    leader.card.game_data.attributes.leader_faces.map(
+      ({ role, name, power }) => ({ role, name, power }),
+    ),
+    [
+      { role: "front", name: "Son Goten", power: 15000 },
+      { role: "back", name: "Son Goten", power: 20000 },
+    ],
+  );
+  assert.deepEqual(
+    leader.appearance_evidence.images.map(({ role, source_url }) => ({
+      role,
+      source_url,
+    })),
+    [
+      {
+        role: "front",
+        source_url:
+          "https://www.dbs-cardgame.com/fw/images/cards/card/en/ST01-001_f.webp",
+      },
+      {
+        role: "back",
+        source_url:
+          "https://www.dbs-cardgame.com/fw/images/cards/card/en/ST01-001_b.webp",
+      },
+    ],
+  );
+  assert.deepEqual(leader.printing.rarity, { raw: "L", normalized: "l" });
+
+  const variant = detail(
+    "fusion-world-en-card-detail-leader-p1",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001&p=_p1",
+  );
+  assert.equal(variant.identity_evidence.locator, "ST01-001_p1");
+  assert.equal(variant.identity_evidence.variant_key, "_p1");
+  assert.equal(
+    variant.card.official_identity.value,
+    leader.card.official_identity.value,
+  );
+  assert.deepEqual(
+    variant.appearance_evidence.images.map(({ source_url }) => source_url),
+    [
+      "https://www.dbs-cardgame.com/fw/images/cards/card/en/ST01-001_f_p1.webp",
+      "https://www.dbs-cardgame.com/fw/images/cards/card/en/ST01-001_b_p1.webp",
+    ],
+  );
+
+  const battle = detail(
+    "fusion-world-en-card-detail-battle",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-002",
+  );
+  assert.equal(battle.identity_evidence.locator, "ST01-002");
+  assert.equal(battle.card.name, "Krillin");
+  assert.equal(battle.card.game_data.attributes.card_type, "battle");
+  assert.equal(battle.card.game_data.attributes.cost, 1);
+  assert.equal(battle.card.game_data.attributes.power, 5000);
+  assert.equal(battle.card.game_data.attributes.combo_power, 10000);
+  assert.deepEqual(battle.card.game_data.attributes.specified_cost, [
+    { colour: "red", count: 1 },
+  ]);
+  assert.deepEqual(
+    battle.appearance_evidence.images.map(({ role }) => role),
+    ["front"],
+  );
+  assert.deepEqual(battle.memberships.source_buckets, [
+    "card-set:STORY BOOSTER 01 [ST01]",
+  ]);
+});
+
+test("the restructured Digimon card search derives one listing per publisher category", () => {
+  const adapter = requiredSourceAdapter("digimon-en@5");
+  const url = adapter.requestUrlForSurface("card-list");
+  const request = officialSourceDiscoveryRequests("digimon-en")[0];
+  assert.equal(request.url, url);
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "digimon-en-restructured-card-search",
+    { url, requestId: "digimon-en:card-list" },
+  );
+  assert.equal(fixture.metadata.source_url, url);
+  assert.equal(observations.length, 1);
+
+  const listings = retainedRestructuredRequests(
+    adapter,
+    "digimon-en-restructured-card-search",
+    { url, requestId: "digimon-en:card-list" },
+  ).filter(({ role }) => role === "listing");
+  assert.equal(listings.length, 70);
+  assert.ok(
+    listings.every(({ url: listingUrl }) => {
+      const params = new URL(listingUrl).searchParams;
+      return params.get("search") === "true" &&
+        (params.get("category") ?? "").length > 0;
+    }),
+    "every derived Digimon listing must pin one publisher category",
+  );
+});
+
+test("the restructured Digimon complete leaf retains vanilla Cards without Effective Rules Text", () => {
+  const adapter = requiredSourceAdapter("digimon-en@5");
+  const leafUrl =
+    "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue";
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "digimon-en-card-list-bt01-leaf",
+    {
+      url: leafUrl,
+      requestId: `digimon-en:listing:${restructuredStageDigest}`,
+    },
+  );
+  assert.equal(fixture.metadata.source_url, leafUrl);
+  assert.equal(observations.length, 24);
+  assert.equal(
+    new Set(observations.map(
+      ({ identity_evidence }) => identity_evidence.locator,
+    )).size,
+    24,
+  );
+  assert.ok(
+    observations.some(
+      ({ identity_evidence }) => identity_evidence.locator === "BT1-044_P1",
+    ),
+    "alternate art keeps its own full locator",
+  );
+  const vanilla = observations.filter(
+    ({ card }) => card.effective_rules_text === null,
+  );
+  assert.equal(vanilla.length, 8);
+  assert.equal(vanilla[0].card.official_identity.value, "BT1-027");
+  assert.equal(vanilla[0].card.game_data.attributes.card_type, "digimon");
+  assert.equal(vanilla[0].card.game_data.attributes.dp, 4000);
+});
+
+test("restructured Digimon rules discovery pins its restriction and errata publications", () => {
+  const adapter = requiredSourceAdapter("digimon-en@5");
+  const { observations } = retainedRestructuredParse(
+    adapter,
+    "digimon-en-rules-hub",
+    {
+      url: "https://world.digimoncard.com/rule/",
+      requestId: `digimon-en:listing:rules:${restructuredStageDigest}`,
+    },
+  );
+  assert.deepEqual(stageRecordSummaries(observations), [
+    {
+      id: "digimon-en:restrictions-current",
+      surface: "restrictions-current",
+      url: "https://world.digimoncard.com/rule/restriction_card/",
+    },
+    {
+      id: "digimon-en:restrictions-history",
+      surface: "restrictions-history",
+      url: "https://world.digimoncard.com/rule/restriction_card/",
+    },
+    {
+      id: "digimon-en:errata",
+      surface: "errata",
+      url: "https://world.digimoncard.com/rule/errata_card/",
+    },
+  ]);
+});
+
+test("restructured Gundam card search roots retain their empty state and every package option", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const adapter = requiredSourceAdapter(`${lineage}@5`);
+    const url = adapter.requestUrlForSurface("packages");
+    const slug = `${lineage}-restructured-card-search`;
+    const { observations } = retainedRestructuredParse(adapter, slug, {
+      url,
+      requestId: `${lineage}:packages`,
+    });
+    assert.equal(observations.length, 1, lineage);
+    const document =
+      observations[0].source_sidecar.raw.official_surfaces[0].document;
+    assert.deepEqual(Object.keys(document).sort(), [
+      "empty_search_state",
+      "package_options",
+      "source_lineage",
+      "surface",
+      "url",
+    ], lineage);
+    assert.equal(document.source_lineage, lineage);
+    assert.equal(document.surface, "packages");
+    assert.equal(document.url, url);
+    assert.equal(
+      document.empty_search_state,
+      "Please specify your search criteria.",
+      lineage,
+    );
+    assert.equal(document.package_options.length, 21, lineage);
+    assert.deepEqual(
+      document.package_options,
+      [...document.package_options].sort(),
+      lineage,
+    );
+    assert.deepEqual(observations[0].completeness, {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 21,
+      parsed_record_count: 21,
+    }, lineage);
+
+    const listings = retainedRestructuredRequests(adapter, slug, {
+      url,
+      requestId: `${lineage}:packages`,
+    }).filter(({ role }) => role === "listing");
+    assert.deepEqual(
+      listings.map(({ url: listingUrl }) => listingUrl),
+      document.package_options.map((option) => `${url}?package=${option}`),
+      lineage,
+    );
+  }
+});
+
+test("restructured Gundam news discovery pins the errata listing subcategory tab", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    const adapter = requiredSourceAdapter(`${lineage}@5`);
+    const locale = lineage === "gundam-en-asia" ? "asia-en" : "en";
+    const { observations } = retainedRestructuredParse(
+      adapter,
+      `${lineage}-news-hub`,
+      {
+        url: `https://www.gundam-gcg.com/${locale}/news/`,
+        requestId: `${lineage}:listing:news:${restructuredStageDigest}`,
+      },
+    );
+    assert.deepEqual(stageRecordSummaries(observations), [
+      {
+        id: `${lineage}:errata`,
+        surface: "errata",
+        url: adapter.requestUrlForSurface("errata"),
+      },
+    ], lineage);
+  }
+});
+
+test("the retained Gundam errata listing schedules its article and remaining pages", () => {
+  const adapter = requiredSourceAdapter("gundam-en-asia@5");
+  const url = adapter.requestUrlForSurface("errata");
+  const { fixture } = retainedRestructuredParse(
+    adapter,
+    "gundam-en-asia-errata-listing",
+    { url, requestId: "gundam-en-asia:errata" },
+  );
+  assert.equal(fixture.metadata.source_url, url);
+  const staged = retainedRestructuredRequests(
+    adapter,
+    "gundam-en-asia-errata-listing",
+    { url, requestId: "gundam-en-asia:errata" },
+  );
+  assert.deepEqual(
+    staged.filter(({ role }) => role === "detail").map(
+      ({ url: detailUrl }) => detailUrl,
+    ),
+    ["https://www.gundam-gcg.com/asia-en/news/01_236.html"],
+  );
+  assert.deepEqual(
+    staged.filter(({ role }) => role === "listing").map(
+      ({ url: listingUrl }) => listingUrl,
+    ),
+    [2, 3, 4].map((page) =>
+      `https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=${page}`
+    ),
+  );
+});
+
+test("restructured discovery stages and listing leaves fail closed on missing publisher structure", () => {
+  const mutate = (slug, replace) => {
+    const fixture = retainedOfficialSourceFixture(slug);
+    const html = fixture.bytes.toString("utf8");
+    const mutated = replace(html);
+    assert.notEqual(mutated, html, `${slug} mutation changed nothing`);
+    return {
+      bytes: new TextEncoder().encode(mutated),
+      mediaType: fixture.metadata.content_type,
+    };
+  };
+
+  const onePiece = requiredSourceAdapter("one-piece-en@4");
+  for (
+    const [surface, pinned] of [
+      ["restrictions", "/news/restriction.html"],
+      ["block-policy", "/topics/013.php"],
+    ]
+  ) {
+    const unpinned = mutate(
+      "one-piece-en-rules-hub",
+      (html) => html.replaceAll(pinned, "/news/unrelated-notice.html"),
+    );
+    assert.throws(
+      () =>
+        onePiece.parseBytes(unpinned.bytes, {
+          mediaType: unpinned.mediaType,
+          url: "https://en.onepiece-cardgame.com/rules/",
+          requestId: `one-piece-en:listing:rules:${restructuredStageDigest}`,
+        }),
+      new RegExp(
+        `Official Source rules discovery stage did not retain the ${surface} surface link\\.`,
+        "u",
+      ),
+    );
+  }
+
+  const gundam = requiredSourceAdapter("gundam-en-asia@5");
+  const packagesUrl = gundam.requestUrlForSurface("packages");
+  const withoutEmptyState = mutate(
+    "gundam-en-asia-restructured-card-search",
+    (html) => html.replace(/<section class="errorCol">[\s\S]*?<\/section>/u, ""),
+  );
+  assert.throws(
+    () =>
+      gundam.parseBytes(withoutEmptyState.bytes, {
+        mediaType: withoutEmptyState.mediaType,
+        url: packagesUrl,
+        requestId: "gundam-en-asia:packages",
+      }),
+    /Official Source Gundam card search root did not retain its empty search state\./u,
+  );
+  const unrecognizedEmptyState = mutate(
+    "gundam-en-asia-restructured-card-search",
+    (html) =>
+      html.replace("Please specify your search criteria.", "Search results"),
+  );
+  assert.throws(
+    () =>
+      gundam.parseBytes(unrecognizedEmptyState.bytes, {
+        mediaType: unrecognizedEmptyState.mediaType,
+        url: packagesUrl,
+        requestId: "gundam-en-asia:packages",
+      }),
+    /Official Source Gundam card search root empty state is unrecognized\./u,
+  );
+  const emptyLeaf = retainedOfficialSourceFixture(
+    "gundam-en-asia-restructured-card-search",
+  );
+  assert.throws(
+    () =>
+      gundam.parseBytes(emptyLeaf.bytes, {
+        mediaType: emptyLeaf.metadata.content_type,
+        url: `${packagesUrl}?package=619000`,
+        requestId: `gundam-en-asia:listing:${restructuredStageDigest}`,
+      }),
+    /Official Source Gundam package leaf did not render its card listing\./u,
+  );
+
+  const fusion = requiredSourceAdapter("fusion-world-en@5");
+  const withoutCategories = mutate(
+    "fusion-world-en-restructured-card-search",
+    (html) => html.replaceAll("searchColSet-product", "searchColSet-retired"),
+  );
+  assert.throws(
+    () =>
+      fusion.parseBytes(withoutCategories.bytes, {
+        mediaType: withoutCategories.mediaType,
+        url: fusion.requestUrlForSurface("card-search"),
+        requestId: "fusion-world-en:card-search",
+      }),
+    /Official Source Fusion World category discovery is unavailable\./u,
+  );
+});
+
 function rawSurfacePayload(lineage, surface) {
   const payload = structuredClone(
     officialRawSurfacePayload(`/${lineage}/${surface}`),
@@ -7249,13 +7875,15 @@ function withLegacyFusionCanonicalFields(payload) {
 
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
-    adapter.adapterVersion === "digimon-en@4" && surface === "card-list";
+    (adapter.adapterVersion === "digimon-en@4" ||
+      adapter.adapterVersion === "digimon-en@5") && surface === "card-list";
   const completeGundamLeaf =
-    (adapter.adapterVersion === "gundam-en-asia@4" ||
-      adapter.adapterVersion === "gundam-en-us@4") && surface === "packages";
+    ["gundam-en-asia@4", "gundam-en-us@4", "gundam-en-asia@5", "gundam-en-us@5"]
+      .includes(adapter.adapterVersion) && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
-    adapter.adapterVersion === "one-piece-en@3" &&
+    (adapter.adapterVersion === "one-piece-en@3" ||
+      adapter.adapterVersion === "one-piece-en@4") &&
     surface === "card-list"
   ) {
     publisherPayload.card_pages.forEach((card) => {

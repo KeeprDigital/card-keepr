@@ -5,7 +5,7 @@ import {
 import digimonDiscovery from "./retained-official-source/digimon-en-discovery.json" with {
   type: "json",
 };
-import fusionWorldDiscovery from "./retained-official-source/fusion-world-en-discovery.json" with {
+import fusionWorldDiscovery from "./retained-official-source/fusion-world-en-restructured-card-search.json" with {
   type: "json",
 };
 import gundamAsiaDiscovery from "./retained-official-source/gundam-en-asia-discovery.json" with {
@@ -14,7 +14,7 @@ import gundamAsiaDiscovery from "./retained-official-source/gundam-en-asia-disco
 import gundamUsDiscovery from "./retained-official-source/gundam-en-us-discovery.json" with {
   type: "json",
 };
-import onePieceDiscovery from "./retained-official-source/one-piece-en-discovery.json" with {
+import onePieceDiscovery from "./retained-official-source/one-piece-en-restructured-discovery.json" with {
   type: "json",
 };
 import {
@@ -374,7 +374,16 @@ function officialBandaiDataset(
   requestUrl,
   requestSurface = null,
 ) {
-  const surface = officialFixtureSurface(lineage, requestUrl, requestSurface);
+  // digimon-en@5 pins its current and historical restriction publications to
+  // one live URL, so that page must retain identical bytes whichever surface
+  // asked for it — it therefore publishes no surface-specific payload. Older
+  // adapters still reach the historical publication through ?view=history.
+  const sharedRestrictionPage = lineage === "digimon-en" &&
+    requestUrl?.pathname === "/rule/restriction_card/" &&
+    !requestUrl.searchParams.has("view");
+  const surface = sharedRestrictionPage
+    ? null
+    : officialFixtureSurface(lineage, requestUrl, requestSurface);
   const publication = {
     "@context": "https://schema.org",
     "@type": "Dataset",
@@ -452,6 +461,10 @@ function officialBandaiDataset(
       part.identifier.slice(`${lineage}:`.length),
       part.payload,
     )).join("")
+  }${
+    sharedRestrictionPage
+      ? `<main><p>0 records</p><article data-publication-empty="true">No published entries.</article></main>`
+      : ""
   }</html>`;
 }
 
@@ -721,7 +734,9 @@ function officialFixtureSurface(lineage, requestUrl, requestSurface) {
   if (lineage === "one-piece-en") {
     if (requestUrl.pathname === "/cardlist/") return "card-list";
     if (requestUrl.pathname === "/rules/restriction/") return "restrictions";
+    if (requestUrl.pathname === "/news/restriction.html") return "restrictions";
     if (requestUrl.pathname === "/rules/block_icon/") return "block-policy";
+    if (requestUrl.pathname === "/topics/013.php") return "block-policy";
     if (requestUrl.pathname === "/rules/errata_card/") return "errata";
     if (requestUrl.pathname === "/rules/") return "don-rules";
   } else if (lineage === "fusion-world-en") {
@@ -745,7 +760,8 @@ function officialFixtureSurface(lineage, requestUrl, requestSurface) {
     if (/\/rules\/$/u.test(requestUrl.pathname)) return "legality";
     if (
       /\/news\/$/u.test(requestUrl.pathname) &&
-      requestUrl.searchParams.get("subcategory") === "rules"
+      (requestUrl.searchParams.get("subcategory") === "rules" ||
+        requestUrl.searchParams.get("subcategory") === "news")
     ) return "errata";
   }
   return null;
@@ -771,8 +787,8 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
   const path = `${requestUrl.pathname}${requestUrl.search}`;
   if (lineage === "one-piece-en" && path === "/rules/") {
     return `<main>
-      <a href="/rules/restriction/">Restriction Cards</a>
-      <a href="/rules/block_icon/">Block Policy</a>
+      <a href="/news/restriction.html">Restriction Cards</a>
+      <a href="/topics/013.php">Block Policy</a>
       <a href="/rules/errata_card/">Errata Cards</a>
     </main>`;
   }
@@ -780,7 +796,6 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
     return `<main>
       <a href="/fw/en/news/01_305.html">Current banned and limited cards</a>
       <a href="/fw/en/news/01_399.html">Previous restriction history</a>
-      <a href="/fw/en/rules/errata-card/">Errata Cards</a>
     </main>`;
   }
   if (lineage === "digimon-en" && path === "/cardlist/") {
@@ -797,7 +812,7 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
     return `<main><a href="index.php">Find Cards</a></main>`;
   }
   if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
-    return `<main><a href="?subcategory=rules">Errata and corrections</a></main>`;
+    return `<main><a href="?subcategory=news&amp;tag=all&amp;page=1">NEWS</a></main>`;
   }
   return "";
 }

@@ -82,7 +82,7 @@ for (const failureCase of failureCases) {
         plans: [{
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "one-piece-en@3",
+          adapter_version: "one-piece-en@4",
           requests,
         }],
       }),
@@ -173,7 +173,7 @@ for (const failureCase of failureCases) {
       new URL(url).origin === "https://en.onepiece-cardgame.com"
     ));
     assert.ok(snapshotUrls.filter((url) =>
-      url === "https://en.onepiece-cardgame.com/cardlist/"
+      url === "https://en.onepiece-cardgame.com/cardlist/?series=569116"
     ).length >= 2);
     assert.equal(
       failed.observation_sets.length,
@@ -192,6 +192,6 @@ for (const failureCase of failureCases) {
 function exactOnePieceRequests() {
   return [{
     id: "one-piece-en:discovery",
-    url: "https://en.onepiece-cardgame.com/cardlist/",
+    url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
   }];
 }

@@ -21,10 +21,10 @@ import {
   onePieceCompleteOfficialSourceResponse,
 } from "../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import digimonDiscovery from "../../acceptance/fixtures/retained-official-source/digimon-en-discovery.json";
-import fusionWorldDiscovery from "../../acceptance/fixtures/retained-official-source/fusion-world-en-discovery.json";
+import fusionWorldDiscovery from "../../acceptance/fixtures/retained-official-source/fusion-world-en-restructured-card-search.json";
 import gundamAsiaDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-asia-discovery.json";
 import gundamUsDiscovery from "../../acceptance/fixtures/retained-official-source/gundam-en-us-discovery.json";
-import onePieceDiscovery from "../../acceptance/fixtures/retained-official-source/one-piece-en-discovery.json";
+import onePieceDiscovery from "../../acceptance/fixtures/retained-official-source/one-piece-en-restructured-discovery.json";
 import {
   consumerProofMessage,
   credentialConsumerProofRequestHeader,
@@ -148,12 +148,17 @@ function paginatedGundamCollectionResponse(
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
-  if (url.pathname === "/asia-en/cards/index.php") {
+  if (url.pathname === "/asia-en/cards/") {
     const selectedPackage = url.searchParams.get("package");
     const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
     if (selectedPackage === null) {
+      // The restructured packages root renders the publisher's empty search
+      // state and enumerates every package from it.
       return new Response(`<html><title>CARDS | GUNDAM CARD GAME</title>
         ${officialNavigation}<main>
+        <section class="errorCol">
+          <h4 class="errorTit">Please specify your search criteria.</h4>
+        </section>
         <a class="js-selectBtn-package" data-val="619102" href="javascript:void(0);">Dual Impact [GD02]</a>
         </main></html>`, {
         headers: { "content-type": "text/html; charset=utf-8" },
