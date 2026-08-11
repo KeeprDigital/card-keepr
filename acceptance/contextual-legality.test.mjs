@@ -61,6 +61,15 @@ const exportManifestSchemaV2 = JSON.parse(
     "utf8",
   ),
 );
+const exportManifestSchemaV4 = JSON.parse(
+  readFileSync(
+    resolve(
+      root,
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json",
+    ),
+    "utf8",
+  ),
+);
 const exportManifestSchemaV5 = JSON.parse(
   readFileSync(
     resolve(
@@ -93,6 +102,7 @@ addFormats(ajv);
 ajv.addSchema(exportManifestSchema);
 ajv.addSchema(exportManifestSchemaV1);
 ajv.addSchema(exportManifestSchemaV2);
+ajv.addSchema(exportManifestSchemaV4);
 ajv.addSchema(exportManifestSchemaV5);
 ajv.addSchema(apiSchema);
 ajv.addSchema(exportRecordSchema);
