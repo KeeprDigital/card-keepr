@@ -1,16 +1,18 @@
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json" with { type: "json" };
-import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v4.schema.json" with { type: "json" };
+import manifestSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json" with { type: "json" };
+import recordSchema from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json" with { type: "json" };
 import historicalRecordSchemaV3 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json" with { type: "json" };
+import historicalRecordSchemaV4 from "../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v4.schema.json" with { type: "json" };
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(historicalRecordSchemaV3);
+ajv.addSchema(historicalRecordSchemaV4);
 const validateManifest = ajv.compile(manifestSchema);
 const validateRecord = ajv.compile(recordSchema);
 const componentValidators = new Map<string, ValidateFunction>(
-  [3, 4].flatMap((major) => [
+  [3, 4, 5].flatMap((major) => [
     "SupportedGameRecord",
     "GameProfileRecord",
     "CardRecord",

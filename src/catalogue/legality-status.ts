@@ -2,6 +2,7 @@ import type { LegalityRegion } from "./legality-rule";
 import {
   evaluateLegalityRuleEffect,
   legalityRuleCardIds,
+  unresolvedTargetScope,
 } from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
@@ -260,7 +261,11 @@ function applicableRules(
     (rule) =>
       rule.region === region &&
       (legalityRuleCardIds(rule).length === 0 ||
-        legalityRuleCardIds(rule).includes(query.cardId)),
+        legalityRuleCardIds(rule).includes(query.cardId) ||
+        // An unresolved target scope names an open publisher predicate whose
+        // membership beyond the enumerated Cards is unknown, so the rule is
+        // an explicit uncertainty for every Card in its context.
+        unresolvedTargetScope(rule.unresolved_scope)),
   ).sort((left, right) => left.id.localeCompare(right.id));
 }
 

@@ -43,9 +43,27 @@ export type LegalityRuleSourceFieldPointers = {
   effect: string;
 };
 
+export type UnresolvedLegalityScopeDimension =
+  | "effective_interval"
+  | "event_tier"
+  | "target_scope";
+
 export type UnresolvedLegalityScope = Readonly<{
-  dimensions: readonly ("effective_interval" | "event_tier")[];
+  dimensions: readonly UnresolvedLegalityScopeDimension[];
 }>;
+
+/**
+ * A rule whose unresolved scope names the `target_scope` dimension targets an
+ * open publisher predicate: its retained Card Numbers are the enumerated
+ * known matches, and the Official Source states that unenumerated (including
+ * future) Cards are also in scope. Contextual status treats such a rule as an
+ * explicit uncertainty for every Card of its game, region, and format.
+ */
+export function unresolvedTargetScope(
+  scope: UnresolvedLegalityScope | null,
+): boolean {
+  return scope !== null && scope.dimensions.includes("target_scope");
+}
 
 export type LegalityRule = CuratedProvenanceBearing & {
   id: string;
@@ -458,7 +476,11 @@ function parsedUnresolvedScope(value: unknown): UnresolvedLegalityScope | null {
     throw new Error("Legality Rule unresolved_scope dimensions must be an array.");
   }
   const dimensions = scope.dimensions.map((dimension) => {
-    if (dimension !== "effective_interval" && dimension !== "event_tier") {
+    if (
+      dimension !== "effective_interval" &&
+      dimension !== "event_tier" &&
+      dimension !== "target_scope"
+    ) {
       throw new Error("Legality Rule unresolved_scope dimension is unsupported.");
     }
     return dimension;
