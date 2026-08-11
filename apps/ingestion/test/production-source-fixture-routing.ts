@@ -186,6 +186,32 @@ export function productionOfficialStageResponse(
     );
     if (cardSearchLeaf !== null) return cardSearchLeaf;
   }
+  if (
+    lineage === "one-piece-en" &&
+    url.hostname === "en.onepiece-cardgame.com" &&
+    `${url.pathname}${url.search}` === "/rules/"
+  ) {
+    // The issue-58 don-rules contract verifies the live hub identity and its
+    // pinned policy links, so the synthetic hub mirrors the live shape: the
+    // exact document title, the pinned restriction, block-policy, and errata
+    // links, one additional rule-manual link, and no DON!! content.
+    return new Response(
+      `<html><title>RULES｜ONE PIECE CARD GAME - Official Web Site</title>
+        ${officialNavigation}<nav aria-label="Rules publications">
+        <a href="/news/restriction.html">Banned/Restricted Card Addition Notice</a>
+        <a href="/topics/013.php">Introduction of the Block Number System</a>
+        <a href="/rules/errata_card/">Errata Cards</a>
+        <a href="/rules/pdf/rule_manual.pdf">Official Rule Manual</a>
+      </nav><main><p>0 records</p>
+      <article data-publication-empty="true">No published entries.</article></main></html>`,
+      {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          etag: '"official--rules-"',
+        },
+      },
+    );
+  }
   const fusionProductCoverage =
     lineage === "fusion-world-en" && url.pathname === "/fw/en/products/"
       ? `<nav aria-label="Product status">

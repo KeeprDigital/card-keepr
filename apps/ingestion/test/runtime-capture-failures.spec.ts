@@ -217,7 +217,7 @@ test("adapter registrations stay constrained while mismatched production identit
     {
       supported_game: "one-piece",
       source_lineage: "unrelated-source",
-      adapter_version: "one-piece-en@5",
+      adapter_version: "one-piece-en@6",
       idempotency_key: "source_adapter_mismatch_001",
       requests: [
         {

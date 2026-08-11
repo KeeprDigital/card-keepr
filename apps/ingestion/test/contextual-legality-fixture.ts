@@ -45,7 +45,8 @@ export function contextualLegalityFixtureDocument(
     | "omit-event-tier"
     | "omit-effective-until"
     | "resolved-card-order"
-    | "operand-overlap" = "current",
+    | "operand-overlap"
+    | "open-predicate" = "current",
   semantics: "current" | "changed" = "current",
 ) {
   const cardNumbers =
@@ -65,6 +66,34 @@ export function contextualLegalityFixtureDocument(
   const rules = legalityRules(region);
   const retainedRules = rulesVariant === "empty"
     ? []
+    : rulesVariant === "open-predicate"
+      ? [
+          ...legalityRules(region),
+          {
+            game: "gundam",
+            region,
+            format: "standard",
+            event_tier: null,
+            effective_from: null,
+            effective_until: null,
+            representable: true,
+            id: "legality_rule_asia_open_predicate",
+            // The publisher's open predicate covers unenumerated (including
+            // future) Cards; GD30-002 and GD30-004 are the enumerated known
+            // matches.
+            unresolved_scope: {
+              dimensions: ["effective_interval", "target_scope"],
+            },
+            card_numbers: ["GD30-002", "GD30-004"],
+            official_wording:
+              "Every current and future card matching the published description participates in banned pairs; GD30-002 and GD30-004 are the enumerated matches.",
+            effect: {
+              type: "unresolved",
+              reason:
+                "The published description includes future printings; its complete matching-card scope and effective interval are not stated.",
+            },
+          },
+        ]
     : rulesVariant === "release-only"
       ? rules.filter((rule) => rule.effect.type === "release_timing")
     : rulesVariant === "resolved-card-order"

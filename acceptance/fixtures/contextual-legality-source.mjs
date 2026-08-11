@@ -331,6 +331,28 @@ function rules(region) {
     },
     {
       ...base,
+      // Issue #58: the publisher restricts an open predicate whose
+      // membership extends beyond the enumerated Cards (future printings
+      // included). The rule is scoped to its own format so the Standard
+      // expectations above stay decisive while every gunpla-battle query
+      // overlaps the uncertainty.
+      id: "legality_rule_asia_open_predicate",
+      format: "gunpla-battle",
+      effective_from: null,
+      unresolved_scope: {
+        dimensions: ["effective_interval", "target_scope"],
+      },
+      card_numbers: ["GD30-002", "GD30-004"],
+      official_wording:
+        "Every current and future card matching the published description participates in banned pairs; GD30-002 and GD30-004 are the enumerated matches.",
+      effect: {
+        type: "unresolved",
+        reason:
+          "The published description includes future printings; its complete matching-card scope and effective interval are not stated.",
+      },
+    },
+    {
+      ...base,
       id: "legality_rule_asia_nullable_membership",
       card_numbers: ["GD30-005"],
       official_wording:

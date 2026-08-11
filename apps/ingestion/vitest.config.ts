@@ -141,6 +141,15 @@ function paginatedGundamCollectionResponse(
     ]), { headers: { "content-type": "image/png" } });
   }
   if (url.pathname === "/asia-en/rules/") {
+    // Issue #58: the rules hub is a discovery stage that links the current
+    // banned/restricted publication captured directly as the legality
+    // surface.
+    return new Response(`<html><title>RULES | GUNDAM CARD GAME</title>
+      <main><a href="/asia-en/news/01_279.html">Current List of Banned / Restricted Cards</a></main></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  if (url.pathname === "/asia-en/news/01_279.html") {
     return new Response(`<html><title>BANDAI gundam CARD PRODUCT RELEASE RULE ERRATA RESTRICTION</title>
       <main><h1>Restriction Rules</h1><p>0 records</p>
       <article data-publication-empty="true">No restrictions are currently published.</article>
@@ -2033,7 +2042,8 @@ function reconciliationSourceDocument(
           rules === "omit-event-tier" ||
           rules === "omit-effective-until" ||
           rules === "resolved-card-order" ||
-          rules === "operand-overlap"
+          rules === "operand-overlap" ||
+          rules === "open-predicate"
         ? rules
         : "current",
       fixtureUrl.searchParams.get("semantics") === "changed"

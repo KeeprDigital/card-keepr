@@ -61,20 +61,20 @@ const exportManifestSchemaV2 = JSON.parse(
     "utf8",
   ),
 );
-const exportManifestSchemaV4 = JSON.parse(
+const exportManifestSchemaV5 = JSON.parse(
   readFileSync(
     resolve(
       root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json",
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json",
     ),
     "utf8",
   ),
 );
-const exportRecordSchemaV4 = JSON.parse(
+const exportRecordSchemaV5 = JSON.parse(
   readFileSync(
     resolve(
       root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v4.schema.json",
+      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json",
     ),
     "utf8",
   ),
@@ -93,10 +93,10 @@ addFormats(ajv);
 ajv.addSchema(exportManifestSchema);
 ajv.addSchema(exportManifestSchemaV1);
 ajv.addSchema(exportManifestSchemaV2);
-ajv.addSchema(exportManifestSchemaV4);
+ajv.addSchema(exportManifestSchemaV5);
 ajv.addSchema(apiSchema);
 ajv.addSchema(exportRecordSchema);
-ajv.addSchema(exportRecordSchemaV4);
+ajv.addSchema(exportRecordSchemaV5);
 const validateLegalityStatus = ajv.getSchema(
   `${apiSchema.$id}#/$defs/LegalityStatusDocument`,
 );
@@ -104,7 +104,7 @@ const validateProblem = ajv.getSchema(
   `${apiSchema.$id}#/$defs/Problem`,
 );
 const validateLegalityRuleExport = ajv.getSchema(
-  `${exportRecordSchemaV4.$id}#/$defs/LegalityRuleRecord`,
+  `${exportRecordSchemaV5.$id}#/$defs/LegalityRuleRecord`,
 );
 const validateCatalogueExportDocument = ajv.getSchema(
   `${apiSchema.$id}#/$defs/CatalogueExportDocument`,
@@ -300,7 +300,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     canonicalRuleId("gundam-en-asia", officialId);
   const usRuleId = (officialId) =>
     canonicalRuleId("gundam-en-us", officialId);
-  assert.equal(asia.legality_rules.length, 15);
+  assert.equal(asia.legality_rules.length, 16);
   const asiaPublication = await approve(
     asia,
     "approve-acceptance-contextual-legality-asia",
@@ -937,6 +937,44 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     );
   }
 
+  await t.test(
+    "an unresolved target scope answers every overlapping query explicitly indeterminate",
+    async () => {
+      const targetScopeStatus = async (number) => {
+        const response = await fetch(
+          `${api.url}/v1/legality-status` +
+            `?card_id=${cards.get(number)}` +
+            "&on=2026-07-30&format=gunpla-battle&region=EN-ASIA",
+          { headers: { authorization: `Bearer ${apiKey}` } },
+        );
+        assert.equal(response.status, 200);
+        return response.json();
+      };
+      // GD30-001 is outside the enumerated matches, but the open predicate
+      // covers future printings, so the query overlaps the uncertainty.
+      const open = await targetScopeStatus("GD30-001");
+      assert.equal(
+        validateLegalityStatus(open),
+        true,
+        JSON.stringify(validateLegalityStatus.errors),
+      );
+      assert.equal(open.data[0].status, "indeterminate");
+      assert.deepEqual(open.data[0].rule_ids, []);
+      assert.deepEqual(open.data[0].unresolved_scope_rule_ids, [
+        asiaRuleId("legality_rule_asia_open_predicate"),
+      ]);
+      assert.match(open.data[0].derivation, /unresolved scope/);
+      // An enumerated match answers the same explicit uncertainty once.
+      const enumerated = await targetScopeStatus("GD30-002");
+      assert.equal(enumerated.data[0].status, "indeterminate");
+      assert.deepEqual(enumerated.data[0].unresolved_scope_rule_ids, [
+        asiaRuleId("legality_rule_asia_open_predicate"),
+      ]);
+      // The Standard-format cases above keep answering normally: the
+      // target-scope rule never leaks outside its own format context.
+    },
+  );
+
   const nullableMembership = await legalityStatus(
     cards.get("GD30-005"),
     ["--region", "EN-ASIA"],
@@ -1161,7 +1199,7 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(exportedRules.length, 18);
+  assert.equal(exportedRules.length, 19);
   assert.ok(
     exportedRules.some((rule) =>
       rule.official_wording.startsWith(
@@ -1215,12 +1253,12 @@ test("Legality Rules flow from test-owned domain evidence to contextual consumer
   await t.test(
     "Legality Rule exports use the current schema and retain exact effects",
     () => {
-      assert.equal(manifestDocument.data.export_schema_major, 4);
+      assert.equal(manifestDocument.data.export_schema_major, 5);
       assert.equal(
         manifestDocument.data.components.find(
           (component) => component.name === "legality-rules",
         ).record_schema,
-        "https://card-keepr.invalid/schemas/catalogue-export-record@4#/$defs/LegalityRuleRecord",
+        "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord",
       );
     },
   );
@@ -1751,7 +1789,7 @@ test("authenticated publication serves repeatable contextual legality export byt
   );
   assert.deepEqual(repeatedBytes, bytes);
   assert.ok(fixedDeflateBlockCount(bytes) > 1);
-  assert.equal(rules.length, 15);
+  assert.equal(rules.length, 16);
   assert.ok(rules.every((rule) => rule.lifecycle.current === true));
   assert.ok(
     rules.every(

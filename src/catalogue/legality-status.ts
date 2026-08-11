@@ -100,7 +100,9 @@ export async function contextualLegalityStatusResponse(
          WHERE catalogue_revision_id = ?
            AND applicability_kind = 'card'
            AND card_id = ?
-         UNION ALL
+         -- UNION deduplicates a target-scope rule that applies through both
+         -- its enumerated Card row and its explicit all_cards row.
+         UNION
          SELECT legality_rule_id
          FROM revision_legality_rule_applicability
          WHERE catalogue_revision_id = ?

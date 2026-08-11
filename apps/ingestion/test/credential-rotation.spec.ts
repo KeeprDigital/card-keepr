@@ -166,7 +166,7 @@ test("recovery rejects reservation and only a signed exact attestation atomicall
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-en@5",
+      adapter_version: "one-piece-en@6",
       idempotency_key: "blocked-by-credential-execution",
       requests: officialSourceDiscoveryRequests("one-piece-en"),
     },

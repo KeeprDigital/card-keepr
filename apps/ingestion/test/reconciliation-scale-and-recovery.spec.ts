@@ -376,7 +376,7 @@ test("recovery health gates fixture evidence injection and reconciliation before
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@5",
+    adapter_version: "one-piece-en@6",
     idempotency_key: "blocked-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -428,7 +428,7 @@ test("degraded recovery permits evidence collection starts and retries while blo
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@5",
+    adapter_version: "one-piece-en@6",
     idempotency_key: "degraded-recovery-start",
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
@@ -463,7 +463,7 @@ test("degraded recovery permits evidence collection starts and retries while blo
 
 test("a partial Gundam refresh accepts one selected production lineage independently", async () => {
   const sourceLineage = "gundam-en-asia";
-  const adapterVersion = "gundam-en-asia@6";
+  const adapterVersion = "gundam-en-asia@7";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
     plans: [{
       supported_game: "gundam",
