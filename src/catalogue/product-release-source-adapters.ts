@@ -249,6 +249,37 @@ const liveProductAdapterVersions = new Map([
   ["gundam-en-us", "gundam-en-us@6"],
 ]);
 
+// Issue #58: the Gundam adapters pin their legality surface to the live
+// news/01_279.html publication and represent its compound open-predicate
+// policy as explicit unresolved rules (including one with an unresolved
+// target_scope dimension), and the One Piece don-rules surface accepts the
+// live /rules/ hub as exact coverage evidence without DON!! payload facts.
+// Fusion World and Digimon parse the current live sites completely and are
+// not re-registered.
+const unresolvedScopeAdapterVersions = new Map([
+  ["one-piece-en", "one-piece-en@6"],
+  ["gundam-en-asia", "gundam-en-asia@7"],
+  ["gundam-en-us", "gundam-en-us@7"],
+]);
+
+function unresolvedScopeBandaiSurfaceUrls(
+  sourceLineage: string,
+  urls: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  if (
+    sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us"
+  ) {
+    const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
+    return {
+      ...urls,
+      // The rules hub publishes navigation only; the current banned and
+      // restricted list is the linked news publication.
+      legality: `https://www.gundam-gcg.com/${locale}/news/01_279.html`,
+    };
+  }
+  return urls;
+}
+
 function restructuredRequiredSurfaces(
   sourceLineage: string,
   requiredSurfaces: readonly string[],
@@ -524,9 +555,66 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           restructured: true,
           restructuredProducts: true,
         },
+        ...(unresolvedScopeAdapterVersions.has(definition.sourceLineage)
+          ? [{
+              ...definition,
+              imagePathnamePrefixes:
+                definition.sourceLineage === "gundam-en-asia"
+                  ? [
+                      ...definition.imagePathnamePrefixes,
+                      "/jp/images/cards/card/",
+                      "/gcg/bccard/asia-en/",
+                    ]
+                  : definition.sourceLineage === "gundam-en-us"
+                    ? [
+                        ...definition.imagePathnamePrefixes,
+                        "/jp/images/cards/card/",
+                        "/gcg/bccard/en/",
+                      ]
+                    : definition.imagePathnamePrefixes,
+              documentPathnamePrefixes:
+                definition.sourceLineage === "one-piece-en"
+                  ? [
+                      ...definition.documentPathnamePrefixes,
+                      "/news/",
+                      "/topics/",
+                    ]
+                  : definition.documentPathnamePrefixes,
+              adapterVersion: unresolvedScopeAdapterVersions.get(
+                definition.sourceLineage,
+              )!,
+              requiredSurfaces: restructuredRequiredSurfaces(
+                definition.sourceLineage,
+                definition.requiredSurfaces,
+              ),
+              urls: unresolvedScopeBandaiSurfaceUrls(
+                definition.sourceLineage,
+                restructuredBandaiSurfaceUrls(
+                  definition.sourceLineage,
+                  activeBandaiSurfaceUrls(
+                    definition.sourceLineage,
+                    definition.urls,
+                    definition.sourceLineage.startsWith("gundam-"),
+                  ),
+                ),
+              ),
+              parserContract:
+                `${definition.sourceLineage}-restructured-complete-catalogue@6`,
+              legalityAware: true,
+              expandedOnePieceCatalogue:
+                definition.sourceLineage === "one-piece-en",
+              catalogueComplete:
+                definition.sourceLineage.startsWith("gundam-"),
+              completeDigimonCatalogue: false,
+              restructured: true,
+              restructuredProducts: true,
+            }]
+          : []),
       ];
-      return versions.map((version) =>
-        Object.freeze({
+      return versions.map((version) => {
+        const unresolvedLegalityScopes = version.adapterVersion ===
+          unresolvedScopeAdapterVersions.get(version.sourceLineage);
+        return Object.freeze({
           ...version,
           requiredSurfaces: Object.freeze([...version.requiredSurfaces]),
           requestUrlForSurface: (surface: string) =>
@@ -556,6 +644,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.completeDigimonCatalogue,
                 version.restructured,
                 version.restructuredProducts,
+                unresolvedLegalityScopes,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -575,6 +664,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.completeDigimonCatalogue,
               version.restructured,
               version.restructuredProducts,
+              unresolvedLegalityScopes,
             )
             : historicalBandaiRequestDiscoveryV1(
               version.format,
@@ -582,8 +672,8 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               version.requiredSurfaces,
               version.urls,
             ),
-        })
-      );
+        });
+      });
     }),
   );
 
@@ -877,6 +967,7 @@ function bandaiRequestDiscovery(
   completeDigimonCatalogue = false,
   restructured = false,
   restructuredProducts = false,
+  _unresolvedLegalityScopes = false,
 ): OfficialRawAdapterContract["discoverRequests"] {
   return (bytes, context) => {
     if (context.requestId?.includes(":image:")) return [];
@@ -2193,6 +2284,7 @@ function legalityAwareBandaiSnapshotDecoder(
   completeDigimonCatalogue = false,
   restructured = false,
   restructuredProducts = false,
+  unresolvedLegalityScopes = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
@@ -2203,6 +2295,7 @@ function legalityAwareBandaiSnapshotDecoder(
     completeDigimonCatalogue,
     restructured,
     restructuredProducts,
+    unresolvedLegalityScopes,
   });
 }
 
@@ -2221,6 +2314,7 @@ function bandaiSnapshotDecoder(
     completeDigimonCatalogue?: boolean;
     restructured?: boolean;
     restructuredProducts?: boolean;
+    unresolvedLegalityScopes?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -2295,6 +2389,7 @@ function bandaiSnapshotDecoder(
         discoveryKey,
         requiredSurfaces,
         profile.restructured === true,
+        profile.unresolvedLegalityScopes === true,
       );
       return [{
         observation_type: "official_surface_evidence",
@@ -2385,6 +2480,7 @@ function bandaiSnapshotDecoder(
         profile.expandedOnePieceCatalogue === true,
         profile.catalogueComplete === true,
         profile.completeDigimonCatalogue === true,
+        profile.unresolvedLegalityScopes === true,
       );
       if (
         profile.parseLegality &&
@@ -2396,6 +2492,7 @@ function bandaiSnapshotDecoder(
           sourceLineage,
           surface,
           observations,
+          profile.unresolvedLegalityScopes === true,
         );
         if (containsUnmodeledDedicatedPolicyContent(
           html,
@@ -2409,6 +2506,9 @@ function bandaiSnapshotDecoder(
       }
       return observations;
     }
+    const legalityParseOptions = {
+      unresolvedTargetScope: profile.unresolvedLegalityScopes === true,
+    };
     const liveLegality = profile.parseLegality
       ? liveOfficialLegalityDocument(
           game,
@@ -2416,21 +2516,31 @@ function bandaiSnapshotDecoder(
           surface,
           context.url,
           html,
+          legalityParseOptions,
         )
       : null;
     const isPlannedFusionPolicyRoot =
       sourceLineage === "fusion-world-en" &&
       dynamicRole === null &&
       (surface === "legality-current" || surface === "legality-history");
+    // The issue-58 Gundam generation plans the news publication directly as
+    // its legality surface instead of discovering it from the rules hub.
+    const isPlannedGundamPolicyRoot =
+      profile.unresolvedLegalityScopes === true &&
+      format === "gundam" &&
+      dynamicRole === null &&
+      surface === "legality";
     if (
       liveLegality !== null &&
-      (dynamicRole !== null || isPlannedFusionPolicyRoot)
+      (dynamicRole !== null || isPlannedFusionPolicyRoot ||
+        isPlannedGundamPolicyRoot)
     ) {
       return [attachRawSurfaceEvidenceV1(
         officialLiveLegalityRulesObservation(
           game,
           sourceLineage,
           liveLegality.document,
+          { allowUnresolvedTargetScope: legalityParseOptions.unresolvedTargetScope },
         ),
         sourceLineage,
         liveLegality.surface,
@@ -2500,6 +2610,19 @@ function bandaiSnapshotDecoder(
       profile.expandedOnePieceCatalogue === true &&
       surface === "don-rules"
     ) {
+      if (profile.unresolvedLegalityScopes === true && dynamicRole === null) {
+        // Issue #58: the live rules hub publishes navigation and rule
+        // documents but no DON!! Card facts. The surface is retained as
+        // exact coverage evidence with a structurally complete empty
+        // Legality Rule observation; no comprehensive DON!! Printing claim
+        // is made, and absence never proves zero Printings.
+        return parseOnePieceDonRulesHubCoverageV1(
+          html,
+          sourceLineage,
+          surface,
+          context.url,
+        );
+      }
       throw new Error(
         "One Piece DON!! Card facts require explicit snapshot evidence.",
       );
@@ -2607,11 +2730,18 @@ function bandaiSnapshotDecoder(
     const legalityObservation = profile.parseLegality &&
         isLegalityRuleSurface(game, surface)
       ? liveLegalityDocument === null
-        ? officialLegalityRulesHtmlObservation(game, sourceLineage, html) ?? null
+        ? officialLegalityRulesHtmlObservation(game, sourceLineage, html, {
+            allowUnresolvedTargetScope:
+              legalityParseOptions.unresolvedTargetScope,
+          }) ?? null
         : officialLiveLegalityRulesObservation(
             game,
             sourceLineage,
             liveLegalityDocument,
+            {
+              allowUnresolvedTargetScope:
+                legalityParseOptions.unresolvedTargetScope,
+            },
           )
       : null;
     if (
@@ -2763,6 +2893,7 @@ function assertStructuredAndVisibleLegalityMatch(
   sourceLineage: string,
   surface: string,
   structuredObservations: readonly unknown[],
+  unresolvedLegalityScopes = false,
 ): void {
   const hasVisibleArticles = [...html.matchAll(
     /<article\b([^>]*)>[\s\S]*?<\/article>/giu,
@@ -2781,6 +2912,7 @@ function assertStructuredAndVisibleLegalityMatch(
       game,
       sourceLineage,
       html,
+      { allowUnresolvedTargetScope: unresolvedLegalityScopes },
     );
   } catch {
     throwStructuredVisibleLegalityMismatch(surface);
@@ -3226,6 +3358,7 @@ function bandaiDiscoveryStageRecords(
   discoveryKey: string,
   requiredSurfaces: readonly string[],
   restructured = false,
+  unresolvedLegalityScopes = false,
 ): Array<{
   id: string;
   surface: string;
@@ -3239,7 +3372,11 @@ function bandaiDiscoveryStageRecords(
     resolution: string;
   };
 }> {
-  const seed = bandaiDiscoverySeeds(sourceLineage, restructured).find(
+  const seed = bandaiDiscoverySeeds(
+    sourceLineage,
+    restructured,
+    unresolvedLegalityScopes,
+  ).find(
     ({ id }) => id === discoveryKey,
   );
   if (seed === undefined) {
@@ -3539,6 +3676,7 @@ function discoverySurfacesForStageLink(
 function bandaiDiscoverySeeds(
   sourceLineage: string,
   restructured = false,
+  unresolvedLegalityScopes = false,
 ): ReadonlyArray<{
   id: string;
   label: string;
@@ -3671,9 +3809,18 @@ function bandaiDiscoverySeeds(
       `Official Source discovery has no navigation grammar for ${sourceLineage}.`,
     );
   }
-  return restructured
+  const restructuredSeeds = restructured
     ? seeds.map((seed) => restructuredDiscoverySeed(sourceLineage, seed))
     : seeds;
+  if (!unresolvedLegalityScopes) return restructuredSeeds;
+  return restructuredSeeds.map((seed) =>
+    sourceLineage.startsWith("gundam-") && seed.id === "rules"
+      // Issue #58: the rules hub proves the linked current banned and
+      // restricted publication, which the plan captures directly as the
+      // legality surface.
+      ? { ...seed, resolutions: { legality: "../news/01_279.html" } }
+      : seed
+  );
 }
 
 function restructuredDiscoverySeed(
@@ -6035,6 +6182,110 @@ function parseRestructuredGundamPackagesRoot(
   );
 }
 
+/**
+ * Issue #58: the live One Piece /rules/ hub publishes rule PDFs and links
+ * to the separately captured restriction, block-policy, and errata
+ * publications, but no DON!! Card facts. The don-rules surface retains the
+ * hub as exact coverage evidence: the page identity and its pinned policy
+ * links are verified, every navigation link is retained explicitly, and a
+ * structurally complete empty Legality Rule observation records that the
+ * surface publishes zero rules. No comprehensive DON!! Printing claim is
+ * made; if the hub starts publishing DON!! content the parse fails closed.
+ */
+function parseOnePieceDonRulesHubCoverageV1(
+  html: string,
+  sourceLineage: string,
+  surface: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  const title = htmlText(
+    html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "",
+  );
+  if (title !== "RULES｜ONE PIECE CARD GAME - Official Web Site") {
+    throw new Error("One Piece rules hub identity is unavailable.");
+  }
+  const visibleText = htmlText(
+    html
+      .replace(/<script\b[\s\S]*?<\/script>/giu, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/giu, " "),
+  );
+  if (
+    /DON!!/u.test(visibleText) ||
+    /(?<![\p{L}\p{N}])DON(?![\p{L}\p{N}])/u.test(visibleText)
+  ) {
+    throw new Error(
+      "One Piece rules hub publishes DON!! content this Source Adapter Version cannot represent.",
+    );
+  }
+  const navigationLinks = [...html.matchAll(
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
+  )].flatMap((match) => {
+    const label = htmlText(match[2]!);
+    if (label.length === 0) return [];
+    let resolved: string;
+    try {
+      resolved = new URL(decodeHtmlText(match[1]!), requestUrl).href;
+    } catch {
+      throw new Error("One Piece rules hub navigation link is invalid.");
+    }
+    return [{ label, url: resolved }];
+  });
+  for (
+    const [pinnedSurface, pinnedUrl] of [
+      ["restrictions", "https://en.onepiece-cardgame.com/news/restriction.html"],
+      ["block-policy", "https://en.onepiece-cardgame.com/topics/013.php"],
+      ["errata", "https://en.onepiece-cardgame.com/rules/errata_card/"],
+    ] as const
+  ) {
+    if (!navigationLinks.some(({ url }) => url === pinnedUrl)) {
+      throw new Error(
+        `One Piece rules hub no longer links its pinned ${pinnedSurface} publication.`,
+      );
+    }
+  }
+  const retainedDocument = {
+    source_lineage: sourceLineage,
+    surface,
+    url: requestUrl,
+    document_title: title,
+    navigation_links: navigationLinks,
+  };
+  const consumedFields = [
+    "source_lineage",
+    "surface",
+    "url",
+    "document_title",
+    "navigation_links",
+  ];
+  return [
+    {
+      completeness: completeObservation(
+        navigationLinks.length,
+        navigationLinks.length,
+      ),
+      product_release_catalogue: {
+        products: [],
+        distribution_contexts: [],
+        relationships: [],
+      },
+    },
+    officialLegalityRulesObservation(
+      "one-piece",
+      sourceLineage,
+      { entries: [], declared_record_count: 0 },
+    ),
+  ].map((observation, index) =>
+    attachRawSurfaceEvidenceV1(
+      observation,
+      sourceLineage,
+      surface,
+      retainedDocument,
+      index === 0,
+      consumedFields,
+    )
+  );
+}
+
 function completeGundamListingCoverage(
   listing: {
     declaredTotal: number;
@@ -7019,6 +7270,7 @@ function normalizedSurfaceObservationsV2(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  unresolvedLegalityScopes = false,
 ): readonly unknown[] {
   const normalized = normalizeLineageSurface(
     format,
@@ -7028,6 +7280,7 @@ function normalizedSurfaceObservationsV2(
     expandedOnePieceCatalogue,
     catalogueComplete,
     completeDigimonCatalogue,
+    unresolvedLegalityScopes,
   );
   const document = normalized.document;
   let observations: readonly unknown[];
@@ -7045,7 +7298,9 @@ function normalizedSurfaceObservationsV2(
     observations = [
       ...parseRawReleasesSurfaceV2(document),
       ...(legalityAware && isLegalityRuleSurface(game, surface)
-        ? [officialLegalityRulesObservation(game, sourceLineage, document)]
+        ? [officialLegalityRulesObservation(game, sourceLineage, document, {
+            allowUnresolvedTargetScope: unresolvedLegalityScopes,
+          })]
         : []),
     ];
   } else if (
@@ -7059,7 +7314,10 @@ function normalizedSurfaceObservationsV2(
     observations = [
       rawCoverageObservationV2(document, surface),
       ...(expandedOnePieceCatalogue && game === "one-piece" &&
-          surface === "don-rules"
+          surface === "don-rules" &&
+          // The issue-58 contract accepts coverage without DON!! payload
+          // evidence; a retained don_card fact is still normalized exactly.
+          (!unresolvedLegalityScopes || document.don_card !== undefined)
         ? [onePieceDonCardObservation(document.don_card)]
         : []),
       ...(catalogueComplete && format === "fusion-world" && surface === "errata"
@@ -7079,6 +7337,7 @@ function normalizedSurfaceObservationsV2(
               game,
               sourceLineage,
               document,
+              { allowUnresolvedTargetScope: unresolvedLegalityScopes },
             ),
           ]
         : []),
@@ -8298,6 +8557,7 @@ function normalizeLineageSurface(
   expandedOnePieceCatalogue = false,
   catalogueComplete = false,
   completeDigimonCatalogue = false,
+  unresolvedLegalityScopes = false,
 ): {
   document: Record<string, unknown>;
   consumedFields: readonly string[];
@@ -8305,7 +8565,12 @@ function normalizeLineageSurface(
 } {
   const normalized =
     format === "one-piece"
-      ? normalizeOnePieceSurface(surface, raw, expandedOnePieceCatalogue)
+      ? normalizeOnePieceSurface(
+          surface,
+          raw,
+          expandedOnePieceCatalogue,
+          unresolvedLegalityScopes,
+        )
       : format === "fusion-world"
         ? normalizeFusionWorldSurface(surface, raw, catalogueComplete)
         : format === "digimon"
@@ -8347,6 +8612,7 @@ function normalizeOnePieceSurface(
   surface: string,
   raw: Record<string, unknown>,
   expandedOnePieceCatalogue = false,
+  unresolvedLegalityScopes = false,
 ): NormalizedSurfaceBody {
   if (surface === "card-list") {
     if (raw.page !== "card-list") {
@@ -8421,7 +8687,11 @@ function normalizeOnePieceSurface(
     `one-piece-${surface}`,
     surface === "don-rules" ? ["don_card"] : [],
   );
-  const hasDonCard = surface === "don-rules";
+  // The issue-58 contract accepts don-rules coverage without a DON!! payload
+  // fact; when the publisher does demonstrate one it is still normalized
+  // exactly. Earlier generations keep requiring the payload.
+  const hasDonCard = surface === "don-rules" &&
+    (!unresolvedLegalityScopes || raw.don_card !== undefined);
   return normalizedSurfaceBody(
     {
       ...policy,

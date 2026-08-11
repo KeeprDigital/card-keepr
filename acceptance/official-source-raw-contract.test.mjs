@@ -99,7 +99,9 @@ const expectedSurfaceUrls = {
     packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
     products: "https://www.gundam-gcg.com/asia-en/products/list.php",
     releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
-    legality: "https://www.gundam-gcg.com/asia-en/rules/",
+    // Issue #58: the plan captures the linked current banned/restricted
+    // publication directly; the /rules/ hub remains a discovery stage.
+    legality: "https://www.gundam-gcg.com/asia-en/news/01_279.html",
     errata:
       "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
   },
@@ -107,7 +109,7 @@ const expectedSurfaceUrls = {
     packages: "https://www.gundam-gcg.com/en/cards/index.php",
     products: "https://www.gundam-gcg.com/en/products/list.php",
     releases: "https://www.gundam-gcg.com/en/products/list.php",
-    legality: "https://www.gundam-gcg.com/en/rules/",
+    legality: "https://www.gundam-gcg.com/en/news/01_279.html",
     errata:
       "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
   },
@@ -174,9 +176,9 @@ const productionAdapterVersions = sourceAdapterRegistrations
 const expectedProductionAdapterVersions = [
   "digimon-en@6",
   "fusion-world-en@6",
-  "gundam-en-asia@6",
-  "gundam-en-us@6",
-  "one-piece-en@5",
+  "gundam-en-asia@7",
+  "gundam-en-us@7",
+  "one-piece-en@6",
 ];
 
 test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
@@ -827,7 +829,7 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-  assert.match(metadata.retrieved_at, /^2026-08-0[2-7]T/u);
+  assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|11)T/u);
   return { bytes, metadata };
 }
 
@@ -1742,13 +1744,18 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
+    const parserContractMajor =
+      adapter.sourceLineage === "fusion-world-en" ||
+        adapter.sourceLineage === "digimon-en"
+        ? 5
+        : 6;
     assert.equal(
       adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@5`,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@${parserContractMajor}`,
     );
     assert.match(
       adapter.parserContract,
-      /-restructured-complete-catalogue@5$/u,
+      /-restructured-complete-catalogue@[56]$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -7861,12 +7868,14 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // The live product-detail generation: every retained page below is a complete
 // publisher body captured from the site that broke production run run_085d6d,
 // where the leading <h1> became the site logo on every product page.
+// The issue-58 generation keeps the live product-detail contracts unchanged
+// for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
-  "one-piece-en": "one-piece-en@5",
+  "one-piece-en": "one-piece-en@6",
   "fusion-world-en": "fusion-world-en@6",
   "digimon-en": "digimon-en@6",
-  "gundam-en-asia": "gundam-en-asia@6",
-  "gundam-en-us": "gundam-en-us@6",
+  "gundam-en-asia": "gundam-en-asia@7",
+  "gundam-en-us": "gundam-en-us@7",
 };
 
 const frozenProductAdapterVersions = {
@@ -8370,11 +8379,18 @@ function parseRegisteredSurface(adapter, surface, payload) {
       "gundam-en-us@5",
       "gundam-en-asia@6",
       "gundam-en-us@6",
+      "gundam-en-asia@7",
+      "gundam-en-us@7",
     ]
       .includes(adapter.adapterVersion) && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
-    ["one-piece-en@3", "one-piece-en@4", "one-piece-en@5"].includes(
+    [
+      "one-piece-en@3",
+      "one-piece-en@4",
+      "one-piece-en@5",
+      "one-piece-en@6",
+    ].includes(
       adapter.adapterVersion,
     ) &&
     surface === "card-list"
