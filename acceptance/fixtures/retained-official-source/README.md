@@ -73,6 +73,19 @@ following:
   `/news/?subcategory=news&tag=all&page=1` listing with its errata article
   and pagination anchors.
 
+The `*-product-*` fixtures were captured on 2026-08-07 UTC (cold, polite
+user agent, no redirect following) after the first full-scale Gundam run
+proved the live product detail pages unparseable: every game's product
+page now carries its identity in the document `<title>` (the leading
+`<h1>` is the site logo), and the listings sweep accessory publications.
+They retain, per game, a card product page, the accessory shapes the live
+listings publish (Gundam card case both locales, US playmat, One Piece
+sleeve), the codeless set shapes (Gundam 1st Anniversary Set, Digimon
+Gift Box), the card-bearing Deck Build Box [SC01], the One Piece
+meta-refresh booster stub (`op17.html`), and the Digimon region-scoped
+release rows ("Europe/Oceania: December, 10 2021" with store-level
+parenthetical annotations).
+
 The live policy expectations intentionally follow the published scope rather
 than capture time or article recency:
 

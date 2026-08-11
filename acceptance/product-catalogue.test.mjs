@@ -43,7 +43,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       initialPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@5"),
+          officialPlan("digimon", "digimon-en", "digimon-en@6"),
         ],
       }),
       { mode: 0o600 },
@@ -52,26 +52,26 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       multiPlanPath,
       JSON.stringify({
         plans: [
-          officialPlan("digimon", "digimon-en", "digimon-en@5"),
+          officialPlan("digimon", "digimon-en", "digimon-en@6"),
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@4",
+            "one-piece-en@5",
           ),
           officialPlan(
             "fusion-world",
             "fusion-world-en",
-            "fusion-world-en@5",
+            "fusion-world-en@6",
           ),
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@5",
+            "gundam-en-asia@6",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@5",
+            "gundam-en-us@6",
           ),
         ],
       }),
@@ -84,7 +84,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@4",
+            "one-piece-en@5",
             {
               accept: "text/html",
               "user-agent": "card-keepr-acceptance-product/codeless",
@@ -258,51 +258,51 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "digimon",
         source_lineage: "digimon-en",
-        adapter_version: "digimon-en@5",
+        adapter_version: "digimon-en@6",
         request_ids: officialPlan(
           "digimon",
           "digimon-en",
-          "digimon-en@5",
+          "digimon-en@6",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@4",
+        adapter_version: "one-piece-en@5",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-en@4",
+          "one-piece-en@5",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fusion-world-en@5",
+        adapter_version: "fusion-world-en@6",
         request_ids: officialPlan(
           "fusion-world",
           "fusion-world-en",
-          "fusion-world-en@5",
+          "fusion-world-en@6",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@5",
+        adapter_version: "gundam-en-asia@6",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@5",
+          "gundam-en-asia@6",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@5",
+        adapter_version: "gundam-en-us@6",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@5",
+          "gundam-en-us@6",
         ).requests.map(({ id }) => id),
       },
     ],
@@ -449,7 +449,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       "digimon:legality-rules",
       "digimon:products-and-releases",
       "fusion-world:cards-and-printings",
-      // fusion-world-en@5 covers the catalogue only: the publisher retired
+      // fusion-world-en@6 covers the catalogue only: the publisher retired
       // its errata surface.
       "fusion-world:legality-rules",
       "fusion-world:products-and-releases",
@@ -648,10 +648,35 @@ test("the CLI publishes separated Product catalogue data consumed through authen
   assert.ok(establishedCodeProvenance.length > 0);
   assert.equal(products.length, 5);
   assert.equal(releases.length, 5);
-  // fusion-world-en@5 Card details name no publisher product code, so the
+  // fusion-world-en@6 Card details name no publisher product code, so the
   // Fusion World Printing binds to its source bucket rather than a Product
-  // distribution context.
-  assert.equal(contexts.length, 4);
+  // distribution context. The fifth context is the Gundam accessory page the
+  // product listing links: the restructured adapters fetch it and retain it as
+  // explicit non-card evidence instead of dropping it by URL vocabulary.
+  assert.equal(contexts.length, 5, JSON.stringify(contexts));
+  const accessoryContexts = contexts.filter(
+    ({ label }) => label === "accessory",
+  );
+  assert.deepEqual(
+    accessoryContexts.map(({ game, kind, label, product_id }) => ({
+      game,
+      kind,
+      label,
+      product_id,
+    })),
+    [{
+      game: "gundam",
+      kind: "other",
+      label: "accessory",
+      product_id: null,
+    }],
+    JSON.stringify(contexts),
+  );
+  assert.equal(
+    products.some(({ name }) => name === "Official Card Case Set 02"),
+    false,
+    "an accessory publication must not be promoted to a Product",
+  );
   assert.ok(products.some(({ id }) => id === productId));
   assert.ok(products.every(({ releases: value }) => value === undefined));
   assert.ok(

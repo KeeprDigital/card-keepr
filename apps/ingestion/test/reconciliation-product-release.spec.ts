@@ -321,7 +321,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@5",
+    adapter_version: "fusion-world-en@6",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });
@@ -350,7 +350,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
     .bind(revisionId, "FB-AUTHORITY")
     .first<{ document_json: string }>();
   expect(JSON.parse(productDocument?.document_json ?? "{}")).toMatchObject({
-    data: { name: "Authoritative Product Detail" },
+    data: { name: "Authoritative Product Detail [FB-AUTHORITY]" },
     disagreements: [
       expect.objectContaining({
         path: "/data/name",
@@ -363,7 +363,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
       ({ official_code }) => official_code === "FB-AUTHORITY",
     ),
   ).toMatchObject({
-    name: "Authoritative Product Detail",
+    name: "Authoritative Product Detail [FB-AUTHORITY]",
   });
 }, 30_000);
 
@@ -383,7 +383,7 @@ test("a registered code-less Product refresh preserves its established code", as
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@5",
+      adapter_version: "fusion-world-en@6",
       idempotency_key:
         `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,
@@ -470,7 +470,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@5",
+    adapter_version: "digimon-en@6",
     idempotency_key: `registered-product-fuzzy-${crypto.randomUUID()}`,
     requests,
   });

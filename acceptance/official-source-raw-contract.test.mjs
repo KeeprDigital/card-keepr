@@ -172,11 +172,11 @@ const productionAdapterVersions = sourceAdapterRegistrations
   .map(({ adapterVersion }) => adapterVersion);
 
 const expectedProductionAdapterVersions = [
-  "digimon-en@5",
-  "fusion-world-en@5",
-  "gundam-en-asia@5",
-  "gundam-en-us@5",
-  "one-piece-en@4",
+  "digimon-en@6",
+  "fusion-world-en@6",
+  "gundam-en-asia@6",
+  "gundam-en-us@6",
+  "one-piece-en@5",
 ];
 
 test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
@@ -1734,7 +1734,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.reconciliationAreas,
       // Fusion World's restructured contract owns no errata surface, so it
       // reconciles catalogue evidence alone.
-      adapter.adapterVersion === "fusion-world-en@5"
+      adapter.adapterVersion === "fusion-world-en@6"
         ? ["catalogue"]
         : ["catalogue", "errata"],
     );
@@ -1744,11 +1744,11 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
     );
     assert.equal(
       adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@4`,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@5`,
     );
     assert.match(
       adapter.parserContract,
-      /-restructured-complete-catalogue@4$/u,
+      /-restructured-complete-catalogue@5$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -5832,8 +5832,9 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
   );
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
-      <h1>Test Booster</h1>
-      <dl><dt>Product Code</dt><dd>GD99</dd></dl>
+      <title>Test Booster [GD99] | GUNDAM CARD GAME Official Website</title>
+      <h1>GUNDAM CARD GAME</h1>
+      <h2 class="mvColTitle">Test Booster [GD99]</h2>
       <dl><dt>Release Event ID</dt><dd>launch-wave</dd></dl>
       <dl><dt>Release Date</dt><dd>Q3 2027</dd></dl>
       <dl><dt>Region</dt><dd>North America</dd></dl>
@@ -5848,12 +5849,20 @@ test("live Product detail normalizes stable release identity and raw vocabulary"
   )[0];
   const release =
     observation.product_release_catalogue.products[0].releases[0];
+  // Release identity is derived from the titled Product itself; a publisher
+  // "Release Event ID" is retained as raw vocabulary, never as identity.
   assert.deepEqual(release, {
-    event_key: "launch-wave",
+    event_key: "product-release:GD99",
     region: "EN-US",
     date: { precision: "quarter", value: "2027-Q3" },
     status: "released",
   });
+  assert.ok(
+    observation.source_sidecar.unmapped_optional_fields.some(
+      ({ path, value }) =>
+        path.endsWith(".Release Event ID") && value === "launch-wave",
+    ),
+  );
   assert.ok(
     observation.source_sidecar.unmapped_optional_fields.some(
       ({ path, value }) =>
@@ -5867,8 +5876,9 @@ test("live Product detail maps official display dates and fails closed on new st
     ({ sourceLineage }) => sourceLineage === "gundam-en-us",
   );
   const base = `
-    <h1>Display Date Booster</h1>
-    <dl><dt>Product Code</dt><dd>GD98</dd></dl>
+    <title>Display Date Booster [GD98] | GUNDAM CARD GAME Official Website</title>
+    <h1>GUNDAM CARD GAME</h1>
+    <h2 class="mvColTitle">Display Date Booster [GD98]</h2>
     <dl><dt>Release Event ID</dt><dd>display-launch</dd></dl>
     <dl><dt>Release Date</dt><dd>September 12, 2027</dd></dl>
     <dl><dt>Region</dt><dd>North America</dd></dl>
@@ -6288,7 +6298,9 @@ test("Product detail ignores unrelated code-shaped prose without losing name aut
   );
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
-      <h1>Name-authoritative Booster</h1>
+      <title>Name-authoritative Booster | GUNDAM CARD GAME Official Website</title>
+      <h1>GUNDAM CARD GAME</h1>
+      <h2 class="titleColInnerHead">Name-authoritative Booster</h2>
       <p>Compatible with card GD99-001.</p>
     `),
     {
@@ -6333,14 +6345,15 @@ test("accessory detail traversal retains non-card evidence without publishing a 
   assert.ok(
     discovered.some(({ url }) => url.includes("/booster/fb-booster-01/")),
   );
-  assert.equal(
+  // The live-product generation fetches accessory pages instead of dropping
+  // them by URL vocabulary: the classification is proven from retained markup.
+  assert.ok(
     discovered.some(({ url }) => url.includes("/accessory/fb-box-01/")),
-    false,
   );
   const observation = adapter.parseBytes(
     new TextEncoder().encode(`
-      <h1>Storage Box</h1>
-      <dl><dt>Product Code</dt><dd>FB-BOX-01</dd></dl>
+      <title>Storage Box | Dragon Ball Super Card Game Fusion World - Official Web Site</title>
+      <h1>Dragon Ball Super Card Game Fusion World</h1>
     `),
     {
       mediaType: "text/html",
@@ -6529,7 +6542,9 @@ test("code-less HTML Product announcements derive stable opaque event identities
   const parse = () =>
     adapter.parseBytes(
       new TextEncoder().encode(`
-        <h1>Future Product Without Code</h1>
+        <title>Future Product Without Code | GUNDAM CARD GAME Official Website</title>
+        <h1>GUNDAM CARD GAME</h1>
+        <h2 class="mvColTitle">Future Product Without Code</h2>
         <dl><dt>Release Date</dt><dd>TBA</dd></dl>
       `),
       {
@@ -6560,8 +6575,9 @@ test("unavailable Product release vocabulary normalizes to reviewable unknown va
   for (const dateToken of ["-", "TBA", ""]) {
     const observation = adapter.parseBytes(
       new TextEncoder().encode(`
-        <h1>Future Booster</h1>
-        <dl><dt>Product Code</dt><dd>GD-FUTURE</dd></dl>
+        <title>Future Booster [GD-FUTURE] | GUNDAM CARD GAME Official Website</title>
+        <h1>GUNDAM CARD GAME</h1>
+        <h2 class="mvColTitle">Future Booster [GD-FUTURE]</h2>
         <dl><dt>Release Date</dt><dd>${dateToken}</dd></dl>
         <dl><dt>Status</dt><dd>TBA</dd></dl>
       `),
@@ -7842,6 +7858,474 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
   );
 });
 
+// The live product-detail generation: every retained page below is a complete
+// publisher body captured from the site that broke production run run_085d6d,
+// where the leading <h1> became the site logo on every product page.
+const liveProductAdapterVersions = {
+  "one-piece-en": "one-piece-en@5",
+  "fusion-world-en": "fusion-world-en@6",
+  "digimon-en": "digimon-en@6",
+  "gundam-en-asia": "gundam-en-asia@6",
+  "gundam-en-us": "gundam-en-us@6",
+};
+
+const frozenProductAdapterVersions = {
+  "one-piece-en": "one-piece-en@4",
+  "fusion-world-en": "fusion-world-en@5",
+  "digimon-en": "digimon-en@5",
+  "gundam-en-asia": "gundam-en-asia@5",
+  "gundam-en-us": "gundam-en-us@5",
+};
+
+const retainedProductFixtures = {
+  "gundam-en-asia": [
+    "gundam-en-asia-product-booster",
+    "gundam-en-asia-product-deck-build-box",
+    "gundam-en-asia-product-card-case",
+    "gundam-en-asia-product-anniversary-set",
+  ],
+  "gundam-en-us": [
+    "gundam-en-us-product-card-case",
+    "gundam-en-us-product-playmat",
+  ],
+  "one-piece-en": [
+    "one-piece-en-product-card-collection",
+    "one-piece-en-product-anniversary-set",
+    "one-piece-en-product-sleeve",
+    "one-piece-en-product-booster-stub",
+  ],
+  "digimon-en": [
+    "digimon-en-product-theme-booster",
+    "digimon-en-product-gift-box",
+    "digimon-en-product-starter-deck",
+  ],
+  "fusion-world-en": [
+    "fusion-world-en-product-story-booster",
+    "fusion-world-en-product-starter-deck",
+  ],
+};
+
+function activeProductionAdapter(sourceLineage) {
+  const adapter = requiredSourceAdapter(
+    liveProductAdapterVersions[sourceLineage],
+  );
+  assert.ok(
+    registeredProductionAdapters().includes(adapter),
+    `${sourceLineage} must resolve its live-product version as the active adapter`,
+  );
+  return adapter;
+}
+
+function retainedProductDetail(sourceLineage, slug, adapter) {
+  const resolved = adapter ?? activeProductionAdapter(sourceLineage);
+  const fixture = retainedOfficialSourceFixture(slug);
+  const observations = resolved.parseBytes(fixture.bytes, {
+    mediaType: "text/html",
+    url: fixture.metadata.source_url,
+    requestId: `${sourceLineage}:product_detail:${restructuredStageDigest}`,
+  });
+  assert.equal(observations.length, 1, slug);
+  return {
+    fixture,
+    catalogue: observations[0].product_release_catalogue,
+    document: observations[0].source_sidecar.raw.official_surfaces[0].document,
+  };
+}
+
+function mutatedProductDetail(sourceLineage, slug, from, to, adapter) {
+  const resolved = adapter ?? activeProductionAdapter(sourceLineage);
+  const fixture = retainedOfficialSourceFixture(slug);
+  const html = fixture.bytes.toString("utf8");
+  assert.ok(html.includes(from), `${slug} must retain ${from}`);
+  return () =>
+    resolved.parseBytes(
+      new TextEncoder().encode(html.replace(from, to)),
+      {
+        mediaType: "text/html",
+        url: fixture.metadata.source_url,
+        requestId: `${sourceLineage}:product_detail:${restructuredStageDigest}`,
+      },
+    );
+}
+
+function retainedAccessoryContext(sourceLineage, slug, title) {
+  const { catalogue, document } = retainedProductDetail(sourceLineage, slug);
+  assert.deepEqual(catalogue.products, [], slug);
+  assert.deepEqual(catalogue.relationships, [], slug);
+  assert.deepEqual(catalogue.distribution_contexts, [{
+    key: `non-card:accessory:${title.toLocaleLowerCase()}`,
+    kind: "other",
+    label: "accessory",
+    evidence_category: "explicit",
+  }], slug);
+  assert.equal(document.document_title, title, slug);
+}
+
+test("retained live Gundam product pages promote every titled Product from its heading contract", () => {
+  const booster = retainedProductDetail(
+    "gundam-en-asia",
+    "gundam-en-asia-product-booster",
+  );
+  assert.deepEqual(booster.catalogue.products, [{
+    reference: { kind: "official_code", value: "GD05" },
+    official_code: "GD05",
+    name: "Freedom Ascension [GD05]",
+    releases: [{
+      event_key: "product-release:GD05",
+      region: "EN-ASIA",
+      date: { precision: "day", value: "2026-07-25" },
+      status: null,
+    }],
+  }]);
+  assert.deepEqual(booster.catalogue.distribution_contexts, []);
+  assert.equal(booster.document.document_title, "Freedom Ascension [GD05]");
+
+  // A card-bearing box is an ordinary Product, not an accessory.
+  const deckBuildBox = retainedProductDetail(
+    "gundam-en-asia",
+    "gundam-en-asia-product-deck-build-box",
+  );
+  assert.deepEqual(deckBuildBox.catalogue.products, [{
+    reference: { kind: "official_code", value: "SC01" },
+    official_code: "SC01",
+    name: "Deck Build Box Freedom Ascension [SC01]",
+    releases: [{
+      event_key: "product-release:SC01",
+      region: "EN-ASIA",
+      date: { precision: "day", value: "2026-07-25" },
+      status: null,
+    }],
+  }]);
+  assert.deepEqual(deckBuildBox.catalogue.distribution_contexts, []);
+});
+
+test("a retained live Gundam set without a bracketed code keeps name identity and its dotted release date", () => {
+  const { catalogue, fixture } = retainedProductDetail(
+    "gundam-en-asia",
+    "gundam-en-asia-product-anniversary-set",
+  );
+  // The publisher prints the shorthand "2026.7.27" on this page.
+  assert.ok(fixture.bytes.toString("utf8").includes("2026.7.27"));
+  const [product] = catalogue.products;
+  assert.equal(catalogue.products.length, 1);
+  assert.equal(product.official_code, null);
+  assert.deepEqual(product.reference, {
+    kind: "name",
+    value: "GUNDAM CARD GAME 1st Anniversary Set",
+  });
+  assert.equal(product.name, "GUNDAM CARD GAME 1st Anniversary Set");
+  assert.deepEqual(product.releases[0].date, {
+    precision: "day",
+    value: "2026-07-27",
+  });
+  assert.equal(product.releases[0].region, "EN-ASIA");
+  assert.match(
+    product.releases[0].event_key,
+    /^product-release:name-[0-9a-f]+-[0-9a-f]{16}$/u,
+  );
+});
+
+test("retained live Gundam accessory pages retain non-card evidence in both locales", () => {
+  for (const lineage of ["gundam-en-asia", "gundam-en-us"]) {
+    retainedAccessoryContext(
+      lineage,
+      `${lineage}-product-card-case`,
+      "Official Card Case Set 02",
+    );
+  }
+  retainedAccessoryContext(
+    "gundam-en-us",
+    "gundam-en-us-product-playmat",
+    "Official Playmat & Card Set — Mobile Suit Gundam 00 —",
+  );
+});
+
+test("retained live One Piece product pages separate coded, code-less, and accessory publications", () => {
+  // The live OP-17 page is a 343-byte meta-refresh stub whose only publisher
+  // fact is its titled Product identity.
+  const stub = retainedProductDetail(
+    "one-piece-en",
+    "one-piece-en-product-booster-stub",
+  );
+  assert.equal(stub.fixture.bytes.length, 343);
+  assert.deepEqual(stub.catalogue.products, [{
+    reference: { kind: "official_code", value: "OP-17" },
+    official_code: "OP-17",
+    name: "BOOSTER PACK -THE WORLD’S STRONGEST WARRIORS- [OP-17]",
+    releases: [],
+  }]);
+  assert.deepEqual(Object.keys(stub.document), ["document_title"]);
+
+  for (
+    const [slug, name] of [
+      [
+        "one-piece-en-product-card-collection",
+        "Premium Card Collection -Ace & Sabo & Luffy-",
+      ],
+      [
+        "one-piece-en-product-anniversary-set",
+        "ONE PIECE CARD GAME English Version 3rd Anniversary Set",
+      ],
+    ]
+  ) {
+    const { catalogue } = retainedProductDetail("one-piece-en", slug);
+    assert.deepEqual(catalogue.products, [{
+      reference: { kind: "name", value: name },
+      official_code: null,
+      name,
+      releases: [],
+    }], slug);
+    assert.deepEqual(catalogue.distribution_contexts, [], slug);
+  }
+
+  retainedAccessoryContext(
+    "one-piece-en",
+    "one-piece-en-product-sleeve",
+    "LIMITED CARD SLEEVE PREMIUM MATTE vol.6",
+  );
+});
+
+test("retained live Digimon product pages map region-scoped and code-less releases", () => {
+  const themeBooster = retainedProductDetail(
+    "digimon-en",
+    "digimon-en-product-theme-booster",
+  );
+  assert.deepEqual(themeBooster.catalogue.products, [{
+    reference: { kind: "official_code", value: "EX-01" },
+    official_code: "EX-01",
+    name: "DIGIMON CARD GAME THEME BOOSTER CLASSIC COLLECTION [EX-01]",
+    releases: [{
+      event_key: "product-release:EX-01",
+      // "Europe/Oceania: December 10, 2021 (*Asmodee UK/Blackfire Stores: …)"
+      region: "EN-OCEANIA",
+      date: { precision: "day", value: "2021-12-10" },
+      status: null,
+    }],
+  }]);
+
+  const giftBox = retainedProductDetail(
+    "digimon-en",
+    "digimon-en-product-gift-box",
+  );
+  const [gift] = giftBox.catalogue.products;
+  assert.equal(gift.official_code, null);
+  assert.equal(gift.name, "DIGIMON CARD GAME GIFT BOX");
+  assert.equal(gift.releases[0].region, "EN-OCEANIA");
+  assert.deepEqual(gift.releases[0].date, {
+    precision: "day",
+    value: "2021-12-10",
+  });
+
+  const starterDeck = retainedProductDetail(
+    "digimon-en",
+    "digimon-en-product-starter-deck",
+  );
+  assert.deepEqual(starterDeck.catalogue.products, [{
+    reference: { kind: "official_code", value: "ST-24" },
+    official_code: "ST-24",
+    name: "DIGIMON CARD GAME DIGIMON DATA SQUAD [ST-24]",
+    releases: [{
+      event_key: "product-release:ST-24",
+      region: "unknown",
+      date: { precision: "day", value: "2026-05-15" },
+      status: null,
+    }],
+  }]);
+});
+
+test("retained live Fusion World product pages promote their coded Products", () => {
+  for (
+    const [slug, code, name, date] of [
+      [
+        "fusion-world-en-product-story-booster",
+        "ST01",
+        "STORY BOOSTER 01 [ST01]",
+        "2026-08-21",
+      ],
+      [
+        "fusion-world-en-product-starter-deck",
+        "FS11",
+        "STARTER DECK EX THE PHASE OF EVOLUTION [FS11]",
+        "2026-03-13",
+      ],
+    ]
+  ) {
+    const { catalogue } = retainedProductDetail("fusion-world-en", slug);
+    assert.deepEqual(catalogue.products, [{
+      reference: { kind: "official_code", value: code },
+      official_code: code,
+      name,
+      releases: [{
+        event_key: `product-release:${code}`,
+        region: "unknown",
+        date: { precision: "day", value: date },
+        status: null,
+      }],
+    }], slug);
+  }
+});
+
+test("live Product detail fails closed without its publisher title suffix or matching Gundam heading", () => {
+  assert.throws(
+    mutatedProductDetail(
+      "one-piece-en",
+      "one-piece-en-product-card-collection",
+      " | ONE PIECE CARD GAME - Official Web Site</title>",
+      "</title>",
+    ),
+    /one-piece-en Product detail is missing its official title\./u,
+  );
+  assert.throws(
+    mutatedProductDetail(
+      "gundam-en-asia",
+      "gundam-en-asia-product-booster",
+      " | GUNDAM CARD GAME Official Website</title>",
+      "</title>",
+    ),
+    /gundam-en-asia Product detail is missing its official title\./u,
+  );
+  assert.throws(
+    mutatedProductDetail(
+      "gundam-en-asia",
+      "gundam-en-asia-product-booster",
+      '<h2 class="mvColTitle">Freedom Ascension [GD05]</h2>',
+      '<h2 class="mvColTitle">Freedom Ascension</h2>',
+    ),
+    /gundam-en-asia Product detail heading does not match its official title\./u,
+  );
+});
+
+test("the frozen product generation cannot read the live pages that failed production", () => {
+  for (const [lineage, slugs] of Object.entries(retainedProductFixtures)) {
+    const frozen = requiredSourceAdapter(frozenProductAdapterVersions[lineage]);
+    assert.equal(
+      registeredProductionAdapters().includes(frozen),
+      false,
+      `${frozen.adapterVersion} must no longer be the active adapter`,
+    );
+    for (const slug of slugs) {
+      // The meta-refresh stub is the one live page whose leading heading is
+      // absent rather than the site logo: the frozen parser mints an identity
+      // out of the unstripped document title instead of failing.
+      if (slug === "one-piece-en-product-booster-stub") {
+        const { catalogue } = retainedProductDetail(lineage, slug, frozen);
+        assert.deepEqual(catalogue.products, [{
+          reference: {
+            kind: "name",
+            value:
+              "BOOSTER PACK -THE WORLD’S STRONGEST WARRIORS- [OP-17] − PRODUCTS｜ONE PIECE CARD GAME - Official Web Site",
+          },
+          official_code: null,
+          name:
+            "BOOSTER PACK -THE WORLD’S STRONGEST WARRIORS- [OP-17] − PRODUCTS｜ONE PIECE CARD GAME - Official Web Site",
+          releases: [],
+        }]);
+        continue;
+      }
+      assert.throws(
+        () => retainedProductDetail(lineage, slug, frozen),
+        new RegExp(
+          `${lineage} Product detail is missing its official title\\.`,
+          "u",
+        ),
+        slug,
+      );
+    }
+  }
+});
+
+test("the retained One Piece restriction publication is proven at its live redirect target", () => {
+  const adapter = activeProductionAdapter("one-piece-en");
+  const url = adapter.requestUrlForSurface("restrictions");
+  assert.equal(url, "https://en.onepiece-cardgame.com/news/restriction.html");
+  const fixture = retainedOfficialSourceFixture("one-piece-en-policy");
+  // The retained bytes were captured at the pre-redirect URL; the same
+  // publication now answers at the live target under one contract.
+  assert.equal(
+    fixture.metadata.source_url,
+    "https://en.onepiece-cardgame.com/rules/restriction/",
+  );
+  const observations = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url,
+    requestId: "one-piece-en:restrictions",
+  });
+  const legality = observations.find(
+    (observation) => observation.observation_type === "legality_rules",
+  );
+  assert.deepEqual(
+    legality.legality_rules.map(({ card_numbers, effect }) => ({
+      card_numbers,
+      effect,
+    })),
+    [
+      { card_numbers: ["OP06-047"], effect: { type: "ban" } },
+      { card_numbers: ["OP03-040"], effect: { type: "ban" } },
+      { card_numbers: ["OP06-086"], effect: { type: "ban" } },
+      { card_numbers: ["ST10-001"], effect: { type: "ban" } },
+      { card_numbers: ["OP06-116"], effect: { type: "ban" } },
+      {
+        card_numbers: ["OP07-115"],
+        effect: {
+          type: "prohibited_combination",
+          with_card_numbers: ["EB04-058"],
+        },
+      },
+      {
+        card_numbers: ["OP11-040"],
+        effect: {
+          type: "prohibited_combination",
+          with_card_numbers: ["OP11-067"],
+        },
+      },
+      {
+        card_numbers: ["OP11-040"],
+        effect: {
+          type: "prohibited_combination",
+          with_card_numbers: ["OP08-069"],
+        },
+      },
+    ],
+  );
+  assert.equal(legality.completeness.declared_record_count, 8);
+  assert.equal(legality.completeness.parsed_record_count, 8);
+  const surface =
+    observations.find((observation) => observation.observation_type === undefined)
+      .source_sidecar.raw.official_surfaces[0];
+  assert.equal(surface.surface, "restrictions");
+  assert.equal(surface.document.url, url);
+});
+
+test("the One Piece Block Number publication is an exactly empty policy surface", () => {
+  const adapter = activeProductionAdapter("one-piece-en");
+  const url = adapter.requestUrlForSurface("block-policy");
+  assert.equal(url, "https://en.onepiece-cardgame.com/topics/013.php");
+  const fixture = retainedOfficialSourceFixture(
+    "one-piece-en-block-policy-topic",
+  );
+  assert.equal(fixture.metadata.source_url, url);
+  const observations = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url,
+    requestId: "one-piece-en:block-policy",
+  });
+  const legality = observations.find(
+    (observation) => observation.observation_type === "legality_rules",
+  );
+  assert.deepEqual(legality.legality_rules, []);
+  assert.equal(legality.completeness.declared_record_count, 0);
+  assert.equal(legality.completeness.parsed_record_count, 0);
+  assert.equal(legality.completeness.structurally_complete, true);
+  const surface =
+    observations.find((observation) => observation.observation_type === undefined)
+      .source_sidecar.raw.official_surfaces[0];
+  assert.equal(surface.surface, "block-policy");
+  assert.equal(
+    surface.document.document_title,
+    "Introduction of the Block Number System − TOPICS｜ONE PIECE CARD GAME - Official Web Site",
+  );
+});
+
 function rawSurfacePayload(lineage, surface) {
   const payload = structuredClone(
     officialRawSurfacePayload(`/${lineage}/${surface}`),
@@ -7875,15 +8359,24 @@ function withLegacyFusionCanonicalFields(payload) {
 
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
-    (adapter.adapterVersion === "digimon-en@4" ||
-      adapter.adapterVersion === "digimon-en@5") && surface === "card-list";
+    ["digimon-en@4", "digimon-en@5", "digimon-en@6"].includes(
+      adapter.adapterVersion,
+    ) && surface === "card-list";
   const completeGundamLeaf =
-    ["gundam-en-asia@4", "gundam-en-us@4", "gundam-en-asia@5", "gundam-en-us@5"]
+    [
+      "gundam-en-asia@4",
+      "gundam-en-us@4",
+      "gundam-en-asia@5",
+      "gundam-en-us@5",
+      "gundam-en-asia@6",
+      "gundam-en-us@6",
+    ]
       .includes(adapter.adapterVersion) && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
-    (adapter.adapterVersion === "one-piece-en@3" ||
-      adapter.adapterVersion === "one-piece-en@4") &&
+    ["one-piece-en@3", "one-piece-en@4", "one-piece-en@5"].includes(
+      adapter.adapterVersion,
+    ) &&
     surface === "card-list"
   ) {
     publisherPayload.card_pages.forEach((card) => {

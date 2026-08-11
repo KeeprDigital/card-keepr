@@ -1,0 +1,13 @@
+{
+  "source_url": "https://en.onepiece-cardgame.com/products/op17.html",
+  "retrieved_at": "2026-08-07T09:40:48Z",
+  "http_status": 200,
+  "content_type": "text/html; charset=UTF-8",
+  "effective_url": "https://en.onepiece-cardgame.com/products/op17.html",
+  "full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+  "body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+  "full_body_size": 343,
+  "range_start": 0,
+  "range_end_exclusive": 343,
+  "body_base64": "DQo8IURPQ1RZUEUgaHRtbD4NCjxodG1sIGxhbmc9ImVuIj4NCiAgPGhlYWQgcHJlZml4PSJvZzogaHR0cDovL29ncC5tZS9ucyMiPg0KICAgIDxtZXRhIGNoYXJzZXQ9IlVURi04Ij4NCiAgICA8bWV0YSBodHRwLWVxdWl2PSJyZWZyZXNoIiBjb250ZW50PSIwOyBVUkw9Li9ib29zdGVycy9vcDE3LyI+DQogICAgPHRpdGxlPkJPT1NURVIgUEFDSyAtVEhFIFdPUkxE4oCZUyBTVFJPTkdFU1QgV0FSUklPUlMtIFtPUC0xN10g4oiSIFBST0RVQ1RT772cT05FIFBJRUNFIENBUkQgR0FNRSAtIE9mZmljaWFsIFdlYiBTaXRlPC90aXRsZT4NCiAgPC9oZWFkPg0KICA8Ym9keT4NCiAgPC9ib2R5Pg0KPC9odG1sPg=="
+}

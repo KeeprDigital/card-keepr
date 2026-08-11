@@ -39,7 +39,7 @@ test.each([
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@5",
+    adapter_version: "fusion-world-en@6",
     idempotency_key: `production-unrepresentable-legality-v3-${marker}`,
     requests: productionFusionLegalityRequests(
       marker,
