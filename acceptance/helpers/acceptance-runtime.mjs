@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -65,6 +65,18 @@ export async function startWorker({
   vars = {},
 }) {
   if (migrate) await applyMigrations(statePath, config);
+  // The released-probe-port allocation races other concurrent processes, so a
+  // boot that dies on the collision retries on fresh ports. A caller-pinned
+  // port is never retried: reusing it is the caller's stated intent.
+  const retriable = port === undefined && inspectorPort === undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    const worker = await spawnWorker();
+    if (!retriable || attempt >= 3) return worker;
+    const collided = await portCollision(worker);
+    if (!collided) return worker;
+  }
+
+  async function spawnWorker() {
   const boundPort = port ?? await allocatePort();
   const boundInspectorPort = inspectorPort ?? await allocatePort();
   const boundRegistryPath = registryPath ??
@@ -100,6 +112,34 @@ export async function startWorker({
     inspectorPort: boundInspectorPort,
     url: `http://127.0.0.1:${boundPort}`,
   };
+  }
+}
+
+// Wait briefly for a just-spawned Worker to either hold its port (no
+// collision) or exit with the address-collision error; only that exact early
+// exit reports a collision.
+async function portCollision(worker) {
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline) {
+    if (worker.process.exitCode !== null) {
+      return worker.getOutput().includes("Address already in use");
+    }
+    if (await portHeld(worker.port)) return false;
+    await delay(50);
+  }
+  return false;
+}
+
+function portHeld(port) {
+  return new Promise((resolveHeld) => {
+    const probe = createConnection({ host: "127.0.0.1", port });
+    probe.unref();
+    probe.once("connect", () => {
+      probe.destroy();
+      resolveHeld(true);
+    });
+    probe.once("error", () => resolveHeld(false));
+  });
 }
 
 export async function waitForResponse(url, worker, description, headers) {
