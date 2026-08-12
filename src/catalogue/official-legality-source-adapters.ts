@@ -150,20 +150,44 @@ const htmlLabelsByGame: Readonly<
   },
 };
 
+export type OfficialLegalityParseOptions = Readonly<{
+  /**
+   * Enabled only by the issue-58 adapter generation: accepts the exact
+   * recognized open-predicate policy as an `unresolved` rule whose
+   * unresolved scope names the `target_scope` dimension. Earlier adapter
+   * versions keep rejecting the dimension and the compound wording.
+   */
+  allowUnresolvedTargetScope?: boolean;
+}>;
+
 export function officialLegalityRulesObservation(
   game: OfficialLegalityGame,
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
+  options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
-  return officialLegalityObservation(game, sourceLineage, rawDocument, false);
+  return officialLegalityObservation(
+    game,
+    sourceLineage,
+    rawDocument,
+    false,
+    options,
+  );
 }
 
 export function officialLiveLegalityRulesObservation(
   game: OfficialLegalityGame,
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
+  options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
-  return officialLegalityObservation(game, sourceLineage, rawDocument, true);
+  return officialLegalityObservation(
+    game,
+    sourceLineage,
+    rawDocument,
+    true,
+    options,
+  );
 }
 
 function officialLegalityObservation(
@@ -171,6 +195,7 @@ function officialLegalityObservation(
   sourceLineage: string,
   rawDocument: Record<string, unknown>,
   allowKnownPolicyWithUnresolvedInterval: boolean,
+  options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
   const entries = requiredArray(
     rawDocument.entries,
@@ -196,6 +221,7 @@ function officialLegalityObservation(
         fieldsByGame[game],
         requiredRecord(entry, `Official Source Legality entry ${index}`),
         allowKnownPolicyWithUnresolvedInterval,
+        options,
       )
     ),
     completeness: {
@@ -213,6 +239,7 @@ export function officialLegalityRulesHtmlObservation(
   game: OfficialLegalityGame,
   sourceLineage: string,
   html: string,
+  options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> | null {
   const declaredRecordCount = publisherDeclaredRecordCount(html);
   const articles = [...html.matchAll(
@@ -224,7 +251,7 @@ export function officialLegalityRulesHtmlObservation(
   );
   if (articles.length === 0) {
     return declaredRecordCount === 0
-      ? officialLegalityRulesObservation(game, sourceLineage, { entries: [] })
+      ? officialLegalityRulesObservation(game, sourceLineage, { entries: [] }, options)
       : null;
   }
   if (declaredRecordCount === null) {
@@ -287,7 +314,7 @@ export function officialLegalityRulesHtmlObservation(
       `Official Legality HTML declares ${declaredRecordCount} records but exactly ${entries.length} were parsed.`,
     );
   }
-  return officialLegalityRulesObservation(game, sourceLineage, { entries });
+  return officialLegalityRulesObservation(game, sourceLineage, { entries }, options);
 }
 
 function publisherDeclaredRecordCount(html: string): number | null {
@@ -376,6 +403,7 @@ function exactLegalityRule(
   fields: FieldMap,
   entry: Record<string, unknown>,
   allowKnownPolicyWithUnresolvedInterval = false,
+  options: OfficialLegalityParseOptions = {},
 ): Record<string, unknown> {
   const allowedFields = new Set(Object.values(fields));
   const unknownField = Object.keys(entry).find((field) =>
@@ -406,6 +434,7 @@ function exactLegalityRule(
     directive,
     wording,
     allowKnownPolicyWithUnresolvedInterval,
+    options.allowUnresolvedTargetScope === true,
   );
   if (region !== regionForLineage(sourceLineage)) {
     throw new Error(
@@ -420,7 +449,10 @@ function exactLegalityRule(
     entry[fields.effectiveUntil],
     "Official Legality end date",
   );
-  const unresolvedScope = exactUnresolvedScope(entry[fields.unresolvedScope]);
+  const unresolvedScope = exactUnresolvedScope(
+    entry[fields.unresolvedScope],
+    options.allowUnresolvedTargetScope === true,
+  );
   const eventTier = nullableText(
     entry[fields.tier],
     "Official Legality event tier",
@@ -446,7 +478,12 @@ function exactLegalityRule(
           ? effectiveFrom !== null || effectiveUntil !== null
           : effectiveFrom === null) ||
         (unresolvedScope.dimensions.includes("event_tier") &&
-          eventTier !== null)))
+          eventTier !== null) ||
+        // The target_scope dimension is valid only for the exactly
+        // recognized open-predicate policy wording; free-form wording
+        // cannot silently claim an open scope.
+        (unresolvedScope.dimensions.includes("target_scope") &&
+          !isExactPolicyWithUnresolvedTargetScope(wording, cardNumbers))))
   ) {
     throw new Error("Official Legality unresolved scope conflicts with its exact context.");
   }
@@ -459,6 +496,7 @@ function exactLegalityRule(
     cardNumbers,
     effect,
     allowKnownPolicyWithUnresolvedInterval,
+    allowUnresolvedTargetScope: options.allowUnresolvedTargetScope === true,
   });
   return {
     id: requiredText(entry[fields.id], "Official Legality identity"),
@@ -478,7 +516,10 @@ function exactLegalityRule(
 
 function exactUnresolvedScope(
   value: unknown,
-): { dimensions: ("effective_interval" | "event_tier")[] } | null {
+  allowTargetScope = false,
+): {
+  dimensions: ("effective_interval" | "event_tier" | "target_scope")[];
+} | null {
   if (value === undefined || value === null) return null;
   const scope = requiredRecord(value, "Official Legality unresolved scope");
   const unknown = Object.keys(scope).find((field) => field !== "dimensions");
@@ -486,10 +527,13 @@ function exactUnresolvedScope(
     throw new Error("Official Legality unresolved scope is invalid.");
   }
   const dimensions = scope.dimensions.map((dimension) => {
-    if (dimension !== "effective_interval" && dimension !== "event_tier") {
+    if (
+      dimension !== "effective_interval" && dimension !== "event_tier" &&
+      (dimension !== "target_scope" || !allowTargetScope)
+    ) {
       throw new Error("Official Legality unresolved scope dimension is invalid.");
     }
-    return dimension;
+    return dimension as "effective_interval" | "event_tier" | "target_scope";
   });
   if (
     dimensions.length === 0 || new Set(dimensions).size !== dimensions.length ||
@@ -506,6 +550,7 @@ function exactEffect(
   directive: string,
   wording: string,
   allowKnownPolicyWithUnresolvedInterval: boolean,
+  allowUnresolvedTargetScope = false,
 ): Record<string, unknown> {
   switch (directive) {
     case "eligible":
@@ -733,6 +778,13 @@ function exactEffect(
       ) {
         return { type: "unresolved", reason };
       }
+      if (
+        allowUnresolvedTargetScope &&
+        reason === openPredicateUnresolvedReason &&
+        isExactPolicyWithUnresolvedTargetScope(wording, cardNumbers)
+      ) {
+        return { type: "unresolved", reason };
+      }
       assertNoAdditionalStructuredSemantics("unresolved", wording, [
         banSemantics,
         copyLimitSemantics,
@@ -759,6 +811,29 @@ function exactEffect(
         `Official Legality directive ${directive} is not representable by this Source Adapter Version.`,
       );
   }
+}
+
+/**
+ * The exact Bandai Gundam 2026-07-24 open-predicate wording: every current
+ * and future card matching the quoted description participates in banned
+ * pairs and a four-copy limit. The enumerated Card lines are the known
+ * matches; the predicate itself remains open.
+ */
+export const openPredicateUnresolvedReason =
+  'The published description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" includes future printings; its complete matching-card scope and effective interval are not stated.';
+
+const openPredicatePolicyPattern =
+  /^All combinations of cards that match the above description "a Unit card that is Lv\.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck\.(?:\n[A-Z0-9-]+ [^\n]+)+$/u;
+
+function isExactPolicyWithUnresolvedTargetScope(
+  wording: string,
+  cardNumbers: readonly string[],
+): boolean {
+  if (!openPredicatePolicyPattern.test(wording)) return false;
+  const wordingCards = wordingCardNumbers(wording);
+  return wordingCards.length > 0 &&
+    wordingCards.length === cardNumbers.length &&
+    wordingCards.every((card, index) => card === cardNumbers[index]);
 }
 
 function isExactPolicyWithUnresolvedInterval(
@@ -857,6 +932,7 @@ type ExactWordingInput = Readonly<{
   cardNumbers: readonly string[];
   effect: Record<string, unknown>;
   allowKnownPolicyWithUnresolvedInterval: boolean;
+  allowUnresolvedTargetScope?: boolean;
 }>;
 
 function assertExactWordingSemantics(input: ExactWordingInput): void {
@@ -920,6 +996,7 @@ function assertExactWordingSemantics(input: ExactWordingInput): void {
       input.effect,
       input.cardNumbers,
       input.allowKnownPolicyWithUnresolvedInterval,
+      input.allowUnresolvedTargetScope === true,
     );
   }
 }
@@ -1089,11 +1166,19 @@ function assertExactUnresolvedWording(
   effect: Record<string, unknown>,
   cardNumbers: readonly string[],
   allowKnownPolicyWithUnresolvedInterval: boolean,
+  allowUnresolvedTargetScope = false,
 ): void {
   const reason = requiredText(
     effect.reason,
     "Official Legality unresolved reason",
   );
+  if (
+    allowUnresolvedTargetScope &&
+    reason === openPredicateUnresolvedReason &&
+    isExactPolicyWithUnresolvedTargetScope(wording, cardNumbers)
+  ) {
+    return;
+  }
   const expressed = wording.match(
     /^(?:The official notice does not identify whether\s+)?([^\n.!?]+?)(?:\s+(?:is|are|remains?)\s+(?:unresolved|unclear|unknown)|\s+(?:cannot be determined|is not stated|awaiting (?:publisher )?clarification))\.$/iu,
   )?.[1];

@@ -849,6 +849,7 @@ function isLegalitySurface(
       "one-piece-en@3",
       "one-piece-en@4",
       "one-piece-en@5",
+      "one-piece-en@6",
     ].includes(
       adapter.adapterVersion,
     ) && surface === "releases");
@@ -1004,9 +1005,11 @@ export function validateGundamListingCollectionGraph(
         "gundam-en-asia@4",
         "gundam-en-asia@5",
         "gundam-en-asia@6",
+        "gundam-en-asia@7",
         "gundam-en-us@4",
         "gundam-en-us@5",
         "gundam-en-us@6",
+        "gundam-en-us@7",
       ].includes(input.adapterVersion)
     ) continue;
     const retained = input.observations.flatMap((wrapped) => {
@@ -1290,6 +1293,7 @@ function assertClosedRequestGraph(
               "one-piece-en@3",
               "one-piece-en@4",
               "one-piece-en@5",
+              "one-piece-en@6",
             ].includes(
               adapter.adapterVersion,
             )

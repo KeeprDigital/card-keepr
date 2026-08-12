@@ -99,7 +99,9 @@ const expectedSurfaceUrls = {
     packages: "https://www.gundam-gcg.com/asia-en/cards/index.php",
     products: "https://www.gundam-gcg.com/asia-en/products/list.php",
     releases: "https://www.gundam-gcg.com/asia-en/products/list.php",
-    legality: "https://www.gundam-gcg.com/asia-en/rules/",
+    // Issue #58: the plan captures the linked current banned/restricted
+    // publication directly; the /rules/ hub remains a discovery stage.
+    legality: "https://www.gundam-gcg.com/asia-en/news/01_279.html",
     errata:
       "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
   },
@@ -107,7 +109,7 @@ const expectedSurfaceUrls = {
     packages: "https://www.gundam-gcg.com/en/cards/index.php",
     products: "https://www.gundam-gcg.com/en/products/list.php",
     releases: "https://www.gundam-gcg.com/en/products/list.php",
-    legality: "https://www.gundam-gcg.com/en/rules/",
+    legality: "https://www.gundam-gcg.com/en/news/01_279.html",
     errata:
       "https://www.gundam-gcg.com/en/news/?subcategory=news&tag=all&page=1",
   },
@@ -176,11 +178,19 @@ const productionAdapterVersions = sourceAdapterRegistrations
 // Energy Markers omit rarity and Digimon's live Q&A nests Related Cards.
 // One Piece and both Gundam locales stay on their previous actives.
 const expectedProductionAdapterVersions = [
+<<<<<<< HEAD
   "digimon-en@7",
   "fusion-world-en@7",
   "gundam-en-asia@6",
   "gundam-en-us@6",
   "one-piece-en@5",
+=======
+  "digimon-en@6",
+  "fusion-world-en@6",
+  "gundam-en-asia@7",
+  "gundam-en-us@7",
+  "one-piece-en@6",
+>>>>>>> origin/main
 ];
 
 const optionalCardFieldAdapterVersions = [
@@ -836,9 +846,13 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
+<<<<<<< HEAD
   // 08-02 to 08-07 captured the restructured generation; 08-11 captured the
   // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A).
   assert.match(metadata.retrieved_at, /^2026-08-(0[2-7]|11)T/u);
+=======
+  assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|11)T/u);
+>>>>>>> origin/main
   return { bytes, metadata };
 }
 
@@ -1045,6 +1059,114 @@ test("retained live Gundam locale policy bytes fail closed on their compound eff
       descriptor.adapter,
     );
   }
+});
+
+test("issue-58 Gundam adapters parse the retained compound policy into explicit unresolved rules", () => {
+  const openPredicateReason =
+    'The published description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" includes future printings; its complete matching-card scope and effective interval are not stated.';
+  for (const descriptor of [
+    {
+      adapter: "gundam-en-asia@7",
+      slug: "gundam-en-asia-policy-detail",
+      lineage: "gundam-en-asia",
+      region: "EN-ASIA",
+    },
+    {
+      adapter: "gundam-en-us@7",
+      slug: "gundam-en-us-policy-detail",
+      lineage: "gundam-en-us",
+      region: "EN-US",
+    },
+  ]) {
+    const adapter = requiredSourceAdapter(descriptor.adapter);
+    assert.equal(
+      adapter.requestUrlForSurface("legality"),
+      retainedOfficialSourceFixture(descriptor.slug).metadata.source_url,
+    );
+    const rules = retainedLegalityRules(
+      adapter,
+      "legality",
+      descriptor.slug,
+      { requestId: `${descriptor.lineage}:legality` },
+    );
+    assert.equal(rules.length, 5);
+    assert.ok(rules.every((rule) =>
+      rule.region === descriptor.region &&
+      rule.effective_from === null &&
+      rule.effect.type === "unresolved" &&
+      rule.unresolved_scope.dimensions.includes("effective_interval")
+    ));
+    assert.deepEqual(
+      rules.slice(0, 4).map((rule) => rule.card_numbers),
+      [
+        ["GD01-020"],
+        ["ST02-016"],
+        ["ST01-010", "ST05-010"],
+        ["GD01-008", "GD05-015"],
+      ],
+    );
+    const openPredicate = rules[4];
+    assert.equal(openPredicate.id, "01_279-current-open-predicate");
+    assert.deepEqual(openPredicate.unresolved_scope, {
+      dimensions: ["effective_interval", "target_scope"],
+    });
+    assert.equal(openPredicate.card_numbers.length, 20);
+    assert.equal(openPredicate.card_numbers[0], "GD01-035");
+    assert.equal(openPredicate.card_numbers.at(-1), "ST10-005");
+    assert.equal(openPredicate.effect.reason, openPredicateReason);
+    assert.match(
+      openPredicate.official_wording,
+      /^All combinations of cards that match the above description/u,
+    );
+  }
+});
+
+test("the issue-58 One Piece don-rules contract retains the live hub as coverage without DON payload", () => {
+  const adapter = requiredSourceAdapter("one-piece-en@6");
+  const fixture = retainedOfficialSourceFixture("one-piece-en-don-rules-hub");
+  const observations = adapter.parseBytes(fixture.bytes, {
+    mediaType: fixture.metadata.content_type,
+    url: fixture.metadata.source_url,
+    requestId: "one-piece-en:don-rules",
+  });
+  assert.equal(observations.length, 2);
+  const [coverage, legality] = observations;
+  assert.deepEqual(coverage.completeness, {
+    structurally_complete: true,
+    required_surfaces_complete: true,
+    partitions_complete: true,
+    declared_record_count: 76,
+    parsed_record_count: 76,
+  });
+  const retained = coverage.source_sidecar.raw.official_surfaces[0].document;
+  assert.equal(
+    retained.document_title,
+    "RULES｜ONE PIECE CARD GAME - Official Web Site",
+  );
+  for (const pinned of [
+    "https://en.onepiece-cardgame.com/news/restriction.html",
+    "https://en.onepiece-cardgame.com/topics/013.php",
+    "https://en.onepiece-cardgame.com/rules/errata_card/",
+  ]) {
+    assert.ok(
+      retained.navigation_links.some(({ url }) => url === pinned),
+      `retained hub evidence keeps ${pinned}`,
+    );
+  }
+  assert.equal(legality.observation_type, "legality_rules");
+  assert.deepEqual(legality.legality_rules, []);
+  assert.equal(legality.completeness.declared_record_count, 0);
+
+  // The earlier generation keeps its frozen fail-closed contract.
+  assert.throws(
+    () =>
+      requiredSourceAdapter("one-piece-en@5").parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: "one-piece-en:don-rules",
+      }),
+    /DON!! Card facts require explicit snapshot evidence/u,
+  );
 });
 
 test("retained live policy roots schedule the exact current detail publications", () => {
@@ -1753,6 +1875,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
+<<<<<<< HEAD
     // Only the optional-card-field lineages carry the @6 parser contract; the
     // lineages that kept their previous active still declare @5.
     const expectedParserContract = optionalCardFieldAdapterVersions.includes(
@@ -1770,6 +1893,20 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
         `-restructured-complete-catalogue@${expectedParserContract}$`,
         "u",
       ),
+=======
+    const parserContractMajor =
+      adapter.sourceLineage === "fusion-world-en" ||
+        adapter.sourceLineage === "digimon-en"
+        ? 5
+        : 6;
+    assert.equal(
+      adapter.parserContract,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@${parserContractMajor}`,
+    );
+    assert.match(
+      adapter.parserContract,
+      /-restructured-complete-catalogue@[56]$/u,
+>>>>>>> origin/main
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -8164,12 +8301,22 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // The live product-detail generation: every retained page below is a complete
 // publisher body captured from the site that broke production run run_085d6d,
 // where the leading <h1> became the site logo on every product page.
+// The issue-58 generation keeps the live product-detail contracts unchanged
+// for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
+<<<<<<< HEAD
   "one-piece-en": "one-piece-en@5",
   "fusion-world-en": "fusion-world-en@7",
   "digimon-en": "digimon-en@7",
   "gundam-en-asia": "gundam-en-asia@6",
   "gundam-en-us": "gundam-en-us@6",
+=======
+  "one-piece-en": "one-piece-en@6",
+  "fusion-world-en": "fusion-world-en@6",
+  "digimon-en": "digimon-en@6",
+  "gundam-en-asia": "gundam-en-asia@7",
+  "gundam-en-us": "gundam-en-us@7",
+>>>>>>> origin/main
 };
 
 const frozenProductAdapterVersions = {
@@ -8673,11 +8820,18 @@ function parseRegisteredSurface(adapter, surface, payload) {
       "gundam-en-us@5",
       "gundam-en-asia@6",
       "gundam-en-us@6",
+      "gundam-en-asia@7",
+      "gundam-en-us@7",
     ]
       .includes(adapter.adapterVersion) && surface === "packages";
   const publisherPayload = structuredClone(payload);
   if (
-    ["one-piece-en@3", "one-piece-en@4", "one-piece-en@5"].includes(
+    [
+      "one-piece-en@3",
+      "one-piece-en@4",
+      "one-piece-en@5",
+      "one-piece-en@6",
+    ].includes(
       adapter.adapterVersion,
     ) &&
     surface === "card-list"

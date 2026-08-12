@@ -1373,7 +1373,7 @@ test("the One Piece production release surface publishes release timing through 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@5",
+    adapter_version: "one-piece-en@6",
     idempotency_key: "production-one-piece-release-timing-v2",
     requests: productionOnePieceReleaseTimingRequests(),
   });
@@ -1408,7 +1408,7 @@ test("the One Piece production release surface publishes release timing through 
   const changed = await request("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@5",
+    adapter_version: "one-piece-en@6",
     idempotency_key: "production-one-piece-unrecognized-release-v2",
     requests: productionOnePieceReleaseTimingRequests(
       "card-keepr-one-piece-unrecognized-release-v2",

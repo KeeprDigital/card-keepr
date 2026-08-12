@@ -809,6 +809,9 @@ function officialFixtureSurface(lineage, requestUrl, requestSurface) {
   } else if (lineage.startsWith("gundam-")) {
     if (/\/cards\/index\.php$/u.test(requestUrl.pathname)) return "packages";
     if (/\/rules\/$/u.test(requestUrl.pathname)) return "legality";
+    // Issue #58: the @7 generation captures the linked current
+    // banned/restricted publication directly as its legality surface.
+    if (/\/news\/01_279\.html$/u.test(requestUrl.pathname)) return "legality";
     if (
       /\/news\/$/u.test(requestUrl.pathname) &&
       (requestUrl.searchParams.get("subcategory") === "rules" ||
@@ -861,6 +864,11 @@ function officialBandaiStageNavigation(lineage, requestUrl) {
   }
   if (lineage.startsWith("gundam-") && /\/cards\/$/u.test(path)) {
     return `<main><a href="index.php">Find Cards</a></main>`;
+  }
+  if (lineage.startsWith("gundam-") && /\/rules\/$/u.test(path)) {
+    // Issue #58: the rules hub proves the linked current banned/restricted
+    // publication that the @7 plan captures directly.
+    return `<main><a href="../news/01_279.html">Current List of Banned / Restricted Cards</a></main>`;
   }
   if (lineage.startsWith("gundam-") && /\/news\/$/u.test(path)) {
     return `<main><a href="?subcategory=news&amp;tag=all&amp;page=1">NEWS</a></main>`;

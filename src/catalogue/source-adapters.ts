@@ -203,6 +203,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           "one-piece-en@3",
           "one-piece-en@4",
           "one-piece-en@5",
+          "one-piece-en@6",
           "fusion-world-en@4",
           "digimon-en@4",
           "digimon-en@5",
@@ -211,9 +212,11 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           "gundam-en-asia@4",
           "gundam-en-asia@5",
           "gundam-en-asia@6",
+          "gundam-en-asia@7",
           "gundam-en-us@4",
           "gundam-en-us@5",
           "gundam-en-us@6",
+          "gundam-en-us@7",
         ].includes(adapter.adapterVersion)
           ? ["catalogue", "errata"] as const
           // The live Fusion World EN site no longer publishes an errata
@@ -229,9 +232,11 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
             "gundam-en-asia@4",
             "gundam-en-asia@5",
             "gundam-en-asia@6",
+            "gundam-en-asia@7",
             "gundam-en-us@4",
             "gundam-en-us@5",
             "gundam-en-us@6",
+            "gundam-en-us@7",
           ].includes(adapter.adapterVersion),
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,

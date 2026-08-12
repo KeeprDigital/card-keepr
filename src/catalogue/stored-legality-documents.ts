@@ -324,13 +324,18 @@ function requiredUnresolvedScope(
   );
   if (
     dimensions.some((dimension) =>
-      dimension !== "effective_interval" && dimension !== "event_tier"
+      dimension !== "effective_interval" && dimension !== "event_tier" &&
+      dimension !== "target_scope"
     ) || canonicalJson(dimensions) !== canonicalJson([...dimensions].sort())
   ) {
     throw new Error("Stored Legality Rule unresolved scope is not canonical.");
   }
   return {
-    dimensions: dimensions as ("effective_interval" | "event_tier")[],
+    dimensions: dimensions as (
+      | "effective_interval"
+      | "event_tier"
+      | "target_scope"
+    )[],
   };
 }
 

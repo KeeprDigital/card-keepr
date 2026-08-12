@@ -1562,6 +1562,259 @@ test("authenticated Legality Status gives definitive exclusions precedence while
   }
 });
 
+test("an unresolved target-scope rule answers explicitly indeterminate for every overlapping query", async () => {
+  const revisionId = "catrev_api_target_scope";
+  const runId = "run_api_target_scope";
+  const publishedAt = "2026-07-30T00:00:00.000Z";
+  const digest = "e".repeat(64);
+  const cardIds = [
+    "card_scope_enumerated",
+    "card_scope_open",
+    "card_scope_banned",
+  ] as const;
+  const cards = cardIds.map((cardId) => ({
+    type: "card",
+    id: cardId,
+    game: "gundam",
+    official_identity: {
+      kind: "card_number",
+      value: `GD-SCOPE-${cardId}`,
+    },
+    name: `Target scope ${cardId}`,
+    effective_rules_text: null,
+    game_data: {
+      profile: "gundam@1",
+      attributes: {
+        card_type: "unit",
+        colours: [],
+        level: null,
+        cost: null,
+        block_icon: null,
+        effect_text: null,
+        zone: null,
+        traits: [],
+        link_condition: null,
+        ap: null,
+        hp: null,
+        series_titles: [],
+      },
+    },
+    printing_ids: [],
+    source_lineages: ["gundam-en-asia"],
+    lifecycle: {
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      withdrawn: false,
+    },
+    links: { self: `/v1/cards/${cardId}` },
+  }));
+  const provenance = {
+    source_lineage: "gundam-en-asia",
+    source_snapshot_id: "srcsnap_api_target_scope",
+    source_observation_set_id: "srcset_api_target_scope",
+    source_observation_id: "srcobs_api_target_scope",
+  } as const;
+  const rules = [
+    {
+      id: "legality_rule_open_predicate",
+      official_id: "target-scope-open-predicate",
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: null,
+      effective_until: null,
+      unresolved_scope: {
+        dimensions: ["effective_interval", "target_scope"] as const,
+      },
+      card_ids: ["card_scope_enumerated"],
+      official_wording:
+        "Every current and future card matching the published description is restricted.",
+      effect: {
+        type: "unresolved",
+        reason:
+          "The published description includes future printings; its complete matching-card scope is not stated.",
+      },
+      ...provenance,
+    },
+    {
+      id: "legality_rule_scope_definitive_ban",
+      official_id: "target-scope-definitive-ban",
+      game: "gundam",
+      region: "EN-ASIA",
+      format: "standard",
+      event_tier: null,
+      effective_from: "2026-01-01",
+      effective_until: null,
+      card_ids: ["card_scope_banned"],
+      official_wording: "Definitive ban alongside the open predicate.",
+      effect: { type: "ban" },
+      ...provenance,
+    },
+  ];
+  await testEnv.CATALOGUE_DB.batch([
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO ingestion_runs (
+        id, state, selected_games_json, started_at,
+        expected_current_revision_id, linked_run_id, idempotency_key,
+        candidate_digest, candidate_created_at, approval_deadline,
+        approval_json, published_revision_id, export_manifest_digest,
+        terminal_at, candidate_json, approval_idempotency_key
+      ) VALUES (
+        ?, 'publishing', '["gundam"]', ?, 'catrev_spine_000', NULL,
+        'api-legality-target-scope-seed', ?, ?,
+        '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
+      )`,
+    ).bind(
+      runId,
+      publishedAt,
+      digest,
+      publishedAt,
+      JSON.stringify({
+        action: "approved",
+        candidate_digest: digest,
+        expected_current_revision_id: "catrev_spine_000",
+        approved_at: publishedAt,
+      }),
+    ),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = ?
+       WHERE singleton = 1`,
+    ).bind(runId),
+    ...legalitySourceStatements({
+      runId,
+      key: "api_target_scope",
+      game: "gundam",
+      profile: "gundam@1",
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@1",
+      snapshotId: "srcsnap_api_target_scope",
+      observationSetId: "srcset_api_target_scope",
+    }),
+    testEnv.CATALOGUE_DB.prepare(
+      `INSERT INTO catalogue_revisions (
+        id, ingestion_run_id, published_at, content_digest,
+        expected_previous_revision_id, approved_candidate_digest
+      ) VALUES (?, ?, ?, ?, 'catrev_spine_000', ?)`,
+    ).bind(revisionId, runId, publishedAt, digest, digest),
+    ...canonicalLegalityRuleStatements(revisionId, rules),
+    ...cards.map((card) =>
+      testEnv.CATALOGUE_DB.prepare(
+        `INSERT INTO revision_cards (
+          catalogue_revision_id, card_id, document_json
+        ) VALUES (?, ?, ?)`,
+      ).bind(revisionId, card.id, JSON.stringify(publishedCardEnvelope(card)))
+    ),
+    ...revisionLegalityRuleStatements(revisionId, rules),
+    testEnv.CATALOGUE_DB.prepare(
+      `UPDATE catalogue_state SET current_revision_id = ?, published_at = ?
+       WHERE singleton = 1`,
+    ).bind(revisionId, publishedAt),
+  ]);
+
+  // The target-scope rule materializes one explicit all_cards row alongside
+  // its enumerated Card row.
+  const applicability = await testEnv.CATALOGUE_DB.prepare(
+    `SELECT applicability_kind, card_id
+     FROM revision_legality_rule_applicability
+     WHERE catalogue_revision_id = ? AND legality_rule_id = ?
+     ORDER BY applicability_kind`,
+  ).bind(revisionId, "legality_rule_open_predicate").all();
+  expect(applicability.results).toEqual([
+    { applicability_kind: "all_cards", card_id: "" },
+    { applicability_kind: "card", card_id: "card_scope_enumerated" },
+  ]);
+
+  const status = async (cardId: string, query: string, ip: string) => {
+    const response = await exports.default.fetch(new Request(
+      "https://card-keepr.invalid/v1/legality-status" +
+        `?card_id=${cardId}&on=2026-07-30&${query}`,
+      {
+        headers: {
+          authorization: "Bearer vitest-api-key",
+          "cf-connecting-ip": ip,
+        },
+      },
+    ));
+    expect(response.status).toBe(200);
+    return (await response.json<{
+      data: Array<{
+        status: string;
+        rule_ids: string[];
+        unresolved_scope_rule_ids: string[];
+        derivation: string;
+      }>;
+    }>()).data[0]!;
+  };
+
+  // A query for a Card outside the enumerated matches overlaps the open
+  // predicate and answers explicitly indeterminate.
+  const open = await status(
+    "card_scope_open",
+    "format=standard&region=EN-ASIA",
+    "203.0.113.110",
+  );
+  expect(open).toMatchObject({
+    status: "indeterminate",
+    rule_ids: [],
+    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
+  });
+  expect(open.derivation).toContain("unresolved scope");
+
+  // The enumerated Card answers the same explicit uncertainty.
+  const enumerated = await status(
+    "card_scope_enumerated",
+    "format=standard&region=EN-ASIA",
+    "203.0.113.111",
+  );
+  expect(enumerated).toMatchObject({
+    status: "indeterminate",
+    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
+  });
+
+  // A definitive exclusion still decides its Card while the uncertainty
+  // remains in the audit.
+  const banned = await status(
+    "card_scope_banned",
+    "format=standard&region=EN-ASIA",
+    "203.0.113.112",
+  );
+  expect(banned).toMatchObject({
+    status: "not_legal",
+    rule_ids: ["legality_rule_scope_definitive_ban"],
+    unresolved_scope_rule_ids: ["legality_rule_open_predicate"],
+  });
+  expect(banned.derivation).toContain("evaluated not_legal");
+
+  // A non-overlapping context (different format) answers normally without
+  // the target-scope rule.
+  const otherFormat = await status(
+    "card_scope_open",
+    "format=unlimited&region=EN-ASIA",
+    "203.0.113.113",
+  );
+  expect(otherFormat).toMatchObject({
+    status: "indeterminate",
+    rule_ids: [],
+    unresolved_scope_rule_ids: [],
+  });
+  expect(otherFormat.derivation).toContain(
+    "no effective published Legality Rule",
+  );
+
+  // The other lineage's region carries no such rule and answers normally.
+  const otherRegion = await status(
+    "card_scope_open",
+    "format=standard&region=EN-US",
+    "203.0.113.114",
+  );
+  expect(otherRegion).toMatchObject({
+    status: "indeterminate",
+    rule_ids: [],
+    unresolved_scope_rule_ids: [],
+  });
+});
+
 test("authenticated Legality Status targets the functional DON!! Card and audits unresolved rules", async () => {
   const revisionId = "catrev_api_don_legality";
   const runId = "run_api_don_legality";

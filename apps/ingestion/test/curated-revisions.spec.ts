@@ -2838,13 +2838,13 @@ test("a curated absence derives one relationship state and retains Official Sour
     now,
   );
   expect(built.manifest).toMatchObject({
-    format: "card-keepr-catalogue-export-manifest@4",
-    export_schema_major: 4,
+    format: "card-keepr-catalogue-export-manifest@5",
+    export_schema_major: 5,
   });
   expect(built.manifest.components.find(({ name }) =>
     name === "relationships"
   )?.record_schema).toBe(
-    "https://card-keepr.invalid/schemas/catalogue-export-record@4#/$defs/RelationshipRecord",
+    "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/RelationshipRecord",
   );
 });
 

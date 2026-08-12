@@ -29,5 +29,5 @@ INSERT INTO source_adapter_versions (
   );
 
 UPDATE catalogue_schema_state
-SET migration_level = 24
-WHERE singleton = 1 AND migration_level = 23;
+SET migration_level = 25
+WHERE singleton = 1 AND migration_level = 24;

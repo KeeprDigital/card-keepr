@@ -585,7 +585,7 @@ test("production Evidence Plans bind discovery identity to its exact Official So
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "one-piece-en@5",
+    adapter_version: "one-piece-en@6",
     idempotency_key: "forged-production-surface-url",
     requests,
   });

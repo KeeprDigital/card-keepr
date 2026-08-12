@@ -11,11 +11,38 @@ The following production Catalogue adapters are installed for bounded,
 credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
-- `one-piece-en@5`
+- `one-piece-en@6`
 - `fusion-world-en@7`
 - `digimon-en@7`
-- `gundam-en-asia@6`
-- `gundam-en-us@6`
+- `gundam-en-asia@7`
+- `gundam-en-us@7`
+
+The issue-58 generation (`one-piece-en@6`, `gundam-en-asia@7`,
+`gundam-en-us@7`) closes the two remaining production fail-closed walls
+without losing precision. The Gundam adapters pin their `legality` surface to
+the live `news/01_279.html` publication and parse the 2026-07-24 compound
+policy exactly: one ban, one two-copy restriction, and two explicit banned
+pairs each retain an unresolved effective interval, and the open-predicate
+group ("a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without
+effects", future printings included) becomes one explicit `unresolved` rule
+whose `unresolved_scope.dimensions` name both `effective_interval` and
+`target_scope` while retaining the twenty enumerated matching Cards. The One
+Piece adapter's `don-rules` surface accepts the live `/rules/` hub as exact
+coverage evidence without DON!! payload facts: the hub's identity and its
+pinned restriction, block-policy, and errata links are verified and retained
+explicitly, the surface emits a structurally complete empty Legality Rule
+observation, and no comprehensive DON!! Printing claim is made — absence
+never proves zero Printings, and the DON!! reconciliation warning stays
+explicit whenever DON!! evidence is present. Earlier versions keep their
+original fail-closed behavior for retained replay.
+
+The optional-card-field generation (`fusion-world-en@7`, `digimon-en@7`)
+models the remaining live card-detail vocabulary: Fusion World Energy
+Marker details publish no rarity block (their rarity is explicitly null;
+every other Card type still requires its exact rarity), and Digimon Q&A
+answers may nest related-card lists that are retained as explicit
+related-card evidence alongside the Appmon crossover digivolution and
+Link DP bonus vocabulary.
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
@@ -33,8 +60,8 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-`one-piece-en@4`/`@5`, `digimon-en@5` through `@7`, and the Gundam
-`@5`/`@6` versions explicitly
+`one-piece-en@4` through `@6`, `digimon-en@5` through `@7`, and the
+Gundam `@5` through `@7` versions explicitly
 own both Catalogue and standalone Official Errata reconciliation areas. A
 successful run records freshness independently for `cards-and-printings` and
 `errata`; neither area is inferred from the adapter version string.
@@ -52,9 +79,9 @@ Card-associated publications are promoted to Products; accessory pages
 `non-card:accessory` distribution-context evidence instead of being skipped
 by URL vocabulary or promoted to Products.
 
-The earlier production versions (`one-piece-en@1` through `one-piece-en@4`,
+The earlier production versions (`one-piece-en@1` through `one-piece-en@5`,
 `fusion-world-en@2` through `fusion-world-en@6`,
-`digimon-en@2` through `digimon-en@6`, and the Gundam `@2` through `@5`
+`digimon-en@2` through `digimon-en@6`, and the Gundam `@2` through `@6`
 versions) remain
 registered with their original parser contracts only for explicit reprocessing
 of retained Source Snapshots. New production Evidence Plans accept only the
@@ -119,9 +146,17 @@ game, region, format, nullable event tier, effective interval, affected Card
 Numbers, normalized effect, and `representable: true`. If the publisher omits
 an effective boundary or event tier that cannot be inferred, the adapter emits
 an `unresolved` effect with `unresolved_scope.dimensions` naming
-`effective_interval`, `event_tier`, or both. Such a rule must target explicit
-Cards: it cannot become a global rule, invent an effective date, or claim an
-unbounded scope. Its catalogue `id` is
+`effective_interval`, `event_tier`, or both. If the publisher targets an open
+predicate whose membership extends beyond the enumerated Cards (including
+future printings), the issue-58 adapter generation adds the `target_scope`
+dimension: the rule still retains the enumerated known matches as explicit
+Cards, and the dimension declares the remainder of the scope unresolved.
+Such a rule must target explicit
+Cards: it cannot invent an effective date or compile the open predicate into
+invented pairs. A `target_scope` rule additionally materializes one explicit
+`all_cards` applicability row, so every contextual status query in its game,
+region, and format retains the uncertainty; rules without that dimension
+cannot become global. Its catalogue `id` is
 derived from the canonical pair of `source_lineage` and `official_id`. Once
 that identity is observed, identity-bound rule semantics cannot change; the
 Official Source must publish a new official identity for a semantic change.
@@ -179,25 +214,27 @@ uncertainty yields `indeterminate` when no definitive rule decides the result;
 definitive exclusions still take precedence while retaining the uncertainty
 in the audit. `Catalogue Export` component `legality-rules` contains the
 external rule records, with `legality-rule-card` relationships in the
-`relationships` component. Newly generated exports use schema major 4, the
-`card-keepr-catalogue-export-manifest@4` format, the canonical
-`https://card-keepr.invalid/schemas/catalogue-export-manifest@4` manifest
+`relationships` component. Newly generated exports use schema major 5, the
+`card-keepr-catalogue-export-manifest@5` format, the canonical
+`https://card-keepr.invalid/schemas/catalogue-export-manifest@5` manifest
 schema URI, and component schema URIs rooted at
-`https://card-keepr.invalid/schemas/catalogue-export-record@4` with the exact
-record `$defs` fragment. They retain `official_id`, source lineage and
+`https://card-keepr.invalid/schemas/catalogue-export-record@5` with the exact
+record `$defs` fragment (see ADR 0003: major 5 admits the `target_scope`
+unresolved dimension). They retain `official_id`, source lineage and
 observation IDs, lifecycle, and each rule's complete normalized `effect`,
 including every operand and unresolved reason, plus nullable `effective_from`
 and explicit `unresolved_scope`.
 Lifecycle on the rule itself states whether it is current and
 preserves its observation boundaries, including for globally applicable rules
 whose `card_ids` array is empty. Card-scoped relationships remain supplemental.
-Historical schema-major-1, schema-major-2, and schema-major-3 artifacts remain
+Historical schema-major-1 through schema-major-4 artifacts remain
 byte-identical, immutable, and readable through their explicitly versioned
-schemas; retained major-3 exports continue to use their recorded v3 manifest
-and record URIs.
+schemas; retained major-3 and major-4 exports continue to use their recorded
+manifest and record URIs.
 
 Each revision materializes indexed applicability for every Card-scoped rule
-and one explicit `all_cards` row for a genuinely global rule. The authenticated
+and one explicit `all_cards` row for a genuinely global rule or for a rule
+whose unresolved scope names `target_scope`. The authenticated
 status query selects only the requested Card plus those global rows and applies
 the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
@@ -210,8 +247,11 @@ Migrations `0009_one_piece_complete_catalogue.sql`,
 Piece, Fusion World, Digimon, and Gundam adapters after
 `0008_legality_rules.sql`, and
 `0022_restructured_source_adapters.sql` registers the 2026-08
-site-restructure generation, and `0023_live_product_source_adapters.sql`
-registers the live product-detail generation, and
-`0024_optional_card_field_source_adapters.sql` registers the
+site-restructure generation, `0023_live_product_source_adapters.sql`
+registers the live product-detail generation,
+`0024_unresolved_target_scope.sql` extends the unresolved-scope vocabulary
+with `target_scope`, materializes its `all_cards` applicability, and
+registers the issue-58 generation, and
+`0025_optional_card_field_source_adapters.sql` registers the
 optional-card-field generation. Apply all of them before deploying either
 Worker.
