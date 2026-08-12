@@ -22,6 +22,7 @@ const failClosedCases = [
   "mismatched-detail",
   "missing-leader-face",
   "conflicting-locator",
+  "energy-marker-rarity",
 ];
 
 test("the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
@@ -46,7 +47,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
         plans: [{
           supported_game: "fusion-world",
           source_lineage: "fusion-world-en",
-          adapter_version: "fusion-world-en@6",
+          adapter_version: "fusion-world-en@7",
           requests: [{
             id: "fusion-world-en:discovery",
             url:
@@ -152,8 +153,8 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   );
   assert.equal(inspected.code, 0, inspected.stderr);
   const candidate = JSON.parse(inspected.stdout);
-  assert.equal(candidate.diff.summary.cards_added, 1);
-  assert.equal(candidate.diff.summary.printings_added, 1);
+  assert.equal(candidate.diff.summary.cards_added, 2);
+  assert.equal(candidate.diff.summary.printings_added, 2);
   const approved = await runCli([
     "run",
     "approve",
@@ -193,7 +194,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "legality-rules",
       "products-and-releases",
     ],
-    "fusion-world-en@6 publishes no errata area: the live site retired it",
+    "fusion-world-en@7 publishes no errata area: the live site retired it",
   );
 
   const [
@@ -220,16 +221,21 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     ].map((component) =>
       exportRecords(api.port, apiKey, revisionId, component)
     ));
-  assert.equal(cards.length, 1);
-  assert.equal(printings.length, 1);
+  assert.equal(cards.length, 2);
+  assert.equal(printings.length, 2);
   assert.equal(products.length, 2);
   assert.equal(releases.length, 2);
   assert.equal(errata.length, 0);
   assert.equal(legalityRules.length, 2);
   assert.equal(distributionContexts.length, 1);
 
-  const card = cards[0];
-  assert.equal(card.official_identity.value, "FB99-001");
+  const card = cards.find(
+    ({ official_identity }) => official_identity.value === "FB99-001",
+  );
+  const energyMarker = cards.find(
+    ({ official_identity }) => official_identity.value === "E-99",
+  );
+  assert.ok(energyMarker, "the Energy Marker publishes as its own Card");
   assert.equal(card.effective_rules_text, "Official front skill");
   assert.deepEqual(card.game_data, {
     profile: "fusion-world@1",
@@ -261,12 +267,38 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     },
   });
   assert.equal(JSON.stringify(card.game_data).includes("FB99-001_p2"), false);
-  assert.equal(printings[0].printed_rules_text, "Official front skill");
+  const leaderPrinting = printings.find(({ card_id }) => card_id === card.id);
+  const energyMarkerPrinting = printings.find(
+    ({ card_id }) => card_id === energyMarker.id,
+  );
+  assert.equal(leaderPrinting.printed_rules_text, "Official front skill");
   assert.deepEqual(
-    printings[0].locator_evidence.current.map(({ locator }) => locator),
+    leaderPrinting.locator_evidence.current.map(({ locator }) => locator),
     ["FB99-001_p2"],
   );
-  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "front"]);
+  assert.deepEqual(
+    energyMarkerPrinting.locator_evidence.current.map(({ locator }) => locator),
+    ["E-99"],
+  );
+  // fusion-world-en@7 carries an Energy Marker's absent rarity all the way to
+  // the export as a null pair, rather than inventing a placeholder or failing;
+  // every other family still publishes one.
+  assert.deepEqual(energyMarkerPrinting.rarity, { raw: null, normalized: null });
+  assert.deepEqual(leaderPrinting.rarity, { raw: "L", normalized: "l" });
+  assert.equal(energyMarker.game_data.attributes.card_type, "energy_marker");
+  assert.deepEqual(energyMarker.game_data.attributes.cost, null);
+  assert.deepEqual(energyMarker.game_data.attributes.power, null);
+  assert.deepEqual(energyMarker.game_data.attributes.traits, []);
+  // The publisher tags an Energy Marker's dashed colour cell data-color
+  // "no-color", which falls outside the fusion-world@1 colour vocabulary, so
+  // reconciliation drops it to an unknown-vocabulary warning and the Card
+  // publishes with no profile colour at all.
+  assert.deepEqual(energyMarker.game_data.attributes.colours, []);
+  assert.deepEqual(images.map(({ role }) => role).sort(), [
+    "back",
+    "front",
+    "front",
+  ]);
   const availableProduct = products.find(
     ({ official_code }) => official_code === "FB-RAW-01",
   );
@@ -285,10 +317,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
           "&on=2026-08-04&format=standard&region=EN-OCEANIA",
       ),
     ]);
-  assert.deepEqual(cardCollection.data.map(({ id }) => id), [card.id]);
   assert.deepEqual(
-    printingCollection.data.map(({ id }) => id),
-    [printings[0].id],
+    cardCollection.data.map(({ id }) => id).sort(),
+    cards.map(({ id }) => id).sort(),
+  );
+  assert.deepEqual(
+    printingCollection.data.map(({ id }) => id).sort(),
+    printings.map(({ id }) => id).sort(),
   );
   assert.deepEqual(
     productCollection.data.map(({ id }) => id).sort(),
@@ -340,7 +375,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   assert.ok(distributionContexts.some(
     ({ product_id }) => product_id === comingSoonProduct.id,
   ));
-  // fusion-world-en@6 detail pages carry no publisher product code, so a
+  // fusion-world-en@7 detail pages carry no publisher product code, so a
   // Printing binds to its "Where to get it" source bucket instead of a
   // Product; only the publisher's own Product surfaces relate to Products.
   assert.deepEqual(

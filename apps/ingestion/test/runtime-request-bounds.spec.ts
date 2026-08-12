@@ -89,7 +89,7 @@ test("dynamic discovery rejects oversized request identities before Workflow sch
 });
 
 test("final Official Source requests keep discovery evidence immutable while exposing a deterministic fixture role", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@6");
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const records = fusionWorldDiscoveryRecords();
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
@@ -115,7 +115,7 @@ test("final Official Source requests keep discovery evidence immutable while exp
 });
 
 test("final Official Source requests canonicalize injected reserved routing metadata", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@6");
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -133,7 +133,7 @@ test("final Official Source requests canonicalize injected reserved routing meta
 });
 
 test("the exact live Fusion final request selects and parses the representable legality fixture", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@6");
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const requests = await officialCollectionRequestsFromDiscovery(
     adapter,
     fusionWorldDiscoveryRecords(),
@@ -192,7 +192,7 @@ test("the exact live Fusion final request selects and parses the representable l
 });
 
 test("final Official Source collection identities enforce the URL byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@6");
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const records = fusionWorldDiscoveryRecords();
   const withFirstUrl = (url: string) => records.map((record, index) =>
     index === 0
@@ -218,7 +218,7 @@ test("final Official Source collection identities enforce the URL byte bound", a
 });
 
 test("final Official Source collection identities enforce the merged-header byte bound", async () => {
-  const adapter = requiredSourceAdapter("fusion-world-en@6");
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const records = fusionWorldDiscoveryRecords();
   const headerBase = utf8(canonicalJson({
     accept: "text/html",

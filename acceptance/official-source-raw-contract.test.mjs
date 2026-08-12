@@ -173,12 +173,22 @@ const productionAdapterVersions = sourceAdapterRegistrations
   )
   .map(({ adapterVersion }) => adapterVersion);
 
+// The optional-card-field generation advanced the two lineages whose live
+// pages published a field the frozen parsers required (Fusion World's
+// Energy Markers omit rarity, Digimon's live Q&A nests Related Cards),
+// while the issue-58 unresolved-scope generation advanced One Piece and
+// both Gundam locales.
 const expectedProductionAdapterVersions = [
-  "digimon-en@6",
-  "fusion-world-en@6",
+  "digimon-en@7",
+  "fusion-world-en@7",
   "gundam-en-asia@7",
   "gundam-en-us@7",
   "one-piece-en@6",
+];
+
+const optionalCardFieldAdapterVersions = [
+  "fusion-world-en@7",
+  "digimon-en@7",
 ];
 
 test("Gundam V4 keeps locale lineages immutable and closes package leaves by full locator", () => {
@@ -829,6 +839,8 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
+  // 08-02 to 08-07 captured the restructured generation; 08-11 captured the
+  // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A).
   assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|11)T/u);
   return { bytes, metadata };
 }
@@ -1844,7 +1856,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.reconciliationAreas,
       // Fusion World's restructured contract owns no errata surface, so it
       // reconciles catalogue evidence alone.
-      adapter.adapterVersion === "fusion-world-en@6"
+      adapter.adapterVersion === "fusion-world-en@7"
         ? ["catalogue"]
         : ["catalogue", "errata"],
     );
@@ -1852,18 +1864,15 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
-    const parserContractMajor =
-      adapter.sourceLineage === "fusion-world-en" ||
-        adapter.sourceLineage === "digimon-en"
-        ? 5
-        : 6;
+    // After the issue-58 and optional-card-field generations, every active
+    // lineage declares the @6 parser contract.
     assert.equal(
       adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@${parserContractMajor}`,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@6`,
     );
     assert.match(
       adapter.parserContract,
-      /-restructured-complete-catalogue@[56]$/u,
+      /-restructured-complete-catalogue@6$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -7680,6 +7689,134 @@ test("restructured Fusion World details retain Leader faces, variants, and Battl
   ]);
 });
 
+// The exact failure of production run run_967677 on snapshot E-148: the live
+// Energy Marker detail publishes no rarity block at all, which the frozen
+// parser read as a broken page instead of an absent optional field.
+const fusionEnergyMarkerUrl =
+  "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148";
+
+function exactMessage(message) {
+  return (error) => {
+    assert.equal(error.message, message);
+    return true;
+  };
+}
+
+test("active Fusion World details retain Energy Markers without a rarity", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
+  const detail = (slug, url) => {
+    const { fixture, observations } = retainedRestructuredParse(adapter, slug, {
+      url,
+      requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+    });
+    assert.equal(fixture.metadata.source_url, url);
+    assert.equal(observations.length, 1, slug);
+    return observations[0];
+  };
+
+  const marker = detail(
+    "fusion-world-en-card-detail-energy-marker",
+    fusionEnergyMarkerUrl,
+  );
+  assert.equal(marker.identity_evidence.locator, "E-148");
+  assert.equal(marker.identity_evidence.variant_key, "base");
+  assert.equal(marker.card.name, "Energy Marker");
+  assert.equal(marker.card.game_data.attributes.card_type, "energy_marker");
+  // Every printed cell but the skill and the set is a dash, and the dashed
+  // colour cell stays colourless rather than becoming an unknown colour.
+  assert.deepEqual(marker.card.game_data.attributes.colours, ["no-color"]);
+  assert.equal(marker.card.game_data.attributes.cost, null);
+  assert.equal(marker.card.game_data.attributes.power, null);
+  assert.equal(marker.card.game_data.attributes.combo_power, null);
+  assert.deepEqual(marker.card.game_data.attributes.specified_cost, []);
+  assert.deepEqual(marker.card.game_data.attributes.traits, []);
+  assert.deepEqual(marker.printing.rarity, { raw: null, normalized: null });
+  assert.deepEqual(
+    marker.appearance_evidence.images.map(({ role }) => role),
+    ["front"],
+  );
+
+  const variant = detail(
+    "fusion-world-en-card-detail-energy-marker-p1",
+    `${fusionEnergyMarkerUrl}&p=_p1`,
+  );
+  assert.equal(variant.identity_evidence.locator, "E-148_p1");
+  assert.equal(variant.identity_evidence.variant_key, "_p1");
+  assert.equal(
+    variant.card.official_identity.value,
+    marker.card.official_identity.value,
+  );
+  assert.deepEqual(variant.printing.rarity, { raw: null, normalized: null });
+  assert.deepEqual(
+    variant.appearance_evidence.images.map(({ source_url }) => source_url),
+    ["https://www.dbs-cardgame.com/fw/images/cards/card/en/E-148_p1.webp"],
+  );
+
+  const promo = detail(
+    "fusion-world-en-card-detail-promo",
+    "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-001",
+  );
+  assert.equal(promo.identity_evidence.locator, "FP-001");
+  assert.equal(promo.card.name, "Son Goku");
+  assert.equal(promo.card.game_data.attributes.card_type, "battle");
+  assert.deepEqual(promo.printing.rarity, { raw: "PR", normalized: "pr" });
+  assert.deepEqual(promo.memberships.source_buckets, [
+    "card-set:Promotion Pack vol.1",
+  ]);
+});
+
+test("Fusion World rarity remains required for every family but Energy Markers", () => {
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
+  const mutatedDetail = (slug, from, to) => {
+    const fixture = retainedOfficialSourceFixture(slug);
+    const html = fixture.bytes.toString("utf8");
+    assert.ok(html.includes(from), `${slug} must retain ${from}`);
+    return () =>
+      adapter.parseBytes(new TextEncoder().encode(html.replace(from, to)), {
+        mediaType: fixture.metadata.content_type,
+        url: fixture.metadata.source_url,
+        requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+      });
+  };
+
+  assert.throws(
+    mutatedDetail(
+      "fusion-world-en-card-detail-promo",
+      '<div class="rarity">PR</div>',
+      "",
+    ),
+    exactMessage("Fusion World Card detail is missing its rarity."),
+    "a Battle Card without a rarity block is still a broken page",
+  );
+  assert.throws(
+    mutatedDetail(
+      "fusion-world-en-card-detail-energy-marker",
+      '<div class="cardNo">E-148</div>',
+      '<div class="cardNo">E-148</div><div class="rarity">C</div>',
+    ),
+    exactMessage(
+      "Fusion World Energy Marker detail must not publish a rarity.",
+    ),
+    "an Energy Marker that publishes a rarity is an unmodelled page",
+  );
+});
+
+test("the frozen Fusion World generation still fails on the Energy Marker that broke production", () => {
+  const frozen = requiredSourceAdapter("fusion-world-en@6");
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-card-detail-energy-marker",
+  );
+  assert.throws(
+    () =>
+      frozen.parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: fusionEnergyMarkerUrl,
+        requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+      }),
+    exactMessage("Fusion World Card detail is missing its rarity."),
+  );
+});
+
 test("the restructured Digimon card search derives one listing per publisher category", () => {
   const adapter = requiredSourceAdapter("digimon-en@5");
   const url = adapter.requestUrlForSurface("card-list");
@@ -7742,6 +7879,160 @@ test("the restructured Digimon complete leaf retains vanilla Cards without Effec
   assert.equal(vanilla[0].card.official_identity.value, "BT1-027");
   assert.equal(vanilla[0].card.game_data.attributes.card_type, "digimon");
   assert.equal(vanilla[0].card.game_data.attributes.dp, 4000);
+});
+
+// The nested Related Cards block inside a live Q&A answer truncated the whole
+// popup inventory for the frozen parser, so these leaves are the exact bytes
+// that the optional-card-field generation had to learn to read.
+const digimonRelatedQaLeafUrl =
+  "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black";
+
+function activeDigimonLeaf(slug, leafUrl) {
+  const adapter = requiredSourceAdapter("digimon-en@7");
+  const { fixture, observations } = retainedRestructuredParse(adapter, slug, {
+    url: leafUrl,
+    requestId: `digimon-en:listing:${restructuredStageDigest}`,
+  });
+  assert.equal(fixture.metadata.source_url, leafUrl);
+  return observations;
+}
+
+function digimonQaEntries(observation) {
+  return observation.source_sidecar.raw.official_surfaces[0].document
+    .card_qa ?? [];
+}
+
+test("active Digimon leaves retain Q&A answers that nest Related Cards", () => {
+  const observations = activeDigimonLeaf(
+    "digimon-en-card-list-related-qa-leaf",
+    digimonRelatedQaLeafUrl,
+  );
+  assert.equal(observations.length, 5);
+  assert.deepEqual(
+    observations.map(({ identity_evidence }) => identity_evidence.locator),
+    ["BT7-056_P2", "BT7-056_P3", "BT7-058_P2", "BT8-059_P4", "ST13-08_P1"],
+  );
+  assert.deepEqual(
+    observations.map((observation) => digimonQaEntries(observation).length),
+    [4, 4, 2, 6, 4],
+  );
+  assert.deepEqual(
+    observations.flatMap((observation) =>
+      digimonQaEntries(observation)
+        .filter(({ related_cards }) => related_cards.length > 0)
+        .map(({ number, related_cards }) => [number, related_cards])
+    ),
+    [
+      ["Q1606", ["BT9-109"]],
+      ["Q1742", ["BT10-067"]],
+      ["Q1743", ["BT4-011"]],
+    ],
+  );
+  assert.ok(
+    observations.every((observation) =>
+      digimonQaEntries(observation).every(({ related_cards }) =>
+        Array.isArray(related_cards)
+      )
+    ),
+    "every retained answer must publish an explicit Related Cards array",
+  );
+});
+
+test("active Digimon leaves model unconstrained and bonus-token printed vocabulary", () => {
+  const [appmon] = activeDigimonLeaf(
+    "digimon-en-card-list-appmon-leaf",
+    "https://world.digimoncard.com/cards/index.php?search=true&category=522204&cardcategory=Digimon&color=Purple",
+  );
+  assert.equal(appmon.identity_evidence.locator, "BT21-071_P1");
+  const attributes = appmon.card.game_data.attributes;
+  assert.deepEqual(attributes.digivolution_requirements, [
+    {
+      index: 1,
+      from_level: 3,
+      colours: ["purple"],
+      cost: 2,
+      raw_condition: "Purple 2 from Lv.3",
+    },
+    // "Multicolor" constrains no colour and "Stnd." is a grade, not a level,
+    // so both frozen fields stay explicitly unconstrained beside exact wording.
+    {
+      index: 2,
+      from_level: null,
+      colours: [],
+      cost: 2,
+      raw_condition: "Multicolor 2 from Stnd.",
+    },
+  ]);
+  assert.equal(attributes.link_dp, 3000);
+
+  const promo = activeDigimonLeaf(
+    "digimon-en-card-list-promo-leaf",
+    "https://world.digimoncard.com/cards/index.php?search=true&category=522901&cardcategory=Digimon&color=Red",
+  );
+  assert.equal(promo.length, 19);
+  assert.deepEqual(
+    promo.map(({ identity_evidence }) => identity_evidence.locator),
+    [
+      "P-001",
+      "P-002",
+      "P-009",
+      "P-010",
+      "P-029",
+      "P-041",
+      "P-049",
+      "P-050",
+      "P-058",
+      "P-059",
+      "P-065",
+      "P-066",
+      "P-072",
+      "P-079",
+      "P-088",
+      "P-119",
+      "P-182",
+      "P-189",
+      "P-213",
+    ],
+  );
+  // The publisher pads these related-card links with a trailing ideographic
+  // space, which may not leak into the retained card numbers.
+  assert.deepEqual(
+    promo.flatMap((observation) =>
+      digimonQaEntries(observation).flatMap(({ related_cards }) =>
+        related_cards
+      )
+    ),
+    ["BT5-109", "BT3-109"],
+  );
+  assert.deepEqual(
+    promo.find(({ identity_evidence }) => identity_evidence.locator === "P-119")
+      .card.game_data.attributes.digivolution_requirements,
+    [
+      {
+        index: 1,
+        from_level: 2,
+        colours: ["red", "yellow"],
+        cost: 0,
+        raw_condition: "Red Yellow 0 from Lv.2",
+      },
+    ],
+  );
+});
+
+test("the frozen Digimon generation still truncates the nested Related Cards leaf", () => {
+  const frozen = requiredSourceAdapter("digimon-en@6");
+  const fixture = retainedOfficialSourceFixture(
+    "digimon-en-card-list-related-qa-leaf",
+  );
+  assert.throws(
+    () =>
+      frozen.parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: digimonRelatedQaLeafUrl,
+        requestId: `digimon-en:listing:${restructuredStageDigest}`,
+      }),
+    exactMessage("Official Digimon Card Q&A answer is structurally incomplete."),
+  );
 });
 
 test("restructured Digimon rules discovery pins its restriction and errata publications", () => {
@@ -7980,8 +8271,8 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
   "one-piece-en": "one-piece-en@6",
-  "fusion-world-en": "fusion-world-en@6",
-  "digimon-en": "digimon-en@6",
+  "fusion-world-en": "fusion-world-en@7",
+  "digimon-en": "digimon-en@7",
   "gundam-en-asia": "gundam-en-asia@7",
   "gundam-en-us": "gundam-en-us@7",
 };
@@ -8476,7 +8767,7 @@ function withLegacyFusionCanonicalFields(payload) {
 
 function parseRegisteredSurface(adapter, surface, payload) {
   const completeDigimonLeaf =
-    ["digimon-en@4", "digimon-en@5", "digimon-en@6"].includes(
+    ["digimon-en@4", "digimon-en@5", "digimon-en@6", "digimon-en@7"].includes(
       adapter.adapterVersion,
     ) && surface === "card-list";
   const completeGundamLeaf =

@@ -86,6 +86,24 @@ meta-refresh booster stub (`op17.html`), and the Digimon region-scoped
 release rows ("Europe/Oceania: December, 10 2021" with store-level
 parenthetical annotations).
 
+The optional-card-field fixtures were captured on 2026-08-11 UTC (cold,
+polite user agent, no redirect following) after the second full-scale
+Fusion World run failed on `detail.php?card_no=E-148`:
+
+- `fusion-world-en-card-detail-energy-marker.json` and its `_p1` variant
+  retain the live Energy Marker detail pages, which publish no rarity
+  block at all; `fusion-world-en-card-detail-promo.json` retains a
+  PR-rarity promo detail proving every non-Energy-Marker family still
+  publishes its rarity.
+- `digimon-en-card-list-related-qa-leaf.json` retains the AD-01 leaf whose
+  Q&A answers nest a "Related Cards" list inside the answer container;
+  `digimon-en-card-list-appmon-leaf.json` retains the LM-08 leaf with the
+  Appmon crossover vocabulary ("Multicolor 2 from Stnd." digivolution and
+  "DP+3000" Link DP); `digimon-en-card-list-promo-leaf.json` retains the
+  P-numbered promo leaf whose related-card identities carry a trailing
+  ideographic space and whose digivolution requirements join colours
+  without a separator.
+
 The live policy expectations intentionally follow the published scope rather
 than capture time or article recency:
 

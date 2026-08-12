@@ -1271,6 +1271,7 @@ function assertClosedRequestGraph(
             "fusion-world-en@4",
             "fusion-world-en@5",
             "fusion-world-en@6",
+            "fusion-world-en@7",
           ].includes(row.adapter_version)
           ? observation.value.listing_identity_evidence
           : undefined;
@@ -1301,6 +1302,7 @@ function assertClosedRequestGraph(
                 "fusion-world-en@4",
                 "fusion-world-en@5",
                 "fusion-world-en@6",
+                "fusion-world-en@7",
               ].includes(
                 adapter.adapterVersion,
               )

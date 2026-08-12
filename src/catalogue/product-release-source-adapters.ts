@@ -241,6 +241,15 @@ const restructuredAdapterVersions = new Map([
 // every lineage with a live product-detail parser that promotes only
 // card-associated publications to Products and retains accessory pages as
 // explicit non-card evidence.
+// 2026-08-12 production feedback (#55): the second full-scale Fusion World
+// run proved the live Energy Marker detail pages publish no rarity block,
+// and the live Digimon Q&A answers nest related-card lists inside their
+// answers. These versions model both shapes explicitly.
+const optionalCardFieldAdapterVersions = new Map([
+  ["fusion-world-en", "fusion-world-en@7"],
+  ["digimon-en", "digimon-en@7"],
+]);
+
 const liveProductAdapterVersions = new Map([
   ["one-piece-en", "one-piece-en@5"],
   ["fusion-world-en", "fusion-world-en@6"],
@@ -352,6 +361,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           completeDigimonCatalogue: false,
           restructured: false,
           restructuredProducts: false,
+          optionalCardFields: false,
         },
         {
           ...definition,
@@ -369,6 +379,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           completeDigimonCatalogue: false,
           restructured: false,
           restructuredProducts: false,
+          optionalCardFields: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -381,6 +392,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               completeDigimonCatalogue: false,
               restructured: false,
               restructuredProducts: false,
+              optionalCardFields: false,
             }]
           : []),
         ...(definition.sourceLineage === "fusion-world-en"
@@ -399,6 +411,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               completeDigimonCatalogue: false,
               restructured: false,
               restructuredProducts: false,
+              optionalCardFields: false,
             }]
           : []),
         ...(definition.sourceLineage === "digimon-en"
@@ -417,6 +430,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               completeDigimonCatalogue: true,
               restructured: false,
               restructuredProducts: false,
+              optionalCardFields: false,
             }]
           : []),
         ...(completeGundamAdapterVersions.has(definition.sourceLineage)
@@ -449,6 +463,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               completeDigimonCatalogue: false,
               restructured: false,
               restructuredProducts: false,
+              optionalCardFields: false,
             }]
           : []),
         {
@@ -502,6 +517,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
             definition.sourceLineage === "digimon-en",
           restructured: true,
           restructuredProducts: false,
+          optionalCardFields: false,
         },
         {
           ...definition,
@@ -554,6 +570,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
             definition.sourceLineage === "digimon-en",
           restructured: true,
           restructuredProducts: true,
+          optionalCardFields: false,
         },
         ...(unresolvedScopeAdapterVersions.has(definition.sourceLineage)
           ? [{
@@ -608,6 +625,38 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               completeDigimonCatalogue: false,
               restructured: true,
               restructuredProducts: true,
+              optionalCardFields: false,
+            }]
+          : []),
+        ...(optionalCardFieldAdapterVersions.has(definition.sourceLineage)
+          ? [{
+              ...definition,
+              adapterVersion: optionalCardFieldAdapterVersions.get(
+                definition.sourceLineage,
+              )!,
+              requiredSurfaces: restructuredRequiredSurfaces(
+                definition.sourceLineage,
+                definition.requiredSurfaces,
+              ),
+              urls: restructuredBandaiSurfaceUrls(
+                definition.sourceLineage,
+                activeBandaiSurfaceUrls(
+                  definition.sourceLineage,
+                  definition.urls,
+                  false,
+                ),
+              ),
+              parserContract:
+                `${definition.sourceLineage}-restructured-complete-catalogue@6`,
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete:
+                definition.sourceLineage === "fusion-world-en",
+              completeDigimonCatalogue:
+                definition.sourceLineage === "digimon-en",
+              restructured: true,
+              restructuredProducts: true,
+              optionalCardFields: true,
             }]
           : []),
       ];
@@ -644,6 +693,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.completeDigimonCatalogue,
                 version.restructured,
                 version.restructuredProducts,
+                version.optionalCardFields,
                 unresolvedLegalityScopes,
               )
             : historicalBandaiSnapshotDecoderV1(
@@ -2284,6 +2334,7 @@ function legalityAwareBandaiSnapshotDecoder(
   completeDigimonCatalogue = false,
   restructured = false,
   restructuredProducts = false,
+  optionalCardFields = false,
   unresolvedLegalityScopes = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
@@ -2295,6 +2346,7 @@ function legalityAwareBandaiSnapshotDecoder(
     completeDigimonCatalogue,
     restructured,
     restructuredProducts,
+    optionalCardFields,
     unresolvedLegalityScopes,
   });
 }
@@ -2314,6 +2366,7 @@ function bandaiSnapshotDecoder(
     completeDigimonCatalogue?: boolean;
     restructured?: boolean;
     restructuredProducts?: boolean;
+    optionalCardFields?: boolean;
     unresolvedLegalityScopes?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
@@ -2570,17 +2623,23 @@ function bandaiSnapshotDecoder(
       }
       return [
         profile.catalogueComplete === true && format === "fusion-world"
-          ? profile.restructured === true
-            ? parseFusionWorldCardDetailV4(
+          ? profile.optionalCardFields === true
+            ? parseFusionWorldCardDetailV5(
               html,
               sourceLineage,
               context.url,
             )
-            : parseFusionWorldCardDetailV3(
-              html,
-              sourceLineage,
-              context.url,
-            )
+            : profile.restructured === true
+              ? parseFusionWorldCardDetailV4(
+                html,
+                sourceLineage,
+                context.url,
+              )
+              : parseFusionWorldCardDetailV3(
+                html,
+                sourceLineage,
+                context.url,
+              )
           : parseBandaiCardDetailV2(
               html,
               format,
@@ -2657,9 +2716,11 @@ function bandaiSnapshotDecoder(
         digimonPopupRecordCount(html) > 0)
     ) {
       assertCompleteDigimonLeafUrl(context.url);
-      return profile.restructured === true
-        ? parseDigimonCardListPopupHtmlV5(html, context.url)
-        : parseDigimonCardListPopupHtmlV4(html, context.url);
+      return profile.optionalCardFields === true
+        ? parseDigimonCardListPopupHtmlV6(html, context.url)
+        : profile.restructured === true
+          ? parseDigimonCardListPopupHtmlV5(html, context.url)
+          : parseDigimonCardListPopupHtmlV4(html, context.url);
     }
     const completeGundamListing = profile.catalogueComplete === true &&
         format === "gundam" &&
@@ -4521,6 +4582,36 @@ function parseFusionWorldCardDetailV4(
   sourceLineage: string,
   requestUrl: string,
 ): Record<string, unknown> {
+  return parseFusionWorldCardDetailByContract(
+    html,
+    sourceLineage,
+    requestUrl,
+    false,
+  );
+}
+
+function parseFusionWorldCardDetailV5(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  // The live Energy Marker detail pages (verified 2026-08-12 on E-116,
+  // E-148, and the E-42 variant) publish no rarity block at all; every
+  // other Card type still requires its exact rarity.
+  return parseFusionWorldCardDetailByContract(
+    html,
+    sourceLineage,
+    requestUrl,
+    true,
+  );
+}
+
+function parseFusionWorldCardDetailByContract(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+  optionalEnergyMarkerRarity: boolean,
+): Record<string, unknown> {
   const request = new URL(requestUrl);
   const requestedLocator = fusionWorldFullLocatorFromUrl(request, true);
   if (requestedLocator === null) {
@@ -4542,10 +4633,6 @@ function parseFusionWorldCardDetailV4(
   const rarityMatches = [...html.matchAll(
     /<div\b[^>]*\bclass=["']rarity["'][^>]*>([\s\S]*?)<\/div>/giu,
   )];
-  if (rarityMatches.length !== 1) {
-    throw new Error("Fusion World Card detail is missing its rarity.");
-  }
-  const rarity = htmlText(rarityMatches[0]![1]!);
   const cells = fusionWorldDetailCells(html);
   const cellFor = (label: string) =>
     cells.find((cell) =>
@@ -4565,6 +4652,19 @@ function parseFusionWorldCardDetailV4(
   }
   const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
   const leader = normalizedType === "leader";
+  const energyMarkerWithoutRarity = optionalEnergyMarkerRarity &&
+    normalizedType === "energy_marker";
+  if (energyMarkerWithoutRarity && rarityMatches.length !== 0) {
+    throw new Error(
+      "Fusion World Energy Marker detail must not publish a rarity.",
+    );
+  }
+  if (!energyMarkerWithoutRarity && rarityMatches.length !== 1) {
+    throw new Error("Fusion World Card detail is missing its rarity.");
+  }
+  const rarity = energyMarkerWithoutRarity
+    ? null
+    : htmlText(rarityMatches[0]![1]!);
   const colourCell = requiredCell("Color");
   const colourTokens = [...(colourCell.shared ?? "").matchAll(
     /\bdata-color=["']([^"']+)["']/giu,
@@ -4705,8 +4805,10 @@ function parseFusionWorldCardDetailV4(
       label: whereToGet,
     },
     printing: {
-      rarity: rarity.length === 0 ? null : rarity,
-      normalizedRarity: rarity.length === 0 ? null : rarity.toLowerCase(),
+      rarity: rarity === null || rarity.length === 0 ? null : rarity,
+      normalizedRarity: rarity === null || rarity.length === 0
+        ? null
+        : rarity.toLowerCase(),
       attributes: {},
     },
     treatment: null,
@@ -8018,6 +8120,22 @@ function parseDigimonCardListPopupHtmlV5(
   );
 }
 
+function parseDigimonCardListPopupHtmlV6(
+  html: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  // The live Q&A answers may nest a related-cards list inside the answer
+  // container (verified 2026-08-12 on the P-, LM-, and AD-01 leaves); the
+  // nested list is retained as explicit related-card evidence.
+  return parseDigimonCardListPopupHtmlByContract(
+    html,
+    requestUrl,
+    digimonStructuralRecordCount(html),
+    true,
+    true,
+  );
+}
+
 function digimonStructuralRecordCount(html: string): number {
   const pagers = [...html.matchAll(
     /<div\b[^>]*\bclass=["'][^"']*\bpaging\b[^"']*["'][^>]*>/giu,
@@ -8054,6 +8172,7 @@ function parseDigimonCardListPopupHtmlByContract(
   requestUrl: string,
   declaredRecordCount: number,
   optionalEffect = false,
+  nestedRelatedQa = false,
 ): Record<string, unknown>[] {
   const leafPublisherCardType = requiredText(
     new URL(requestUrl).searchParams.get("cardcategory"),
@@ -8199,7 +8318,7 @@ function parseDigimonCardListPopupHtmlByContract(
       "Official Digimon Card information",
       /<\/div>\s*<!--\s*InfoCol\s*-->/iu,
     );
-    const retainedQa = digimonCardQa(info);
+    const retainedQa = digimonCardQa(info, nestedRelatedQa);
     const pairs = htmlLabelPairs(retainedQa.remainingHtml);
     const allowedLabels = new Set([
       "Color", "Cost", "Play Cost", "Use Cost", "DP", "Form",
@@ -8244,16 +8363,30 @@ function parseDigimonCardListPopupHtmlByContract(
         const match = value.match(
           /^((?:Red|Blue|Green|Yellow|Black|Purple|White)(?:\s*\/\s*(?:Red|Blue|Green|Yellow|Black|Purple|White))*)\s+(\d+)\s+from\s+Lv\.?(\d+)$/iu,
         );
-        if (match === null) {
+        // The live Appmon crossover printings (verified 2026-08-12 on the
+        // LM-08 leaf) digivolve from publisher grade tokens with an "any
+        // colours" requirement; the exact wording stays retained in
+        // raw_condition and the colour set is explicitly unconstrained.
+        const liveMatch = match === null && nestedRelatedQa
+          ? value.match(
+            /^(Multicolor|(?:Red|Blue|Green|Yellow|Black|Purple|White)(?:[\s/]+(?:Red|Blue|Green|Yellow|Black|Purple|White))*)\s+(\d+)\s+from\s+(?:Lv\.?(\d+)|(?:Sup|Stnd|Ult|God)\.?)$/u,
+          )
+          : null;
+        if (match === null && liveMatch === null) {
           throw new Error(
             `Unrecognized official Digimon digivolution requirement: ${value}`,
           );
         }
+        const chosen = match ?? liveMatch!;
         return {
           index: requirementIndex + 1,
-          from_level: Number.parseInt(match[3]!, 10),
-          colours: colourValues(match[1]!),
-          cost: Number.parseInt(match[2]!, 10),
+          from_level: chosen[3] === undefined
+            ? null
+            : Number.parseInt(chosen[3], 10),
+          colours: chosen[1] === "Multicolor"
+            ? []
+            : colourValues(chosen[1]!.replace(/\s+/gu, "/")),
+          cost: Number.parseInt(chosen[2]!, 10),
           raw_condition: value,
         };
       });
@@ -8344,7 +8477,9 @@ function parseDigimonCardListPopupHtmlByContract(
         text_sections: digimonTextSections(textSectionPairs),
         dual_colours: colourValues(field("DUAL Color")),
         dual_cost: integerOrNull(field("DUAL Cost")),
-        link_dp: integerOrNull(field("[Link DP]")),
+        link_dp: nestedRelatedQa
+          ? digimonLinkDp(field("[Link DP]"))
+          : integerOrNull(field("[Link DP]")),
       },
       imageFields: [{ role: "front", value: imageUrl.href }],
       preserveFuzzyProductLabels: true,
@@ -8429,19 +8564,24 @@ function digimonDeclaredRecordCount(html: string): number {
   return Number.parseInt(count, 10);
 }
 
-function digimonCardQa(infoHtml: string): {
+function digimonLinkDp(value: string | null): number | null {
+  // The live Appmon crossover printings publish Link DP as an explicit
+  // bonus token ("DP+3000", verified 2026-08-12 on the LM-08 leaf).
+  const bonus = value?.normalize("NFC").trim().match(/^DP\+(\d+)$/u);
+  return bonus === undefined || bonus === null
+    ? integerOrNull(value)
+    : Number.parseInt(bonus[1]!, 10);
+}
+
+function digimonCardQa(infoHtml: string, nestedRelatedQa = false): {
   remainingHtml: string;
   entries: Record<string, unknown>[];
 } {
-  const listMatches = [...infoHtml.matchAll(
-    /<ul\b[^>]*\bclass=["'][^"']*\bcardFaqList\b[^"']*["'][^>]*>([\s\S]*?)<\/ul>/giu,
-  )];
-  if (listMatches.length > 1) {
-    throw new Error("Official Digimon Card Q&A list is duplicated.");
-  }
-  const match = listMatches[0];
-  if (match === undefined) return { remainingHtml: infoHtml, entries: [] };
-  const body = match[1]!;
+  const list = nestedRelatedQa
+    ? digimonNestedQaList(infoHtml)
+    : digimonFlatQaList(infoHtml);
+  if (list === null) return { remainingHtml: infoHtml, entries: [] };
+  const { body, remainingHtml } = list;
   const starts = [...body.matchAll(
     /<li\b[^>]*\bclass=["'][^"']*\bcardFaqListItem\b[^"']*["'][^>]*>/giu,
   )].map((item) => item.index);
@@ -8450,6 +8590,15 @@ function digimonCardQa(infoHtml: string): {
   }
   const entries = starts.map((start, index) => {
     const entry = body.slice(start, starts[index + 1] ?? body.length);
+    const answerBody = exactDigimonClassBody(
+      entry,
+      "dd",
+      "cardFaqAnswer",
+      "Official Digimon Card Q&A answer",
+    );
+    const related = nestedRelatedQa
+      ? digimonQaRelatedCards(answerBody)
+      : { answerHtml: answerBody, relatedCards: null };
     return {
       number: exactDigimonClassText(
         entry,
@@ -8464,17 +8613,122 @@ function digimonCardQa(infoHtml: string): {
         "cardFaqQuestion",
         "Official Digimon Card Q&A question",
       ),
-      answer: exactDigimonClassText(
-        entry,
-        "dd",
-        "cardFaqAnswer",
+      answer: requiredText(
+        htmlText(related.answerHtml),
         "Official Digimon Card Q&A answer",
       ),
+      ...(related.relatedCards === null
+        ? {}
+        : { related_cards: related.relatedCards }),
     };
   });
+  return { remainingHtml, entries };
+}
+
+function digimonFlatQaList(
+  infoHtml: string,
+): { body: string; remainingHtml: string } | null {
+  const listMatches = [...infoHtml.matchAll(
+    /<ul\b[^>]*\bclass=["'][^"']*\bcardFaqList\b[^"']*["'][^>]*>([\s\S]*?)<\/ul>/giu,
+  )];
+  if (listMatches.length > 1) {
+    throw new Error("Official Digimon Card Q&A list is duplicated.");
+  }
+  const match = listMatches[0];
+  if (match === undefined) return null;
   return {
+    body: match[1]!,
     remainingHtml: infoHtml.replace(match[0], ""),
-    entries,
+  };
+}
+
+function digimonNestedQaList(
+  infoHtml: string,
+): { body: string; remainingHtml: string } | null {
+  // Live Q&A answers can nest a related-cards <ul>, so the list body must
+  // end at its matching close, not at the first </ul>.
+  const openings = [...infoHtml.matchAll(
+    /<ul\b[^>]*\bclass=["'][^"']*\bcardFaqList\b[^"']*["'][^>]*>/giu,
+  )];
+  if (openings.length > 1) {
+    throw new Error("Official Digimon Card Q&A list is duplicated.");
+  }
+  const opening = openings[0];
+  if (opening === undefined) return null;
+  const bodyStart = opening.index + opening[0].length;
+  let depth = 1;
+  let bodyEnd = -1;
+  let listEnd = -1;
+  for (
+    const token of infoHtml.slice(bodyStart).matchAll(/<ul\b|<\/ul>/giu)
+  ) {
+    depth += token[0] === "</ul>" ? -1 : 1;
+    if (depth === 0) {
+      bodyEnd = bodyStart + token.index;
+      listEnd = bodyStart + token.index + token[0].length;
+      break;
+    }
+  }
+  if (bodyEnd < 0) {
+    throw new Error("Official Digimon Card Q&A list is structurally incomplete.");
+  }
+  return {
+    body: infoHtml.slice(bodyStart, bodyEnd),
+    remainingHtml: infoHtml.slice(0, opening.index) + infoHtml.slice(listEnd),
+  };
+}
+
+function digimonQaRelatedCards(
+  answerBody: string,
+): { answerHtml: string; relatedCards: string[] } {
+  const boxes = [...answerBody.matchAll(
+    /<div\b[^>]*\bclass=["'][^"']*\brelatedBox\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/giu,
+  )];
+  if (boxes.length === 0) return { answerHtml: answerBody, relatedCards: [] };
+  if (boxes.length > 1) {
+    throw new Error(
+      "Official Digimon Card Q&A duplicates its related-cards evidence.",
+    );
+  }
+  const box = boxes[0]!;
+  const boxHtml = box[0]!;
+  const boxBody = box[1]!;
+  if (/<div/iu.test(boxBody)) {
+    throw new Error(
+      "Official Digimon Card Q&A related-cards evidence is unrecognized.",
+    );
+  }
+  if (!/<p\b[^>]*\bclass=["'][^"']*\brelatedTit\b[^"']*["'][^>]*>\s*Related Cards\s*<\/p>/iu.test(boxBody)) {
+    throw new Error(
+      "Official Digimon Card Q&A related-cards evidence is unrecognized.",
+    );
+  }
+  const relatedCards = [...boxBody.matchAll(
+    /<a\b[^>]*\bhref=["'][^"']*[?&]free=([^"'&]+)["'&][\s\S]*?<img\b([^>]*)>/giu,
+  )].map((anchor) => {
+    // The live publisher occasionally pads related-card identities with an
+    // ideographic space (verified 2026-08-12 on the P-numbered promo leaf).
+    const locator = decodeHtmlText(anchor[1]!).normalize("NFKC").trim();
+    const alt = htmlAttribute(anchor[2]!, "alt")
+      ?.normalize("NFKC").trim() ?? null;
+    if (
+      !/^[A-Z]{1,6}\d{0,3}-\d{1,5}$/u.test(locator) ||
+      alt !== locator
+    ) {
+      throw new Error(
+        "Official Digimon Card Q&A related-card identity is invalid.",
+      );
+    }
+    return locator;
+  });
+  if (relatedCards.length === 0) {
+    throw new Error(
+      "Official Digimon Card Q&A related-cards evidence is structurally empty.",
+    );
+  }
+  return {
+    answerHtml: answerBody.replace(boxHtml, ""),
+    relatedCards,
   };
 }
 
