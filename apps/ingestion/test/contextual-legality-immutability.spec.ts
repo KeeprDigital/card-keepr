@@ -1041,7 +1041,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@6",
+    adapter_version: "fusion-world-en@7",
     idempotency_key: "production-representable-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1100,7 +1100,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const conflicting = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@6",
+    adapter_version: "fusion-world-en@7",
     idempotency_key: "production-conflicting-shared-legality-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-representable-legality-v3",
@@ -1123,7 +1123,7 @@ test("production discovery retains literal stages and cannot freeze a Collection
   const started = await request("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@6",
+    adapter_version: "fusion-world-en@7",
     idempotency_key: "production-staged-discovery-gap-v3",
     requests: productionFusionLegalityRequests(
       "card-keepr-staged-discovery-gap-v3",

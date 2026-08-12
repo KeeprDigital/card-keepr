@@ -191,7 +191,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   assert.deepEqual(
     cardListSnapshots.map(({ request }) => request.url),
     [
-      // digimon-en@6 fetches the card search directly: the discovery root,
+      // digimon-en@7 fetches the card search directly: the discovery root,
       // its cards navigation stage, and the card-list surface all pin the
       // same live URL before the facets close the exact leaf.
       "https://world.digimoncard.com/cards/index.php?search=true",
@@ -424,7 +424,7 @@ function digimonPlan(marker) {
     plans: [{
       supported_game: "digimon",
       source_lineage: "digimon-en",
-      adapter_version: "digimon-en@6",
+      adapter_version: "digimon-en@7",
       requests: [{
         id: "digimon-en:discovery",
         url: "https://world.digimoncard.com/cards/index.php?search=true",

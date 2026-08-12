@@ -11,6 +11,9 @@ const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
 // ("Filter by series") instead of card_type/colour/cost checkboxes.
 const selectedCategory = "583301";
 const siblingCategory = "583302";
+// Energy Markers are the one Fusion World family whose detail page publishes
+// no rarity block, and they carry a single unvariant locator.
+const energyMarkerNumber = "E-99";
 let activeScenarioMarker = fixtureMarker;
 
 export default {
@@ -115,6 +118,7 @@ function fusionWorldCardSearchPage(url, marker) {
     category === selectedCategory;
   const entries = [
     listingEntry("FB99-001", "_p2", "Fusion Leader"),
+    unvariantListingEntry(energyMarkerNumber, "Energy Marker"),
     ...(conflicting
       // The same full locator claimed by a second, disagreeing Card number.
       ? [listingEntry("FB99-001", "_p2", "Conflicting Leader", "FB99-999")]
@@ -131,7 +135,7 @@ function fusionWorldCardSearchPage(url, marker) {
     <main>
       ${capped ? "<p>More than 1,000 results were capped</p>" : ""}
       <div class="resultCol" id="cardResult">
-        <div class="resultTxt">Result<span class="num">1</span>cards</div>
+        <div class="resultTxt">Result<span class="num">2</span>cards</div>
         <div class="cardCol"><ul>${entries.join("")}</ul></div>
       </div>
     </main>
@@ -160,10 +164,94 @@ function listingEntry(cardNumber, variant, name, altCardNumber = cardNumber) {
   return `<li class="cardItem"><a href="javascript:void(0);" data-fancybox="cards" data-type="iframe" data-src="detail.php?card_no=${cardNumber}&amp;p=${variant}" class="cardStr"><img class="lazy" src="../../images/cards/card/noimage.webp" data-src="../../images/cards/card/en/${cardNumber}_f${variant}.webp" alt="${altCardNumber} ${name}"></a></li>`;
 }
 
+function unvariantListingEntry(cardNumber, name) {
+  return `<li class="cardItem"><a href="javascript:void(0);" data-fancybox="cards" data-type="iframe" data-src="detail.php?card_no=${cardNumber}" class="cardStr"><img class="lazy" src="../../images/cards/card/noimage.webp" data-src="../../images/cards/card/en/${cardNumber}.webp" alt="${cardNumber} ${name}"></a></li>`;
+}
+
+function fusionWorldEnergyMarkerDetailPage(marker) {
+  // The publisher leaves every gameplay cell as "-" on an Energy Marker and
+  // omits the rarity block entirely; the scenario marker restores a rarity to
+  // prove the adapter refuses an Energy Marker that publishes one.
+  const rarity = marker === `${fixtureMarker}-energy-marker-rarity`
+    ? `<div class="rarity">C</div>`
+    : "";
+  return `<html><title>BANDAI DRAGON BALL CARD detail</title>
+  <main class="mainCol"><article class="article cardDetailPageCol">
+    <div class="cardDetailPageContent">
+      <div class="cardNoCol">
+        <div class="cardNo">${energyMarkerNumber}</div>
+        ${rarity}
+      </div>
+      <div class="nameCol">
+        <h1 class="cardName">Energy Marker</h1>
+      </div>
+      <div class="cardCol"><div class="cardColInner"><div class="cardColBox">
+        <div class="cardImage">
+          <img src="../../images/cards/card/en/${energyMarkerNumber}.webp" alt="${energyMarkerNumber} Energy Marker">
+        </div>
+      </div></div></div>
+      <div class="cardDataCol"><div class="cardData">
+        <div class="cardDataRow">
+          <div class="cardDataCell">
+            <h6>Card type</h6>
+            <div class="data">ENERGY MARKER</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Color</h6>
+            <div class="data color-"><div class="colValue" data-color="no-color">-</div></div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Cost</h6>
+            <div class="data">-</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Specified cost</h6>
+            <div class="data costIconCol">-</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Power</h6>
+            <div class="data">-</div>
+          </div>
+          <div class="cardDataCell">
+            <h6>Combo power</h6>
+            <div class="data">-</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell isTraits">
+            <h6>Special Traits</h6>
+            <div class="data is-nomal">-</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell isSkills">
+            <h6>Skills</h6>
+            <div class="data dataSmall">At the start of the game, the player who goes second places 1 Energy Marker in their Energy Area.</div>
+          </div>
+        </div>
+        <div class="cardDataRow">
+          <div class="cardDataCell">
+            <h6>Where to get it</h6>
+            <div class="data dataSmall">Fusion World Raw Product</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="informationCol">
+        <h4>Products</h4>
+        <div class="productsCol"><div class="productName">Fusion World Raw Product</div></div>
+      </div>
+    </div>
+  </article></main></html>`;
+}
+
 function fusionWorldCardDetailPage(url, marker) {
+  const requested = url.searchParams.get("card_no") ?? "FB99-001";
+  if (requested === energyMarkerNumber) {
+    return fusionWorldEnergyMarkerDetailPage(marker);
+  }
   const cardNumber = marker === `${fixtureMarker}-mismatched-detail`
     ? "FB99-999"
-    : url.searchParams.get("card_no") ?? "FB99-001";
+    : requested;
   const variant = url.searchParams.get("p") ?? "";
   const backImage = marker === `${fixtureMarker}-missing-leader-face`
     ? ""

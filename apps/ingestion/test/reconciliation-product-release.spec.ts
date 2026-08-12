@@ -321,7 +321,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@6",
+    adapter_version: "fusion-world-en@7",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });
@@ -383,7 +383,7 @@ test("a registered code-less Product refresh preserves its established code", as
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@6",
+      adapter_version: "fusion-world-en@7",
       idempotency_key:
         `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,
@@ -470,7 +470,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "digimon",
     source_lineage: "digimon-en",
-    adapter_version: "digimon-en@6",
+    adapter_version: "digimon-en@7",
     idempotency_key: `registered-product-fuzzy-${crypto.randomUUID()}`,
     requests,
   });
