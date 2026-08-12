@@ -56,7 +56,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@5",
+            "one-piece-en@6",
           ),
           officialPlan(
             "fusion-world",
@@ -66,12 +66,12 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "gundam",
             "gundam-en-asia",
-            "gundam-en-asia@6",
+            "gundam-en-asia@7",
           ),
           officialPlan(
             "gundam",
             "gundam-en-us",
-            "gundam-en-us@6",
+            "gundam-en-us@7",
           ),
         ],
       }),
@@ -84,7 +84,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
           officialPlan(
             "one-piece",
             "one-piece-en",
-            "one-piece-en@5",
+            "one-piece-en@6",
             {
               accept: "text/html",
               "user-agent": "card-keepr-acceptance-product/codeless",
@@ -268,11 +268,11 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "one-piece-en@5",
+        adapter_version: "one-piece-en@6",
         request_ids: officialPlan(
           "one-piece",
           "one-piece-en",
-          "one-piece-en@5",
+          "one-piece-en@6",
         ).requests.map(({ id }) => id),
       },
       {
@@ -288,21 +288,21 @@ test("the CLI publishes separated Product catalogue data consumed through authen
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "gundam-en-asia@6",
+        adapter_version: "gundam-en-asia@7",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-asia",
-          "gundam-en-asia@6",
+          "gundam-en-asia@7",
         ).requests.map(({ id }) => id),
       },
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "gundam-en-us@6",
+        adapter_version: "gundam-en-us@7",
         request_ids: officialPlan(
           "gundam",
           "gundam-en-us",
-          "gundam-en-us@6",
+          "gundam-en-us@7",
         ).requests.map(({ id }) => id),
       },
     ],

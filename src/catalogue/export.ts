@@ -39,17 +39,17 @@ import {
 import { deterministicGzipStream } from "./export-compression";
 
 const componentDefinitions = [
-  ["supported-games", "SupportedGameRecord", "id:utf8", 4],
-  ["game-profiles", "GameProfileRecord", "profile:utf8", 4],
-  ["cards", "CardRecord", "id:utf8", 4],
-  ["printings", "PrintingRecord", "id:utf8", 4],
-  ["printing-images", "PrintingImageRecord", "id:utf8", 4],
-  ["products", "ProductRecord", "id:utf8", 4],
-  ["releases", "ReleaseRecord", "id:utf8", 4],
-  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 4],
-  ["errata", "ErratumRecord", "id:utf8", 4],
-  ["legality-rules", "LegalityRuleRecord", "id:utf8", 4],
-  ["relationships", "RelationshipRecord", "id:utf8", 4],
+  ["supported-games", "SupportedGameRecord", "id:utf8", 5],
+  ["game-profiles", "GameProfileRecord", "profile:utf8", 5],
+  ["cards", "CardRecord", "id:utf8", 5],
+  ["printings", "PrintingRecord", "id:utf8", 5],
+  ["printing-images", "PrintingImageRecord", "id:utf8", 5],
+  ["products", "ProductRecord", "id:utf8", 5],
+  ["releases", "ReleaseRecord", "id:utf8", 5],
+  ["distribution-contexts", "DistributionContextRecord", "id:utf8", 5],
+  ["errata", "ErratumRecord", "id:utf8", 5],
+  ["legality-rules", "LegalityRuleRecord", "id:utf8", 5],
+  ["relationships", "RelationshipRecord", "id:utf8", 5],
 ] as const;
 
 export type ExportObject = {
@@ -74,9 +74,9 @@ export type BuiltCatalogueExport = {
 export type SourceFreshness = CatalogueSourceCheck;
 
 type CatalogueExportManifest = {
-  format: "card-keepr-catalogue-export-manifest@4";
+  format: "card-keepr-catalogue-export-manifest@5";
   serialization_profile: "card-keepr-ndjson-gzip@1";
-  export_schema_major: 4;
+  export_schema_major: 5;
   catalogue_revision: {
     id: string;
     content_sha256: string;
@@ -203,9 +203,9 @@ export async function buildCatalogueExport(
   }
 
   const manifestWithPlaceholder: CatalogueExportManifest = {
-    format: "card-keepr-catalogue-export-manifest@4",
+    format: "card-keepr-catalogue-export-manifest@5",
     serialization_profile: "card-keepr-ndjson-gzip@1",
-    export_schema_major: 4,
+    export_schema_major: 5,
     catalogue_revision: {
       id: catalogueRevisionId,
       content_sha256: candidateDigest,

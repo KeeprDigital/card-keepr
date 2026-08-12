@@ -102,4 +102,25 @@ than capture time or article recency:
 - Both Gundam locale details contain one banned Card, one restricted Card, two
   explicit pairs, and one twenty-Card predicate group. The July 24 article date
   does not state the list's effective boundary, so all five target groups per
-  locale retain an unresolved effective interval.
+  locale retain an unresolved effective interval. The issue-58 adapter
+  generation (`gundam-en-asia@7` / `gundam-en-us@7`) additionally parses the
+  open-predicate group ("a Unit card that is Lv.2 with cost 1, 2 AP, and
+  2 HP, and without effects", future printings included) into one explicit
+  `unresolved` rule whose scope names both `effective_interval` and
+  `target_scope`; earlier generations keep failing closed on the compound
+  policy.
+
+The issue-58 captures were verified on 2026-08-11 UTC (cold, polite user
+agent, no redirect following):
+
+- Both Gundam locale `/rules/` hubs and `news/01_279.html` details returned
+  byte-identical responses to the retained 2026-08-07 fixtures, so those
+  fixtures remain the current live evidence for the `@7` legality contract.
+- `one-piece-en-don-rules-hub.json` retains the fresh complete `/rules/` hub
+  response (the earlier `one-piece-en-rules-hub.json` capture remains as the
+  2026-08-07 restructure-generation evidence; the live page has since
+  reworded its FOR BEGINNERS header navigation). The hub publishes rule
+  PDFs, news notices, and the pinned restriction, block-policy, and errata
+  links, and no DON!! content: the `one-piece-en@6` don-rules contract
+  retains it as exact coverage evidence with a structurally complete empty
+  Legality Rule observation and makes no comprehensive DON!! Printing claim.

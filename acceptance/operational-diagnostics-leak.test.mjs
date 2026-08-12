@@ -189,7 +189,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
           {
             supported_game: "one-piece",
             source_lineage: "one-piece-en",
-            adapter_version: "one-piece-en@5",
+            adapter_version: "one-piece-en@6",
             requests: [
               {
                 id: "one-piece-en:discovery",

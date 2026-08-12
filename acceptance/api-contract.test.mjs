@@ -16,6 +16,8 @@ test("historical export schemas remain byte-identical to their fixed points", as
     ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
     ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
     ["catalogue-export-record.schema.json", "cb9b7ef626dad9473f641d567167379a4edfba5572153b55c9dbabb0ab1d1f62", "catalogue-export-record@3"],
+    ["catalogue-export-manifest-v4.schema.json", "caf3e7b1f64491f0dad969ecc499e955ed5c6dafb385bb4de40e429c92043863", "catalogue-export-manifest@4"],
+    ["catalogue-export-record-v4.schema.json", "762b10c3141cfbfe92051dda9ffe99d056ef06300a8ff27233d57064f048776d", "catalogue-export-record@4"],
   ]) {
     const bytes = await readFile(resolve(
       root,
@@ -91,6 +93,91 @@ test("curated catalogue exports use a new schema major", async () => {
       last_missing_revision_id: null,
     },
   }), false);
+});
+
+test("unresolved target-scope exports use schema major 5", async () => {
+  const [record, manifest] = await Promise.all([
+    "catalogue-export-record-v5.schema.json",
+    "catalogue-export-manifest-v5.schema.json",
+  ].map((name) => readFile(resolve(
+    root,
+    "prototype/formalize-implementation-contracts/schemas",
+    name,
+  ), "utf8").then(JSON.parse)));
+  assert.equal(record.$id.endsWith("catalogue-export-record@5"), true);
+  assert.equal(manifest.$id.endsWith("catalogue-export-manifest@5"), true);
+  assert.equal(manifest.properties.export_schema_major.const, 5);
+  assert.ok(manifest.$defs.CardsComponent.allOf[1].properties.record_schema
+    .const.includes("catalogue-export-record@5"));
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
+  ajv.addSchema(record);
+  const validateRule = ajv.getSchema(
+    `${record.$id}#/$defs/LegalityRuleRecord`,
+  );
+  const rule = (overrides) => ({
+    type: "legality_rule",
+    id: "legality_rule_target_scope",
+    official_id: "target-scope-1",
+    game: "gundam",
+    region: "EN-ASIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: null,
+    effective_until: null,
+    unresolved_scope: {
+      dimensions: ["effective_interval", "target_scope"],
+    },
+    kind: "indeterminate",
+    effect: {
+      type: "unresolved",
+      reason: "The published description includes future printings.",
+    },
+    card_ids: ["card_enumerated"],
+    official_wording: "Open predicate wording.",
+    source_lineage: "gundam-en-asia",
+    source_observation_ids: ["srcobs_1"],
+    source_observation_pointer: "/observations/0/value/legality_rules/0",
+    source_field_pointers: Object.fromEntries([
+      "official_wording", "effective_from", "effective_until",
+      "unresolved_scope", "region", "format", "event_tier",
+      "card_numbers", "effect",
+    ].map((field) => [
+      field,
+      `/observations/0/value/legality_rules/0/${field}`,
+    ])),
+    lifecycle: {
+      first_revision_id: "catrev_1",
+      last_observed_revision_id: "catrev_1",
+      current: true,
+      last_missing_revision_id: null,
+    },
+    ...overrides,
+  });
+  assert.equal(
+    validateRule(rule({})),
+    true,
+    ajv.errorsText(validateRule.errors),
+  );
+  assert.equal(
+    validateRule(rule({
+      unresolved_scope: { dimensions: ["target_scope"] },
+      effective_from: "2026-01-01",
+    })),
+    true,
+    ajv.errorsText(validateRule.errors),
+  );
+  // Non-canonical order, invented dates, and empty targets stay rejected.
+  assert.equal(validateRule(rule({
+    unresolved_scope: { dimensions: ["target_scope", "effective_interval"] },
+  })), false);
+  assert.equal(validateRule(rule({ effective_from: "2026-01-01" })), false);
+  assert.equal(validateRule(rule({ card_ids: [] })), false);
+  assert.equal(validateRule(rule({
+    kind: "eligible",
+    effect: { type: "eligible" },
+  })), false);
 });
 
 test("Product detail documents invalid include requests", async () => {

@@ -1,6 +1,19 @@
 import { isIsoCalendarDate } from "./calendar-date.mjs";
+import {
+  openPredicateUnresolvedReason,
+} from "./official-legality-source-adapters.mjs";
 
 type LiveLegalityGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
+
+export type LiveLegalityParseOptions = Readonly<{
+  /**
+   * Enabled only by the issue-58 adapter generation: the Gundam 2026-07-24
+   * compound policy parses into exact unresolved rules, including one
+   * explicit open-predicate rule with an unresolved `target_scope`
+   * dimension, instead of failing closed.
+   */
+  unresolvedTargetScope?: boolean;
+}>;
 
 export function liveOfficialLegalityDocument(
   game: LiveLegalityGame,
@@ -8,6 +21,7 @@ export function liveOfficialLegalityDocument(
   surface: string,
   requestUrl: string,
   html: string,
+  options: LiveLegalityParseOptions = {},
 ): { surface: string; document: Record<string, unknown> } | null {
   if (
     game === "one-piece" &&
@@ -82,7 +96,10 @@ export function liveOfficialLegalityDocument(
   if (
     game === "gundam" &&
     (sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us") &&
-    surface === "detail"
+    // The issue-58 generation plans the news publication directly as its
+    // legality surface; earlier generations discover it as a detail request
+    // from the rules hub.
+    (surface === "detail" || surface === "legality")
   ) {
     const locale = sourceLineage === "gundam-en-asia" ? "asia-en" : "en";
     if (
@@ -92,7 +109,7 @@ export function liveOfficialLegalityDocument(
     ) {
       return {
         surface: "legality",
-        document: gundamCurrentRestrictions(sourceLineage, html),
+        document: gundamCurrentRestrictions(sourceLineage, html, options),
       };
     }
   }
@@ -108,8 +125,9 @@ function fusionWorldPublisherDeclaresExactEmptyHistory(html: string): boolean {
 }
 
 function gundamCurrentRestrictions(
-  _sourceLineage: "gundam-en-asia" | "gundam-en-us",
+  sourceLineage: "gundam-en-asia" | "gundam-en-us",
   html: string,
+  options: LiveLegalityParseOptions = {},
 ): Record<string, unknown> {
   if (
     !/<div class="date">July 24, 2026<\/div>/u.test(html) ||
@@ -134,9 +152,200 @@ function gundamCurrentRestrictions(
       throw new Error("Gundam current policy semantics are incomplete.");
     }
   }
-  throw new Error(
-    "Gundam compound prohibited-combination and copy-limit policy is not exactly representable.",
-  );
+  if (options.unresolvedTargetScope !== true) {
+    // Frozen behavior for earlier adapter generations: the compound policy
+    // has no representable form without the target_scope dimension.
+    throw new Error(
+      "Gundam compound prohibited-combination and copy-limit policy is not exactly representable.",
+    );
+  }
+  return gundamExactCurrentRestrictions(sourceLineage, current);
+}
+
+type GundamPolicyToken = {
+  kind: "heading3" | "heading4" | "navigation" | "paragraph";
+  text: string;
+};
+
+const gundamCardLabelPattern = /^([A-Z]{1,6}\d{0,4}-\d{1,4}) (.+)$/u;
+const gundamBanWording = "No copies of the card are permitted in the deck.";
+const gundamRestrictedWording =
+  "Only 2 copy of the card is permitted in the deck.";
+const gundamPairWording = "Cards A and B cannot be used at the same time";
+const gundamOpenPredicateWording =
+  'All combinations of cards that match the above description "a Unit card that is Lv.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck.';
+
+function gundamPolicyTokens(current: string): GundamPolicyToken[] {
+  return [...current.matchAll(
+    /<(h3|h4)\b[^>]*>([\s\S]*?)<\/\1>|<a\b([^>]*)>([\s\S]*?)<\/a>|<p\b[^>]*>([\s\S]*?)<\/p>/giu,
+  )].flatMap<GundamPolicyToken>((match) => {
+    if (match[1] !== undefined) {
+      return [{
+        kind: match[1].toLowerCase() === "h3" ? "heading3" : "heading4",
+        text: normalizedVisiblePolicyText(match[2]!),
+      }];
+    }
+    if (match[3] !== undefined) {
+      const text = normalizedVisiblePolicyText(match[4]!);
+      if (text.length === 0) return [];
+      if (
+        !/(?:^|\s)commonBtn(?:\s|$)/u.test(
+          match[3].match(/\bclass=["']([^"']*)["']/iu)?.[1] ?? "",
+        )
+      ) {
+        throw new Error(
+          "Gundam current policy contains an unrecognized visible link.",
+        );
+      }
+      return [{ kind: "navigation", text }];
+    }
+    const text = normalizedVisiblePolicyText(match[5]!);
+    return text.length === 0 ? [] : [{ kind: "paragraph", text }];
+  });
+}
+
+function gundamExactCardLabel(
+  token: GundamPolicyToken | undefined,
+): { number: string; label: string } {
+  const match = token?.kind === "paragraph"
+    ? token.text.match(gundamCardLabelPattern)
+    : null;
+  if (match === null || match === undefined) {
+    throw new Error("Gundam current policy Card entry is not exactly labeled.");
+  }
+  return { number: match[1]!, label: match[0] };
+}
+
+function gundamExactCurrentRestrictions(
+  sourceLineage: "gundam-en-asia" | "gundam-en-us",
+  current: string,
+): Record<string, unknown> {
+  const tokens = gundamPolicyTokens(current);
+  let position = 0;
+  const next = (): GundamPolicyToken | undefined => tokens[position++];
+  const require = (
+    kind: GundamPolicyToken["kind"],
+    expected: string | RegExp,
+  ): string => {
+    const token = next();
+    const matches = token !== undefined && token.kind === kind &&
+      (typeof expected === "string"
+        ? token.text === expected
+        : expected.test(token.text));
+    if (!matches) {
+      throw new Error("Gundam current policy structure is not exactly representable.");
+    }
+    return token!.text;
+  };
+
+  require("heading3", "Current List of Banned / Restricted Cards");
+  require("navigation", /^Banned Cards$/u);
+  require("navigation", /^Restricted Cards(?:〈2〉)?$/u);
+  require("navigation", /^Banned [Pp]air$/u);
+
+  require("heading4", "Banned Cards");
+  require("paragraph", gundamBanWording);
+  const banned = gundamExactCardLabel(next());
+
+  require("heading4", "Restricted Cards〈2〉");
+  require("paragraph", gundamRestrictedWording);
+  const restricted = gundamExactCardLabel(next());
+
+  require("heading4", /^Banned [Pp]air$/u);
+  require("paragraph", gundamPairWording);
+  const pairs: Array<{
+    left: { number: string; label: string };
+    right: { number: string; label: string };
+  }> = [];
+  while (tokens[position]?.kind === "paragraph" && tokens[position]?.text === "A") {
+    position += 1;
+    const left = gundamExactCardLabel(next());
+    require("paragraph", "B");
+    const right = gundamExactCardLabel(next());
+    pairs.push({ left, right });
+  }
+  const predicateCards: Array<{ number: string; label: string }> = [];
+  while (
+    tokens[position]?.kind === "paragraph" &&
+    gundamCardLabelPattern.test(tokens[position]!.text)
+  ) {
+    predicateCards.push(gundamExactCardLabel(next()));
+  }
+  require("paragraph", gundamOpenPredicateWording);
+  if (position !== tokens.length) {
+    throw new Error("Gundam current policy structure is not exactly representable.");
+  }
+  if (
+    pairs.length !== 2 ||
+    predicateCards.length !== 20 ||
+    new Set([
+      banned.number,
+      restricted.number,
+      ...pairs.flatMap(({ left, right }) => [left.number, right.number]),
+      ...predicateCards.map(({ number }) => number),
+    ]).size !== 2 + 4 + 20
+  ) {
+    throw new Error("Gundam current policy category totals changed.");
+  }
+  const expectedVisibleText = tokens.map(({ text }) => text).join(" ");
+  if (normalizedVisiblePolicyText(current) !== expectedVisibleText) {
+    throw new Error(
+      "Gundam current policy contains unconsumed prose or structure.",
+    );
+  }
+  const region = sourceLineage === "gundam-en-asia" ? "EN-ASIA" : "EN-US";
+  const common = {
+    region,
+    format: "standard",
+    event_tier: null,
+    effective_date: null,
+    end_date: null,
+    ruling: "unresolved",
+  };
+  const intervalEntry = (
+    id: string,
+    wording: string,
+    cards: ReadonlyArray<{ number: string; label: string }>,
+  ) => {
+    const numbers = cards.map(({ number }) => number);
+    return {
+      ...common,
+      news_id: id,
+      text: `${wording}\n${cards.map(({ label }) => label).join("\n")}`,
+      card_numbers: numbers,
+      unresolved_scope: { dimensions: ["effective_interval"] },
+      reason: `Effective interval for ${numbers.join(", ")} is not stated.`,
+    };
+  };
+  const entries = [
+    intervalEntry(`01_279-current-ban-${banned.number}`, gundamBanWording, [
+      banned,
+    ]),
+    intervalEntry(
+      `01_279-current-restricted-${restricted.number}`,
+      gundamRestrictedWording,
+      [restricted],
+    ),
+    ...pairs.map(({ left, right }, index) =>
+      intervalEntry(`01_279-current-pair-${index + 1}`, gundamPairWording, [
+        left,
+        right,
+      ])
+    ),
+    {
+      ...common,
+      news_id: "01_279-current-open-predicate",
+      text: `${gundamOpenPredicateWording}\n${
+        predicateCards.map(({ label }) => label).join("\n")
+      }`,
+      card_numbers: predicateCards.map(({ number }) => number),
+      unresolved_scope: {
+        dimensions: ["effective_interval", "target_scope"],
+      },
+      reason: openPredicateUnresolvedReason,
+    },
+  ];
+  return { entries, declared_record_count: entries.length };
 }
 
 function digimonCurrentRestrictions(html: string): Record<string, unknown> {

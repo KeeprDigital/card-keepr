@@ -1019,6 +1019,9 @@
             },
             {
               "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@4"
+            },
+            {
+              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@5"
             }
           ]
         },

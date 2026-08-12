@@ -399,7 +399,11 @@ export function canonicalLegalityRuleStatements(
     effective_from: string | null;
     effective_until: string | null;
     unresolved_scope?: {
-      dimensions: readonly ("effective_interval" | "event_tier")[];
+      dimensions: readonly (
+        | "effective_interval"
+        | "event_tier"
+        | "target_scope"
+      )[];
     } | null;
     card_ids: readonly string[];
     official_wording: string;

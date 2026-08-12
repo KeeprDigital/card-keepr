@@ -162,3 +162,7 @@ _Avoid_: Ruling, boolean legal flag
 **Legality Status**:
 A Card’s eligibility in organized play for a particular date and context, derived from applicable Legality Rules.
 _Avoid_: Ruling, format guide
+
+**Unresolved Target Scope**:
+The explicit declaration that an official rule's affected-Card set is an open publisher predicate: enumerated known matches are retained as Cards while unenumerated (including future) printings remain in scope, so every overlapping Legality Status query answers indeterminate rather than silently omitting the rule.
+_Avoid_: Compiled pair list, global ban
