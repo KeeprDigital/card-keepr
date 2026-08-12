@@ -212,14 +212,25 @@ export function productionOfficialStageResponse(
       },
     );
   }
+  // The live Fusion World listing publishes its statuses as anchored
+  // sections (fusion-world-en@8); the synthetic stage mirrors that shape
+  // with structurally empty product lists.
   const fusionProductCoverage =
     lineage === "fusion-world-en" && url.pathname === "/fw/en/products/"
-      ? `<nav aria-label="Product status">
-          <a data-product-status="available" href="#available">Available</a>
-          <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
-        </nav>
-        <article data-publication-empty="true" data-product-status="available">No available entries.</article>
-        <article data-publication-empty="true" data-product-status="coming-soon">No coming-soon entries.</article>`
+      ? `<div class="contentsHead">
+          <ul class="ankerList">
+            <li class="ankerListItem"><a href="#available">AVAILABLE NOW</a></li>
+            <li class="ankerListItem"><a href="#comingsoon">COMING SOON</a></li>
+          </ul>
+        </div>
+        <section class="contentsColInner availableCol" id="available">
+          <h2 class="listTit">AVAILABLE NOW</h2>
+          <ul class="prpductList"></ul>
+        </section>
+        <section class="contentsColInner comingsoonCol" id="comingsoon">
+          <h2 class="listTit">COMING SOON</h2>
+          <ul class="prpductList"></ul>
+        </section>`
       : `<article data-publication-empty="true">No published entries.</article>`;
   return new Response(
     `<html><title>Official Bandai CARD PRODUCT RELEASE RULE ERRATA RESTRICTION publication</title>${officialNavigation}${productionOfficialStageNavigation(lineage, url)}<main>${

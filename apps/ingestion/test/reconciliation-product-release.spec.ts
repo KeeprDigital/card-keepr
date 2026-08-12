@@ -321,7 +321,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@7",
+    adapter_version: "fusion-world-en@8",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });
@@ -368,10 +368,14 @@ test("registered Product detail evidence outranks its conflicting listing throug
 }, 30_000);
 
 test("a registered code-less Product refresh preserves its established code", async () => {
+  // The fusion-world-en@8 live listing derives Product codes from bracketed
+  // titles, so a code cannot disappear while the published name stays
+  // identical; the digimon-en listing keeps publishing explicit
+  // data-product-code attributes and exercises the code-preserving refresh.
   const start = async (
     state: "coded" | "codeless",
   ) => {
-    const requests = officialSourceDiscoveryRequests("fusion-world-en").map(
+    const requests = officialSourceDiscoveryRequests("digimon-en").map(
       (request) => ({
         ...request,
         headers: {
@@ -381,9 +385,9 @@ test("a registered code-less Product refresh preserves its established code", as
       }),
     );
     const started = await post("/v1/ingestion-runs/evidence", {
-      supported_game: "fusion-world",
-      source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@7",
+      supported_game: "digimon",
+      source_lineage: "digimon-en",
+      adapter_version: "digimon-en@7",
       idempotency_key:
         `registered-product-identity-${state}-${crypto.randomUUID()}`,
       requests,

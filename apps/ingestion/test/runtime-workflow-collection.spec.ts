@@ -183,7 +183,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@7",
+      adapter_version: "fusion-world-en@8",
       idempotency_key: "source_parent_auto_reconcile_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },
@@ -250,7 +250,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   expect(retainedObservation.status).toBe(200);
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
-    adapter_version: "fusion-world-en@7",
+    adapter_version: "fusion-world-en@8",
     observations: [{
       value: {
         observation_type: "official_surface_evidence",
@@ -293,7 +293,7 @@ test("incomplete retained production discovery blocks collection and publication
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@7",
+      adapter_version: "fusion-world-en@8",
       idempotency_key: "source_parent_incomplete_discovery_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -329,7 +329,7 @@ test("notice-link-only production legality evidence fails closed before stale ru
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@7",
+      adapter_version: "fusion-world-en@8",
       idempotency_key: "source_parent_notice_only_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
@@ -361,7 +361,7 @@ test("the parent Workflow keeps a greater-than-1-MiB legality candidate in D1 an
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@7",
+      adapter_version: "fusion-world-en@8",
       idempotency_key: "source_parent_large_legality_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en").map(
         (request) => ({
