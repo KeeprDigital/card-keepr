@@ -258,6 +258,18 @@ const liveProductAdapterVersions = new Map([
   ["gundam-en-us", "gundam-en-us@6"],
 ]);
 
+// 2026-08-12 production feedback (#55): the third full-scale Fusion World run
+// retained five live page shapes the frozen parsers refused: the Product
+// listing publishes AVAILABLE NOW / COMING SOON as anchored sections instead
+// of status-attributed tabs, the Card detail Skills and Special Traits labels
+// carry face-scoped "(Errata Applied)" annotations with a pinned Errata
+// Notice link, one Product publishes a season-precision Release
+// ("Winter, 2026"), and the pinned legality-history publication announces an
+// exact restriction lift. This generation models each shape exactly.
+const liveShapeAdapterVersions = new Map([
+  ["fusion-world-en", "fusion-world-en@8"],
+]);
+
 // Issue #58: the Gundam adapters pin their legality surface to the live
 // news/01_279.html publication and represent its compound open-predicate
 // policy as explicit unresolved rules (including one with an unresolved
@@ -362,6 +374,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           restructured: false,
           restructuredProducts: false,
           optionalCardFields: false,
+          liveShapes: false,
         },
         {
           ...definition,
@@ -380,6 +393,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           restructured: false,
           restructuredProducts: false,
           optionalCardFields: false,
+          liveShapes: false,
         },
         ...(definition.sourceLineage === "one-piece-en"
           ? [{
@@ -393,6 +407,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: false,
               restructuredProducts: false,
               optionalCardFields: false,
+              liveShapes: false,
             }]
           : []),
         ...(definition.sourceLineage === "fusion-world-en"
@@ -412,6 +427,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: false,
               restructuredProducts: false,
               optionalCardFields: false,
+              liveShapes: false,
             }]
           : []),
         ...(definition.sourceLineage === "digimon-en"
@@ -431,6 +447,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: false,
               restructuredProducts: false,
               optionalCardFields: false,
+              liveShapes: false,
             }]
           : []),
         ...(completeGundamAdapterVersions.has(definition.sourceLineage)
@@ -464,6 +481,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: false,
               restructuredProducts: false,
               optionalCardFields: false,
+              liveShapes: false,
             }]
           : []),
         {
@@ -518,6 +536,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           restructured: true,
           restructuredProducts: false,
           optionalCardFields: false,
+          liveShapes: false,
         },
         {
           ...definition,
@@ -571,6 +590,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           restructured: true,
           restructuredProducts: true,
           optionalCardFields: false,
+          liveShapes: false,
         },
         ...(unresolvedScopeAdapterVersions.has(definition.sourceLineage)
           ? [{
@@ -626,6 +646,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: true,
               restructuredProducts: true,
               optionalCardFields: false,
+              liveShapes: false,
             }]
           : []),
         ...(optionalCardFieldAdapterVersions.has(definition.sourceLineage)
@@ -657,6 +678,38 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
               restructured: true,
               restructuredProducts: true,
               optionalCardFields: true,
+              liveShapes: false,
+            }]
+          : []),
+        ...(liveShapeAdapterVersions.has(definition.sourceLineage)
+          ? [{
+              ...definition,
+              adapterVersion: liveShapeAdapterVersions.get(
+                definition.sourceLineage,
+              )!,
+              requiredSurfaces: restructuredRequiredSurfaces(
+                definition.sourceLineage,
+                definition.requiredSurfaces,
+              ),
+              urls: restructuredBandaiSurfaceUrls(
+                definition.sourceLineage,
+                activeBandaiSurfaceUrls(
+                  definition.sourceLineage,
+                  definition.urls,
+                  false,
+                ),
+              ),
+              parserContract:
+                `${definition.sourceLineage}-restructured-complete-catalogue@7`,
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete:
+                definition.sourceLineage === "fusion-world-en",
+              completeDigimonCatalogue: false,
+              restructured: true,
+              restructuredProducts: true,
+              optionalCardFields: true,
+              liveShapes: true,
             }]
           : []),
       ];
@@ -695,6 +748,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
                 version.restructuredProducts,
                 version.optionalCardFields,
                 unresolvedLegalityScopes,
+                version.liveShapes,
               )
             : historicalBandaiSnapshotDecoderV1(
                 version.format,
@@ -2336,6 +2390,7 @@ function legalityAwareBandaiSnapshotDecoder(
   restructuredProducts = false,
   optionalCardFields = false,
   unresolvedLegalityScopes = false,
+  liveShapes = false,
 ): OfficialRawAdapterContract["parseBytes"] {
   return bandaiSnapshotDecoder(format, game, sourceLineage, requiredSurfaces, urls, {
     parseLegality: true,
@@ -2348,6 +2403,7 @@ function legalityAwareBandaiSnapshotDecoder(
     restructuredProducts,
     optionalCardFields,
     unresolvedLegalityScopes,
+    liveShapes,
   });
 }
 
@@ -2368,6 +2424,7 @@ function bandaiSnapshotDecoder(
     restructuredProducts?: boolean;
     optionalCardFields?: boolean;
     unresolvedLegalityScopes?: boolean;
+    liveShapes?: boolean;
   }>,
 ): OfficialRawAdapterContract["parseBytes"] {
   return (bytes, context) => {
@@ -2561,6 +2618,7 @@ function bandaiSnapshotDecoder(
     }
     const legalityParseOptions = {
       unresolvedTargetScope: profile.unresolvedLegalityScopes === true,
+      fusionRestrictionLift: profile.liveShapes === true,
     };
     const liveLegality = profile.parseLegality
       ? liveOfficialLegalityDocument(
@@ -2593,7 +2651,11 @@ function bandaiSnapshotDecoder(
           game,
           sourceLineage,
           liveLegality.document,
-          { allowUnresolvedTargetScope: legalityParseOptions.unresolvedTargetScope },
+          {
+            allowUnresolvedTargetScope:
+              legalityParseOptions.unresolvedTargetScope,
+            allowRestrictionLift: legalityParseOptions.fusionRestrictionLift,
+          },
         ),
         sourceLineage,
         liveLegality.surface,
@@ -2623,7 +2685,13 @@ function bandaiSnapshotDecoder(
       }
       return [
         profile.catalogueComplete === true && format === "fusion-world"
-          ? profile.optionalCardFields === true
+          ? profile.liveShapes === true
+            ? parseFusionWorldCardDetailV6(
+              html,
+              sourceLineage,
+              context.url,
+            )
+            : profile.optionalCardFields === true
             ? parseFusionWorldCardDetailV5(
               html,
               sourceLineage,
@@ -2651,7 +2719,14 @@ function bandaiSnapshotDecoder(
     }
     if (dynamicRole === "product_detail") {
       return [
-        profile.restructuredProducts === true
+        profile.liveShapes === true
+          ? parseBandaiProductDetailV4(
+            html,
+            format,
+            sourceLineage,
+            context.url,
+          )
+          : profile.restructuredProducts === true
           ? parseBandaiProductDetailV3(
             html,
             format,
@@ -2786,6 +2861,7 @@ function bandaiSnapshotDecoder(
                 isStructurallyEmptyFusionErrata),
             profile.catalogueComplete === true,
             profile.restructured === true,
+            profile.liveShapes === true,
           );
     const liveLegalityDocument = liveLegality?.document ?? null;
     const legalityObservation = profile.parseLegality &&
@@ -2794,6 +2870,7 @@ function bandaiSnapshotDecoder(
         ? officialLegalityRulesHtmlObservation(game, sourceLineage, html, {
             allowUnresolvedTargetScope:
               legalityParseOptions.unresolvedTargetScope,
+            allowRestrictionLift: legalityParseOptions.fusionRestrictionLift,
           }) ?? null
         : officialLiveLegalityRulesObservation(
             game,
@@ -2802,6 +2879,8 @@ function bandaiSnapshotDecoder(
             {
               allowUnresolvedTargetScope:
                 legalityParseOptions.unresolvedTargetScope,
+              allowRestrictionLift:
+                legalityParseOptions.fusionRestrictionLift,
             },
           )
       : null;
@@ -4606,11 +4685,33 @@ function parseFusionWorldCardDetailV5(
   );
 }
 
+function parseFusionWorldCardDetailV6(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  // The live detail pages (verified 2026-08-12 on SB01-039, FB01-046,
+  // FS10-01 and its _p1 variant, the FB06 variant reprints, and FP-088)
+  // annotate errata'd Skills and Special Traits labels with a face-scoped
+  // "(Errata Applied)" span and nest one pinned Errata Notice link in the
+  // annotated face's data cell. The annotated text is the effective
+  // publication, so the printed-rules claim is withheld exactly where the
+  // publisher declares the applied erratum.
+  return parseFusionWorldCardDetailByContract(
+    html,
+    sourceLineage,
+    requestUrl,
+    true,
+    true,
+  );
+}
+
 function parseFusionWorldCardDetailByContract(
   html: string,
   sourceLineage: string,
   requestUrl: string,
   optionalEnergyMarkerRarity: boolean,
+  errataAnnotatedLabels = false,
 ): Record<string, unknown> {
   const request = new URL(requestUrl);
   const requestedLocator = fusionWorldFullLocatorFromUrl(request, true);
@@ -4633,7 +4734,40 @@ function parseFusionWorldCardDetailByContract(
   const rarityMatches = [...html.matchAll(
     /<div\b[^>]*\bclass=["']rarity["'][^>]*>([\s\S]*?)<\/div>/giu,
   )];
-  const cells = fusionWorldDetailCells(html);
+  const cells = fusionWorldDetailCells(html, errataAnnotatedLabels);
+  const errataAnnotatedCells = cells.filter((cell) =>
+    cell.errataFaces.length > 0 || cell.errataNotices.length > 0
+  );
+  for (const cell of errataAnnotatedCells) {
+    if (cell.label !== "Skills" && cell.label !== "Special Traits") {
+      throw new Error(
+        "Fusion World Card detail publishes an Errata Applied annotation on an unmodelled cell.",
+      );
+    }
+    const annotated = [...cell.errataFaces].sort().join(",");
+    const linked = [...new Set(cell.errataNotices.map(({ face }) => face))]
+      .sort().join(",");
+    if (
+      annotated !== linked ||
+      cell.errataNotices.length !== cell.errataFaces.length ||
+      new Set(cell.errataFaces).size !== cell.errataFaces.length
+    ) {
+      throw new Error(
+        "Fusion World Errata Applied annotation and its Errata Notice link do not match.",
+      );
+    }
+    for (const { url } of cell.errataNotices) {
+      const resolved = new URL(url, requestUrl);
+      if (
+        resolved.protocol !== "https:" ||
+        !officialUrl(sourceLineage, resolved, "document")
+      ) {
+        throw new Error(
+          "Fusion World Errata Notice link is outside registered authority.",
+        );
+      }
+    }
+  }
   const cellFor = (label: string) =>
     cells.find((cell) =>
       cell.label.localeCompare(label, undefined, { sensitivity: "accent" }) ===
@@ -4652,6 +4786,18 @@ function parseFusionWorldCardDetailByContract(
   }
   const normalizedType = cardType.toLowerCase().replace(/\s+/gu, "_");
   const leader = normalizedType === "leader";
+  if (
+    !leader &&
+    errataAnnotatedCells.some((cell) =>
+      cell.errataFaces.some((face) => face !== "front")
+    )
+  ) {
+    // Single-faced Cards publish exactly one face; the live annotation
+    // always scopes it as the front.
+    throw new Error(
+      "Fusion World Errata Applied annotation names a face this Card does not publish.",
+    );
+  }
   const energyMarkerWithoutRarity = optionalEnergyMarkerRarity &&
     normalizedType === "energy_marker";
   if (energyMarkerWithoutRarity && rarityMatches.length !== 0) {
@@ -4790,6 +4936,21 @@ function parseFusionWorldCardDetailByContract(
     imageEvidence.map(({ role }) => role),
     null,
   );
+  // The face whose displayed Skills text carries the publisher's errata
+  // annotation publishes its effective text. `rules` always reads the front
+  // (or single) face, so the printed-rules claim is withheld exactly when
+  // that face is annotated; a Leader whose back face alone is annotated
+  // keeps its exact front-face printed claim.
+  const printedRulesErrataApplied = skillsCell.errataFaces.includes("front");
+  const errataApplied = errataAnnotatedCells.flatMap((cell) =>
+    cell.errataNotices.map(({ face, url }) => ({
+      cell: cell.label,
+      face,
+      notice_url: new URL(url, requestUrl).href,
+    }))
+  ).sort((left, right) =>
+    `${left.cell}:${left.face}`.localeCompare(`${right.cell}:${right.face}`)
+  );
   const detail = {
     path: requestedLocator,
     number: cardNumber,
@@ -4812,7 +4973,7 @@ function parseFusionWorldCardDetailByContract(
       attributes: {},
     },
     treatment: null,
-    printed_rules: rules,
+    printed_rules: printedRulesErrataApplied ? null : rules,
     variant: identity.variant,
     artwork_fingerprint: artworkFingerprint,
     printed_fields_digest: `printed-material:${
@@ -4842,6 +5003,7 @@ function parseFusionWorldCardDetailByContract(
         htmlText(cell.shared ?? `${cell.front ?? ""} ${cell.back ?? ""}`),
       ]),
     ),
+    ...(errataApplied.length === 0 ? {} : { errata_applied: errataApplied }),
   };
   return attachRawSurfaceEvidenceV1(
     observation,
@@ -4861,16 +5023,34 @@ function parseFusionWorldCardDetailByContract(
       "Special Traits",
       "Skills",
       "Where to get it",
+      ...(errataApplied.length === 0 ? [] : ["errata_applied"]),
     ],
   );
 }
 
-function fusionWorldDetailCells(html: string): {
+// The exact live publisher annotation and notice-link shapes verified on
+// 2026-08-12: the Skills / Special Traits label carries a face-scoped
+// "(Errata Applied)" span, and the annotated face's data cell nests one
+// pinned "Errata Notice" publication link (the href is unquoted in the
+// live markup).
+const fusionErrataAnnotationPattern =
+  /<span class="is-(front|back)"> \(Errata Applied\)<\/span>/gu;
+const fusionErrataNoticePattern =
+  /\s*<div class="cardNotesBtnCol"><a class="cardNotesBtn" href=(\S+) target="_blank" rel="noopener noreferrer">Errata Notice<\/a><\/div>/gu;
+
+type FusionWorldDetailCell = {
   label: string;
   shared: string | null;
   front: string | null;
   back: string | null;
-}[] {
+  errataFaces: ("front" | "back")[];
+  errataNotices: { face: "front" | "back"; url: string }[];
+};
+
+function fusionWorldDetailCells(
+  html: string,
+  errataAnnotatedLabels = false,
+): FusionWorldDetailCell[] {
   const cellStarts = [...html.matchAll(
     /<div\b[^>]*\bclass=["'][^"']*\bcardDataCell\b[^"']*["'][^>]*>/giu,
   )].map((match) => match.index);
@@ -4878,16 +5058,47 @@ function fusionWorldDetailCells(html: string): {
     /<div\b[^>]*\bclass=["'][^"']*\binformationCol\b[^"']*["'][^>]*>/iu,
   );
   return cellStarts.map((start, index) => {
-    const chunk = html.slice(
+    const rawChunk = html.slice(
       start,
       cellStarts[index + 1] ?? (boundary >= 0 ? boundary : html.length),
     );
+    const errataFaces: ("front" | "back")[] = [];
+    const errataNotices: { face: "front" | "back"; url: string }[] = [];
+    let chunk = rawChunk;
+    if (errataAnnotatedLabels) {
+      for (const notice of rawChunk.matchAll(fusionErrataNoticePattern)) {
+        const openings = [...rawChunk.slice(0, notice.index).matchAll(
+          /<div\b[^>]*\bclass=["']([^"']*\bdata\b[^"']*)["'][^>]*>/giu,
+        )];
+        const classes = openings.at(-1)?.[1]?.split(/\s+/u) ?? [];
+        if (openings.length === 0) {
+          throw new Error(
+            "Fusion World Errata Notice link is outside a Card data cell.",
+          );
+        }
+        errataNotices.push({
+          face: classes.includes("is-back") ? "back" : "front",
+          url: decodeHtmlText(notice[1]!),
+        });
+      }
+      chunk = rawChunk.replace(fusionErrataNoticePattern, "");
+    }
+    const labelHtml = requiredHtmlMatch(
+      chunk,
+      /<h6\b[^>]*>([\s\S]*?)<\/h6>/iu,
+      "Fusion World Card data label",
+    )[1]!;
+    if (errataAnnotatedLabels) {
+      for (const annotation of labelHtml.matchAll(
+        fusionErrataAnnotationPattern,
+      )) {
+        errataFaces.push(annotation[1]! as "front" | "back");
+      }
+    }
     const label = htmlText(
-      requiredHtmlMatch(
-        chunk,
-        /<h6\b[^>]*>([\s\S]*?)<\/h6>/iu,
-        "Fusion World Card data label",
-      )[1]!,
+      errataAnnotatedLabels
+        ? labelHtml.replace(fusionErrataAnnotationPattern, "")
+        : labelHtml,
     );
     let shared: string | null = null;
     let front: string | null = null;
@@ -4900,7 +5111,14 @@ function fusionWorldDetailCells(html: string): {
       else if (classes.includes("is-back")) back = value[2]!;
       else if (shared === null) shared = value[2]!;
     }
-    return { label, shared: shared ?? front, front, back };
+    return {
+      label,
+      shared: shared ?? front,
+      front,
+      back,
+      errataFaces,
+      errataNotices,
+    };
   });
 }
 
@@ -5787,11 +6005,45 @@ function parseBandaiProductDetailV2(
   return parseBandaiProductDetailFrozenV1(html, sourceLineage, requestUrl);
 }
 
+function parseBandaiProductDetailV4(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown> {
+  // The live Fusion World product pages (verified 2026-08-12 on
+  // products/01_477.html) publish season-precision Releases such as
+  // "Winter, 2026"; the frozen V3 vocabulary keeps failing closed on them.
+  return parseBandaiProductDetailByContract(
+    html,
+    format,
+    sourceLineage,
+    requestUrl,
+    true,
+  );
+}
+
 function parseBandaiProductDetailV3(
   html: string,
   format: DiscoveryFormat,
   sourceLineage: string,
   requestUrl: string,
+): Record<string, unknown> {
+  return parseBandaiProductDetailByContract(
+    html,
+    format,
+    sourceLineage,
+    requestUrl,
+    false,
+  );
+}
+
+function parseBandaiProductDetailByContract(
+  html: string,
+  format: DiscoveryFormat,
+  sourceLineage: string,
+  requestUrl: string,
+  seasonPrecisionReleases: boolean,
 ): Record<string, unknown> {
   const pairs = htmlLabelPairs(html);
   const field = (...names: string[]): string | null =>
@@ -5838,7 +6090,9 @@ function parseBandaiProductDetailV3(
   const releases = new Map<string, Record<string, unknown>[]>();
   if (releaseDateText !== null) {
     const releaseEvidence = liveOfficialReleaseDateEvidence(releaseDateText);
-    const date = normalizedOfficialReleaseDate(releaseEvidence.date);
+    const date = normalizedOfficialReleaseDate(releaseEvidence.date, {
+      seasons: seasonPrecisionReleases,
+    });
     releases.set(productMapKey(product), [{
       event_key: productEventKey("product-release", product),
       region: releaseEvidence.region ??
@@ -6207,6 +6461,7 @@ function parseBandaiSurfaceCoverageV2(
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete = false,
   restructured = false,
+  liveShapes = false,
 ): ParsedBandaiSurface {
   return parseBandaiSurfaceCoverageByContract(
     html,
@@ -6217,6 +6472,7 @@ function parseBandaiSurfaceCoverageV2(
     acceptPublisherDeclaredEmpty,
     catalogueComplete,
     restructured,
+    liveShapes,
   );
 }
 
@@ -6453,6 +6709,7 @@ function parseBandaiSurfaceCoverageByContract(
   acceptPublisherDeclaredEmpty: boolean,
   catalogueComplete: boolean,
   restructured = false,
+  liveShapes = false,
 ): ParsedBandaiSurface {
   const text = htmlText(html);
   const restructuredFusionLeafSurface = restructured &&
@@ -6588,8 +6845,16 @@ function parseBandaiSurfaceCoverageByContract(
       `Official Source ${surface} has no structural publication entries.`,
     );
   }
+  const fusionLiveProductSurface = liveShapes &&
+    catalogueComplete &&
+    format === "fusion-world" &&
+    (surface === "products" || surface === "releases");
   if (catalogueComplete && format === "fusion-world" && surface === "products") {
-    requireFusionWorldHtmlProductStatusCoverage(html, url);
+    if (liveShapes) {
+      requireFusionWorldLiveProductStatusCoverage(html);
+    } else {
+      requireFusionWorldHtmlProductStatusCoverage(html, url);
+    }
   }
   const labelPairs = htmlLabelPairs(html);
   const parsedPublicationCount =
@@ -6604,8 +6869,9 @@ function parseBandaiSurfaceCoverageByContract(
     declaredCount ?? String(parsedPublicationCount),
     10,
   );
-  const productIndexObservations =
-    surface === "products" || surface === "releases"
+  const productIndexObservations = fusionLiveProductSurface
+    ? parseFusionWorldLiveProductIndex(html, sourceLineage, url)
+    : surface === "products" || surface === "releases"
       ? parseBandaiProductIndex(html, url)
       : [];
   return {
@@ -6715,6 +6981,188 @@ function requireFusionWorldHtmlProductStatusCoverage(
       `Fusion World Product status tabs are incomplete; missing tabs: ${missingTabs.join(", ") || "none"}; unexpected: ${[...new Set(unexpected)].join(", ") || "none"}.`,
     );
   }
+}
+
+// The live Fusion World Product listing (verified byte-identically on
+// 2026-08-12 against the retained hub capture): the AVAILABLE NOW and
+// COMING SOON statuses publish as anchored sections with exact anchor-list
+// tabs instead of the status-attributed markup the frozen generations
+// modelled.
+const fusionLiveProductSections = [
+  { id: "available", heading: "AVAILABLE NOW", status: "released" },
+  { id: "comingsoon", heading: "COMING SOON", status: "announced" },
+] as const;
+
+function requireFusionWorldLiveProductStatusCoverage(html: string): void {
+  const sections = [...html.matchAll(
+    /<section class="contentsColInner ([a-z-]+)Col" id="([a-z-]+)">/gu,
+  )].map((match) => ({ classId: match[1]!, id: match[2]! }));
+  const anchors = [...html.matchAll(
+    /<li class="ankerListItem"><a href="#([a-z-]+)">([^<]+)<\/a><\/li>/gu,
+  )].map((match) => ({ id: match[1]!, label: decodeHtmlText(match[2]!) }));
+  const missing = fusionLiveProductSections.filter((expected) =>
+    sections.filter(({ classId, id }) =>
+        classId === expected.id && id === expected.id
+      ).length !== 1 ||
+    anchors.filter(({ id, label }) =>
+        id === expected.id && label === expected.heading
+      ).length !== 1 ||
+    !html.includes(
+      `<section class="contentsColInner ${expected.id}Col" id="${expected.id}">`,
+    )
+  ).map(({ id }) => id);
+  const expectedIds = new Set<string>(
+    fusionLiveProductSections.map(({ id }) => id),
+  );
+  const unexpected = [
+    ...sections.flatMap(({ classId, id }) =>
+      expectedIds.has(id) && classId === id ? [] : [id]
+    ),
+    ...anchors.flatMap(({ id }) => expectedIds.has(id) ? [] : [id]),
+  ];
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(
+      `Fusion World Product status sections are incomplete; missing: ${
+        missing.join(", ") || "none"
+      }; unexpected: ${[...new Set(unexpected)].join(", ") || "none"}.`,
+    );
+  }
+}
+
+function parseFusionWorldLiveProductIndex(
+  html: string,
+  sourceLineage: string,
+  requestUrl: string,
+): Record<string, unknown>[] {
+  type LiveProductEntry =
+    | {
+        product: { code: string | null; title: string };
+        status: "released" | "announced";
+        date: { precision: string; value: string | null };
+      }
+    | {
+        non_card_context: {
+          key: string;
+          kind: "other";
+          label: string;
+          evidence_category: "explicit";
+        };
+      };
+  const entries: LiveProductEntry[] = [];
+  for (const expected of fusionLiveProductSections) {
+    // The products-surface coverage check is the fail-closed wall proving
+    // both status sections; the index reads whichever sections the parsed
+    // surface publishes.
+    const section = html.match(
+      new RegExp(
+        `<section class="contentsColInner ${expected.id}Col" id="${expected.id}">([\\s\\S]*?)</section>`,
+        "u",
+      ),
+    )?.[1];
+    if (section === undefined) continue;
+    for (const item of section.matchAll(
+      /<li class="prpductListItem cardCol">([\s\S]*?)<\/li>/gu,
+    )) {
+      const body = item[1]!;
+      const href = requiredHtmlMatch(
+        body,
+        /<a href="([^"]+)" class="cardLink">/u,
+        "Fusion World Product listing link",
+      )[1]!;
+      const resolved = new URL(decodeHtmlText(href), requestUrl);
+      if (
+        resolved.protocol !== "https:" ||
+        !officialUrl(sourceLineage, resolved, "document")
+      ) {
+        throw new Error(
+          "Fusion World Product listing link is outside registered authority.",
+        );
+      }
+      const title = htmlText(requiredHtmlMatch(
+        body,
+        /<h3 class="cardText">([\s\S]*?)<\/h3>/u,
+        "Fusion World Product listing title",
+      )[1]!);
+      if (title.length === 0) {
+        throw new Error(
+          "Fusion World Product listing entry is missing its title.",
+        );
+      }
+      const info = [...body.matchAll(
+        /<dt class="cardInfoTit">([\s\S]*?)<\/dt>\s*<dd class="cardInfoTxt">([\s\S]*?)<\/dd>/gu,
+      )].map((match) => ({
+        label: htmlText(match[1]!),
+        value: htmlText(match[2]!),
+      }));
+      const unknownLabel = info.find(({ label }) =>
+        label !== "RELEASE" && label !== "MSRP"
+      );
+      const release = info.filter(({ label }) => label === "RELEASE");
+      if (unknownLabel !== undefined || release.length !== 1) {
+        throw new Error(
+          "Fusion World Product listing entry publishes an unmodelled field.",
+        );
+      }
+      const nonCardClassification = nonCardProductClassificationV2(
+        `${resolved.pathname} ${title}`,
+      );
+      if (nonCardClassification !== null) {
+        entries.push({
+          non_card_context: {
+            key: `non-card:${nonCardClassification}:${
+              title.normalize("NFC").trim().toLocaleLowerCase()
+            }`,
+            kind: "other",
+            label: nonCardClassification,
+            evidence_category: "explicit",
+          },
+        });
+        continue;
+      }
+      const date = normalizedOfficialReleaseDate(
+        liveOfficialReleaseDateText(release[0]!.value),
+        { seasons: true },
+      );
+      entries.push({
+        product: { code: liveOfficialProductCode(title), title },
+        status: expected.status,
+        date,
+      });
+    }
+  }
+  return [
+    ...new Map(entries.map((entry) => [
+      "product" in entry
+        ? `product:${productMapKey(entry.product)}`
+        : `context:${entry.non_card_context.key}`,
+      entry,
+    ])).values(),
+  ].map((entry) => {
+    if ("non_card_context" in entry) {
+      return {
+        completeness: completeObservation(),
+        product_release_catalogue: {
+          products: [],
+          distribution_contexts: [entry.non_card_context],
+          relationships: [],
+        },
+      };
+    }
+    const releases = new Map<string, Record<string, unknown>[]>();
+    releases.set(productMapKey(entry.product), [{
+      event_key: productEventKey("product-release", entry.product),
+      region: "unknown",
+      precision: entry.date.precision,
+      date: entry.date.value,
+      status: entry.status,
+    }]);
+    return productOnlyObservation(
+      entry.product,
+      releases,
+      { revision: "captured-by-policy-surface", entries: [] },
+      { revision: "captured-by-policy-surface", entries: [] },
+    );
+  });
 }
 
 function parseBandaiProductIndex(

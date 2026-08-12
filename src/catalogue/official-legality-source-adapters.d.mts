@@ -1,5 +1,6 @@
 export type OfficialLegalityParseOptions = Readonly<{
   allowUnresolvedTargetScope?: boolean;
+  allowRestrictionLift?: boolean;
 }>;
 export const openPredicateUnresolvedReason: string;
 export function officialLegalityRulesObservation(

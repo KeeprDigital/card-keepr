@@ -1,10 +1,11 @@
 export type OfficialReleaseDate = {
-  precision: "day" | "month" | "quarter" | "year" | "unknown";
+  precision: "day" | "month" | "quarter" | "season" | "year" | "unknown";
   value: string | null;
 };
 
 export function normalizedOfficialReleaseDate(
   value: string,
+  options?: { seasons?: boolean },
 ): OfficialReleaseDate;
 
 export function normalizedOfficialReleaseStatus(

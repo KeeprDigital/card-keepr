@@ -158,6 +158,12 @@ export type OfficialLegalityParseOptions = Readonly<{
    * versions keep rejecting the dimension and the compound wording.
    */
   allowUnresolvedTargetScope?: boolean;
+  /**
+   * Enabled only by the fusion-world-en@8 generation: accepts the exact
+   * recognized restriction-lift policy wording as an effective-dated
+   * `eligible` rule. Earlier adapter versions keep rejecting the wording.
+   */
+  allowRestrictionLift?: boolean;
 }>;
 
 export function officialLegalityRulesObservation(
@@ -435,6 +441,7 @@ function exactLegalityRule(
     wording,
     allowKnownPolicyWithUnresolvedInterval,
     options.allowUnresolvedTargetScope === true,
+    options.allowRestrictionLift === true,
   );
   if (region !== regionForLineage(sourceLineage)) {
     throw new Error(
@@ -551,9 +558,26 @@ function exactEffect(
   wording: string,
   allowKnownPolicyWithUnresolvedInterval: boolean,
   allowUnresolvedTargetScope = false,
+  allowRestrictionLift = false,
 ): Record<string, unknown> {
   switch (directive) {
     case "eligible":
+      if (
+        allowRestrictionLift &&
+        restrictionLiftPolicyPattern.test(wording) &&
+        isExactRestrictionLiftPolicy(
+          wording,
+          requiredTextArray(
+            entry[fields.cards],
+            "Official Legality Card numbers",
+            false,
+          ),
+        )
+      ) {
+        // The exactly recognized publisher lift: the named Card returns to
+        // the game's default copy rule from the rule's effective date.
+        return { type: "eligible" };
+      }
       assertNoAdditionalStructuredSemantics("eligible", wording, [
         copyLimitSemantics,
         combinationSemantics,
@@ -824,6 +848,25 @@ export const openPredicateUnresolvedReason =
 
 const openPredicatePolicyPattern =
   /^All combinations of cards that match the above description "a Unit card that is Lv\.2 with cost 1, 2 AP, and 2 HP, and without effects" are included as banned pairs, and no more than four copies of one card matching this description can be used in a deck\.(?:\n[A-Z0-9-]+ [^\n]+)+$/u;
+
+/**
+ * The exact Bandai Fusion World restriction-lift wording (news/01_399.html,
+ * verified live 2026-08-12): the named Card is removed from the restricted
+ * list, returning it to the default copy rule from the stated change date.
+ */
+const restrictionLiftPolicyPattern =
+  /^Card Removed from the Restricted List\n[A-Z]{1,6}\d{0,4}-\d{1,4} [^\n]+\nTherefore, its Restricted status will be lifted\.$/u;
+
+function isExactRestrictionLiftPolicy(
+  wording: string,
+  cardNumbers: readonly string[],
+): boolean {
+  if (!restrictionLiftPolicyPattern.test(wording)) return false;
+  const wordingCards = wordingCardNumbers(wording);
+  return wordingCards.length === 1 &&
+    cardNumbers.length === 1 &&
+    wordingCards[0] === cardNumbers[0];
+}
 
 function isExactPolicyWithUnresolvedTargetScope(
   wording: string,

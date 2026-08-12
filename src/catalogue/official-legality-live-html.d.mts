@@ -1,5 +1,6 @@
 export type LiveLegalityParseOptions = Readonly<{
   unresolvedTargetScope?: boolean;
+  fusionRestrictionLift?: boolean;
 }>;
 export function liveOfficialLegalityDocument(
   game: "one-piece" | "fusion-world" | "digimon" | "gundam",

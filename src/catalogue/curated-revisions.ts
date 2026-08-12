@@ -1862,11 +1862,15 @@ const sharedCuratableFieldSchemas: Readonly<Record<string, JsonSchema>> = {
     additionalProperties: false,
     required: ["precision", "value"],
     properties: {
-      precision: { enum: ["day", "month", "quarter", "year", "unknown", null] },
+      precision: {
+        enum: ["day", "month", "quarter", "season", "year", "unknown", null],
+      },
       value: nullableNonEmptyTextSchema,
     },
   },
-  "release:/date/precision": { enum: ["day", "month", "quarter", "year", "unknown", null] },
+  "release:/date/precision": {
+    enum: ["day", "month", "quarter", "season", "year", "unknown", null],
+  },
   "release:/date/value": nullableNonEmptyTextSchema,
   "release:/status": { enum: ["announced", "released", null] },
   "distribution_context:/kind": { enum: ["product", "tournament_pack", "winner_prize", "promotion", "other"] },
@@ -2021,6 +2025,7 @@ function validCompleteCuratedEntity(
       day: /^\d{4}-\d{2}-\d{2}$/,
       month: /^\d{4}-\d{2}$/,
       quarter: /^\d{4}-Q[1-4]$/,
+      season: /^\d{4}-(?:spring|summer|autumn|winter)$/,
       year: /^\d{4}$/,
     };
     if (precision === "unknown") return value === null;

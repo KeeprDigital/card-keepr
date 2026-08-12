@@ -13,10 +13,37 @@ const monthNumbers = new Map([
   ["december", "12"],
 ]);
 
-export function normalizedOfficialReleaseDate(value) {
+const seasonNames = new Map([
+  ["spring", "spring"],
+  ["summer", "summer"],
+  ["autumn", "autumn"],
+  ["fall", "autumn"],
+  ["winter", "winter"],
+]);
+
+// The 2026-08 live Fusion World pages publish season-precision Releases
+// ("Winter, 2026") and comma-separated display months ("September, 2025").
+// Only the fusion-world-en@8 generation opts into this vocabulary; earlier
+// registered parser contracts keep failing closed on it.
+export function normalizedOfficialReleaseDate(value, options = {}) {
   const normalized = value.normalize("NFC").trim();
   if (officialReleaseDateNeedsSchemaReview(normalized)) {
     return { precision: "unknown", value: null };
+  }
+  if (options.seasons === true) {
+    const seasonMatch = normalized.match(/^([A-Za-z]+),?\s+(\d{4})$/u);
+    const season = seasonMatch === null
+      ? undefined
+      : seasonNames.get(seasonMatch[1].toLocaleLowerCase());
+    if (season !== undefined) {
+      return { precision: "season", value: `${seasonMatch[2]}-${season}` };
+    }
+    const commaMonth = seasonMatch === null
+      ? undefined
+      : monthNumbers.get(seasonMatch[1].toLocaleLowerCase());
+    if (commaMonth !== undefined) {
+      return { precision: "month", value: `${seasonMatch[2]}-${commaMonth}` };
+    }
   }
   if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
     assertCalendarDay(normalized);

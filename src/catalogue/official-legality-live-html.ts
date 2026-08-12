@@ -13,6 +13,14 @@ export type LiveLegalityParseOptions = Readonly<{
    * dimension, instead of failing closed.
    */
   unresolvedTargetScope?: boolean;
+  /**
+   * Enabled only by the fusion-world-en@8 generation: the pinned
+   * legality-history publication (news/01_399.html) announces one exact
+   * restriction lift with an exact TCG change date, which parses into one
+   * effective-dated eligible rule. Earlier generations keep failing closed
+   * on the publication.
+   */
+  fusionRestrictionLift?: boolean;
 }>;
 
 export function liveOfficialLegalityDocument(
@@ -70,6 +78,20 @@ export function liveOfficialLegalityDocument(
   if (
     game === "fusion-world" &&
     sourceLineage === "fusion-world-en" &&
+    (surface === "detail" || surface === "legality-history") &&
+    options.fusionRestrictionLift === true &&
+    new URL(requestUrl).href ===
+      "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
+    /<title>Announcement Regarding Cards That Will be Banned or Restricted from March 2026 \| Dragon Ball Super Card Game Fusion World - Official Web Site<\/title>/u.test(html)
+  ) {
+    return {
+      surface: "legality-history",
+      document: fusionWorldHistoryRestrictionLift(html),
+    };
+  }
+  if (
+    game === "fusion-world" &&
+    sourceLineage === "fusion-world-en" &&
     surface === "legality-history" &&
     new URL(requestUrl).href ===
       "https://www.dbs-cardgame.com/fw/en/news/01_399.html" &&
@@ -122,6 +144,87 @@ function fusionWorldPublisherDeclaresExactEmptyHistory(html: string): boolean {
   return /\bBANDAI\b[\s\S]*\bRULE\b[\s\S]*\bRESTRICTION\b/iu.test(title) &&
     /^\s*<p>0 records<\/p>\s*<article data-publication-empty="true">No published entries\.<\/article>\s*$/u
       .test(main);
+}
+
+// The pinned Fusion World legality-history publication (verified live on
+// 2026-08-12): one Card leaves the restricted list with an exact TCG change
+// date, and the DIGITAL version ties its change to a game update instead of
+// a calendar date. The TCG rule parses as one effective-dated eligible rule;
+// the digital sentence is retained through the full-consumption check and
+// asserts no organized-play scope this catalogue models.
+function fusionWorldHistoryRestrictionLift(
+  html: string,
+): Record<string, unknown> {
+  if (
+    !/<time class="time" datetime="2026-03-09">March 09, 2026<\/time>\s*<span class="txt">Announcement Regarding Cards That Will be Banned or Restricted from March 2026<\/span>/u.test(html)
+  ) {
+    throw new Error("Fusion World history policy identity is unavailable.");
+  }
+  const article = requiredCapture(
+    html,
+    /<article class="articleCol">([\s\S]*?)<\/article>/u,
+    "Fusion World history policy article",
+  );
+  assertNoUnconsumedPolicyConditions(article);
+  const changeDate = exactHumanDate(requiredCapture(
+    article,
+    /<p class="xxSmallTitle">TCG Ver\. Change Date<\/p>[\s\S]*?<p>([^<]+)<\/p>/u,
+    "Fusion World TCG change date",
+  ));
+  const liftPattern =
+    /<h4>Card Removed from the Restricted List<\/h4>[\s\S]*?<h6>(([A-Z]{1,6}\d{0,4}-\d{1,4}) [^<]+)<\/h6>/u;
+  const liftedLabel = decodedText(requiredCapture(
+    article,
+    liftPattern,
+    "Fusion World lifted restriction",
+  ));
+  const liftedNumber = requiredCapture(
+    article,
+    liftPattern,
+    "Fusion World lifted restriction Card number",
+    2,
+  );
+  const liftWording = "Therefore, its Restricted status will be lifted.";
+  const visibleText = normalizedVisiblePolicyText(article);
+  const expectedVisibleText = [
+    "Regarding Banned/Restricted Cards",
+    'In this game a deck used in a tournament is generally permitted up to 4 copies of a card with the same card number. Cards that are exceptions and to be limited are noted in the " Banned/Restricted Cards " section.',
+    'This is divided into " Banned Cards " and " Restricted Cards ". For cards that are designated as " Banned Cards "no copies of the card are permitted in the deck. For cards designated as " Restricted Cards " only 1 copy of the card is permitted in the deck.',
+    "Cards with different artwork but the same card number are considered identical to the listed card and follow the same restriction.",
+    "Change Date",
+    "TCG Ver. Change Date",
+    "March 14, 2026",
+    "DIGITAL Ver. Change Date",
+    "Same day as Ver.11.0.0 update",
+    "For details regarding changes to the Digital Version, please check the in game notices.",
+    "Card Removed from the Restricted List",
+    liftedLabel,
+    `“${liftedLabel}” was previously designated as a Restricted Card due to its stability and explosive development potential, which often led to one sided games that ignored healthy player interaction.`,
+    `In the environment following DUAL EVOLUTION [FB09], this card remains powerful but is no longer considered to exceed the expected balance parameters. ${liftWording}`,
+    "For detailed rules and gameplay information, please refer to the Rules page.",
+    "Our operations and development teams will continue to monitor the metagame closely and will discuss and implement adjustments as needed to maintain a healthy play environment.",
+    "We greatly appreciate your continued support of DRAGON BALL SUPER CARD GAME FUSION WORLD.",
+    "— DRAGON BALL SUPER CARD GAME FUSION WORLD Operations & Development Teams",
+  ].join(" ");
+  if (visibleText !== expectedVisibleText) {
+    throw new Error(
+      "Fusion World history policy contains unconsumed prose or structure.",
+    );
+  }
+  const entries = [{
+    market: "EN-OCEANIA",
+    play_format: "standard",
+    tier: null,
+    active_on: changeDate,
+    expires_on: null,
+    unresolved_scope: null,
+    directive: "eligible",
+    rule_ref: `01_399-${liftedNumber}`,
+    notice:
+      `Card Removed from the Restricted List\n${liftedLabel}\n${liftWording}`,
+    cards: [liftedNumber],
+  }];
+  return { entries, declared_record_count: entries.length };
 }
 
 function gundamCurrentRestrictions(
