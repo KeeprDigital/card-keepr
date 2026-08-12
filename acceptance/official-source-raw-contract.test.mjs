@@ -173,24 +173,17 @@ const productionAdapterVersions = sourceAdapterRegistrations
   )
   .map(({ adapterVersion }) => adapterVersion);
 
-// The optional-card-field generation only advanced the two lineages whose
-// live pages published a field the frozen parsers required: Fusion World's
-// Energy Markers omit rarity and Digimon's live Q&A nests Related Cards.
-// One Piece and both Gundam locales stay on their previous actives.
+// The optional-card-field generation advanced the two lineages whose live
+// pages published a field the frozen parsers required (Fusion World's
+// Energy Markers omit rarity, Digimon's live Q&A nests Related Cards),
+// while the issue-58 unresolved-scope generation advanced One Piece and
+// both Gundam locales.
 const expectedProductionAdapterVersions = [
-<<<<<<< HEAD
   "digimon-en@7",
   "fusion-world-en@7",
-  "gundam-en-asia@6",
-  "gundam-en-us@6",
-  "one-piece-en@5",
-=======
-  "digimon-en@6",
-  "fusion-world-en@6",
   "gundam-en-asia@7",
   "gundam-en-us@7",
   "one-piece-en@6",
->>>>>>> origin/main
 ];
 
 const optionalCardFieldAdapterVersions = [
@@ -846,13 +839,9 @@ function retainedOfficialSourceFixture(slug) {
     `${slug} retained byte range changed`,
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
-<<<<<<< HEAD
   // 08-02 to 08-07 captured the restructured generation; 08-11 captured the
   // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A).
-  assert.match(metadata.retrieved_at, /^2026-08-(0[2-7]|11)T/u);
-=======
   assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|11)T/u);
->>>>>>> origin/main
   return { bytes, metadata };
 }
 
@@ -1875,38 +1864,15 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.gameProfileVersion,
       `${adapter.supportedGame}@1`,
     );
-<<<<<<< HEAD
-    // Only the optional-card-field lineages carry the @6 parser contract; the
-    // lineages that kept their previous active still declare @5.
-    const expectedParserContract = optionalCardFieldAdapterVersions.includes(
-        adapter.adapterVersion,
-      )
-      ? 6
-      : 5;
+    // After the issue-58 and optional-card-field generations, every active
+    // lineage declares the @6 parser contract.
     assert.equal(
       adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@${expectedParserContract}`,
+      `${adapter.sourceLineage}-restructured-complete-catalogue@6`,
     );
     assert.match(
       adapter.parserContract,
-      new RegExp(
-        `-restructured-complete-catalogue@${expectedParserContract}$`,
-        "u",
-      ),
-=======
-    const parserContractMajor =
-      adapter.sourceLineage === "fusion-world-en" ||
-        adapter.sourceLineage === "digimon-en"
-        ? 5
-        : 6;
-    assert.equal(
-      adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@${parserContractMajor}`,
-    );
-    assert.match(
-      adapter.parserContract,
-      /-restructured-complete-catalogue@[56]$/u,
->>>>>>> origin/main
+      /-restructured-complete-catalogue@6$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -8304,19 +8270,11 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // The issue-58 generation keeps the live product-detail contracts unchanged
 // for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
-<<<<<<< HEAD
-  "one-piece-en": "one-piece-en@5",
+  "one-piece-en": "one-piece-en@6",
   "fusion-world-en": "fusion-world-en@7",
   "digimon-en": "digimon-en@7",
-  "gundam-en-asia": "gundam-en-asia@6",
-  "gundam-en-us": "gundam-en-us@6",
-=======
-  "one-piece-en": "one-piece-en@6",
-  "fusion-world-en": "fusion-world-en@6",
-  "digimon-en": "digimon-en@6",
   "gundam-en-asia": "gundam-en-asia@7",
   "gundam-en-us": "gundam-en-us@7",
->>>>>>> origin/main
 };
 
 const frozenProductAdapterVersions = {
