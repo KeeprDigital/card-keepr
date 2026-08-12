@@ -12,8 +12,8 @@ credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
 - `one-piece-en@5`
-- `fusion-world-en@6`
-- `digimon-en@6`
+- `fusion-world-en@7`
+- `digimon-en@7`
 - `gundam-en-asia@6`
 - `gundam-en-us@6`
 
@@ -33,12 +33,12 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-`one-piece-en@4`/`@5`, `digimon-en@5`/`@6`, and the Gundam `@5`/`@6`
-versions explicitly
+`one-piece-en@4`/`@5`, `digimon-en@5` through `@7`, and the Gundam
+`@5`/`@6` versions explicitly
 own both Catalogue and standalone Official Errata reconciliation areas. A
 successful run records freshness independently for `cards-and-printings` and
 `errata`; neither area is inferred from the adapter version string.
-`fusion-world-en@5` and `fusion-world-en@6` own Catalogue coverage only: the
+`fusion-world-en@5` and later own Catalogue coverage only: the
 live Fusion World EN site no longer publishes a Card Errata surface (its
 former `/fw/en/rules/errata-card/` URL returns 404 and is retained as
 negative evidence).
@@ -53,8 +53,8 @@ Card-associated publications are promoted to Products; accessory pages
 by URL vocabulary or promoted to Products.
 
 The earlier production versions (`one-piece-en@1` through `one-piece-en@4`,
-`fusion-world-en@2` through `fusion-world-en@5`,
-`digimon-en@2` through `digimon-en@5`, and the Gundam `@2` through `@5`
+`fusion-world-en@2` through `fusion-world-en@6`,
+`digimon-en@2` through `digimon-en@6`, and the Gundam `@2` through `@5`
 versions) remain
 registered with their original parser contracts only for explicit reprocessing
 of retained Source Snapshots. New production Evidence Plans accept only the
@@ -211,5 +211,7 @@ Piece, Fusion World, Digimon, and Gundam adapters after
 `0008_legality_rules.sql`, and
 `0022_restructured_source_adapters.sql` registers the 2026-08
 site-restructure generation, and `0023_live_product_source_adapters.sql`
-registers the live product-detail generation. Apply all of them before
-deploying either Worker.
+registers the live product-detail generation, and
+`0024_optional_card_field_source_adapters.sql` registers the
+optional-card-field generation. Apply all of them before deploying either
+Worker.
