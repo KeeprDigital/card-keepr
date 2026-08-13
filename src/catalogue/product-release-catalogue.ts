@@ -9,6 +9,7 @@ export type ReleasePrecision =
   | "day"
   | "month"
   | "quarter"
+  | "season"
   | "year"
   | "unknown";
 
@@ -1252,6 +1253,7 @@ function releasePrecision(value: unknown): ReleasePrecision {
     value !== "day" &&
     value !== "month" &&
     value !== "quarter" &&
+    value !== "season" &&
     value !== "year" &&
     value !== "unknown"
   ) {
@@ -1276,6 +1278,7 @@ function assertDatePrecision(
     day: /^\d{4}-\d{2}-\d{2}$/,
     month: /^\d{4}-\d{2}$/,
     quarter: /^\d{4}-Q[1-4]$/,
+    season: /^\d{4}-(?:spring|summer|autumn|winter)$/,
     year: /^\d{4}$/,
   };
   if (

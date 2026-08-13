@@ -180,7 +180,7 @@ const productionAdapterVersions = sourceAdapterRegistrations
 // both Gundam locales.
 const expectedProductionAdapterVersions = [
   "digimon-en@7",
-  "fusion-world-en@7",
+  "fusion-world-en@8",
   "gundam-en-asia@7",
   "gundam-en-us@7",
   "one-piece-en@6",
@@ -840,8 +840,11 @@ function retainedOfficialSourceFixture(slug) {
   );
   assert.match(metadata.full_body_sha256, /^[0-9a-f]{64}$/u);
   // 08-02 to 08-07 captured the restructured generation; 08-11 captured the
-  // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A).
-  assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|11)T/u);
+  // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A);
+  // 08-12 captured the fusion live-shape pages (anchored product status
+  // sections, errata-annotated details, the season Release, and the
+  // legality-history restriction lift).
+  assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|1[12])T/u);
   return { bytes, metadata };
 }
 
@@ -1856,7 +1859,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.reconciliationAreas,
       // Fusion World's restructured contract owns no errata surface, so it
       // reconciles catalogue evidence alone.
-      adapter.adapterVersion === "fusion-world-en@7"
+      adapter.adapterVersion === "fusion-world-en@8"
         ? ["catalogue"]
         : ["catalogue", "errata"],
     );
@@ -1865,14 +1868,17 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       `${adapter.supportedGame}@1`,
     );
     // After the issue-58 and optional-card-field generations, every active
-    // lineage declares the @6 parser contract.
+    // lineage declares the @6 parser contract; the fusion live-shape
+    // generation advances its lineage to @7.
     assert.equal(
       adapter.parserContract,
-      `${adapter.sourceLineage}-restructured-complete-catalogue@6`,
+      adapter.sourceLineage === "fusion-world-en"
+        ? "fusion-world-en-restructured-complete-catalogue@7"
+        : `${adapter.sourceLineage}-restructured-complete-catalogue@6`,
     );
     assert.match(
       adapter.parserContract,
-      /-restructured-complete-catalogue@6$/u,
+      /-restructured-complete-catalogue@[67]$/u,
     );
     assert.equal(typeof adapter.parseBytes, "function");
     assert.deepEqual(
@@ -6305,9 +6311,10 @@ test("every production lineage preserves its synthetic publisher-contract exampl
 });
 
 test("live Product indexes emit typed Products, classifications, and announced releases", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  // The status-attributed product index is the frozen @7 contract; the
+  // live-shape generation reads the anchored status sections, locked by the
+  // retained-fixture tests above.
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
@@ -6380,9 +6387,9 @@ test("live Product indexes emit typed Products, classifications, and announced r
 });
 
 test("a Product URL slug cannot become a canonical official code but its authoritative name is retained", () => {
-  const adapter = registeredProductionAdapters().find(
-    ({ sourceLineage }) => sourceLineage === "fusion-world-en",
-  );
+  // Frozen @7 product-index contract; the live-shape generation derives
+  // codes from bracketed listing titles instead of publisher attributes.
+  const adapter = requiredSourceAdapter("fusion-world-en@7");
   const observations = adapter.parseBytes(
     new TextEncoder().encode(`
       <html><title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
@@ -7817,6 +7824,441 @@ test("the frozen Fusion World generation still fails on the Energy Marker that b
   );
 });
 
+// The five exact live shapes retained by the 2026-08-12 full-scale Fusion
+// World run on fusion-world-en@7. Every fixture below carries the exact live
+// bytes; the live-shape generation parses them and the frozen generation
+// keeps its exact production failures on the same bytes.
+const fusionLiveShapeAdapter = () => requiredSourceAdapter("fusion-world-en@8");
+const fusionFrozenShapeAdapter = () =>
+  requiredSourceAdapter("fusion-world-en@7");
+
+const fusionProductListingFixtures = [
+  {
+    slug: "fusion-world-en-products-hub",
+    url: "https://www.dbs-cardgame.com/fw/en/products/",
+    requestId: "fusion-world-en:products",
+  },
+  {
+    slug: "fusion-world-en-products-page2",
+    url: "https://www.dbs-cardgame.com/fw/en/products/?page=2",
+    requestId: `fusion-world-en:listing:${restructuredStageDigest}`,
+  },
+  {
+    slug: "fusion-world-en-products-starter-tag",
+    url: "https://www.dbs-cardgame.com/fw/en/products/?tags=StarterDecks&page=1",
+    requestId: `fusion-world-en:listing:${restructuredStageDigest}`,
+  },
+];
+
+test("the live Fusion World product listing parses its anchored status sections", () => {
+  const adapter = fusionLiveShapeAdapter();
+  for (const { slug, url, requestId } of fusionProductListingFixtures) {
+    const { fixture, observations } = retainedRestructuredParse(
+      adapter,
+      slug,
+      { url, requestId },
+    );
+    assert.equal(fixture.metadata.source_url, url);
+    const products = observations.flatMap(
+      (observation) => observation.product_release_catalogue?.products ?? [],
+    );
+    const accessories = observations.flatMap((observation) =>
+      observation.product_release_catalogue?.distribution_contexts ?? []
+    );
+    assert.ok(products.length > 0, `${slug} yields Product observations`);
+    assert.ok(
+      accessories.every(({ kind, label }) =>
+        kind === "other" && label === "accessory"
+      ),
+      `${slug} retains accessory listings as explicit non-card contexts`,
+    );
+    assert.ok(
+      products.every(({ releases }) =>
+        releases.length === 1 && releases[0].date !== undefined
+      ),
+      `${slug} retains exactly one published Release per Product`,
+    );
+  }
+
+  const hub = retainedRestructuredParse(
+    adapter,
+    "fusion-world-en-products-hub",
+    fusionProductListingFixtures[0],
+  );
+  const hubProducts = hub.observations.flatMap(
+    (observation) => observation.product_release_catalogue?.products ?? [],
+  );
+  const winter = hubProducts.find(
+    ({ official_code }) => official_code === "FB12",
+  );
+  assert.deepEqual(winter.releases[0], {
+    event_key: "product-release:FB12",
+    region: "unknown",
+    date: { precision: "season", value: "2026-winter" },
+    status: "announced",
+  });
+  const released = hubProducts.find(
+    ({ official_code }) => official_code === "FB10",
+  );
+  assert.deepEqual(released.releases[0], {
+    event_key: "product-release:FB10",
+    region: "unknown",
+    date: { precision: "day", value: "2026-06-12" },
+    status: "released",
+  });
+});
+
+test("the live product listing still fails closed when a status section disappears", () => {
+  const adapter = fusionLiveShapeAdapter();
+  const fixture = retainedOfficialSourceFixture("fusion-world-en-products-hub");
+  const html = fixture.bytes.toString("utf8");
+  const from = '<section class="contentsColInner comingsoonCol" id="comingsoon">';
+  assert.ok(html.includes(from));
+  assert.throws(
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(html.replace(
+          from,
+          '<section class="contentsColInner retiredCol" id="retired">',
+        )),
+        {
+          mediaType: fixture.metadata.content_type,
+          url: fixture.metadata.source_url,
+          requestId: "fusion-world-en:products",
+        },
+      ),
+    exactMessage(
+      "Fusion World Product status sections are incomplete; missing: comingsoon; unexpected: retired.",
+    ),
+  );
+});
+
+test("the frozen generation still fails the retained live product listing bytes", () => {
+  const frozen = fusionFrozenShapeAdapter();
+  for (const { slug, url, requestId } of fusionProductListingFixtures) {
+    const fixture = retainedOfficialSourceFixture(slug);
+    assert.throws(
+      () =>
+        frozen.parseBytes(fixture.bytes, {
+          mediaType: fixture.metadata.content_type,
+          url,
+          requestId,
+        }),
+      exactMessage(
+        "Fusion World Product status tabs are incomplete; missing tabs: available, coming-soon; unexpected: none.",
+      ),
+      slug,
+    );
+  }
+});
+
+const fusionErrataDetailFixtures = [
+  {
+    slug: "fusion-world-en-card-detail-errata-skills",
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=SB01-039",
+    frozenMessage: "Fusion World Card detail is missing its Skills.",
+  },
+  {
+    slug: "fusion-world-en-card-detail-errata-leader",
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01",
+    frozenMessage: "Fusion World Card detail is missing its Skills.",
+  },
+  {
+    slug: "fusion-world-en-card-detail-errata-leader-p1",
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01&p=_p1",
+    frozenMessage: "Fusion World Card detail is missing its Skills.",
+  },
+  {
+    slug: "fusion-world-en-card-detail-errata-traits",
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-088",
+    frozenMessage: "Fusion World Card detail is missing its Special Traits.",
+  },
+];
+
+function retainedFusionErrataDetail(slug, url) {
+  const { fixture, observations } = retainedRestructuredParse(
+    fusionLiveShapeAdapter(),
+    slug,
+    { url, requestId: `fusion-world-en:detail:${restructuredStageDigest}` },
+  );
+  assert.equal(fixture.metadata.source_url, url);
+  assert.equal(observations.length, 1, slug);
+  return observations[0];
+}
+
+test("live Fusion World details retain the publisher's Errata Applied annotations", () => {
+  const battle = retainedFusionErrataDetail(
+    "fusion-world-en-card-detail-errata-skills",
+    fusionErrataDetailFixtures[0].url,
+  );
+  assert.equal(battle.identity_evidence.locator, "SB01-039");
+  assert.equal(battle.card.game_data.attributes.card_type, "battle");
+  // The displayed Skills text is the effective post-erratum publication, so
+  // the printed-rules claim is withheld exactly where the publisher
+  // declares the applied erratum.
+  assert.ok(battle.card.effective_rules_text.length > 0);
+  assert.equal(battle.printing.printed_rules_text, null);
+  assert.deepEqual(
+    battle.source_sidecar.raw.official_surfaces[0].document.errata_applied,
+    [{
+      cell: "Skills",
+      face: "front",
+      notice_url: "https://www.dbs-cardgame.com/fw/en/news/02_22.html",
+    }],
+  );
+
+  const leader = retainedFusionErrataDetail(
+    "fusion-world-en-card-detail-errata-leader",
+    fusionErrataDetailFixtures[1].url,
+  );
+  assert.equal(leader.identity_evidence.locator, "FS10-01");
+  assert.equal(leader.card.game_data.attributes.card_type, "leader");
+  // Only the back face is annotated: the front-face printed claim stands,
+  // the back face publishes its effective text, and the pinned Errata
+  // Notice navigation never leaks into the rules text.
+  assert.ok(leader.printing.printed_rules_text.length > 0);
+  const backFace = leader.card.game_data.attributes.leader_faces.find(
+    ({ role }) => role === "back",
+  );
+  assert.ok(backFace.skills.length > 0);
+  assert.ok(!backFace.skills.includes("Errata Notice"));
+  assert.deepEqual(
+    leader.source_sidecar.raw.official_surfaces[0].document.errata_applied,
+    [{
+      cell: "Skills",
+      face: "back",
+      notice_url: "https://www.dbs-cardgame.com/fw/en/news/02_22.html",
+    }],
+  );
+
+  const variant = retainedFusionErrataDetail(
+    "fusion-world-en-card-detail-errata-leader-p1",
+    fusionErrataDetailFixtures[2].url,
+  );
+  assert.equal(variant.identity_evidence.locator, "FS10-01_p1");
+  assert.equal(variant.identity_evidence.variant_key, "_p1");
+  assert.equal(
+    variant.card.official_identity.value,
+    leader.card.official_identity.value,
+  );
+
+  const traits = retainedFusionErrataDetail(
+    "fusion-world-en-card-detail-errata-traits",
+    fusionErrataDetailFixtures[3].url,
+  );
+  assert.equal(traits.identity_evidence.locator, "FP-088");
+  assert.deepEqual(traits.card.game_data.attributes.traits, [
+    "Saiyan",
+    "Earthling",
+    "Master's Teachings",
+  ]);
+  // The annotation names Special Traits only, so the exact printed Skills
+  // claim is retained.
+  assert.ok(traits.printing.printed_rules_text.length > 0);
+  assert.deepEqual(
+    traits.source_sidecar.raw.official_surfaces[0].document.errata_applied,
+    [{
+      cell: "Special Traits",
+      face: "front",
+      notice_url: "https://www.dbs-cardgame.com/fw/en/news/02_22.html",
+    }],
+  );
+});
+
+test("Errata Applied annotations remain fail-closed outside their proven shape", () => {
+  const adapter = fusionLiveShapeAdapter();
+  const mutatedDetail = (slug, url, from, to) => {
+    const fixture = retainedOfficialSourceFixture(slug);
+    const html = fixture.bytes.toString("utf8");
+    assert.ok(html.includes(from), `${slug} must retain ${from}`);
+    return () =>
+      adapter.parseBytes(new TextEncoder().encode(html.replace(from, to)), {
+        mediaType: fixture.metadata.content_type,
+        url,
+        requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+      });
+  };
+
+  assert.throws(
+    mutatedDetail(
+      "fusion-world-en-card-detail-errata-skills",
+      fusionErrataDetailFixtures[0].url,
+      "<h6>Combo power</h6>",
+      '<h6>Combo power<span class="is-front"> (Errata Applied)</span></h6>',
+    ),
+    exactMessage(
+      "Fusion World Card detail publishes an Errata Applied annotation on an unmodelled cell.",
+    ),
+    "an annotation on a numeric cell is an unmodelled page",
+  );
+  assert.throws(
+    mutatedDetail(
+      "fusion-world-en-card-detail-errata-skills",
+      fusionErrataDetailFixtures[0].url,
+      '<span class="is-front"> (Errata Applied)</span>',
+      '<span class="is-back"> (Errata Applied)</span>',
+    ),
+    exactMessage(
+      "Fusion World Errata Applied annotation and its Errata Notice link do not match.",
+    ),
+    "a single-faced Card annotated on a face without a notice link fails closed",
+  );
+  assert.throws(
+    mutatedDetail(
+      "fusion-world-en-card-detail-errata-skills",
+      fusionErrataDetailFixtures[0].url,
+      '<div class="cardNotesBtnCol"><a class="cardNotesBtn" href=https://www.dbs-cardgame.com/fw/en/news/02_22.html target="_blank" rel="noopener noreferrer">Errata Notice</a></div>',
+      "",
+    ),
+    exactMessage(
+      "Fusion World Errata Applied annotation and its Errata Notice link do not match.",
+    ),
+    "an annotation without its pinned Errata Notice link fails closed",
+  );
+});
+
+test("the frozen generation still fails the retained errata-annotated detail bytes", () => {
+  const frozen = fusionFrozenShapeAdapter();
+  for (const { slug, url, frozenMessage } of fusionErrataDetailFixtures) {
+    const fixture = retainedOfficialSourceFixture(slug);
+    assert.throws(
+      () =>
+        frozen.parseBytes(fixture.bytes, {
+          mediaType: fixture.metadata.content_type,
+          url,
+          requestId: `fusion-world-en:detail:${restructuredStageDigest}`,
+        }),
+      exactMessage(frozenMessage),
+      slug,
+    );
+  }
+});
+
+const fusionWinterProductUrl =
+  "https://www.dbs-cardgame.com/fw/en/products/01_477.html";
+
+test("the live Fusion World product detail retains its season-precision Release", () => {
+  const adapter = fusionLiveShapeAdapter();
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "fusion-world-en-product-winter-booster",
+    {
+      url: fusionWinterProductUrl,
+      requestId: `fusion-world-en:product_detail:${restructuredStageDigest}`,
+    },
+  );
+  assert.equal(fixture.metadata.source_url, fusionWinterProductUrl);
+  assert.equal(observations.length, 1);
+  const [product] = observations[0].product_release_catalogue.products;
+  assert.equal(product.official_code, "FB12");
+  assert.equal(product.name, "BOOSTER PACK -REACH THE GOD- [FB12]");
+  assert.deepEqual(product.releases, [{
+    event_key: "product-release:FB12",
+    region: "unknown",
+    date: { precision: "season", value: "2026-winter" },
+    status: null,
+  }]);
+});
+
+test("the frozen generation still fails the retained season-precision Release bytes", () => {
+  const frozen = fusionFrozenShapeAdapter();
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-product-winter-booster",
+  );
+  assert.throws(
+    () =>
+      frozen.parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: fusionWinterProductUrl,
+        requestId:
+          `fusion-world-en:product_detail:${restructuredStageDigest}`,
+      }),
+    exactMessage("Unrecognized official Release date: Winter, 2026."),
+  );
+});
+
+const fusionLegalityHistoryUrl =
+  "https://www.dbs-cardgame.com/fw/en/news/01_399.html";
+
+test("the live Fusion World legality history parses its exact restriction lift", () => {
+  const adapter = fusionLiveShapeAdapter();
+  assert.equal(
+    adapter.requestUrlForSurface("legality-history"),
+    fusionLegalityHistoryUrl,
+  );
+  const { fixture, observations } = retainedRestructuredParse(
+    adapter,
+    "fusion-world-en-legality-history-news",
+    {
+      url: fusionLegalityHistoryUrl,
+      requestId: "fusion-world-en:legality-history",
+    },
+  );
+  assert.equal(fixture.metadata.source_url, fusionLegalityHistoryUrl);
+  assert.equal(observations.length, 1);
+  const [rule] = observations[0].legality_rules;
+  assert.deepEqual(rule, {
+    id: "01_399-FB02-013",
+    game: "fusion-world",
+    region: "EN-OCEANIA",
+    format: "standard",
+    event_tier: null,
+    effective_from: "2026-03-14",
+    effective_until: null,
+    unresolved_scope: null,
+    card_numbers: ["FB02-013"],
+    official_wording:
+      "Card Removed from the Restricted List\nFB02-013 Kefla\nTherefore, its Restricted status will be lifted.",
+    effect: { type: "eligible" },
+    representable: true,
+  });
+});
+
+test("the legality-history lift remains fail-closed on any drifted prose", () => {
+  const adapter = fusionLiveShapeAdapter();
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-legality-history-news",
+  );
+  const html = fixture.bytes.toString("utf8");
+  const from = "please refer to the Rules page.";
+  assert.ok(html.includes(from));
+  assert.throws(
+    () =>
+      adapter.parseBytes(
+        new TextEncoder().encode(html.replace(
+          from,
+          "please refer to the Rules page. Further cards may be restricted.",
+        )),
+        {
+          mediaType: fixture.metadata.content_type,
+          url: fusionLegalityHistoryUrl,
+          requestId: "fusion-world-en:legality-history",
+        },
+      ),
+    exactMessage(
+      "Fusion World history policy contains unconsumed prose or structure.",
+    ),
+  );
+});
+
+test("the frozen generation still fails the retained legality-history bytes", () => {
+  const frozen = fusionFrozenShapeAdapter();
+  const fixture = retainedOfficialSourceFixture(
+    "fusion-world-en-legality-history-news",
+  );
+  assert.throws(
+    () =>
+      frozen.parseBytes(fixture.bytes, {
+        mediaType: fixture.metadata.content_type,
+        url: fusionLegalityHistoryUrl,
+        requestId: "fusion-world-en:legality-history",
+      }),
+    exactMessage(
+      "Official Source legality-history retained non-empty Legality data without an exact, complete Legality Rule parser.",
+    ),
+  );
+});
+
 test("the restructured Digimon card search derives one listing per publisher category", () => {
   const adapter = requiredSourceAdapter("digimon-en@5");
   const url = adapter.requestUrlForSurface("card-list");
@@ -8271,7 +8713,7 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
   "one-piece-en": "one-piece-en@6",
-  "fusion-world-en": "fusion-world-en@7",
+  "fusion-world-en": "fusion-world-en@8",
   "digimon-en": "digimon-en@7",
   "gundam-en-asia": "gundam-en-asia@7",
   "gundam-en-us": "gundam-en-us@7",

@@ -104,6 +104,36 @@ Fusion World run failed on `detail.php?card_no=E-148`:
   ideographic space and whose digivolution requirements join colours
   without a separator.
 
+The fusion live-shape fixtures were captured on 2026-08-12 UTC (cold, polite
+user agent, sequential requests about one second apart, no redirect
+following) after the third full-scale Fusion World run failed on five live
+page shapes (issue #55):
+
+- `fusion-world-en-products-hub.json` retains the complete live
+  `/fw/en/products/` hub (byte-identical to the bytes the failing run
+  retained), whose AVAILABLE NOW / COMING SOON statuses publish as anchored
+  `id="available"` / `id="comingsoon"` sections with an exact anchor-list
+  navigation instead of the status-attributed markup the frozen generation
+  required. `fusion-world-en-products-page2.json` and
+  `fusion-world-en-products-starter-tag.json` retain a paginated page and a
+  tag-filtered leaf proving the same section shape across the discovered
+  listing URLs.
+- `fusion-world-en-card-detail-errata-skills.json` (SB01-039) retains a
+  Battle Card whose Skills label carries the publisher's face-scoped
+  `(Errata Applied)` annotation with a pinned Errata Notice link nested in
+  the annotated data cell; `fusion-world-en-card-detail-errata-leader.json`
+  and its `_p1` variant (FS10-01) retain the Leader whose back face alone is
+  annotated; `fusion-world-en-card-detail-errata-traits.json` (FP-088)
+  retains the promo whose Special Traits label is annotated.
+- `fusion-world-en-product-winter-booster.json` retains
+  `/fw/en/products/01_477.html`, whose Release Date publishes the
+  season-precision "Winter, 2026".
+- `fusion-world-en-legality-history-news.json` retains the pinned
+  legality-history publication `/fw/en/news/01_399.html`: one exact
+  restriction lift (FB02-013) with a stated TCG change date of
+  March 14, 2026 and a digital-version change tied to a game update rather
+  than a calendar date.
+
 The live policy expectations intentionally follow the published scope rather
 than capture time or article recency:
 

@@ -1338,20 +1338,36 @@ export default defineConfig({
               url.pathname === "/fw/en/products/" &&
               artworkMarker === "card-keepr-product-authority"
             ) {
+              // The fusion-world-en@8 live listing shape: anchored status
+              // sections whose entries carry bracketed identities and one
+              // published RELEASE row.
               return new Response(
                 `<html>
                   <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <nav>
-                    <a data-product-status="available" href="#available">Available</a>
-                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
-                  </nav>
-                  <article class="booster" data-product-status="available">
-                    <a data-product-code="FB-AUTHORITY"
-                       href="/fw/en/products/booster/fb-authority/">
-                      Conflicting Product Listing
-                    </a>
-                  </article>
-                  <article data-product-status="coming-soon">No coming-soon Product.</article>
+                  <div class="contentsHead">
+                    <ul class="ankerList">
+                      <li class="ankerListItem"><a href="#available">AVAILABLE NOW</a></li>
+                      <li class="ankerListItem"><a href="#comingsoon">COMING SOON</a></li>
+                    </ul>
+                  </div>
+                  <section class="contentsColInner availableCol" id="available">
+                    <h2 class="listTit">AVAILABLE NOW</h2>
+                    <ul class="prpductList">
+                      <li class="prpductListItem cardCol">
+                        <a href="/fw/en/products/booster/fb-authority/" class="cardLink">
+                          <h3 class="cardText">Conflicting Product Listing [FB-AUTHORITY]</h3>
+                          <dl class="cardInfoBox">
+                            <dt class="cardInfoTit">RELEASE</dt>
+                            <dd class="cardInfoTxt">June 12, 2026</dd>
+                          </dl>
+                        </a>
+                      </li>
+                    </ul>
+                  </section>
+                  <section class="contentsColInner comingsoonCol" id="comingsoon">
+                    <h2 class="listTit">COMING SOON</h2>
+                    <ul class="prpductList"></ul>
+                  </section>
                 </html>`,
                 {
                   headers: {
@@ -1362,8 +1378,8 @@ export default defineConfig({
               );
             }
             if (
-              url.hostname === "www.dbs-cardgame.com" &&
-              url.pathname === "/fw/en/products/" &&
+              url.hostname === "world.digimoncard.com" &&
+              url.pathname === "/products/" &&
               artworkMarker?.startsWith("card-keepr-product-identity-")
             ) {
               const state = artworkMarker.slice(
@@ -1374,18 +1390,13 @@ export default defineConfig({
                 : "FB-STABLE";
               return new Response(
                 `<html>
-                  <title>BANDAI DRAGON BALL CARD PRODUCTS RELEASE</title>
-                  <nav>
-                    <a data-product-status="available" href="#available">Available</a>
-                    <a data-product-status="coming-soon" href="#coming-soon">Coming Soon</a>
-                  </nav>
-                  <article class="booster" data-product-status="available">
+                  <title>BANDAI DIGIMON CARD PRODUCTS RELEASE</title>
+                  <article class="booster">
                     <a ${code === "" ? "" : `data-product-code="${code}"`}
-                       href="/fw/en/products/booster/fb-stable-${state}/">
+                       href="/products/booster/fb-stable-${state}/">
                       Stable Product Identity
                     </a>
                   </article>
-                  <article data-product-status="coming-soon">No coming-soon Product.</article>
                 </html>`,
                 {
                   headers: {
@@ -1413,9 +1424,9 @@ export default defineConfig({
               );
             }
             if (
-              url.hostname === "www.dbs-cardgame.com" &&
+              url.hostname === "world.digimoncard.com" &&
               url.pathname.startsWith(
-                "/fw/en/products/booster/fb-stable-",
+                "/products/booster/fb-stable-",
               )
             ) {
               const state = url.pathname.match(
@@ -1426,8 +1437,8 @@ export default defineConfig({
               // the code-less refresh matches exactly one published Product.
               return new Response(
                 `<html>
-                  <title>Linked Detail Publication [FB-DETAIL] | Dragon Ball Super Card Game Fusion World - Official Web Site</title>
-                  <h1>DRAGON BALL SUPER CARD GAME FUSION WORLD</h1>
+                  <title>Linked Detail Publication [FB-DETAIL] | Digimon Card Game</title>
+                  <h1>DIGIMON CARD GAME</h1>
                 </html>`,
                 {
                   headers: {

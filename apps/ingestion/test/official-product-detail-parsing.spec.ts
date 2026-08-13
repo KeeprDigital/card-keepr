@@ -25,7 +25,7 @@ async function parseFusionWorldCardDetail(
   html: string,
   locator: string,
 ): Promise<Record<string, unknown>> {
-  const adapter = requiredSourceAdapter("fusion-world-en@7");
+  const adapter = requiredSourceAdapter("fusion-world-en@8");
   const observations = await adapter.parseBytes!(
     new TextEncoder().encode(html),
     {
