@@ -270,6 +270,16 @@ const liveShapeAdapterVersions = new Map([
   ["fusion-world-en", "fusion-world-en@8"],
 ]);
 
+// Issue #63: request capacity is an immutable policy of each exact Source
+// Adapter Version. The production Fusion World graph legitimately exceeds
+// the historical 5,000-request bound, so the active registration advances to
+// fusion-world-en@9, which parses byte-for-byte like fusion-world-en@8 and
+// differs only in the larger request capacity declared in
+// src/catalogue/source-adapters.ts and the source_adapter_versions seed.
+const requestCapacityAdapterVersions = new Map([
+  ["fusion-world-en", "fusion-world-en@9"],
+]);
+
 // Issue #58: the Gundam adapters pin their legality surface to the live
 // news/01_279.html publication and represent its compound open-predicate
 // policy as explicit unresolved rules (including one with an unresolved
@@ -685,6 +695,37 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           ? [{
               ...definition,
               adapterVersion: liveShapeAdapterVersions.get(
+                definition.sourceLineage,
+              )!,
+              requiredSurfaces: restructuredRequiredSurfaces(
+                definition.sourceLineage,
+                definition.requiredSurfaces,
+              ),
+              urls: restructuredBandaiSurfaceUrls(
+                definition.sourceLineage,
+                activeBandaiSurfaceUrls(
+                  definition.sourceLineage,
+                  definition.urls,
+                  false,
+                ),
+              ),
+              parserContract:
+                `${definition.sourceLineage}-restructured-complete-catalogue@7`,
+              legalityAware: true,
+              expandedOnePieceCatalogue: false,
+              catalogueComplete:
+                definition.sourceLineage === "fusion-world-en",
+              completeDigimonCatalogue: false,
+              restructured: true,
+              restructuredProducts: true,
+              optionalCardFields: true,
+              liveShapes: true,
+            }]
+          : []),
+        ...(requestCapacityAdapterVersions.has(definition.sourceLineage)
+          ? [{
+              ...definition,
+              adapterVersion: requestCapacityAdapterVersions.get(
                 definition.sourceLineage,
               )!,
               requiredSurfaces: restructuredRequiredSurfaces(

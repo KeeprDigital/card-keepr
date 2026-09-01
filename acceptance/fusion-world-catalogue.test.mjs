@@ -47,7 +47,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
         plans: [{
           supported_game: "fusion-world",
           source_lineage: "fusion-world-en",
-          adapter_version: "fusion-world-en@8",
+          adapter_version: "fusion-world-en@9",
           requests: [{
             id: "fusion-world-en:discovery",
             url:
@@ -194,7 +194,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "legality-rules",
       "products-and-releases",
     ],
-    "fusion-world-en@8 publishes no errata area: the live site retired it",
+    "fusion-world-en@9 publishes no errata area: the live site retired it",
   );
 
   const [
@@ -280,7 +280,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     energyMarkerPrinting.locator_evidence.current.map(({ locator }) => locator),
     ["E-99"],
   );
-  // fusion-world-en@8 carries an Energy Marker's absent rarity all the way to
+  // fusion-world-en@9 carries an Energy Marker's absent rarity all the way to
   // the export as a null pair, rather than inventing a placeholder or failing;
   // every other family still publishes one.
   assert.deepEqual(energyMarkerPrinting.rarity, { raw: null, normalized: null });
@@ -375,7 +375,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   assert.ok(distributionContexts.some(
     ({ product_id }) => product_id === comingSoonProduct.id,
   ));
-  // fusion-world-en@8 detail pages carry no publisher product code, so a
+  // fusion-world-en@9 detail pages carry no publisher product code, so a
   // Printing binds to its "Where to get it" source bucket instead of a
   // Product; only the publisher's own Product surfaces relate to Products.
   assert.deepEqual(

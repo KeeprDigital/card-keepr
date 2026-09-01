@@ -11,7 +11,10 @@ import {
   type StartEvidenceRunRequest,
   validateEvidencePlans,
 } from "./source-evidence-model";
-import type { SourceAdapterRegistration } from "./source-adapters";
+import {
+  globalEmergencySourceRequestCeiling,
+  type SourceAdapterRegistration,
+} from "./source-adapters";
 import { evidenceRunIdentity } from "./idempotent-identities";
 import {
   curatedRevisionSetForRun,
@@ -467,6 +470,66 @@ export function evidencePlanForRequest(
   return matches[0]!;
 }
 
+// Request capacity is the immutable policy of the exact Source Adapter
+// Version owning an Evidence Plan, counted per Source Lineage over unique
+// Source Request identities across initial, dynamically discovered, and
+// collection-plan roles. The registered column is clamped by the global
+// emergency ceiling so no database row can authorize unbounded discovery.
+async function adapterRequestCapacity(
+  database: D1Database,
+  adapterVersion: string,
+): Promise<number> {
+  const registered = await database
+    .prepare(
+      `SELECT request_capacity FROM source_adapter_versions
+       WHERE adapter_version = ?`,
+    )
+    .bind(adapterVersion)
+    .first<{ request_capacity: number }>();
+  if (
+    registered === null ||
+    !Number.isSafeInteger(registered.request_capacity) ||
+    registered.request_capacity < 1
+  ) {
+    throw new Error(
+      `Source Adapter Version ${adapterVersion} has no registered request capacity.`,
+    );
+  }
+  return Math.min(
+    registered.request_capacity,
+    globalEmergencySourceRequestCeiling,
+  );
+}
+
+function requestCapacityProblem(): AdministrationProblem {
+  return new AdministrationProblem(
+    422,
+    "source_discovery_too_large",
+    "The Official Source request graph exceeds the Source Adapter Version request capacity.",
+  );
+}
+
+// Unique Source Request identities the Source Lineage would hold if the
+// proposed batch were admitted: retained initial-plan and lineage-prefixed
+// rows plus proposed identities not yet retained. Binds: ?1 run id,
+// ?2 lineage LIKE pattern, ?3 initial-plan request-id JSON, ?4 proposed
+// request-id JSON.
+const admittedLineageCountSql = `(
+  SELECT COUNT(*) FROM source_requests
+  WHERE ingestion_run_id = ?1
+    AND (
+      request_id LIKE ?2
+      OR request_id IN (SELECT value FROM json_each(?3))
+    )
+) + (
+  SELECT COUNT(*) FROM json_each(?4) AS proposed
+  WHERE NOT EXISTS (
+    SELECT 1 FROM source_requests
+    WHERE ingestion_run_id = ?1
+      AND request_id = proposed.value
+  )
+)`;
+
 export async function appendDiscoveredEvidenceRequests(
   database: D1Database,
   run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
@@ -523,6 +586,11 @@ export async function appendDiscoveredEvidenceRequests(
     });
   }
   const normalized = [...normalizedById.values()];
+  const proposedRequestIds = JSON.stringify(normalized.map(({ id }) => id));
+  const requestCapacity = await adapterRequestCapacity(
+    database,
+    plan.adapter_version,
+  );
   const planRequestIds = JSON.stringify(plan.requests.map(({ id }) => id));
   const lineageRequestPattern = `${plan.source_lineage}:%`;
   const count = await database
@@ -545,46 +613,33 @@ export async function appendDiscoveredEvidenceRequests(
          WHERE ingestion_run_id = ?
            AND request_id IN (SELECT value FROM json_each(?))`,
       )
-      .bind(run.id, JSON.stringify(normalized.map(({ id }) => id)))
+      .bind(run.id, proposedRequestIds)
       .first<{ count: number }>();
   if (
     count === null || existing === null ||
-    count.count + normalized.length - existing.count > 5_000
+    count.count + normalized.length - existing.count > requestCapacity
   ) {
-    throw new AdministrationProblem(
-      422,
-      "source_discovery_too_large",
-      "The Official Source request graph exceeds its bounded request limit.",
-    );
+    throw requestCapacityProblem();
   }
   if (normalized.length === 0) return [];
   const chunks = chunked(normalized, 100);
   const statements: D1PreparedStatement[] = [
+    // Capacity admission must hold atomically inside the batch: this guard
+    // recounts under the same implicit transaction, so concurrent Workflow
+    // children cannot admit two batches that only fit individually. A CASE
+    // arm cannot RAISE outside a trigger, so an over-capacity recount
+    // deliberately selects json('source_discovery_too_large') — invalid JSON
+    // — to abort the whole batch; the catch below maps that opaque SQLite
+    // error back to the admission problem.
     database.prepare(
-      `WITH proposed AS (
-         SELECT value AS request_id FROM json_each(?)
-       )
-       SELECT CASE WHEN (
-         SELECT COUNT(*) FROM source_requests
-         WHERE ingestion_run_id = ?
-           AND (
-             request_id LIKE ?
-             OR request_id IN (SELECT value FROM json_each(?))
-           )
-       ) + (
-         SELECT COUNT(*) FROM proposed
-         WHERE NOT EXISTS (
-           SELECT 1 FROM source_requests
-           WHERE ingestion_run_id = ?
-             AND request_id = proposed.request_id
-         )
-       ) > 5000 THEN json('source_discovery_too_large') ELSE 1 END`,
+      `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
+         THEN json('source_discovery_too_large') ELSE 1 END`,
     ).bind(
-      JSON.stringify(normalized.map(({ id }) => id)),
       run.id,
       lineageRequestPattern,
       planRequestIds,
-      run.id,
+      proposedRequestIds,
+      requestCapacity,
     ),
   ];
   for (const chunk of chunks) {
@@ -655,7 +710,19 @@ export async function appendDiscoveredEvidenceRequests(
         .bind(run.id, json),
     );
   }
-  await database.batch(statements);
+  try {
+    await database.batch(statements);
+  } catch (error) {
+    throw await mappedDiscoveryAdmissionError(
+      error,
+      database,
+      run.id,
+      lineageRequestPattern,
+      planRequestIds,
+      proposedRequestIds,
+      requestCapacity,
+    );
+  }
   const retainedResults = await database.batch<EvidenceRequestRow>(
     chunks.map((chunk) =>
       database.prepare(
@@ -690,6 +757,35 @@ export async function appendDiscoveredEvidenceRequests(
     inserted.push(retained);
   }
   return inserted;
+}
+
+// Both in-batch admission guards abort by selecting json('<code>') — invalid
+// JSON — so nothing distinguishes a capacity abort from an identity-collision
+// abort in the surfaced SQLite error. Nothing was inserted, so recounting the
+// retained state recovers which guard fired: retained counts only grow
+// (deletion is trigger-blocked), so a genuine capacity abort always recounts
+// over capacity; only a collision abort racing a concurrent admission can be
+// conservatively reported as the capacity problem instead.
+async function mappedDiscoveryAdmissionError(
+  error: unknown,
+  database: D1Database,
+  runId: string,
+  lineageRequestPattern: string,
+  planRequestIds: string,
+  proposedRequestIds: string,
+  requestCapacity: number,
+): Promise<unknown> {
+  if (!/malformed JSON/iu.test(errorMessage(error))) return error;
+  const recounted = await database
+    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
+    .bind(runId, lineageRequestPattern, planRequestIds, proposedRequestIds)
+    .first<{ count: number }>();
+  if (recounted === null || recounted.count > requestCapacity) {
+    return requestCapacityProblem();
+  }
+  return new Error(
+    "Discovered Source Request identity collided with different immutable evidence.",
+  );
 }
 
 function chunked<T>(values: readonly T[], size: number): T[][] {
@@ -774,44 +870,84 @@ export async function persistOfficialSourceCollectionPlan(
     }
     return;
   }
-  await database.batch([
-    database
-      .prepare(
-        `INSERT INTO official_source_collection_plans (
-           ingestion_run_id, source_lineage,
-           discovery_observation_set_id, contract,
-           collection_plan_json, content_digest, created_at
-         ) VALUES (?, ?, ?,
-           'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
-      )
-      .bind(
-        runId,
-        discoveryPlan.source_lineage,
-        discoveryObservationSetId,
-        collectionPlanJson,
-        contentDigest,
-        new Date().toISOString(),
-      ),
-    ...discoveredRequests.map((request, index) =>
+  const requestCapacity = await adapterRequestCapacity(
+    database,
+    discoveryPlan.adapter_version,
+  );
+  const lineageRequestPattern = `${discoveryPlan.source_lineage}:%`;
+  const planRequestIds = JSON.stringify(
+    discoveryPlan.requests.map(({ id }) => id),
+  );
+  const collectionRequestIds = JSON.stringify(
+    discoveredRequests.map(({ id }) => id),
+  );
+  const admitted = await database
+    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
+    .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds)
+    .first<{ count: number }>();
+  if (admitted === null || admitted.count > requestCapacity) {
+    throw requestCapacityProblem();
+  }
+  try {
+    await database.batch([
+      // Collection-plan requests consume the same per-lineage capacity as
+      // dynamically discovered requests, admitted atomically inside the batch
+      // through the documented json('source_discovery_too_large') abort.
       database
         .prepare(
-          `INSERT INTO source_requests (
-             ingestion_run_id, request_id, sequence_number, method, url,
-             request_headers_json, representation_fingerprint, state,
-             source_snapshot_id, failure_code
-           ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL)`,
+          `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
+             THEN json('source_discovery_too_large') ELSE 1 END`,
         )
         .bind(
           runId,
-          request.id,
-          plans.flatMap((plan) => plan.requests).length +
-            planIndex * 10000 + index,
-          request.url,
-          canonicalJson(request.headers),
-          request.representation_fingerprint,
+          lineageRequestPattern,
+          planRequestIds,
+          collectionRequestIds,
+          requestCapacity,
         ),
-    ),
-  ]);
+      database
+        .prepare(
+          `INSERT INTO official_source_collection_plans (
+             ingestion_run_id, source_lineage,
+             discovery_observation_set_id, contract,
+             collection_plan_json, content_digest, created_at
+           ) VALUES (?, ?, ?,
+             'card-keepr-official-source-collection-plan@1', ?, ?, ?)`,
+        )
+        .bind(
+          runId,
+          discoveryPlan.source_lineage,
+          discoveryObservationSetId,
+          collectionPlanJson,
+          contentDigest,
+          new Date().toISOString(),
+        ),
+      ...discoveredRequests.map((request, index) =>
+        database
+          .prepare(
+            `INSERT INTO source_requests (
+               ingestion_run_id, request_id, sequence_number, method, url,
+               request_headers_json, representation_fingerprint, state,
+               source_snapshot_id, failure_code
+             ) VALUES (?, ?, ?, 'GET', ?, ?, ?, 'pending', NULL, NULL)`,
+          )
+          .bind(
+            runId,
+            request.id,
+            plans.flatMap((plan) => plan.requests).length +
+              planIndex * 10000 + index,
+            request.url,
+            canonicalJson(request.headers),
+            request.representation_fingerprint,
+          ),
+      ),
+    ]);
+  } catch (error) {
+    if (/malformed JSON/iu.test(errorMessage(error))) {
+      throw requestCapacityProblem();
+    }
+    throw error;
+  }
 }
 
 export async function requiredEvidenceRun(

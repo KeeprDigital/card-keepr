@@ -23,8 +23,8 @@ const seasonNames = new Map([
 
 // The 2026-08 live Fusion World pages publish season-precision Releases
 // ("Winter, 2026") and comma-separated display months ("September, 2025").
-// Only the fusion-world-en@8 generation opts into this vocabulary; earlier
-// registered parser contracts keep failing closed on it.
+// Only the live-shape generations (fusion-world-en@8 and later) opt into
+// this vocabulary; earlier registered parser contracts keep failing closed.
 export function normalizedOfficialReleaseDate(value, options = {}) {
   const normalized = value.normalize("NFC").trim();
   if (officialReleaseDateNeedsSchemaReview(normalized)) {

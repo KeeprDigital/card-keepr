@@ -368,7 +368,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@8",
+    adapter_version: "fusion-world-en@9",
     idempotency_key: "reconcile-production-adapter-without-coverage",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -413,7 +413,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@8",
+    adapter_version: "fusion-world-en@9",
     idempotency_key: "active-adapter-retained-reparse-source",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
@@ -435,14 +435,14 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const reparsed = await post(
     `/v1/source-snapshots/${snapshot.id}/observations`,
     {
-      adapter_version: "fusion-world-en@8",
+      adapter_version: "fusion-world-en@9",
       idempotency_key: "capturing-adapter-retained-reparse",
     },
   );
   expect(reparsed.response.status).toBe(201);
   expect(reparsed.document).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fusion-world-en@8",
+    adapter_version: "fusion-world-en@9",
   });
   const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect((await post(`/v1/ingestion-runs/${runId}/rejection`, {
