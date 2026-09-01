@@ -501,12 +501,49 @@ async function adapterRequestCapacity(
   );
 }
 
-function requestCapacityProblem(): AdministrationProblem {
-  return new AdministrationProblem(
-    422,
-    "source_discovery_too_large",
-    "The Official Source request graph exceeds the Source Adapter Version request capacity.",
-  );
+// Capacity admission rejections carry the facts a request-capacity pause
+// must persist: they are computed where admission still knows the exact
+// Source Lineage, the retained unique-identity count, and the size of the
+// rejected all-or-nothing overflow batch.
+export type RequestCapacityFacts = Readonly<{
+  source_lineage: string;
+  request_capacity: number;
+  used_capacity: number;
+  overflow_request_count: number;
+  required_capacity: number;
+}>;
+
+export class RequestCapacityProblem extends AdministrationProblem {
+  readonly capacity: RequestCapacityFacts;
+
+  constructor(capacity: RequestCapacityFacts) {
+    super(
+      422,
+      "source_discovery_too_large",
+      "The Official Source request graph exceeds the Source Adapter Version request capacity.",
+    );
+    this.capacity = capacity;
+  }
+}
+
+// The initial request capacity of an Evidence Plan is its Source Adapter
+// Version's registered policy; issue #65 introduces owner-extended capacity
+// generations, so until then every admission runs under generation 1.
+export const initialRequestCapacityGeneration = 1;
+
+function requestCapacityProblem(
+  sourceLineage: string,
+  requestCapacity: number,
+  usedCapacity: number,
+  overflowRequestCount: number,
+): RequestCapacityProblem {
+  return new RequestCapacityProblem({
+    source_lineage: sourceLineage,
+    request_capacity: requestCapacity,
+    used_capacity: usedCapacity,
+    overflow_request_count: overflowRequestCount,
+    required_capacity: usedCapacity + overflowRequestCount,
+  });
 }
 
 // Unique Source Request identities the Source Lineage would hold if the
@@ -615,11 +652,18 @@ export async function appendDiscoveredEvidenceRequests(
       )
       .bind(run.id, proposedRequestIds)
       .first<{ count: number }>();
+  const usedCapacity = count?.count ?? 0;
+  const overflowRequestCount = normalized.length - (existing?.count ?? 0);
   if (
     count === null || existing === null ||
-    count.count + normalized.length - existing.count > requestCapacity
+    usedCapacity + overflowRequestCount > requestCapacity
   ) {
-    throw requestCapacityProblem();
+    throw requestCapacityProblem(
+      plan.source_lineage,
+      requestCapacity,
+      usedCapacity,
+      overflowRequestCount,
+    );
   }
   if (normalized.length === 0) return [];
   const chunks = chunked(normalized, 100);
@@ -717,6 +761,7 @@ export async function appendDiscoveredEvidenceRequests(
       error,
       database,
       run.id,
+      plan.source_lineage,
       lineageRequestPattern,
       planRequestIds,
       proposedRequestIds,
@@ -770,22 +815,64 @@ async function mappedDiscoveryAdmissionError(
   error: unknown,
   database: D1Database,
   runId: string,
+  sourceLineage: string,
   lineageRequestPattern: string,
   planRequestIds: string,
   proposedRequestIds: string,
   requestCapacity: number,
 ): Promise<unknown> {
   if (!/malformed JSON/iu.test(errorMessage(error))) return error;
-  const recounted = await database
-    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
-    .bind(runId, lineageRequestPattern, planRequestIds, proposedRequestIds)
-    .first<{ count: number }>();
-  if (recounted === null || recounted.count > requestCapacity) {
-    return requestCapacityProblem();
+  const recounted = await admittedLineageCapacityFacts(
+    database,
+    runId,
+    lineageRequestPattern,
+    planRequestIds,
+    proposedRequestIds,
+  );
+  if (recounted === null || recounted.admitted > requestCapacity) {
+    return requestCapacityProblem(
+      sourceLineage,
+      requestCapacity,
+      (recounted?.admitted ?? 0) - (recounted?.overflow ?? 0),
+      recounted?.overflow ?? 0,
+    );
   }
   return new Error(
     "Discovered Source Request identity collided with different immutable evidence.",
   );
+}
+
+// The unique Source Request identities the Source Lineage would hold if the
+// proposed batch were admitted, alongside how many proposed identities are
+// not yet retained (the all-or-nothing overflow batch size). Recounted after
+// an in-batch admission abort: nothing was inserted, so retained state still
+// reflects the rejected admission.
+async function admittedLineageCapacityFacts(
+  database: D1Database,
+  runId: string,
+  lineageRequestPattern: string,
+  planRequestIds: string,
+  proposedRequestIds: string,
+): Promise<{ admitted: number; overflow: number } | null> {
+  const [admitted, overflow] = await database.batch<{ count: number }>([
+    database
+      .prepare(`SELECT ${admittedLineageCountSql} AS count`)
+      .bind(runId, lineageRequestPattern, planRequestIds, proposedRequestIds),
+    database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM json_each(?2) AS proposed
+         WHERE NOT EXISTS (
+           SELECT 1 FROM source_requests
+           WHERE ingestion_run_id = ?1
+             AND request_id = proposed.value
+         )`,
+      )
+      .bind(runId, proposedRequestIds),
+  ]);
+  const admittedCount = admitted?.results[0]?.count;
+  const overflowCount = overflow?.results[0]?.count;
+  if (admittedCount === undefined || overflowCount === undefined) return null;
+  return { admitted: admittedCount, overflow: overflowCount };
 }
 
 function chunked<T>(values: readonly T[], size: number): T[][] {
@@ -881,12 +968,20 @@ export async function persistOfficialSourceCollectionPlan(
   const collectionRequestIds = JSON.stringify(
     discoveredRequests.map(({ id }) => id),
   );
-  const admitted = await database
-    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
-    .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds)
-    .first<{ count: number }>();
-  if (admitted === null || admitted.count > requestCapacity) {
-    throw requestCapacityProblem();
+  const admitted = await admittedLineageCapacityFacts(
+    database,
+    runId,
+    lineageRequestPattern,
+    planRequestIds,
+    collectionRequestIds,
+  );
+  if (admitted === null || admitted.admitted > requestCapacity) {
+    throw requestCapacityProblem(
+      discoveryPlan.source_lineage,
+      requestCapacity,
+      (admitted?.admitted ?? 0) - (admitted?.overflow ?? 0),
+      admitted?.overflow ?? 0,
+    );
   }
   try {
     await database.batch([
@@ -944,7 +1039,22 @@ export async function persistOfficialSourceCollectionPlan(
     ]);
   } catch (error) {
     if (/malformed JSON/iu.test(errorMessage(error))) {
-      throw requestCapacityProblem();
+      // The only in-batch guard in this admission is the capacity abort, so a
+      // malformed-JSON abort is always a capacity rejection; the recount
+      // recovers the facts under the same retained state.
+      const recounted = await admittedLineageCapacityFacts(
+        database,
+        runId,
+        lineageRequestPattern,
+        planRequestIds,
+        collectionRequestIds,
+      );
+      throw requestCapacityProblem(
+        discoveryPlan.source_lineage,
+        requestCapacity,
+        (recounted?.admitted ?? 0) - (recounted?.overflow ?? 0),
+        recounted?.overflow ?? 0,
+      );
     }
     throw error;
   }
@@ -1078,6 +1188,58 @@ export async function failActiveEvidenceRequestsForWorkflowExhaustion(
     .run();
 }
 
+// Capacity exhaustion is a circuit breaker, not proof the retained collection
+// attempt is invalid: the run pauses non-terminally, keeps the single
+// active-run reservation and its expected Catalogue Revision, and records the
+// immutable facts the owner needs to extend capacity. The parent Source
+// Request stays 'captured' so the overflow batch can be derived again from
+// its retained Source Snapshot without another Official Source fetch.
+export async function pauseEvidenceRunForRequestCapacity(
+  database: D1Database,
+  runId: string,
+  parentRequestId: string,
+  problem: RequestCapacityProblem,
+): Promise<void> {
+  const pausedAt = new Date().toISOString();
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'paused',
+             progress_json =
+               '{"completed_stages":["planning"],"current_stage":"paused"}'
+         WHERE id = ? AND state = 'collecting'`,
+      )
+      .bind(runId),
+    // Guarded and idempotent under durable Workflow step replay: the run is
+    // paused by the statement above (or already was), and one immutable pause
+    // record exists per capacity generation.
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO ingestion_run_capacity_pauses (
+           ingestion_run_id, capacity_generation, pause_reason, paused_at,
+           source_lineage, parent_request_id, request_capacity,
+           used_capacity, overflow_request_count, required_capacity
+         )
+         SELECT ?, ?, 'source_request_capacity_exhausted', ?, ?, ?, ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+         )`,
+      )
+      .bind(
+        runId,
+        initialRequestCapacityGeneration,
+        pausedAt,
+        problem.capacity.source_lineage,
+        parentRequestId,
+        problem.capacity.request_capacity,
+        problem.capacity.used_capacity,
+        problem.capacity.overflow_request_count,
+        problem.capacity.required_capacity,
+      ),
+  ]);
+}
+
 export async function finalizeEvidenceRun(
   database: D1Database,
   runId: string,
@@ -1171,7 +1333,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans, curatedSet] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -1213,6 +1375,24 @@ export async function showEvidenceRun(
         created_at: string;
       }>(),
     curatedRevisionSetForRun(database, runId),
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_capacity_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY capacity_generation DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<{
+        pause_reason: string;
+        paused_at: string;
+        source_lineage: string;
+        parent_request_id: string;
+        request_capacity: number;
+        capacity_generation: number;
+        used_capacity: number;
+        overflow_request_count: number;
+        required_capacity: number;
+      }>(),
   ]);
   const document: Record<string, unknown> = {
     id: run.id,
@@ -1242,6 +1422,19 @@ export async function showEvidenceRun(
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
+    ...(run.state !== "paused" || pause === null ? {} : {
+      pause: {
+        reason: pause.pause_reason,
+        paused_at: pause.paused_at,
+        source_lineage: pause.source_lineage,
+        parent_request_id: pause.parent_request_id,
+        request_capacity: pause.request_capacity,
+        capacity_generation: pause.capacity_generation,
+        used_capacity: pause.used_capacity,
+        overflow_request_count: pause.overflow_request_count,
+        required_capacity: pause.required_capacity,
+      },
+    }),
     ...(curatedSet === null ? {} : {
       curated_revision_ids: curatedSet.revision_ids,
       curated_revision_set_digest: curatedSet.set_digest,

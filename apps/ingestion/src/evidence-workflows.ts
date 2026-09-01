@@ -433,6 +433,16 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
     );
     let stage = 0;
     for (;;) {
+      // A paused run keeps its pending and captured Source Requests, so this
+      // shard would otherwise reload them forever; the run-state gate lets
+      // the child Workflow finish while the retained work awaits the owner.
+      const runState = await step.do(
+        `read run state stage ${stage}`,
+        deterministicDatabaseStep,
+        async () =>
+          (await requiredEvidenceRun(this.env.CATALOGUE_DB, runId)).state,
+      );
+      if (runState === "paused") break;
       const requests = await loadPendingShardRequests(
         step,
         this.env.CATALOGUE_DB,
