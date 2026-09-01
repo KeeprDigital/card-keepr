@@ -177,10 +177,12 @@ const productionAdapterVersions = sourceAdapterRegistrations
 // pages published a field the frozen parsers required (Fusion World's
 // Energy Markers omit rarity, Digimon's live Q&A nests Related Cards),
 // while the issue-58 unresolved-scope generation advanced One Piece and
-// both Gundam locales.
+// both Gundam locales. The issue-63 request-capacity generation advanced
+// Fusion World again: fusion-world-en@9 parses byte-for-byte like
+// fusion-world-en@8 and differs only in its immutable request capacity.
 const expectedProductionAdapterVersions = [
   "digimon-en@7",
-  "fusion-world-en@8",
+  "fusion-world-en@9",
   "gundam-en-asia@7",
   "gundam-en-us@7",
   "one-piece-en@6",
@@ -1859,7 +1861,7 @@ test("every production lineage owns an exact raw decoder and discovery plan", ()
       adapter.reconciliationAreas,
       // Fusion World's restructured contract owns no errata surface, so it
       // reconciles catalogue evidence alone.
-      adapter.adapterVersion === "fusion-world-en@8"
+      adapter.adapterVersion === "fusion-world-en@9"
         ? ["catalogue"]
         : ["catalogue", "errata"],
     );
@@ -7828,9 +7830,33 @@ test("the frozen Fusion World generation still fails on the Energy Marker that b
 // World run on fusion-world-en@7. Every fixture below carries the exact live
 // bytes; the live-shape generation parses them and the frozen generation
 // keeps its exact production failures on the same bytes.
-const fusionLiveShapeAdapter = () => requiredSourceAdapter("fusion-world-en@8");
+const fusionLiveShapeAdapter = () => requiredSourceAdapter("fusion-world-en@9");
 const fusionFrozenShapeAdapter = () =>
   requiredSourceAdapter("fusion-world-en@7");
+// The issue-63 request-capacity generation changed no parsing: the retained
+// fusion-world-en@8 registration must keep replaying live-shape bytes exactly
+// like the active fusion-world-en@9 registration.
+const fusionRetainedLiveShapeAdapter = () =>
+  requiredSourceAdapter("fusion-world-en@8");
+
+test("the retained fusion-world-en@8 registration replays live-shape bytes exactly like fusion-world-en@9", () => {
+  const active = fusionLiveShapeAdapter();
+  const retained = fusionRetainedLiveShapeAdapter();
+  assert.equal(retained.parserContract, active.parserContract);
+  for (const { slug, url, requestId } of fusionProductListingFixtures) {
+    const fixture = retainedOfficialSourceFixture(slug);
+    const context = {
+      mediaType: fixture.metadata.content_type,
+      url,
+      requestId,
+    };
+    assert.deepEqual(
+      retained.parseBytes(fixture.bytes, context),
+      active.parseBytes(fixture.bytes, context),
+      `${slug} must parse identically on the retained registration`,
+    );
+  }
+});
 
 const fusionProductListingFixtures = [
   {
@@ -8713,7 +8739,7 @@ test("restructured discovery stages and listing leaves fail closed on missing pu
 // for One Piece and Gundam while closing their legality walls.
 const liveProductAdapterVersions = {
   "one-piece-en": "one-piece-en@6",
-  "fusion-world-en": "fusion-world-en@8",
+  "fusion-world-en": "fusion-world-en@9",
   "digimon-en": "digimon-en@7",
   "gundam-en-asia": "gundam-en-asia@7",
   "gundam-en-us": "gundam-en-us@7",

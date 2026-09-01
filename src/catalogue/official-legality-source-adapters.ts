@@ -159,7 +159,7 @@ export type OfficialLegalityParseOptions = Readonly<{
    */
   allowUnresolvedTargetScope?: boolean;
   /**
-   * Enabled only by the fusion-world-en@8 generation: accepts the exact
+   * Enabled only by the live-shape generations (fusion-world-en@8 and later): accepts the exact
    * recognized restriction-lift policy wording as an effective-dated
    * `eligible` rule. Earlier adapter versions keep rejecting the wording.
    */

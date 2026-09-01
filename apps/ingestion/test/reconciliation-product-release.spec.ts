@@ -321,7 +321,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
   const started = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@8",
+    adapter_version: "fusion-world-en@9",
     idempotency_key: "registered-product-detail-authority",
     requests,
   });

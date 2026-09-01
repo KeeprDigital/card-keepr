@@ -5,6 +5,7 @@ import {
   parseCapturedRequest,
 } from "../../../src/catalogue/source-evidence-capture";
 import {
+  globalEmergencySourceRequestCeiling,
   installedSourceAdapterRegistrations,
 } from "../../../src/catalogue/source-adapters";
 import {
@@ -12,6 +13,7 @@ import {
 } from "../../../src/catalogue/product-release-source-adapters";
 import {
   pendingEvidenceRequests,
+  persistOfficialSourceCollectionPlan,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 import { sha256, utf8 } from "../../../src/catalogue/serialization";
@@ -234,7 +236,8 @@ test("adapter registrations stay constrained while mismatched production identit
 
   const constrained = await env.CATALOGUE_DB.prepare(
     `SELECT adapter_version, source_lineage, supported_game,
-            game_profile_version, parser_contract, adapter_origin
+            game_profile_version, parser_contract, adapter_origin,
+            request_capacity
      FROM source_adapter_versions ORDER BY adapter_version`,
   ).all<{
     adapter_version: string;
@@ -243,6 +246,7 @@ test("adapter registrations stay constrained while mismatched production identit
     game_profile_version: string;
     parser_contract: string;
     adapter_origin: string;
+    request_capacity: number;
   }>();
   expect(constrained.results).toEqual(
     installedSourceAdapterRegistrations
@@ -253,11 +257,19 @@ test("adapter registrations stay constrained while mismatched production identit
         game_profile_version: adapter.gameProfileVersion,
         parser_contract: adapter.parserContract,
         adapter_origin: adapter.origin,
+        request_capacity: adapter.requestCapacity,
       }))
       .sort((left, right) =>
         left.adapter_version.localeCompare(right.adapter_version),
       ),
   );
+  for (const adapter of installedSourceAdapterRegistrations) {
+    expect(adapter.requestCapacity).toBeGreaterThanOrEqual(1);
+    expect(adapter.requestCapacity).toBeLessThanOrEqual(
+      globalEmergencySourceRequestCeiling,
+    );
+    expect(Number.isSafeInteger(adapter.requestCapacity)).toBe(true);
+  }
 });
 
 test("a production plan cannot replace its discovery root with a raw surface", async () => {
@@ -435,7 +447,7 @@ async function retainProductionSnapshot(
        ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
          '2026-08-07T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
          'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@8', NULL)`,
+         'fusion-world-en@9', NULL)`,
     ).bind(
       snapshotId,
       runId,
@@ -459,7 +471,7 @@ test("production discovery that proves no collection surface fails its last disc
     {
       supported_game: "fusion-world",
       source_lineage: "fusion-world-en",
-      adapter_version: "fusion-world-en@8",
+      adapter_version: "fusion-world-en@9",
       idempotency_key: "official_collection_plan_empty_001",
       requests: officialSourceDiscoveryRequests("fusion-world-en"),
     },
@@ -530,3 +542,132 @@ test("production discovery that proves no collection surface fails its last disc
     count: 0,
   });
 });
+
+test("an Official Source Collection Plan beyond the adapter capacity is rejected without partial admission", async () => {
+  const created = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "fusion-world",
+      source_lineage: "fusion-world-en",
+      adapter_version: "fusion-world-en@9",
+      idempotency_key: "official_collection_plan_capacity_001",
+      requests: officialSourceDiscoveryRequests("fusion-world-en"),
+    },
+  );
+  expect(created.status).toBe(201);
+  const run = await created.json<{ id: string }>();
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("discovery root request is absent");
+  const snapshotId = await retainProductionSnapshot(
+    run.id,
+    root.request_id,
+    root.url,
+    utf8("<html>fusion discovery</html>"),
+  );
+  const observationSetId = "srcobsset_collection_capacity_001";
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_parse_operations (
+         id, source_snapshot_id, adapter_version, intent, idempotency_key,
+         observation_set_id, content_object_key, parsed_at, state,
+         content_digest, content_byte_length, observation_count
+       ) VALUES (?, ?, 'fusion-world-en@9', 'collection', ?, ?, ?,
+         '2026-08-07T00:00:02.000Z', 'finalized', 'digest', 2, 1)`,
+    ).bind(
+      "srcparse_collection_capacity_001",
+      snapshotId,
+      "official_collection_plan_capacity_parse_001",
+      observationSetId,
+      `source-observation-sets/${observationSetId}.json`,
+    ),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_observation_sets (
+         id, parse_operation_id, source_snapshot_id, source_lineage,
+         supported_game, game_profile_version, adapter_version, parsed_at,
+         content_digest, content_byte_length, content_object_key,
+         observation_count
+       ) VALUES (?, ?, ?, 'fusion-world-en', 'fusion-world',
+         'fusion-world@1', 'fusion-world-en@9', '2026-08-07T00:00:02.000Z',
+         'digest', 2, ?, 1)`,
+    ).bind(
+      observationSetId,
+      "srcparse_collection_capacity_001",
+      snapshotId,
+      `source-observation-sets/${observationSetId}.json`,
+    ),
+  ]);
+  // Fill the Source Lineage with retained unique request identities up to
+  // the exact fusion-world-en@9 capacity (the discovery root is the
+  // 15,000th).
+  await env.CATALOGUE_DB.prepare(
+    `WITH RECURSIVE filler(n) AS (
+       SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < 14999
+     )
+     INSERT INTO source_requests (
+       ingestion_run_id, request_id, sequence_number, method, url,
+       request_headers_json, representation_fingerprint, state,
+       source_snapshot_id, failure_code, request_role,
+       discovered_from_request_id
+     )
+     SELECT ?, 'fusion-world-en:detail:' || printf('%08d', n), 1000 + n,
+            'GET',
+            'https://www.dbs-cardgame.com/fw/en/cardlist/detail/' || n,
+            '{}', 'filler-' || printf('%08d', n), 'pending', NULL, NULL,
+            'detail', NULL
+     FROM filler`,
+  ).bind(run.id).run();
+
+  const collectionRequests = [{
+    id: "fusion-world-en:cards",
+    method: "GET" as const,
+    url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true",
+    headers: { accept: "text/html" },
+    representation_fingerprint: "collection-capacity-overflow",
+    surface: "cards",
+  }];
+  await expect(persistOfficialSourceCollectionPlan(
+    env.CATALOGUE_DB,
+    run.id,
+    observationSetId,
+    collectionRequests,
+  )).rejects.toMatchObject({ code: "source_discovery_too_large" });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM official_source_collection_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    count: 0,
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_requests
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    count: 15_000,
+  });
+
+  // Freeing capacity admits the identical immutable plan deterministically.
+  await env.CATALOGUE_DB.prepare(
+    `DELETE FROM source_requests
+     WHERE ingestion_run_id = ?
+       AND request_id > 'fusion-world-en:detail:00014989'
+       AND request_id LIKE 'fusion-world-en:detail:%'`,
+  ).bind(run.id).run();
+  await persistOfficialSourceCollectionPlan(
+    env.CATALOGUE_DB,
+    run.id,
+    observationSetId,
+    collectionRequests,
+  );
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM official_source_collection_plans
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    count: 1,
+  });
+  await expect(env.CATALOGUE_DB.prepare(
+    `SELECT state FROM source_requests
+     WHERE ingestion_run_id = ? AND request_id = 'fusion-world-en:cards'`,
+  ).bind(run.id).first<{ state: string }>()).resolves.toMatchObject({
+    state: "pending",
+  });
+}, 30_000);

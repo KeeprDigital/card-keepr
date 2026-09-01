@@ -22,6 +22,7 @@ export type SourceAdapterRegistration = Readonly<{
   gameProfileVersion: string;
   parserContract: string;
   maximumSnapshotBytes: number;
+  requestCapacity: number;
   origin: "production" | "synthetic_fixture";
   requestSurface:
     | Readonly<{ kind: "credential-free-https" }>
@@ -51,6 +52,39 @@ export type SourceAdapterRegistration = Readonly<{
   requestUrlForSurface?: (surface: string) => string;
   officialSourceContract?: OfficialSourceContract;
 }>;
+
+// No ordinary Source Adapter Version capacity may authorize discovery at or
+// beyond this ceiling; capacity admission clamps to it even if a registration
+// or database row ever disagreed.
+export const globalEmergencySourceRequestCeiling = 25_000;
+
+// Request capacity is an immutable policy of each exact Source Adapter
+// Version, counted per Source Lineage over unique Source Request identities.
+// Versions registered before issue #63 keep the historical 5,000-request
+// behavior; a larger capacity requires a new immutable version registered
+// here and in the source_adapter_versions seed migrations.
+const historicalSourceRequestCapacity = 5_000;
+const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
+  // The production Fusion World graph legitimately exceeds the historical
+  // bound (issue #62 retained 3,946 detail and 984 image requests at the
+  // 5,000 cutoff before completion).
+  ["fusion-world-en@9", 15_000],
+]);
+
+function sourceRequestCapacity(adapterVersion: string): number {
+  const capacity = declaredSourceRequestCapacities.get(adapterVersion) ??
+    historicalSourceRequestCapacity;
+  if (
+    !Number.isSafeInteger(capacity) ||
+    capacity < 1 ||
+    capacity >= globalEmergencySourceRequestCeiling
+  ) {
+    throw new Error(
+      `Source Adapter Version ${adapterVersion} declares a request capacity outside the global emergency ceiling.`,
+    );
+  }
+  return capacity;
+}
 
 const parseSourceDocument = (document: unknown): readonly unknown[] => {
   if (
@@ -438,6 +472,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
       ...adapter,
       legalityRegion:
         requiredOfficialSourceScope(adapter.sourceLineage).legalityRegion,
+      requestCapacity: sourceRequestCapacity(adapter.adapterVersion),
     })),
   );
 

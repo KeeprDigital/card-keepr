@@ -14,7 +14,7 @@ export type LiveLegalityParseOptions = Readonly<{
    */
   unresolvedTargetScope?: boolean;
   /**
-   * Enabled only by the fusion-world-en@8 generation: the pinned
+   * Enabled only by the live-shape generations (fusion-world-en@8 and later): the pinned
    * legality-history publication (news/01_399.html) announces one exact
    * restriction lift with an exact TCG change date, which parses into one
    * effective-dated eligible rule. Earlier generations keep failing closed

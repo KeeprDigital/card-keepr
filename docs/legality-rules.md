@@ -12,7 +12,7 @@ credential-free capture of their exact Official Source surfaces and dynamic
 request graphs:
 
 - `one-piece-en@6`
-- `fusion-world-en@7`
+- `fusion-world-en@9`
 - `digimon-en@7`
 - `gundam-en-asia@7`
 - `gundam-en-us@7`
@@ -43,6 +43,13 @@ every other Card type still requires its exact rarity), and Digimon Q&A
 answers may nest related-card lists that are retained as explicit
 related-card evidence alongside the Appmon crossover digivolution and
 Link DP bonus vocabulary.
+
+The fusion live-shape generation (`fusion-world-en@8`) models the five live
+page shapes retained by the third full-scale production run, including the
+pinned legality-history restriction lift. The issue-63 request-capacity
+generation (`fusion-world-en@9`) parses byte-for-byte like
+`fusion-world-en@8` and differs only in its immutable request capacity,
+sized for the legitimate production Fusion World request graph.
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
