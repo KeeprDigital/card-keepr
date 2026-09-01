@@ -54,8 +54,10 @@ export type SourceAdapterRegistration = Readonly<{
 }>;
 
 // No ordinary Source Adapter Version capacity may authorize discovery at or
-// beyond this ceiling; capacity admission clamps to it even if a registration
-// or database row ever disagreed.
+// beyond this ceiling. Registration fails closed on a declared capacity that
+// reaches it, and capacity admission additionally clamps the registered
+// database column to it, so neither surface can authorize unbounded
+// discovery alone.
 export const globalEmergencySourceRequestCeiling = 25_000;
 
 // Request capacity is an immutable policy of each exact Source Adapter

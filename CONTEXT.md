@@ -36,6 +36,10 @@ _Avoid_: Request URL, Source Snapshot, hostname
 An immutable parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. A new version may reparse retained Source Snapshots without changing their captured bytes.
 _Avoid_: Generic parser name, mutable scraper, Source schema
 
+**Request Capacity**:
+The immutable bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; changing a capacity requires registering a new Source Adapter Version.
+_Avoid_: Cloudflare platform limit, mutable quota, rate limit
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix

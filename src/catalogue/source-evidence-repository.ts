@@ -509,6 +509,27 @@ function requestCapacityProblem(): AdministrationProblem {
   );
 }
 
+// Unique Source Request identities the Source Lineage would hold if the
+// proposed batch were admitted: retained initial-plan and lineage-prefixed
+// rows plus proposed identities not yet retained. Binds: ?1 run id,
+// ?2 lineage LIKE pattern, ?3 initial-plan request-id JSON, ?4 proposed
+// request-id JSON.
+const admittedLineageCountSql = `(
+  SELECT COUNT(*) FROM source_requests
+  WHERE ingestion_run_id = ?1
+    AND (
+      request_id LIKE ?2
+      OR request_id IN (SELECT value FROM json_each(?3))
+    )
+) + (
+  SELECT COUNT(*) FROM json_each(?4) AS proposed
+  WHERE NOT EXISTS (
+    SELECT 1 FROM source_requests
+    WHERE ingestion_run_id = ?1
+      AND request_id = proposed.value
+  )
+)`;
+
 export async function appendDiscoveredEvidenceRequests(
   database: D1Database,
   run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
@@ -565,6 +586,7 @@ export async function appendDiscoveredEvidenceRequests(
     });
   }
   const normalized = [...normalizedById.values()];
+  const proposedRequestIds = JSON.stringify(normalized.map(({ id }) => id));
   const requestCapacity = await adapterRequestCapacity(
     database,
     plan.adapter_version,
@@ -591,7 +613,7 @@ export async function appendDiscoveredEvidenceRequests(
          WHERE ingestion_run_id = ?
            AND request_id IN (SELECT value FROM json_each(?))`,
       )
-      .bind(run.id, JSON.stringify(normalized.map(({ id }) => id)))
+      .bind(run.id, proposedRequestIds)
       .first<{ count: number }>();
   if (
     count === null || existing === null ||
@@ -610,30 +632,13 @@ export async function appendDiscoveredEvidenceRequests(
     // — to abort the whole batch; the catch below maps that opaque SQLite
     // error back to the admission problem.
     database.prepare(
-      `WITH proposed AS (
-         SELECT value AS request_id FROM json_each(?)
-       )
-       SELECT CASE WHEN (
-         SELECT COUNT(*) FROM source_requests
-         WHERE ingestion_run_id = ?
-           AND (
-             request_id LIKE ?
-             OR request_id IN (SELECT value FROM json_each(?))
-           )
-       ) + (
-         SELECT COUNT(*) FROM proposed
-         WHERE NOT EXISTS (
-           SELECT 1 FROM source_requests
-           WHERE ingestion_run_id = ?
-             AND request_id = proposed.request_id
-         )
-       ) > ? THEN json('source_discovery_too_large') ELSE 1 END`,
+      `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
+         THEN json('source_discovery_too_large') ELSE 1 END`,
     ).bind(
-      JSON.stringify(normalized.map(({ id }) => id)),
       run.id,
       lineageRequestPattern,
       planRequestIds,
-      run.id,
+      proposedRequestIds,
       requestCapacity,
     ),
   ];
@@ -714,7 +719,7 @@ export async function appendDiscoveredEvidenceRequests(
       run.id,
       lineageRequestPattern,
       planRequestIds,
-      JSON.stringify(normalized.map(({ id }) => id)),
+      proposedRequestIds,
       requestCapacity,
     );
   }
@@ -757,7 +762,10 @@ export async function appendDiscoveredEvidenceRequests(
 // Both in-batch admission guards abort by selecting json('<code>') — invalid
 // JSON — so nothing distinguishes a capacity abort from an identity-collision
 // abort in the surfaced SQLite error. Nothing was inserted, so recounting the
-// retained state deterministically recovers which guard fired.
+// retained state recovers which guard fired: retained counts only grow
+// (deletion is trigger-blocked), so a genuine capacity abort always recounts
+// over capacity; only a collision abort racing a concurrent admission can be
+// conservatively reported as the capacity problem instead.
 async function mappedDiscoveryAdmissionError(
   error: unknown,
   database: D1Database,
@@ -769,23 +777,7 @@ async function mappedDiscoveryAdmissionError(
 ): Promise<unknown> {
   if (!/malformed JSON/iu.test(errorMessage(error))) return error;
   const recounted = await database
-    .prepare(
-      `SELECT (
-         SELECT COUNT(*) FROM source_requests
-         WHERE ingestion_run_id = ?1
-           AND (
-             request_id LIKE ?2
-             OR request_id IN (SELECT value FROM json_each(?3))
-           )
-       ) + (
-         SELECT COUNT(*) FROM json_each(?4) AS proposed
-         WHERE NOT EXISTS (
-           SELECT 1 FROM source_requests
-           WHERE ingestion_run_id = ?1
-             AND request_id = proposed.value
-         )
-       ) AS count`,
-    )
+    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
     .bind(runId, lineageRequestPattern, planRequestIds, proposedRequestIds)
     .first<{ count: number }>();
   if (recounted === null || recounted.count > requestCapacity) {
@@ -890,23 +882,7 @@ export async function persistOfficialSourceCollectionPlan(
     discoveredRequests.map(({ id }) => id),
   );
   const admitted = await database
-    .prepare(
-      `SELECT (
-         SELECT COUNT(*) FROM source_requests
-         WHERE ingestion_run_id = ?1
-           AND (
-             request_id LIKE ?2
-             OR request_id IN (SELECT value FROM json_each(?3))
-           )
-       ) + (
-         SELECT COUNT(*) FROM json_each(?4) AS proposed
-         WHERE NOT EXISTS (
-           SELECT 1 FROM source_requests
-           WHERE ingestion_run_id = ?1
-             AND request_id = proposed.value
-         )
-       ) AS count`,
-    )
+    .prepare(`SELECT ${admittedLineageCountSql} AS count`)
     .bind(runId, lineageRequestPattern, planRequestIds, collectionRequestIds)
     .first<{ count: number }>();
   if (admitted === null || admitted.count > requestCapacity) {
@@ -919,21 +895,8 @@ export async function persistOfficialSourceCollectionPlan(
       // through the documented json('source_discovery_too_large') abort.
       database
         .prepare(
-          `SELECT CASE WHEN (
-             SELECT COUNT(*) FROM source_requests
-             WHERE ingestion_run_id = ?1
-               AND (
-                 request_id LIKE ?2
-                 OR request_id IN (SELECT value FROM json_each(?3))
-               )
-           ) + (
-             SELECT COUNT(*) FROM json_each(?4) AS proposed
-             WHERE NOT EXISTS (
-               SELECT 1 FROM source_requests
-               WHERE ingestion_run_id = ?1
-                 AND request_id = proposed.value
-             )
-           ) > ?5 THEN json('source_discovery_too_large') ELSE 1 END`,
+          `SELECT CASE WHEN ${admittedLineageCountSql} > ?5
+             THEN json('source_discovery_too_large') ELSE 1 END`,
         )
         .bind(
           runId,
