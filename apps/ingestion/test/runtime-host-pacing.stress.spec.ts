@@ -46,10 +46,10 @@ test("collection is sequential per hostname and different hostnames progress con
     ]),
   );
   expect(attempts["second-a"]! - attempts["first-a"]!).toBeGreaterThanOrEqual(
-    1_000,
+    500,
   );
   expect(attempts["second-b"]! - attempts["first-b"]!).toBeGreaterThanOrEqual(
-    1_000,
+    500,
   );
   expect(
     Math.abs(attempts["first-a"]! - attempts["first-b"]!),

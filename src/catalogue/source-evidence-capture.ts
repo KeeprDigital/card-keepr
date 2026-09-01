@@ -124,8 +124,8 @@ export type SourceHostPacingMode = "production" | "immediate";
 
 // Test-only pacing override. Production deployments pin the variable to
 // "production" (also the default when unset); test harnesses may opt in to
-// "immediate" so simulated fetches skip the ~1s-per-request host pacing
-// sleep. Any other value fails closed.
+// "immediate" so simulated fetches skip the per-request host pacing sleep.
+// Any other value fails closed.
 export function sourceHostPacingMode(
   value: string | undefined,
 ): SourceHostPacingMode {
@@ -134,6 +134,24 @@ export function sourceHostPacingMode(
   throw new Error(
     "SOURCE_HOST_PACING_MODE must be \"production\" or \"immediate\", got " +
       `${JSON.stringify(value)}.`,
+  );
+}
+
+export const defaultSourceHostPacingIntervalMilliseconds = 500;
+
+// Transport-layer Retry-After and 429/5xx backoff remain the safety net if a
+// host rejects this cadence; the interval only sets the polite steady state.
+export function sourceHostPacingIntervalMilliseconds(
+  value: string | undefined,
+): number {
+  if (value === undefined) return defaultSourceHostPacingIntervalMilliseconds;
+  if (/^(?:0|[1-9]\d*)$/u.test(value)) {
+    const interval = Number.parseInt(value, 10);
+    if (interval <= 60_000) return interval;
+  }
+  throw new Error(
+    "SOURCE_HOST_PACING_INTERVAL_MS must be an integer between 0 and 60000, " +
+      `got ${JSON.stringify(value)}.`,
   );
 }
 
@@ -157,9 +175,13 @@ export async function advanceHostPacing(
   database: D1Database,
   hostname: string,
   mode: SourceHostPacingMode = "production",
+  intervalMilliseconds: number = defaultSourceHostPacingIntervalMilliseconds,
 ): Promise<void> {
   const next = new Date(
-    Date.now() + (mode === "immediate" ? 0 : 1000 + jitter(250)),
+    Date.now() +
+      (mode === "immediate"
+        ? 0
+        : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
   ).toISOString();
   await database
     .prepare(

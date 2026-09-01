@@ -10,6 +10,7 @@ import {
   hostPacingDelay,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
   type CaptureTransportResult,
   type PreparedCaptureAttempt,
@@ -240,9 +241,10 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       if (run.state === "collecting") {
         await step.sleep(
           `await collection barrier stage ${barrierStage}`,
-          maximumShardDepth > 1 && maximumActiveRequestCount > 10
-            ? "4 minutes"
-            : "1 second",
+          collectionBarrierSleepDuration(
+            maximumShardDepth,
+            maximumActiveRequestCount,
+          ),
         );
         barrierStage += 1;
         continue;
@@ -278,6 +280,18 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
       };
     }
   }
+}
+
+// Shards of one hostname run sequentially, so a deep multi-shard collection
+// waits on the barrier for whole shard durations; a minute of poll slack per
+// stage keeps the parent under its step budget without dominating wall clock.
+export function collectionBarrierSleepDuration(
+  maximumShardDepth: number,
+  maximumActiveRequestCount: number,
+): "1 minute" | "1 second" {
+  return maximumShardDepth > 1 && maximumActiveRequestCount > 10
+    ? "1 minute"
+    : "1 second";
 }
 
 function childAttempt(id: string): number {
@@ -414,6 +428,9 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
     } = event.payload;
     // Fails closed on unrecognized values before any capture work begins.
     const pacingMode = sourceHostPacingMode(this.env.SOURCE_HOST_PACING_MODE);
+    const pacingIntervalMilliseconds = sourceHostPacingIntervalMilliseconds(
+      this.env.SOURCE_HOST_PACING_INTERVAL_MS,
+    );
     let stage = 0;
     for (;;) {
       const requests = await loadPendingShardRequests(
@@ -466,7 +483,12 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<
                 `advance pacing for ${request.request_id} attempt ${prepared.attempt_number}`,
                 deterministicDatabaseStep,
                 () =>
-                  advanceHostPacing(this.env.CATALOGUE_DB, hostname, pacingMode),
+                  advanceHostPacing(
+                    this.env.CATALOGUE_DB,
+                    hostname,
+                    pacingMode,
+                    pacingIntervalMilliseconds,
+                  ),
               );
             }
             if (result.kind === "uploaded") {
