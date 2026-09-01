@@ -546,6 +546,32 @@ function requestCapacityProblem(
   });
 }
 
+function recountedRequestCapacityProblem(
+  sourceLineage: string,
+  requestCapacity: number,
+  recounted: { admitted: number; overflow: number } | null,
+  proposedRequestIds: string,
+): RequestCapacityProblem {
+  if (recounted === null) {
+    // COUNT queries always return one row, so a null recount is defensive
+    // only; report the whole proposed batch as overflow above the full
+    // capacity so the persisted pause facts still satisfy their invariants.
+    const proposed = JSON.parse(proposedRequestIds) as unknown[];
+    return requestCapacityProblem(
+      sourceLineage,
+      requestCapacity,
+      requestCapacity,
+      Math.max(1, proposed.length),
+    );
+  }
+  return requestCapacityProblem(
+    sourceLineage,
+    requestCapacity,
+    recounted.admitted - recounted.overflow,
+    recounted.overflow,
+  );
+}
+
 // Unique Source Request identities the Source Lineage would hold if the
 // proposed batch were admitted: retained initial-plan and lineage-prefixed
 // rows plus proposed identities not yet retained. Binds: ?1 run id,
@@ -830,11 +856,11 @@ async function mappedDiscoveryAdmissionError(
     proposedRequestIds,
   );
   if (recounted === null || recounted.admitted > requestCapacity) {
-    return requestCapacityProblem(
+    return recountedRequestCapacityProblem(
       sourceLineage,
       requestCapacity,
-      (recounted?.admitted ?? 0) - (recounted?.overflow ?? 0),
-      recounted?.overflow ?? 0,
+      recounted,
+      proposedRequestIds,
     );
   }
   return new Error(
@@ -976,11 +1002,11 @@ export async function persistOfficialSourceCollectionPlan(
     collectionRequestIds,
   );
   if (admitted === null || admitted.admitted > requestCapacity) {
-    throw requestCapacityProblem(
+    throw recountedRequestCapacityProblem(
       discoveryPlan.source_lineage,
       requestCapacity,
-      (admitted?.admitted ?? 0) - (admitted?.overflow ?? 0),
-      admitted?.overflow ?? 0,
+      admitted,
+      collectionRequestIds,
     );
   }
   try {
@@ -1049,11 +1075,11 @@ export async function persistOfficialSourceCollectionPlan(
         planRequestIds,
         collectionRequestIds,
       );
-      throw requestCapacityProblem(
+      throw recountedRequestCapacityProblem(
         discoveryPlan.source_lineage,
         requestCapacity,
-        (recounted?.admitted ?? 0) - (recounted?.overflow ?? 0),
-        recounted?.overflow ?? 0,
+        recounted,
+        collectionRequestIds,
       );
     }
     throw error;
@@ -1213,10 +1239,13 @@ export async function pauseEvidenceRunForRequestCapacity(
       .bind(runId),
     // Guarded and idempotent under durable Workflow step replay: the run is
     // paused by the statement above (or already was), and one immutable pause
-    // record exists per capacity generation.
+    // record exists per capacity generation. The replay guard is an explicit
+    // NOT EXISTS rather than INSERT OR IGNORE so an unexpected constraint
+    // failure (a facts-computation bug violating the table CHECKs) aborts
+    // loudly instead of silently pausing without a record.
     database
       .prepare(
-        `INSERT OR IGNORE INTO ingestion_run_capacity_pauses (
+        `INSERT INTO ingestion_run_capacity_pauses (
            ingestion_run_id, capacity_generation, pause_reason, paused_at,
            source_lineage, parent_request_id, request_capacity,
            used_capacity, overflow_request_count, required_capacity
@@ -1224,6 +1253,10 @@ export async function pauseEvidenceRunForRequestCapacity(
          SELECT ?, ?, 'source_request_capacity_exhausted', ?, ?, ?, ?, ?, ?, ?
          WHERE EXISTS (
            SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_capacity_pauses
+           WHERE ingestion_run_id = ?1 AND capacity_generation = ?2
          )`,
       )
       .bind(
