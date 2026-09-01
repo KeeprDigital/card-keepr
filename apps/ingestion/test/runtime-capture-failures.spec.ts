@@ -599,31 +599,46 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
   ]);
   // Fill the Source Lineage with retained unique request identities up to
   // the exact fusion-world-en@9 capacity (the discovery root is the
-  // 15,000th).
-  await env.CATALOGUE_DB.prepare(
-    `WITH RECURSIVE filler(n) AS (
-       SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < 14999
-     )
-     INSERT INTO source_requests (
-       ingestion_run_id, request_id, sequence_number, method, url,
-       request_headers_json, representation_fingerprint, state,
-       source_snapshot_id, failure_code, request_role,
-       discovered_from_request_id
-     )
-     SELECT ?, 'fusion-world-en:detail:' || printf('%08d', n), 1000 + n,
-            'GET',
-            'https://www.dbs-cardgame.com/fw/en/cardlist/detail/' || n,
-            '{}', 'filler-' || printf('%08d', n), 'pending', NULL, NULL,
-            'detail', NULL
-     FROM filler`,
-  ).bind(run.id).run();
+  // 15,000th). The immutable-plan trigger admits a source_requests row only
+  // through a matching retained discovery plan row, so retain those first.
+  await env.CATALOGUE_DB.batch([
+    env.CATALOGUE_DB.prepare(
+      `WITH RECURSIVE filler(n) AS (
+         SELECT 1 UNION ALL SELECT n + 1 FROM filler WHERE n < 14999
+       )
+       INSERT INTO source_discovery_request_plans (
+         ingestion_run_id, request_id, sequence_number, parent_request_id,
+         method, url, request_headers_json, representation_fingerprint,
+         request_role
+       )
+       SELECT ?1, 'fusion-world-en:detail:' || printf('%08d', n), 1000 + n,
+              ?2, 'GET',
+              'https://www.dbs-cardgame.com/fw/en/cardlist/detail/' || n,
+              '{}', printf('%064x', n), 'detail'
+       FROM filler`,
+    ).bind(run.id, root.request_id),
+    env.CATALOGUE_DB.prepare(
+      `INSERT INTO source_requests (
+         ingestion_run_id, request_id, sequence_number, method, url,
+         request_headers_json, representation_fingerprint, state,
+         source_snapshot_id, failure_code, request_role,
+         discovered_from_request_id
+       )
+       SELECT ingestion_run_id, request_id, sequence_number, method, url,
+              request_headers_json, representation_fingerprint, 'pending',
+              NULL, NULL, request_role, parent_request_id
+       FROM source_discovery_request_plans
+       WHERE ingestion_run_id = ?1
+         AND request_id LIKE 'fusion-world-en:detail:%'`,
+    ).bind(run.id),
+  ]);
 
   const collectionRequests = [{
     id: "fusion-world-en:cards",
     method: "GET" as const,
     url: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true",
     headers: { accept: "text/html" },
-    representation_fingerprint: "collection-capacity-overflow",
+    representation_fingerprint: "f".repeat(64),
     surface: "cards",
   }];
   await expect(persistOfficialSourceCollectionPlan(
@@ -644,30 +659,18 @@ test("an Official Source Collection Plan beyond the adapter capacity is rejected
   ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
     count: 15_000,
   });
-
-  // Freeing capacity admits the identical immutable plan deterministically.
-  await env.CATALOGUE_DB.prepare(
-    `DELETE FROM source_requests
-     WHERE ingestion_run_id = ?
-       AND request_id > 'fusion-world-en:detail:00014989'
-       AND request_id LIKE 'fusion-world-en:detail:%'`,
-  ).bind(run.id).run();
-  await persistOfficialSourceCollectionPlan(
+  // The rejection is deterministic: replaying the identical admission keeps
+  // failing closed without partially inserting the plan or its requests.
+  await expect(persistOfficialSourceCollectionPlan(
     env.CATALOGUE_DB,
     run.id,
     observationSetId,
     collectionRequests,
-  );
+  )).rejects.toMatchObject({ code: "source_discovery_too_large" });
   await expect(env.CATALOGUE_DB.prepare(
-    `SELECT COUNT(*) AS count FROM official_source_collection_plans
-     WHERE ingestion_run_id = ?`,
-  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
-    count: 1,
-  });
-  await expect(env.CATALOGUE_DB.prepare(
-    `SELECT state FROM source_requests
+    `SELECT COUNT(*) AS count FROM source_requests
      WHERE ingestion_run_id = ? AND request_id = 'fusion-world-en:cards'`,
-  ).bind(run.id).first<{ state: string }>()).resolves.toMatchObject({
-    state: "pending",
+  ).bind(run.id).first<{ count: number }>()).resolves.toMatchObject({
+    count: 0,
   });
 }, 30_000);
