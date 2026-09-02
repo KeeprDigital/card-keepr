@@ -14,7 +14,7 @@ import {
 } from "./reconciliation-profile";
 import {
   parsedOfficialArtworkIdentity,
-} from "./official-artwork-identity.mjs";
+} from "./official-artwork-identity.ts";
 import {
   parseRulesTextErrata,
   type ParsedRulesTextErratum,

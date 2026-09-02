@@ -21,10 +21,15 @@ const knownFields = new Set([
   "use_cost", "value", "variant", "version_options", "zone",
 ]);
 
-export function partitionMappedOfficialLeaves(value, path) {
+export type RawLeaf = { path: string; value: unknown };
+
+export function partitionMappedOfficialLeaves(
+  value: unknown,
+  path: string,
+): { consumed: string[]; unmapped: RawLeaf[] } {
   const rootDepth = path.split(".").length;
-  const consumed = [];
-  const unmapped = [];
+  const consumed: string[] = [];
+  const unmapped: RawLeaf[] = [];
   for (const leaf of leafEntries(value, path)) {
     const nestedFields = leaf.path
       .replaceAll(/\[\d+\]/gu, "")
@@ -39,7 +44,7 @@ export function partitionMappedOfficialLeaves(value, path) {
   return { consumed, unmapped };
 }
 
-function leafEntries(value, path) {
+function leafEntries(value: unknown, path: string): RawLeaf[] {
   if (Array.isArray(value)) {
     return value.length === 0
       ? [{ path, value }]
@@ -58,6 +63,6 @@ function leafEntries(value, path) {
   return [{ path, value }];
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

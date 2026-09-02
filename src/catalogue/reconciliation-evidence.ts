@@ -12,7 +12,7 @@ import {
 } from "./source-evidence-model";
 import {
   parsedOfficialArtworkIdentity,
-} from "./official-artwork-identity.mjs";
+} from "./official-artwork-identity.ts";
 import {
   parseRetainedLegalityRules,
   regionForLineage,

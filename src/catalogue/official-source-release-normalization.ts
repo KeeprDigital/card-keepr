@@ -21,11 +21,19 @@ const seasonNames = new Map([
   ["winter", "winter"],
 ]);
 
+export type OfficialReleaseDate = {
+  precision: "day" | "month" | "quarter" | "season" | "year" | "unknown";
+  value: string | null;
+};
+
 // The 2026-08 live Fusion World pages publish season-precision Releases
 // ("Winter, 2026") and comma-separated display months ("September, 2025").
 // Only the live-shape generations (fusion-world-en@8 and later) opt into
 // this vocabulary; earlier registered parser contracts keep failing closed.
-export function normalizedOfficialReleaseDate(value, options = {}) {
+export function normalizedOfficialReleaseDate(
+  value: string,
+  options: { seasons?: boolean } = {},
+): OfficialReleaseDate {
   const normalized = value.normalize("NFC").trim();
   if (officialReleaseDateNeedsSchemaReview(normalized)) {
     return { precision: "unknown", value: null };
@@ -34,15 +42,15 @@ export function normalizedOfficialReleaseDate(value, options = {}) {
     const seasonMatch = normalized.match(/^([A-Za-z]+),?\s+(\d{4})$/u);
     const season = seasonMatch === null
       ? undefined
-      : seasonNames.get(seasonMatch[1].toLocaleLowerCase());
+      : seasonNames.get(seasonMatch[1]!.toLocaleLowerCase());
     if (season !== undefined) {
-      return { precision: "season", value: `${seasonMatch[2]}-${season}` };
+      return { precision: "season", value: `${seasonMatch![2]}-${season}` };
     }
     const commaMonth = seasonMatch === null
       ? undefined
-      : monthNumbers.get(seasonMatch[1].toLocaleLowerCase());
+      : monthNumbers.get(seasonMatch[1]!.toLocaleLowerCase());
     if (commaMonth !== undefined) {
-      return { precision: "month", value: `${seasonMatch[2]}-${commaMonth}` };
+      return { precision: "month", value: `${seasonMatch![2]}-${commaMonth}` };
     }
   }
   if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
@@ -75,9 +83,9 @@ export function normalizedOfficialReleaseDate(value, options = {}) {
   );
   const displayMonth = normalized.match(/^([A-Za-z]+)\s+(\d{4})$/u);
   if (monthFirst !== null || dayFirst !== null) {
-    const monthName = (monthFirst?.[1] ?? dayFirst?.[2]).toLocaleLowerCase();
+    const monthName = (monthFirst?.[1] ?? dayFirst?.[2])!.toLocaleLowerCase();
     const month = monthNumbers.get(monthName);
-    const day = monthFirst?.[2] ?? dayFirst?.[1];
+    const day = (monthFirst?.[2] ?? dayFirst?.[1])!;
     const year = monthFirst?.[3] ?? dayFirst?.[3];
     if (month === undefined) {
       throw new Error(`Unrecognized official Release date: ${normalized}.`);
@@ -87,7 +95,7 @@ export function normalizedOfficialReleaseDate(value, options = {}) {
     return { precision: "day", value: date };
   }
   if (displayMonth !== null) {
-    const month = monthNumbers.get(displayMonth[1].toLocaleLowerCase());
+    const month = monthNumbers.get(displayMonth[1]!.toLocaleLowerCase());
     if (month !== undefined) {
       return { precision: "month", value: `${displayMonth[2]}-${month}` };
     }
@@ -95,7 +103,9 @@ export function normalizedOfficialReleaseDate(value, options = {}) {
   throw new Error(`Unrecognized official Release date: ${normalized}.`);
 }
 
-export function normalizedOfficialReleaseStatus(value) {
+export function normalizedOfficialReleaseStatus(
+  value: string | null,
+): "announced" | "released" | null {
   const normalized = value?.normalize("NFC").trim().toLocaleLowerCase() ?? "";
   if (normalized === "") return null;
   if (officialReleaseStatusNeedsSchemaReview(normalized)) {
@@ -116,22 +126,30 @@ export function normalizedOfficialReleaseStatus(value) {
   throw new Error(`Unrecognized official Release status: ${value}.`);
 }
 
-export function officialReleaseDateNeedsSchemaReview(value) {
+export function officialReleaseDateNeedsSchemaReview(
+  value: string | null,
+): boolean {
   return unavailableOfficialReleaseVocabulary(value);
 }
 
-export function officialReleaseStatusNeedsSchemaReview(value) {
+export function officialReleaseStatusNeedsSchemaReview(
+  value: string | null,
+): boolean {
   return unavailableOfficialReleaseVocabulary(value);
 }
 
-function unavailableOfficialReleaseVocabulary(value) {
+function unavailableOfficialReleaseVocabulary(value: string | null): boolean {
   return value !== null &&
     /^(?:|-|tba|tbd|to be announced|to be determined|unknown|not announced)$/iu
       .test(value.normalize("NFC").trim());
 }
 
-function assertCalendarDay(value) {
-  const [year, month, day] = value.split("-").map(Number);
+function assertCalendarDay(value: string): void {
+  const [year, month, day] = value.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
   const parsed = new Date(Date.UTC(year, month - 1, day));
   if (
     parsed.getUTCFullYear() !== year ||

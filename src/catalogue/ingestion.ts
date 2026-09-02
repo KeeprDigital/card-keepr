@@ -42,7 +42,7 @@ import {
   guardedAtomicBatch,
   retainedPayload,
 } from "./reconciliation-payload";
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import { productReleasePublicationStatements } from "./product-release-publication";
 import { typedPrintingProjections } from "./product-release-projection";
 import {
@@ -1361,7 +1361,7 @@ async function rejectRunAttempt(
   return resultingRun;
 }
 
-export { AdministrationProblem } from "./administration-problem.mjs";
+export { AdministrationProblem } from "./administration-problem.ts";
 
 class PublicationPrefixOwnershipError extends Error {}
 

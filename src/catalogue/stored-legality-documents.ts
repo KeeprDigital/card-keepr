@@ -11,7 +11,7 @@ import {
   type ProfileWarning,
 } from "./reconciliation-profile";
 import { registeredLegalitySourceScope } from "./source-adapters";
-import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { isIsoCalendarDate } from "./calendar-date.ts";
 import { canonicalJson, compareUtf8 } from "./serialization";
 
 const games = new Set<SupportedGame>([

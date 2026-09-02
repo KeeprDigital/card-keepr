@@ -7,7 +7,7 @@ import test from "node:test";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
-} from "../src/catalogue/card-search-recovery-statements.mjs";
+} from "../src/catalogue/card-search-recovery-statements.ts";
 
 const root = resolve(import.meta.dirname, "..");
 

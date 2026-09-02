@@ -1,10 +1,16 @@
 const prefix = "official-artwork:";
 
+export type OfficialArtworkIdentity = Readonly<{
+  official_card_identity: string;
+  roles: readonly string[];
+  artwork_id: string | null;
+}>;
+
 export function officialArtworkFingerprint(
-  officialCardIdentity,
-  roles,
-  artworkId,
-) {
+  officialCardIdentity: string,
+  roles: readonly string[],
+  artworkId: string | null,
+): string {
   const identity = normalizedOfficialArtworkIdentity(
     officialCardIdentity,
     roles,
@@ -13,10 +19,12 @@ export function officialArtworkFingerprint(
   return `${prefix}${JSON.stringify(identity)}`;
 }
 
-export function parsedOfficialArtworkIdentity(fingerprint) {
+export function parsedOfficialArtworkIdentity(
+  fingerprint: string,
+): OfficialArtworkIdentity | null {
   if (!fingerprint.startsWith(prefix)) return null;
   try {
-    const value = JSON.parse(fingerprint.slice(prefix.length));
+    const value: unknown = JSON.parse(fingerprint.slice(prefix.length));
     if (
       !isRecord(value) ||
       Object.keys(value).sort().join(",") !==
@@ -35,8 +43,8 @@ export function parsedOfficialArtworkIdentity(fingerprint) {
     }
     return {
       official_card_identity: value.official_card_identity,
-      roles: value.roles,
-      artwork_id: value.artwork_id,
+      roles: value.roles as string[],
+      artwork_id: value.artwork_id as string | null,
     };
   } catch {
     return null;
@@ -44,10 +52,10 @@ export function parsedOfficialArtworkIdentity(fingerprint) {
 }
 
 function normalizedOfficialArtworkIdentity(
-  officialCardIdentity,
-  roles,
-  artworkId,
-) {
+  officialCardIdentity: string,
+  roles: readonly string[],
+  artworkId: string | null,
+): OfficialArtworkIdentity {
   const card = officialCardIdentity.normalize("NFC").trim().toUpperCase();
   const normalizedArtworkId =
     artworkId?.normalize("NFC").trim().toLocaleLowerCase() ?? null;
@@ -68,6 +76,6 @@ function normalizedOfficialArtworkIdentity(
   };
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
