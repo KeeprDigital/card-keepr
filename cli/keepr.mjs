@@ -1612,6 +1612,7 @@ function formatAdministrationResult(document) {
       ),
       formatCount(document.diagnostics.length, "diagnostic"),
     ];
+    lines.push(...formatEvidencePause(document.pause));
     const requestId = safeDiagnosticReference(
       document.operational_diagnostics?.references?.request_id,
     );
@@ -1636,6 +1637,52 @@ function formatAdministrationResult(document) {
 
 function formatCount(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// The minimum capacity facts of a paused Ingestion Run: why collection
+// stopped, how much of the exact adapter capacity is used, and how large a
+// capacity the rejected overflow batch requires.
+function formatEvidencePause(pause) {
+  if (typeof pause !== "object" || pause === null) return [];
+  const lines = [];
+  const reason = safeMachineCode(pause.reason);
+  const pausedAt = safeDiagnosticReference(pause.paused_at);
+  if (reason !== null) {
+    lines.push(
+      `Paused: ${reason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
+    );
+  }
+  const sourceLineage = safeDiagnosticReference(pause.source_lineage);
+  if (sourceLineage !== null) {
+    lines.push(`Source Lineage: ${sourceLineage}`);
+  }
+  if (
+    Number.isSafeInteger(pause.request_capacity) &&
+    Number.isSafeInteger(pause.used_capacity) &&
+    Number.isSafeInteger(pause.capacity_generation)
+  ) {
+    lines.push(
+      `Request Capacity: ${pause.used_capacity} used of ` +
+        `${pause.request_capacity} (generation ${pause.capacity_generation})`,
+    );
+  }
+  if (
+    Number.isSafeInteger(pause.overflow_request_count) &&
+    Number.isSafeInteger(pause.required_capacity)
+  ) {
+    lines.push(
+      `Overflow: ${
+        formatCount(pause.overflow_request_count, "request")
+      } require${pause.overflow_request_count === 1 ? "s" : ""} capacity ${
+        pause.required_capacity
+      }`,
+    );
+  }
+  const parentRequestId = safeDiagnosticReference(pause.parent_request_id);
+  if (parentRequestId !== null) {
+    lines.push(`Parent request: ${parentRequestId}`);
+  }
+  return lines;
 }
 
 function formatStatus(document) {

@@ -44,6 +44,10 @@ _Avoid_: Fetch attempt, Source Snapshot, request URL
 The immutable bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; changing a capacity requires registering a new Source Adapter Version.
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
+**Capacity Pause**:
+The non-terminal paused condition an Ingestion Run enters when admitting a dynamically discovered request batch would exceed its Request Capacity. Every retained observation, pending Source Request, the single active-run reservation, and the run identity survive unchanged, and the run cannot parse, reconcile, await approval, or publish until the owner acts. It records nothing as failed and is distinct from a Cloudflare Workflow instance's own paused status.
+_Avoid_: Failed run, cancelled run, Workflow instance pause
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix

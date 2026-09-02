@@ -77,8 +77,12 @@ const activeRunStages = [
   "awaiting_approval",
   "publishing",
 ] as const;
+// 'paused' is a non-terminal run state, not a progress stage: a paused run
+// holds the active-run reservation with collection incomplete, so it never
+// appears in a completed_stages list.
 const runStates = new Set([
   ...activeRunStages,
+  "paused",
   "published",
   "rejected",
   "expired",
@@ -5006,6 +5010,7 @@ async function expireOverdueRuns(
               AND state IN (
                 'planning',
                 'collecting',
+                'paused',
                 'parsing',
                 'reconciling',
                 'awaiting_approval',
@@ -5523,6 +5528,9 @@ function validCompletedStageCount(
     (knownStage) => knownStage === state,
   );
   if (activeIndex >= 0) return completedCount === activeIndex;
+  if (state === "paused") {
+    return completedCount === activeRunStages.indexOf("collecting");
+  }
   if (state === "published") {
     return completedCount === activeRunStages.length;
   }

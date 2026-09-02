@@ -16,7 +16,9 @@ import {
 import {
   appendDiscoveredEvidenceRequests,
   evidencePlanForRequest,
+  pauseEvidenceRunForRequestCapacity,
   persistOfficialSourceCollectionPlan,
+  RequestCapacityProblem,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
   type SnapshotRow,
@@ -200,6 +202,11 @@ export async function prepareCaptureAttempt(
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
 ): Promise<PreparedCaptureAttempt> {
+  // A paused run keeps its pending and captured Source Requests intact but
+  // admits no further capture or parse work until the owner acts.
+  if (run.state === "paused") {
+    return { kind: "done", failure_code: null };
+  }
   const request = await currentRequest(
     database,
     run.id,
@@ -781,6 +788,24 @@ export async function parseCapturedRequest(
     };
   } catch (error) {
     if (!(error instanceof AdministrationProblem)) throw error;
+    if (error instanceof RequestCapacityProblem) {
+      // Reaching request capacity is not evidence the parent Source Request
+      // failed: the request keeps its retained Source Snapshot in 'captured',
+      // pending requests stay pending, and the run pauses non-terminally so
+      // the owner can extend capacity and derive the rejected overflow batch
+      // again from retained discovery evidence.
+      await pauseEvidenceRunForRequestCapacity(
+        database,
+        run.id,
+        sourceRequest.request_id,
+        error,
+      );
+      return {
+        kind: "done",
+        failure_code: null,
+        request_made: false,
+      };
+    }
     await failRequest(database, sourceRequest, error.code);
     return {
       kind: "done",
