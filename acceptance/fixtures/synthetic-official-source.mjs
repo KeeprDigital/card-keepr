@@ -26,6 +26,11 @@ import {
   onePieceCompleteOfficialSourceResponse,
 } from "./one-piece-complete-official-source.mjs";
 
+// Bounded-outage simulation state: the first four responses for a surface
+// are 503s, after which the normal fixture response recovers. Worker module
+// state persists across requests within the local dev isolate.
+const recoveringOutcomeCounts = new Map();
+
 export default {
   fetch(request) {
     const url = new URL(request.url);
@@ -52,6 +57,20 @@ export default {
         status: 503,
         headers: { "retry-after": "0" },
       });
+    }
+    if (
+      transportOutcome ===
+      "card-keepr-acceptance-transport/unavailable-then-recovered"
+    ) {
+      const count = (recoveringOutcomeCounts.get(pathname) ?? 0) + 1;
+      recoveringOutcomeCounts.set(pathname, count);
+      if (count <= 4) {
+        return new Response("temporarily unavailable", {
+          status: 503,
+          headers: { "retry-after": "0" },
+        });
+      }
+      // Recovered: fall through to the normal fixture response.
     }
     if (pathname === "/success") {
       return Response.json(

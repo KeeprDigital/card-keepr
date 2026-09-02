@@ -103,6 +103,7 @@ export type CollectionDocument = {
   state: string;
   linked_run_id: string | null;
   failure_code: string | null;
+  pause?: Record<string, unknown>;
   snapshots: Snapshot[];
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];

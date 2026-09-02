@@ -2,8 +2,7 @@ import { AdministrationProblem } from "../../../src/catalogue/ingestion";
 import type { EvidenceParentWorkflowParams } from "../../../src/catalogue/source-evidence-model";
 import {
   requiredEvidenceRun,
-  resumeCapacityPausedEvidenceRun,
-  runRequestCapacityPolicy,
+  resumePausedEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 
 export async function resumeEvidenceRun(
@@ -13,23 +12,15 @@ export async function resumeEvidenceRun(
 ): Promise<Record<string, unknown>> {
   let run = await requiredEvidenceRun(database, runId);
   if (run.state === "paused") {
-    // A capacity-paused run resumes under a parent Workflow identity derived
-    // from its capacity generation: the previous parent completed when the
-    // run left its collection phase, and a deterministic new identity keeps
-    // replayed resumes reacquiring the same instance. The still-captured
-    // parent Source Request re-parses its retained Source Snapshot inside
-    // the hostname shard, deriving the overflow batch again without another
-    // Official Source fetch.
-    const policy = await runRequestCapacityPolicy(
-      database,
-      runId,
-      run.adapter_version,
-    );
-    await resumeCapacityPausedEvidenceRun(
-      database,
-      runId,
-      `evidence-${runId}-resume-${policy.capacity_generation}`,
-    );
+    // A paused run resumes under a parent Workflow identity derived from the
+    // count of recorded resumes: the previous parent completed when the run
+    // left its collection phase, and a deterministic new identity keeps
+    // replayed resumes reacquiring the same instance. A still-captured
+    // Source Request re-parses its retained Source Snapshot inside the
+    // hostname shard without another Official Source fetch, and a
+    // retry-exhausted request reopens under its next bounded retry
+    // generation.
+    await resumePausedEvidenceRun(database, runId);
     run = await requiredEvidenceRun(database, runId);
   }
   if (run.state !== "collecting") {
@@ -72,9 +63,12 @@ export async function resumeEvidenceRun(
       await instance.resume();
       status = { status: "queued" };
     } else if (status.status === "complete") {
-      await instance.restart({
-        from: { name: "start dynamically sharded hostname workflows" },
-      });
+      // The parent completes cleanly when the run pauses mid-collection, so
+      // a resume that reuses its identity must restart it from the top; the
+      // barrier loop is deterministic over retained state. (A targeted
+      // restart-from-step is not used: the step name it referenced no
+      // longer exists, and restart() re-derives the same position.)
+      await instance.restart();
       status = { status: "queued" };
     }
   } catch {

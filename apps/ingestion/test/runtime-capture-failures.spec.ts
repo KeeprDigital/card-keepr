@@ -28,6 +28,7 @@ import {
   installRuntimeSuite,
   resumeCollection,
   showCollection,
+  waitForEvidenceCondition,
   waitForEvidenceDiagnostic,
   waitForEvidenceRun,
 } from "./runtime-helpers";
@@ -35,20 +36,31 @@ import {
 installRuntimeSuite();
 
 test(
-  "successful captures remain auditable when a later required response is rejected or terminally fails",
+  "successful captures remain auditable when a later required response is rejected or exhausts its retries",
   async () => {
+    // A redirect stays a terminal source-contract failure; exhausted
+    // retryable HTTP responses now pause the run non-terminally instead.
+    // Both outcomes retain the sibling capture's Source Snapshot and
+    // Source Observation Set for audit.
     for (const scenario of [
       {
         key: "retained_after_rejected_001",
-        terminalUrl:
+        problemUrl:
           "https://retained-redirect-official-source.invalid/redirect",
-        failureCode: "source_redirect_rejected",
+        expected: {
+          state: "failed",
+          failure_code: "source_redirect_rejected",
+        },
       },
       {
-        key: "retained_after_terminal_failure_001",
-        terminalUrl:
+        key: "retained_after_transport_pause_001",
+        problemUrl:
           "https://retained-failure-official-source.invalid/unavailable",
-        failureCode: "source_request_retries_exhausted",
+        expected: {
+          state: "paused",
+          failure_code: null,
+          pause: { reason: "source_transport_retries_exhausted" },
+        },
       },
     ]) {
       const response = await fixtureEvidenceRequest(
@@ -60,30 +72,38 @@ test(
           requests: [
             {
               id: "captured",
-              url: `https://${new URL(scenario.terminalUrl).hostname}/cards`,
+              url: `https://${new URL(scenario.problemUrl).hostname}/cards`,
             },
-            { id: "terminal", url: scenario.terminalUrl },
+            { id: "terminal", url: scenario.problemUrl },
           ],
         },
       );
       expect(response.status).toBe(201);
       const run = await response.json<CollectionDocument>();
-      const terminal = await resumeCollection(run.id);
-      expect(terminal).toMatchObject({
-        state: "failed",
-        failure_code: scenario.failureCode,
-      });
-      expect(terminal.snapshots).toHaveLength(1);
-      expect(terminal.observation_sets).toHaveLength(1);
+      const accepted = await administrationRequest(
+        `/v1/ingestion-runs/${run.id}/collection/resume`,
+        "POST",
+      );
+      expect(accepted.status).toBe(202);
+      await accepted.body?.cancel();
+      const settled = await waitForEvidenceCondition(
+        run.id,
+        (current) => current.state === scenario.expected.state,
+        12_000,
+      );
+      expect(settled).toMatchObject(scenario.expected);
+      expect(settled.snapshots).toHaveLength(1);
+      expect(settled.observation_sets).toHaveLength(1);
 
       const retained = await showCollection(run.id);
-      expect(retained.snapshots).toEqual(terminal.snapshots);
+      expect(retained.snapshots).toEqual(settled.snapshots);
       expect(retained.observation_sets).toEqual(
-        terminal.observation_sets,
+        settled.observation_sets,
       );
+      await clearActiveRunForNextScenario();
     }
   },
-  12_000,
+  24_000,
 );
 
 test("a successful response remains snapshotted when parsing terminally fails", async () => {

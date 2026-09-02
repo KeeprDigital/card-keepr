@@ -590,24 +590,32 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     http_status: 302,
   });
 
-  const failedRun = await createCollection(
+  const exhaustedRun = await createCollection(
     "source_collection_failed_001",
     "https://failed-official-source.invalid/unavailable",
   );
-  const failedResponse = await administrationRequest(
-    `/v1/ingestion-runs/${failedRun.id}/collection/resume`,
+  const exhaustedResponse = await administrationRequest(
+    `/v1/ingestion-runs/${exhaustedRun.id}/collection/resume`,
     "POST",
   );
-  expect(failedResponse.status).toBe(202);
-  await failedResponse.body?.cancel();
-  const failed = await waitForEvidenceRun(
-    failedRun.id,
-    "failed",
+  expect(exhaustedResponse.status).toBe(202);
+  await exhaustedResponse.body?.cancel();
+  // Exhausting the retryable 503 responses pauses the run with the
+  // transport reason instead of failing it; the attempts stay recorded as
+  // diagnostics without Source Snapshots.
+  const failed = await waitForEvidenceCondition(
+    exhaustedRun.id,
+    (current) => current.state === "paused",
     12_000,
   ) as CollectionDocument;
   expect(failed).toMatchObject({
-    state: "failed",
-    failure_code: "source_request_retries_exhausted",
+    state: "paused",
+    failure_code: null,
+    pause: {
+      reason: "source_transport_retries_exhausted",
+      failure_classification: "http_failure",
+      http_status: 503,
+    },
     snapshots: [],
   });
   expect(failed.diagnostics).toHaveLength(4);
@@ -645,20 +653,17 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     },
   ]);
 
+  // A paused run is not terminal: the generic linked-evidence retry stays
+  // rejected, because the same run remains resumable.
   const retriedResponse = await administrationRequest(
     `/v1/ingestion-runs/${failed.id}/collection/retry`,
     "POST",
     { idempotency_key: "source_collection_failed_retry_001" },
   );
-  expect(retriedResponse.status).toBe(201);
-  const retried = await retriedResponse.json<CollectionDocument>();
-  expect(retried).toMatchObject({
-    state: "collecting",
-    linked_run_id: failed.id,
-    snapshots: [],
-    diagnostics: [],
+  expect(retriedResponse.status).toBe(409);
+  await expect(retriedResponse.json()).resolves.toMatchObject({
+    code: "ingestion_run_not_retryable",
   });
-  expect(retried.id).not.toBe(failed.id);
 });
 
 test("the parent Workflow creates a persisted dynamic host child before recovery inspects it", async () => {

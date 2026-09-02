@@ -55,7 +55,7 @@ test("an extended production-shaped run resumes into bounded host shards without
     );
     expect(resumed.status).toBe(202);
     await expect(resumed.json()).resolves.toMatchObject({
-      workflow: { id: `evidence-${runId}-resume-2` },
+      workflow: { id: `evidence-${runId}-resume-1` },
     });
 
     // The overflow batch is admitted again and the pending overflow work

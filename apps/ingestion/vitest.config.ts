@@ -1807,6 +1807,27 @@ export default defineConfig({
               headers: { "retry-after": "120" },
             });
           }
+          if (url.pathname === "/unavailable-then-recovered") {
+            const key = `${url.hostname}${url.pathname}`;
+            const count = (retryAttemptCounts.get(key) ?? 0) + 1;
+            retryAttemptCounts.set(key, count);
+            if (count <= 4) {
+              return new Response("temporarily unavailable", {
+                status: 503,
+                headers: { "retry-after": "0" },
+              });
+            }
+            return new Response(
+              '{"cards":[{"card_number":"OP01-003","name":"Recovered Card"}]}',
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          if (url.pathname === "/retry-after-empty") {
+            return new Response("temporarily unavailable", {
+              status: 503,
+              headers: { "retry-after": "" },
+            });
+          }
           if (url.pathname === "/retry-once") {
             const key = `${url.hostname}${url.pathname}`;
             const count = (retryAttemptCounts.get(key) ?? 0) + 1;

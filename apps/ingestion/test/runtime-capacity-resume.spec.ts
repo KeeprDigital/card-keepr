@@ -75,7 +75,8 @@ test("resuming an extended run derives the overflow batch again without refetchi
   );
   expect(extended.status).toBe(200);
 
-  const resumedParentId = `evidence-${runId}-resume-2`;
+  // The first recorded paused -> collecting resume of this run.
+  const resumedParentId = `evidence-${runId}-resume-1`;
   try {
     // The single collection-resume command moves the same run from paused
     // back to collecting and starts the required Workflow work.
