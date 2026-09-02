@@ -14,6 +14,10 @@ import {
   healthResponse,
 } from "../../../src/http/health";
 import { prepareProductionRelease } from "../../../src/catalogue/production-release";
+import {
+  appendCredentialRotationLogEntry,
+  listCredentialRotationLogEntries,
+} from "../../../src/catalogue/credential-rotation-log";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
@@ -853,6 +857,34 @@ async function handleIngestionRequest(
             evidenceInspectionOptions(env),
           ),
         );
+      }
+
+      if (url.pathname === "/v1/credential-rotation-log") {
+        if (request.method === "GET") {
+          return Response.json(
+            await listCredentialRotationLogEntries(env.CATALOGUE_DB),
+          );
+        }
+        if (request.method === "POST") {
+          const body = await readAdministrationBody(request);
+          assertOnlyFields(body, [
+            "credential_class",
+            "operator_note",
+            "idempotency_key",
+          ]);
+          const appended = await appendCredentialRotationLogEntry(
+            env.CATALOGUE_DB,
+            {
+              credential_class: body.credential_class,
+              operator_note: body.operator_note,
+              idempotency_key: requiredString(body, "idempotency_key"),
+            },
+            observedAt,
+          );
+          return Response.json(appended.entry, {
+            status: appended.created ? 201 : 200,
+          });
+        }
       }
 
       if (request.method === "GET" && url.pathname === "/v1/status") {

@@ -254,7 +254,8 @@ non-mutating metadata read. D1 write proof uses a challenge-owned table in the
 configured disposable database and always attempts exact cleanup.
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
-the ingestion Worker using `wrangler secret put`. Runtime authentication
+the ingestion Worker using `wrangler secret put`. Rotate either key by the
+dual-key procedure in `docs/runbooks/credential-rotation.md`. Runtime authentication
 requires the presented key to remain present in that Worker's live secret
 bindings, so provider deletion takes effect even if catalogue finalization
 must be reconciled later. Set the production CORS
