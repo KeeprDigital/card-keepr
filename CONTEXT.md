@@ -64,6 +64,10 @@ _Avoid_: Fetch attempt, retry generation, mutable workflow id
 The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid. Stall classification derives last progress from persisted lifecycle events and never counts a durable pacing sleep, Retry-After wait, or scheduled retry as a stall; nothing is recorded as failed, and resuming opens a new Workflow Attempt for the same run.
 _Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
 
+**Collection Termination**:
+The owner's explicit, idempotent decision to abandon a paused Ingestion Run. It is the only path from paused to terminal: the run keeps every retained observation, pause record, and Workflow Attempt as audit evidence, can never resume, extend capacity, parse, reconcile, or publish, and releases the single active-run reservation so a new Ingestion Run may start.
+_Avoid_: Cancelled run, deleted run, Workflow instance termination, linked retry
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix
