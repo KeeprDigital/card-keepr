@@ -1694,3 +1694,172 @@ test("a capacity-paused Ingestion Run reports its pause facts through source sho
   assert.match(shown.stdout, /Request reference: request_paused_cli/);
   assert.doesNotMatch(shown.stdout, /cli-test-key/);
 });
+
+test("source capacity extend performs the compare-and-set administration mutation", async (t) => {
+  const extensionDocument = {
+    contract: "card-keepr-capacity-extension@1",
+    ingestion_run_id: "run_paused_cli",
+    source_lineage: "fusion-world-en",
+    previous_request_capacity: 15000,
+    previous_capacity_generation: 1,
+    request_capacity: 20000,
+    capacity_generation: 2,
+    extended_at: "2026-08-30T01:00:00.000Z",
+  };
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push({
+        method: request.method,
+        path: request.url,
+        authorization: request.headers.authorization,
+        body: body === "" ? null : JSON.parse(body),
+      });
+      response.setHeader("content-type", "application/json");
+      if (
+        request.url === "/v1/ingestion-runs/run_paused_cli/capacity/extension"
+      ) {
+        response.end(JSON.stringify(extensionDocument));
+        return;
+      }
+      if (
+        request.url === "/v1/ingestion-runs/run_stale_cli/capacity/extension"
+      ) {
+        response.statusCode = 409;
+        response.setHeader("content-type", "application/problem+json");
+        response.end(JSON.stringify({
+          type: "https://card-keepr.invalid/problems/request_capacity_mismatch",
+          title: "Conflict",
+          status: 409,
+          code: "request_capacity_mismatch",
+          detail:
+            "The expected request capacity is stale: the effective capacity is 20000.",
+          request_id: "request_stale_cli",
+        }));
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ code: "not_found" }));
+    });
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const extendArguments = [
+    "source",
+    "capacity",
+    "extend",
+    "--run-id",
+    "run_paused_cli",
+    "--expected-capacity",
+    "15000",
+    "--expected-generation",
+    "1",
+    "--capacity",
+    "20000",
+    "--idempotency-key",
+    "extend-cli-demo",
+  ];
+
+  const extendedJson = await runCli(
+    [...extendArguments, "--json"],
+    environment,
+  );
+  assert.equal(extendedJson.code, 0, extendedJson.stderr);
+  assert.deepEqual(JSON.parse(extendedJson.stdout), extensionDocument);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/ingestion-runs/run_paused_cli/capacity/extension",
+    authorization: "Bearer cli-test-key",
+    body: {
+      expected_request_capacity: 15000,
+      expected_capacity_generation: 1,
+      request_capacity: 20000,
+      idempotency_key: "extend-cli-demo",
+    },
+  });
+
+  const extended = await runCli(extendArguments, environment);
+  assert.equal(extended.code, 0, extended.stderr);
+  assert.match(
+    extended.stdout,
+    /Ingestion Run run_paused_cli capacity extended/,
+  );
+  assert.match(
+    extended.stdout,
+    /Request Capacity: 15000 -> 20000 \(generation 1 -> 2\)/,
+  );
+  assert.match(extended.stdout, /Source Lineage: fusion-world-en/);
+  assert.doesNotMatch(extended.stdout, /cli-test-key/);
+
+  // A stale compare-and-set expectation renders the problem document and the
+  // conflict exit code.
+  const stale = await runCli(
+    [
+      "source",
+      "capacity",
+      "extend",
+      "--run-id",
+      "run_stale_cli",
+      "--expected-capacity",
+      "15000",
+      "--expected-generation",
+      "1",
+      "--capacity",
+      "20000",
+      "--idempotency-key",
+      "extend-stale-cli",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(stale.code, 7);
+  assert.deepEqual(JSON.parse(stale.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "request_capacity_mismatch",
+    detail:
+      "The expected request capacity is stale: the effective capacity is 20000.",
+  });
+
+  // Malformed or missing capacity values fail as usage errors before any
+  // request is made.
+  const mutationCount = requests.length;
+  for (const [option, value] of [
+    ["--capacity", "not-a-number"],
+    ["--capacity", "0"],
+    ["--expected-generation", "1.5"],
+  ]) {
+    const invalid = await runCli(
+      extendArguments.map((argument, index) =>
+        extendArguments[index - 1] === option ? value : argument
+      ),
+      environment,
+    );
+    assert.equal(invalid.code, 2, `${option}=${value} must be a usage error`);
+  }
+  const missing = await runCli(
+    ["source", "capacity", "extend", "--run-id", "run_paused_cli"],
+    environment,
+  );
+  assert.equal(missing.code, 2);
+  assert.equal(
+    requests.length,
+    mutationCount,
+    "usage failures must stop before any administration request",
+  );
+});

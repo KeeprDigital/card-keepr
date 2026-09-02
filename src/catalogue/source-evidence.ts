@@ -8,6 +8,7 @@ import {
   type StartEvidenceRunRequest,
 } from "./source-evidence-model";
 import {
+  extendRunRequestCapacity,
   publicObservationSet,
   requiredEvidenceRun,
   retryEvidenceRun,
@@ -18,6 +19,7 @@ import {
 } from "./source-evidence-repository";
 
 export {
+  extendRunRequestCapacity,
   retryEvidenceRun,
   showEvidenceRun,
   startEvidenceRun,
