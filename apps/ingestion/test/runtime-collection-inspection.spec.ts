@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
+  appendDiscoveredEvidenceRequests,
+  pendingEvidenceRequests,
+  requiredEvidenceRun,
+} from "../../../src/catalogue/source-evidence-repository";
+import {
   administrationRequest,
   createCollection,
   installRuntimeSuite,
@@ -314,3 +319,56 @@ test("per-request detail is bounded while aggregate counts stay exact", async ()
     fetch_attempt_count: 251,
   });
 }, 60_000);
+
+test("request counts group listing, detail, product-detail, image, and surface roles per lineage", async () => {
+  const run = await createCollection(
+    "collection_inspection_roles_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending root request missing");
+  const discovered = [
+    { role: "listing" as const, url: "https://official-source.invalid/listing/1" },
+    { role: "listing" as const, url: "https://official-source.invalid/listing/2" },
+    { role: "detail" as const, url: "https://official-source.invalid/cards/1" },
+    { role: "detail" as const, url: "https://official-source.invalid/cards/2" },
+    { role: "detail" as const, url: "https://official-source.invalid/cards/3" },
+    { role: "product_detail" as const, url: "https://official-source.invalid/products/1" },
+    { role: "image" as const, url: "https://official-source.invalid/images/1.png" },
+    { role: "image" as const, url: "https://official-source.invalid/images/2.png" },
+    { role: "image" as const, url: "https://official-source.invalid/images/3.png" },
+    { role: "image" as const, url: "https://official-source.invalid/images/4.png" },
+  ].map((request) => ({ ...request, headers: { accept: "*/*" } }));
+  await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    discovered,
+  );
+  const document = await showCollection(run.id) as unknown as {
+    collection: CollectionInspection;
+  };
+  expect(document.collection.requests).toEqual({
+    total: 11,
+    by_state: { pending: 11 },
+    by_role: { surface: 1, listing: 2, detail: 3, product_detail: 1, image: 4 },
+    by_lineage: [{
+      source_lineage: "one-piece-en",
+      total: 11,
+      by_state: { pending: 11 },
+      by_role: {
+        surface: 1,
+        listing: 2,
+        detail: 3,
+        product_detail: 1,
+        image: 4,
+      },
+    }],
+  });
+  expect(document.collection.capacity).toMatchObject([{
+    source_lineage: "one-piece-en",
+    used_capacity: 11,
+    remaining_capacity: 4_989,
+  }]);
+});

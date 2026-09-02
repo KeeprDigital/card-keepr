@@ -95,6 +95,7 @@ import type { EvidenceInspectionOptions } from "../../../src/catalogue/source-ev
 // advisory remaining-time estimate.
 function evidenceInspectionOptions(env: Env): EvidenceInspectionOptions {
   return {
+    parentWorkflow: env.EVIDENCE_INGESTION_WORKFLOW,
     hostWorkflow: env.EVIDENCE_HOST_WORKFLOW,
     pacing: {
       mode: sourceHostPacingMode(env.SOURCE_HOST_PACING_MODE),
@@ -849,7 +850,6 @@ async function handleIngestionRequest(
           await showEvidenceRun(
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceMatch[1]!),
-            env.EVIDENCE_INGESTION_WORKFLOW,
             evidenceInspectionOptions(env),
           ),
         );
@@ -1048,7 +1048,6 @@ async function handleIngestionRequest(
             await showEvidenceRun(
               env.CATALOGUE_DB,
               runId,
-              env.EVIDENCE_INGESTION_WORKFLOW,
               evidenceInspectionOptions(env),
             ),
           );

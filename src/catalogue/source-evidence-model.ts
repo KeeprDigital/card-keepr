@@ -10,6 +10,10 @@ import {
 } from "./source-adapters";
 import { AdministrationProblem } from "./ingestion";
 
+// The polite steady-state interval between requests to one Official Source
+// hostname when no deployment override is configured.
+export const defaultSourceHostPacingIntervalMilliseconds = 500;
+
 const allowedRequestHeaders = new Set([
   "accept",
   "accept-language",

@@ -3,6 +3,7 @@ import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertBoundedOfficialSourceRequest,
   assertIdentifier,
+  defaultSourceHostPacingIntervalMilliseconds,
   parseEvidencePlans,
   parseStringRecord,
   type EvidencePlan,
@@ -133,20 +134,6 @@ export type ObservationSetRow = {
   content_byte_length: number;
   content_object_key: string;
   observation_count: number;
-};
-
-type AttemptRow = {
-  id: string;
-  ingestion_run_id: string;
-  request_id: string;
-  attempt_number: number;
-  requested_at: string;
-  completed_at: string;
-  outcome: string;
-  http_status: number | null;
-  response_headers_json: string;
-  retry_after_ms: number | null;
-  diagnostic: string | null;
 };
 
 export async function startEvidenceRun(
@@ -1947,9 +1934,10 @@ export type CollectionTerminationRequest = Readonly<{
 // The stable terminal reason of an owner-terminated Ingestion Run.
 export const ingestionRunTerminatedFailureCode = "ingestion_run_terminated";
 
-// The owner actions the collection lifecycle currently admits for a run in
-// the given state: the inspection document lists them explicitly so
-// automation never infers valid transitions. A capacity-paused run may be
+// The collection actions the lifecycle currently admits for a run in the
+// given state (approval and rejection belong to the run document): the
+// inspection document lists them explicitly so automation never infers
+// valid transitions. A capacity-paused run may be
 // resumed as-is (re-admission simply pauses it again if nothing changed),
 // extended, or terminated; every other pause resumes or terminates; a
 // terminal evidence run can only be retried as a new linked run.
@@ -2090,7 +2078,8 @@ type TerminationRow = {
 // concurrent resume, capacity extension, or second termination resolves as
 // an explicit state conflict rather than a double outcome. Nothing retained
 // is deleted; the active-run reservation is released separately by the
-// administration layer after it has fenced late Workflow work.
+// administration layer after it has fenced late Workflow work, so the
+// retained response records only the decision, never the release.
 export async function terminateEvidenceRun(
   database: D1Database,
   runId: string,
@@ -2122,7 +2111,6 @@ export async function terminateEvidenceRun(
     pause_reason: pause.reason,
     paused_at: pause.paused_at,
     terminated_at: terminatedAt,
-    active_run_released: true,
   };
   let transitioned = false;
   try {
@@ -2231,13 +2219,14 @@ async function terminationReplay(
   return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 
-// Release the single active-run reservation of a terminated run. Guarded on
-// the terminal owner decision so it can never release a live run, and
-// idempotent so a replayed termination re-runs it harmlessly.
+// Release the single active-run reservation of a terminated run and report
+// whether the run holds it no longer. Guarded on the terminal owner decision
+// so it can never release a live run, and idempotent so a replayed
+// termination re-runs it harmlessly.
 export async function releaseTerminatedEvidenceRun(
   database: D1Database,
   runId: string,
-): Promise<void> {
+): Promise<boolean> {
   await database
     .prepare(
       `UPDATE operation_state SET active_ingestion_run_id = NULL
@@ -2249,6 +2238,12 @@ export async function releaseTerminatedEvidenceRun(
     )
     .bind(runId, ingestionRunTerminatedFailureCode)
     .run();
+  const operation = await database
+    .prepare(
+      "SELECT active_ingestion_run_id FROM operation_state WHERE singleton = 1",
+    )
+    .first<{ active_ingestion_run_id: string | null }>();
+  return operation !== null && operation.active_ingestion_run_id !== runId;
 }
 
 // The retained owner decision of a terminated run, or null while the run was
@@ -2380,22 +2375,22 @@ export async function finalizeEvidenceRun(
 }
 
 // The Workflow bindings and pacing configuration the inspection document
-// reads live facts from. Both are optional: repository callers without the
-// runtime (tests, replays) still get every persisted fact.
+// reads live facts from. All are optional: repository callers without the
+// runtime (creation replies, tests) still get every persisted fact.
 export type EvidenceInspectionOptions = Readonly<{
+  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>;
   hostWorkflow?: Workflow<EvidenceHostWorkflowParams>;
   pacing?: PacingConfiguration;
 }>;
 
 const defaultPacingConfiguration: PacingConfiguration = {
   mode: "production",
-  interval_ms: 500,
+  interval_ms: defaultSourceHostPacingIntervalMilliseconds,
 };
 
 export async function showEvidenceRun(
   database: D1Database,
   runId: string,
-  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
   options: EvidenceInspectionOptions = {},
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
@@ -2493,7 +2488,7 @@ export async function showEvidenceRun(
       run,
       workflowAttempts,
       progress,
-      parentWorkflow,
+      options.parentWorkflow,
       options.hostWorkflow,
     ),
     snapshots: detail.snapshots.map(publicSnapshot),

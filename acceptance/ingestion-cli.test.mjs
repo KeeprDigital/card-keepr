@@ -2434,13 +2434,17 @@ test("source show renders aggregated collection progress in human-readable form"
   );
   assert.match(
     out,
-    /Pacing: production 1000ms; www.dbs-cardgame.com 9000 pending \(waiting 800ms\)/,
+    /Pacing: production 1000ms; 1 host: www.dbs-cardgame.com 9000 pending, 3 captured \(waiting 800ms\)/,
   );
   assert.match(
     out,
     /Estimated minimum remaining: 2h 30m 0s \(advisory\)/,
   );
   assert.match(out, /Expected Catalogue Revision: catrev_current_cli/);
+  assert.match(
+    out,
+    /Detail lists bounded to the newest 200: snapshots, observation sets, diagnostics truncated/,
+  );
   assert.match(out, /Last progress: 2026-09-01T03:00:00.000Z/);
   assert.match(
     out,

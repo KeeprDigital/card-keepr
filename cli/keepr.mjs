@@ -1808,6 +1808,25 @@ function formatCollectionProgress(collection) {
         groups.length === 0 ? "" : ` (${groups.join("; ")})`
       }`,
     );
+    // Per-lineage counts only add information when a run spans lineages.
+    const byLineage = Array.isArray(requests.by_lineage)
+      ? requests.by_lineage
+      : [];
+    if (byLineage.length > 1) {
+      for (const group of byLineage) {
+        const lineage = safeDiagnosticReference(group?.source_lineage);
+        if (lineage === null || !Number.isSafeInteger(group.total)) continue;
+        const lineageGroups = [
+          formatCountMap(group.by_state),
+          formatCountMap(group.by_role),
+        ].filter((part) => part !== "");
+        lines.push(
+          `Requests ${lineage}: ${group.total}${
+            lineageGroups.length === 0 ? "" : ` (${lineageGroups.join("; ")})`
+          }`,
+        );
+      }
+    }
   }
   for (const capacity of Array.isArray(collection.capacity) ? collection.capacity : []) {
     const lineage = safeDiagnosticReference(capacity?.source_lineage);
@@ -1826,11 +1845,32 @@ function formatCollectionProgress(collection) {
     if (Number.isSafeInteger(capacity.required_capacity)) {
       details.push(`${capacity.required_capacity} required`);
     }
+    if (Number.isSafeInteger(capacity.overflow_request_count)) {
+      details.push(`${formatCount(capacity.overflow_request_count, "overflow request")}`);
+    }
     lines.push(
       `Capacity ${lineage}: ${capacity.used_capacity} used of ${
         capacity.request_capacity
       } (${details.join(", ")})`,
     );
+  }
+  const evidence = collection.evidence;
+  if (
+    typeof evidence === "object" && evidence !== null &&
+    Number.isSafeInteger(evidence.detail_limit)
+  ) {
+    const truncated = [
+      ["snapshots", evidence.snapshots_truncated],
+      ["observation sets", evidence.observation_sets_truncated],
+      ["diagnostics", evidence.diagnostics_truncated],
+    ].filter(([, flag]) => flag === true).map(([name]) => name);
+    if (truncated.length > 0) {
+      lines.push(
+        `Detail lists bounded to the newest ${evidence.detail_limit}: ${
+          truncated.join(", ")
+        } truncated`,
+      );
+    }
   }
   const failure = collection.evidence?.latest_failure;
   if (typeof failure === "object" && failure !== null) {
@@ -1881,6 +1921,11 @@ function formatCollectionProgress(collection) {
             return null;
           }
           return `${hostname} ${host.pending_request_count} pending${
+            Number.isSafeInteger(host.captured_request_count) &&
+              host.captured_request_count > 0
+              ? `, ${host.captured_request_count} captured`
+              : ""
+          }${
             Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0
               ? ` (waiting ${host.waiting_ms}ms)`
               : ""
@@ -1892,7 +1937,11 @@ function formatCollectionProgress(collection) {
           Number.isSafeInteger(pacing.interval_ms)
             ? ` ${pacing.interval_ms}ms`
             : ""
-        }${hosts.length === 0 ? "" : `; ${hosts.join(", ")}`}`,
+        }${
+          hosts.length === 0
+            ? ""
+            : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
+        }`,
       );
     }
   }
@@ -2122,6 +2171,7 @@ function formatEvidenceWorkflow(workflow) {
         const kind = safeMachineCode(attempt?.kind);
         if (id === null || kind === null) return null;
         return {
+          kind,
           current: attempt.current === true,
           text: `${kind} ${id}${
             Number.isSafeInteger(attempt.attempt_number)
@@ -2137,7 +2187,7 @@ function formatEvidenceWorkflow(workflow) {
       .filter((attempt) => attempt !== null);
     // The current parent attempt already has its own line above.
     const listed = attempts.filter((attempt) =>
-      !attempt.text.startsWith("parent ") || !attempt.current
+      attempt.kind !== "parent" || !attempt.current
     );
     lines.push(
       `Workflow attempts: ${attempts.length} recorded, ${

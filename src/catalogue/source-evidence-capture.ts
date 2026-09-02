@@ -4,6 +4,7 @@ import { requiredSourceAdapter } from "./source-adapters";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   completeOfficialCollectionRequestsFromDiscovery,
+  defaultSourceHostPacingIntervalMilliseconds,
   headersRecord,
   parseStringRecord,
   responseVary,
@@ -140,7 +141,7 @@ export function sourceHostPacingMode(
   );
 }
 
-export const defaultSourceHostPacingIntervalMilliseconds = 500;
+export { defaultSourceHostPacingIntervalMilliseconds };
 
 // Transport-layer Retry-After and 429/5xx backoff remain the safety net if a
 // host rejects this cadence; the interval only sets the polite steady state.
@@ -198,16 +199,20 @@ export async function advanceHostPacing(
     .run();
 }
 
+// Only a collecting run admits capture or parse work. A paused run keeps its
+// pending and captured Source Requests intact until the owner acts, and a
+// terminated run is fenced: late durable steps that re-read the run record
+// nothing further.
+function admitsCollectionWork(run: Pick<IngestionEvidenceRow, "state">): boolean {
+  return run.state === "collecting";
+}
+
 export async function prepareCaptureAttempt(
   database: D1Database,
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
 ): Promise<PreparedCaptureAttempt> {
-  // Only a collecting run admits capture or parse work. A paused run keeps
-  // its pending and captured Source Requests intact until the owner acts,
-  // and a terminated run is fenced: late durable steps that re-read the run
-  // record nothing further.
-  if (run.state !== "collecting") {
+  if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null };
   }
   const request = await currentRequest(
@@ -326,7 +331,7 @@ export async function capturePreparedAttempt(
   sourceRequest: EvidenceRequestRow,
   prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
 ): Promise<CaptureTransportResult> {
-  if (run.state !== "collecting") {
+  if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
   let operation = await requiredCaptureOperation(
@@ -605,7 +610,7 @@ export async function completeUploadedCapture(
   sourceRequest: EvidenceRequestRow,
   attemptId: string,
 ): Promise<CaptureTransportResult> {
-  if (run.state !== "collecting") {
+  if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
   const evidencePlan = evidencePlanForRequest(
@@ -731,7 +736,7 @@ export async function parseCapturedRequest(
   sourceRequest: EvidenceRequestRow,
   snapshotId: string,
 ): Promise<CaptureTransportResult> {
-  if (run.state !== "collecting") {
+  if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
   const evidencePlan = evidencePlanForRequest(

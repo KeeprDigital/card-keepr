@@ -185,8 +185,10 @@ export async function terminateEvidenceCollection(
     ...current.parent.map((id) => terminateWorkflowInstance(parentWorkflow, id)),
     ...current.child.map((id) => terminateWorkflowInstance(hostWorkflow, id)),
   ]);
-  await releaseTerminatedEvidenceRun(database, runId);
-  return document;
+  // The release outcome is observed, never assumed: a replay re-runs the
+  // fences and reports the reservation's actual state.
+  const activeRunReleased = await releaseTerminatedEvidenceRun(database, runId);
+  return { ...document, active_run_released: activeRunReleased };
 }
 
 // Best effort: a settled, absent, or unreachable instance rejects

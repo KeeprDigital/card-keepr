@@ -51,7 +51,6 @@ export type EvidenceCounts = Readonly<{
 
 type RequestGroupRow = {
   group_key: string;
-  sample_request_id: string;
   request_role: string;
   state: string;
   count: number;
@@ -86,20 +85,28 @@ export async function collectionInspection(
   const runId = input.run.id;
   const [groups, counts, latestFailure, currentRequest, hosts] =
     await Promise.all([
+      // Dynamically discovered and collection-plan identities carry their
+      // Source Lineage as a prefix and group by it; every other identity is
+      // an initial Evidence Plan request that resolves through its plan, so
+      // it groups by its whole identity.
       database
         .prepare(
           `SELECT
              CASE WHEN instr(request_id, ':') > 0
+               AND substr(request_id, 1, instr(request_id, ':') - 1)
+                 IN (SELECT value FROM json_each(?2))
                THEN substr(request_id, 1, instr(request_id, ':') - 1)
                ELSE request_id END AS group_key,
-             MIN(request_id) AS sample_request_id,
              request_role, state, COUNT(*) AS count
            FROM source_requests
            WHERE ingestion_run_id = ?1
            GROUP BY group_key, request_role, state
            ORDER BY group_key, request_role, state`,
         )
-        .bind(runId)
+        .bind(
+          runId,
+          JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
+        )
         .all<RequestGroupRow>(),
       database
         .prepare(
@@ -355,10 +362,9 @@ type RequestGrouping = {
   }>;
 };
 
-// Dynamically discovered and collection-plan identities carry their Source
-// Lineage as a prefix; initial Evidence Plan identities resolve through the
-// plan that declared them. Grouping happens in SQL by that prefix (or the
-// whole identity), so only one row per (group, role, state) reaches here.
+// A group key is either a Source Lineage (the prefix of discovered and
+// collection-plan identities) or one initial Evidence Plan identity, which
+// resolves through the plan that declared it.
 function groupedRequests(
   rows: readonly RequestGroupRow[],
   plans: readonly EvidencePlan[],
@@ -369,12 +375,10 @@ function groupedRequests(
       plan.requests.map(({ id }) => [id, plan.source_lineage] as const)
     ),
   );
-  const lineageOf = (row: RequestGroupRow): string => {
-    if (lineages.has(row.group_key)) return row.group_key;
-    return lineageOfPlanRequest.get(row.sample_request_id) ??
-      lineageOfPlanRequest.get(row.group_key) ??
-      row.group_key;
-  };
+  const lineageOf = (row: RequestGroupRow): string =>
+    lineages.has(row.group_key)
+      ? row.group_key
+      : lineageOfPlanRequest.get(row.group_key) ?? row.group_key;
   const grouping: RequestGrouping = {
     total: 0,
     by_state: {},

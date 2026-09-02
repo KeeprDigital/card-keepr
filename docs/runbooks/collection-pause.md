@@ -34,7 +34,9 @@ Both forms carry the same material facts. The `collection` block reports:
   decisions.
 - `workflow`: every parent and hostname-shard Workflow Attempt with a safe
   status; exactly one attempt per scope is current.
-- `actions`: the exact owner actions the lifecycle admits right now.
+- `actions`: the exact collection actions the lifecycle admits right now
+  (`resume`, `extend_capacity`, `terminate`, or `retry`); approval and
+  rejection stay on the run document.
 
 ## Pause reasons
 
