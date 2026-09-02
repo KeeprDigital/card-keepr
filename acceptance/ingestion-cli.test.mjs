@@ -1781,6 +1781,109 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
   assert.doesNotMatch(shown.stdout, /cli-test-key/);
 });
 
+test("a workflow-paused Ingestion Run reports its recovery facts through source show", async (t) => {
+  const pausedEvidence = {
+    id: "run_workflow_paused_cli",
+    state: "paused",
+    plan_origin: "production",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    failure_code: null,
+    collection_completed_at: null,
+    pause: {
+      reason: "source_workflow_stalled",
+      paused_at: "2026-09-01T00:00:00.000Z",
+      workflow_instance_id: "evidence-run_workflow_paused_cli",
+      workflow_status: "running",
+      last_progress_at: "2026-08-31T22:00:00.000Z",
+      actions: ["resume"],
+    },
+    workflow: {
+      parent_id: "evidence-run_workflow_paused_cli",
+      child_ids: [],
+      last_progress_at: "2026-08-31T22:00:00.000Z",
+      current_attempt: {
+        id: "evidence-run_workflow_paused_cli",
+        attempt_number: 1,
+        created_at: "2026-08-31T20:00:00.000Z",
+      },
+      attempts: [
+        {
+          id: "evidence-run_workflow_paused_cli",
+          kind: "parent",
+          attempt_number: 1,
+          created_at: "2026-08-31T20:00:00.000Z",
+          current: true,
+        },
+      ],
+      status: "running",
+    },
+    snapshots: [],
+    observation_sets: [],
+    diagnostics: [],
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: { request_id: "request_workflow_paused_cli" },
+    },
+  };
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (
+      request.url === "/v1/ingestion-runs/run_workflow_paused_cli/evidence"
+    ) {
+      response.end(JSON.stringify(pausedEvidence));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ code: "not_found" }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+
+  const shownJson = await runCli(
+    ["source", "show", "--run-id", "run_workflow_paused_cli", "--json"],
+    environment,
+  );
+  assert.equal(shownJson.code, 0, shownJson.stderr);
+  assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
+
+  const shown = await runCli(
+    ["source", "show", "--run-id", "run_workflow_paused_cli"],
+    environment,
+  );
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.match(
+    shown.stdout,
+    /Ingestion Run run_workflow_paused_cli evidence: paused/,
+  );
+  assert.match(
+    shown.stdout,
+    /Paused: source_workflow_stalled at 2026-09-01T00:00:00.000Z/,
+  );
+  assert.match(
+    shown.stdout,
+    /Workflow attempt: evidence-run_workflow_paused_cli \(status running\)/,
+  );
+  assert.match(shown.stdout, /Last progress: 2026-08-31T22:00:00.000Z/);
+  assert.match(shown.stdout, /Available actions: resume/);
+  assert.match(
+    shown.stdout,
+    /Workflow attempt 1: evidence-run_workflow_paused_cli \(status running\)/,
+  );
+  assert.doesNotMatch(shown.stdout, /cli-test-key/);
+});
+
 test("source capacity extend performs the compare-and-set administration mutation", async (t) => {
   const extensionDocument = {
     contract: "card-keepr-capacity-extension@1",

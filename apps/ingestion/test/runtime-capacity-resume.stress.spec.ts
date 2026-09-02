@@ -79,12 +79,15 @@ test("an extended production-shaped run resumes into bounded host shards without
     ).bind(runId, root.request_id).first("state")).toBe("observed");
 
     // The parent Source Request was re-parsed from its retained Source
-    // Snapshot: the run still holds exactly the one fetch attempt retained
+    // Snapshot: the root still holds exactly the one fetch attempt retained
     // before the pause, so nothing captured or observed was fetched again.
+    // (Pending overflow requests may already be collecting through the
+    // resumed hostname shards by now, so the run-wide attempt count is not
+    // a stable observation.)
     expect(await env.CATALOGUE_DB.prepare(
       `SELECT COUNT(*) AS count FROM source_fetch_attempts
-       WHERE ingestion_run_id = ?`,
-    ).bind(runId).first("count")).toBe(1);
+       WHERE ingestion_run_id = ? AND request_id = ?`,
+    ).bind(runId, root.request_id).first("count")).toBe(1);
   } finally {
     const current = await showCollection(runId);
     if (current.workflow.parent_id !== null) {

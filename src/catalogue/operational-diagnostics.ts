@@ -167,9 +167,24 @@ function safeWorkflowReferences(value: unknown): Record<string, unknown> {
       return safe === null ? [] : [safe];
     })
     : [];
+  const currentAttempt =
+    workflow.current_attempt !== null &&
+      typeof workflow.current_attempt === "object" &&
+      !Array.isArray(workflow.current_attempt)
+      ? (workflow.current_attempt as Record<string, unknown>)
+      : null;
   return {
     parent_id: safeReference(workflow.parent_id),
     child_ids: childIds,
+    current_attempt_id: currentAttempt === null
+      ? null
+      : safeReference(currentAttempt.id),
+    status: safeMachineCode(workflow.status),
+    classification: safeMachineCode(workflow.classification),
+    last_progress_at: safeReference(workflow.last_progress_at),
+    attempt_count: Array.isArray(workflow.attempts)
+      ? workflow.attempts.length
+      : 0,
   };
 }
 

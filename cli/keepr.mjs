@@ -1672,6 +1672,7 @@ function formatAdministrationResult(document) {
       formatCount(document.diagnostics.length, "diagnostic"),
     ];
     lines.push(...formatEvidencePause(document.pause));
+    lines.push(...formatEvidenceWorkflow(document.workflow));
     const requestId = safeDiagnosticReference(
       document.operational_diagnostics?.references?.request_id,
     );
@@ -1796,6 +1797,24 @@ function formatEvidencePause(pause) {
       }`,
     );
   }
+  // A Workflow Pause identifies the abandoned Workflow Attempt, the safe
+  // status that classified it, and the deterministic last-progress time the
+  // classification was derived from.
+  const workflowInstanceId = safeDiagnosticReference(
+    pause.workflow_instance_id,
+  );
+  if (workflowInstanceId !== null) {
+    const workflowStatus = safeMachineCode(pause.workflow_status);
+    lines.push(
+      `Workflow attempt: ${workflowInstanceId}${
+        workflowStatus === null ? "" : ` (status ${workflowStatus})`
+      }`,
+    );
+  }
+  const lastProgressAt = safeDiagnosticReference(pause.last_progress_at);
+  if (lastProgressAt !== null) {
+    lines.push(`Last progress: ${lastProgressAt}`);
+  }
   if (Array.isArray(pause.actions)) {
     const actions = pause.actions
       .map((action) => safeMachineCode(action))
@@ -1803,6 +1822,35 @@ function formatEvidencePause(pause) {
     if (actions.length > 0) {
       lines.push(`Available actions: ${actions.join(", ")}`);
     }
+  }
+  return lines;
+}
+
+// The collection Workflow observability facts: the current Workflow Attempt
+// with its safe status, its stall classification while collecting, and the
+// deterministic last-progress time.
+function formatEvidenceWorkflow(workflow) {
+  if (typeof workflow !== "object" || workflow === null) return [];
+  const lines = [];
+  const current = workflow.current_attempt;
+  if (typeof current === "object" && current !== null) {
+    const id = safeDiagnosticReference(current.id);
+    if (id !== null && Number.isSafeInteger(current.attempt_number)) {
+      const status = safeMachineCode(workflow.status);
+      lines.push(
+        `Workflow attempt ${current.attempt_number}: ${id}${
+          status === null ? "" : ` (status ${status})`
+        }`,
+      );
+    }
+  }
+  const classification = safeMachineCode(workflow.classification);
+  if (classification !== null) {
+    lines.push(`Workflow classification: ${classification}`);
+  }
+  const lastProgressAt = safeDiagnosticReference(workflow.last_progress_at);
+  if (lastProgressAt !== null) {
+    lines.push(`Last progress: ${lastProgressAt}`);
   }
   return lines;
 }

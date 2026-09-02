@@ -107,7 +107,25 @@ export type CollectionDocument = {
   snapshots: Snapshot[];
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];
-  workflow: { parent_id: string | null; child_ids: string[] };
+  workflow: {
+    parent_id: string | null;
+    child_ids: string[];
+    last_progress_at: string | null;
+    current_attempt: {
+      id: string;
+      attempt_number: number;
+      created_at: string | null;
+    } | null;
+    attempts: Array<{
+      id: string;
+      kind: string;
+      attempt_number: number;
+      created_at: string | null;
+      current: boolean;
+    }>;
+    status?: string;
+    classification?: string;
+  };
   official_source_collection_plans: Array<{
     source_lineage: string;
     discovery_observation_set_id: string;

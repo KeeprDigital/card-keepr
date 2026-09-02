@@ -56,6 +56,14 @@ _Avoid_: Mutable quota, adapter capacity change, resumed run
 The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing.
 _Avoid_: Failed request, Capacity Pause, linked retry run
 
+**Workflow Attempt**:
+One append-only recorded execution identity of the parent or hostname-shard Cloudflare Workflow driving an Ingestion Run's collection. A recovery supersedes an attempt by opening a deterministic new identity without deleting earlier ones, exactly one attempt per scope is current, and no attempt changes the Ingestion Run identity, its Source Requests, or its retained evidence.
+_Avoid_: Fetch attempt, retry generation, mutable workflow id
+
+**Workflow Pause**:
+The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid. Stall classification derives last progress from persisted lifecycle events and never counts a durable pacing sleep, Retry-After wait, or scheduled retry as a stall; nothing is recorded as failed, and resuming opens a new Workflow Attempt for the same run.
+_Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix
