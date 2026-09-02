@@ -1,12 +1,18 @@
 name: ci
 
+# Pull requests build refs/pull/N/merge, the PR merged into main as of the
+# run, so a second run on the resulting push to main would test the same
+# tree. Main is therefore not run on push; use workflow_dispatch when needed.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
@@ -22,22 +28,15 @@ jobs:
       - run: npm run typecheck
       - run: npm run types:check
       - run: npm run deploy:dry-run
-
-  api-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
       - run: npm run test:workers:api
 
   ingestion-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,11 +44,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:workers:ingestion
+      - run: npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
 
   acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,4 +60,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:acceptance
+      - run: npm run test:acceptance:shard -- --shard=${{ matrix.shard }}/3

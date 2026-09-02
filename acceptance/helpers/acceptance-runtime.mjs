@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync, rmSync } from "node:fs";
+import { cp, mkdtemp } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -30,12 +33,44 @@ export async function allocatePort() {
   throw new Error("An unused local port could not be allocated.");
 }
 
+// Migrate CATALOGUE_DB under statePath. Running the wrangler CLI costs
+// several seconds per boot, so the migrated D1 directory is built once per
+// process and config into a template, then copied into each fresh statePath.
+// A statePath that already holds D1 state is migrated in place instead, so
+// callers layering migrations onto restored or seeded state keep the real
+// wrangler run.
+const migratedTemplates = new Map();
+const D1_STATE = join("v3", "d1");
+
 export async function applyMigrations(statePath, config) {
+  const resolvedConfig = config ?? "apps/ingestion/wrangler.jsonc";
+  if (existsSync(join(statePath, D1_STATE))) {
+    await runMigrations(statePath, resolvedConfig);
+    return;
+  }
+  let template = migratedTemplates.get(resolvedConfig);
+  if (template === undefined) {
+    template = buildMigratedTemplate(resolvedConfig);
+    migratedTemplates.set(resolvedConfig, template);
+  }
+  await cp(join(await template, D1_STATE), join(statePath, D1_STATE), {
+    recursive: true,
+  });
+}
+
+async function buildMigratedTemplate(config) {
+  const template = await mkdtemp(join(tmpdir(), "card-keepr-migrated-"));
+  process.once("exit", () => rmSync(template, { recursive: true, force: true }));
+  await runMigrations(template, config);
+  return template;
+}
+
+async function runMigrations(statePath, config) {
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
     [
       "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", config ?? "apps/ingestion/wrangler.jsonc",
+      "--config", config,
       "--persist-to", statePath,
     ],
     { ...processEnvironment(statePath), CI: "1" },

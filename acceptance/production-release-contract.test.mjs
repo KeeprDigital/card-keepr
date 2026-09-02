@@ -43,7 +43,9 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /changed_rows[\s\S]*transition_rows[\s\S]*changed_rows/u);
   assert.doesNotMatch(release, /d1 delete|databases\/\$\{RETAINED_DATABASE_ID\}/u);
   assert.match(ci, /pull_request:/u);
-  assert.match(ci, /push:/u);
+  // Pull requests already test refs/pull/N/merge; a push-to-main run repeats it.
+  assert.match(ci, /workflow_dispatch:/u);
+  assert.doesNotMatch(ci, /^\s*push:/mu);
   assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
 });
 
