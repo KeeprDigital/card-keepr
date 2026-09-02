@@ -1,5 +1,5 @@
 import { AdministrationProblem } from "./administration-problem.ts";
-import { canonicalJson, sha256, utf8 } from "./serialization";
+import { canonicalJson, sha256Text } from "./serialization";
 import { assertIdentifier } from "./source-evidence-model";
 
 // The two bearer keys each worker accepts in primary-plus-replacement form
@@ -56,17 +56,15 @@ export async function appendCredentialRotationLogEntry(
   assertIdentifier(request.idempotency_key, "idempotency_key");
   const credentialClass = requiredCredentialClass(request.credential_class);
   const operatorNote = requiredOperatorNote(request.operator_note);
-  const requestDigest = await sha256(utf8(canonicalJson({
+  const requestDigest = await sha256Text(canonicalJson({
     credential_class: credentialClass,
     operator_note: operatorNote,
     idempotency_key: request.idempotency_key,
-  })));
-  const replayed = await retainedEntry(
-    database,
-    request.idempotency_key,
-    requestDigest,
-  );
-  if (replayed !== null) return { entry: replayed, created: false };
+  }));
+  const replayed = () =>
+    retainedEntry(database, request.idempotency_key, requestDigest);
+  const retained = await replayed();
+  if (retained !== null) return { entry: retained, created: false };
   const inserted = await database
     .prepare(
       `INSERT INTO credential_rotation_log (
@@ -88,11 +86,7 @@ export async function appendCredentialRotationLogEntry(
   if (inserted !== null) return { entry: entryFromRow(inserted), created: true };
   // A concurrent append under the same key won the insert; report its
   // retained entry (or its conflict) exactly as a later replay would.
-  const raced = await retainedEntry(
-    database,
-    request.idempotency_key,
-    requestDigest,
-  );
+  const raced = await replayed();
   if (raced === null) {
     throw new Error("The credential rotation log entry could not be retained.");
   }

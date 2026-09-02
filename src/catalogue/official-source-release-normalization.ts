@@ -40,17 +40,16 @@ export function normalizedOfficialReleaseDate(
   }
   if (options.seasons === true) {
     const seasonMatch = normalized.match(/^([A-Za-z]+),?\s+(\d{4})$/u);
-    const season = seasonMatch === null
-      ? undefined
-      : seasonNames.get(seasonMatch[1]!.toLocaleLowerCase());
-    if (season !== undefined) {
-      return { precision: "season", value: `${seasonMatch![2]}-${season}` };
-    }
-    const commaMonth = seasonMatch === null
-      ? undefined
-      : monthNumbers.get(seasonMatch[1]!.toLocaleLowerCase());
-    if (commaMonth !== undefined) {
-      return { precision: "month", value: `${seasonMatch![2]}-${commaMonth}` };
+    if (seasonMatch !== null) {
+      const [, word = "", year = ""] = seasonMatch;
+      const season = seasonNames.get(word.toLocaleLowerCase());
+      if (season !== undefined) {
+        return { precision: "season", value: `${year}-${season}` };
+      }
+      const commaMonth = monthNumbers.get(word.toLocaleLowerCase());
+      if (commaMonth !== undefined) {
+        return { precision: "month", value: `${year}-${commaMonth}` };
+      }
     }
   }
   if (/^\d{4}-\d{2}-\d{2}$/u.test(normalized)) {
@@ -83,10 +82,11 @@ export function normalizedOfficialReleaseDate(
   );
   const displayMonth = normalized.match(/^([A-Za-z]+)\s+(\d{4})$/u);
   if (monthFirst !== null || dayFirst !== null) {
-    const monthName = (monthFirst?.[1] ?? dayFirst?.[2])!.toLocaleLowerCase();
+    const monthName = (monthFirst?.[1] ?? dayFirst?.[2] ?? "")
+      .toLocaleLowerCase();
     const month = monthNumbers.get(monthName);
-    const day = (monthFirst?.[2] ?? dayFirst?.[1])!;
-    const year = monthFirst?.[3] ?? dayFirst?.[3];
+    const day = monthFirst?.[2] ?? dayFirst?.[1] ?? "";
+    const year = monthFirst?.[3] ?? dayFirst?.[3] ?? "";
     if (month === undefined) {
       throw new Error(`Unrecognized official Release date: ${normalized}.`);
     }
@@ -95,7 +95,7 @@ export function normalizedOfficialReleaseDate(
     return { precision: "day", value: date };
   }
   if (displayMonth !== null) {
-    const month = monthNumbers.get(displayMonth[1]!.toLocaleLowerCase());
+    const month = monthNumbers.get((displayMonth[1] ?? "").toLocaleLowerCase());
     if (month !== undefined) {
       return { precision: "month", value: `${displayMonth[2]}-${month}` };
     }

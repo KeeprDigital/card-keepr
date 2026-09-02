@@ -88,8 +88,8 @@ curl -fsS -H "Authorization: Bearer $REPLACEMENT" "$KEEPR_INGESTION_URL/health"
 Now distribute the key: update every operator's `KEEPR_ADMINISTRATION_KEY`
 (or `KEEPR_API_KEY` and each Catalogue Consumer for the API worker). The old
 key keeps working only while it still occupies a slot, which it no longer
-does after this step; a consumer that fails from here on is one that was not
-updated.
+does after this step; a Catalogue Consumer that fails from here on is one
+that was not updated.
 
 ## Clear the old value
 
@@ -141,7 +141,8 @@ Entries are append-only: the database refuses updates and deletes, and the
 - **Promotion fails after `secret put`**: the replacement slot still holds
   the same value, so consumers already holding it keep working. Re-run the
   promote command; do not distribute the old key again.
-- **A consumer is locked out after clearing**: it still presents the old key.
+- **A Catalogue Consumer is locked out after clearing**: it still presents the
+  old key.
   Give it the new key; do not reinstate the old value, which would extend the
   key's life past its recorded rotation.
 - **A rotation was performed but not logged**: append the entry late with a

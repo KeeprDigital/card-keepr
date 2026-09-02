@@ -28,24 +28,20 @@ export function parsedOfficialArtworkIdentity(
     if (
       !isRecord(value) ||
       Object.keys(value).sort().join(",") !==
-        "artwork_id,official_card_identity,roles" ||
-      typeof value.official_card_identity !== "string" ||
-      value.official_card_identity.length === 0 ||
-      !Array.isArray(value.roles) ||
-      value.roles.length === 0 ||
-      value.roles.some((role) => typeof role !== "string" || role.length === 0) ||
-      (
-        value.artwork_id !== null &&
-        (typeof value.artwork_id !== "string" || value.artwork_id.length === 0)
-      )
+        "artwork_id,official_card_identity,roles"
     ) {
       return null;
     }
-    return {
-      official_card_identity: value.official_card_identity,
-      roles: value.roles as string[],
-      artwork_id: value.artwork_id as string | null,
-    };
+    const { official_card_identity, roles, artwork_id } = value;
+    if (
+      typeof official_card_identity !== "string" ||
+      official_card_identity.length === 0 ||
+      !isNonEmptyStringArray(roles) ||
+      (artwork_id !== null && !isNonEmptyString(artwork_id))
+    ) {
+      return null;
+    }
+    return { official_card_identity, roles, artwork_id };
   } catch {
     return null;
   }
@@ -78,4 +74,13 @@ function normalizedOfficialArtworkIdentity(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 &&
+    value.every(isNonEmptyString);
 }

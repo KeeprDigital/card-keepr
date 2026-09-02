@@ -1,17 +1,11 @@
 import { env, exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
+import type {
+  CredentialRotationLogEntry as LogEntry,
+} from "../../../src/catalogue/credential-rotation-log";
 import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
 
 installRuntimeSuite();
-
-type LogEntry = {
-  contract: string;
-  sequence: number;
-  credential_class: string;
-  operator_note: string;
-  recorded_at: string;
-  idempotency_key: string;
-};
 
 async function appendEntry(
   body: Record<string, unknown>,
