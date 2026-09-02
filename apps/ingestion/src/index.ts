@@ -52,7 +52,10 @@ import {
   verifyCatalogueRecovery,
 } from "../../../src/catalogue/recovery";
 import { activeD1CredentialSlots } from "./backup-workflow";
-import { resumeEvidenceRun } from "./evidence-administration";
+import {
+  resumeEvidenceRun,
+  terminateEvidenceCollection,
+} from "./evidence-administration";
 import {
   CredentialRotationProblem,
 } from "../../../src/catalogue/credential-rotation";
@@ -81,6 +84,27 @@ import {
   retryCatalogueExportDeletion,
 } from "../../../src/catalogue/catalogue-export-deletion";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
+import {
+  sourceHostPacingIntervalMilliseconds,
+  sourceHostPacingMode,
+} from "../../../src/catalogue/source-evidence-capture";
+import type { EvidenceInspectionOptions } from "../../../src/catalogue/source-evidence-repository";
+
+// The live facts the evidence status document reads beyond D1: hostname-shard
+// Workflow statuses and the configured per-host pacing that grounds its
+// advisory remaining-time estimate.
+function evidenceInspectionOptions(env: Env): EvidenceInspectionOptions {
+  return {
+    parentWorkflow: env.EVIDENCE_INGESTION_WORKFLOW,
+    hostWorkflow: env.EVIDENCE_HOST_WORKFLOW,
+    pacing: {
+      mode: sourceHostPacingMode(env.SOURCE_HOST_PACING_MODE),
+      interval_ms: sourceHostPacingIntervalMilliseconds(
+        env.SOURCE_HOST_PACING_INTERVAL_MS,
+      ),
+    },
+  };
+}
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -693,6 +717,28 @@ async function handleIngestionRequest(
         );
       }
 
+      const evidenceTerminationMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/collection\/termination$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "POST" &&
+        evidenceTerminationMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["idempotency_key"]);
+        return Response.json(
+          await terminateEvidenceCollection(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_INGESTION_WORKFLOW,
+            env.EVIDENCE_HOST_WORKFLOW,
+            decodeURIComponent(evidenceTerminationMatch[1]!),
+            requiredString(body, "idempotency_key"),
+          ),
+          { status: 200 },
+        );
+      }
+
       const capacityExtensionMatch =
         /^\/v1\/ingestion-runs\/([^/]+)\/capacity\/extension$/.exec(
           url.pathname,
@@ -804,7 +850,7 @@ async function handleIngestionRequest(
           await showEvidenceRun(
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceMatch[1]!),
-            env.EVIDENCE_INGESTION_WORKFLOW,
+            evidenceInspectionOptions(env),
           ),
         );
       }
@@ -1002,7 +1048,7 @@ async function handleIngestionRequest(
             await showEvidenceRun(
               env.CATALOGUE_DB,
               runId,
-              env.EVIDENCE_INGESTION_WORKFLOW,
+              evidenceInspectionOptions(env),
             ),
           );
         }

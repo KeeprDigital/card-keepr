@@ -123,6 +123,9 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "source", "resume")) {
     return resumeEvidenceCollection(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "source", "terminate")) {
+    return terminateEvidenceCollection(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "retry")) {
     return retryEvidenceCollection(arguments_.slice(2), environment, json);
   }
@@ -1184,6 +1187,32 @@ async function resumeEvidenceCollection(arguments_, environment, json) {
   );
 }
 
+// Termination is the owner's deliberate decision to abandon a paused
+// Ingestion Run: it is idempotent under its key and releases the single
+// active-run reservation while retaining every evidence object.
+async function terminateEvidenceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/termination`,
+    "POST",
+    { idempotency_key: idempotencyKey },
+  );
+}
+
 async function retryEvidenceCollection(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--run-id",
@@ -1626,7 +1655,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
@@ -1655,6 +1684,9 @@ function formatAdministrationResult(document) {
   if (document.contract === "card-keepr-capacity-extension@1") {
     return formatCapacityExtension(document);
   }
+  if (document.contract === "card-keepr-collection-termination@1") {
+    return formatCollectionTermination(document);
+  }
   if (
     Array.isArray(document.snapshots) &&
     Array.isArray(document.observation_sets) &&
@@ -1664,15 +1696,13 @@ function formatAdministrationResult(document) {
   ) {
     const lines = [
       `Ingestion Run ${document.id} evidence: ${document.state}`,
-      formatCount(document.snapshots.length, "Source Snapshot"),
-      formatCount(
-        document.observation_sets.length,
-        "Source Observation set",
-      ),
-      formatCount(document.diagnostics.length, "diagnostic"),
+      ...formatEvidenceVolume(document),
     ];
     lines.push(...formatEvidencePause(document.pause));
+    lines.push(...formatEvidenceTermination(document.termination));
+    lines.push(...formatCollectionProgress(document.collection));
     lines.push(...formatEvidenceWorkflow(document.workflow));
+    lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
     const requestId = safeDiagnosticReference(
       document.operational_diagnostics?.references?.request_id,
     );
@@ -1697,6 +1727,242 @@ function formatAdministrationResult(document) {
 
 function formatCount(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// Evidence volume prefers the aggregate counts of the collection block: the
+// per-request detail lists are bounded, so their lengths understate a
+// production-sized run.
+function formatEvidenceVolume(document) {
+  const evidence = document.collection?.evidence;
+  if (
+    typeof evidence === "object" && evidence !== null &&
+    Number.isSafeInteger(evidence.snapshot_count) &&
+    Number.isSafeInteger(evidence.observation_set_count) &&
+    Number.isSafeInteger(evidence.fetch_attempt_count)
+  ) {
+    return [
+      `${formatCount(evidence.snapshot_count, "Source Snapshot")}${
+        Number.isSafeInteger(evidence.retained_byte_total)
+          ? ` (${evidence.retained_byte_total} bytes)`
+          : ""
+      }`,
+      formatCount(evidence.observation_set_count, "Source Observation set"),
+      `${formatCount(evidence.fetch_attempt_count, "fetch attempt")}${
+        Number.isSafeInteger(evidence.retry_attempt_count) &&
+          Number.isSafeInteger(evidence.failed_attempt_count)
+          ? ` (${evidence.retry_attempt_count} ${
+            evidence.retry_attempt_count === 1 ? "retry" : "retries"
+          }, ${formatCount(evidence.failed_attempt_count, "failure")})`
+          : ""
+      }`,
+    ];
+  }
+  return [
+    formatCount(document.snapshots.length, "Source Snapshot"),
+    formatCount(document.observation_sets.length, "Source Observation set"),
+    formatCount(document.diagnostics.length, "diagnostic"),
+  ];
+}
+
+function formatCountMap(map) {
+  if (typeof map !== "object" || map === null) return "";
+  return Object.entries(map)
+    .filter(([key, value]) =>
+      safeMachineCode(key) !== null && Number.isSafeInteger(value)
+    )
+    .map(([key, value]) => `${key} ${value}`)
+    .join(", ");
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}h ${minutes}m ${seconds}s`
+    : minutes > 0
+      ? `${minutes}m ${seconds}s`
+      : `${seconds}s`;
+}
+
+// The aggregated collection progress: request counts by state and role,
+// per-lineage capacity, the latest safe failure, the current safe request
+// reference, host pacing, the advisory remaining-time floor, and the
+// lifecycle timestamps. Human output carries the same material facts as the
+// JSON document, in the same closed vocabulary.
+function formatCollectionProgress(collection) {
+  if (typeof collection !== "object" || collection === null) return [];
+  const lines = [];
+  const requests = collection.requests;
+  if (
+    typeof requests === "object" && requests !== null &&
+    Number.isSafeInteger(requests.total)
+  ) {
+    const groups = [
+      formatCountMap(requests.by_state),
+      formatCountMap(requests.by_role),
+    ].filter((group) => group !== "");
+    lines.push(
+      `Requests: ${requests.total}${
+        groups.length === 0 ? "" : ` (${groups.join("; ")})`
+      }`,
+    );
+    // Per-lineage counts only add information when a run spans lineages.
+    const byLineage = Array.isArray(requests.by_lineage)
+      ? requests.by_lineage
+      : [];
+    if (byLineage.length > 1) {
+      for (const group of byLineage) {
+        const lineage = safeDiagnosticReference(group?.source_lineage);
+        if (lineage === null || !Number.isSafeInteger(group.total)) continue;
+        const lineageGroups = [
+          formatCountMap(group.by_state),
+          formatCountMap(group.by_role),
+        ].filter((part) => part !== "");
+        lines.push(
+          `Requests ${lineage}: ${group.total}${
+            lineageGroups.length === 0 ? "" : ` (${lineageGroups.join("; ")})`
+          }`,
+        );
+      }
+    }
+  }
+  for (const capacity of Array.isArray(collection.capacity) ? collection.capacity : []) {
+    const lineage = safeDiagnosticReference(capacity?.source_lineage);
+    if (
+      lineage === null ||
+      !Number.isSafeInteger(capacity.used_capacity) ||
+      !Number.isSafeInteger(capacity.request_capacity) ||
+      !Number.isSafeInteger(capacity.capacity_generation)
+    ) {
+      continue;
+    }
+    const details = [`generation ${capacity.capacity_generation}`];
+    if (Number.isSafeInteger(capacity.remaining_capacity)) {
+      details.push(`${capacity.remaining_capacity} remaining`);
+    }
+    if (Number.isSafeInteger(capacity.required_capacity)) {
+      details.push(`${capacity.required_capacity} required`);
+    }
+    if (Number.isSafeInteger(capacity.overflow_request_count)) {
+      details.push(`${formatCount(capacity.overflow_request_count, "overflow request")}`);
+    }
+    lines.push(
+      `Capacity ${lineage}: ${capacity.used_capacity} used of ${
+        capacity.request_capacity
+      } (${details.join(", ")})`,
+    );
+  }
+  const evidence = collection.evidence;
+  if (
+    typeof evidence === "object" && evidence !== null &&
+    Number.isSafeInteger(evidence.detail_limit)
+  ) {
+    const truncated = [
+      ["snapshots", evidence.snapshots_truncated],
+      ["observation sets", evidence.observation_sets_truncated],
+      ["diagnostics", evidence.diagnostics_truncated],
+    ].filter(([, flag]) => flag === true).map(([name]) => name);
+    if (truncated.length > 0) {
+      lines.push(
+        `Detail lists bounded to the newest ${evidence.detail_limit}: ${
+          truncated.join(", ")
+        } truncated`,
+      );
+    }
+  }
+  const failure = collection.evidence?.latest_failure;
+  if (typeof failure === "object" && failure !== null) {
+    const classification = safeMachineCode(failure.classification);
+    const requestId = safeDiagnosticReference(failure.request_id);
+    if (classification !== null && requestId !== null) {
+      const at = safeDiagnosticReference(failure.at);
+      lines.push(
+        `Latest failure: ${classification}${
+          Number.isSafeInteger(failure.http_status)
+            ? ` (HTTP ${failure.http_status})`
+            : ""
+        } on ${requestId}${
+          Number.isSafeInteger(failure.attempt_number)
+            ? ` attempt ${failure.attempt_number}`
+            : ""
+        }${at === null ? "" : ` at ${at}`}`,
+      );
+    }
+  }
+  const current = collection.progress?.current_request;
+  if (typeof current === "object" && current !== null) {
+    const requestId = safeDiagnosticReference(current.request_id);
+    if (requestId !== null) {
+      const facts = [
+        safeDiagnosticReference(current.hostname),
+        safeMachineCode(current.role),
+        safeMachineCode(current.state),
+        Number.isSafeInteger(current.attempt_count)
+          ? formatCount(current.attempt_count, "attempt")
+          : null,
+      ].filter((fact) => fact !== null);
+      lines.push(
+        `Current request: ${requestId}${
+          facts.length === 0 ? "" : ` (${facts.join(", ")})`
+        }`,
+      );
+    }
+  }
+  const pacing = collection.pacing;
+  if (typeof pacing === "object" && pacing !== null) {
+    const mode = safeMachineCode(pacing.mode);
+    if (mode !== null) {
+      const hosts = (Array.isArray(pacing.hosts) ? pacing.hosts : [])
+        .map((host) => {
+          const hostname = safeDiagnosticReference(host?.hostname);
+          if (hostname === null || !Number.isSafeInteger(host.pending_request_count)) {
+            return null;
+          }
+          return `${hostname} ${host.pending_request_count} pending${
+            Number.isSafeInteger(host.captured_request_count) &&
+              host.captured_request_count > 0
+              ? `, ${host.captured_request_count} captured`
+              : ""
+          }${
+            Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0
+              ? ` (waiting ${host.waiting_ms}ms)`
+              : ""
+          }`;
+        })
+        .filter((host) => host !== null);
+      lines.push(
+        `Pacing: ${mode}${
+          Number.isSafeInteger(pacing.interval_ms)
+            ? ` ${pacing.interval_ms}ms`
+            : ""
+        }${
+          hosts.length === 0
+            ? ""
+            : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
+        }`,
+      );
+    }
+  }
+  const estimate = collection.estimate;
+  if (
+    typeof estimate === "object" && estimate !== null &&
+    Number.isSafeInteger(estimate.minimum_remaining_ms)
+  ) {
+    lines.push(
+      `Estimated minimum remaining: ${
+        formatDuration(estimate.minimum_remaining_ms)
+      } (advisory)`,
+    );
+  }
+  const expectedRevision = safeDiagnosticReference(
+    collection.expected_catalogue_revision_id,
+  );
+  if (expectedRevision !== null) {
+    lines.push(`Expected Catalogue Revision: ${expectedRevision}`);
+  }
+  return lines;
 }
 
 // The confirmation facts of an applied capacity extension: which Ingestion
@@ -1815,15 +2081,61 @@ function formatEvidencePause(pause) {
   if (lastProgressAt !== null) {
     lines.push(`Last progress: ${lastProgressAt}`);
   }
-  if (Array.isArray(pause.actions)) {
-    const actions = pause.actions
-      .map((action) => safeMachineCode(action))
-      .filter((action) => action !== null);
-    if (actions.length > 0) {
-      lines.push(`Available actions: ${actions.join(", ")}`);
-    }
-  }
   return lines;
+}
+
+// The exact owner actions the collection lifecycle currently admits, so an
+// operator reading the human form sees the same choices automation reads
+// from the JSON document.
+function formatEvidenceActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  const safe = actions
+    .map((action) => safeMachineCode(action))
+    .filter((action) => action !== null);
+  return safe.length === 0 ? [] : [`Available actions: ${safe.join(", ")}`];
+}
+
+// The retained owner decision of a terminated run: the stable terminal
+// reason, when it was taken, and which pause it abandoned.
+function formatEvidenceTermination(termination) {
+  if (typeof termination !== "object" || termination === null) return [];
+  const reason = safeMachineCode(termination.reason);
+  if (reason === null) return [];
+  const terminatedAt = safeDiagnosticReference(termination.terminated_at);
+  const pauseReason = safeMachineCode(termination.pause_reason);
+  const pausedAt = safeDiagnosticReference(termination.paused_at);
+  const abandoned = pauseReason === null
+    ? ""
+    : ` (paused ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`})`;
+  return [
+    `Terminated: ${reason}${
+      terminatedAt === null ? "" : ` at ${terminatedAt}`
+    }${abandoned}`,
+  ];
+}
+
+// The confirmation facts of an applied termination: which run became
+// terminal, which pause it abandoned, and whether the single active-run
+// reservation was released.
+function formatCollectionTermination(document) {
+  const lines = [];
+  const runId = safeDiagnosticReference(document.ingestion_run_id);
+  if (runId !== null) lines.push(`Ingestion Run ${runId} terminated`);
+  const pauseReason = safeMachineCode(document.pause_reason);
+  const pausedAt = safeDiagnosticReference(document.paused_at);
+  if (pauseReason !== null) {
+    lines.push(
+      `Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
+    );
+  }
+  const terminatedAt = safeDiagnosticReference(document.terminated_at);
+  if (terminatedAt !== null) lines.push(`Terminated at: ${terminatedAt}`);
+  if (typeof document.active_run_released === "boolean") {
+    lines.push(
+      `Active run released: ${document.active_run_released ? "yes" : "no"}`,
+    );
+  }
+  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
 
 // The collection Workflow observability facts: the current Workflow Attempt
@@ -1851,6 +2163,41 @@ function formatEvidenceWorkflow(workflow) {
   const lastProgressAt = safeDiagnosticReference(workflow.last_progress_at);
   if (lastProgressAt !== null) {
     lines.push(`Last progress: ${lastProgressAt}`);
+  }
+  if (Array.isArray(workflow.attempts) && workflow.attempts.length > 0) {
+    const attempts = workflow.attempts
+      .map((attempt) => {
+        const id = safeDiagnosticReference(attempt?.id);
+        const kind = safeMachineCode(attempt?.kind);
+        if (id === null || kind === null) return null;
+        return {
+          kind,
+          current: attempt.current === true,
+          text: `${kind} ${id}${
+            Number.isSafeInteger(attempt.attempt_number)
+              ? ` attempt ${attempt.attempt_number}`
+              : ""
+          }${
+            safeMachineCode(attempt.status) === null
+              ? ""
+              : ` ${attempt.status}`
+          }${attempt.current === true ? " (current)" : ""}`,
+        };
+      })
+      .filter((attempt) => attempt !== null);
+    // The current parent attempt already has its own line above.
+    const listed = attempts.filter((attempt) =>
+      attempt.kind !== "parent" || !attempt.current
+    );
+    lines.push(
+      `Workflow attempts: ${attempts.length} recorded, ${
+        attempts.filter((attempt) => attempt.current).length
+      } current${
+        listed.length === 0
+          ? ""
+          : `; ${listed.map((attempt) => attempt.text).join("; ")}`
+      }`,
+    );
   }
   return lines;
 }

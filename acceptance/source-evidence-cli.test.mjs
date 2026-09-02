@@ -96,6 +96,108 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     "redirect",
   );
 
+  // A run paused by a source that never recovers is abandoned deliberately:
+  // `keepr source terminate` records the owner decision, retains the
+  // diagnostics of the paused generation, releases the active-run
+  // reservation, and inspection stops advertising resume.
+  const abandoned = await collectResumeAndShow(
+    "cli_terminated_evidence_001",
+    "unavailable",
+    "paused",
+    cliEnvironment,
+    ingestion,
+    directory,
+  );
+  assert.equal(abandoned.pause.reason, "source_transport_retries_exhausted");
+  assert.deepEqual(abandoned.actions, ["resume", "terminate"]);
+  assert.equal(abandoned.collection.state, "paused");
+  assert.equal(
+    abandoned.collection.pause_reason,
+    "source_transport_retries_exhausted",
+  );
+  assert.equal(abandoned.collection.evidence.fetch_attempt_count, 4);
+  assert.equal(abandoned.collection.evidence.retry_attempt_count, 3);
+  assert.equal(
+    abandoned.collection.evidence.latest_failure.classification,
+    "http_failure",
+  );
+  assert.equal(
+    abandoned.collection.progress.current_request.request_id,
+    "one-piece-en:discovery",
+  );
+  assert.equal(abandoned.collection.estimate.advisory, true);
+  const terminated = await runCli(
+    [
+      "source",
+      "terminate",
+      "--run-id",
+      abandoned.id,
+      "--idempotency-key",
+      "cli_terminated_evidence_001_terminate",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(terminated.code, 0, terminated.stderr);
+  const terminationDocument = JSON.parse(terminated.stdout);
+  assert.equal(
+    terminationDocument.contract,
+    "card-keepr-collection-termination@1",
+  );
+  assert.equal(terminationDocument.ingestion_run_id, abandoned.id);
+  assert.equal(terminationDocument.failure_code, "ingestion_run_terminated");
+  assert.equal(
+    terminationDocument.pause_reason,
+    "source_transport_retries_exhausted",
+  );
+  assert.equal(terminationDocument.active_run_released, true);
+  const replayed = await runCli(
+    [
+      "source",
+      "terminate",
+      "--run-id",
+      abandoned.id,
+      "--idempotency-key",
+      "cli_terminated_evidence_001_terminate",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(replayed.code, 0, replayed.stderr);
+  assert.deepEqual(JSON.parse(replayed.stdout), terminationDocument);
+  const shownTerminated = await runCli(
+    ["source", "show", "--run-id", abandoned.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(shownTerminated.code, 0, shownTerminated.stderr);
+  const terminatedRun = JSON.parse(shownTerminated.stdout);
+  assert.equal(terminatedRun.state, "failed");
+  assert.equal(terminatedRun.failure_code, "ingestion_run_terminated");
+  assert.equal(terminatedRun.termination.reason, "ingestion_run_terminated");
+  assert.equal(
+    terminatedRun.termination.pause_reason,
+    "source_transport_retries_exhausted",
+  );
+  assert.deepEqual(terminatedRun.actions, ["retry"]);
+  assert.equal(terminatedRun.pause, undefined);
+  assert.equal(terminatedRun.diagnostics.length, 4);
+  const resumeRefused = await runCli(
+    ["source", "resume", "--run-id", abandoned.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(resumeRefused.code, 7);
+  assert.equal(
+    JSON.parse(resumeRefused.stdout).code,
+    "ingestion_run_not_collecting",
+  );
+  const terminatedHuman = await runCli(
+    ["source", "show", "--run-id", abandoned.id],
+    cliEnvironment,
+  );
+  assert.equal(terminatedHuman.code, 0, terminatedHuman.stderr);
+  assert.match(terminatedHuman.stdout, /Terminated: ingestion_run_terminated/);
+  assert.match(terminatedHuman.stdout, /Available actions: retry/);
+
   // Exhausting the retryable 503 responses pauses the same Ingestion Run
   // instead of failing it. `keepr source resume` then opens the next bounded
   // retry generation and the identical run completes collection.
@@ -115,7 +217,8 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   assert.equal(paused.pause.attempt_count, 4);
   assert.equal(paused.pause.failure_classification, "http_failure");
   assert.equal(paused.pause.http_status, 503);
-  assert.deepEqual(paused.pause.actions, ["resume"]);
+  assert.deepEqual(paused.pause.actions, ["resume", "terminate"]);
+  assert.deepEqual(paused.actions, ["resume", "terminate"]);
   assert.equal(paused.snapshots.length, 0);
   assert.equal(paused.observation_sets.length, 0);
   assert.equal(paused.diagnostics.length, 4);

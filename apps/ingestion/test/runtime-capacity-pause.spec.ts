@@ -160,7 +160,9 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
     used_capacity: fusionWorldRequestCapacity,
     overflow_request_count: overflow,
     required_capacity: fusionWorldRequestCapacity + overflow,
+    actions: ["resume", "extend_capacity", "terminate"],
   });
+  expect(document.actions).toEqual(["resume", "extend_capacity", "terminate"]);
 }, 30_000);
 
 test("a paused Ingestion Run fails closed on every advancing operation", async () => {
