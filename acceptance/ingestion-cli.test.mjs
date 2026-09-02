@@ -1714,8 +1714,9 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
       attempt_count: 4,
       failure_classification: "http_failure",
       http_status: 503,
-      actions: ["resume"],
+      actions: ["resume", "terminate"],
     },
+    actions: ["resume", "terminate"],
     workflow: { parent_id: "workflow_retry_paused_cli", child_ids: [] },
     snapshots: [],
     observation_sets: [],
@@ -1776,7 +1777,7 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
   assert.match(shown.stdout, /Hostname: en.dbs-cardgame.com/);
   assert.match(shown.stdout, /Attempts: 4 in retry generation 1/);
   assert.match(shown.stdout, /Last failure: http_failure \(HTTP 503\)/);
-  assert.match(shown.stdout, /Available actions: resume/);
+  assert.match(shown.stdout, /Available actions: resume, terminate/);
   assert.match(shown.stdout, /Request reference: request_retry_paused_cli/);
   assert.doesNotMatch(shown.stdout, /cli-test-key/);
 });
@@ -1796,8 +1797,9 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
       workflow_instance_id: "evidence-run_workflow_paused_cli",
       workflow_status: "running",
       last_progress_at: "2026-08-31T22:00:00.000Z",
-      actions: ["resume"],
+      actions: ["resume", "terminate"],
     },
+    actions: ["resume", "terminate"],
     workflow: {
       parent_id: "evidence-run_workflow_paused_cli",
       child_ids: [],
@@ -1876,7 +1878,7 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
     /Workflow attempt: evidence-run_workflow_paused_cli \(status running\)/,
   );
   assert.match(shown.stdout, /Last progress: 2026-08-31T22:00:00.000Z/);
-  assert.match(shown.stdout, /Available actions: resume/);
+  assert.match(shown.stdout, /Available actions: resume, terminate/);
   assert.match(
     shown.stdout,
     /Workflow attempt 1: evidence-run_workflow_paused_cli \(status running\)/,
@@ -2046,6 +2048,192 @@ test("source capacity extend performs the compare-and-set administration mutatio
     environment,
   );
   assert.equal(missing.code, 2);
+  assert.equal(
+    requests.length,
+    mutationCount,
+    "usage failures must stop before any administration request",
+  );
+});
+
+test("source terminate performs the idempotent termination mutation", async (t) => {
+  const terminationDocument = {
+    contract: "card-keepr-collection-termination@1",
+    ingestion_run_id: "run_paused_cli",
+    state: "failed",
+    failure_code: "ingestion_run_terminated",
+    pause_reason: "source_request_capacity_exhausted",
+    paused_at: "2026-08-30T00:00:00.000Z",
+    terminated_at: "2026-08-30T02:00:00.000Z",
+    active_run_released: true,
+  };
+  const terminatedEvidence = {
+    id: "run_paused_cli",
+    state: "failed",
+    plan_origin: "production",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    failure_code: "ingestion_run_terminated",
+    collection_completed_at: null,
+    termination: {
+      reason: "ingestion_run_terminated",
+      pause_reason: "source_request_capacity_exhausted",
+      paused_at: "2026-08-30T00:00:00.000Z",
+      terminated_at: "2026-08-30T02:00:00.000Z",
+    },
+    actions: ["retry"],
+    workflow: { parent_id: "workflow_paused_cli", child_ids: [] },
+    snapshots: [],
+    observation_sets: [],
+    diagnostics: [],
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: { request_id: "request_terminated_cli" },
+    },
+  };
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push({
+        method: request.method,
+        path: request.url,
+        authorization: request.headers.authorization,
+        body: body === "" ? null : JSON.parse(body),
+      });
+      response.setHeader("content-type", "application/json");
+      if (
+        request.url ===
+          "/v1/ingestion-runs/run_paused_cli/collection/termination"
+      ) {
+        response.end(JSON.stringify(terminationDocument));
+        return;
+      }
+      if (request.url === "/v1/ingestion-runs/run_paused_cli/evidence") {
+        response.end(JSON.stringify(terminatedEvidence));
+        return;
+      }
+      if (
+        request.url ===
+          "/v1/ingestion-runs/run_collecting_cli/collection/termination"
+      ) {
+        response.statusCode = 409;
+        response.setHeader("content-type", "application/problem+json");
+        response.end(JSON.stringify({
+          type: "https://card-keepr.invalid/problems/ingestion_run_not_paused",
+          title: "Conflict",
+          status: 409,
+          code: "ingestion_run_not_paused",
+          detail: "Only a paused Ingestion Run can be terminated.",
+          request_id: "request_not_paused_cli",
+        }));
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ code: "not_found" }));
+    });
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const terminateArguments = [
+    "source",
+    "terminate",
+    "--run-id",
+    "run_paused_cli",
+    "--idempotency-key",
+    "terminate-cli-demo",
+  ];
+
+  const terminatedJson = await runCli(
+    [...terminateArguments, "--json"],
+    environment,
+  );
+  assert.equal(terminatedJson.code, 0, terminatedJson.stderr);
+  assert.deepEqual(JSON.parse(terminatedJson.stdout), terminationDocument);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/ingestion-runs/run_paused_cli/collection/termination",
+    authorization: "Bearer cli-test-key",
+    body: { idempotency_key: "terminate-cli-demo" },
+  });
+
+  const terminated = await runCli(terminateArguments, environment);
+  assert.equal(terminated.code, 0, terminated.stderr);
+  assert.match(terminated.stdout, /Ingestion Run run_paused_cli terminated/);
+  assert.match(
+    terminated.stdout,
+    /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/,
+  );
+  assert.match(terminated.stdout, /Terminated at: 2026-08-30T02:00:00.000Z/);
+  assert.match(terminated.stdout, /Active run released: yes/);
+  assert.doesNotMatch(terminated.stdout, /cli-test-key/);
+
+  // Inspection of the terminated run reports the owner decision and no
+  // longer advertises resume or capacity extension.
+  const shownJson = await runCli(
+    ["source", "show", "--run-id", "run_paused_cli", "--json"],
+    environment,
+  );
+  assert.equal(shownJson.code, 0, shownJson.stderr);
+  assert.deepEqual(JSON.parse(shownJson.stdout), terminatedEvidence);
+  const shown = await runCli(
+    ["source", "show", "--run-id", "run_paused_cli"],
+    environment,
+  );
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.match(shown.stdout, /Ingestion Run run_paused_cli evidence: failed/);
+  assert.match(
+    shown.stdout,
+    /Terminated: ingestion_run_terminated at 2026-08-30T02:00:00.000Z \(paused source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z\)/,
+  );
+  assert.match(shown.stdout, /Available actions: retry/);
+  assert.doesNotMatch(shown.stdout, /resume|extend_capacity/);
+
+  // A state conflict renders the problem document and the conflict exit
+  // code.
+  const conflict = await runCli(
+    [
+      "source",
+      "terminate",
+      "--run-id",
+      "run_collecting_cli",
+      "--idempotency-key",
+      "terminate-conflict-cli",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(conflict.code, 7);
+  assert.deepEqual(JSON.parse(conflict.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "ingestion_run_not_paused",
+    detail: "Only a paused Ingestion Run can be terminated.",
+  });
+
+  // Missing arguments fail as usage errors before any request is made.
+  const mutationCount = requests.length;
+  for (const missing of [
+    ["source", "terminate", "--run-id", "run_paused_cli"],
+    ["source", "terminate", "--idempotency-key", "terminate-cli-demo"],
+    ["source", "terminate"],
+  ]) {
+    const invalid = await runCli(missing, environment);
+    assert.equal(invalid.code, 2, missing.join(" "));
+  }
   assert.equal(
     requests.length,
     mutationCount,

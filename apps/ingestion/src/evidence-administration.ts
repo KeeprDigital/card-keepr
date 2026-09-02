@@ -8,11 +8,15 @@ import {
   type CollectionProgressFacts,
   type SafeWorkflowStatus,
 } from "../../../src/catalogue/collection-recovery";
+import type { EvidenceHostWorkflowParams } from "../../../src/catalogue/source-evidence-model";
 import {
   collectionProgressFacts,
+  currentCollectionWorkflowIds,
   pauseEvidenceRunForWorkflowRecovery,
+  releaseTerminatedEvidenceRun,
   requiredEvidenceRun,
   resumePausedEvidenceRun,
+  terminateEvidenceRun,
   workflowAttemptStatements,
   type IngestionEvidenceRow,
 } from "../../../src/catalogue/source-evidence-repository";
@@ -155,6 +159,48 @@ export async function resumeEvidenceRun(
     },
     ...(recovery === null ? {} : { recovery }),
   };
+}
+
+// Terminate a paused Ingestion Run deliberately. The compare-and-set
+// transition to the terminal owner-termination state is itself the fence for
+// every durable collection step, because each step re-reads the run before
+// acting; terminating the current parent and hostname-shard Workflow
+// Attempts then stops any in-flight sleep or step as well. Only after both
+// fences is the single active-run reservation released, so no successor run
+// can start while late collection work could still act. Every step is
+// idempotent, so a replayed termination re-runs the fences harmlessly and
+// returns the original result.
+export async function terminateEvidenceCollection(
+  database: D1Database,
+  parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
+  runId: string,
+  idempotencyKey: string,
+): Promise<Record<string, unknown>> {
+  const document = await terminateEvidenceRun(database, runId, {
+    idempotency_key: idempotencyKey,
+  });
+  const current = await currentCollectionWorkflowIds(database, runId);
+  await Promise.all([
+    ...current.parent.map((id) => terminateWorkflowInstance(parentWorkflow, id)),
+    ...current.child.map((id) => terminateWorkflowInstance(hostWorkflow, id)),
+  ]);
+  await releaseTerminatedEvidenceRun(database, runId);
+  return document;
+}
+
+// Best effort: a settled, absent, or unreachable instance rejects
+// termination, and the database fence already stops its late work.
+async function terminateWorkflowInstance(
+  workflow: Workflow<EvidenceParentWorkflowParams | EvidenceHostWorkflowParams>,
+  instanceId: string,
+): Promise<void> {
+  try {
+    const instance = await workflow.get(instanceId);
+    await instance.terminate();
+  } catch {
+    // Already settled or unavailable.
+  }
 }
 
 // Pause the run with the Workflow Pause reason, then immediately reopen it

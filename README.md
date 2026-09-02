@@ -95,6 +95,17 @@ npm run keepr -- run reconcile \
 ```
 
 An interrupted collection phase resumes against its persisted request plan.
+A run that reaches its Source Adapter Version's request capacity, exhausts
+recoverable transport or R2 retries, or loses its collection Workflow pauses
+instead of failing: `source show` reports the pause reason and the exact
+actions available. Extend a capacity-paused run with
+`source capacity extend --run-id RUN_ID --expected-capacity 15000
+--expected-generation 1 --capacity 20000 --idempotency-key KEY`, then
+`source resume --run-id RUN_ID` continues the same run from its retained
+evidence. Abandon a paused run deliberately with
+`source terminate --run-id RUN_ID --idempotency-key KEY`; termination keeps
+every retained Source Snapshot and diagnostic, marks the run terminal, and
+releases the active-run reservation.
 A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with

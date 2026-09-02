@@ -58,7 +58,7 @@ test("transport retry exhaustion pauses the Ingestion Run without failing the re
     attempt_count: 4,
     failure_classification: "http_failure",
     http_status: 503,
-    actions: ["resume"],
+    actions: ["resume", "terminate"],
   });
   expect(
     paused.diagnostics.map((diagnostic) => ({
@@ -353,7 +353,7 @@ test("network failure exhaustion pauses with the network classification", async 
       attempt_count: 4,
       failure_classification: "network_failure",
       http_status: null,
-      actions: ["resume"],
+      actions: ["resume", "terminate"],
     },
   });
   expect(

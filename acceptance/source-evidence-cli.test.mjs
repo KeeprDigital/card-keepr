@@ -115,7 +115,8 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
   assert.equal(paused.pause.attempt_count, 4);
   assert.equal(paused.pause.failure_classification, "http_failure");
   assert.equal(paused.pause.http_status, 503);
-  assert.deepEqual(paused.pause.actions, ["resume"]);
+  assert.deepEqual(paused.pause.actions, ["resume", "terminate"]);
+  assert.deepEqual(paused.actions, ["resume", "terminate"]);
   assert.equal(paused.snapshots.length, 0);
   assert.equal(paused.observation_sets.length, 0);
   assert.equal(paused.diagnostics.length, 4);

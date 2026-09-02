@@ -82,7 +82,7 @@ test("a recorded Workflow Pause is inspectable, immutable, and resumable", async
       workflow_instance_id: parentId,
       workflow_status: "running",
       last_progress_at: "2026-09-02T00:00:00.000Z",
-      actions: ["resume"],
+      actions: ["resume", "terminate"],
     },
   });
   await expect(

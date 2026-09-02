@@ -1932,6 +1932,358 @@ async function capacityExtensionReplay(
   return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 
+export type CollectionTerminationRequest = Readonly<{
+  idempotency_key: string;
+}>;
+
+// The stable terminal reason of an owner-terminated Ingestion Run.
+export const ingestionRunTerminatedFailureCode = "ingestion_run_terminated";
+
+// The owner actions the collection lifecycle currently admits for a run in
+// the given state: the inspection document lists them explicitly so
+// automation never infers valid transitions. A capacity-paused run may be
+// resumed as-is (re-admission simply pauses it again if nothing changed),
+// extended, or terminated; every other pause resumes or terminates; a
+// terminal evidence run can only be retried as a new linked run.
+export function collectionActions(
+  state: string,
+  pauseReason: string | null,
+): string[] {
+  if (state === "paused") {
+    return pauseReason === "source_request_capacity_exhausted"
+      ? ["resume", "extend_capacity", "terminate"]
+      : ["resume", "terminate"];
+  }
+  if (state === "failed" || state === "rejected" || state === "expired") {
+    return ["retry"];
+  }
+  return [];
+}
+
+type CapacityPauseRow = {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  parent_request_id: string;
+  request_capacity: number;
+  capacity_generation: number;
+  used_capacity: number;
+  overflow_request_count: number;
+  required_capacity: number;
+};
+
+type RetryPauseRow = {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  request_id: string;
+  hostname: string;
+  retry_generation: number;
+  attempt_count: number;
+  failure_classification: string;
+  http_status: number | null;
+};
+
+type WorkflowPauseRow = {
+  pause_reason: string;
+  paused_at: string;
+  workflow_instance_id: string;
+  workflow_status: string;
+  last_progress_at: string | null;
+};
+
+export type CurrentPause = Readonly<{
+  reason: string;
+  paused_at: string;
+  document: Record<string, unknown>;
+}>;
+
+// The current pause of a run: the newest record across the capacity,
+// retry-exhaustion, and Workflow pause tables (a retry pause wins an equal
+// capacity-pause timestamp, because a run can only re-enter capacity
+// admission after the exhausted request recovers; a Workflow pause wins any
+// equal timestamp, because it is recorded by a later explicit recovery
+// classification). Historical records from earlier pauses of the same run
+// stay retained but are not the current pause. The pause documents have a
+// closed shape: correlation identifiers, bounded counters, and machine codes
+// only, so the owner-facing status surface stays free of request headers,
+// payloads, and credentials.
+export async function currentPause(
+  database: D1Database,
+  runId: string,
+): Promise<CurrentPause | null> {
+  const [capacity, retry, workflow] = await Promise.all([
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_capacity_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY capacity_generation DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<CapacityPauseRow>(),
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_retry_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY paused_at DESC, retry_generation DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<RetryPauseRow>(),
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_workflow_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY paused_at DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<WorkflowPauseRow>(),
+  ]);
+  const retryNewest = retry !== null &&
+    (capacity === null || retry.paused_at >= capacity.paused_at);
+  const requestPause: CurrentPause | null = retryNewest && retry !== null
+    ? {
+      reason: retry.pause_reason,
+      paused_at: retry.paused_at,
+      document: retryPauseDocument(retry),
+    }
+    : capacity === null
+      ? null
+      : {
+        reason: capacity.pause_reason,
+        paused_at: capacity.paused_at,
+        document: capacityPauseDocument(capacity),
+      };
+  if (
+    workflow !== null &&
+    (requestPause === null || workflow.paused_at >= requestPause.paused_at)
+  ) {
+    return {
+      reason: workflow.pause_reason,
+      paused_at: workflow.paused_at,
+      document: workflowPauseDocument(workflow),
+    };
+  }
+  return requestPause;
+}
+
+type TerminationRow = {
+  pause_reason: string;
+  paused_at: string;
+  terminated_at: string;
+  idempotency_key: string;
+  request_digest: string;
+  response_json: string;
+};
+
+// Terminate a paused Ingestion Run deliberately. The guarded batch is a
+// compare-and-set on the run still being paused: the immutable termination
+// record is inserted first (its trigger requires the paused run), and the
+// paused -> failed transition is legal only once that record exists, so a
+// concurrent resume, capacity extension, or second termination resolves as
+// an explicit state conflict rather than a double outcome. Nothing retained
+// is deleted; the active-run reservation is released separately by the
+// administration layer after it has fenced late Workflow work.
+export async function terminateEvidenceRun(
+  database: D1Database,
+  runId: string,
+  request: CollectionTerminationRequest,
+): Promise<Record<string, unknown>> {
+  assertIdentifier(request.idempotency_key, "idempotency_key");
+  const run = await requiredEvidenceRun(database, runId);
+  const requestDigest = await sha256(utf8(canonicalJson({
+    ingestion_run_id: runId,
+    idempotency_key: request.idempotency_key,
+  })));
+  const replayed = await terminationReplay(
+    database,
+    request.idempotency_key,
+    requestDigest,
+  );
+  if (replayed !== null) return replayed;
+  if (run.state !== "paused") throw ingestionRunNotPausedForTermination();
+  const pause = await currentPause(database, runId);
+  if (pause === null) {
+    throw new Error("The paused Ingestion Run has no retained pause record.");
+  }
+  const terminatedAt = new Date().toISOString();
+  const response: Record<string, unknown> = {
+    contract: "card-keepr-collection-termination@1",
+    ingestion_run_id: runId,
+    state: "failed",
+    failure_code: ingestionRunTerminatedFailureCode,
+    pause_reason: pause.reason,
+    paused_at: pause.paused_at,
+    terminated_at: terminatedAt,
+    active_run_released: true,
+  };
+  let transitioned = false;
+  try {
+    const outcome = await database.batch([
+      database
+        .prepare(
+          `INSERT INTO ingestion_run_terminations (
+             ingestion_run_id, pause_reason, paused_at, terminated_at,
+             idempotency_key, request_digest, response_json
+           )
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+           WHERE EXISTS (
+             SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+           )`,
+        )
+        .bind(
+          runId,
+          pause.reason,
+          pause.paused_at,
+          terminatedAt,
+          request.idempotency_key,
+          requestDigest,
+          canonicalJson(response),
+        ),
+      database
+        .prepare(
+          `UPDATE ingestion_runs
+           SET state = 'failed', terminal_at = ?2, failure_code = ?3,
+               progress_json =
+                 '{"completed_stages":["planning"],"current_stage":"failed"}'
+           WHERE id = ?1 AND state = 'paused'
+             AND EXISTS (
+               SELECT 1 FROM ingestion_run_terminations
+               WHERE ingestion_run_id = ?1 AND idempotency_key = ?4
+             )`,
+        )
+        .bind(
+          runId,
+          terminatedAt,
+          ingestionRunTerminatedFailureCode,
+          request.idempotency_key,
+        ),
+      database
+        .prepare(
+          `UPDATE ingestion_evidence_plans SET failure_code = ?2
+           WHERE ingestion_run_id = ?1
+             AND EXISTS (
+               SELECT 1 FROM ingestion_runs
+               WHERE id = ?1 AND state = 'failed' AND failure_code = ?2
+             )`,
+        )
+        .bind(runId, ingestionRunTerminatedFailureCode),
+    ]);
+    transitioned = outcome[1]?.meta.changes === 1;
+  } catch {
+    transitioned = false;
+  }
+  if (transitioned) return response;
+  // The guarded batch lost a race: a replay of this exact request, a resume,
+  // an extension, or another termination. Re-reading the retained state
+  // reports the precise conflict.
+  const raced = await terminationReplay(
+    database,
+    request.idempotency_key,
+    requestDigest,
+  );
+  if (raced !== null) return raced;
+  const current = await requiredEvidenceRun(database, runId);
+  if (current.state !== "paused") throw ingestionRunNotPausedForTermination();
+  throw new AdministrationProblem(
+    409,
+    "collection_termination_conflict",
+    "A concurrent lifecycle action prevented this termination from applying.",
+  );
+}
+
+function ingestionRunNotPausedForTermination(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "ingestion_run_not_paused",
+    "Only a paused Ingestion Run can be terminated.",
+  );
+}
+
+async function terminationReplay(
+  database: D1Database,
+  idempotencyKey: string,
+  requestDigest: string,
+): Promise<Record<string, unknown> | null> {
+  const retained = await database
+    .prepare(
+      `SELECT request_digest, response_json
+       FROM ingestion_run_terminations
+       WHERE idempotency_key = ?`,
+    )
+    .bind(idempotencyKey)
+    .first<Pick<TerminationRow, "request_digest" | "response_json">>();
+  if (retained === null) return null;
+  if (retained.request_digest !== requestDigest) {
+    throw new AdministrationProblem(
+      409,
+      "idempotency_conflict",
+      "The idempotency key was already used for a different termination.",
+    );
+  }
+  return JSON.parse(retained.response_json) as Record<string, unknown>;
+}
+
+// Release the single active-run reservation of a terminated run. Guarded on
+// the terminal owner decision so it can never release a live run, and
+// idempotent so a replayed termination re-runs it harmlessly.
+export async function releaseTerminatedEvidenceRun(
+  database: D1Database,
+  runId: string,
+): Promise<void> {
+  await database
+    .prepare(
+      `UPDATE operation_state SET active_ingestion_run_id = NULL
+       WHERE singleton = 1 AND active_ingestion_run_id = ?1
+         AND EXISTS (
+           SELECT 1 FROM ingestion_runs
+           WHERE id = ?1 AND state = 'failed' AND failure_code = ?2
+         )`,
+    )
+    .bind(runId, ingestionRunTerminatedFailureCode)
+    .run();
+}
+
+// The retained owner decision of a terminated run, or null while the run was
+// never terminated.
+export async function terminationDocument(
+  database: D1Database,
+  runId: string,
+): Promise<Record<string, unknown> | null> {
+  const row = await database
+    .prepare(
+      `SELECT pause_reason, paused_at, terminated_at
+       FROM ingestion_run_terminations WHERE ingestion_run_id = ?`,
+    )
+    .bind(runId)
+    .first<Pick<TerminationRow, "pause_reason" | "paused_at" | "terminated_at">>();
+  return row === null ? null : {
+    reason: ingestionRunTerminatedFailureCode,
+    pause_reason: row.pause_reason,
+    paused_at: row.paused_at,
+    terminated_at: row.terminated_at,
+  };
+}
+
+// The Workflow instance identities termination must fence: the current
+// parent attempt and every current hostname-shard child attempt.
+export async function currentCollectionWorkflowIds(
+  database: D1Database,
+  runId: string,
+): Promise<{ parent: string[]; child: string[] }> {
+  const run = await requiredEvidenceRun(database, runId);
+  const rows = await workflowAttemptRows(database, runId);
+  const attempts = resolvedWorkflowAttempts(run, rows);
+  const current = attempts.attempts.filter(attempts.isCurrent);
+  return {
+    parent: current
+      .filter((attempt) => attempt.workflow_kind === "parent")
+      .map((attempt) => attempt.workflow_instance_id),
+    child: current
+      .filter((attempt) => attempt.workflow_kind === "child")
+      .map((attempt) => attempt.workflow_instance_id),
+  };
+}
+
 export async function finalizeEvidenceRun(
   database: D1Database,
   runId: string,
@@ -2026,7 +2378,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, retryPause, workflowPause, workflowAttempts, progress] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, termination, workflowAttempts, progress] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -2068,96 +2420,25 @@ export async function showEvidenceRun(
         created_at: string;
       }>(),
     curatedRevisionSetForRun(database, runId),
-    database
-      .prepare(
-        `SELECT * FROM ingestion_run_capacity_pauses
-         WHERE ingestion_run_id = ?
-         ORDER BY capacity_generation DESC LIMIT 1`,
-      )
-      .bind(runId)
-      .first<{
-        pause_reason: string;
-        paused_at: string;
-        source_lineage: string;
-        parent_request_id: string;
-        request_capacity: number;
-        capacity_generation: number;
-        used_capacity: number;
-        overflow_request_count: number;
-        required_capacity: number;
-      }>(),
-    database
-      .prepare(
-        `SELECT * FROM ingestion_run_retry_pauses
-         WHERE ingestion_run_id = ?
-         ORDER BY paused_at DESC, retry_generation DESC LIMIT 1`,
-      )
-      .bind(runId)
-      .first<{
-        pause_reason: string;
-        paused_at: string;
-        source_lineage: string;
-        request_id: string;
-        hostname: string;
-        retry_generation: number;
-        attempt_count: number;
-        failure_classification: string;
-        http_status: number | null;
-      }>(),
-    database
-      .prepare(
-        `SELECT * FROM ingestion_run_workflow_pauses
-         WHERE ingestion_run_id = ?
-         ORDER BY paused_at DESC LIMIT 1`,
-      )
-      .bind(runId)
-      .first<{
-        pause_reason: string;
-        paused_at: string;
-        workflow_instance_id: string;
-        workflow_status: string;
-        last_progress_at: string | null;
-      }>(),
-    database
-      .prepare(
-        `SELECT workflow_kind, base_workflow_id, attempt_number,
-                workflow_instance_id, created_at
-         FROM ingestion_workflow_attempts
-         WHERE ingestion_run_id = ?
-         ORDER BY workflow_kind, base_workflow_id, attempt_number`,
-      )
-      .bind(runId)
-      .all<{
-        workflow_kind: string;
-        base_workflow_id: string;
-        attempt_number: number;
-        workflow_instance_id: string;
-        created_at: string;
-      }>(),
+    currentPause(database, runId),
+    terminationDocument(database, runId),
+    workflowAttemptRows(database, runId),
     collectionProgressFacts(database, runId),
   ]);
-  // A paused run reports exactly one pause: the newest record across the
-  // capacity, retry-exhaustion, and Workflow pause tables (a retry pause
-  // wins an equal capacity-pause timestamp, because a run can only re-enter
-  // capacity admission after the exhausted request recovers; a Workflow
-  // pause wins any equal timestamp, because it is recorded by a later
-  // explicit recovery classification). Historical records from earlier
-  // pauses of the same run stay retained but are not the current pause.
-  const retryPauseNewest = retryPause !== null &&
-    (pause === null || retryPause.paused_at >= pause.paused_at);
-  const requestPauseDocument = retryPauseNewest && retryPause !== null
-    ? { at: retryPause.paused_at, document: retryPauseDocument(retryPause) }
-    : pause === null
-      ? null
-      : { at: pause.paused_at, document: capacityPauseDocument(pause) };
-  const newestPauseDocument = workflowPause !== null &&
-      (requestPauseDocument === null ||
-        workflowPause.paused_at >= requestPauseDocument.at)
-    ? workflowPauseDocument(workflowPause)
-    : requestPauseDocument?.document ?? null;
-  const currentPause = run.state !== "paused" || newestPauseDocument === null
-    ? {}
-    : { pause: newestPauseDocument };
+  // A paused run reports exactly one pause, its current one; a terminated
+  // run reports the owner decision instead. Both carry the exact owner
+  // actions the lifecycle admits for the run's state and pause reason.
+  const actions = collectionActions(
+    run.state,
+    run.state === "paused" ? pause?.reason ?? null : null,
+  );
+  const lifecycleBlocks: Record<string, unknown> = {
+    ...(run.state === "paused" && pause !== null
+      ? { pause: { ...pause.document, actions } }
+      : {}),
+    ...(termination === null ? {} : { termination }),
+    actions,
+  };
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -2186,14 +2467,14 @@ export async function showEvidenceRun(
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
-    ...currentPause,
+    ...lifecycleBlocks,
     ...(curatedSet === null ? {} : {
       curated_revision_ids: curatedSet.revision_ids,
       curated_revision_set_digest: curatedSet.set_digest,
     }),
     workflow: await collectionWorkflowDocument(
       run,
-      workflowAttempts.results,
+      workflowAttempts,
       progress,
       parentWorkflow,
     ),
@@ -2232,17 +2513,7 @@ export async function showEvidenceRun(
 // The closed pause block shapes: correlation identifiers, bounded counters,
 // and machine codes only, so the owner-facing status surface stays free of
 // request headers, payloads, and credentials.
-function retryPauseDocument(row: {
-  pause_reason: string;
-  paused_at: string;
-  source_lineage: string;
-  request_id: string;
-  hostname: string;
-  retry_generation: number;
-  attempt_count: number;
-  failure_classification: string;
-  http_status: number | null;
-}): Record<string, unknown> {
+function retryPauseDocument(row: RetryPauseRow): Record<string, unknown> {
   return {
     reason: row.pause_reason,
     paused_at: row.paused_at,
@@ -2253,24 +2524,18 @@ function retryPauseDocument(row: {
     attempt_count: row.attempt_count,
     failure_classification: row.failure_classification,
     http_status: row.http_status,
-    actions: ["resume"],
   };
 }
 
-function workflowPauseDocument(row: {
-  pause_reason: string;
-  paused_at: string;
-  workflow_instance_id: string;
-  workflow_status: string;
-  last_progress_at: string | null;
-}): Record<string, unknown> {
+function workflowPauseDocument(
+  row: WorkflowPauseRow,
+): Record<string, unknown> {
   return {
     reason: row.pause_reason,
     paused_at: row.paused_at,
     workflow_instance_id: row.workflow_instance_id,
     workflow_status: row.workflow_status,
     last_progress_at: row.last_progress_at,
-    actions: ["resume"],
   };
 }
 
@@ -2282,19 +2547,36 @@ type WorkflowAttemptRow = {
   created_at: string;
 };
 
-// The safe Workflow observability block: append-only attempt references with
-// exactly one current attempt per scope, the deterministic last-progress
-// time, and — when the parent Workflow binding is supplied — the current
-// parent attempt's platform status mapped onto the closed safe vocabulary
-// plus its stall classification while the run collects. Runs recorded before
-// the attempt table existed synthesize their attempts from the retained
-// identity columns, so historical Workflow references stay auditable.
-async function collectionWorkflowDocument(
+async function workflowAttemptRows(
+  database: D1Database,
+  runId: string,
+): Promise<WorkflowAttemptRow[]> {
+  const rows = await database
+    .prepare(
+      `SELECT workflow_kind, base_workflow_id, attempt_number,
+              workflow_instance_id, created_at
+       FROM ingestion_workflow_attempts
+       WHERE ingestion_run_id = ?
+       ORDER BY workflow_kind, base_workflow_id, attempt_number`,
+    )
+    .bind(runId)
+    .all<WorkflowAttemptRow>();
+  return rows.results;
+}
+
+// Every Workflow Attempt of a run with exactly one current attempt per
+// scope. Runs recorded before the attempt table existed synthesize their
+// attempts from the retained identity columns, so historical Workflow
+// references stay auditable, and parent identities are deterministic, so
+// attempts predating their recorded rows are reconstructed below the highest
+// known attempt.
+function resolvedWorkflowAttempts(
   run: IngestionEvidenceRow,
   attemptRows: readonly WorkflowAttemptRow[],
-  progress: CollectionProgressFacts,
-  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
-): Promise<Record<string, unknown>> {
+): {
+  attempts: WorkflowAttemptRow[];
+  isCurrent: (attempt: WorkflowAttemptRow) => boolean;
+} {
   const childIds: string[] = run.child_workflow_ids_json === null
     ? []
     : JSON.parse(run.child_workflow_ids_json);
@@ -2306,9 +2588,6 @@ async function collectionWorkflowDocument(
     const record = workflowAttemptRecord(run.id, legacyId);
     recorded.set(legacyId, { ...record, created_at: "" });
   }
-  // Parent identities are deterministic, so attempts predating their
-  // recorded rows (history from before the attempt table, or bound outside
-  // the resume path) are reconstructed below the highest known attempt.
   const highestParentAttempt = Math.max(
     0,
     ...[...recorded.values()]
@@ -2330,16 +2609,36 @@ async function collectionWorkflowDocument(
   );
   const currentAttemptNumbers = new Map<string, number>();
   for (const attempt of attempts) {
-    const scope = `${attempt.workflow_kind} ${attempt.base_workflow_id}`;
+    const scope = `${attempt.workflow_kind} ${attempt.base_workflow_id}`;
     currentAttemptNumbers.set(
       scope,
       Math.max(currentAttemptNumbers.get(scope) ?? 0, attempt.attempt_number),
     );
   }
-  const isCurrent = (attempt: WorkflowAttemptRow): boolean =>
-    currentAttemptNumbers.get(
-      `${attempt.workflow_kind} ${attempt.base_workflow_id}`,
-    ) === attempt.attempt_number;
+  return {
+    attempts,
+    isCurrent: (attempt) =>
+      currentAttemptNumbers.get(
+        `${attempt.workflow_kind} ${attempt.base_workflow_id}`,
+      ) === attempt.attempt_number,
+  };
+}
+
+// The safe Workflow observability block: append-only attempt references with
+// exactly one current attempt per scope, the deterministic last-progress
+// time, and — when the parent Workflow binding is supplied — the current
+// parent attempt's platform status mapped onto the closed safe vocabulary
+// plus its stall classification while the run collects.
+async function collectionWorkflowDocument(
+  run: IngestionEvidenceRow,
+  attemptRows: readonly WorkflowAttemptRow[],
+  progress: CollectionProgressFacts,
+  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
+): Promise<Record<string, unknown>> {
+  const childIds: string[] = run.child_workflow_ids_json === null
+    ? []
+    : JSON.parse(run.child_workflow_ids_json);
+  const { attempts, isCurrent } = resolvedWorkflowAttempts(run, attemptRows);
   const currentParent = attempts
     .filter((attempt) => attempt.workflow_kind === "parent")
     .filter(isCurrent)
@@ -2385,17 +2684,9 @@ async function collectionWorkflowDocument(
   };
 }
 
-function capacityPauseDocument(row: {
-  pause_reason: string;
-  paused_at: string;
-  source_lineage: string;
-  parent_request_id: string;
-  request_capacity: number;
-  capacity_generation: number;
-  used_capacity: number;
-  overflow_request_count: number;
-  required_capacity: number;
-}): Record<string, unknown> {
+function capacityPauseDocument(
+  row: CapacityPauseRow,
+): Record<string, unknown> {
   return {
     reason: row.pause_reason,
     paused_at: row.paused_at,

@@ -52,7 +52,10 @@ import {
   verifyCatalogueRecovery,
 } from "../../../src/catalogue/recovery";
 import { activeD1CredentialSlots } from "./backup-workflow";
-import { resumeEvidenceRun } from "./evidence-administration";
+import {
+  resumeEvidenceRun,
+  terminateEvidenceCollection,
+} from "./evidence-administration";
 import {
   CredentialRotationProblem,
 } from "../../../src/catalogue/credential-rotation";
@@ -690,6 +693,28 @@ async function handleIngestionRequest(
             decodeURIComponent(evidenceResumeMatch[1]!),
           ),
           { status: 202 },
+        );
+      }
+
+      const evidenceTerminationMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/collection\/termination$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "POST" &&
+        evidenceTerminationMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["idempotency_key"]);
+        return Response.json(
+          await terminateEvidenceCollection(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_INGESTION_WORKFLOW,
+            env.EVIDENCE_HOST_WORKFLOW,
+            decodeURIComponent(evidenceTerminationMatch[1]!),
+            requiredString(body, "idempotency_key"),
+          ),
+          { status: 200 },
         );
       }
 

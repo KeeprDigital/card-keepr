@@ -104,6 +104,8 @@ export type CollectionDocument = {
   linked_run_id: string | null;
   failure_code: string | null;
   pause?: Record<string, unknown>;
+  termination?: Record<string, unknown>;
+  actions?: string[];
   snapshots: Snapshot[];
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];

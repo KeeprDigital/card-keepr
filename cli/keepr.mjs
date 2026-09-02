@@ -123,6 +123,9 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "source", "resume")) {
     return resumeEvidenceCollection(arguments_.slice(2), environment, json);
   }
+  if (isCommand(arguments_, "source", "terminate")) {
+    return terminateEvidenceCollection(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "retry")) {
     return retryEvidenceCollection(arguments_.slice(2), environment, json);
   }
@@ -1184,6 +1187,32 @@ async function resumeEvidenceCollection(arguments_, environment, json) {
   );
 }
 
+// Termination is the owner's deliberate decision to abandon a paused
+// Ingestion Run: it is idempotent under its key and releases the single
+// active-run reservation while retaining every evidence object.
+async function terminateEvidenceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/termination`,
+    "POST",
+    { idempotency_key: idempotencyKey },
+  );
+}
+
 async function retryEvidenceCollection(arguments_, environment, json) {
   const options = parseOptions(arguments_, [
     "--run-id",
@@ -1626,7 +1655,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
@@ -1655,6 +1684,9 @@ function formatAdministrationResult(document) {
   if (document.contract === "card-keepr-capacity-extension@1") {
     return formatCapacityExtension(document);
   }
+  if (document.contract === "card-keepr-collection-termination@1") {
+    return formatCollectionTermination(document);
+  }
   if (
     Array.isArray(document.snapshots) &&
     Array.isArray(document.observation_sets) &&
@@ -1672,7 +1704,9 @@ function formatAdministrationResult(document) {
       formatCount(document.diagnostics.length, "diagnostic"),
     ];
     lines.push(...formatEvidencePause(document.pause));
+    lines.push(...formatEvidenceTermination(document.termination));
     lines.push(...formatEvidenceWorkflow(document.workflow));
+    lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
     const requestId = safeDiagnosticReference(
       document.operational_diagnostics?.references?.request_id,
     );
@@ -1815,15 +1849,61 @@ function formatEvidencePause(pause) {
   if (lastProgressAt !== null) {
     lines.push(`Last progress: ${lastProgressAt}`);
   }
-  if (Array.isArray(pause.actions)) {
-    const actions = pause.actions
-      .map((action) => safeMachineCode(action))
-      .filter((action) => action !== null);
-    if (actions.length > 0) {
-      lines.push(`Available actions: ${actions.join(", ")}`);
-    }
-  }
   return lines;
+}
+
+// The exact owner actions the collection lifecycle currently admits, so an
+// operator reading the human form sees the same choices automation reads
+// from the JSON document.
+function formatEvidenceActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  const safe = actions
+    .map((action) => safeMachineCode(action))
+    .filter((action) => action !== null);
+  return safe.length === 0 ? [] : [`Available actions: ${safe.join(", ")}`];
+}
+
+// The retained owner decision of a terminated run: the stable terminal
+// reason, when it was taken, and which pause it abandoned.
+function formatEvidenceTermination(termination) {
+  if (typeof termination !== "object" || termination === null) return [];
+  const reason = safeMachineCode(termination.reason);
+  if (reason === null) return [];
+  const terminatedAt = safeDiagnosticReference(termination.terminated_at);
+  const pauseReason = safeMachineCode(termination.pause_reason);
+  const pausedAt = safeDiagnosticReference(termination.paused_at);
+  const abandoned = pauseReason === null
+    ? ""
+    : ` (paused ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`})`;
+  return [
+    `Terminated: ${reason}${
+      terminatedAt === null ? "" : ` at ${terminatedAt}`
+    }${abandoned}`,
+  ];
+}
+
+// The confirmation facts of an applied termination: which run became
+// terminal, which pause it abandoned, and whether the single active-run
+// reservation was released.
+function formatCollectionTermination(document) {
+  const lines = [];
+  const runId = safeDiagnosticReference(document.ingestion_run_id);
+  if (runId !== null) lines.push(`Ingestion Run ${runId} terminated`);
+  const pauseReason = safeMachineCode(document.pause_reason);
+  const pausedAt = safeDiagnosticReference(document.paused_at);
+  if (pauseReason !== null) {
+    lines.push(
+      `Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
+    );
+  }
+  const terminatedAt = safeDiagnosticReference(document.terminated_at);
+  if (terminatedAt !== null) lines.push(`Terminated at: ${terminatedAt}`);
+  if (typeof document.active_run_released === "boolean") {
+    lines.push(
+      `Active run released: ${document.active_run_released ? "yes" : "no"}`,
+    );
+  }
+  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
 
 // The collection Workflow observability facts: the current Workflow Attempt
