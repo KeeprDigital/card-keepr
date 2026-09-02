@@ -30,7 +30,15 @@ import {
   type SafeWorkflowStatus,
   type WorkflowPauseReason,
 } from "./collection-recovery";
-import type { EvidenceParentWorkflowParams } from "./source-evidence-model";
+import type {
+  EvidenceHostWorkflowParams,
+  EvidenceParentWorkflowParams,
+} from "./source-evidence-model";
+import {
+  boundedEvidenceDetail,
+  collectionInspection,
+  type PacingConfiguration,
+} from "./collection-inspection";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -2371,38 +2379,29 @@ export async function finalizeEvidenceRun(
   ]);
 }
 
+// The Workflow bindings and pacing configuration the inspection document
+// reads live facts from. Both are optional: repository callers without the
+// runtime (tests, replays) still get every persisted fact.
+export type EvidenceInspectionOptions = Readonly<{
+  hostWorkflow?: Workflow<EvidenceHostWorkflowParams>;
+  pacing?: PacingConfiguration;
+}>;
+
+const defaultPacingConfiguration: PacingConfiguration = {
+  mode: "production",
+  interval_ms: 500,
+};
+
 export async function showEvidenceRun(
   database: D1Database,
   runId: string,
   parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
+  options: EvidenceInspectionOptions = {},
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, termination, workflowAttempts, progress] = await Promise.all([
-    database
-      .prepare(
-        `SELECT * FROM source_snapshots
-         WHERE ingestion_run_id = ? ORDER BY retrieved_at, id`,
-      )
-      .bind(runId)
-      .all<SnapshotRow>(),
-    database
-      .prepare(
-        `SELECT observations.* FROM source_observation_sets AS observations
-         JOIN source_snapshots AS snapshots
-           ON snapshots.id = observations.source_snapshot_id
-         WHERE snapshots.ingestion_run_id = ?
-         ORDER BY observations.parsed_at, observations.id`,
-      )
-      .bind(runId)
-      .all<ObservationSetRow>(),
-    database
-      .prepare(
-        `SELECT * FROM source_fetch_attempts
-         WHERE ingestion_run_id = ? ORDER BY request_id, attempt_number`,
-      )
-      .bind(runId)
-      .all<AttemptRow>(),
+  const [detail, collectionPlans, curatedSet, pause, termination, workflowAttempts, progress] = await Promise.all([
+    boundedEvidenceDetail(database, runId),
     database
       .prepare(
         `SELECT source_lineage, discovery_observation_set_id, contract,
@@ -2439,6 +2438,23 @@ export async function showEvidenceRun(
     ...(termination === null ? {} : { termination }),
     actions,
   };
+  const capacityPolicies = new Map<string, RunCapacityPolicy>();
+  for (const plan of evidencePlans) {
+    if (capacityPolicies.has(plan.source_lineage)) continue;
+    capacityPolicies.set(
+      plan.source_lineage,
+      await runRequestCapacityPolicy(database, runId, plan.adapter_version),
+    );
+  }
+  const inspection = await collectionInspection(database, {
+    run,
+    plans: evidencePlans,
+    capacityPolicies,
+    pause,
+    lastProgressAt: progress.last_progress_at,
+    pacing: options.pacing ?? defaultPacingConfiguration,
+    nowMs: Date.now(),
+  });
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -2472,15 +2488,17 @@ export async function showEvidenceRun(
       curated_revision_ids: curatedSet.revision_ids,
       curated_revision_set_digest: curatedSet.set_digest,
     }),
+    collection: inspection.collection,
     workflow: await collectionWorkflowDocument(
       run,
       workflowAttempts,
       progress,
       parentWorkflow,
+      options.hostWorkflow,
     ),
-    snapshots: snapshots.results.map(publicSnapshot),
-    observation_sets: observations.results.map(publicObservationSet),
-    diagnostics: attempts.results.map((row) => ({
+    snapshots: detail.snapshots.map(publicSnapshot),
+    observation_sets: detail.observationSets.map(publicObservationSet),
+    diagnostics: detail.attempts.map((row) => ({
       id: row.id,
       request_id: row.request_id,
       attempt_number: row.attempt_number,
@@ -2497,6 +2515,7 @@ export async function showEvidenceRun(
     ...document,
     operational_diagnostics: operationalDiagnostics({
       ...document,
+      evidence_counts: inspection.counts,
       operational_request_id: run.operational_request_id,
       candidate_digest: run.candidate_digest,
       progress: JSON.parse(run.progress_json),
@@ -2634,6 +2653,7 @@ async function collectionWorkflowDocument(
   attemptRows: readonly WorkflowAttemptRow[],
   progress: CollectionProgressFacts,
   parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
+  hostWorkflow?: Workflow<EvidenceHostWorkflowParams>,
 ): Promise<Record<string, unknown>> {
   const childIds: string[] = run.child_workflow_ids_json === null
     ? []
@@ -2643,17 +2663,31 @@ async function collectionWorkflowDocument(
     .filter((attempt) => attempt.workflow_kind === "parent")
     .filter(isCurrent)
     .at(-1) ?? null;
-  let status: SafeWorkflowStatus | null = null;
-  if (parentWorkflow !== undefined && currentParent !== null) {
-    try {
-      const instance = await parentWorkflow.get(
-        currentParent.workflow_instance_id,
-      );
-      status = safeWorkflowStatus((await instance.status()).status);
-    } catch {
-      status = "unavailable";
-    }
-  }
+  // Every recorded attempt, active or historical, reports its platform
+  // status mapped onto the closed safe vocabulary; a binding that is not
+  // supplied leaves the status unknown (null) rather than guessing.
+  const statuses = new Map<string, SafeWorkflowStatus | null>(
+    await Promise.all(attempts.map(async (attempt) => {
+      const binding = attempt.workflow_kind === "parent"
+        ? parentWorkflow
+        : hostWorkflow;
+      if (binding === undefined) {
+        return [attempt.workflow_instance_id, null] as const;
+      }
+      try {
+        const instance = await binding.get(attempt.workflow_instance_id);
+        return [
+          attempt.workflow_instance_id,
+          safeWorkflowStatus((await instance.status()).status),
+        ] as const;
+      } catch {
+        return [attempt.workflow_instance_id, "unavailable"] as const;
+      }
+    })),
+  );
+  const status: SafeWorkflowStatus | null = currentParent === null
+    ? null
+    : statuses.get(currentParent.workflow_instance_id) ?? null;
   const classification = status === null || run.state !== "collecting"
     ? null
     : classifyCollectionProgress(status, progress);
@@ -2667,6 +2701,7 @@ async function collectionWorkflowDocument(
       created_at: currentParent.created_at === ""
         ? null
         : currentParent.created_at,
+      status,
     },
     attempts: attempts.map((attempt) => ({
       id: attempt.workflow_instance_id,
@@ -2674,6 +2709,7 @@ async function collectionWorkflowDocument(
       attempt_number: attempt.attempt_number,
       created_at: attempt.created_at === "" ? null : attempt.created_at,
       current: isCurrent(attempt),
+      status: statuses.get(attempt.workflow_instance_id) ?? null,
     })),
     ...(status === null ? {} : { status }),
     ...(classification === null ? {} : {

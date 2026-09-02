@@ -106,6 +106,7 @@ export type CollectionDocument = {
   pause?: Record<string, unknown>;
   termination?: Record<string, unknown>;
   actions?: string[];
+  collection?: Record<string, unknown>;
   snapshots: Snapshot[];
   observation_sets: ObservationSet[];
   diagnostics: Diagnostic[];

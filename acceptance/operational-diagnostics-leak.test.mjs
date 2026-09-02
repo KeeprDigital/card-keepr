@@ -218,13 +218,15 @@ test("operational logs and diagnostics retain correlation fields without leaking
   );
   assert.equal(resumed.status, 202, JSON.stringify(resumed.body));
 
-  const failedRun = await waitForFailedRun(
+  const failedRun = await waitForRunState(
     `${ingestion.url}/v1/ingestion-runs/${
       encodeURIComponent(runId)
     }`,
     secrets.ADMINISTRATION_KEY,
     ingestion,
     capturedResponses,
+    "failed",
+    "terminal evidence run show response",
   );
   assert.equal(failedRun.failure_code, "source_parse_failed");
   assert.ok(failedRun.snapshots.length >= 1);
@@ -251,7 +253,117 @@ test("operational logs and diagnostics retain correlation fields without leaking
     failedRun.snapshots.length,
   );
 
-  // 3. Status diagnostics over HTTP and the CLI.
+  // 3. A paused, inspected, then deliberately terminated collection: the
+  //    pause facts, the aggregated collection inspection, the termination
+  //    document, and the terminal inspection all pass through the sweep.
+  const pausedStart = await capture(
+    "paused evidence run creation response",
+    await fetch(`${ingestion.url}/v1/ingestion-runs/evidence`, {
+      method: "POST",
+      headers: administrationHeaders,
+      body: JSON.stringify({
+        plans: [
+          {
+            supported_game: "one-piece",
+            source_lineage: "one-piece-en",
+            adapter_version: "one-piece-en@6",
+            requests: [
+              {
+                id: "one-piece-en:discovery",
+                url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+                headers: {
+                  "user-agent": "card-keepr-acceptance-transport/unavailable",
+                },
+              },
+            ],
+          },
+        ],
+        idempotency_key: "operational-diagnostics-leak-paused-001",
+      }),
+    }),
+  );
+  assert.equal(pausedStart.status, 201, JSON.stringify(pausedStart.body));
+  const pausedRunId = pausedStart.body.id;
+  const pausedResume = await capture(
+    "paused evidence run resume response",
+    await fetch(
+      `${ingestion.url}/v1/ingestion-runs/${
+        encodeURIComponent(pausedRunId)
+      }/collection/resume`,
+      { method: "POST", headers: administrationHeaders },
+    ),
+  );
+  assert.equal(pausedResume.status, 202, JSON.stringify(pausedResume.body));
+  const pausedRun = await waitForRunState(
+    `${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}`,
+    secrets.ADMINISTRATION_KEY,
+    ingestion,
+    capturedResponses,
+    "paused",
+    "paused evidence run show response",
+  );
+  assert.equal(pausedRun.pause.reason, "source_transport_retries_exhausted");
+  assert.deepEqual(pausedRun.actions, ["resume", "terminate"]);
+  assert.equal(pausedRun.collection.pause_reason, "source_transport_retries_exhausted");
+  assert.equal(pausedRun.collection.evidence.fetch_attempt_count, 4);
+  assert.equal(
+    pausedRun.collection.progress.current_request.hostname,
+    "en.onepiece-cardgame.com",
+  );
+  assert.ok(Array.isArray(pausedRun.collection.pacing.hosts));
+  assert.equal(pausedRun.collection.estimate.advisory, true);
+  for (const attempt of pausedRun.workflow.attempts) {
+    assert.match(attempt.status, /^[a-z_]+$/);
+  }
+  const cliPaused = await runCli(
+    ["source", "show", "--run-id", pausedRunId],
+    {
+      KEEPR_INGESTION_URL: ingestion.url,
+      KEEPR_ADMINISTRATION_KEY: secrets.ADMINISTRATION_KEY,
+    },
+  );
+  assert.equal(cliPaused.code, 0, cliPaused.stderr);
+  capturedResponses.push(
+    { label: "CLI paused source show stdout", text: cliPaused.stdout },
+    { label: "CLI paused source show stderr", text: cliPaused.stderr },
+  );
+  const termination = await capture(
+    "collection termination response",
+    await fetch(
+      `${ingestion.url}/v1/ingestion-runs/${
+        encodeURIComponent(pausedRunId)
+      }/collection/termination`,
+      {
+        method: "POST",
+        headers: administrationHeaders,
+        body: JSON.stringify({
+          idempotency_key: "operational-diagnostics-leak-terminate-001",
+        }),
+      },
+    ),
+  );
+  assert.equal(termination.status, 200, JSON.stringify(termination.body));
+  assert.equal(termination.body.failure_code, "ingestion_run_terminated");
+  const terminatedRun = await capture(
+    "terminated evidence run show response",
+    await fetch(
+      `${ingestion.url}/v1/ingestion-runs/${encodeURIComponent(pausedRunId)}`,
+      { headers: { authorization: `Bearer ${secrets.ADMINISTRATION_KEY}` } },
+    ),
+  );
+  assert.equal(terminatedRun.status, 200);
+  assert.equal(terminatedRun.body.state, "failed");
+  assert.equal(
+    terminatedRun.body.termination.pause_reason,
+    "source_transport_retries_exhausted",
+  );
+  assert.deepEqual(terminatedRun.body.actions, ["retry"]);
+  assert.equal(
+    terminatedRun.body.operational_diagnostics.terminal_evidence.failure.code,
+    "ingestion_run_terminated",
+  );
+
+  // 4. Status diagnostics over HTTP and the CLI.
   const status = await capture(
     "status response",
     await fetch(`${ingestion.url}/v1/status`, {
@@ -377,7 +489,14 @@ test("operational logs and diagnostics retain correlation fields without leaking
   assert.equal(creationEvent.status, 201);
 });
 
-async function waitForFailedRun(url, key, worker, capturedResponses) {
+async function waitForRunState(
+  url,
+  key,
+  worker,
+  capturedResponses,
+  expectedState,
+  label,
+) {
   const deadline = Date.now() + 120_000;
   let lastBody = null;
   while (Date.now() < deadline) {
@@ -389,18 +508,15 @@ async function waitForFailedRun(url, key, worker, capturedResponses) {
     if (response.status === 200) {
       lastBody = text;
       const document = JSON.parse(text);
-      if (document.state === "failed") {
-        capturedResponses.push({
-          label: "terminal evidence run show response",
-          text,
-        });
+      if (document.state === expectedState) {
+        capturedResponses.push({ label, text });
         return document;
       }
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
   }
   throw new Error(
-    `the evidence run did not reach a terminal failure: ${lastBody}\n${worker.getOutput()}`,
+    `the evidence run did not reach ${expectedState}: ${lastBody}\n${worker.getOutput()}`,
   );
 }
 

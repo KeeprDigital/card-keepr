@@ -1696,15 +1696,11 @@ function formatAdministrationResult(document) {
   ) {
     const lines = [
       `Ingestion Run ${document.id} evidence: ${document.state}`,
-      formatCount(document.snapshots.length, "Source Snapshot"),
-      formatCount(
-        document.observation_sets.length,
-        "Source Observation set",
-      ),
-      formatCount(document.diagnostics.length, "diagnostic"),
+      ...formatEvidenceVolume(document),
     ];
     lines.push(...formatEvidencePause(document.pause));
     lines.push(...formatEvidenceTermination(document.termination));
+    lines.push(...formatCollectionProgress(document.collection));
     lines.push(...formatEvidenceWorkflow(document.workflow));
     lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
     const requestId = safeDiagnosticReference(
@@ -1731,6 +1727,193 @@ function formatAdministrationResult(document) {
 
 function formatCount(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// Evidence volume prefers the aggregate counts of the collection block: the
+// per-request detail lists are bounded, so their lengths understate a
+// production-sized run.
+function formatEvidenceVolume(document) {
+  const evidence = document.collection?.evidence;
+  if (
+    typeof evidence === "object" && evidence !== null &&
+    Number.isSafeInteger(evidence.snapshot_count) &&
+    Number.isSafeInteger(evidence.observation_set_count) &&
+    Number.isSafeInteger(evidence.fetch_attempt_count)
+  ) {
+    return [
+      `${formatCount(evidence.snapshot_count, "Source Snapshot")}${
+        Number.isSafeInteger(evidence.retained_byte_total)
+          ? ` (${evidence.retained_byte_total} bytes)`
+          : ""
+      }`,
+      formatCount(evidence.observation_set_count, "Source Observation set"),
+      `${formatCount(evidence.fetch_attempt_count, "fetch attempt")}${
+        Number.isSafeInteger(evidence.retry_attempt_count) &&
+          Number.isSafeInteger(evidence.failed_attempt_count)
+          ? ` (${evidence.retry_attempt_count} ${
+            evidence.retry_attempt_count === 1 ? "retry" : "retries"
+          }, ${formatCount(evidence.failed_attempt_count, "failure")})`
+          : ""
+      }`,
+    ];
+  }
+  return [
+    formatCount(document.snapshots.length, "Source Snapshot"),
+    formatCount(document.observation_sets.length, "Source Observation set"),
+    formatCount(document.diagnostics.length, "diagnostic"),
+  ];
+}
+
+function formatCountMap(map) {
+  if (typeof map !== "object" || map === null) return "";
+  return Object.entries(map)
+    .filter(([key, value]) =>
+      safeMachineCode(key) !== null && Number.isSafeInteger(value)
+    )
+    .map(([key, value]) => `${key} ${value}`)
+    .join(", ");
+}
+
+function formatDuration(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}h ${minutes}m ${seconds}s`
+    : minutes > 0
+      ? `${minutes}m ${seconds}s`
+      : `${seconds}s`;
+}
+
+// The aggregated collection progress: request counts by state and role,
+// per-lineage capacity, the latest safe failure, the current safe request
+// reference, host pacing, the advisory remaining-time floor, and the
+// lifecycle timestamps. Human output carries the same material facts as the
+// JSON document, in the same closed vocabulary.
+function formatCollectionProgress(collection) {
+  if (typeof collection !== "object" || collection === null) return [];
+  const lines = [];
+  const requests = collection.requests;
+  if (
+    typeof requests === "object" && requests !== null &&
+    Number.isSafeInteger(requests.total)
+  ) {
+    const groups = [
+      formatCountMap(requests.by_state),
+      formatCountMap(requests.by_role),
+    ].filter((group) => group !== "");
+    lines.push(
+      `Requests: ${requests.total}${
+        groups.length === 0 ? "" : ` (${groups.join("; ")})`
+      }`,
+    );
+  }
+  for (const capacity of Array.isArray(collection.capacity) ? collection.capacity : []) {
+    const lineage = safeDiagnosticReference(capacity?.source_lineage);
+    if (
+      lineage === null ||
+      !Number.isSafeInteger(capacity.used_capacity) ||
+      !Number.isSafeInteger(capacity.request_capacity) ||
+      !Number.isSafeInteger(capacity.capacity_generation)
+    ) {
+      continue;
+    }
+    const details = [`generation ${capacity.capacity_generation}`];
+    if (Number.isSafeInteger(capacity.remaining_capacity)) {
+      details.push(`${capacity.remaining_capacity} remaining`);
+    }
+    if (Number.isSafeInteger(capacity.required_capacity)) {
+      details.push(`${capacity.required_capacity} required`);
+    }
+    lines.push(
+      `Capacity ${lineage}: ${capacity.used_capacity} used of ${
+        capacity.request_capacity
+      } (${details.join(", ")})`,
+    );
+  }
+  const failure = collection.evidence?.latest_failure;
+  if (typeof failure === "object" && failure !== null) {
+    const classification = safeMachineCode(failure.classification);
+    const requestId = safeDiagnosticReference(failure.request_id);
+    if (classification !== null && requestId !== null) {
+      const at = safeDiagnosticReference(failure.at);
+      lines.push(
+        `Latest failure: ${classification}${
+          Number.isSafeInteger(failure.http_status)
+            ? ` (HTTP ${failure.http_status})`
+            : ""
+        } on ${requestId}${
+          Number.isSafeInteger(failure.attempt_number)
+            ? ` attempt ${failure.attempt_number}`
+            : ""
+        }${at === null ? "" : ` at ${at}`}`,
+      );
+    }
+  }
+  const current = collection.progress?.current_request;
+  if (typeof current === "object" && current !== null) {
+    const requestId = safeDiagnosticReference(current.request_id);
+    if (requestId !== null) {
+      const facts = [
+        safeDiagnosticReference(current.hostname),
+        safeMachineCode(current.role),
+        safeMachineCode(current.state),
+        Number.isSafeInteger(current.attempt_count)
+          ? formatCount(current.attempt_count, "attempt")
+          : null,
+      ].filter((fact) => fact !== null);
+      lines.push(
+        `Current request: ${requestId}${
+          facts.length === 0 ? "" : ` (${facts.join(", ")})`
+        }`,
+      );
+    }
+  }
+  const pacing = collection.pacing;
+  if (typeof pacing === "object" && pacing !== null) {
+    const mode = safeMachineCode(pacing.mode);
+    if (mode !== null) {
+      const hosts = (Array.isArray(pacing.hosts) ? pacing.hosts : [])
+        .map((host) => {
+          const hostname = safeDiagnosticReference(host?.hostname);
+          if (hostname === null || !Number.isSafeInteger(host.pending_request_count)) {
+            return null;
+          }
+          return `${hostname} ${host.pending_request_count} pending${
+            Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0
+              ? ` (waiting ${host.waiting_ms}ms)`
+              : ""
+          }`;
+        })
+        .filter((host) => host !== null);
+      lines.push(
+        `Pacing: ${mode}${
+          Number.isSafeInteger(pacing.interval_ms)
+            ? ` ${pacing.interval_ms}ms`
+            : ""
+        }${hosts.length === 0 ? "" : `; ${hosts.join(", ")}`}`,
+      );
+    }
+  }
+  const estimate = collection.estimate;
+  if (
+    typeof estimate === "object" && estimate !== null &&
+    Number.isSafeInteger(estimate.minimum_remaining_ms)
+  ) {
+    lines.push(
+      `Estimated minimum remaining: ${
+        formatDuration(estimate.minimum_remaining_ms)
+      } (advisory)`,
+    );
+  }
+  const expectedRevision = safeDiagnosticReference(
+    collection.expected_catalogue_revision_id,
+  );
+  if (expectedRevision !== null) {
+    lines.push(`Expected Catalogue Revision: ${expectedRevision}`);
+  }
+  return lines;
 }
 
 // The confirmation facts of an applied capacity extension: which Ingestion
@@ -1931,6 +2114,40 @@ function formatEvidenceWorkflow(workflow) {
   const lastProgressAt = safeDiagnosticReference(workflow.last_progress_at);
   if (lastProgressAt !== null) {
     lines.push(`Last progress: ${lastProgressAt}`);
+  }
+  if (Array.isArray(workflow.attempts) && workflow.attempts.length > 0) {
+    const attempts = workflow.attempts
+      .map((attempt) => {
+        const id = safeDiagnosticReference(attempt?.id);
+        const kind = safeMachineCode(attempt?.kind);
+        if (id === null || kind === null) return null;
+        return {
+          current: attempt.current === true,
+          text: `${kind} ${id}${
+            Number.isSafeInteger(attempt.attempt_number)
+              ? ` attempt ${attempt.attempt_number}`
+              : ""
+          }${
+            safeMachineCode(attempt.status) === null
+              ? ""
+              : ` ${attempt.status}`
+          }${attempt.current === true ? " (current)" : ""}`,
+        };
+      })
+      .filter((attempt) => attempt !== null);
+    // The current parent attempt already has its own line above.
+    const listed = attempts.filter((attempt) =>
+      !attempt.text.startsWith("parent ") || !attempt.current
+    );
+    lines.push(
+      `Workflow attempts: ${attempts.length} recorded, ${
+        attempts.filter((attempt) => attempt.current).length
+      } current${
+        listed.length === 0
+          ? ""
+          : `; ${listed.map((attempt) => attempt.text).join("; ")}`
+      }`,
+    );
   }
   return lines;
 }

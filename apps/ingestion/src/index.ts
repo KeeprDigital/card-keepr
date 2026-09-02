@@ -84,6 +84,26 @@ import {
   retryCatalogueExportDeletion,
 } from "../../../src/catalogue/catalogue-export-deletion";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
+import {
+  sourceHostPacingIntervalMilliseconds,
+  sourceHostPacingMode,
+} from "../../../src/catalogue/source-evidence-capture";
+import type { EvidenceInspectionOptions } from "../../../src/catalogue/source-evidence-repository";
+
+// The live facts the evidence status document reads beyond D1: hostname-shard
+// Workflow statuses and the configured per-host pacing that grounds its
+// advisory remaining-time estimate.
+function evidenceInspectionOptions(env: Env): EvidenceInspectionOptions {
+  return {
+    hostWorkflow: env.EVIDENCE_HOST_WORKFLOW,
+    pacing: {
+      mode: sourceHostPacingMode(env.SOURCE_HOST_PACING_MODE),
+      interval_ms: sourceHostPacingIntervalMilliseconds(
+        env.SOURCE_HOST_PACING_INTERVAL_MS,
+      ),
+    },
+  };
+}
 export {
   EvidenceHostWorkflow,
   EvidenceIngestionWorkflow,
@@ -830,6 +850,7 @@ async function handleIngestionRequest(
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceMatch[1]!),
             env.EVIDENCE_INGESTION_WORKFLOW,
+            evidenceInspectionOptions(env),
           ),
         );
       }
@@ -1028,6 +1049,7 @@ async function handleIngestionRequest(
               env.CATALOGUE_DB,
               runId,
               env.EVIDENCE_INGESTION_WORKFLOW,
+              evidenceInspectionOptions(env),
             ),
           );
         }

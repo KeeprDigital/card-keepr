@@ -71,6 +71,9 @@ const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
   // bound (issue #62 retained 3,946 detail and 984 image requests at the
   // 5,000 cutoff before completion).
   ["fusion-world-en@9", 15_000],
+  // The synthetic large-graph fixture proves a single Source Lineage larger
+  // than the historical bound completes through bounded hostname shards.
+  ["fixture-fusion-world-json-large@1", 15_000],
 ]);
 
 function sourceRequestCapacity(adapterVersion: string): number {
@@ -410,6 +413,14 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           gameProfileVersion: "fusion-world@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
           legalityAware: true,
+        },
+        {
+          adapterVersion: "fixture-fusion-world-json-large@1",
+          sourceLineage: "fusion-world-en",
+          supportedGame: "fusion-world",
+          gameProfileVersion: "fusion-world@1",
+          parserContract: "synthetic-fixture-card-document@1",
+          legalityAware: false,
         },
         {
           adapterVersion: "fixture-digimon-json@1",

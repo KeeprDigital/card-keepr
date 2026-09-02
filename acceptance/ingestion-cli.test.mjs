@@ -2240,3 +2240,215 @@ test("source terminate performs the idempotent termination mutation", async (t) 
     "usage failures must stop before any administration request",
   );
 });
+
+test("source show renders aggregated collection progress in human-readable form", async (t) => {
+  const evidence = {
+    id: "run_progress_cli",
+    state: "collecting",
+    plan_origin: "production",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fusion-world-en@9",
+    failure_code: null,
+    collection_completed_at: null,
+    actions: [],
+    collection: {
+      state: "collecting",
+      pause_reason: null,
+      paused_at: null,
+      started_at: "2026-09-01T00:00:00.000Z",
+      last_progress_at: "2026-09-01T03:00:00.000Z",
+      collection_completed_at: null,
+      terminal_at: null,
+      expected_catalogue_revision_id: "catrev_current_cli",
+      capacity: [{
+        source_lineage: "fusion-world-en",
+        adapter_version: "fusion-world-en@9",
+        capacity_generation: 2,
+        request_capacity: 20000,
+        used_capacity: 15003,
+        remaining_capacity: 4997,
+        required_capacity: null,
+        overflow_request_count: null,
+      }],
+      requests: {
+        total: 15003,
+        by_state: { pending: 9000, captured: 3, observed: 6000 },
+        by_role: { surface: 5, detail: 12000, image: 2998 },
+        by_lineage: [{
+          source_lineage: "fusion-world-en",
+          total: 15003,
+          by_state: { pending: 9000, captured: 3, observed: 6000 },
+          by_role: { surface: 5, detail: 12000, image: 2998 },
+        }],
+      },
+      evidence: {
+        snapshot_count: 6003,
+        retained_byte_total: 1234567890,
+        observation_set_count: 6000,
+        fetch_attempt_count: 6010,
+        retry_attempt_count: 7,
+        failed_attempt_count: 7,
+        latest_failure: {
+          request_id: "fusion-world-en:detail:abc",
+          hostname: "www.dbs-cardgame.com",
+          classification: "http_failure",
+          http_status: 503,
+          attempt_number: 2,
+          at: "2026-09-01T02:59:00.000Z",
+        },
+        detail_limit: 200,
+        snapshots_truncated: true,
+        observation_sets_truncated: true,
+        diagnostics_truncated: true,
+      },
+      progress: {
+        current_request: {
+          request_id: "fusion-world-en:detail:def",
+          hostname: "www.dbs-cardgame.com",
+          role: "detail",
+          state: "pending",
+          attempt_count: 1,
+          last_attempt_at: "2026-09-01T03:00:00.000Z",
+        },
+      },
+      pacing: {
+        mode: "production",
+        interval_ms: 1000,
+        hosts: [{
+          hostname: "www.dbs-cardgame.com",
+          pending_request_count: 9000,
+          captured_request_count: 3,
+          next_request_not_before: "2026-09-01T03:00:01.000Z",
+          waiting_ms: 800,
+        }],
+      },
+      estimate: {
+        advisory: true,
+        pending_request_count: 9000,
+        captured_request_count: 3,
+        active_host_count: 1,
+        minimum_remaining_ms: 9000800,
+      },
+    },
+    workflow: {
+      parent_id: "evidence-run_progress_cli",
+      child_ids: ["evidence-host-abc"],
+      last_progress_at: "2026-09-01T03:00:00.000Z",
+      current_attempt: {
+        id: "evidence-run_progress_cli",
+        attempt_number: 1,
+        created_at: "2026-09-01T00:00:00.000Z",
+        status: "running",
+      },
+      attempts: [
+        {
+          id: "evidence-run_progress_cli",
+          kind: "parent",
+          attempt_number: 1,
+          created_at: "2026-09-01T00:00:00.000Z",
+          current: true,
+          status: "running",
+        },
+        {
+          id: "evidence-host-abc",
+          kind: "child",
+          attempt_number: 1,
+          created_at: "2026-09-01T00:00:01.000Z",
+          current: false,
+          status: "errored",
+        },
+        {
+          id: "evidence-host-abc-attempt-0",
+          kind: "child",
+          attempt_number: 2,
+          created_at: "2026-09-01T01:00:00.000Z",
+          current: true,
+          status: "running",
+        },
+      ],
+      status: "running",
+      classification: "active",
+    },
+    snapshots: [],
+    observation_sets: [],
+    diagnostics: [],
+    operational_diagnostics: {
+      contract: "card-keepr-operational-diagnostics@1",
+      references: { request_id: "request_progress_cli" },
+    },
+  };
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    if (request.url === "/v1/ingestion-runs/run_progress_cli/evidence") {
+      response.end(JSON.stringify(evidence));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ code: "not_found" }));
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+
+  const shownJson = await runCli(
+    ["source", "show", "--run-id", "run_progress_cli", "--json"],
+    environment,
+  );
+  assert.equal(shownJson.code, 0, shownJson.stderr);
+  assert.deepEqual(JSON.parse(shownJson.stdout), evidence);
+
+  const shown = await runCli(
+    ["source", "show", "--run-id", "run_progress_cli"],
+    environment,
+  );
+  assert.equal(shown.code, 0, shown.stderr);
+  const out = shown.stdout;
+  assert.match(out, /Ingestion Run run_progress_cli evidence: collecting/);
+  // Aggregate counts replace the bounded detail lengths in the summary.
+  assert.match(out, /6003 Source Snapshots \(1234567890 bytes\)/);
+  assert.match(out, /6000 Source Observation sets/);
+  assert.match(out, /6010 fetch attempts \(7 retries, 7 failures\)/);
+  assert.match(
+    out,
+    /Requests: 15003 \(pending 9000, captured 3, observed 6000; surface 5, detail 12000, image 2998\)/,
+  );
+  assert.match(
+    out,
+    /Capacity fusion-world-en: 15003 used of 20000 \(generation 2, 4997 remaining\)/,
+  );
+  assert.match(
+    out,
+    /Latest failure: http_failure \(HTTP 503\) on fusion-world-en:detail:abc attempt 2 at 2026-09-01T02:59:00.000Z/,
+  );
+  assert.match(
+    out,
+    /Current request: fusion-world-en:detail:def \(www.dbs-cardgame.com, detail, pending, 1 attempt\)/,
+  );
+  assert.match(
+    out,
+    /Pacing: production 1000ms; www.dbs-cardgame.com 9000 pending \(waiting 800ms\)/,
+  );
+  assert.match(
+    out,
+    /Estimated minimum remaining: 2h 30m 0s \(advisory\)/,
+  );
+  assert.match(out, /Expected Catalogue Revision: catrev_current_cli/);
+  assert.match(out, /Last progress: 2026-09-01T03:00:00.000Z/);
+  assert.match(
+    out,
+    /Workflow attempt 1: evidence-run_progress_cli \(status running\)/,
+  );
+  assert.match(
+    out,
+    /Workflow attempts: 3 recorded, 2 current; child evidence-host-abc attempt 1 errored; child evidence-host-abc-attempt-0 attempt 2 running \(current\)/,
+  );
+  assert.doesNotMatch(out, /cli-test-key/);
+});

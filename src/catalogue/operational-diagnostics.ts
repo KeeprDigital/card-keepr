@@ -188,20 +188,32 @@ function safeWorkflowReferences(value: unknown): Record<string, unknown> {
   };
 }
 
+// Coverage prefers the aggregate evidence counts when the status document
+// carries them: its per-request detail lists are bounded, so their lengths
+// understate a production-sized run.
 function safeCoverage(run: Record<string, unknown>): Record<string, number> {
+  const counts = run.evidence_counts !== null &&
+      typeof run.evidence_counts === "object" &&
+      !Array.isArray(run.evidence_counts)
+    ? (run.evidence_counts as Record<string, unknown>)
+    : null;
+  const count = (key: string, list: unknown): number => {
+    const aggregate = counts?.[key];
+    if (typeof aggregate === "number" && Number.isSafeInteger(aggregate)) {
+      return aggregate;
+    }
+    return Array.isArray(list) ? list.length : 0;
+  };
   return {
     evidence_plan_count: Array.isArray(run.evidence_plans)
       ? run.evidence_plans.length
       : 0,
-    source_snapshot_count: Array.isArray(run.snapshots)
-      ? run.snapshots.length
-      : 0,
-    source_observation_set_count: Array.isArray(run.observation_sets)
-      ? run.observation_sets.length
-      : 0,
-    fetch_attempt_count: Array.isArray(run.diagnostics)
-      ? run.diagnostics.length
-      : 0,
+    source_snapshot_count: count("snapshot_count", run.snapshots),
+    source_observation_set_count: count(
+      "observation_set_count",
+      run.observation_sets,
+    ),
+    fetch_attempt_count: count("fetch_attempt_count", run.diagnostics),
   };
 }
 
