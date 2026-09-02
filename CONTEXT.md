@@ -41,12 +41,16 @@ One immutable planned retrieval within an Ingestion Run's collection coverage, i
 _Avoid_: Fetch attempt, Source Snapshot, request URL
 
 **Request Capacity**:
-The immutable bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; changing a capacity requires registering a new Source Adapter Version.
+The immutable bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; changing a version's capacity requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
 **Capacity Pause**:
 The non-terminal paused condition an Ingestion Run enters when admitting a dynamically discovered request batch would exceed its Request Capacity. Every retained observation, pending Source Request, the single active-run reservation, and the run identity survive unchanged, and the run cannot parse, reconcile, await approval, or publish until the owner acts. It records nothing as failed and is distinct from a Cloudflare Workflow instance's own paused status.
 _Avoid_: Failed run, cancelled run, Workflow instance pause
+
+**Capacity Extension**:
+An owner-initiated, idempotent, compare-and-set administration action that raises one capacity-paused Ingestion Run's effective request capacity to a larger absolute value and atomically advances that run's capacity generation. It binds the expected current capacity and generation, stays below the global emergency ceiling, leaves the Source Adapter Version's registered Request Capacity untouched, and never resumes collection itself: the run returns to collecting only through the separate resume action.
+_Avoid_: Mutable quota, adapter capacity change, resumed run
 
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.

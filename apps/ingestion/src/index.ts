@@ -19,6 +19,7 @@ import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
 import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import {
+  extendRunRequestCapacity,
   reparseSourceSnapshot,
   retryEvidenceRun,
   showEvidenceRun,
@@ -689,6 +690,36 @@ async function handleIngestionRequest(
             decodeURIComponent(evidenceResumeMatch[1]!),
           ),
           { status: 202 },
+        );
+      }
+
+      const capacityExtensionMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/capacity\/extension$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "POST" &&
+        capacityExtensionMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, [
+          "expected_request_capacity",
+          "expected_capacity_generation",
+          "request_capacity",
+          "idempotency_key",
+        ]);
+        return Response.json(
+          await extendRunRequestCapacity(
+            env.CATALOGUE_DB,
+            decodeURIComponent(capacityExtensionMatch[1]!),
+            {
+              expected_request_capacity: body.expected_request_capacity,
+              expected_capacity_generation: body.expected_capacity_generation,
+              request_capacity: body.request_capacity,
+              idempotency_key: requiredString(body, "idempotency_key"),
+            },
+          ),
+          { status: 200 },
         );
       }
 

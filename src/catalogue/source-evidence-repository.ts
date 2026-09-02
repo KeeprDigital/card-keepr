@@ -508,6 +508,7 @@ async function adapterRequestCapacity(
 export type RequestCapacityFacts = Readonly<{
   source_lineage: string;
   request_capacity: number;
+  capacity_generation: number;
   used_capacity: number;
   overflow_request_count: number;
   required_capacity: number;
@@ -527,19 +528,59 @@ export class RequestCapacityProblem extends AdministrationProblem {
 }
 
 // The initial request capacity of an Evidence Plan is its Source Adapter
-// Version's registered policy; issue #65 introduces owner-extended capacity
-// generations, so until then every admission runs under generation 1.
+// Version's registered policy at generation 1; each owner-approved capacity
+// extension supersedes it with a larger absolute capacity at the next
+// generation.
 export const initialRequestCapacityGeneration = 1;
+
+// The effective capacity policy of one Ingestion Run: the newest capacity
+// extension when the owner has extended it, otherwise the Source Adapter
+// Version's registered capacity. Both remain constrained by the global
+// emergency ceiling.
+export type RunCapacityPolicy = Readonly<{
+  request_capacity: number;
+  capacity_generation: number;
+}>;
+
+export async function runRequestCapacityPolicy(
+  database: D1Database,
+  runId: string,
+  adapterVersion: string,
+): Promise<RunCapacityPolicy> {
+  const extension = await database
+    .prepare(
+      `SELECT capacity_generation, request_capacity
+       FROM ingestion_run_capacity_extensions
+       WHERE ingestion_run_id = ?
+       ORDER BY capacity_generation DESC LIMIT 1`,
+    )
+    .bind(runId)
+    .first<{ capacity_generation: number; request_capacity: number }>();
+  if (extension !== null) {
+    return {
+      request_capacity: Math.min(
+        extension.request_capacity,
+        globalEmergencySourceRequestCeiling,
+      ),
+      capacity_generation: extension.capacity_generation,
+    };
+  }
+  return {
+    request_capacity: await adapterRequestCapacity(database, adapterVersion),
+    capacity_generation: initialRequestCapacityGeneration,
+  };
+}
 
 function requestCapacityProblem(
   sourceLineage: string,
-  requestCapacity: number,
+  policy: RunCapacityPolicy,
   usedCapacity: number,
   overflowRequestCount: number,
 ): RequestCapacityProblem {
   return new RequestCapacityProblem({
     source_lineage: sourceLineage,
-    request_capacity: requestCapacity,
+    request_capacity: policy.request_capacity,
+    capacity_generation: policy.capacity_generation,
     used_capacity: usedCapacity,
     overflow_request_count: overflowRequestCount,
     required_capacity: usedCapacity + overflowRequestCount,
@@ -548,7 +589,7 @@ function requestCapacityProblem(
 
 function recountedRequestCapacityProblem(
   sourceLineage: string,
-  requestCapacity: number,
+  policy: RunCapacityPolicy,
   recounted: { admitted: number; overflow: number } | null,
   proposedRequestIds: string,
 ): RequestCapacityProblem {
@@ -559,14 +600,14 @@ function recountedRequestCapacityProblem(
     const proposed = JSON.parse(proposedRequestIds) as unknown[];
     return requestCapacityProblem(
       sourceLineage,
-      requestCapacity,
-      requestCapacity,
+      policy,
+      policy.request_capacity,
       Math.max(1, proposed.length),
     );
   }
   return requestCapacityProblem(
     sourceLineage,
-    requestCapacity,
+    policy,
     recounted.admitted - recounted.overflow,
     recounted.overflow,
   );
@@ -650,10 +691,12 @@ export async function appendDiscoveredEvidenceRequests(
   }
   const normalized = [...normalizedById.values()];
   const proposedRequestIds = JSON.stringify(normalized.map(({ id }) => id));
-  const requestCapacity = await adapterRequestCapacity(
+  const capacityPolicy = await runRequestCapacityPolicy(
     database,
+    run.id,
     plan.adapter_version,
   );
+  const requestCapacity = capacityPolicy.request_capacity;
   const planRequestIds = JSON.stringify(plan.requests.map(({ id }) => id));
   const lineageRequestPattern = `${plan.source_lineage}:%`;
   const count = await database
@@ -686,7 +729,7 @@ export async function appendDiscoveredEvidenceRequests(
   ) {
     throw requestCapacityProblem(
       plan.source_lineage,
-      requestCapacity,
+      capacityPolicy,
       usedCapacity,
       overflowRequestCount,
     );
@@ -791,7 +834,7 @@ export async function appendDiscoveredEvidenceRequests(
       lineageRequestPattern,
       planRequestIds,
       proposedRequestIds,
-      requestCapacity,
+      capacityPolicy,
     );
   }
   const retainedResults = await database.batch<EvidenceRequestRow>(
@@ -845,7 +888,7 @@ async function mappedDiscoveryAdmissionError(
   lineageRequestPattern: string,
   planRequestIds: string,
   proposedRequestIds: string,
-  requestCapacity: number,
+  capacityPolicy: RunCapacityPolicy,
 ): Promise<unknown> {
   if (!/malformed JSON/iu.test(errorMessage(error))) return error;
   const recounted = await admittedLineageCapacityFacts(
@@ -855,10 +898,10 @@ async function mappedDiscoveryAdmissionError(
     planRequestIds,
     proposedRequestIds,
   );
-  if (recounted === null || recounted.admitted > requestCapacity) {
+  if (recounted === null || recounted.admitted > capacityPolicy.request_capacity) {
     return recountedRequestCapacityProblem(
       sourceLineage,
-      requestCapacity,
+      capacityPolicy,
       recounted,
       proposedRequestIds,
     );
@@ -983,10 +1026,12 @@ export async function persistOfficialSourceCollectionPlan(
     }
     return;
   }
-  const requestCapacity = await adapterRequestCapacity(
+  const capacityPolicy = await runRequestCapacityPolicy(
     database,
+    runId,
     discoveryPlan.adapter_version,
   );
+  const requestCapacity = capacityPolicy.request_capacity;
   const lineageRequestPattern = `${discoveryPlan.source_lineage}:%`;
   const planRequestIds = JSON.stringify(
     discoveryPlan.requests.map(({ id }) => id),
@@ -1004,7 +1049,7 @@ export async function persistOfficialSourceCollectionPlan(
   if (admitted === null || admitted.admitted > requestCapacity) {
     throw recountedRequestCapacityProblem(
       discoveryPlan.source_lineage,
-      requestCapacity,
+      capacityPolicy,
       admitted,
       collectionRequestIds,
     );
@@ -1077,7 +1122,7 @@ export async function persistOfficialSourceCollectionPlan(
       );
       throw recountedRequestCapacityProblem(
         discoveryPlan.source_lineage,
-        requestCapacity,
+        capacityPolicy,
         recounted,
         collectionRequestIds,
       );
@@ -1261,7 +1306,7 @@ export async function pauseEvidenceRunForRequestCapacity(
       )
       .bind(
         runId,
-        initialRequestCapacityGeneration,
+        problem.capacity.capacity_generation,
         pausedAt,
         problem.capacity.source_lineage,
         parentRequestId,
@@ -1271,6 +1316,261 @@ export async function pauseEvidenceRunForRequestCapacity(
         problem.capacity.required_capacity,
       ),
   ]);
+}
+
+// Move a capacity-paused Ingestion Run back into its collection phase and
+// bind the deterministic parent Workflow identity that will reacquire the
+// remaining work. Both statements are idempotent under replayed resumes: the
+// state update is a no-op once the run collects again, and the identity is
+// derived from the capacity generation, so a replay reassigns the same value.
+export async function resumeCapacityPausedEvidenceRun(
+  database: D1Database,
+  runId: string,
+  parentWorkflowId: string,
+): Promise<void> {
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'collecting',
+             progress_json =
+               '{"completed_stages":["planning"],"current_stage":"collecting"}'
+         WHERE id = ? AND state = 'paused'`,
+      )
+      .bind(runId),
+    // The reassignment holds only while the run is actually collecting (the
+    // statement above just moved it there, or an earlier replay already did),
+    // so a stale resume replay cannot rewrite the parent Workflow identity
+    // after the run has advanced beyond collection.
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
+         WHERE ingestion_run_id = ?
+           AND EXISTS (
+             SELECT 1 FROM ingestion_runs
+             WHERE id = ingestion_evidence_plans.ingestion_run_id
+               AND state = 'collecting'
+           )`,
+      )
+      .bind(parentWorkflowId, runId),
+  ]);
+}
+
+export type CapacityExtensionRequest = Readonly<{
+  expected_request_capacity: unknown;
+  expected_capacity_generation: unknown;
+  request_capacity: unknown;
+  idempotency_key: string;
+}>;
+
+function requiredCapacityInteger(
+  value: unknown,
+  code: string,
+  field: string,
+): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new AdministrationProblem(
+      422,
+      code,
+      `${field} must be a positive integer.`,
+    );
+  }
+  return value as number;
+}
+
+// Extend the Request Capacity of a capacity-paused Ingestion Run through a
+// compare-and-set on the run's effective capacity and capacity generation.
+// The guarded insert advances the generation atomically: a concurrent
+// extension can commit at most one record per generation, and every losing
+// writer re-reads the retained state to report the precise conflict. The
+// immutable extension row doubles as the idempotency record, so an exact
+// replay returns the original response without applying another extension.
+export async function extendRunRequestCapacity(
+  database: D1Database,
+  runId: string,
+  request: CapacityExtensionRequest,
+): Promise<Record<string, unknown>> {
+  assertIdentifier(request.idempotency_key, "idempotency_key");
+  const expectedRequestCapacity = requiredCapacityInteger(
+    request.expected_request_capacity,
+    "request_capacity_invalid",
+    "expected_request_capacity",
+  );
+  const expectedCapacityGeneration = requiredCapacityInteger(
+    request.expected_capacity_generation,
+    "capacity_generation_invalid",
+    "expected_capacity_generation",
+  );
+  const requestedCapacity = requiredCapacityInteger(
+    request.request_capacity,
+    "request_capacity_invalid",
+    "request_capacity",
+  );
+  const run = await requiredEvidenceRun(database, runId);
+  const requestDigest = await sha256(utf8(canonicalJson({
+    ingestion_run_id: runId,
+    expected_request_capacity: expectedRequestCapacity,
+    expected_capacity_generation: expectedCapacityGeneration,
+    request_capacity: requestedCapacity,
+    idempotency_key: request.idempotency_key,
+  })));
+  const replayed = await capacityExtensionReplay(
+    database,
+    request.idempotency_key,
+    requestDigest,
+  );
+  if (replayed !== null) return replayed;
+  if (run.state !== "paused") throw ingestionRunNotPausedProblem();
+  const policy = await runRequestCapacityPolicy(
+    database,
+    runId,
+    run.adapter_version,
+  );
+  assertExpectedCapacityPolicy(
+    policy,
+    expectedRequestCapacity,
+    expectedCapacityGeneration,
+  );
+  if (requestedCapacity < policy.request_capacity) {
+    throw new AdministrationProblem(
+      422,
+      "request_capacity_decreased",
+      "A capacity extension cannot decrease the effective request capacity.",
+    );
+  }
+  if (requestedCapacity === policy.request_capacity) {
+    throw new AdministrationProblem(
+      422,
+      "request_capacity_unchanged",
+      "A capacity extension must exceed the effective request capacity.",
+    );
+  }
+  if (requestedCapacity >= globalEmergencySourceRequestCeiling) {
+    throw new AdministrationProblem(
+      422,
+      "request_capacity_exceeds_global_ceiling",
+      "No request capacity may reach the global emergency ceiling.",
+    );
+  }
+  const capacityGeneration = policy.capacity_generation + 1;
+  const response: Record<string, unknown> = {
+    contract: "card-keepr-capacity-extension@1",
+    ingestion_run_id: runId,
+    source_lineage: run.source_lineage,
+    previous_request_capacity: policy.request_capacity,
+    previous_capacity_generation: policy.capacity_generation,
+    request_capacity: requestedCapacity,
+    capacity_generation: capacityGeneration,
+    extended_at: new Date().toISOString(),
+  };
+  let outcome: D1Result | null = null;
+  try {
+    outcome = await database
+      .prepare(
+        `INSERT INTO ingestion_run_capacity_extensions (
+           ingestion_run_id, capacity_generation, previous_request_capacity,
+           request_capacity, source_lineage, extended_at, idempotency_key,
+           request_digest, response_json
+         )
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+         WHERE EXISTS (
+           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_capacity_extensions
+           WHERE ingestion_run_id = ?1 AND capacity_generation >= ?2
+         )`,
+      )
+      .bind(
+        runId,
+        capacityGeneration,
+        policy.request_capacity,
+        requestedCapacity,
+        run.source_lineage,
+        response.extended_at,
+        request.idempotency_key,
+        requestDigest,
+        canonicalJson(response),
+      )
+      .run();
+  } catch {
+    outcome = null;
+  }
+  if (outcome !== null && outcome.meta.changes === 1) return response;
+  // The guarded insert lost a race: a replay of this exact request, another
+  // extension advancing the generation, or a resumed run. Re-reading the
+  // retained state reports the precise conflict.
+  const raced = await capacityExtensionReplay(
+    database,
+    request.idempotency_key,
+    requestDigest,
+  );
+  if (raced !== null) return raced;
+  const current = await requiredEvidenceRun(database, runId);
+  if (current.state !== "paused") throw ingestionRunNotPausedProblem();
+  assertExpectedCapacityPolicy(
+    await runRequestCapacityPolicy(database, runId, current.adapter_version),
+    expectedRequestCapacity,
+    expectedCapacityGeneration,
+  );
+  throw new AdministrationProblem(
+    409,
+    "capacity_extension_conflict",
+    "A concurrent capacity extension prevented this extension from applying.",
+  );
+}
+
+function ingestionRunNotPausedProblem(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "ingestion_run_not_paused",
+    "Only a capacity-paused Ingestion Run can have its request capacity extended.",
+  );
+}
+
+function assertExpectedCapacityPolicy(
+  policy: RunCapacityPolicy,
+  expectedRequestCapacity: number,
+  expectedCapacityGeneration: number,
+): void {
+  if (expectedCapacityGeneration !== policy.capacity_generation) {
+    throw new AdministrationProblem(
+      409,
+      "capacity_generation_mismatch",
+      `The expected capacity generation is stale: the run is at generation ${policy.capacity_generation}.`,
+    );
+  }
+  if (expectedRequestCapacity !== policy.request_capacity) {
+    throw new AdministrationProblem(
+      409,
+      "request_capacity_mismatch",
+      `The expected request capacity is stale: the effective capacity is ${policy.request_capacity}.`,
+    );
+  }
+}
+
+async function capacityExtensionReplay(
+  database: D1Database,
+  idempotencyKey: string,
+  requestDigest: string,
+): Promise<Record<string, unknown> | null> {
+  const retained = await database
+    .prepare(
+      `SELECT request_digest, response_json
+       FROM ingestion_run_capacity_extensions
+       WHERE idempotency_key = ?`,
+    )
+    .bind(idempotencyKey)
+    .first<{ request_digest: string; response_json: string }>();
+  if (retained === null) return null;
+  if (retained.request_digest !== requestDigest) {
+    throw new AdministrationProblem(
+      409,
+      "idempotency_conflict",
+      "The idempotency key was already used for a different capacity extension.",
+    );
+  }
+  return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 
 export async function finalizeEvidenceRun(

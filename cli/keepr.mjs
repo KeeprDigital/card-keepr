@@ -113,6 +113,13 @@ export async function main(arguments_, environment) {
   if (isCommand(arguments_, "source", "show")) {
     return showSourceEvidence(arguments_.slice(2), environment, json);
   }
+  if (
+    arguments_[0] === "source" &&
+    arguments_[1] === "capacity" &&
+    arguments_[2] === "extend"
+  ) {
+    return extendSourceCapacity(arguments_.slice(3), environment, json);
+  }
   if (isCommand(arguments_, "source", "resume")) {
     return resumeEvidenceCollection(arguments_.slice(2), environment, json);
   }
@@ -1114,6 +1121,55 @@ async function showSourceEvidence(arguments_, environment, json) {
   );
 }
 
+// The compare-and-set numbers of a capacity extension travel as JSON
+// integers, so the CLI accepts only canonical positive decimal digits.
+function parsedCapacityInteger(value) {
+  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+async function extendSourceCapacity(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--expected-capacity",
+    "--expected-generation",
+    "--capacity",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const expectedCapacity = parsedCapacityInteger(
+    options.values["--expected-capacity"],
+  );
+  const expectedGeneration = parsedCapacityInteger(
+    options.values["--expected-generation"],
+  );
+  const capacity = parsedCapacityInteger(options.values["--capacity"]);
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    expectedCapacity === null ||
+    expectedGeneration === null ||
+    capacity === null ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/capacity/extension`,
+    "POST",
+    {
+      expected_request_capacity: expectedCapacity,
+      expected_capacity_generation: expectedGeneration,
+      request_capacity: capacity,
+      idempotency_key: idempotencyKey,
+    },
+  );
+}
+
 async function resumeEvidenceCollection(arguments_, environment, json) {
   const options = parseOptions(arguments_, ["--run-id"]);
   const runId = options.values["--run-id"];
@@ -1570,7 +1626,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire | credential install | credential verify | credential revoke | credential show",
     },
     2,
   );
@@ -1595,6 +1651,9 @@ function resolvedTargetFailure(json, detail) {
 function formatAdministrationResult(document) {
   if (document.contract === "card-keepr-administration-status@1") {
     return formatStatus(document);
+  }
+  if (document.contract === "card-keepr-capacity-extension@1") {
+    return formatCapacityExtension(document);
   }
   if (
     Array.isArray(document.snapshots) &&
@@ -1637,6 +1696,35 @@ function formatAdministrationResult(document) {
 
 function formatCount(count, noun) {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// The confirmation facts of an applied capacity extension: which Ingestion
+// Run and Source Lineage were extended, and how the compare-and-set advanced
+// the capacity and its generation.
+function formatCapacityExtension(document) {
+  const lines = [];
+  const runId = safeDiagnosticReference(document.ingestion_run_id);
+  if (runId !== null) {
+    lines.push(`Ingestion Run ${runId} capacity extended`);
+  }
+  if (
+    Number.isSafeInteger(document.previous_request_capacity) &&
+    Number.isSafeInteger(document.request_capacity) &&
+    Number.isSafeInteger(document.previous_capacity_generation) &&
+    Number.isSafeInteger(document.capacity_generation)
+  ) {
+    lines.push(
+      `Request Capacity: ${document.previous_request_capacity} -> ` +
+        `${document.request_capacity} (generation ` +
+        `${document.previous_capacity_generation} -> ` +
+        `${document.capacity_generation})`,
+    );
+  }
+  const sourceLineage = safeDiagnosticReference(document.source_lineage);
+  if (sourceLineage !== null) {
+    lines.push(`Source Lineage: ${sourceLineage}`);
+  }
+  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
 
 // The minimum capacity facts of a paused Ingestion Run: why collection
