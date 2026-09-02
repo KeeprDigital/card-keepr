@@ -21,6 +21,15 @@ import {
   curatedRevisionPinStatementsForNewRun,
 } from "./curated-revisions";
 import { operationalDiagnostics } from "./operational-diagnostics";
+import {
+  classifyCollectionWorkflow,
+  parentWorkflowAttemptId,
+  safeWorkflowStatus,
+  workflowAttemptRecord,
+  type SafeWorkflowStatus,
+  type WorkflowPauseReason,
+} from "./collection-recovery";
+import type { EvidenceParentWorkflowParams } from "./source-evidence-model";
 
 export type IngestionEvidenceRow = {
   id: string;
@@ -1230,20 +1239,55 @@ export async function recordWorkflowIds(
   parentWorkflowId: string,
   childWorkflowIds: readonly string[],
 ): Promise<void> {
-  await database
-    .prepare(
-      `UPDATE ingestion_evidence_plans
-       SET parent_workflow_id = ?, child_workflow_ids_json = ?
-       WHERE ingestion_run_id = ?
-         AND (parent_workflow_id IS NULL OR parent_workflow_id = ?)`,
-    )
-    .bind(
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE ingestion_evidence_plans
+         SET parent_workflow_id = ?, child_workflow_ids_json = ?
+         WHERE ingestion_run_id = ?
+           AND (parent_workflow_id IS NULL OR parent_workflow_id = ?)`,
+      )
+      .bind(
+        parentWorkflowId,
+        canonicalJson(childWorkflowIds),
+        runId,
+        parentWorkflowId,
+      ),
+    ...workflowAttemptStatements(database, runId, [
       parentWorkflowId,
-      canonicalJson(childWorkflowIds),
-      runId,
-      parentWorkflowId,
-    )
-    .run();
+      ...childWorkflowIds,
+    ]),
+  ]);
+}
+
+// Every observed Workflow identity becomes one immutable Workflow Attempt
+// row. Identities are self-describing (see workflowAttemptRecord), so the
+// same record is recomputed idempotently wherever an identity is observed
+// and INSERT OR IGNORE preserves the first recorded creation time.
+export function workflowAttemptStatements(
+  database: D1Database,
+  runId: string,
+  workflowInstanceIds: readonly string[],
+): D1PreparedStatement[] {
+  const createdAt = new Date().toISOString();
+  return workflowInstanceIds.map((instanceId) => {
+    const record = workflowAttemptRecord(runId, instanceId);
+    return database
+      .prepare(
+        `INSERT OR IGNORE INTO ingestion_workflow_attempts (
+           ingestion_run_id, workflow_kind, base_workflow_id,
+           attempt_number, workflow_instance_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        runId,
+        record.workflow_kind,
+        record.base_workflow_id,
+        record.attempt_number,
+        record.workflow_instance_id,
+        createdAt,
+      );
+  });
 }
 
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
@@ -1405,6 +1449,147 @@ export function retryExhaustionPauseStatements(
   ];
 }
 
+export type WorkflowRecoveryFacts = {
+  workflow_instance_id: string;
+  pause_reason: WorkflowPauseReason;
+  workflow_status: SafeWorkflowStatus;
+  last_progress_at: string | null;
+};
+
+// A stalled, errored, terminated, or unavailable collection Workflow is not
+// proof the retained collection attempt is invalid: the run pauses
+// non-terminally with the Workflow Pause reason, no Source Request changes
+// state, and the immutable record identifies the abandoned Workflow Attempt,
+// the safe status that classified it, and the deterministic last-progress
+// time the classification was derived from.
+export async function pauseEvidenceRunForWorkflowRecovery(
+  database: D1Database,
+  runId: string,
+  facts: WorkflowRecoveryFacts,
+): Promise<void> {
+  await database.batch([
+    // Compare-and-set on the abandoned instance still being the bound
+    // parent: a concurrent recovery that already superseded it rebound the
+    // identity, so a stale classification of the old instance must not
+    // re-pause the freshly recovered run.
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'paused',
+             progress_json =
+               '{"completed_stages":["planning"],"current_stage":"paused"}'
+         WHERE id = ?1 AND state = 'collecting'
+           AND EXISTS (
+             SELECT 1 FROM ingestion_evidence_plans
+             WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
+           )`,
+      )
+      .bind(runId, facts.workflow_instance_id),
+    // Guarded and idempotent, mirroring the capacity and retry pauses: the
+    // run is paused by the statement above (or already was), and one
+    // immutable record exists per abandoned Workflow instance. When the run
+    // already reached another state, both statements record nothing.
+    database
+      .prepare(
+        `INSERT INTO ingestion_run_workflow_pauses (
+           ingestion_run_id, workflow_instance_id, pause_reason,
+           workflow_status, paused_at, last_progress_at
+         )
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6
+         WHERE EXISTS (
+           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_workflow_pauses
+           WHERE ingestion_run_id = ?1 AND workflow_instance_id = ?2
+         )`,
+      )
+      .bind(
+        runId,
+        facts.workflow_instance_id,
+        facts.pause_reason,
+        facts.workflow_status,
+        new Date().toISOString(),
+        facts.last_progress_at,
+      ),
+  ]);
+}
+
+export type CollectionProgressFacts = {
+  last_progress_at: string | null;
+  pacing_deadline_at: string | null;
+  retry_deadline_at: string | null;
+};
+
+// The deterministic progress evidence stall classification consumes: the
+// newest persisted lifecycle event across transitions, fetch attempts,
+// capture operations, parses, collection plans, and Workflow Attempts —
+// never log arrival time — plus the persisted wait deadlines that must not
+// be misread as silence (the host pacing table's next-request deadline and
+// the newest scheduled Retry-After deadline).
+export async function collectionProgressFacts(
+  database: D1Database,
+  runId: string,
+): Promise<CollectionProgressFacts> {
+  const [progress, pacing, retry] = await Promise.all([
+    database
+      .prepare(
+        `SELECT
+           (SELECT MAX(transitioned_at) FROM ingestion_run_transitions
+            WHERE ingestion_run_id = ?1) AS transitioned_at,
+           (SELECT MAX(completed_at) FROM source_fetch_attempts
+            WHERE ingestion_run_id = ?1) AS fetched_at,
+           (SELECT MAX(COALESCE(completed_at, requested_at))
+            FROM source_capture_operations
+            WHERE ingestion_run_id = ?1) AS captured_at,
+           (SELECT MAX(created_at) FROM ingestion_workflow_attempts
+            WHERE ingestion_run_id = ?1) AS attempted_at,
+           (SELECT MAX(observations.parsed_at)
+            FROM source_observation_sets AS observations
+            JOIN source_snapshots AS snapshots
+              ON snapshots.id = observations.source_snapshot_id
+            WHERE snapshots.ingestion_run_id = ?1) AS parsed_at,
+           (SELECT MAX(created_at) FROM official_source_collection_plans
+            WHERE ingestion_run_id = ?1) AS planned_at,
+           (SELECT started_at FROM ingestion_runs WHERE id = ?1) AS started_at`,
+      )
+      .bind(runId)
+      .first<Record<string, string | null>>(),
+    // Pacing deadlines are keyed by hostname rather than run; the maximum
+    // across all hosts is a bounded over-approximation (at most the pacing
+    // interval plus jitter) that can only delay a stall verdict, never
+    // manufacture one.
+    database
+      .prepare(
+        `SELECT MAX(next_request_not_before) AS pacing_deadline_at
+         FROM source_host_pacing`,
+      )
+      .first<{ pacing_deadline_at: string | null }>(),
+    database
+      .prepare(
+        `SELECT MAX(
+           (julianday(completed_at) - 2440587.5) * 86400000.0 + retry_after_ms
+         ) AS retry_deadline_ms
+         FROM source_fetch_attempts
+         WHERE ingestion_run_id = ? AND retry_after_ms IS NOT NULL`,
+      )
+      .bind(runId)
+      .first<{ retry_deadline_ms: number | null }>(),
+  ]);
+  // Every source column carries the same UTC ISO-8601 shape, so the newest
+  // event is the lexicographic maximum of the non-null values.
+  const progressTimes = Object.values(progress ?? {})
+    .filter((value): value is string => typeof value === "string")
+    .sort();
+  return {
+    last_progress_at: progressTimes.at(-1) ?? null,
+    pacing_deadline_at: pacing?.pacing_deadline_at ?? null,
+    retry_deadline_at: retry?.retry_deadline_ms == null
+      ? null
+      : new Date(Math.round(retry.retry_deadline_ms)).toISOString(),
+  };
+}
+
 // Move a paused Ingestion Run back into its collection phase and bind the
 // deterministic parent Workflow identity that will reacquire the remaining
 // work. Every statement is idempotent under replayed resumes: the retry
@@ -1424,8 +1609,9 @@ export async function resumePausedEvidenceRun(
     )
     .bind(runId)
     .first<{ count: number }>();
-  const parentWorkflowId =
-    `evidence-${runId}-resume-${(resumed?.count ?? 0) + 1}`;
+  const resumeCount = resumed?.count ?? 0;
+  const parentWorkflowId = parentWorkflowAttemptId(runId, resumeCount + 2);
+  const attemptRecord = workflowAttemptRecord(runId, parentWorkflowId);
   await database.batch([
     // Resuming after retry exhaustion opens the next bounded retry
     // generation for each affected Source Request: attempts stay
@@ -1457,20 +1643,52 @@ export async function resumePausedEvidenceRun(
       )
       .bind(runId),
     // The reassignment holds only while the run is actually collecting (the
-    // statement above just moved it there, or an earlier replay already did),
-    // so a stale resume replay cannot rewrite the parent Workflow identity
-    // after the run has advanced beyond collection.
+    // statement above just moved it there, or an earlier replay already did)
+    // AND the transition count still matches the count this identity was
+    // derived from: a concurrent resume that lost the paused -> collecting
+    // race derived a later identity, records nothing here, and re-reads the
+    // winner's identity instead of binding a competing Workflow Attempt.
     database
       .prepare(
-        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ?
+        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?1
+         WHERE ingestion_run_id = ?2
            AND EXISTS (
              SELECT 1 FROM ingestion_runs
              WHERE id = ingestion_evidence_plans.ingestion_run_id
                AND state = 'collecting'
-           )`,
+           )
+           AND (
+             SELECT COUNT(*) FROM ingestion_run_transitions
+             WHERE ingestion_run_id = ?2
+               AND from_state = 'paused' AND to_state = 'collecting'
+           ) = ?3`,
       )
-      .bind(parentWorkflowId, runId),
+      .bind(parentWorkflowId, runId, resumeCount + 1),
+    // The Workflow Attempt row appends atomically with the binding above and
+    // under the same guard, so exactly one new current parent attempt exists
+    // per recorded resume.
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO ingestion_workflow_attempts (
+           ingestion_run_id, workflow_kind, base_workflow_id,
+           attempt_number, workflow_instance_id, created_at
+         )
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6
+         WHERE (
+           SELECT COUNT(*) FROM ingestion_run_transitions
+           WHERE ingestion_run_id = ?1
+             AND from_state = 'paused' AND to_state = 'collecting'
+         ) = ?7`,
+      )
+      .bind(
+        runId,
+        attemptRecord.workflow_kind,
+        attemptRecord.base_workflow_id,
+        attemptRecord.attempt_number,
+        attemptRecord.workflow_instance_id,
+        new Date().toISOString(),
+        resumeCount + 1,
+      ),
   ]);
 }
 
@@ -1781,10 +1999,11 @@ export async function finalizeEvidenceRun(
 export async function showEvidenceRun(
   database: D1Database,
   runId: string,
+  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, retryPause] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, retryPause, workflowPause, workflowAttempts, progress] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -1862,21 +2081,60 @@ export async function showEvidenceRun(
         failure_classification: string;
         http_status: number | null;
       }>(),
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_workflow_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY paused_at DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<{
+        pause_reason: string;
+        paused_at: string;
+        workflow_instance_id: string;
+        workflow_status: string;
+        last_progress_at: string | null;
+      }>(),
+    database
+      .prepare(
+        `SELECT workflow_kind, base_workflow_id, attempt_number,
+                workflow_instance_id, created_at
+         FROM ingestion_workflow_attempts
+         WHERE ingestion_run_id = ?
+         ORDER BY workflow_kind, base_workflow_id, attempt_number`,
+      )
+      .bind(runId)
+      .all<{
+        workflow_kind: string;
+        base_workflow_id: string;
+        attempt_number: number;
+        workflow_instance_id: string;
+        created_at: string;
+      }>(),
+    collectionProgressFacts(database, runId),
   ]);
   // A paused run reports exactly one pause: the newest record across the
-  // capacity and retry-exhaustion tables (a retry pause wins an equal
-  // timestamp, because a run can only re-enter capacity admission after the
-  // exhausted request recovers). Historical records from earlier pauses of
-  // the same run stay retained but are not the current pause.
+  // capacity, retry-exhaustion, and Workflow pause tables (a retry pause
+  // wins an equal capacity-pause timestamp, because a run can only re-enter
+  // capacity admission after the exhausted request recovers; a Workflow
+  // pause wins any equal timestamp, because it is recorded by a later
+  // explicit recovery classification). Historical records from earlier
+  // pauses of the same run stay retained but are not the current pause.
   const retryPauseNewest = retryPause !== null &&
     (pause === null || retryPause.paused_at >= pause.paused_at);
-  const currentPause = run.state !== "paused"
+  const requestPauseDocument = retryPauseNewest && retryPause !== null
+    ? { at: retryPause.paused_at, document: retryPauseDocument(retryPause) }
+    : pause === null
+      ? null
+      : { at: pause.paused_at, document: capacityPauseDocument(pause) };
+  const newestPauseDocument = workflowPause !== null &&
+      (requestPauseDocument === null ||
+        workflowPause.paused_at >= requestPauseDocument.at)
+    ? workflowPauseDocument(workflowPause)
+    : requestPauseDocument?.document ?? null;
+  const currentPause = run.state !== "paused" || newestPauseDocument === null
     ? {}
-    : retryPauseNewest && retryPause !== null
-      ? { pause: retryPauseDocument(retryPause) }
-      : pause === null
-        ? {}
-        : { pause: capacityPauseDocument(pause) };
+    : { pause: newestPauseDocument };
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -1910,13 +2168,12 @@ export async function showEvidenceRun(
       curated_revision_ids: curatedSet.revision_ids,
       curated_revision_set_digest: curatedSet.set_digest,
     }),
-    workflow: {
-      parent_id: run.parent_workflow_id,
-      child_ids:
-        run.child_workflow_ids_json === null
-          ? []
-          : JSON.parse(run.child_workflow_ids_json),
-    },
+    workflow: await collectionWorkflowDocument(
+      run,
+      workflowAttempts.results,
+      progress,
+      parentWorkflow,
+    ),
     snapshots: snapshots.results.map(publicSnapshot),
     observation_sets: observations.results.map(publicObservationSet),
     diagnostics: attempts.results.map((row) => ({
@@ -1975,6 +2232,146 @@ function retryPauseDocument(row: {
     http_status: row.http_status,
     actions: ["resume"],
   };
+}
+
+function workflowPauseDocument(row: {
+  pause_reason: string;
+  paused_at: string;
+  workflow_instance_id: string;
+  workflow_status: string;
+  last_progress_at: string | null;
+}): Record<string, unknown> {
+  return {
+    reason: row.pause_reason,
+    paused_at: row.paused_at,
+    workflow_instance_id: row.workflow_instance_id,
+    workflow_status: row.workflow_status,
+    last_progress_at: row.last_progress_at,
+    actions: ["resume"],
+  };
+}
+
+type WorkflowAttemptRow = {
+  workflow_kind: string;
+  base_workflow_id: string;
+  attempt_number: number;
+  workflow_instance_id: string;
+  created_at: string;
+};
+
+// The safe Workflow observability block: append-only attempt references with
+// exactly one current attempt per scope, the deterministic last-progress
+// time, and — when the parent Workflow binding is supplied — the current
+// parent attempt's platform status mapped onto the closed safe vocabulary
+// plus its stall classification while the run collects. Runs recorded before
+// the attempt table existed synthesize their attempts from the retained
+// identity columns, so historical Workflow references stay auditable.
+async function collectionWorkflowDocument(
+  run: IngestionEvidenceRow,
+  attemptRows: readonly WorkflowAttemptRow[],
+  progress: CollectionProgressFacts,
+  parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
+): Promise<Record<string, unknown>> {
+  const childIds: string[] = run.child_workflow_ids_json === null
+    ? []
+    : JSON.parse(run.child_workflow_ids_json);
+  const recorded = new Map(
+    attemptRows.map((row) => [row.workflow_instance_id, row]),
+  );
+  for (const legacyId of [run.parent_workflow_id, ...childIds]) {
+    if (legacyId === null || recorded.has(legacyId)) continue;
+    const record = workflowAttemptRecord(run.id, legacyId);
+    recorded.set(legacyId, { ...record, created_at: "" });
+  }
+  // Parent identities are deterministic, so attempts predating their
+  // recorded rows (history from before the attempt table, or bound outside
+  // the resume path) are reconstructed below the highest known attempt.
+  const highestParentAttempt = Math.max(
+    0,
+    ...[...recorded.values()]
+      .filter((record) => record.workflow_kind === "parent")
+      .map((record) => record.attempt_number),
+  );
+  for (let attempt = 1; attempt < highestParentAttempt; attempt += 1) {
+    const attemptId = parentWorkflowAttemptId(run.id, attempt);
+    if (recorded.has(attemptId)) continue;
+    recorded.set(attemptId, {
+      ...workflowAttemptRecord(run.id, attemptId),
+      created_at: "",
+    });
+  }
+  const attempts = [...recorded.values()].sort((left, right) =>
+    left.workflow_kind.localeCompare(right.workflow_kind) ||
+    left.base_workflow_id.localeCompare(right.base_workflow_id) ||
+    left.attempt_number - right.attempt_number
+  );
+  const currentAttemptNumbers = new Map<string, number>();
+  for (const attempt of attempts) {
+    const scope = `${attempt.workflow_kind} ${attempt.base_workflow_id}`;
+    currentAttemptNumbers.set(
+      scope,
+      Math.max(currentAttemptNumbers.get(scope) ?? 0, attempt.attempt_number),
+    );
+  }
+  const isCurrent = (attempt: WorkflowAttemptRow): boolean =>
+    currentAttemptNumbers.get(
+      `${attempt.workflow_kind} ${attempt.base_workflow_id}`,
+    ) === attempt.attempt_number;
+  const currentParent = attempts
+    .filter((attempt) => attempt.workflow_kind === "parent")
+    .filter(isCurrent)
+    .at(-1) ?? null;
+  let status: SafeWorkflowStatus | null = null;
+  if (parentWorkflow !== undefined && currentParent !== null) {
+    try {
+      const instance = await parentWorkflow.get(
+        currentParent.workflow_instance_id,
+      );
+      status = safeWorkflowStatus((await instance.status()).status);
+    } catch {
+      status = "unavailable";
+    }
+  }
+  const classification = status === null || run.state !== "collecting"
+    ? null
+    : classifyCollectionWorkflow({
+      now_ms: Date.now(),
+      workflow_status: status,
+      last_progress_ms: parseProgressTime(progress.last_progress_at),
+      pacing_deadline_ms: parseProgressTime(progress.pacing_deadline_at),
+      retry_deadline_ms: parseProgressTime(progress.retry_deadline_at),
+    });
+  return {
+    parent_id: run.parent_workflow_id,
+    child_ids: childIds,
+    last_progress_at: progress.last_progress_at,
+    current_attempt: currentParent === null ? null : {
+      id: currentParent.workflow_instance_id,
+      attempt_number: currentParent.attempt_number,
+      created_at: currentParent.created_at === ""
+        ? null
+        : currentParent.created_at,
+    },
+    attempts: attempts.map((attempt) => ({
+      id: attempt.workflow_instance_id,
+      kind: attempt.workflow_kind,
+      attempt_number: attempt.attempt_number,
+      created_at: attempt.created_at === "" ? null : attempt.created_at,
+      current: isCurrent(attempt),
+    })),
+    ...(status === null ? {} : { status }),
+    ...(classification === null ? {} : {
+      classification: classification.kind === "recover"
+        ? classification.reason
+        : classification.kind,
+    }),
+  };
+}
+
+function parseProgressTime(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function capacityPauseDocument(row: {

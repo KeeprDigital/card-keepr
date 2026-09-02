@@ -804,6 +804,7 @@ async function handleIngestionRequest(
           await showEvidenceRun(
             env.CATALOGUE_DB,
             decodeURIComponent(evidenceMatch[1]!),
+            env.EVIDENCE_INGESTION_WORKFLOW,
           ),
         );
       }
@@ -998,7 +999,11 @@ async function handleIngestionRequest(
         const runId = decodeURIComponent(runMatch[1]!);
         if (await hasEvidencePlan(env.CATALOGUE_DB, runId)) {
           return Response.json(
-            await showEvidenceRun(env.CATALOGUE_DB, runId),
+            await showEvidenceRun(
+              env.CATALOGUE_DB,
+              runId,
+              env.EVIDENCE_INGESTION_WORKFLOW,
+            ),
           );
         }
         return Response.json(
