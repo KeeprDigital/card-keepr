@@ -96,31 +96,65 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     "redirect",
   );
 
-  const terminalFailure = await collectResumeAndShow(
-    "cli_terminal_evidence_001",
-    "unavailable",
-    "failed",
+  // Exhausting the retryable 503 responses pauses the same Ingestion Run
+  // instead of failing it. `keepr source resume` then opens the next bounded
+  // retry generation and the identical run completes collection.
+  const paused = await collectResumeAndShow(
+    "cli_retry_pause_evidence_001",
+    "unavailable-then-recovered",
+    "paused",
     cliEnvironment,
     ingestion,
     directory,
   );
-  assert.equal(
-    terminalFailure.failure_code,
-    "source_request_retries_exhausted",
-  );
-  assert.equal(terminalFailure.snapshots.length, 0);
-  assert.equal(terminalFailure.observation_sets.length, 0);
-  assert.equal(terminalFailure.diagnostics.length, 4);
+  assert.equal(paused.failure_code, null);
+  assert.equal(paused.pause.reason, "source_transport_retries_exhausted");
+  assert.equal(paused.pause.request_id, "one-piece-en:discovery");
+  assert.equal(paused.pause.hostname, "en.onepiece-cardgame.com");
+  assert.equal(paused.pause.retry_generation, 1);
+  assert.equal(paused.pause.attempt_count, 4);
+  assert.equal(paused.pause.failure_classification, "http_failure");
+  assert.equal(paused.pause.http_status, 503);
+  assert.deepEqual(paused.pause.actions, ["resume"]);
+  assert.equal(paused.snapshots.length, 0);
+  assert.equal(paused.observation_sets.length, 0);
+  assert.equal(paused.diagnostics.length, 4);
+  for (const diagnostic of paused.diagnostics) {
+    assert.equal(diagnostic.outcome, "http_failure");
+    assert.equal(diagnostic.http_status, 503);
+  }
 
-  const successful = await collectResumeAndShow(
-    "cli_success_evidence_001",
-    null,
+  const resumedAfterPause = await runCli(
+    ["source", "resume", "--run-id", paused.id, "--json"],
+    cliEnvironment,
+  );
+  assert.equal(resumedAfterPause.code, 0, resumedAfterPause.stderr);
+  const successful = await waitForRunState(
+    paused.id,
     "awaiting_approval",
     cliEnvironment,
     ingestion,
-    directory,
+    { deadlineMs: 30_000 },
   );
   assert.equal(successful.failure_code, null);
+  assert.equal(successful.id, paused.id);
+  // The recovered fetch is attempt 5 of the same append-only history.
+  const discoveryAttempts = successful.diagnostics.filter(
+    ({ request_id }) => request_id === "one-piece-en:discovery",
+  );
+  assert.deepEqual(
+    discoveryAttempts.map(({ attempt_number, outcome }) => ({
+      attempt_number,
+      outcome,
+    })),
+    [
+      { attempt_number: 1, outcome: "http_failure" },
+      { attempt_number: 2, outcome: "http_failure" },
+      { attempt_number: 3, outcome: "http_failure" },
+      { attempt_number: 4, outcome: "http_failure" },
+      { attempt_number: 5, outcome: "success" },
+    ],
+  );
   assert.deepEqual(
     successful.snapshots.map(({ request }) => request.url),
     [
@@ -142,7 +176,12 @@ test("the CLI audits real retained evidence through a locally emulated ingestion
     successful.observation_sets.length,
     successful.snapshots.length,
   );
-  assert.equal(successful.diagnostics.length, successful.snapshots.length);
+  // Every snapshot has its successful attempt, plus the four retained 503
+  // diagnostics from the paused generation.
+  assert.equal(
+    successful.diagnostics.length,
+    successful.snapshots.length + 4,
+  );
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
   const retained = await runCli(

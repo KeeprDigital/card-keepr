@@ -20,7 +20,7 @@ import {
 
 installRuntimeSuite();
 
-test("R2 recovery outages become durable bounded storage failures", async () => {
+test("R2 recovery outages pause the run and resume completes the same capture", async () => {
   const run = await createCollection(
     "source_recovery_r2_outage_001",
     "https://official-source.invalid/cards",
@@ -93,19 +93,44 @@ test("R2 recovery outages become durable bounded storage failures", async () => 
     expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
   }
 
-  const failed = await resumeCollection(run.id);
-  expect(failed).toMatchObject({
-    state: "failed",
-    failure_code: "source_request_retries_exhausted",
-    snapshots: [],
+  // Exhausting the bounded storage retries pauses the run with its own
+  // reason instead of failing the request: transient R2 problems do not
+  // destroy the collection attempt.
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT state FROM ingestion_runs WHERE id = ?",
+  ).bind(run.id).first("state")).toBe("paused");
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT pause_reason, failure_classification, retry_generation
+     FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first()).toMatchObject({
+    pause_reason: "source_storage_retries_exhausted",
+    failure_classification: "storage_failure",
+    retry_generation: 1,
   });
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT state, failure_code FROM source_requests
+     WHERE ingestion_run_id = ? AND request_id = 'required-source'`,
+  ).bind(run.id).first()).toMatchObject({
+    state: "pending",
+    failure_code: null,
+  });
+
+  // Resuming against the recovered bucket opens generation 2; attempt 5
+  // captures and the same run completes collection.
+  const completed = await resumeCollection(run.id);
+  expect(completed).toMatchObject({
+    state: "parsing",
+    failure_code: null,
+  });
+  expect(completed.snapshots).toHaveLength(1);
   expect(
-    failed.diagnostics.map((diagnostic) => diagnostic.outcome),
+    completed.diagnostics.map((diagnostic) => diagnostic.outcome),
   ).toEqual([
     "storage_failure",
     "storage_failure",
     "storage_failure",
     "storage_failure",
+    "success",
   ]);
 });
 

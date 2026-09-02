@@ -1727,9 +1727,10 @@ function formatCapacityExtension(document) {
   return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
 
-// The minimum capacity facts of a paused Ingestion Run: why collection
-// stopped, how much of the exact adapter capacity is used, and how large a
-// capacity the rejected overflow batch requires.
+// The minimum pause facts of a paused Ingestion Run: why collection stopped,
+// and either the capacity consumption the rejected overflow batch requires
+// (a Capacity Pause) or the exhausted request's safe reference, hostname,
+// retry generation, and latest safe failure classification (a retry pause).
 function formatEvidencePause(pause) {
   if (typeof pause !== "object" || pause === null) return [];
   const lines = [];
@@ -1769,6 +1770,39 @@ function formatEvidencePause(pause) {
   const parentRequestId = safeDiagnosticReference(pause.parent_request_id);
   if (parentRequestId !== null) {
     lines.push(`Parent request: ${parentRequestId}`);
+  }
+  // A retry-exhaustion pause identifies the exhausted Source Request and its
+  // bounded retry generation instead of lineage capacity facts.
+  const requestId = safeDiagnosticReference(pause.request_id);
+  if (requestId !== null) lines.push(`Request: ${requestId}`);
+  const hostname = safeDiagnosticReference(pause.hostname);
+  if (hostname !== null) lines.push(`Hostname: ${hostname}`);
+  if (
+    Number.isSafeInteger(pause.attempt_count) &&
+    Number.isSafeInteger(pause.retry_generation)
+  ) {
+    lines.push(
+      `Attempts: ${pause.attempt_count} in retry generation ` +
+        `${pause.retry_generation}`,
+    );
+  }
+  const classification = safeMachineCode(pause.failure_classification);
+  if (classification !== null) {
+    lines.push(
+      `Last failure: ${classification}${
+        Number.isSafeInteger(pause.http_status)
+          ? ` (HTTP ${pause.http_status})`
+          : ""
+      }`,
+    );
+  }
+  if (Array.isArray(pause.actions)) {
+    const actions = pause.actions
+      .map((action) => safeMachineCode(action))
+      .filter((action) => action !== null);
+    if (actions.length > 0) {
+      lines.push(`Available actions: ${actions.join(", ")}`);
+    }
   }
   return lines;
 }

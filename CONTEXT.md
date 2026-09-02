@@ -52,6 +52,10 @@ _Avoid_: Failed run, cancelled run, Workflow instance pause
 An owner-initiated, idempotent, compare-and-set administration action that raises one capacity-paused Ingestion Run's effective request capacity to a larger absolute value and atomically advances that run's capacity generation. It binds the expected current capacity and generation, stays below the global emergency ceiling, leaves the Source Adapter Version's registered Request Capacity untouched, and never resumes collection itself: the run returns to collecting only through the separate resume action.
 _Avoid_: Mutable quota, adapter capacity change, resumed run
 
+**Retry Pause**:
+The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing.
+_Avoid_: Failed request, Capacity Pause, linked retry run
+
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
 _Avoid_: Silent override, scrape fix

@@ -15,16 +15,17 @@ import {
 } from "./source-evidence-parsing";
 import {
   appendDiscoveredEvidenceRequests,
+  captureAttemptsPerRetryGeneration,
   evidencePlanForRequest,
   pauseEvidenceRunForRequestCapacity,
   persistOfficialSourceCollectionPlan,
   RequestCapacityProblem,
+  retryExhaustionPauseStatements,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
+  type RetryExhaustionFacts,
   type SnapshotRow,
 } from "./source-evidence-repository";
-
-const maximumAttempts = 4;
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set([
   "accept",
@@ -248,12 +249,45 @@ export async function prepareCaptureAttempt(
     .bind(run.id, request.request_id)
     .first<{ attempt_number: number }>();
   const attemptNumber = (latest?.attempt_number ?? 0) + 1;
-  if (attemptNumber > maximumAttempts) {
-    await failRequest(database, request, "source_request_retries_exhausted");
-    return {
-      kind: "done",
-      failure_code: "source_request_retries_exhausted",
-    };
+  if (attemptNumber > retryBudget(request)) {
+    // The current retry generation is exhausted but no capture operation is
+    // open: reached on replay after a crash, or when a resume did not open a
+    // new generation. Recoverable exhaustion re-pauses the run instead of
+    // failing the request; only a terminal latest outcome fails closed.
+    const previous = await database
+      .prepare(
+        `SELECT outcome, http_status, attempt_number
+         FROM source_fetch_attempts
+         WHERE ingestion_run_id = ? AND request_id = ?
+         ORDER BY attempt_number DESC LIMIT 1`,
+      )
+      .bind(run.id, request.request_id)
+      .first<{
+        outcome: string;
+        http_status: number | null;
+        attempt_number: number;
+      }>();
+    const classification = recoverableExhaustionClassification(
+      previous?.outcome ?? null,
+    );
+    if (previous === null || classification === null) {
+      await failRequest(database, request, "source_request_retries_exhausted");
+      return {
+        kind: "done",
+        failure_code: "source_request_retries_exhausted",
+      };
+    }
+    await database.batch(
+      retryExhaustionPause(
+        database,
+        run,
+        request,
+        previous.attempt_number,
+        classification,
+        previous.http_status,
+      ),
+    );
+    return { kind: "done", failure_code: null };
   }
   const identity = await captureOperationIdentity(
     run.id,
@@ -309,7 +343,7 @@ export async function capturePreparedAttempt(
     };
   }
   if (operation.state === "failed") {
-    return retryOrFinish(operation.attempt_number);
+    return retryOrFinish(sourceRequest, operation.attempt_number);
   }
   if (operation.state === "response_received") {
     try {
@@ -325,7 +359,7 @@ export async function capturePreparedAttempt(
           request_made: false,
         };
       }
-      return recordFailedTransportAttempt(database, sourceRequest, operation, {
+      return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
         outcome: "storage_failure",
         completedAt: new Date().toISOString(),
         status: operation.http_status,
@@ -337,7 +371,7 @@ export async function capturePreparedAttempt(
           "The staged Source Snapshot object was unavailable during recovery.",
       });
     } catch (error) {
-      return recordFailedTransportAttempt(database, sourceRequest, operation, {
+      return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
         outcome: "storage_failure",
         completedAt: new Date().toISOString(),
         status: operation.http_status,
@@ -398,7 +432,7 @@ export async function capturePreparedAttempt(
   }
   const completedAt = new Date().toISOString();
   if (response === null) {
-    return recordFailedTransportAttempt(database, request, operation, {
+    return recordFailedTransportAttempt(database, run, request, operation, {
       outcome: fetchFailureOutcome,
       completedAt,
       status: null,
@@ -411,7 +445,7 @@ export async function capturePreparedAttempt(
   if (response.status === 304) {
     if (reusable === null || !validatorAccepted(response, reusable)) {
       if (response.body !== null) await response.body.cancel();
-      return recordRejectedAttempt(database, request, operation, {
+      return recordRejectedAttempt(database, run, request, operation, {
         outcome: "content_rejected",
         completedAt,
         status: response.status,
@@ -460,7 +494,7 @@ export async function capturePreparedAttempt(
       Date.parse(completedAt),
     );
     if (response.body !== null) await response.body.cancel();
-    return recordRejectedAttempt(database, request, operation, {
+    return recordRejectedAttempt(database, run, request, operation, {
       outcome: redirect ? "redirect" : "http_failure",
       completedAt,
       status: response.status,
@@ -550,7 +584,7 @@ export async function capturePreparedAttempt(
               "Evidence persistence failed.",
             ),
           );
-    return recordFailedTransportAttempt(database, request, operation, {
+    return recordFailedTransportAttempt(database, run, request, operation, {
       outcome: failure.outcome,
       completedAt,
       status: response.status,
@@ -1081,6 +1115,7 @@ async function streamSnapshotToR2(
 
 async function recordFailedTransportAttempt(
   database: D1Database,
+  run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   operation: CaptureOperationRow,
   failure: {
@@ -1091,7 +1126,12 @@ async function recordFailedTransportAttempt(
     diagnostic: string | null;
   },
 ): Promise<CaptureTransportResult> {
-  const exhausted = operation.attempt_number === maximumAttempts;
+  const exhausted = operation.attempt_number >= retryBudget(request);
+  // Exhausted network and storage retries remain semantically safe to retry
+  // later, so they pause the run in the same atomic batch that records the
+  // final failed attempt; a body-contract violation stays terminal.
+  const classification =
+    failure.outcome === "body_failure" ? null : failure.outcome;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1122,7 +1162,7 @@ async function recordFailedTransportAttempt(
         failure.diagnostic,
         operation.attempt_id,
       ),
-    ...(exhausted
+    ...(exhausted && classification === null
       ? [
           failRequestStatement(
             database,
@@ -1131,22 +1171,35 @@ async function recordFailedTransportAttempt(
           ),
         ]
       : []),
+    ...(exhausted && classification !== null
+      ? retryExhaustionPause(
+          database,
+          run,
+          request,
+          operation.attempt_number,
+          classification,
+          failure.status,
+        )
+      : []),
   ]);
-  return exhausted
-    ? {
-        kind: "done",
-        failure_code: "source_request_retries_exhausted",
-        request_made: true,
-      }
-    : {
-        kind: "wait",
-        wait_ms: exponentialBackoff(operation.attempt_number),
-        request_made: true,
-      };
+  if (!exhausted) {
+    return {
+      kind: "wait",
+      wait_ms: exponentialBackoff(operation.attempt_number),
+      request_made: true,
+    };
+  }
+  return {
+    kind: "done",
+    failure_code:
+      classification !== null ? null : "source_request_retries_exhausted",
+    request_made: true,
+  };
 }
 
 async function recordRejectedAttempt(
   database: D1Database,
+  run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   operation: CaptureOperationRow,
   rejection: {
@@ -1159,10 +1212,12 @@ async function recordRejectedAttempt(
     failureCode: string | null;
   },
 ): Promise<CaptureTransportResult> {
-  const exhausted = operation.attempt_number === maximumAttempts;
-  const failureCode =
-    rejection.failureCode ??
-    (exhausted ? "source_request_retries_exhausted" : null);
+  const exhausted = operation.attempt_number >= retryBudget(request);
+  // A rejection without its own terminal failure code is a retryable HTTP
+  // response (429 or 5xx): exhausting its bounded retries pauses the run
+  // rather than failing the request. Redirects, non-retryable statuses, and
+  // rejected revalidations keep their terminal codes.
+  const pausing = exhausted && rejection.failureCode === null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1191,16 +1246,29 @@ async function recordRejectedAttempt(
         rejection.diagnostic,
         operation.attempt_id,
       ),
-    ...(failureCode === null
+    ...(rejection.failureCode === null
       ? []
-      : [failRequestStatement(database, request, failureCode)]),
+      : [failRequestStatement(database, request, rejection.failureCode)]),
+    ...(pausing
+      ? retryExhaustionPause(
+          database,
+          run,
+          request,
+          operation.attempt_number,
+          "http_failure",
+          rejection.status,
+        )
+      : []),
   ]);
-  if (failureCode !== null) {
+  if (rejection.failureCode !== null) {
     return {
       kind: "done",
-      failure_code: failureCode,
+      failure_code: rejection.failureCode,
       request_made: true,
     };
+  }
+  if (pausing) {
+    return { kind: "done", failure_code: null, request_made: true };
   }
   return {
     kind: "wait",
@@ -1211,18 +1279,58 @@ async function recordRejectedAttempt(
   };
 }
 
-function retryOrFinish(attemptNumber: number): CaptureTransportResult {
-  return attemptNumber >= maximumAttempts
-      ? {
-          kind: "done",
-          failure_code: "source_request_retries_exhausted",
-          request_made: false,
-        }
+// Replay path for a capture operation already recorded as failed: within the
+// budget the caller waits and retries; at the budget the exhaustion outcome
+// (pause or terminal request failure) was committed atomically with that
+// failure record, so there is nothing further to record here.
+function retryOrFinish(
+  request: EvidenceRequestRow,
+  attemptNumber: number,
+): CaptureTransportResult {
+  return attemptNumber >= retryBudget(request)
+    ? { kind: "done", failure_code: null, request_made: false }
     : {
         kind: "wait",
         wait_ms: exponentialBackoff(attemptNumber),
         request_made: false,
       };
+}
+
+function retryBudget(request: EvidenceRequestRow): number {
+  return request.retry_generation * captureAttemptsPerRetryGeneration;
+}
+
+function recoverableExhaustionClassification(
+  outcome: string | null,
+): RetryExhaustionFacts["failure_classification"] | null {
+  if (
+    outcome === "network_failure" ||
+    outcome === "http_failure" ||
+    outcome === "storage_failure"
+  ) {
+    return outcome;
+  }
+  return null;
+}
+
+function retryExhaustionPause(
+  database: D1Database,
+  run: IngestionEvidenceRow,
+  request: EvidenceRequestRow,
+  attemptCount: number,
+  classification: RetryExhaustionFacts["failure_classification"],
+  httpStatus: number | null,
+): D1PreparedStatement[] {
+  return retryExhaustionPauseStatements(database, request.ingestion_run_id, {
+    request_id: request.request_id,
+    source_lineage: evidencePlanForRequest(run, request.request_id)
+      .source_lineage,
+    hostname: new URL(request.url).hostname,
+    retry_generation: request.retry_generation,
+    attempt_count: attemptCount,
+    failure_classification: classification,
+    http_status: httpStatus,
+  });
 }
 
 type AttemptInput = {
@@ -1353,7 +1461,9 @@ function parseRetryAfter(
   value: string | null,
   observedAt: number,
 ): number | null {
-  if (value === null) return null;
+  // An empty header carries no timing instruction; Number("") would
+  // otherwise coerce it to an immediate zero-millisecond retry.
+  if (value === null || value.trim() === "") return null;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) {
     return Math.ceil(seconds * 1000);

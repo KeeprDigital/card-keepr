@@ -62,6 +62,7 @@ export type EvidenceRequestRow = {
   state: "pending" | "captured" | "observed" | "failed";
   source_snapshot_id: string | null;
   failure_code: string | null;
+  retry_generation: number;
   request_role:
     | "surface"
     | "listing"
@@ -1318,17 +1319,134 @@ export async function pauseEvidenceRunForRequestCapacity(
   ]);
 }
 
-// Move a capacity-paused Ingestion Run back into its collection phase and
-// bind the deterministic parent Workflow identity that will reacquire the
-// remaining work. Both statements are idempotent under replayed resumes: the
-// state update is a no-op once the run collects again, and the identity is
-// derived from the capacity generation, so a replay reassigns the same value.
-export async function resumeCapacityPausedEvidenceRun(
+// Each Source Request owns a bounded budget of fetch attempts per retry
+// generation. Attempt numbers grow monotonically across generations, so the
+// append-only attempt history and the deterministic capture-operation
+// identities never renumber; resuming after a retry-exhaustion pause raises
+// the counted window by advancing the request's generation instead.
+export const captureAttemptsPerRetryGeneration = 4;
+
+export type RetryExhaustionFacts = {
+  request_id: string;
+  source_lineage: string;
+  hostname: string;
+  retry_generation: number;
+  attempt_count: number;
+  failure_classification:
+    | "network_failure"
+    | "http_failure"
+    | "storage_failure";
+  http_status: number | null;
+};
+
+// Exhausting the bounded transport or storage retries for one immutable
+// Source Request is not proof the retained collection attempt is invalid:
+// the run pauses non-terminally with a reason distinct from capacity
+// exhaustion, the request stays pending with its append-only attempt
+// history, and the immutable pause record identifies the safe request
+// reference, hostname, exhausted generation, and latest safe classification.
+// The statements are returned unexecuted so callers can commit them in the
+// same atomic batch that records the final failed attempt.
+export function retryExhaustionPauseStatements(
   database: D1Database,
   runId: string,
-  parentWorkflowId: string,
+  facts: RetryExhaustionFacts,
+): D1PreparedStatement[] {
+  const pauseReason = facts.failure_classification === "storage_failure"
+    ? "source_storage_retries_exhausted"
+    : "source_transport_retries_exhausted";
+  return [
+    database
+      .prepare(
+        `UPDATE ingestion_runs
+         SET state = 'paused',
+             progress_json =
+               '{"completed_stages":["planning"],"current_stage":"paused"}'
+         WHERE id = ? AND state = 'collecting'`,
+      )
+      .bind(runId),
+    // Guarded and idempotent under durable Workflow step replay, mirroring
+    // the capacity pause: the run is paused by the statement above (or a
+    // concurrent exhaustion already paused it), and one immutable record
+    // exists per (request, generation). The replay guard is an explicit
+    // NOT EXISTS so a facts bug violating the table CHECKs aborts loudly
+    // instead of silently pausing without a record. When the run already
+    // reached a terminal state through a sibling request, both statements
+    // deliberately record nothing: the terminal outcome stands.
+    database
+      .prepare(
+        `INSERT INTO ingestion_run_retry_pauses (
+           ingestion_run_id, request_id, retry_generation, pause_reason,
+           paused_at, source_lineage, hostname, attempt_count,
+           failure_classification, http_status
+         )
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+         WHERE EXISTS (
+           SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM ingestion_run_retry_pauses
+           WHERE ingestion_run_id = ?1 AND request_id = ?2
+             AND retry_generation = ?3
+         )`,
+      )
+      .bind(
+        runId,
+        facts.request_id,
+        facts.retry_generation,
+        pauseReason,
+        new Date().toISOString(),
+        facts.source_lineage,
+        facts.hostname,
+        facts.attempt_count,
+        facts.failure_classification,
+        facts.http_status,
+      ),
+  ];
+}
+
+// Move a paused Ingestion Run back into its collection phase and bind the
+// deterministic parent Workflow identity that will reacquire the remaining
+// work. Every statement is idempotent under replayed resumes: the retry
+// budgets reopen only while a generation is exhausted, the state update is a
+// no-op once the run collects again, and the identity is derived from the
+// count of recorded paused -> collecting transitions, so a replay reassigns
+// the same value.
+export async function resumePausedEvidenceRun(
+  database: D1Database,
+  runId: string,
 ): Promise<void> {
+  const resumed = await database
+    .prepare(
+      `SELECT COUNT(*) AS count FROM ingestion_run_transitions
+       WHERE ingestion_run_id = ?
+         AND from_state = 'paused' AND to_state = 'collecting'`,
+    )
+    .bind(runId)
+    .first<{ count: number }>();
+  const parentWorkflowId =
+    `evidence-${runId}-resume-${(resumed?.count ?? 0) + 1}`;
   await database.batch([
+    // Resuming after retry exhaustion opens the next bounded retry
+    // generation for each affected Source Request: attempts stay
+    // append-only, and the raised counted window admits the next
+    // captureAttemptsPerRetryGeneration attempts. Requests that still have
+    // budget (every request after a capacity pause) are untouched, which
+    // also makes a replayed resume a natural no-op.
+    database
+      .prepare(
+        `UPDATE source_requests
+         SET retry_generation = retry_generation + 1
+         WHERE ingestion_run_id = ?1
+           AND state IN ('pending', 'captured')
+           AND (
+             SELECT COALESCE(MAX(attempts.attempt_number), 0)
+             FROM source_fetch_attempts AS attempts
+             WHERE attempts.ingestion_run_id = source_requests.ingestion_run_id
+               AND attempts.request_id = source_requests.request_id
+           ) >= retry_generation * ?2`,
+      )
+      .bind(runId, captureAttemptsPerRetryGeneration),
     database
       .prepare(
         `UPDATE ingestion_runs
@@ -1666,7 +1784,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause] = await Promise.all([
+  const [snapshots, observations, attempts, collectionPlans, curatedSet, pause, retryPause] = await Promise.all([
     database
       .prepare(
         `SELECT * FROM source_snapshots
@@ -1726,7 +1844,39 @@ export async function showEvidenceRun(
         overflow_request_count: number;
         required_capacity: number;
       }>(),
+    database
+      .prepare(
+        `SELECT * FROM ingestion_run_retry_pauses
+         WHERE ingestion_run_id = ?
+         ORDER BY paused_at DESC, retry_generation DESC LIMIT 1`,
+      )
+      .bind(runId)
+      .first<{
+        pause_reason: string;
+        paused_at: string;
+        source_lineage: string;
+        request_id: string;
+        hostname: string;
+        retry_generation: number;
+        attempt_count: number;
+        failure_classification: string;
+        http_status: number | null;
+      }>(),
   ]);
+  // A paused run reports exactly one pause: the newest record across the
+  // capacity and retry-exhaustion tables (a retry pause wins an equal
+  // timestamp, because a run can only re-enter capacity admission after the
+  // exhausted request recovers). Historical records from earlier pauses of
+  // the same run stay retained but are not the current pause.
+  const retryPauseNewest = retryPause !== null &&
+    (pause === null || retryPause.paused_at >= pause.paused_at);
+  const currentPause = run.state !== "paused"
+    ? {}
+    : retryPauseNewest && retryPause !== null
+      ? { pause: retryPauseDocument(retryPause) }
+      : pause === null
+        ? {}
+        : { pause: capacityPauseDocument(pause) };
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -1755,19 +1905,7 @@ export async function showEvidenceRun(
     started_at: run.started_at,
     collection_completed_at: run.collection_completed_at,
     failure_code: run.failure_code,
-    ...(run.state !== "paused" || pause === null ? {} : {
-      pause: {
-        reason: pause.pause_reason,
-        paused_at: pause.paused_at,
-        source_lineage: pause.source_lineage,
-        parent_request_id: pause.parent_request_id,
-        request_capacity: pause.request_capacity,
-        capacity_generation: pause.capacity_generation,
-        used_capacity: pause.used_capacity,
-        overflow_request_count: pause.overflow_request_count,
-        required_capacity: pause.required_capacity,
-      },
-    }),
+    ...currentPause,
     ...(curatedSet === null ? {} : {
       curated_revision_ids: curatedSet.revision_ids,
       curated_revision_set_digest: curatedSet.set_digest,
@@ -1808,6 +1946,58 @@ export async function showEvidenceRun(
       resulting_revision_id: run.resulting_revision_id,
       publication_outcome: run.publication_outcome,
     }),
+  };
+}
+
+// The closed pause block shapes: correlation identifiers, bounded counters,
+// and machine codes only, so the owner-facing status surface stays free of
+// request headers, payloads, and credentials.
+function retryPauseDocument(row: {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  request_id: string;
+  hostname: string;
+  retry_generation: number;
+  attempt_count: number;
+  failure_classification: string;
+  http_status: number | null;
+}): Record<string, unknown> {
+  return {
+    reason: row.pause_reason,
+    paused_at: row.paused_at,
+    source_lineage: row.source_lineage,
+    request_id: row.request_id,
+    hostname: row.hostname,
+    retry_generation: row.retry_generation,
+    attempt_count: row.attempt_count,
+    failure_classification: row.failure_classification,
+    http_status: row.http_status,
+    actions: ["resume"],
+  };
+}
+
+function capacityPauseDocument(row: {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  parent_request_id: string;
+  request_capacity: number;
+  capacity_generation: number;
+  used_capacity: number;
+  overflow_request_count: number;
+  required_capacity: number;
+}): Record<string, unknown> {
+  return {
+    reason: row.pause_reason,
+    paused_at: row.paused_at,
+    source_lineage: row.source_lineage,
+    parent_request_id: row.parent_request_id,
+    request_capacity: row.request_capacity,
+    capacity_generation: row.capacity_generation,
+    used_capacity: row.used_capacity,
+    overflow_request_count: row.overflow_request_count,
+    required_capacity: row.required_capacity,
   };
 }
 
