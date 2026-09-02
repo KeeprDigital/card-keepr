@@ -1931,6 +1931,19 @@ export default defineConfig({
     // proven concurrency.
     maxWorkers: 2,
     hookTimeout: 30_000,
+    // Workflow steps still running when a file's isolated runtime is torn
+    // down forward their operational logs over an rpc that has already
+    // closed. Vitest reports that race as an unhandled rejection and fails
+    // the run even though every test passed; only that teardown error is
+    // ignored here.
+    onUnhandledError(error) {
+      if (
+        error.name === "EnvironmentTeardownError" &&
+        /Closing rpc while ".+" was pending/u.test(error.message)
+      ) {
+        return false;
+      }
+    },
     testTimeout: 30_000,
   },
 });
