@@ -1338,10 +1338,19 @@ export async function resumeCapacityPausedEvidenceRun(
          WHERE id = ? AND state = 'paused'`,
       )
       .bind(runId),
+    // The reassignment holds only while the run is actually collecting (the
+    // statement above just moved it there, or an earlier replay already did),
+    // so a stale resume replay cannot rewrite the parent Workflow identity
+    // after the run has advanced beyond collection.
     database
       .prepare(
         `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
-         WHERE ingestion_run_id = ?`,
+         WHERE ingestion_run_id = ?
+           AND EXISTS (
+             SELECT 1 FROM ingestion_runs
+             WHERE id = ingestion_evidence_plans.ingestion_run_id
+               AND state = 'collecting'
+           )`,
       )
       .bind(parentWorkflowId, runId),
   ]);
@@ -1411,13 +1420,7 @@ export async function extendRunRequestCapacity(
     requestDigest,
   );
   if (replayed !== null) return replayed;
-  if (run.state !== "paused") {
-    throw new AdministrationProblem(
-      409,
-      "ingestion_run_not_paused",
-      "Only a capacity-paused Ingestion Run can have its request capacity extended.",
-    );
-  }
+  if (run.state !== "paused") throw ingestionRunNotPausedProblem();
   const policy = await runRequestCapacityPolicy(
     database,
     runId,
@@ -1504,13 +1507,7 @@ export async function extendRunRequestCapacity(
   );
   if (raced !== null) return raced;
   const current = await requiredEvidenceRun(database, runId);
-  if (current.state !== "paused") {
-    throw new AdministrationProblem(
-      409,
-      "ingestion_run_not_paused",
-      "Only a capacity-paused Ingestion Run can have its request capacity extended.",
-    );
-  }
+  if (current.state !== "paused") throw ingestionRunNotPausedProblem();
   assertExpectedCapacityPolicy(
     await runRequestCapacityPolicy(database, runId, current.adapter_version),
     expectedRequestCapacity,
@@ -1520,6 +1517,14 @@ export async function extendRunRequestCapacity(
     409,
     "capacity_extension_conflict",
     "A concurrent capacity extension prevented this extension from applying.",
+  );
+}
+
+function ingestionRunNotPausedProblem(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "ingestion_run_not_paused",
+    "Only a capacity-paused Ingestion Run can have its request capacity extended.",
   );
 }
 

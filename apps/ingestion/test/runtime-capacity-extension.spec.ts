@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   administrationRequest,
@@ -79,6 +79,26 @@ test("extending capacity advances the generation atomically and replays idempote
      WHERE ingestion_run_id = ?`,
   ).bind(runId).first("count")).toBe(1);
 }, 30_000);
+
+test("the capacity extension mutation requires the administration key", async () => {
+  const response = await exports.default.fetch(
+    new Request(
+      "https://card-keepr.invalid/v1/ingestion-runs/run_unauthenticated/capacity/extension",
+      {
+        method: "POST",
+        headers: {
+          "cf-connecting-ip": "192.0.2.250",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(extensionBody),
+      },
+    ),
+  );
+  expect(response.status).toBe(401);
+  await expect(response.json()).resolves.toMatchObject({
+    code: "authentication_required",
+  });
+});
 
 test("every invalid capacity extension returns its explicit problem document", async () => {
   // A run that is not capacity-paused refuses extension outright.

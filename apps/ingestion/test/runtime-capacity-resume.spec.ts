@@ -10,6 +10,7 @@ import {
   installRuntimeSuite,
   waitForEvidenceRun,
 } from "./runtime-helpers";
+import { reconcile } from "./reconciliation-helpers";
 import {
   fusionWorldRequestCapacity,
   pauseRunAtCapacity,
@@ -173,7 +174,11 @@ test("a resumed run advances through the existing completeness gates once collec
     adapter_version: "fixture-one-piece-json@1",
     idempotency_key: "capacity_resume_complete_001",
     requests: [
-      { id: "cards", url: "https://official-source.invalid/cards" },
+      {
+        id: "cards",
+        url: "https://official-source.invalid/reconciliation/profile-don-printing",
+        headers: { accept: "application/json" },
+      },
     ],
   });
   expect(created.status).toBe(201);
@@ -228,5 +233,14 @@ test("a resumed run advances through the existing completeness gates once collec
     { from_state: "paused", to_state: "collecting" },
     { from_state: "collecting", to_state: "parsing" },
   ]);
+
+  // The same run continues through reconciliation with the unchanged gates
+  // and awaits approval; the current Catalogue Revision is untouched
+  // throughout pause, extension, and resumed collection.
+  const reconciled = await reconcile(run.id);
+  expect(reconciled.response.status).toBe(200);
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT state FROM ingestion_runs WHERE id = ?",
+  ).bind(run.id).first("state")).toBe("awaiting_approval");
   expect(await catalogueRevisionCount()).toEqual(revisionsBefore);
 }, 30_000);
