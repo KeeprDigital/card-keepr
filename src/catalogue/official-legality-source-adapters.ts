@@ -1,5 +1,5 @@
-import { isIsoCalendarDate } from "./calendar-date.mjs";
-import { requiredOfficialSourceScope } from "./official-source-scope.mjs";
+import { isIsoCalendarDate } from "./calendar-date.ts";
+import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 type OfficialLegalityGame =
   | "one-piece"

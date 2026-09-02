@@ -8,7 +8,7 @@ import {
   compareUtf8,
   sha256Text,
 } from "./serialization";
-import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { isIsoCalendarDate } from "./calendar-date.ts";
 import {
   parseLegalityRuleEffect,
   parseStoredLegalityRuleEffect,

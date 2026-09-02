@@ -8,6 +8,10 @@
     "types": ["node"],
     "strict": true,
     "noEmit": true,
+    // Modules that Node loads directly (acceptance tests and Vitest configs
+    // reach src/catalogue through explicit-extension specifiers) import their
+    // TypeScript neighbours as "./name.ts"; everything else stays extensionless.
+    "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },

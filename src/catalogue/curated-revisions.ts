@@ -1,7 +1,7 @@
 import type { CatalogueCandidate, SupportedGame } from "./catalogue-candidate";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import { canonicalJson, sha256Text } from "./serialization";
 import { retainedPayload } from "./reconciliation-payload";
 import type {

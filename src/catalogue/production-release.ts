@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import { canonicalJson, sha256Text } from "./serialization";
 
 export type ProductionTarget = Readonly<{

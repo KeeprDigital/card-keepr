@@ -1843,6 +1843,24 @@ export default defineConfig({
               { headers: { "content-type": "application/json" } },
             );
           }
+          if (url.pathname === "/retry-once-slow") {
+            // A first refusal whose Retry-After is long enough for a test to
+            // terminate the sleeping hostname shard deterministically; every
+            // later fetch succeeds.
+            const key = `${url.hostname}${url.pathname}`;
+            const count = (retryAttemptCounts.get(key) ?? 0) + 1;
+            retryAttemptCounts.set(key, count);
+            if (count === 1) {
+              return new Response("temporarily unavailable", {
+                status: 503,
+                headers: { "retry-after": "30" },
+              });
+            }
+            return new Response(
+              '{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}',
+              { headers: { "content-type": "application/json" } },
+            );
+          }
           if (url.pathname === "/large-json") {
             const body = JSON.stringify({ padding: "x".repeat(1024 * 1024) });
             return new Response(

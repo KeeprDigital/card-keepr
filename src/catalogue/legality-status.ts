@@ -6,8 +6,8 @@ import {
 } from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
-import { isIsoCalendarDate } from "./calendar-date.mjs";
-import { requiredLegalityRegionsForGame } from "./official-source-scope";
+import { isIsoCalendarDate } from "./calendar-date.ts";
+import { requiredLegalityRegionsForGame } from "./official-source-scope.ts";
 import { maximumLegalityStatusRules } from "./export-limits";
 import {
   parseStoredCatalogueCard,

@@ -70,7 +70,11 @@ _Avoid_: Cancelled run, deleted run, Workflow instance termination, linked retry
 
 **Curated Revision**:
 An immutable owner-authored correction or supplement applied exceptionally during reconciliation while preserving Official Source observations and its own provenance. Changes supersede or retire it rather than rewriting history, and it does not turn a third-party source into an Official Source.
-_Avoid_: Silent override, scrape fix
+_Avoid_: Silent override, scrape fix, Curated Revision Proposal
+
+**Curated Revision Proposal**:
+The owner-authored request for a Curated Revision: the Supported Game, the exact field or relationship it targets, the asserted value or presence, the rationale, the retained evidence it cites, its effective interval, and the Official Source state the owner reviewed. It is validated against the current Catalogue Revision and becomes a Curated Revision only when created exactly as validated; it is never edited in place and is not itself part of any Catalogue Revision.
+_Avoid_: Curated Revision, patch, override, Catalogue Candidate
 
 **Card**:
 A rules-level game piece normally identified within a Supported Game by its official card number. The unnumbered One Piece DON!! Card is identified by its official functional designation. A Card may have multiple Printings.
@@ -111,6 +115,14 @@ _Avoid_: Evidence Plan, mutable request queue, automatic crawl
 **Ingestion Run**:
 One owner-initiated attempt to capture Source Snapshots and reconcile them into current Catalogue Data. Its outcome remains auditable even though the ordinary API exposes the current catalogue.
 _Avoid_: Automatic refresh, API request
+
+**Catalogue Candidate**:
+The complete, immutable next version of Catalogue Data that one Ingestion Run's reconciliation puts forward for its selected Supported Games, bound to the exact Catalogue Revision it expects to succeed. It is inspected, approved, or rejected only as a whole and exactly as reconciled, it expires unapproved after a bounded window, and no other path turns it into a Catalogue Revision.
+_Avoid_: Candidate printing, draft revision, staged catalogue, Curated Revision Proposal, search result
+
+**Reconciliation Context**:
+The immutable binding between one Ingestion Run's reconciliation outcome and the retained evidence it was derived from: the Source Snapshots, Source Observation Sets, and Source Lineages that reconciliation read. It keeps a Catalogue Candidate, or a blocked reconciliation, inspectable after the fact and every reconciliation warning attributable to its evidence.
+_Avoid_: Reconciliation Clock, Source Observation Set, Catalogue Candidate, Evidence Plan
 
 **Catalogue Revision**:
 An atomically published version of current Catalogue Data produced by a successful Ingestion Run across its selected Supported Games; data for unselected Supported Games carries forward unchanged.
@@ -184,7 +196,7 @@ An official, effective-dated correction to published Card or Printing facts that
 _Avoid_: Curated Revision, silent overwrite
 
 **Reconciliation Clock**:
-The authenticated reconciliation request time used to decide which effective-dated official facts apply to a candidate. A candidate cannot cross an applicability date while awaiting approval.
+The authenticated reconciliation request time used to decide which effective-dated official facts apply to a Catalogue Candidate. A Catalogue Candidate cannot cross an applicability date while awaiting approval.
 _Avoid_: Publication time, wall clock
 
 **Legality Rule**:

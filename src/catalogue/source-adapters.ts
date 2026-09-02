@@ -1,9 +1,9 @@
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import {
   officialRawAdapterContracts,
-} from "./official-raw-adapter-contracts.mjs";
-import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.mjs";
-import { requiredOfficialSourceScope } from "./official-source-scope.mjs";
+} from "./product-release-source-adapters.ts";
+import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
+import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";

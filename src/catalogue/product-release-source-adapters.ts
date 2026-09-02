@@ -3,25 +3,25 @@ import {
   officialReleaseStatusNeedsSchemaReview,
   normalizedOfficialReleaseDate,
   normalizedOfficialReleaseStatus,
-} from "./official-source-release-normalization.mjs";
+} from "./official-source-release-normalization.ts";
 import {
   partitionMappedOfficialLeaves,
-} from "./official-source-field-coverage.mjs";
+} from "./official-source-field-coverage.ts";
 import {
   officialArtworkFingerprint,
-} from "./official-artwork-identity.mjs";
+} from "./official-artwork-identity.ts";
 import {
   officialLiveLegalityRulesObservation,
   officialLegalityRulesHtmlObservation,
   officialLegalityRulesObservation,
-} from "./official-legality-source-adapters.mjs";
-import { liveOfficialLegalityDocument } from "./official-legality-live-html.mjs";
+} from "./official-legality-source-adapters.ts";
+import { liveOfficialLegalityDocument } from "./official-legality-live-html.ts";
 import {
   normalizeOnePieceCardPage,
   normalizedOnePieceRarity,
   onePieceDonCardObservation,
   onePieceRecordingMemberships,
-} from "./one-piece-source-adapter.mjs";
+} from "./one-piece-source-adapter.ts";
 import { parse as parseHtml } from "parse5";
 
 type ProductSourceGame =

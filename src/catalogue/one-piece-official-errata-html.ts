@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 
 export type OnePieceOfficialErratumObservation = Readonly<{
   kind: "official_erratum";

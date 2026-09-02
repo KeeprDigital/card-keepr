@@ -1,4 +1,4 @@
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import {
   cloudflareD1BackupProvider,
   type CatalogueVerificationEvidence,

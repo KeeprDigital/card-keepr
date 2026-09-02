@@ -1,4 +1,4 @@
-import { isIsoCalendarDate } from "./calendar-date.mjs";
+import { isIsoCalendarDate } from "./calendar-date.ts";
 import { compareUtf8 } from "./serialization";
 
 export type LegalityRuleEffect =

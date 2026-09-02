@@ -1,8 +1,8 @@
-import { AdministrationProblem } from "./administration-problem.mjs";
+import { AdministrationProblem } from "./administration-problem.ts";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
-} from "./card-search-recovery-statements.mjs";
+} from "./card-search-recovery-statements.ts";
 import {
   withCardSearchPreparedForD1Export,
 } from "./card-search-recovery";

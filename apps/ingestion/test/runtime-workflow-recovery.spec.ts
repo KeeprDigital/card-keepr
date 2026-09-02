@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   pauseEvidenceRunForWorkflowRecovery,
+  resumePausedEvidenceRun,
 } from "../../../src/catalogue/source-evidence-repository";
 import {
   canonicalJson,
@@ -10,6 +11,7 @@ import {
 } from "../../../src/catalogue/serialization";
 import {
   administrationRequest,
+  clearActiveRunForNextScenario,
   type CollectionDocument,
   createCollection,
   fixtureEvidenceRequest,
@@ -40,6 +42,17 @@ async function releaseParentRecordStep(): Promise<void> {
   await env.CATALOGUE_DB.prepare(
     "DROP TRIGGER hold_child_workflow_ids",
   ).run();
+}
+
+async function terminateBestEffort(
+  workflow: Workflow,
+  instanceId: string,
+): Promise<void> {
+  try {
+    await (await workflow.get(instanceId)).terminate();
+  } catch {
+    // Already settled.
+  }
 }
 
 async function resumeDocument(runId: string): Promise<{
@@ -384,3 +397,144 @@ test("inspection classifies a healthy collecting Workflow without pausing it", a
     attempt_number: 1,
   });
 });
+
+test("a parent Workflow that completed with a request still pending resumes as a new attempt without duplicate fetches", async () => {
+  // Issue #70: the resume endpoint once restarted a completed parent from a
+  // step name that does not exist. A completed parent is now classified as
+  // stalled and superseded by a deterministic new attempt that pulls only
+  // the pending work from D1, so retained evidence is never fetched again.
+  //
+  // A healthy parent replaces its own dead hostname shards and only ends
+  // once the run leaves collection, so the reproduction shape (a completed
+  // instance holding the run's current attempt identity while one Source
+  // Request is captured and another is still pending) is staged: the run
+  // collects one host and is refused by the other with a long Retry-After,
+  // its first attempt is fenced off, and the instance under the next attempt
+  // identity is created to drive an already-parsed run so it completes at
+  // once without touching this run's evidence.
+  const parsed = await createCollection(
+    "workflow_completed_parent_donor_001",
+    "https://official-source.invalid/cards",
+  );
+  expect((await resumeDocument(parsed.id)).status).toBe(202);
+  await waitForEvidenceRun(parsed.id, "parsing", 20_000);
+  await clearActiveRunForNextScenario();
+
+  const created = await fixtureEvidenceRequest({
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: "workflow_completed_parent_resume_001",
+    requests: [
+      {
+        id: "captured-host",
+        url: "https://mapping-a-official-source.invalid/cards",
+      },
+      {
+        id: "pending-host",
+        url: "https://completed-parent-official-source.invalid/retry-once-slow",
+      },
+    ],
+  });
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  expect((await resumeDocument(run.id)).status).toBe(202);
+  const interrupted = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.snapshots.length === 1 &&
+      current.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.request_id === "pending-host" &&
+          diagnostic.outcome === "http_failure",
+      ),
+    20_000,
+  );
+  const firstParentId = `evidence-${run.id}`;
+  // Fence the first attempt off: the captured host's shard has already
+  // settled, so termination is best effort exactly as in production.
+  await terminateBestEffort(env.EVIDENCE_INGESTION_WORKFLOW, firstParentId);
+  for (const childId of interrupted.workflow.child_ids) {
+    await terminateBestEffort(env.EVIDENCE_HOST_WORKFLOW, childId);
+  }
+  await pauseEvidenceRunForWorkflowRecovery(env.CATALOGUE_DB, run.id, {
+    workflow_instance_id: firstParentId,
+    pause_reason: "source_workflow_terminated",
+    workflow_status: "terminated",
+    last_progress_at: interrupted.workflow.last_progress_at,
+  });
+  await resumePausedEvidenceRun(env.CATALOGUE_DB, run.id);
+  const completedParentId = `evidence-${run.id}-resume-1`;
+  await env.EVIDENCE_INGESTION_WORKFLOW.create({
+    id: completedParentId,
+    params: { ingestion_run_id: parsed.id },
+  });
+  await waitForWorkflowStatus(
+    completedParentId,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(completedParentId)).status(),
+    "complete",
+    20_000,
+  );
+  const stalled = await showCollection(run.id);
+  expect(stalled.state).toBe("collecting");
+  expect(stalled.workflow.parent_id).toBe(completedParentId);
+  expect(stalled.snapshots).toHaveLength(1);
+
+  const recovered = await resumeDocument(run.id);
+  expect(recovered.status).toBe(202);
+  expect(recovered.document).toMatchObject({
+    ingestion_run_id: run.id,
+    workflow: {
+      id: `evidence-${run.id}-resume-2`,
+      attempt_number: 3,
+    },
+    recovery: {
+      reason: "source_workflow_stalled",
+      superseded_workflow_id: completedParentId,
+      workflow_status: "complete",
+    },
+  });
+
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) =>
+      current.state === "parsing" &&
+      current.snapshots.length === 2 &&
+      current.observation_sets.length === 2,
+    25_000,
+  );
+  // Only the pending request is fetched again: the captured host keeps its
+  // single successful fetch and single capture operation, while the pending
+  // host records its refusal and then exactly one success.
+  const outcomesByRequest = new Map<string, string[]>();
+  for (const entry of completed.diagnostics) {
+    outcomesByRequest.set(entry.request_id, [
+      ...(outcomesByRequest.get(entry.request_id) ?? []),
+      entry.outcome,
+    ]);
+  }
+  expect(outcomesByRequest.get("captured-host")).toEqual(["success"]);
+  expect(outcomesByRequest.get("pending-host")?.sort())
+    .toEqual(["http_failure", "success"]);
+  const captureOperations = await env.CATALOGUE_DB.prepare(
+    `SELECT request_id, COUNT(*) AS count FROM source_capture_operations
+     WHERE ingestion_run_id = ? GROUP BY request_id ORDER BY request_id`,
+  ).bind(run.id).all<{ request_id: string; count: number }>();
+  expect(captureOperations.results).toEqual([
+    { request_id: "captured-host", count: 1 },
+    { request_id: "pending-host", count: 2 },
+  ]);
+  expect(completed.workflow.current_attempt).toMatchObject({
+    id: `evidence-${run.id}-resume-2`,
+    attempt_number: 3,
+  });
+  const parentAttempts = completed.workflow.attempts
+    .filter((attempt) => attempt.kind === "parent")
+    .map((attempt) => attempt.id);
+  expect(parentAttempts).toEqual([
+    firstParentId,
+    completedParentId,
+    `evidence-${run.id}-resume-2`,
+  ]);
+}, 60_000);

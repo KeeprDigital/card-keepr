@@ -1,7 +1,7 @@
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
-} from "./card-search-recovery-statements.mjs";
+} from "./card-search-recovery-statements.ts";
 
 // D1 export does not support virtual tables. Card-search chunks are the
 // exportable source of truth, so backup recovery removes only the derived FTS
