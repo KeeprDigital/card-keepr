@@ -10,6 +10,7 @@ import {
 } from "../../../src/catalogue/serialization";
 import {
   administrationRequest,
+  clearActiveRunForNextScenario,
   type CollectionDocument,
   createCollection,
   fixtureEvidenceRequest,
@@ -384,3 +385,91 @@ test("inspection classifies a healthy collecting Workflow without pausing it", a
     attempt_number: 1,
   });
 });
+
+test("a parent Workflow that completed with a request still pending resumes as a new attempt without duplicate fetches", async () => {
+  // Issue #70: the resume endpoint once restarted a completed parent from a
+  // step name that does not exist. A completed parent is now classified as
+  // stalled and superseded by a deterministic new attempt that pulls the
+  // pending work from D1, so retained evidence is never fetched again.
+  //
+  // A healthy parent replaces its own dead hostname shards and only ends
+  // once the run leaves collection, so the reproduction shape (a completed
+  // instance holding the run's first attempt identity while its Source
+  // Request is still pending) is staged directly: the instance under the
+  // stalled run's identity is created to drive an already-parsed run, so it
+  // completes at once without touching the stalled run's evidence.
+  const parsed = await createCollection(
+    "workflow_completed_parent_donor_001",
+    "https://official-source.invalid/cards",
+  );
+  expect((await resumeDocument(parsed.id)).status).toBe(202);
+  await waitForEvidenceRun(parsed.id, "parsing", 20_000);
+  await clearActiveRunForNextScenario();
+  const run = await createCollection(
+    "workflow_completed_parent_resume_001",
+    "https://official-source.invalid/cards",
+  );
+  const parentId = `evidence-${run.id}`;
+  await env.EVIDENCE_INGESTION_WORKFLOW.create({
+    id: parentId,
+    params: { ingestion_run_id: parsed.id },
+  });
+  await waitForWorkflowStatus(
+    parentId,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    "complete",
+    20_000,
+  );
+  const stalled = await showCollection(run.id);
+  expect(stalled.state).toBe("collecting");
+  expect(stalled.snapshots).toHaveLength(0);
+  expect(stalled.diagnostics).toHaveLength(0);
+
+  const recovered = await resumeDocument(run.id);
+  expect(recovered.status).toBe(202);
+  expect(recovered.document).toMatchObject({
+    ingestion_run_id: run.id,
+    workflow: {
+      id: `evidence-${run.id}-resume-1`,
+      attempt_number: 2,
+    },
+    recovery: {
+      reason: "source_workflow_stalled",
+      superseded_workflow_id: parentId,
+      workflow_status: "complete",
+    },
+  });
+
+  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  // The pending request continues under the new attempt exactly once: one
+  // Source Snapshot, one Source Observation Set, one successful fetch, and
+  // one capture operation for the lone Source Request.
+  expect(completed.snapshots).toHaveLength(1);
+  expect(completed.observation_sets).toHaveLength(1);
+  expect(completed.diagnostics.map((entry) => entry.outcome))
+    .toEqual(["success"]);
+  const captureOperations = await env.CATALOGUE_DB.prepare(
+    `SELECT COUNT(*) AS count FROM source_capture_operations
+     WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first<{ count: number }>();
+  expect(captureOperations?.count).toBe(1);
+  expect(completed.workflow.current_attempt).toMatchObject({
+    id: `evidence-${run.id}-resume-1`,
+    attempt_number: 2,
+  });
+  const parentAttempts = completed.workflow.attempts
+    .filter((attempt) => attempt.kind === "parent")
+    .map((attempt) => attempt.id);
+  expect(parentAttempts).toEqual([parentId, `evidence-${run.id}-resume-1`]);
+  const transitions = await env.CATALOGUE_DB.prepare(
+    `SELECT from_state, to_state FROM ingestion_run_transitions
+     WHERE ingestion_run_id = ? ORDER BY sequence`,
+  ).bind(run.id).all<{ from_state: string; to_state: string }>();
+  expect(transitions.results).toEqual([
+    { from_state: null, to_state: "collecting" },
+    { from_state: "collecting", to_state: "paused" },
+    { from_state: "paused", to_state: "collecting" },
+    { from_state: "collecting", to_state: "parsing" },
+  ]);
+}, 60_000);
