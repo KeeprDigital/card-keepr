@@ -22,10 +22,11 @@ import {
 } from "./curated-revisions";
 import { operationalDiagnostics } from "./operational-diagnostics";
 import {
-  classifyCollectionWorkflow,
+  classifyCollectionProgress,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
   workflowAttemptRecord,
+  type CollectionProgressFacts,
   type SafeWorkflowStatus,
   type WorkflowPauseReason,
 } from "./collection-recovery";
@@ -1290,17 +1291,34 @@ export function workflowAttemptStatements(
   });
 }
 
+// Exhausting the bounded replacement identities of one hostname shard fails
+// only that shard's active requests: other hosts' healthy shards keep
+// collecting, and the completeness gate still fails the run at the barrier.
+// The URL prefix match is exact on the '://hostname/' boundary (evidence
+// requests are plain https URLs without ports).
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
   database: D1Database,
   runId: string,
+  shard: Readonly<{
+    hostname: string;
+    minimumSequenceNumber: number;
+    maximumSequenceNumber: number;
+  }>,
 ): Promise<void> {
   await database
     .prepare(
       `UPDATE source_requests
        SET state = 'failed', failure_code = 'source_workflow_retries_exhausted'
-       WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')`,
+       WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
+         AND sequence_number BETWEEN ? AND ?
+         AND url LIKE '%://' || ? || '/%'`,
     )
-    .bind(runId)
+    .bind(
+      runId,
+      shard.minimumSequenceNumber,
+      shard.maximumSequenceNumber,
+      shard.hostname,
+    )
     .run();
 }
 
@@ -1515,11 +1533,7 @@ export async function pauseEvidenceRunForWorkflowRecovery(
   ]);
 }
 
-export type CollectionProgressFacts = {
-  last_progress_at: string | null;
-  pacing_deadline_at: string | null;
-  retry_deadline_at: string | null;
-};
+export type { CollectionProgressFacts } from "./collection-recovery";
 
 // The deterministic progress evidence stall classification consumes: the
 // newest persisted lifecycle event across transitions, fetch attempts,
@@ -1555,15 +1569,24 @@ export async function collectionProgressFacts(
       )
       .bind(runId)
       .first<Record<string, string | null>>(),
-    // Pacing deadlines are keyed by hostname rather than run; the maximum
-    // across all hosts is a bounded over-approximation (at most the pacing
-    // interval plus jitter) that can only delay a stall verdict, never
-    // manufacture one.
+    // Pacing deadlines are keyed by hostname rather than run, so the scan
+    // keeps only hosts this run still has open requests against. The URL
+    // prefix match is exact on the '://hostname/' boundary (evidence
+    // requests are plain https URLs without ports), and any residual
+    // over-approximation is bounded by the pacing interval cap plus jitter —
+    // it can only delay a stall verdict briefly, never manufacture one.
     database
       .prepare(
-        `SELECT MAX(next_request_not_before) AS pacing_deadline_at
-         FROM source_host_pacing`,
+        `SELECT MAX(pacing.next_request_not_before) AS pacing_deadline_at
+         FROM source_host_pacing AS pacing
+         WHERE EXISTS (
+           SELECT 1 FROM source_requests AS requests
+           WHERE requests.ingestion_run_id = ?
+             AND requests.state IN ('pending', 'captured')
+             AND requests.url LIKE '%://' || pacing.hostname || '/%'
+         )`,
       )
+      .bind(runId)
       .first<{ pacing_deadline_at: string | null }>(),
     database
       .prepare(
@@ -2334,13 +2357,7 @@ async function collectionWorkflowDocument(
   }
   const classification = status === null || run.state !== "collecting"
     ? null
-    : classifyCollectionWorkflow({
-      now_ms: Date.now(),
-      workflow_status: status,
-      last_progress_ms: parseProgressTime(progress.last_progress_at),
-      pacing_deadline_ms: parseProgressTime(progress.pacing_deadline_at),
-      retry_deadline_ms: parseProgressTime(progress.retry_deadline_at),
-    });
+    : classifyCollectionProgress(status, progress);
   return {
     parent_id: run.parent_workflow_id,
     child_ids: childIds,
@@ -2366,12 +2383,6 @@ async function collectionWorkflowDocument(
         : classification.kind,
     }),
   };
-}
-
-function parseProgressTime(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function capacityPauseDocument(row: {

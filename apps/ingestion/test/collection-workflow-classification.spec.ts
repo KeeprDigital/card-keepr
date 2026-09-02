@@ -1,7 +1,9 @@
 import { expect, test } from "vitest";
 import {
+  classifyCollectionProgress,
   classifyCollectionWorkflow,
   collectionStallGraceMilliseconds,
+  isWorkflowInstanceNotFound,
   parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
@@ -92,6 +94,45 @@ test("an expired wait deadline no longer defers the stall", () => {
 test("a run with no persisted progress evidence at all is stalled", () => {
   expect(classifyCollectionWorkflow(facts({ last_progress_ms: null })))
     .toEqual({ kind: "recover", reason: "source_workflow_stalled" });
+});
+
+test("progress facts classify through their persisted ISO deadlines", () => {
+  expect(classifyCollectionProgress("running", {
+    last_progress_at: "2026-09-02T11:59:00.000Z",
+    pacing_deadline_at: null,
+    retry_deadline_at: null,
+  }, nowMs)).toEqual({ kind: "active" });
+  expect(classifyCollectionProgress("running", {
+    last_progress_at: "2026-09-02T06:00:00.000Z",
+    pacing_deadline_at: null,
+    retry_deadline_at: "2026-09-02T12:30:00.000Z",
+  }, nowMs)).toEqual({ kind: "active" });
+  expect(classifyCollectionProgress("running", {
+    last_progress_at: "2026-09-02T06:00:00.000Z",
+    pacing_deadline_at: null,
+    retry_deadline_at: null,
+  }, nowMs)).toEqual({
+    kind: "recover",
+    reason: "source_workflow_stalled",
+  });
+  expect(classifyCollectionProgress("errored", {
+    last_progress_at: "2026-09-02T11:59:00.000Z",
+    pacing_deadline_at: null,
+    retry_deadline_at: null,
+  }, nowMs)).toEqual({
+    kind: "recover",
+    reason: "source_workflow_errored",
+  });
+});
+
+test("a lost instance is distinguished from a transient control-plane error", () => {
+  expect(isWorkflowInstanceNotFound(new Error("instance.not_found")))
+    .toBe(true);
+  expect(isWorkflowInstanceNotFound(new Error("Workflow instance not found")))
+    .toBe(true);
+  expect(isWorkflowInstanceNotFound(new Error("network timeout"))).toBe(false);
+  expect(isWorkflowInstanceNotFound(new Error("internal error"))).toBe(false);
+  expect(isWorkflowInstanceNotFound("not an error")).toBe(false);
 });
 
 test("workflow statuses map onto the closed safe vocabulary", () => {

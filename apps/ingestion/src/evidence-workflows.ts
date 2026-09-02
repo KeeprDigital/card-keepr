@@ -32,6 +32,9 @@ import {
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
 import {
+  isWorkflowInstanceNotFound,
+} from "../../../src/catalogue/collection-recovery";
+import {
   requiredSourceAdapter,
 } from "../../../src/catalogue/source-adapters";
 import { durableReconciliationResult } from "./reconciliation-workflow";
@@ -145,13 +148,25 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
               try {
                 latest = await this.env.EVIDENCE_HOST_WORKFLOW.get(latestId);
                 status = await latest.status();
-              } catch {
+              } catch (error) {
+                // Only a genuinely absent instance may burn one of the
+                // bounded replacement identities. A transient control-plane
+                // failure rethrows into the durable step's retry policy, and
+                // if that exhausts, the parent errors recoverably (a new
+                // Workflow Attempt through resume) instead of terminally
+                // failing the shard's Source Requests.
+                if (!isWorkflowInstanceNotFound(error)) throw error;
                 if (attempts.length >= maximumHostWorkflowIdentities) {
                   await failActiveEvidenceRequestsForWorkflowExhaustion(
                     this.env.CATALOGUE_DB,
                     runId,
+                    {
+                      hostname: child.hostname,
+                      minimumSequenceNumber: child.minimumSequenceNumber,
+                      maximumSequenceNumber: child.maximumSequenceNumber,
+                    },
                   );
-                  return [];
+                  continue;
                 }
                 selected.push({
                   ...child,
@@ -168,8 +183,13 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
                   await failActiveEvidenceRequestsForWorkflowExhaustion(
                     this.env.CATALOGUE_DB,
                     runId,
+                    {
+                      hostname: child.hostname,
+                      minimumSequenceNumber: child.minimumSequenceNumber,
+                      maximumSequenceNumber: child.maximumSequenceNumber,
+                    },
                   );
-                  return [];
+                  continue;
                 }
                 selected.push({
                   ...child,

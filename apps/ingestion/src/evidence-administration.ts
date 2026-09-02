@@ -1,10 +1,11 @@
 import { AdministrationProblem } from "../../../src/catalogue/ingestion";
 import type { EvidenceParentWorkflowParams } from "../../../src/catalogue/source-evidence-model";
 import {
-  classifyCollectionWorkflow,
+  classifyCollectionProgress,
   parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
+  type CollectionProgressFacts,
   type SafeWorkflowStatus,
 } from "../../../src/catalogue/collection-recovery";
 import {
@@ -13,7 +14,6 @@ import {
   requiredEvidenceRun,
   resumePausedEvidenceRun,
   workflowAttemptStatements,
-  type CollectionProgressFacts,
   type IngestionEvidenceRow,
 } from "../../../src/catalogue/source-evidence-repository";
 
@@ -109,13 +109,7 @@ export async function resumeEvidenceRun(
   // platform status and the persisted progress evidence.
   const classification = acquired !== null && acquired.created
     ? { kind: "active" as const }
-    : classifyCollectionWorkflow({
-      now_ms: Date.now(),
-      workflow_status: acquired?.status ?? "unavailable",
-      last_progress_ms: parseProgressTime(progress.last_progress_at),
-      pacing_deadline_ms: parseProgressTime(progress.pacing_deadline_at),
-      retry_deadline_ms: parseProgressTime(progress.retry_deadline_at),
-    });
+    : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
   if (classification.kind === "instance_paused" && acquired !== null) {
     // The Workflow instance's own paused status is a platform condition
     // distinct from a paused Ingestion Run: the same attempt resumes in
@@ -222,8 +216,3 @@ async function recoverParentWorkflow(
   };
 }
 
-function parseProgressTime(value: string | null): number | null {
-  if (value === null) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}

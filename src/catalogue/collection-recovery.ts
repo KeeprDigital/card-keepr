@@ -98,6 +98,43 @@ export function classifyCollectionWorkflow(
   }
 }
 
+export type CollectionProgressFacts = {
+  last_progress_at: string | null;
+  pacing_deadline_at: string | null;
+  retry_deadline_at: string | null;
+};
+
+// Classify directly from the persisted progress facts' ISO timestamps.
+export function classifyCollectionProgress(
+  workflowStatus: SafeWorkflowStatus,
+  progress: CollectionProgressFacts,
+  nowMs: number = Date.now(),
+): CollectionWorkflowClassification {
+  return classifyCollectionWorkflow({
+    now_ms: nowMs,
+    workflow_status: workflowStatus,
+    last_progress_ms: parseProgressTime(progress.last_progress_at),
+    pacing_deadline_ms: parseProgressTime(progress.pacing_deadline_at),
+    retry_deadline_ms: parseProgressTime(progress.retry_deadline_at),
+  });
+}
+
+function parseProgressTime(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+// A Workflow lookup can fail for two very different reasons: the platform
+// genuinely holds no instance under the identity (the instance is lost, or
+// was never created), or the control-plane call itself failed transiently.
+// Only the former may burn a bounded replacement identity; a transient error
+// must surface to the durable step so its retry policy absorbs it.
+export function isWorkflowInstanceNotFound(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /not[._ ]?found/iu.test(`${error.name} ${error.message}`);
+}
+
 // Parent Workflow Attempt identities are minted from the count of recorded
 // paused -> collecting transitions: attempt 1 is the original identity and
 // each recovery appends '-resume-N'. Child hostname-shard attempts append
@@ -159,6 +196,10 @@ export function workflowAttemptRecord(
     : {
       workflow_kind: "child",
       base_workflow_id: instanceId.slice(0, -childSuffix[0].length),
+      // Child replacement suffixes are zero-based (see
+      // nextChildWorkflowIdentity in evidence-workflows.ts): the bare digest
+      // identity is attempt 1 and '-attempt-0' is the first replacement, so
+      // suffix N maps to attempt N + 2.
       attempt_number: Number.parseInt(childSuffix[1]!, 10) + 2,
       workflow_instance_id: instanceId,
     };

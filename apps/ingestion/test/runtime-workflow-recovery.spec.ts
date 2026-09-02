@@ -4,10 +4,18 @@ import {
   pauseEvidenceRunForWorkflowRecovery,
 } from "../../../src/catalogue/source-evidence-repository";
 import {
+  canonicalJson,
+  sha256,
+  utf8,
+} from "../../../src/catalogue/serialization";
+import {
   administrationRequest,
+  type CollectionDocument,
   createCollection,
+  fixtureEvidenceRequest,
   installRuntimeSuite,
   showCollection,
+  waitForEvidenceCondition,
   waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
@@ -295,6 +303,68 @@ test("concurrent resumes of a dead Workflow cannot create competing attempts", a
   ).bind(run.id).first<{ count: number }>();
   expect(pauseRecords?.count).toBe(1);
   await waitForEvidenceRun(run.id, "parsing", 20_000);
+});
+
+test("child identity exhaustion fails only the exhausted hostname shard", async () => {
+  const created = await fixtureEvidenceRequest({
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@1",
+    idempotency_key: "workflow_scoped_exhaustion_001",
+    requests: [
+      {
+        id: "healthy-host",
+        url: "https://mapping-a-official-source.invalid/cards",
+      },
+      {
+        id: "exhausted-host",
+        url: "https://mapping-z-official-source.invalid/cards",
+      },
+    ],
+  });
+  expect(created.status).toBe(201);
+  const run = await created.json<CollectionDocument>();
+  const baseChildId = `evidence-host-${await sha256(utf8(canonicalJson({
+    ingestion_run_id: run.id,
+    hostname: "mapping-z-official-source.invalid",
+    minimum_sequence_number: 0,
+    maximum_sequence_number: 199,
+  })))}`;
+  await env.CATALOGUE_DB.prepare(
+    `UPDATE ingestion_evidence_plans SET child_workflow_ids_json = ?
+     WHERE ingestion_run_id = ?`,
+  ).bind(
+    canonicalJson([
+      baseChildId,
+      `${baseChildId}-attempt-0`,
+      `${baseChildId}-attempt-1`,
+      `${baseChildId}-attempt-2`,
+    ]),
+    run.id,
+  ).run();
+
+  const resumed = await resumeDocument(run.id);
+  expect(resumed.status).toBe(202);
+  const terminal = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.state !== "collecting",
+    20_000,
+  );
+  expect(terminal).toMatchObject({
+    state: "failed",
+    failure_code: "source_workflow_retries_exhausted",
+  });
+  const requestStates = await env.CATALOGUE_DB.prepare(
+    `SELECT request_id, state FROM source_requests
+     WHERE ingestion_run_id = ? ORDER BY request_id`,
+  ).bind(run.id).all<{ request_id: string; state: string }>();
+  const byRequest = Object.fromEntries(
+    requestStates.results.map((row) => [row.request_id, row.state]),
+  );
+  // Only the exhausted hostname's shard fails; the healthy host's request
+  // is never marked failed by another shard's identity exhaustion.
+  expect(byRequest["exhausted-host"]).toBe("failed");
+  expect(byRequest["healthy-host"]).not.toBe("failed");
 });
 
 test("inspection classifies a healthy collecting Workflow without pausing it", async () => {
