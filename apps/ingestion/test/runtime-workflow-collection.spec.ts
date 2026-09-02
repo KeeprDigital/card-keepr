@@ -603,12 +603,12 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
   // Exhausting the retryable 503 responses pauses the run with the
   // transport reason instead of failing it; the attempts stay recorded as
   // diagnostics without Source Snapshots.
-  const failed = await waitForEvidenceCondition(
+  const pausedByExhaustion = await waitForEvidenceCondition(
     exhaustedRun.id,
     (current) => current.state === "paused",
     12_000,
   ) as CollectionDocument;
-  expect(failed).toMatchObject({
+  expect(pausedByExhaustion).toMatchObject({
     state: "paused",
     failure_code: null,
     pause: {
@@ -618,9 +618,9 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
     },
     snapshots: [],
   });
-  expect(failed.diagnostics).toHaveLength(4);
+  expect(pausedByExhaustion.diagnostics).toHaveLength(4);
   expect(
-    failed.diagnostics.map((diagnostic) => ({
+    pausedByExhaustion.diagnostics.map((diagnostic) => ({
       attempt_number: diagnostic.attempt_number,
       outcome: diagnostic.outcome,
       status: diagnostic.http_status,
@@ -656,7 +656,7 @@ test("redirects and terminal HTTP failures remain diagnostics without Source Sna
   // A paused run is not terminal: the generic linked-evidence retry stays
   // rejected, because the same run remains resumable.
   const retriedResponse = await administrationRequest(
-    `/v1/ingestion-runs/${failed.id}/collection/retry`,
+    `/v1/ingestion-runs/${pausedByExhaustion.id}/collection/retry`,
     "POST",
     { idempotency_key: "source_collection_failed_retry_001" },
   );

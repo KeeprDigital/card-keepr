@@ -1369,8 +1369,10 @@ export function retryExhaustionPauseStatements(
     // the capacity pause: the run is paused by the statement above (or a
     // concurrent exhaustion already paused it), and one immutable record
     // exists per (request, generation). The replay guard is an explicit
-    // NOT EXISTS so an unexpected constraint failure aborts loudly instead
-    // of silently pausing without a record.
+    // NOT EXISTS so a facts bug violating the table CHECKs aborts loudly
+    // instead of silently pausing without a record. When the run already
+    // reached a terminal state through a sibling request, both statements
+    // deliberately record nothing: the terminal outcome stands.
     database
       .prepare(
         `INSERT INTO ingestion_run_retry_pauses (
@@ -1862,41 +1864,19 @@ export async function showEvidenceRun(
       }>(),
   ]);
   // A paused run reports exactly one pause: the newest record across the
-  // capacity and retry-exhaustion tables. Historical records from earlier
-  // pauses of the same run stay retained but are not the current pause.
+  // capacity and retry-exhaustion tables (a retry pause wins an equal
+  // timestamp, because a run can only re-enter capacity admission after the
+  // exhausted request recovers). Historical records from earlier pauses of
+  // the same run stay retained but are not the current pause.
+  const retryPauseNewest = retryPause !== null &&
+    (pause === null || retryPause.paused_at >= pause.paused_at);
   const currentPause = run.state !== "paused"
     ? {}
-    : retryPause !== null &&
-        (pause === null || retryPause.paused_at > pause.paused_at)
-      ? {
-          pause: {
-            reason: retryPause.pause_reason,
-            paused_at: retryPause.paused_at,
-            source_lineage: retryPause.source_lineage,
-            request_id: retryPause.request_id,
-            hostname: retryPause.hostname,
-            retry_generation: retryPause.retry_generation,
-            attempt_count: retryPause.attempt_count,
-            failure_classification: retryPause.failure_classification,
-            http_status: retryPause.http_status,
-            actions: ["resume"],
-          },
-        }
+    : retryPauseNewest && retryPause !== null
+      ? { pause: retryPauseDocument(retryPause) }
       : pause === null
         ? {}
-        : {
-            pause: {
-              reason: pause.pause_reason,
-              paused_at: pause.paused_at,
-              source_lineage: pause.source_lineage,
-              parent_request_id: pause.parent_request_id,
-              request_capacity: pause.request_capacity,
-              capacity_generation: pause.capacity_generation,
-              used_capacity: pause.used_capacity,
-              overflow_request_count: pause.overflow_request_count,
-              required_capacity: pause.required_capacity,
-            },
-          };
+        : { pause: capacityPauseDocument(pause) };
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -1966,6 +1946,58 @@ export async function showEvidenceRun(
       resulting_revision_id: run.resulting_revision_id,
       publication_outcome: run.publication_outcome,
     }),
+  };
+}
+
+// The closed pause block shapes: correlation identifiers, bounded counters,
+// and machine codes only, so the owner-facing status surface stays free of
+// request headers, payloads, and credentials.
+function retryPauseDocument(row: {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  request_id: string;
+  hostname: string;
+  retry_generation: number;
+  attempt_count: number;
+  failure_classification: string;
+  http_status: number | null;
+}): Record<string, unknown> {
+  return {
+    reason: row.pause_reason,
+    paused_at: row.paused_at,
+    source_lineage: row.source_lineage,
+    request_id: row.request_id,
+    hostname: row.hostname,
+    retry_generation: row.retry_generation,
+    attempt_count: row.attempt_count,
+    failure_classification: row.failure_classification,
+    http_status: row.http_status,
+    actions: ["resume"],
+  };
+}
+
+function capacityPauseDocument(row: {
+  pause_reason: string;
+  paused_at: string;
+  source_lineage: string;
+  parent_request_id: string;
+  request_capacity: number;
+  capacity_generation: number;
+  used_capacity: number;
+  overflow_request_count: number;
+  required_capacity: number;
+}): Record<string, unknown> {
+  return {
+    reason: row.pause_reason,
+    paused_at: row.paused_at,
+    source_lineage: row.source_lineage,
+    parent_request_id: row.parent_request_id,
+    request_capacity: row.request_capacity,
+    capacity_generation: row.capacity_generation,
+    used_capacity: row.used_capacity,
+    overflow_request_count: row.overflow_request_count,
+    required_capacity: row.required_capacity,
   };
 }
 

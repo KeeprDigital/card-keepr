@@ -278,16 +278,13 @@ export async function prepareCaptureAttempt(
       };
     }
     await database.batch(
-      retryExhaustionPauseStatements(
+      retryExhaustionPause(
         database,
-        run.id,
-        retryExhaustionFacts(
-          run,
-          request,
-          previous.attempt_number,
-          classification,
-          previous.http_status,
-        ),
+        run,
+        request,
+        previous.attempt_number,
+        classification,
+        previous.http_status,
       ),
     );
     return { kind: "done", failure_code: null };
@@ -1135,7 +1132,6 @@ async function recordFailedTransportAttempt(
   // final failed attempt; a body-contract violation stays terminal.
   const classification =
     failure.outcome === "body_failure" ? null : failure.outcome;
-  const recoverable = classification !== null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1166,7 +1162,7 @@ async function recordFailedTransportAttempt(
         failure.diagnostic,
         operation.attempt_id,
       ),
-    ...(exhausted && !recoverable
+    ...(exhausted && classification === null
       ? [
           failRequestStatement(
             database,
@@ -1176,16 +1172,13 @@ async function recordFailedTransportAttempt(
         ]
       : []),
     ...(exhausted && classification !== null
-      ? retryExhaustionPauseStatements(
+      ? retryExhaustionPause(
           database,
-          request.ingestion_run_id,
-          retryExhaustionFacts(
-            run,
-            request,
-            operation.attempt_number,
-            classification,
-            failure.status,
-          ),
+          run,
+          request,
+          operation.attempt_number,
+          classification,
+          failure.status,
         )
       : []),
   ]);
@@ -1198,7 +1191,8 @@ async function recordFailedTransportAttempt(
   }
   return {
     kind: "done",
-    failure_code: recoverable ? null : "source_request_retries_exhausted",
+    failure_code:
+      classification !== null ? null : "source_request_retries_exhausted",
     request_made: true,
   };
 }
@@ -1223,8 +1217,7 @@ async function recordRejectedAttempt(
   // response (429 or 5xx): exhausting its bounded retries pauses the run
   // rather than failing the request. Redirects, non-retryable statuses, and
   // rejected revalidations keep their terminal codes.
-  const failureCode = rejection.failureCode;
-  const pausing = exhausted && failureCode === null;
+  const pausing = exhausted && rejection.failureCode === null;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -1253,27 +1246,24 @@ async function recordRejectedAttempt(
         rejection.diagnostic,
         operation.attempt_id,
       ),
-    ...(failureCode === null
+    ...(rejection.failureCode === null
       ? []
-      : [failRequestStatement(database, request, failureCode)]),
+      : [failRequestStatement(database, request, rejection.failureCode)]),
     ...(pausing
-      ? retryExhaustionPauseStatements(
+      ? retryExhaustionPause(
           database,
-          request.ingestion_run_id,
-          retryExhaustionFacts(
-            run,
-            request,
-            operation.attempt_number,
-            "http_failure",
-            rejection.status,
-          ),
+          run,
+          request,
+          operation.attempt_number,
+          "http_failure",
+          rejection.status,
         )
       : []),
   ]);
-  if (failureCode !== null) {
+  if (rejection.failureCode !== null) {
     return {
       kind: "done",
-      failure_code: failureCode,
+      failure_code: rejection.failureCode,
       request_made: true,
     };
   }
@@ -1323,14 +1313,15 @@ function recoverableExhaustionClassification(
   return null;
 }
 
-function retryExhaustionFacts(
+function retryExhaustionPause(
+  database: D1Database,
   run: IngestionEvidenceRow,
   request: EvidenceRequestRow,
   attemptCount: number,
   classification: RetryExhaustionFacts["failure_classification"],
   httpStatus: number | null,
-): RetryExhaustionFacts {
-  return {
+): D1PreparedStatement[] {
+  return retryExhaustionPauseStatements(database, request.ingestion_run_id, {
     request_id: request.request_id,
     source_lineage: evidencePlanForRequest(run, request.request_id)
       .source_lineage,
@@ -1339,7 +1330,7 @@ function retryExhaustionFacts(
     attempt_count: attemptCount,
     failure_classification: classification,
     http_status: httpStatus,
-  };
+  });
 }
 
 type AttemptInput = {
