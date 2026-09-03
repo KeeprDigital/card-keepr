@@ -1,7 +1,22 @@
 import type {
   CatalogueCard,
+  LegalityRegion,
+  LegalityRule,
+  LegalityRuleEffect,
+  LegalityRuleSourceFieldPointers,
   SupportedGame,
-} from "./catalogue-candidate";
+  UnresolvedLegalityScope,
+  UnresolvedLegalityScopeDimension,
+} from "./catalogue-candidate-types";
+// The Legality Rule shapes live in the leaf module `catalogue-candidate-types`;
+// they stay importable from here.
+export type {
+  LegalityRegion,
+  LegalityRule,
+  LegalityRuleSourceFieldPointers,
+  UnresolvedLegalityScope,
+  UnresolvedLegalityScopeDimension,
+} from "./catalogue-candidate-types";
 import { validateMembershipPredicate } from "./reconciliation-profile";
 import {
   canonicalJson,
@@ -20,37 +35,12 @@ export {
   type LegalityEvaluation,
   type LegalityRuleEffect,
 } from "./legality-effect-policy";
-import type { LegalityRuleEffect } from "./legality-effect-policy";
 import { registeredLegalitySourceScope } from "./source-adapters";
-import type { CuratedProvenanceBearing } from "./curated-provenance";
 export {
   legalityRulesForCandidate,
   normalizedLegalityRuleLifecycle,
   type LegalityRuleLifecycle,
 } from "./legality-rule-lifecycle";
-
-export type LegalityRegion = "EN-OCEANIA" | "EN-ASIA" | "EN-US";
-
-export type LegalityRuleSourceFieldPointers = {
-  official_wording: string;
-  effective_from: string;
-  effective_until: string;
-  unresolved_scope: string;
-  region: string;
-  format: string;
-  event_tier: string;
-  card_numbers: string;
-  effect: string;
-};
-
-export type UnresolvedLegalityScopeDimension =
-  | "effective_interval"
-  | "event_tier"
-  | "target_scope";
-
-export type UnresolvedLegalityScope = Readonly<{
-  dimensions: readonly UnresolvedLegalityScopeDimension[];
-}>;
 
 /**
  * A rule whose unresolved scope names the `target_scope` dimension targets an
@@ -64,31 +54,6 @@ export function unresolvedTargetScope(
 ): boolean {
   return scope !== null && scope.dimensions.includes("target_scope");
 }
-
-export type LegalityRule = CuratedProvenanceBearing & {
-  id: string;
-  official_id: string;
-  game: SupportedGame;
-  region: LegalityRegion;
-  format: string;
-  event_tier: string | null;
-  effective_from: string | null;
-  effective_until: string | null;
-  unresolved_scope: UnresolvedLegalityScope | null;
-  card_ids: readonly string[];
-  official_wording: string;
-  effect: LegalityRuleEffect;
-  source_lineage: string;
-  source_snapshot_id: string;
-  source_observation_set_id: string;
-  source_observation_id: string;
-  source_observation_pointer: string;
-  source_field_pointers: LegalityRuleSourceFieldPointers;
-  first_revision_id?: string;
-  last_observed_revision_id?: string;
-  current?: boolean;
-  last_missing_revision_id?: string | null;
-};
 
 export type RetainedLegalityRule = Omit<
   LegalityRule,

@@ -4,6 +4,10 @@ import {
 } from "./product-release-source-adapters.ts";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
+import type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
+// The listing reconciliation traits live in the leaf module
+// `source-adapter-registration-types`; they stay importable from here.
+export type { ListingReconciliationTraits } from "./source-adapter-registration-types.ts";
 
 export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
@@ -12,21 +16,6 @@ export type OfficialSourceContract = Readonly<{
   documentPathnamePrefixes: readonly string[];
   imagePathnamePrefixes: readonly string[];
   requiredSurfaces: readonly string[];
-}>;
-
-// Registration facts reconciliation reads about a lineage's listing
-// evidence (ADR 0004: these lived in code-side version lists before).
-export type ListingReconciliationTraits = Readonly<{
-  // The releases surface also carries release-timing Legality Rules.
-  releasesSurfaceCarriesLegality: boolean;
-  // Listing observations are publisher pages closed by full locator.
-  groupsPublisherPages: boolean;
-  // Listing identity is read from listing_identity_evidence rather than
-  // the generic identity_evidence.
-  strictListingIdentity: boolean;
-  // How the same locator observed by two listing requests is judged
-  // compatible: by observation semantic, by canonical identity, or never.
-  duplicateLocatorCompatibility: "semantic" | "canonical" | "never";
 }>;
 
 export type SourceAdapterRegistration = Readonly<{

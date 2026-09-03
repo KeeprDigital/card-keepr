@@ -1,15 +1,9 @@
 import { isIsoCalendarDate } from "./calendar-date.ts";
 import { compareUtf8 } from "./serialization";
-
-export type LegalityRuleEffect =
-  | { type: "eligible" }
-  | { type: "ban" }
-  | { type: "copy_limit"; maximum_copies: number }
-  | { type: "prohibited_combination"; with_card_ids: readonly string[] }
-  | { type: "membership"; attribute: string; includes_any: readonly string[] }
-  | { type: "rotation"; eligible_blocks: readonly string[] }
-  | { type: "release_timing"; legal_from: string }
-  | { type: "unresolved"; reason: string };
+import type { LegalityRuleEffect } from "./catalogue-candidate-types";
+// The Legality Rule effect shape lives in the leaf module
+// `catalogue-candidate-types`; it stays importable from here.
+export type { LegalityRuleEffect } from "./catalogue-candidate-types";
 
 export type ParsedLegalityRuleEffect =
   | Exclude<LegalityRuleEffect, { type: "prohibited_combination" }>

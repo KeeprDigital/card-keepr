@@ -34,16 +34,10 @@ import {
 } from "./errata-rules-text";
 import { requiredSourceAdapter } from "./source-adapters";
 import { curatedPublicationStatements } from "./curated-revisions";
-
-export type NormalizedLifecycle = {
-  first_revision_id: string;
-  last_observed_revision_id: string;
-  withdrawn: boolean;
-  withdrawal?: {
-    revision_id: string;
-    evidence: Record<string, unknown>;
-  } | null;
-};
+import type { NormalizedLifecycle } from "./publication-lifecycle-types";
+// The published lifecycle shape lives in the leaf module
+// `publication-lifecycle-types`; it stays importable from here.
+export type { NormalizedLifecycle } from "./publication-lifecycle-types";
 
 export type { RelationshipEvidence } from "./reconciliation-relationships";
 

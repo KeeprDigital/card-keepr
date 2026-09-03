@@ -1,23 +1,12 @@
 import type {
   CatalogueCard,
+  CatalogueErratum,
   SupportedGame,
-} from "./catalogue-candidate";
+} from "./catalogue-candidate-types";
 import { canonicalJson, sha256Text } from "./serialization";
-import type { CuratedProvenanceBearing } from "./curated-provenance";
-
-export type CatalogueErratum = Readonly<CuratedProvenanceBearing & {
-  id: string;
-  game: SupportedGame;
-  target_type: "card" | "printing";
-  target_id: string;
-  effective_from: string | null;
-  official_wording: string;
-  corrected_value: string | null;
-  provenance: readonly Readonly<{
-    source_lineage: string;
-    source_observation_id: string;
-  }>[];
-}>;
+// The Erratum shape lives in the leaf module `catalogue-candidate-types`; it
+// stays importable from here.
+export type { CatalogueErratum } from "./catalogue-candidate-types";
 
 export type ParsedRulesTextErratum = Readonly<{
   targetType: "card" | "printing";

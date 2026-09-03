@@ -1,5 +1,7 @@
-import type { CatalogueCandidate } from "./catalogue-candidate";
-import type { LegalityRule } from "./legality-rule";
+import type {
+  CatalogueCandidate,
+  LegalityRule,
+} from "./catalogue-candidate-types";
 import { canonicalJson, compareUtf8 } from "./serialization";
 
 export type LegalityRuleLifecycle = {
