@@ -319,7 +319,7 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
 
 test.each([
   {
-    adapterVersion: "one-piece-en@2",
+    adapterVersion: "one-piece-en@6",
     lineage: "one-piece-en",
     game: "one-piece",
     surface: "restrictions",
@@ -338,7 +338,7 @@ test.each([
     },
   },
   {
-    adapterVersion: "fusion-world-en@3",
+    adapterVersion: "fusion-world-en@9",
     lineage: "fusion-world-en",
     game: "fusion-world",
     surface: "legality-current",
@@ -357,7 +357,7 @@ test.each([
     },
   },
   {
-    adapterVersion: "digimon-en@4",
+    adapterVersion: "digimon-en@7",
     lineage: "digimon-en",
     game: "digimon",
     surface: "restrictions-current",
@@ -375,8 +375,8 @@ test.each([
     },
   },
   ...([
-    ["gundam-en-asia@3", "gundam-en-asia", "EN-ASIA"],
-    ["gundam-en-us@3", "gundam-en-us", "EN-US"],
+    ["gundam-en-asia@7", "gundam-en-asia", "EN-ASIA"],
+    ["gundam-en-us@7", "gundam-en-us", "EN-US"],
   ] as const).map(([adapterVersion, lineage, region]) => ({
     adapterVersion,
     lineage,

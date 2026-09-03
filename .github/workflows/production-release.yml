@@ -1,5 +1,5 @@
 name: production-release
-run-name: production-release-credential-boundary-${{ inputs.secret_slot }}-${{ inputs.expected_token_id }}-${{ inputs.expected_status }}-${{ inputs.expected_fingerprint }}-${{ inputs.plan_digest }}
+run-name: production-release-${{ inputs.release_id }}-${{ inputs.expected_head_sha }}
 
 on:
   workflow_dispatch:
@@ -7,47 +7,17 @@ on:
       expected_account_id:
         required: true
         type: string
-      expected_token_id:
-        required: false
-        default: not-applicable
-        type: string
-      plan_digest:
-        required: false
-        default: "0000000000000000000000000000000000000000000000000000000000000000"
-        type: string
-      plan_nonce:
-        required: false
-        default: "0000000000000000000000000000000000000000000000000000000000000000"
-        type: string
       expected_head_sha:
         required: true
         type: string
       expected_actor:
         required: true
         type: string
-      expected_status:
-        required: false
-        default: unusable
-        type: choice
-        options:
-          - usable
-          - unusable
-      expected_fingerprint:
-        required: false
-        default: sha256:0000000000000000000000000000000000000000000000000000000000000000
-        type: string
-      secret_slot:
-        required: false
-        default: active
-        type: choice
-        options:
-          - active
-          - replacement
       operation:
         required: false
-        default: credential_probe
+        default: production_release
         type: choice
-        options: [credential_probe, production_release]
+        options: [production_release]
       release_id:
         required: false
         type: string
@@ -109,52 +79,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-production:
-    if: inputs.operation == 'credential_probe'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: production
-    steps:
-      - name: Check out the exact guarded release
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.expected_head_sha }}
-      - name: Select active deployment credential
-        if: inputs.secret_slot == 'active'
-        env:
-          SELECTED_DEPLOYMENT_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
-        run: |
-          set -euo pipefail
-          printf 'CLOUDFLARE_API_TOKEN=%s\n' \
-            "${SELECTED_DEPLOYMENT_TOKEN}" >> "${GITHUB_ENV}"
-      - name: Select replacement deployment credential
-        if: inputs.secret_slot == 'replacement'
-        env:
-          SELECTED_DEPLOYMENT_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN_REPLACEMENT }}
-        run: |
-          set -euo pipefail
-          printf 'CLOUDFLARE_API_TOKEN=%s\n' \
-            "${SELECTED_DEPLOYMENT_TOKEN}" >> "${GITHUB_ENV}"
-      - name: Observe the guarded credential without mutation
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
-          EXPECTED_ACCOUNT_ID: ${{ inputs.expected_account_id }}
-          EXPECTED_TOKEN_ID: ${{ inputs.expected_token_id }}
-          PLAN_DIGEST: ${{ inputs.plan_digest }}
-          PLAN_NONCE: ${{ inputs.plan_nonce }}
-          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
-          EXPECTED_ACTOR: ${{ inputs.expected_actor }}
-          EXPECTED_STATUS: ${{ inputs.expected_status }}
-          EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint }}
-          SECRET_SLOT: ${{ inputs.secret_slot }}
-        run: |
-          set -euo pipefail
-          test "${GITHUB_SHA}" = "${EXPECTED_HEAD_SHA}"
-          test "${GITHUB_ACTOR}" = "${EXPECTED_ACTOR}"
-          node scripts/production-release-provider.mjs credential-proof >/dev/null
-          printf 'KEEPR_CREDENTIAL_PROOF plan_digest=%s plan_nonce=%s head_sha=%s token_id=%s actor=%s slot=%s\n' \
-            "${PLAN_DIGEST}" "${PLAN_NONCE}" "${GITHUB_SHA}" "${EXPECTED_TOKEN_ID}" "${GITHUB_ACTOR}" "${SECRET_SLOT}"
-
   guarded-release:
     if: inputs.operation == 'production_release'
     runs-on: ubuntu-latest

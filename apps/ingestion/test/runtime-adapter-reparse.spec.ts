@@ -114,17 +114,43 @@ test.each([
   },
 );
 
+test("a production Evidence Plan cannot pin a retired Source Adapter Version", async () => {
+  const retired = requiredSourceAdapter("one-piece-en@4");
+  expect(retired.retired).toBe(true);
+  expect(retired.parseBytes).toBeUndefined();
+  const refused = await administrationRequest(
+    "/v1/ingestion-runs/evidence",
+    "POST",
+    {
+      supported_game: "one-piece",
+      source_lineage: "one-piece-en",
+      adapter_version: "one-piece-en@4",
+      idempotency_key: "reject-retired-one-piece-v4-source",
+      requests: officialSourceDiscoveryRequests("one-piece-en"),
+    },
+  );
+  expect(refused.status).toBe(422);
+  await expect(refused.json()).resolves.toMatchObject({
+    code: "adapter_version_retired",
+    detail: expect.stringContaining("one-piece-en@4"),
+  });
+});
+
 test("authenticated reparse requires the exact Digimon snapshot capture version even when versions share URL authority", async () => {
   const current = requiredSourceAdapter("digimon-en@7");
-  const historical = requiredSourceAdapter("digimon-en@3");
+  // digimon-en@6 is the retained predecessor: still parseable for its own
+  // snapshots, superseded for new collection (ADR 0004).
+  const predecessor = requiredSourceAdapter("digimon-en@6");
   const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
-  const historicalCardListUrl = historical.requestUrlForSurface?.(
+  const predecessorCardListUrl = predecessor.requestUrlForSurface?.(
     "card-list",
   );
-  if (currentDiscoveryUrl === undefined || historicalCardListUrl === undefined) {
+  if (currentDiscoveryUrl === undefined || predecessorCardListUrl === undefined) {
     throw new Error("Digimon versioned URL contracts are unavailable");
   }
-  expect(currentDiscoveryUrl).toBe(historicalCardListUrl);
+  expect(currentDiscoveryUrl).toBe(predecessorCardListUrl);
+  expect(predecessor.retired).toBeUndefined();
+  expect(predecessor.parseBytes).toBeTypeOf("function");
   const superseded = await administrationRequest(
     "/v1/ingestion-runs/evidence",
     "POST",
@@ -180,13 +206,28 @@ test("authenticated reparse requires the exact Digimon snapshot capture version 
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@5",
+        adapter_version: "digimon-en@6",
         idempotency_key: "digimon-mismatched-capture-version-reparse",
       },
     );
     expect(mismatched.status).toBe(422);
     await expect(mismatched.json()).resolves.toMatchObject({
       code: "source_snapshot_adapter_mismatch",
+    });
+
+    // A retired version is refused before the capture-version check: its
+    // parser no longer exists, so it can never reinterpret retained bytes.
+    const retired = await administrationRequest(
+      `/v1/source-snapshots/${snapshot.id}/observations`,
+      "POST",
+      {
+        adapter_version: "digimon-en@5",
+        idempotency_key: "digimon-retired-capture-version-reparse",
+      },
+    );
+    expect(retired.status).toBe(422);
+    await expect(retired.json()).resolves.toMatchObject({
+      code: "adapter_version_retired",
     });
 
     const exact = await administrationRequest(

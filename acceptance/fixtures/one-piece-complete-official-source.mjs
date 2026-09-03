@@ -1,6 +1,7 @@
 const marker = "card-keepr-one-piece-complete-v1";
 const errataMarker = "card-keepr-one-piece-complete-errata-v1";
-// one-piece-en@4 pins its discovery root at the live series redirect target.
+// The live One Piece adapters (one-piece-en@5 and @6) pin their discovery
+// root at the live series redirect target.
 const discoveryRootSeries = "569116";
 
 export function onePieceCompleteOfficialSourceResponse(request) {
@@ -97,7 +98,8 @@ function cardListRoot() {
   );
 }
 
-// one-piece-en@4 makes the pinned series leaf its own discovery root: the
+// The live One Piece adapters make the pinned series leaf their own
+// discovery root: the
 // publisher navigation is repeated once in the header and once in the footer,
 // and the cards seed resolves through the series redirect back to this page.
 function discoveryRoot() {

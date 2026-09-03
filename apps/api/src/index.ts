@@ -1,5 +1,4 @@
-import { WorkerEntrypoint } from "cloudflare:workers";
-import { authenticateCredentialBearer } from "../../../src/http/authentication";
+import { authenticateBearer } from "../../../src/http/authentication";
 import {
   CardReadProblem,
   CatalogueExportReadProblem,
@@ -36,9 +35,6 @@ import {
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
-import {
-  handleApiCredentialConsumerObservation,
-} from "../../../src/credentials/consumer-proof";
 import {
   cardCollectionResponse,
 } from "../../../src/catalogue/card-collection-read";
@@ -96,10 +92,8 @@ async function handleApiRequest(
         }
       }
 
-      const authenticationFailure = await authenticateCredentialBearer(
+      const authenticationFailure = await authenticateBearer(
         request,
-        env.CATALOGUE_DB,
-        "api_bearer_key",
         [env.API_BEARER_KEY, env.API_BEARER_KEY_REPLACEMENT],
         requestId,
         {
@@ -442,31 +436,6 @@ const apiWorker = {
 } satisfies ExportedHandler<Env>;
 
 export default apiWorker;
-
-export class ApiCredentialConsumer extends WorkerEntrypoint<
-  Env
-> {
-  override async fetch(request: Request): Promise<Response> {
-    return (
-      await handleApiCredentialConsumerObservation(
-        request,
-        this.env,
-        async (secret) => {
-          const response = await apiWorker.fetch(
-            new Request(new URL("/health", request.url), {
-              headers: {
-                authorization: `Bearer ${secret}`,
-              },
-            }),
-            this.env,
-          );
-          await response.body?.cancel();
-          return response.status === 200;
-        },
-      )
-    ) ?? new Response(null, { status: 404 });
-  }
-}
 
 function isPrintingImageContent(pathname: string): boolean {
   return (

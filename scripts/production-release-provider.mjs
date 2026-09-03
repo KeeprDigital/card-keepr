@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const api = "https://api.cloudflare.com/client/v4";
@@ -8,34 +7,12 @@ const workerConfigs = {
   "card-keepr-ingestion": "apps/ingestion/wrangler.jsonc",
 };
 const expectedSecrets = {
-  "card-keepr-api": [
-    "API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT",
-    "CREDENTIAL_CONSUMER_PROOF_KEY",
-  ],
+  "card-keepr-api": ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"],
   "card-keepr-ingestion": [
     "ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT",
-    "CREDENTIAL_BOUNDARY_ATTESTATION_KEY", "CREDENTIAL_CONSUMER_PROOF_KEY",
-    "CLOUDFLARE_OBSERVATION_TOKEN", "GITHUB_APP_PRIVATE_KEY",
-    "GITHUB_OBSERVATION_ACTOR", "D1_EXPORT_TOKEN",
-    "D1_EXPORT_TOKEN_REPLACEMENT", "D1_VERIFICATION_TOKEN",
-    "D1_VERIFICATION_TOKEN_REPLACEMENT",
+    "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN",
   ],
 };
-
-export async function verifyCredential(environment, fetchImpl = fetch) {
-  const expectedStatus = environment.EXPECTED_STATUS;
-  const token = environment.CLOUDFLARE_API_TOKEN ?? "";
-  if (expectedStatus === "unusable") {
-    if (token !== "") throw new Error("unusable_slot_not_empty");
-    return { status: "unusable" };
-  }
-  if (expectedStatus !== "usable" || token.length === 0) throw new Error("invalid_expected_status");
-  const fingerprint = `sha256:${createHash("sha256").update(token).digest("hex")}`;
-  if (fingerprint !== environment.EXPECTED_FINGERPRINT) throw new Error("credential_fingerprint_mismatch");
-  const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/tokens/verify`);
-  if (!record(document.result) || document.result.id !== environment.EXPECTED_TOKEN_ID || document.result.status !== "active") throw new Error("credential_identity_mismatch");
-  return { status: "usable", token_id: document.result.id };
-}
 
 export async function verifyProductionTarget(environment, fetchImpl = fetch) {
   const token = required(environment, "CLOUDFLARE_API_TOKEN");
@@ -219,6 +196,5 @@ function record(value) { return value !== null && typeof value === "object" && !
 function account(environment) { return required(environment, "CLOUDFLARE_ACCOUNT_ID"); }
 function required(environment, name) { const value = environment[name]; if (typeof value !== "string" || value.length === 0) throw new Error(`missing_${name.toLowerCase()}`); return value; }
 
-if (process.argv[2] === "credential-proof") process.stdout.write(`${JSON.stringify(await verifyCredential(process.env))}\n`);
-else if (process.argv[2] === "verify-target") process.stdout.write(`${JSON.stringify(await verifyProductionTarget(process.env))}\n`);
+if (process.argv[2] === "verify-target") process.stdout.write(`${JSON.stringify(await verifyProductionTarget(process.env))}\n`);
 else if (process.argv[2] === "observe-bindings") process.stdout.write(`${JSON.stringify(await observeCatalogueBindings(process.env))}\n`);

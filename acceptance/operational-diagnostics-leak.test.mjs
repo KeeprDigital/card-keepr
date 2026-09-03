@@ -59,10 +59,6 @@ test("operational logs and diagnostics retain correlation fields without leaking
     API_BEARER_KEY: `api-bearer-secret-${randomUUID()}`,
     ADMINISTRATION_KEY: `administration-secret-${randomUUID()}`,
     D1_VERIFICATION_TOKEN: `d1-verification-secret-${randomUUID()}`,
-    CREDENTIAL_BOUNDARY_ATTESTATION_KEY: `attestation-secret-${randomUUID()}`,
-    CREDENTIAL_CONSUMER_PROOF_KEY: `consumer-proof-secret-${randomUUID()}`,
-    CLOUDFLARE_OBSERVATION_TOKEN: `observation-token-secret-${randomUUID()}`,
-    GITHUB_APP_PRIVATE_KEY: `github-app-private-secret-${randomUUID()}`,
   };
   const forgedApiToken = `forged-api-bearer-${randomUUID()}`;
   const forgedAdministrationToken = `forged-administration-${randomUUID()}`;
@@ -74,8 +70,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
   const sourceState = join(directory, "source-state");
   await writeFile(
     apiEnv,
-    `API_BEARER_KEY=${secrets.API_BEARER_KEY}\n` +
-      `CREDENTIAL_CONSUMER_PROOF_KEY=${secrets.CREDENTIAL_CONSUMER_PROOF_KEY}\n`,
+    `API_BEARER_KEY=${secrets.API_BEARER_KEY}\n`,
     { mode: 0o600 },
   );
   await writeFile(

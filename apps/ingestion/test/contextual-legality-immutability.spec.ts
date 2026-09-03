@@ -1218,7 +1218,7 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
          game_profile_version, adapter_version, request_plan_json,
          plan_origin
        ) VALUES (?, 'fusion-world-en', 'fusion-world', 'fusion-world@1',
-         'fusion-world-en@3', ?, 'production')`,
+         'fusion-world-en@9', ?, 'production')`,
     ).bind(runId, JSON.stringify({
       requests: retained.map((item) => ({
         id: item.requestId,
@@ -1264,7 +1264,7 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
          ) VALUES (?, ?, ?, ?, 'GET', ?, ?, ?, '[]',
            '2026-08-03T00:00:01.000Z', 200, '{}', ?, ?, ?, ?,
            'fusion-world-en', 'fusion-world', 'fusion-world@1',
-           'fusion-world-en@3', NULL)`,
+           'fusion-world-en@9', NULL)`,
       ).bind(
         item.snapshotId,
         runId,
@@ -1291,7 +1291,7 @@ test("authenticated parsing retains staged live Fusion policy root and detail ob
     const parsed = await request(
       `/v1/source-snapshots/${item.snapshotId}/observations`,
       {
-        adapter_version: "fusion-world-en@3",
+        adapter_version: "fusion-world-en@9",
         idempotency_key: `parse-${item.snapshotId}`,
       },
     );

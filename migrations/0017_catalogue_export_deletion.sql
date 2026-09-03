@@ -240,3 +240,12 @@ BEFORE DELETE ON catalogue_export_deletions
 BEGIN
   SELECT RAISE(ABORT, 'catalogue_export_deletion_operation_immutable');
 END;
+
+-- Schema-level bump added retrospectively (issue #72): the migration
+-- originally shipped without one, so a database that had applied it still
+-- reported level 16. Production already applied this file, so this edit only
+-- affects fresh databases and the per-migration level walk in
+-- acceptance/schema-hygiene.test.mjs.
+UPDATE catalogue_schema_state
+SET migration_level = 17
+WHERE singleton = 1 AND migration_level = 16;

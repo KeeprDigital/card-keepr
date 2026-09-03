@@ -1,12 +1,5 @@
 # Copy to .dev.vars and replace this non-secret type-generation placeholder.
 ADMINISTRATION_KEY=generated-type-placeholder
 ADMINISTRATION_KEY_REPLACEMENT=generated-type-placeholder-replacement
-CREDENTIAL_BOUNDARY_ATTESTATION_KEY=generated-type-placeholder-attestation
-CREDENTIAL_CONSUMER_PROOF_KEY=generated-type-placeholder-consumer-proof
-CLOUDFLARE_OBSERVATION_TOKEN=generated-type-placeholder-cloudflare-observation
-GITHUB_APP_PRIVATE_KEY=generated-type-placeholder-github-app-private-key
-GITHUB_OBSERVATION_ACTOR=keepr-rotation[bot]
 D1_EXPORT_TOKEN=generated-type-placeholder-d1-export
-D1_EXPORT_TOKEN_REPLACEMENT=generated-type-placeholder-d1-export-replacement
 D1_VERIFICATION_TOKEN=generated-type-placeholder-d1-verification
-D1_VERIFICATION_TOKEN_REPLACEMENT=generated-type-placeholder-d1-verification-replacement

@@ -442,10 +442,11 @@ function officialBandaiDataset(
   requestUrl,
   requestSurface = null,
 ) {
-  // digimon-en@5 pins its current and historical restriction publications to
-  // one live URL, so that page must retain identical bytes whichever surface
-  // asked for it — it therefore publishes no surface-specific payload. Older
-  // adapters still reach the historical publication through ?view=history.
+  // The live Digimon adapters (digimon-en@6 and @7) pin their current and
+  // historical restriction publications to one live URL, so that page must
+  // retain identical bytes whichever surface asked for it — it therefore
+  // publishes no surface-specific payload. The ?view=history variant is
+  // retained as a distinct publication for tests that need separate bytes.
   const sharedRestrictionPage = lineage === "digimon-en" &&
     requestUrl?.pathname === "/rule/restriction_card/" &&
     !requestUrl.searchParams.has("view");

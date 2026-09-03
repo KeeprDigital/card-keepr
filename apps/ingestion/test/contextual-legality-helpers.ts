@@ -165,16 +165,16 @@ export function approve(
 }
 
 export function officialAdapterUrl(adapter: string, scenario: string): string {
-  if (adapter === "one-piece-json-document@3") {
+  if (adapter.startsWith("one-piece-")) {
     return `https://en.onepiece-cardgame.com/reconciliation/${scenario}`;
   }
-  if (adapter === "fusion-world-en@2") {
+  if (adapter.startsWith("fusion-world-en@")) {
     return `https://www.dbs-cardgame.com/fw/en/reconciliation/${scenario}`;
   }
-  if (adapter === "digimon-en@2") {
+  if (adapter.startsWith("digimon-en@")) {
     return `https://world.digimoncard.com/reconciliation/${scenario}`;
   }
-  if (adapter === "gundam-en-asia@2") {
+  if (adapter.startsWith("gundam-en-asia@")) {
     return `https://www.gundam-gcg.com/asia-en/reconciliation/${scenario}`;
   }
   return `https://www.gundam-gcg.com/en/reconciliation/${scenario}`;

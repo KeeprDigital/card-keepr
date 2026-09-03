@@ -42,7 +42,6 @@ export async function runCatalogueBackupWorkflow(
       "export, retain, restore, and verify Catalogue D1",
       backupStep,
       async () => {
-        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
         return createVerifiedCatalogueBackup(
           env.CATALOGUE_DB,
           env.BACKUPS,
@@ -53,12 +52,8 @@ export async function runCatalogueBackupWorkflow(
             cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
             catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
             disposableDatabaseId: env.DISPOSABLE_D1_DATABASE_ID,
-            exportToken: slots.export === "a"
-              ? env.D1_EXPORT_TOKEN
-              : env.D1_EXPORT_TOKEN_REPLACEMENT,
-            verificationToken: slots.verification === "a"
-              ? env.D1_VERIFICATION_TOKEN
-              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+            exportToken: env.D1_EXPORT_TOKEN,
+            verificationToken: env.D1_VERIFICATION_TOKEN,
             failedAttemptId: params.failed_attempt_id,
             failedAttemptDigest: params.failed_attempt_digest,
           },
@@ -99,29 +94,4 @@ export async function runCatalogueBackupWorkflow(
       }),
     };
   }
-}
-
-export async function activeD1CredentialSlots(database: D1Database): Promise<{
-  export: "a" | "b";
-  verification: "a" | "b";
-}> {
-  const rows = await database.prepare(
-    `SELECT credential_class, current_consumer_slot
-     FROM credential_rotations
-     WHERE credential_class IN ('d1_export_token', 'd1_verification_token')
-     ORDER BY installed_at DESC`,
-  ).all<{
-    credential_class: "d1_export_token" | "d1_verification_token";
-    current_consumer_slot: "a" | "b";
-  }>();
-  const latest = new Map<string, "a" | "b">();
-  for (const row of rows.results) {
-    if (!latest.has(row.credential_class)) {
-      latest.set(row.credential_class, row.current_consumer_slot);
-    }
-  }
-  return {
-    export: latest.get("d1_export_token") ?? "a",
-    verification: latest.get("d1_verification_token") ?? "a",
-  };
 }

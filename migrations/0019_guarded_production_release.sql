@@ -156,6 +156,8 @@ BEGIN
   SELECT RAISE(ABORT, 'production release transition audit is immutable');
 END;
 
+-- The guard originally read migration_level = 16 because 0017 and 0018
+-- shipped without bumps (issue #72); both now bump, so this expects 18.
 UPDATE catalogue_schema_state
 SET migration_level = 19
-WHERE singleton = 1 AND migration_level = 16;
+WHERE singleton = 1 AND migration_level = 18;

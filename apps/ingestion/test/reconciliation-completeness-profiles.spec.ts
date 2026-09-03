@@ -403,7 +403,7 @@ test("new collection rejects a superseded adapter while retained snapshots repar
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fusion-world-en@7",
+    adapter_version: "fusion-world-en@8",
     idempotency_key: "reject-superseded-production-adapter",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });

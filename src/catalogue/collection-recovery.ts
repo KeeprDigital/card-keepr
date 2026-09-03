@@ -204,3 +204,14 @@ export function workflowAttemptRecord(
       workflow_instance_id: instanceId,
     };
 }
+
+// Deep multi-shard collections poll the completion barrier once a minute;
+// shallow or small collections poll immediately.
+export function collectionBarrierSleepDuration(
+  maximumShardDepth: number,
+  maximumActiveRequestCount: number,
+): "1 minute" | "1 second" {
+  return maximumShardDepth > 1 && maximumActiveRequestCount > 10
+    ? "1 minute"
+    : "1 second";
+}

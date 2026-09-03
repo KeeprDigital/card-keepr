@@ -36,6 +36,27 @@ jobs:
       - run: npm run deploy:dry-run
       - run: npm run test:workers:api
 
+  # Runtime-free catalogue tests (parsers, reconciliation identity, legality,
+  # export, contract checks) run under plain node vitest: no Workers pool, no
+  # wrangler boot, so this job finishes in well under a minute.
+  domain-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/cache@v6
+        id: node-modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+      - run: npm run test:domain
+
   ingestion-tests:
     runs-on: ubuntu-latest
     # A shard normally finishes in ~4 min. The workers pool occasionally

@@ -16,17 +16,16 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /retained_database_id/u);
   assert.match(failure, /failed\.sql/u);
   assert.match(failure, /set \+e[\s\S]*failed_command_status[\s\S]*cleanup_result/u);
-  assert.match(release, /deploy-production:\s*\n\s*if: inputs\.operation == 'credential_probe'/u);
   assert.match(release, /guarded-release:\s*\n\s*if: inputs\.operation == 'production_release'/u);
   assert.match(release, /Observe the binding while recovery remains blocked/u);
   assert.doesNotMatch(release, /\/acceptance|ADMINISTRATION_TOKEN/u);
   assert.doesNotMatch(release, /curl|Authorization:\s*Bearer|--header|-H\s/u);
   assert.doesNotMatch(release, /d1 execute[^\n]*--command/u);
-  const credentialJob = release.split("  guarded-release:")[0];
-  assert.match(credentialJob, /production-release-provider\.mjs credential-proof/u);
-  assert.doesNotMatch(credentialJob, /d1 execute|d1 migrations|wrangler deploy|versions (?:upload|deploy)/u);
+  // The guarded release is the workflow's only job (ADR 0005 removed the
+  // credential-probe job), and it is selected by the operation input alone.
+  assert.equal((release.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).length, 1);
+  assert.match(release, /options: \[production_release\]/u);
   assert.match(release, /validate-dispatch \/tmp\/production-release/u);
-  assert.match(release, /production-release-provider\.mjs credential-proof/u);
   assert.match(release, /production-release-provider\.mjs verify-target/u);
   assert.match(release, /production-release-provider\.mjs observe-bindings/u);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
@@ -59,7 +58,7 @@ test("only the guarded CLI provider can select release mode", () => {
   const cli = readFileSync("cli/production-release.mjs", "utf8");
   const provider = readFileSync("cli/provider-github-release.mjs", "utf8");
   assert.match(cli, /operation: "production_release"/u);
-  assert.doesNotMatch(cli, /secret_slot|credential_probe/u);
+  assert.doesNotMatch(cli, /operation:(?!\s*"production_release")/u);
   assert.match(provider, /inputs\?\.operation !== "production_release"/u);
   assert.equal((provider.match(/export async function dispatchProductionRelease/gu) ?? []).length, 1);
 });
