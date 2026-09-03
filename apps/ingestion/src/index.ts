@@ -1,4 +1,4 @@
-import { authenticateCredentialBearer } from "../../../src/http/authentication";
+import { authenticateBearer } from "../../../src/http/authentication";
 import {
   AdministrationProblem,
   administrationStatus,
@@ -55,22 +55,10 @@ import {
   inspectCatalogueRecovery,
   verifyCatalogueRecovery,
 } from "../../../src/catalogue/recovery";
-import { activeD1CredentialSlots } from "./backup-workflow";
 import {
   resumeEvidenceRun,
   terminateEvidenceCollection,
 } from "./evidence-administration";
-import {
-  CredentialRotationProblem,
-} from "../../../src/catalogue/credential-rotation";
-import {
-  handleCredentialAdministration,
-  handleCredentialExecutionCapability,
-} from "./credential-administration";
-import {
-  credentialConsumerProofRequestHeader,
-  handleCredentialConsumerProof,
-} from "../../../src/credentials/consumer-proof";
 import {
   createCuratedRevision,
   listCuratedRevisions,
@@ -124,54 +112,6 @@ async function handleIngestionRequest(
   requestId: string,
 ): Promise<Response> {
     try {
-      const consumerProof = await handleCredentialConsumerProof(
-        request,
-        env,
-        [
-          "api_bearer_key",
-          "ingestion_admin_key",
-          "d1_export_token",
-          "d1_verification_token",
-        ],
-        async (secret) => {
-          const response = await ingestionWorker.fetch(
-            new Request(new URL("/health", request.url), {
-              headers: {
-                authorization: `Bearer ${secret}`,
-              },
-            }),
-            env,
-            context,
-          );
-          await response.body?.cancel();
-          return response.status === 200;
-        },
-        async (requestToken) => {
-          const response = await env.API_CREDENTIAL_CONSUMER.fetch(
-            new Request("https://card-keepr-api.invalid/health", {
-              headers: {
-                [credentialConsumerProofRequestHeader]: requestToken,
-              },
-            }),
-          );
-          return response.json();
-        },
-      );
-      if (consumerProof !== null) return consumerProof;
-      const executionCapability =
-        await handleCredentialExecutionCapability(
-          request,
-          env.CATALOGUE_DB,
-          administrationObservedAt(request, env),
-          env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
-          env.CREDENTIAL_CONSUMER_PROOF_KEY,
-          env.CLOUDFLARE_OBSERVATION_TOKEN,
-          env.GITHUB_APP_PRIVATE_KEY,
-          env.GITHUB_APP_ID,
-          env.GITHUB_WORKFLOW_ID,
-          env.GITHUB_OBSERVATION_ACTOR,
-        );
-      if (executionCapability !== null) return executionCapability;
       const rateLimited = await rateLimitFailure(
         request,
         env.ADMINISTRATION_RATE_LIMIT,
@@ -179,10 +119,8 @@ async function handleIngestionRequest(
       );
       if (rateLimited !== null) return rateLimited;
 
-      const authenticationFailure = await authenticateCredentialBearer(
+      const authenticationFailure = await authenticateBearer(
         request,
-        env.CATALOGUE_DB,
-        "ingestion_admin_key",
         [
           env.ADMINISTRATION_KEY,
           env.ADMINISTRATION_KEY_REPLACEMENT,
@@ -313,26 +251,6 @@ async function handleIngestionRequest(
           decodeURIComponent(exportDeletionMatch[1]!),
         ));
       }
-
-      const credentialResponse = await handleCredentialAdministration(
-        request,
-        env.CATALOGUE_DB,
-        observedAt,
-        {
-          cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
-          catalogue_d1_database_id: env.CATALOGUE_D1_DATABASE_ID,
-          disposable_d1_database_id:
-            env.DISPOSABLE_D1_DATABASE_ID,
-          github_repository_id: env.GITHUB_REPOSITORY_ID,
-          github_app_id: env.GITHUB_APP_ID,
-          github_installation_id: env.GITHUB_INSTALLATION_ID,
-          github_environment_id: env.GITHUB_ENVIRONMENT_ID,
-          github_workflow_id: env.GITHUB_WORKFLOW_ID,
-        },
-        env.CREDENTIAL_BOUNDARY_ATTESTATION_KEY,
-        env.CREDENTIAL_CONSUMER_PROOF_KEY,
-      );
-      if (credentialResponse !== null) return credentialResponse;
 
       if (
         request.method === "POST" &&
@@ -599,7 +517,6 @@ async function handleIngestionRequest(
             "method must be time_travel or replacement_database.",
           );
         }
-        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
         const document = await beginCatalogueRecovery(
           env.CATALOGUE_DB,
           env.BACKUPS,
@@ -626,9 +543,7 @@ async function handleIngestionRequest(
             observedAt,
             cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
             catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
-            verificationToken: slots.verification === "a"
-              ? env.D1_VERIFICATION_TOKEN
-              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+            verificationToken: env.D1_VERIFICATION_TOKEN,
           },
         );
         return Response.json(document, { status: 201 });
@@ -639,7 +554,6 @@ async function handleIngestionRequest(
       if (request.method === "POST" && recoveryVerificationMatch !== null) {
         const body = await readAdministrationBody(request);
         assertOnlyFields(body, ["target_digest", "idempotency_key"]);
-        const slots = await activeD1CredentialSlots(env.CATALOGUE_DB);
         return Response.json(await verifyCatalogueRecovery(
           env.CATALOGUE_DB,
           env.BACKUPS,
@@ -649,9 +563,7 @@ async function handleIngestionRequest(
             idempotencyKey: requiredString(body, "idempotency_key"),
             observedAt,
             cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-            verificationToken: slots.verification === "a"
-              ? env.D1_VERIFICATION_TOKEN
-              : env.D1_VERIFICATION_TOKEN_REPLACEMENT,
+            verificationToken: env.D1_VERIFICATION_TOKEN,
           },
         ));
       }
@@ -1104,7 +1016,6 @@ async function handleIngestionRequest(
     } catch (error) {
       if (
         error instanceof AdministrationProblem ||
-        error instanceof CredentialRotationProblem ||
         error instanceof CatalogueExportDeletionProblem
       ) {
         return problemResponse({

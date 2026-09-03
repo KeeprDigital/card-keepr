@@ -29,8 +29,8 @@ const target = {
   r2_buckets: ingestionConfig.r2_buckets.map((binding) => binding.bucket_name),
 };
 const secrets = {
-  "card-keepr-api": ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT", "CREDENTIAL_CONSUMER_PROOF_KEY"],
-  "card-keepr-ingestion": ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "CREDENTIAL_BOUNDARY_ATTESTATION_KEY", "CREDENTIAL_CONSUMER_PROOF_KEY", "CLOUDFLARE_OBSERVATION_TOKEN", "GITHUB_APP_PRIVATE_KEY", "GITHUB_OBSERVATION_ACTOR", "D1_EXPORT_TOKEN", "D1_EXPORT_TOKEN_REPLACEMENT", "D1_VERIFICATION_TOKEN", "D1_VERIFICATION_TOKEN_REPLACEMENT"],
+  "card-keepr-api": ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"],
+  "card-keepr-ingestion": ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"],
 };
 
 test("provider proves exact least-privilege Worker inventories and private R2 buckets", async () => {

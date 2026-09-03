@@ -23,8 +23,6 @@ export default defineConfig({
         bindings: {
           API_BEARER_KEY: "vitest-api-key",
           API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
-          CREDENTIAL_CONSUMER_PROOF_KEY:
-            "vitest-consumer-proof-key",
           TEST_MIGRATIONS: migrations,
         },
       },
