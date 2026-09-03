@@ -6,6 +6,7 @@ import {
 } from "./legality-rule";
 import { canonicalJson, sha256Text } from "./serialization";
 import { ifNoneMatchMatches } from "../http/conditional-request";
+import { publicUrl, type PublicBase } from "../http/public-base";
 import { isIsoCalendarDate } from "./calendar-date.ts";
 import { requiredLegalityRegionsForGame } from "./official-source-scope.ts";
 import { maximumLegalityStatusRules } from "./export-limits";
@@ -52,6 +53,7 @@ export class LegalityStatusProblem extends Error {
 export async function contextualLegalityStatusResponse(
   request: Request,
   database: D1Database,
+  base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
   const query = parseQuery(url);
@@ -172,7 +174,7 @@ export async function contextualLegalityStatusResponse(
   const data = regions.map((region) =>
     deriveRegionStatus(card, rules, query, region),
   );
-  const self = `${url.pathname}${url.search}`;
+  const self = publicUrl(base, `${url.pathname}${url.search}`);
   const document = {
     data,
     ...(query.includeEvidence

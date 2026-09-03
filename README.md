@@ -3,8 +3,19 @@
 Card Keepr is a private catalogue service for Bandai Catalogue Data. This first
 production spine runs two separately configured Cloudflare Workers:
 
-- `card-keepr-api` is the authenticated read boundary for Catalogue Consumers.
-- `card-keepr-ingestion` is the separate administration and mutation boundary.
+- `card-keepr-api` is the authenticated read boundary for Catalogue Consumers,
+  served at `https://card.keepr.digital/api`.
+- `card-keepr-ingestion` is the separate administration and mutation boundary,
+  served at `https://card.keepr.digital/ingest`.
+
+Both Workers share one host through zone routes on `keepr.digital` (ADR
+0007). Each `wrangler.jsonc` declares the Worker's public base in
+`PUBLIC_BASE_URL`; the path of that URL is the mount every request must sit
+under, and every link the API emits is an absolute URL built from it. The
+health routes are therefore `https://card.keepr.digital/api/health` and
+`https://card.keepr.digital/ingest/health`, and `/v1/...` routes sit under
+the same prefixes. Requests outside a mount receive `404` before
+authentication.
 
 ## Local development
 
@@ -22,6 +33,11 @@ npm run dev
 
 The API listens on `http://127.0.0.1:8787` and ingestion listens on
 `http://127.0.0.1:8788`. Local D1 and R2 state is emulated by Wrangler.
+The copied `.dev.vars` files set `PUBLIC_BASE_URL` to those local origins,
+which mounts each Worker at its root locally (`.dev.vars` overrides the
+production value in `wrangler.jsonc`, as does `wrangler dev --var
+PUBLIC_BASE_URL:...`). Without that override the local Worker would expect
+the production mount path, for example `http://127.0.0.1:8787/api/health`.
 `migrations/` starts from a single schema baseline, `0001_baseline.sql`,
 which creates the whole schema and its seed rows at schema level 1 (ADR
 0006); every later migration opens with a schema-level guard and bumps the
@@ -41,7 +57,9 @@ npm run keepr -- health --json
 ```
 
 Override `KEEPR_API_URL` and `KEEPR_INGESTION_URL` when inspecting deployed
-runtimes.
+runtimes. Both are base URLs that include the mount path
+(`https://card.keepr.digital/api` and `https://card.keepr.digital/ingest`);
+the CLI appends route paths to them.
 
 The first controlled publication can be exercised without Official Source
 network access:

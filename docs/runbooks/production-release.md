@@ -8,15 +8,26 @@ deployment credentials.
 
 ## Prepare
 
-1. Confirm GitHub's `production` environment reviewers, branch policy, and the
-   Cloudflare deployment token's least-privilege grants outside the repository.
-2. Run `npm test`, `npm run typecheck`, `npm run types:check`, and
+1. Confirm GitHub's `production` environment branch policy and the Cloudflare
+   deployment token's least-privilege grants outside the repository. This
+   repository's billing plan does not support required reviewers on the
+   `production` environment, so the exact confirmation envelope the CLI
+   demands (step 4) is the only human gate before the workflow mutates
+   production.
+2. Confirm the public mounts' prerequisites (ADR 0007). Zone routes do not
+   create DNS: a proxied placeholder record for `card.keepr.digital` must
+   exist in the `keepr.digital` zone (an `AAAA` record to `100::`, proxied)
+   before the first release, or the routes never receive traffic. The
+   `production` environment secret `API_BASE_URL` must be the public API
+   base, `https://card.keepr.digital/api`, because the smoke checks append
+   route paths to it.
+3. Run `npm test`, `npm run typecheck`, `npm run types:check`, and
    `npm run deploy:dry-run` at the exact Production Release SHA.
-3. Run `keepr status --json`. Production Release preflight must report the expected
+4. Run `keepr status --json`. Production Release preflight must report the expected
    schema level, idle mutation state, a verified current-revision backup and
    usable bookmark, complete current-plus-two export/recovery evidence, exact
    production bindings, and representative smoke targets.
-4. Copy the complete confirmation JSON printed by a deliberately unconfirmed
+5. Copy the complete confirmation JSON printed by a deliberately unconfirmed
    command. Do not edit or reorder it. Supply the GitHub Actions-write token in
    `KEEPR_GITHUB_RELEASE_TOKEN`; deployment credentials never enter the CLI.
 
@@ -47,9 +58,16 @@ revision window before mutation. It acquires the D1 Production Release lease, ap
 checked-in forward migrations, uploads tagged immutable Worker versions,
 verifies that each uploaded version binds exactly the checked-in vars,
 bindings, and expected secrets, activates the API and ingestion pair,
-observes the resulting binding, and runs
-black-box health/auth/revision/Card/Printing/search/Legality Status/export/image
-checks.
+deploys both Workers' route triggers, observes the resulting binding, and
+runs black-box health/auth/revision/Card/Printing/search/Legality
+Status/export/image checks against `API_BASE_URL`.
+
+Versions carry code, vars, and bindings, but the zone routes that mount the
+Workers at `card.keepr.digital/api` and `/ingest` are script-level triggers
+that `versions upload` and `versions deploy` never apply. The workflow
+therefore runs `wrangler triggers deploy` for each release configuration
+immediately after activation; a route change ships through the guarded
+release like any other configuration change.
 
 ### Binding inventory checks
 
@@ -99,7 +117,7 @@ compatible roll-forward.
 
 ## Environment-only verification
 
-Repository tests cannot prove GitHub reviewer policy, organization workflows,
+Repository tests cannot prove GitHub environment policy, organization workflows,
 live secret scope, token grants, D1 location/bookmark usability, R2 public
 access settings, traffic propagation, or production observability acceptance.
 Verify these in GitHub and Cloudflare before approving the workflow run and

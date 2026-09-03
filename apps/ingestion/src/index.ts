@@ -77,6 +77,13 @@ import {
 } from "../../../src/catalogue/catalogue-export-deletion";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import {
+  absoluteDocumentLinks,
+  mountedRequest,
+  publicBase,
+  routePath,
+  type PublicBase,
+} from "../../../src/http/public-base";
+import {
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
 } from "../../../src/catalogue/source-evidence-capture";
@@ -110,6 +117,7 @@ async function handleIngestionRequest(
   env: Env,
   context: ExecutionContext | undefined,
   requestId: string,
+  base: PublicBase,
 ): Promise<Response> {
     try {
       const rateLimited = await rateLimitFailure(
@@ -899,7 +907,7 @@ async function handleIngestionRequest(
             context?.waitUntil(dispatch().catch(reportDispatchFailure));
           }
         }
-        return Response.json(result, {
+        return Response.json(absoluteDocumentLinks(result, base), {
           status: administrationResultStatus(result, 200),
         });
       }
@@ -930,7 +938,7 @@ async function handleIngestionRequest(
           },
           observedAt,
         );
-        return Response.json(result, {
+        return Response.json(absoluteDocumentLinks(result, base), {
           status: administrationResultStatus(result, 200),
         });
       }
@@ -953,7 +961,7 @@ async function handleIngestionRequest(
           },
           observedAt,
         );
-        return Response.json(result, {
+        return Response.json(absoluteDocumentLinks(result, base), {
           status: administrationResultStatus(result, 201),
         });
       }
@@ -977,7 +985,7 @@ async function handleIngestionRequest(
           },
           observedAt,
         );
-        return Response.json(result, {
+        return Response.json(absoluteDocumentLinks(result, base), {
           status: administrationResultStatus(result, 200),
         });
       }
@@ -1042,12 +1050,40 @@ const ingestionWorker = {
     env: Env,
     context?: ExecutionContext,
   ): Promise<Response> {
+    // The worker is mounted at the path of PUBLIC_BASE_URL (ADR 0007). A
+    // request outside the mount is not routed at all: no rate limit, no
+    // authentication, just a 404 problem. Everything under the mount is
+    // handled as if the worker served the root.
+    const base = publicBase(env);
+    const route = routePath(new URL(request.url), base.basePath);
+    if (route === null) {
+      return withOperationalRequestLog(
+        "ingestion",
+        request,
+        env,
+        async (_observedEnv, requestId) =>
+          problemResponse({
+            requestId,
+            status: 404,
+            code: "not_found",
+            title: "Not found",
+            detail: "The requested resource does not exist.",
+          }),
+      );
+    }
+    const mounted = mountedRequest(request, route);
     return withOperationalRequestLog(
       "ingestion",
-      request,
+      mounted,
       env,
       (observedEnv, requestId) =>
-        handleIngestionRequest(request, observedEnv, context, requestId),
+        handleIngestionRequest(
+          mounted,
+          observedEnv,
+          context,
+          requestId,
+          base,
+        ),
     );
   },
 } satisfies ExportedHandler<Env>;

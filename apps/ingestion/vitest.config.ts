@@ -222,6 +222,9 @@ export default defineConfig({
       miniflare: {
         d1Databases: ["SCRATCH_DB"],
         bindings: {
+          // Tests mount at the root; the mounted-path behaviour is covered
+          // by the public-mount spec, which overrides the base per request.
+          PUBLIC_BASE_URL: "http://127.0.0.1:8788",
           SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
           // The test suite is hermetic: it pins the placeholder resource
           // identifiers its Cloudflare API mocks and fixtures assert on,

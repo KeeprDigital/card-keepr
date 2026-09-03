@@ -3,3 +3,6 @@ ADMINISTRATION_KEY=generated-type-placeholder
 ADMINISTRATION_KEY_REPLACEMENT=generated-type-placeholder-replacement
 D1_EXPORT_TOKEN=generated-type-placeholder-d1-export
 D1_VERIFICATION_TOKEN=generated-type-placeholder-d1-verification
+# Local dev serves the Worker at its root; production mounts it under the
+# path in wrangler.jsonc. Override PUBLIC_BASE_URL only for local development.
+PUBLIC_BASE_URL=http://127.0.0.1:8788

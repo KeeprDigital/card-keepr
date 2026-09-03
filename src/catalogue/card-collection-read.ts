@@ -1,5 +1,10 @@
 import { ifNoneMatchMatches } from "../http/conditional-request";
 import { problemResponse } from "../http/problem";
+import {
+  absoluteDocumentLinks,
+  publicUrl,
+  type PublicBase,
+} from "../http/public-base";
 import { cardSearchFtsQuery, cardSearchQuery } from "./card-search";
 
 type CardRow = {
@@ -46,6 +51,7 @@ export async function cardCollectionResponse(
   database: D1Database,
   request: Request,
   requestId: string,
+  base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
   const filters = parseFilters(url, requestId);
@@ -71,7 +77,7 @@ export async function cardCollectionResponse(
   if (revision === null) {
     return cursor === null
       ? catalogueQueryUnavailable(requestId)
-      : cursorUnavailable(requestId);
+      : cursorUnavailable(requestId, base);
   }
 
   const etag = `"cards:${revision.id}:${await digestFilters(url.search)}"`;
@@ -108,13 +114,15 @@ export async function cardCollectionResponse(
           })
         : null;
     const serialized = JSON.stringify({
-      data: pageRows.map((row) => JSON.parse(row.summary_json)),
+      data: pageRows.map((row) =>
+        absoluteDocumentLinks(JSON.parse(row.summary_json), base)
+      ),
       meta: {
         catalogue_revision_id: revision.id,
         published_at: revision.publishedAt,
       },
       page: { limit: filters.limit, next_cursor: nextCursor },
-      links: { self: `/v1/cards${url.search}` },
+      links: { self: publicUrl(base, `/v1/cards${url.search}`) },
     });
     if (encoder.encode(serialized).byteLength <= maximumCollectionResponseBytes) {
       return new Response(serialized, {
@@ -574,14 +582,14 @@ function invalidCursor(requestId: string): Response {
   });
 }
 
-function cursorUnavailable(requestId: string): Response {
+function cursorUnavailable(requestId: string, base: PublicBase): Response {
   return problemResponse({
     requestId,
     status: 409,
     code: "cursor_revision_unavailable",
     title: "Cursor revision unavailable",
     detail: "Cursor revision unavailable",
-    extensions: { links: { collection: "/v1/cards" } },
+    extensions: { links: { collection: publicUrl(base, "/v1/cards") } },
   });
 }
 

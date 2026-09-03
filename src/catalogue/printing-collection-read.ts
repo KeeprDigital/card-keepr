@@ -1,4 +1,9 @@
 import { ifNoneMatch } from "../http/conditional";
+import {
+  absoluteDocumentLinks,
+  publicUrl,
+  type PublicBase,
+} from "../http/public-base";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
@@ -50,6 +55,7 @@ export class PrintingCollectionReadProblem extends Error {
 export async function currentPrintingsResponse(
   database: D1Database,
   request: Request,
+  base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
   const state = await database
@@ -218,7 +224,7 @@ export async function currentPrintingsResponse(
   }));
   const data = selected
     .slice(0, limit)
-    .map(({ document }) => document);
+    .map(({ document }) => absoluteDocumentLinks(document, base));
   const next =
     selected.length > limit
       ? encodeCursor({
@@ -242,15 +248,18 @@ export async function currentPrintingsResponse(
       },
       page: { limit, next_cursor: next },
       links: {
-        self: canonicalSelf(url.pathname, {
-          cardId,
-          game,
-          rarity,
-          productId,
-          releaseRegion,
-          limit,
-          after: url.searchParams.get("after"),
-        }),
+        self: publicUrl(
+          base,
+          canonicalSelf(url.pathname, {
+            cardId,
+            game,
+            rarity,
+            productId,
+            releaseRegion,
+            limit,
+            after: url.searchParams.get("after"),
+          }),
+        ),
       },
     },
     { headers: printingHeaders(revisionId, etag) },

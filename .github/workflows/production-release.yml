@@ -197,6 +197,13 @@ jobs:
           set -euo pipefail
           npx wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
           npx wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
+      - name: Deploy the route triggers
+        # Versions carry code, vars, and bindings; zone routes are script-level
+        # triggers that versions upload/deploy never apply (issue #123).
+        run: |
+          set -euo pipefail
+          npx wrangler triggers deploy --config "${API_RELEASE_CONFIG}"
+          npx wrangler triggers deploy --config "${INGESTION_RELEASE_CONFIG}"
       - name: Observe the binding while recovery remains blocked
         run: |
           set -euo pipefail

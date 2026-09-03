@@ -14,6 +14,10 @@ export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
 };
 
+// The vitest pool mounts the API at the root of this local base (issue
+// #123); every emitted link is absolute on it.
+export const apiPublicBase = "http://127.0.0.1:8787";
+
 export function installApiSuite(): void {
   beforeEach(async () => {
     await applyD1Migrations(

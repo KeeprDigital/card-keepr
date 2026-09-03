@@ -1,6 +1,7 @@
 import {
   exitCodeForStatus,
   parseOptions,
+  runtimeUrl,
   writeCliFailure,
 } from "./command-support.mjs";
 
@@ -61,7 +62,7 @@ async function apiRequest(environment, json, pathname) {
   }
   let response;
   try {
-    response = await fetch(new URL(pathname, configuration.url), {
+    response = await fetch(runtimeUrl(configuration.url, pathname), {
       headers: {
         authorization: `Bearer ${configuration.key}`,
       },

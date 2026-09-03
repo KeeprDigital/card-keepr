@@ -155,7 +155,7 @@
       "additionalProperties": false,
       "required": ["self"],
       "properties": {
-        "self": { "type": "string", "pattern": "^/v1/" }
+        "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/" }
       }
     },
     "Page": {
@@ -417,10 +417,10 @@
           "additionalProperties": false,
           "required": ["self", "content"],
           "properties": {
-            "self": { "type": "string", "pattern": "^/v1/" },
+            "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/" },
             "content": {
               "type": "string",
-              "pattern": "^/v1/printing-images/[^/]+/content$"
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/printing-images/[^/]+/content$"
             }
           }
         }
@@ -751,7 +751,7 @@
             },
             "current_export": {
               "type": "string",
-              "pattern": "^/v1/catalogue-exports/"
+              "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue-exports/"
             }
           }
         },
@@ -760,11 +760,11 @@
           "type": "object",
           "required": ["self", "cards", "printings", "products", "catalogue_exports"],
           "properties": {
-            "self": { "const": "/v1/catalogue" },
-            "cards": { "const": "/v1/cards" },
-            "printings": { "const": "/v1/printings" },
-            "products": { "const": "/v1/products" },
-            "catalogue_exports": { "const": "/v1/catalogue-exports" }
+            "self": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue$" },
+            "cards": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/cards$" },
+            "printings": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/printings$" },
+            "products": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/products$" },
+            "catalogue_exports": { "type": "string", "pattern": "^(https?://[^/?#]+)?(/[^?#]*)?/v1/catalogue-exports$" }
           },
           "additionalProperties": false
         }

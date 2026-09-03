@@ -10,6 +10,7 @@ import { runCatalogueCommand } from "./catalogue.mjs";
 import {
   exitCodeForStatus,
   parseOptions,
+  runtimeUrl,
   writeCliFailure as writeFailure,
 } from "./command-support.mjs";
 import { runLegalityStatusCommand } from "./contextual-legality.mjs";
@@ -1319,7 +1320,7 @@ async function fetchAdministrationDocument(
   }
   let response;
   try {
-    response = await fetch(new URL(pathname, configuration.url), {
+    response = await fetch(runtimeUrl(configuration.url, pathname), {
       method,
       headers: {
         authorization: `Bearer ${configuration.key}`,
@@ -2470,7 +2471,7 @@ function safeDiagnosticCount(value) {
 async function checkRuntime(runtime) {
   let response;
   try {
-    response = await fetch(new URL("/health", runtime.url), {
+    response = await fetch(runtimeUrl(runtime.url, "/health"), {
       headers: {
         authorization: `Bearer ${runtime.key}`,
       },

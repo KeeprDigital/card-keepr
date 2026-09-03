@@ -20,6 +20,9 @@ export default defineConfig({
       },
       miniflare: {
         bindings: {
+          // Tests mount at the root; the mounted-path behaviour is covered
+          // by the public-mount spec, which overrides the base per request.
+          PUBLIC_BASE_URL: "http://127.0.0.1:8787",
           API_BEARER_KEY: "vitest-api-key",
           API_BEARER_KEY_REPLACEMENT: "vitest-api-key-replacement-slot",
           TEST_MIGRATIONS: migrations,

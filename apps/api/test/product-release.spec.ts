@@ -7,6 +7,7 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test } from "vitest";
+import { apiPublicBase } from "./api-fixtures";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import {
   catalogueCandidateContract,
@@ -1001,7 +1002,13 @@ test("Product detail returns revision-pinned immutable provenance and disagreeme
     expect(response.status).toBe(200);
     const document = await response.json();
     expectSchema("ProductDocument", document);
-    expect(document).toMatchObject(unresolved);
+    expect(document).toMatchObject({
+      ...unresolved,
+      data: {
+        ...unresolved.data,
+        links: { self: `${apiPublicBase}/v1/products/product_unresolved` },
+      },
+    });
   } finally {
     await testEnv.CATALOGUE_DB.prepare(
       `DELETE FROM revision_products
@@ -1306,7 +1313,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   expect(archived.status).toBe(409);
   await expect(archived.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/products" },
+    links: { collection: `${apiPublicBase}/v1/products` },
   });
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_query_revisions SET state = 'available'
@@ -1324,7 +1331,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/products" },
+    links: { collection: `${apiPublicBase}/v1/products` },
   });
   const wrongRoute = encodeCursor({ ...forged, route: "/v1/cards" });
   const rejected = await api(
@@ -1536,7 +1543,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/printings" },
+    links: { collection: `${apiPublicBase}/v1/printings` },
   });
   await testEnv.CATALOGUE_DB.prepare(
     `UPDATE catalogue_query_revisions SET state = 'available'

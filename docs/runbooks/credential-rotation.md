@@ -28,8 +28,8 @@ neither observed nor logged by the worker; #76 tracks their runbook.
    account, and export the deployed runtime URLs plus the current keys:
 
 ```sh
-export KEEPR_API_URL='https://<api-host>'
-export KEEPR_INGESTION_URL='https://<ingestion-host>'
+export KEEPR_API_URL='https://card.keepr.digital/api'
+export KEEPR_INGESTION_URL='https://card.keepr.digital/ingest'
 export KEEPR_API_KEY='<current API bearer key>'
 export KEEPR_ADMINISTRATION_KEY='<current administration key>'
 npm run keepr -- health --json
@@ -63,7 +63,10 @@ key is untouched, so existing Catalogue Consumers and operators keep working.
 ## Verify with a health call
 
 The health route authenticates like every other route, so a `200` proves the
-replacement is live in that worker's bindings:
+replacement is live in that worker's bindings. Each worker is mounted under
+the path of its base URL, so the health routes are
+`https://card.keepr.digital/ingest/health` and
+`https://card.keepr.digital/api/health`:
 
 ```sh
 curl -fsS -H "Authorization: Bearer $REPLACEMENT" "$KEEPR_INGESTION_URL/health"
