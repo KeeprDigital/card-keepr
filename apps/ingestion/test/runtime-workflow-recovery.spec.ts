@@ -247,6 +247,65 @@ test("a terminated parent Workflow recovers with its own safe reason", async () 
   expect(completed.snapshots).toHaveLength(1);
 });
 
+test("a collecting run whose parent Workflow died can be terminated without resuming it", async () => {
+  const run = await createCollection(
+    "workflow_terminated_termination_001",
+    "https://official-source.invalid/cards",
+  );
+  await holdParentAtRecordStep();
+  const started = await resumeDocument(run.id);
+  expect(started.status).toBe(202);
+  const parentId = `evidence-${run.id}`;
+
+  // A live parent keeps the run collecting: termination is still refused.
+  const refused = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/termination`,
+    "POST",
+    { idempotency_key: "workflow_terminated_termination_refused_001" },
+  );
+  expect(refused.status).toBe(409);
+  await expect(refused.json()).resolves.toMatchObject({
+    code: "ingestion_run_not_paused",
+  });
+
+  await (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).terminate();
+  await waitForWorkflowStatus(
+    parentId,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    "terminated",
+    20_000,
+  );
+  await releaseParentRecordStep();
+
+  // The dead parent is observed, the Workflow Pause is recorded, and the
+  // same call terminates the run: no resume, no new attempt.
+  const terminated = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/termination`,
+    "POST",
+    { idempotency_key: "workflow_terminated_termination_001" },
+  );
+  expect(terminated.status).toBe(200);
+  await expect(terminated.json()).resolves.toMatchObject({
+    state: "failed",
+    failure_code: "ingestion_run_terminated",
+    active_run_released: true,
+  });
+  const pauses = await env.CATALOGUE_DB.prepare(
+    `SELECT pause_reason, workflow_instance_id, workflow_status
+     FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ?`,
+  ).bind(run.id).all<{ pause_reason: string; workflow_instance_id: string; workflow_status: string }>();
+  expect(pauses.results).toEqual([{
+    pause_reason: "source_workflow_terminated",
+    workflow_instance_id: parentId,
+    workflow_status: "terminated",
+  }]);
+  const attempts = await env.CATALOGUE_DB.prepare(
+    "SELECT count(*) AS count FROM ingestion_workflow_attempts WHERE ingestion_run_id = ? AND workflow_kind = 'parent'",
+  ).bind(run.id).first<{ count: number }>();
+  expect(attempts?.count).toBe(1);
+});
+
 test("a bound but never-created parent instance is recreated under its own identity", async () => {
   const run = await createCollection(
     "workflow_missing_instance_001",
