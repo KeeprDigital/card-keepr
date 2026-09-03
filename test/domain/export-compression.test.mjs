@@ -41,16 +41,16 @@ test("component export validation rejects a valid record from the wrong componen
   assert.doesNotThrow(() => verifyExportRecord(supportedGame));
   assert.throws(
     () => verifyComponentExportRecord(
-      "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/ProductRecord",
+      "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord",
       supportedGame,
     ),
     /component record failed schema verification/u,
   );
 });
 
-test("v3 Legality Rule component validation enforces effect and contextual scope invariants", () => {
+test("Legality Rule component validation enforces effect and contextual scope invariants", () => {
   const uri =
-    "https://card-keepr.invalid/schemas/catalogue-export-record@3#/$defs/LegalityRuleRecord";
+    "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/LegalityRuleRecord";
   const pointer = "/observations/0/value/legality_rules/0";
   const base = {
     type: "legality_rule",

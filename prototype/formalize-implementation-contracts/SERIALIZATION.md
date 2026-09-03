@@ -7,22 +7,19 @@ component for every component declared by that schema version. Empty components
 are present with zero records. A successful no-change Ingestion Run produces no
 export.
 
-New exports use manifest schema major 4 with the
-`card-keepr-catalogue-export-manifest@4` format and canonical
-`https://card-keepr.invalid/schemas/catalogue-export-manifest@4` manifest
+Exports use manifest schema major 5 with the
+`card-keepr-catalogue-export-manifest@5` format and canonical
+`https://card-keepr.invalid/schemas/catalogue-export-manifest@5` manifest
 schema URI. Every component advertises its canonical
-`https://card-keepr.invalid/schemas/catalogue-export-record@4` URI with its
+`https://card-keepr.invalid/schemas/catalogue-export-record@5` URI with its
 exact record `$defs` fragment. The `legality-rules` component's
 `LegalityRuleRecord` retains both the Official Source
 identity, the exact normalized discriminated `effect` with every operand,
 source lineage and observation provenance, and rule lifecycle. The lifecycle is
 carried on the rule itself so rules without affected Card IDs remain auditable;
 card-scoped rules additionally retain their `legality-rule-card` relationships.
-Major 4 additionally carries discriminated curated targets and evidence and
-requires closed relationship endpoints. Separately named schema-major-1,
-schema-major-2, and schema-major-3 manifests and record schemas remain
-byte-identical and available for revision-addressed historical artifacts; they
-are never referenced by a new v4 manifest or rewritten during the upgrade.
+The schema also carries discriminated curated targets and evidence, requires
+closed relationship endpoints, and expresses unresolved target scope.
 
 Identifiers that are serialized as provenance are stable products of the
 public idempotent operation. Production Source Evidence run IDs are a
@@ -42,7 +39,7 @@ conflict.
 Each component contains exactly one JSON object per line, validated against the
 `record_schema` URI recorded in its manifest entry.
 
-The v4 component order is:
+The component order is:
 
 1. `supported-games`
 2. `game-profiles`
@@ -58,17 +55,15 @@ The v4 component order is:
 
 ## Export schema compatibility
 
-Export schema majors are immutable compatibility contracts. Major 2 added
-Product, Release, Distribution Context, and typed game-profile properties to
-major 1. Major 3 adds the complete normalized Legality Rule `effect`, source
-provenance, and lifecycle required for exact contextual legality. Major 4 adds
-strictly typed curated provenance and curated relationship records without
-changing the immutable major-3 contract. Publishers emit
-`card-keepr-catalogue-export-manifest@4` and
-`catalogue-export-record@4` component schema URIs. Consumers must select a
-decoder by `export_schema_major` and URI and must never validate a component
-with a different major. The historical major-1, major-2, and major-3 schemas
-remain checked in byte-identically for revision-addressed exports.
+Before Go-Live exactly one export schema major exists (ADR 0008): changes edit
+the major-5 schema in place, no earlier major is kept readable or checked in,
+and exports produced under an earlier shape are regenerated rather than
+migrated. Publishers emit `card-keepr-catalogue-export-manifest@5` and
+`catalogue-export-record@5` component schema URIs, and the validator accepts
+only that major. Consumers must select a decoder by `export_schema_major` and
+URI and must never validate a component with a different major. From Go-Live,
+export schema majors become immutable compatibility contracts and earlier
+majors stay readable (ADRs 0001 to 0003).
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are
@@ -125,9 +120,8 @@ gzip member. An immutable R2 component key is derived from
 
 ## Manifest
 
-New manifests validate against the canonical v3 schema at
-`schemas/catalogue-export-manifest.schema.json`; historical v1 and v2 manifests
-validate against their explicitly suffixed schema files. Consumers
+Manifests validate against `schemas/catalogue-export-manifest-v5.schema.json`
+and records against `schemas/catalogue-export-record-v5.schema.json`. Consumers
 must resolve each component's advertised `record_schema` URI rather than infer
 it from the manifest major. The `components` array follows the fixed component
 order above. The manifest is canonical JSON under the same rules, followed by
