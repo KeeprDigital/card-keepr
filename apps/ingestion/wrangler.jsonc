@@ -14,7 +14,7 @@
     "SOURCE_HOST_PACING_MODE": "production",
     "SOURCE_HOST_PACING_INTERVAL_MS": "500",
     "CLOUDFLARE_ACCOUNT_ID": "3ec389380c7b82e6a172e6f351d4aad9",
-    "CATALOGUE_D1_DATABASE_ID": "f20a04ff-5605-4220-b85f-77098b2b0d6f",
+    "CATALOGUE_D1_DATABASE_ID": "2469f888-1530-4bef-bc58-17dc298bb598",
     "DISPOSABLE_D1_DATABASE_ID": "cd5807b4-cde9-44ea-8a37-e650d1182ee8"
   },
   "placement": {
@@ -53,7 +53,7 @@
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
-      "database_id": "f20a04ff-5605-4220-b85f-77098b2b0d6f",
+      "database_id": "2469f888-1530-4bef-bc58-17dc298bb598",
       "migrations_dir": "../../migrations"
     }
   ],
