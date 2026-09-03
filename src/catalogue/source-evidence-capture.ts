@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AdministrationProblem } from "./ingestion";
-import { requiredSourceAdapter } from "./source-adapters";
+import { requiredLiveSourceAdapter } from "./source-adapters";
 import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   completeOfficialCollectionRequestsFromDiscovery,
@@ -546,7 +546,7 @@ export async function capturePreparedAttempt(
       evidenceObjects,
       operation.content_object_key,
       response,
-      requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
+      requiredLiveSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
     );
     await database
       .prepare(
@@ -754,7 +754,7 @@ export async function parseCapturedRequest(
         idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
       },
     );
-    const adapter = requiredSourceAdapter(evidencePlan.adapter_version);
+    const adapter = requiredLiveSourceAdapter(evidencePlan.adapter_version);
     const discovered = await discoverSnapshotRequests(
       database,
       evidenceObjects,

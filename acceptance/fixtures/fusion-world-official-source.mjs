@@ -7,7 +7,8 @@ import {
 } from "../../apps/ingestion/test/production-source-fixture-routing.ts";
 
 const fixtureMarker = "card-keepr-acceptance-fusion-world-issue-32";
-// fusion-world-en@5 partitions the card search by publisher category
+// The live Fusion World adapters (fusion-world-en@8 and @9) partition the
+// card search by publisher category
 // ("Filter by series") instead of card_type/colour/cost checkboxes.
 const selectedCategory = "583301";
 const siblingCategory = "583302";

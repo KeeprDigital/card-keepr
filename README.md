@@ -109,7 +109,9 @@ releases the active-run reservation.
 A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with
-`snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@1`.
+`snapshot reparse --snapshot-id SNAPSHOT_ID --adapter one-piece-en@6`. Only
+the exact capturing version may reparse a snapshot, and a retired Source
+Adapter Version (ADR 0004) is refused with `adapter_version_retired`.
 Reconciliation is an authenticated owner action. Before sending the mutation,
 the CLI resolves the named production Ingestion Run, its bound Catalogue
 Revision, and the exact Cloudflare account, Worker scripts, D1 databases, and

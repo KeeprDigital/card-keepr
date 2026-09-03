@@ -67,17 +67,20 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-`one-piece-en@4` through `@6`, `digimon-en@5` through `@7`, and the
-Gundam `@5` through `@7` versions explicitly
-own both Catalogue and standalone Official Errata reconciliation areas. A
-successful run records freshness independently for `cards-and-printings` and
-`errata`; neither area is inferred from the adapter version string.
-`fusion-world-en@5` and later own Catalogue coverage only: the
-live Fusion World EN site no longer publishes a Card Errata surface (its
-former `/fw/en/rules/errata-card/` URL returns 404 and is retained as
-negative evidence).
+`one-piece-en@5` and `@6`, `digimon-en@6` and `@7`, and the Gundam `@6`
+and `@7` versions explicitly own both Catalogue and standalone Official
+Errata reconciliation areas. A successful run records freshness
+independently for `cards-and-printings` and `errata`; neither area is
+inferred from the adapter version string. The reconciliation areas are
+registration data declared beside each version (live versions on their
+lineage contract, retired versions in
+`src/catalogue/retired-source-adapter-versions.ts`). `fusion-world-en@8`
+and `@9` own Catalogue coverage only: the live Fusion World EN site no
+longer publishes a Card Errata surface (its former
+`/fw/en/rules/errata-card/` URL returns 404).
 
-The `@5`/`@6` generation additionally reads the live product detail pages:
+The live-product generation (`one-piece-en@5`, `digimon-en@6`, the Gundam
+`@6` versions, and every later version) reads the live product detail pages:
 every game now publishes its product identity through the document title
 (the leading `h1` is the site logo), official codes are demonstrated as
 bracketed title suffixes, and the listings sweep accessory publications.
@@ -86,18 +89,23 @@ Card-associated publications are promoted to Products; accessory pages
 `non-card:accessory` distribution-context evidence instead of being skipped
 by URL vocabulary or promoted to Products.
 
-The earlier production versions (`one-piece-en@1` through `one-piece-en@5`,
-`fusion-world-en@2` through `fusion-world-en@6`,
-`digimon-en@2` through `digimon-en@6`, and the Gundam `@2` through `@6`
-versions) remain
-registered with their original parser contracts only for explicit reprocessing
-of retained Source Snapshots. New production Evidence Plans accept only the
-active registrations listed above. Reprocessing retained bytes through an
-earlier identity cannot gain Legality Rule observations; a non-empty legality
-sidecar still fails closed. Synthetic fixture adapters follow the same
-append-only rule: One Piece `@3` and the other games' `@2` versions are the
-legality-aware identities, while prior fixture versions retain their original
-behavior.
+Parser implementation is retained only for the active version and its
+immediate predecessor on each Source Lineage (`one-piece-en@5`,
+`fusion-world-en@8`, `digimon-en@6`, and the Gundam `@6` versions are the
+predecessors). New production Evidence Plans accept only the active
+registrations listed above; a predecessor may still reparse the Source
+Snapshots it captured. Every older production version (`one-piece-en@1`
+through `@4`, `fusion-world-en@2` through `@7`, `digimon-en@2` through
+`@5`, and the Gundam `@2` through `@5` versions) is retired under ADR
+0004: it remains registered with its immutable parser contract so retained
+Source Observation Sets, Evidence Plans, and Ingestion Runs stay
+attributable, but it carries no parser and the runtime refuses to capture
+or parse under it with `adapter_version_retired`. Reparsing retained Source
+Snapshots is done by registering a new version, never by reviving a retired
+one; see `docs/runbooks/adapter-version-retirement.md`. Synthetic fixture
+adapters follow the append-only rule: One Piece `@3` and the other games'
+`@2` versions are the legality-aware identities, while prior fixture
+versions retain their original behavior.
 
 An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
 separate plan for every selected Source Lineage. Each complete production plan

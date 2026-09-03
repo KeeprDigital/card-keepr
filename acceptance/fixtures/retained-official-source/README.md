@@ -13,11 +13,11 @@ full response size and digest, and the retained-range digest. Tests decode the
 bytes, verify `body_sha256`, and pass those exact bytes to the production
 adapter.
 
-The current Fusion World URL registered by the earlier adapter contract now
-returns 404. Its complete response is retained as explicit negative evidence;
-the current publisher-linked Rules page is retained separately. These files
-are evidence snapshots, not synthetic success envelopes and not rewritten
-HTML examples.
+These files are evidence snapshots, not synthetic success envelopes and not
+rewritten HTML examples. Under ADR 0004 every fixture is exercised against
+the live Source Adapter Versions only (the active version and its retained
+predecessor per Source Lineage); fixtures that only a retired parser
+generation could read are removed together with that generation.
 
 `one-piece-en-card-list.json` retains the complete live one-result Card List
 response for the publisher's `series=569001&freewords=ST01-001` query. It
@@ -113,8 +113,8 @@ page shapes (issue #55):
   `/fw/en/products/` hub (byte-identical to the bytes the failing run
   retained), whose AVAILABLE NOW / COMING SOON statuses publish as anchored
   `id="available"` / `id="comingsoon"` sections with an exact anchor-list
-  navigation instead of the status-attributed markup the frozen generation
-  required. `fusion-world-en-products-page2.json` and
+  navigation instead of the status-attributed markup the
+  pre-live-shape generation required. `fusion-world-en-products-page2.json` and
   `fusion-world-en-products-starter-tag.json` retain a paginated page and a
   tag-filtered leaf proving the same section shape across the discovered
   listing URLs.
@@ -155,8 +155,7 @@ than capture time or article recency:
   open-predicate group ("a Unit card that is Lv.2 with cost 1, 2 AP, and
   2 HP, and without effects", future printings included) into one explicit
   `unresolved` rule whose scope names both `effective_interval` and
-  `target_scope`; earlier generations keep failing closed on the compound
-  policy.
+  `target_scope`.
 
 The issue-58 captures were verified on 2026-08-11 UTC (cold, polite user
 agent, no redirect following):

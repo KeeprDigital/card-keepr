@@ -844,15 +844,8 @@ function isLegalitySurface(
   surface: string,
 ): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    ([
-      "one-piece-en@2",
-      "one-piece-en@3",
-      "one-piece-en@4",
-      "one-piece-en@5",
-      "one-piece-en@6",
-    ].includes(
-      adapter.adapterVersion,
-    ) && surface === "releases");
+    (["one-piece-en@5", "one-piece-en@6"].includes(adapter.adapterVersion) &&
+      surface === "releases");
 }
 
 function rawOfficialSurfaceRecords(
@@ -1002,12 +995,8 @@ export function validateGundamListingCollectionGraph(
   for (const input of inputs) {
     if (
       ![
-        "gundam-en-asia@4",
-        "gundam-en-asia@5",
         "gundam-en-asia@6",
         "gundam-en-asia@7",
-        "gundam-en-us@4",
-        "gundam-en-us@5",
         "gundam-en-us@6",
         "gundam-en-us@7",
       ].includes(input.adapterVersion)
@@ -1268,10 +1257,6 @@ function assertClosedRequestGraph(
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
         const strictFusionIdentity = [
-            "fusion-world-en@4",
-            "fusion-world-en@5",
-            "fusion-world-en@6",
-            "fusion-world-en@7",
             "fusion-world-en@8",
             "fusion-world-en@9",
           ].includes(row.adapter_version)
@@ -1292,8 +1277,6 @@ function assertClosedRequestGraph(
         const prior = listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
           const compatible = [
-              "one-piece-en@3",
-              "one-piece-en@4",
               "one-piece-en@5",
               "one-piece-en@6",
             ].includes(
@@ -1301,10 +1284,6 @@ function assertClosedRequestGraph(
             )
             ? prior.semantic === semantic
             : [
-                "fusion-world-en@4",
-                "fusion-world-en@5",
-                "fusion-world-en@6",
-                "fusion-world-en@7",
                 "fusion-world-en@8",
                 "fusion-world-en@9",
               ].includes(
