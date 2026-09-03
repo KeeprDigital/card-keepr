@@ -14,7 +14,7 @@ const root = resolve(import.meta.dirname, "..");
 // are recorded in the ADR. The digest checks always run; when the commit is
 // present locally (it is not in a shallow CI checkout) the chain is also
 // replayed and diffed object by object so a mismatch names the object.
-const chainCommit = "30751a2";
+const chainCommit = "30751a2a46548530d48dc37a1dc507efbbd07c03";
 const chainLevel = 36;
 const chainSchemaDigest = "4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4";
 const chainSeedDigest = "6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0";
@@ -55,27 +55,30 @@ test("the baseline schema and seed rows equal the level-36 chain", async () => {
 });
 
 // Replays the 36-file chain from git history, or returns null when the
-// commit is not available (a shallow clone).
+// commit is not in the checkout (a shallow clone). Any other git failure
+// propagates so the proof cannot silently degrade to the digest check.
 function chainDatabase() {
-  let names;
   try {
-    names = execFileSync(
-      "git",
-      ["ls-tree", "--name-only", chainCommit, "migrations/"],
-      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).split("\n").filter((name) => name.endsWith(".sql")).sort();
+    execFileSync("git", ["cat-file", "-e", `${chainCommit}^{commit}`], {
+      cwd: root,
+      stdio: "ignore",
+    });
   } catch {
     return null;
   }
+  const names = git(["ls-tree", "--name-only", chainCommit, "migrations/"])
+    .split("\n").filter((name) => name.endsWith(".sql")).sort();
   const database = new DatabaseSync(":memory:");
-  for (const name of names) {
-    database.exec(execFileSync("git", ["show", `${chainCommit}:${name}`], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-    }));
-  }
+  for (const name of names) database.exec(git(["show", `${chainCommit}:${name}`]));
   return database;
+}
+
+function git(args) {
+  return execFileSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
 }
 
 function schemaObjects(database) {

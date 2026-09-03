@@ -26,10 +26,13 @@ test("every migration leaves catalogue_schema_state at its own level", async () 
   database.close();
 });
 
-test("a guarded migration aborts before changing anything when the recorded level mismatches", async () => {
+test("a guarded migration aborts before changing anything when the recorded level mismatches", async (t) => {
   const migrations = await readMigrations();
-  // Empty while the chain is the baseline alone; every later file is guarded.
   const guarded = migrations.filter(({ level }) => level >= firstGuardedLevel);
+  if (guarded.length === 0) {
+    t.skip("no migration after the baseline yet; every later file is guarded");
+    return;
+  }
   for (const migration of guarded) {
     const database = new DatabaseSync(":memory:");
     for (const earlier of migrations) {

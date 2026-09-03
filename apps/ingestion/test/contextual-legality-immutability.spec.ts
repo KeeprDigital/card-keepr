@@ -325,7 +325,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
 test("a fresh D1 enforces full lowercase digests and canonical revision rule identity", async () => {
   // A separate database: the discovery-owner trigger is dropped below so
   // the digest and identity guards can be exercised without a real plan.
-  const scratchDatabase = testEnv.LEGACY_DB;
+  const scratchDatabase = testEnv.SCRATCH_DB;
   await applyD1Migrations(scratchDatabase, testEnv.TEST_MIGRATIONS);
   await scratchDatabase.prepare(
     `DROP TRIGGER official_source_collection_plan_discovery_owner`,

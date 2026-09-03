@@ -2,7 +2,7 @@
 --
 -- This file replaces the 36 forward migrations that took the catalogue
 -- database to schema level 36 (0001_catalogue_publication through
--- 0036_drop_credential_rotation, last applied together at commit 30751a2).
+-- 0036_drop_credential_rotation, last applied together at commit 30751a2a46548530d48dc37a1dc507efbbd07c03).
 -- It creates the level-36 schema in one pass and seeds the rows every
 -- environment starts from, recording schema level 1. The old files remain
 -- in git history; acceptance/schema-baseline.test.mjs proves this file

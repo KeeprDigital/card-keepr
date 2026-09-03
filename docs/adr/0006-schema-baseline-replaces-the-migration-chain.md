@@ -10,7 +10,7 @@ The catalogue schema had grown through 36 forward migrations. The files
 carried three rebuilds of `ingestion_runs`, tables created and later
 dropped (the attested-rotation subsystem, ADR 0005), `ALTER`s on `ALTER`s,
 and the 0017/0018 schema-level repair. 0028 rebuilt `ingestion_runs` by
-dropping it and lost curated pin rows on a populated database (issue #126):
+dropping it and lost curated pin rows on a populated database (PR #126):
 the chain was a hazard as well as a history.
 
 The bootstrap catalogue database was deleted and recreated empty (PR #127).
@@ -31,7 +31,7 @@ Revision pointer in `catalogue_state`, `operation_state`,
 `card_search_fts_state`, and `catalogue_schema_state` at level 1. Design
 rationale from the old files is carried over as comments where it explains
 a constraint or trigger. The 36 old files are deleted; they remain in git
-history at commit `30751a2`.
+history at commit `30751a2a46548530d48dc37a1dc507efbbd07c03`.
 
 Every environment is built the same way: tests, local development, and
 production all apply the baseline to an empty database and report schema
@@ -78,7 +78,7 @@ nothing when the recorded level is wrong.
 
 `acceptance/schema-baseline.test.mjs` applies the baseline and compares its
 `sqlite_schema` rows (type, name, tbl_name, sql) and every seeded row with
-those produced by replaying the 36-file chain from commit `30751a2`. The
+those produced by replaying the 36-file chain from commit `30751a2a46548530d48dc37a1dc507efbbd07c03`. The
 DDL text is compared at the token level (comments, identifier quotes, and
 whitespace around punctuation removed) because `sqlite_schema` stores
 `ALTER TABLE ADD COLUMN` text with the `ALTER` statement's spacing and a
@@ -93,7 +93,7 @@ The digests recorded in the test were computed from that replay:
 | normalized `sqlite_schema` rows     | `4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4` |
 | seed rows of every table            | `6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0` |
 
-The digest assertions always run. When commit `30751a2` is present in the
+The digest assertions always run. When that commit is present in the
 checkout the chain is also replayed and diffed object by object, so a
 mismatch names the object; a shallow CI clone runs the digest check alone.
 
