@@ -1,6 +1,10 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
+  capturePreparedAttempt,
+  prepareCaptureAttempt,
+} from "../../../src/catalogue/source-evidence-capture";
+import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
@@ -115,6 +119,81 @@ test("an image request that exhausts its transport retries fails alone and colle
       failure_code: "source_image_retries_exhausted",
       attempt_count: 4,
     }],
+  });
+});
+
+// Storage is ours to recover: exhausting R2 retries for an image pauses the
+// run exactly like any other role, with the request kept pending.
+test("an image request that exhausts its storage retries still pauses the run", async () => {
+  const run = await createCollection(
+    "image_failure_storage_001",
+    "https://official-source.invalid/cards",
+  );
+  const storedRun = await requiredEvidenceRun(env.CATALOGUE_DB, run.id);
+  const root = (await pendingEvidenceRequests(env.CATALOGUE_DB, run.id))[0];
+  if (root === undefined) throw new Error("pending root request missing");
+  const [image] = await appendDiscoveredEvidenceRequests(
+    env.CATALOGUE_DB,
+    storedRun,
+    root,
+    [{
+      role: "image",
+      url: "https://official-source.invalid/cards",
+      headers: { accept: "*/*" },
+    }],
+  );
+  if (image === undefined) throw new Error("image request missing");
+  const outageBucket = new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (
+        property === "get" ||
+        property === "put" ||
+        property === "createMultipartUpload"
+      ) {
+        return async () => {
+          throw new Error("synthetic R2 outage");
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const prepared = await prepareCaptureAttempt(
+      env.CATALOGUE_DB,
+      storedRun,
+      image,
+    );
+    if (prepared.kind !== "attempt") {
+      throw new Error(`unexpected preparation result ${prepared.kind}`);
+    }
+    const result = await capturePreparedAttempt(
+      env.CATALOGUE_DB,
+      outageBucket,
+      env.OFFICIAL_SOURCE_TRANSPORT,
+      storedRun,
+      image,
+      prepared,
+    );
+    expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
+  }
+  expect(await env.CATALOGUE_DB.prepare(
+    "SELECT state FROM ingestion_runs WHERE id = ?",
+  ).bind(run.id).first("state")).toBe("paused");
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT request_id, pause_reason, failure_classification
+     FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`,
+  ).bind(run.id).first()).toMatchObject({
+    request_id: image.request_id,
+    pause_reason: "source_storage_retries_exhausted",
+    failure_classification: "storage_failure",
+  });
+  expect(await env.CATALOGUE_DB.prepare(
+    `SELECT state, failure_code FROM source_requests
+     WHERE ingestion_run_id = ? AND request_id = ?`,
+  ).bind(run.id, image.request_id).first()).toMatchObject({
+    state: "pending",
+    failure_code: null,
   });
 });
 

@@ -261,8 +261,9 @@ export async function prepareCaptureAttempt(
   if (attemptNumber > retryBudget(request)) {
     // The current retry generation is exhausted but no capture operation is
     // open: reached on replay after a crash, or when a resume did not open a
-    // new generation. Recoverable exhaustion re-pauses the run instead of
-    // failing the request; only a terminal latest outcome fails closed.
+    // new generation. Recoverable exhaustion follows the role's transport
+    // policy (re-pause the run, or fail a Printing Image request alone);
+    // only a terminal latest outcome fails closed.
     const previous = await database
       .prepare(
         `SELECT outcome, http_status, attempt_number
