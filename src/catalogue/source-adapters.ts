@@ -17,6 +17,21 @@ export type OfficialSourceContract = Readonly<{
   requiredSurfaces: readonly string[];
 }>;
 
+// Registration facts reconciliation reads about a lineage's listing
+// evidence (ADR 0004: these lived in code-side version lists before).
+export type ListingReconciliationTraits = Readonly<{
+  // The releases surface also carries release-timing Legality Rules.
+  releasesSurfaceCarriesLegality: boolean;
+  // Listing observations are publisher pages closed by full locator.
+  groupsPublisherPages: boolean;
+  // Listing identity is read from listing_identity_evidence rather than
+  // the generic identity_evidence.
+  strictListingIdentity: boolean;
+  // How the same locator observed by two listing requests is judged
+  // compatible: by observation semantic, by canonical identity, or never.
+  duplicateLocatorCompatibility: "semantic" | "canonical" | "never";
+}>;
+
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
   sourceLineage: string;
@@ -34,6 +49,7 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
+  listingReconciliation?: ListingReconciliationTraits;
   // ADR 0004: a retired Source Adapter Version keeps its registration so
   // retained evidence stays attributable, but its parser implementation has
   // been removed. It carries no parse, discovery, or request-surface
@@ -205,6 +221,31 @@ export function assertOfficialSourceUrl(
   return url;
 }
 
+// The registration facts every production raw-catalogue version shares,
+// live or retired.
+function productionCatalogueRegistration(adapter: Readonly<{
+  adapterVersion: string;
+  sourceLineage: string;
+  supportedGame: string;
+  parserContract: string;
+  reconciliationAreas: readonly ("catalogue" | "errata")[];
+  inheritDiscoveryRequestHeaders: boolean;
+}>) {
+  return {
+    adapterVersion: adapter.adapterVersion,
+    sourceLineage: adapter.sourceLineage,
+    supportedGame: adapter.supportedGame,
+    gameProfileVersion: `${adapter.supportedGame}@1`,
+    parserContract: adapter.parserContract,
+    maximumSnapshotBytes: 16 * 1024 * 1024,
+    origin: "production" as const,
+    requestSurface: { kind: "credential-free-https" as const },
+    reconciliationCapability: "catalogue" as const,
+    reconciliationAreas: adapter.reconciliationAreas,
+    inheritDiscoveryRequestHeaders: adapter.inheritDiscoveryRequestHeaders,
+  };
+}
+
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     [
@@ -237,17 +278,8 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         },
       },
       ...officialRawAdapterContracts.map((adapter) => ({
-        adapterVersion: adapter.adapterVersion,
-        sourceLineage: adapter.sourceLineage,
-        supportedGame: adapter.supportedGame,
-        gameProfileVersion: `${adapter.supportedGame}@1`,
-        parserContract: adapter.parserContract,
-        maximumSnapshotBytes: 16 * 1024 * 1024,
-        origin: "production" as const,
-        requestSurface: { kind: "credential-free-https" as const },
-        reconciliationCapability: "catalogue" as const,
-        reconciliationAreas: adapter.reconciliationAreas,
-        inheritDiscoveryRequestHeaders: adapter.inheritDiscoveryRequestHeaders,
+        ...productionCatalogueRegistration(adapter),
+        listingReconciliation: adapter.listingReconciliation,
         parseBytes: adapter.parseBytes,
         discoverRequests: adapter.discoverRequests,
         requiredSurfaces: adapter.requiredSurfaces,
@@ -263,17 +295,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         },
       })),
       ...retiredSourceAdapterVersions.map((adapter) => ({
-        adapterVersion: adapter.adapterVersion,
-        sourceLineage: adapter.sourceLineage,
-        supportedGame: adapter.supportedGame,
-        gameProfileVersion: `${adapter.supportedGame}@1`,
-        parserContract: adapter.parserContract,
-        maximumSnapshotBytes: 16 * 1024 * 1024,
-        origin: "production" as const,
-        requestSurface: { kind: "credential-free-https" as const },
-        reconciliationCapability: "catalogue" as const,
-        reconciliationAreas: adapter.reconciliationAreas,
-        inheritDiscoveryRequestHeaders: adapter.inheritDiscoveryRequestHeaders,
+        ...productionCatalogueRegistration(adapter),
         retired: true as const,
       })),
       ...[

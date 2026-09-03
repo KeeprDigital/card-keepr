@@ -18,10 +18,12 @@
 // adding it to scripts/retired-adapter-runs.sql (asserted by the acceptance
 // suite to name exactly this list).
 
+import type { SupportedGame } from "./catalogue-candidate";
+
 export type RetiredSourceAdapterVersion = Readonly<{
   adapterVersion: string;
   sourceLineage: "one-piece-en" | "fusion-world-en" | "digimon-en" | "gundam-en-asia" | "gundam-en-us";
-  supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  supportedGame: SupportedGame;
   parserContract: string;
   reconciliationAreas: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders: boolean;

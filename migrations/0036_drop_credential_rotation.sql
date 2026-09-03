@@ -13,10 +13,10 @@ SELECT CASE
   ELSE json_extract('schema_level_mismatch_expected_35', '$')
 END;
 
-DROP TRIGGER IF EXISTS block_ingestion_during_credential_execution;
-DROP TRIGGER IF EXISTS block_recovery_during_credential_execution;
-DROP TRIGGER IF EXISTS block_catalogue_reconciliation_during_credential_execution;
-DROP TRIGGER IF EXISTS guard_credential_plan_finalization;
+DROP TRIGGER block_ingestion_during_credential_execution;
+DROP TRIGGER block_recovery_during_credential_execution;
+DROP TRIGGER block_catalogue_reconciliation_during_credential_execution;
+DROP TRIGGER guard_credential_plan_finalization;
 
 DROP TABLE credential_consumer_proof_uses;
 DROP TABLE credential_rotations;

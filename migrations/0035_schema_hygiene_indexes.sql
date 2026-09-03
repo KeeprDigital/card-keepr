@@ -55,10 +55,14 @@ ON catalogue_backup_attempts (
 );
 
 -- The run dashboard lists the twenty most recent runs from a table that
--- grows forever. Every state filter in the codebase is anchored on the
--- primary key, so the ordering is the only unindexed access.
+-- grows forever; the publication-reconcile poll picks the next publishing
+-- run by its reconcile deadline, and the active-run release sweeps expired
+-- runs. Every other state filter is anchored on the primary key.
 CREATE INDEX ingestion_runs_recent
 ON ingestion_runs (started_at DESC, id DESC);
+
+CREATE INDEX ingestion_runs_by_state
+ON ingestion_runs (state, publication_reconcile_after, id);
 
 -- release_regions_json is a JSON array; no query can seek it, and the
 -- revision prefix is already served by revision_products_catalogue_order.

@@ -23,6 +23,7 @@ import {
   onePieceRecordingMemberships,
 } from "./one-piece-source-adapter.ts";
 import { parse as parseHtml } from "parse5";
+import type { ListingReconciliationTraits } from "./source-adapters.ts";
 
 type ProductSourceGame =
   | "one-piece"
@@ -57,6 +58,7 @@ export type OfficialRawAdapterContract = {
   // requests inherit the discovery request's headers.
   reconciliationAreas: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders: boolean;
+  listingReconciliation: ListingReconciliationTraits;
   requestUrlForDiscovery?: () => string;
   requestUrlForSurface: (surface: string) => string;
   parseBytes: (
@@ -125,6 +127,7 @@ const rawContractDefinitions: readonly {
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
   reconciliationAreas: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders: boolean;
+  listingReconciliation: ListingReconciliationTraits;
   requiredSurfaces: readonly string[];
   urls: Readonly<Record<string, string>>;
   versions: readonly LiveContractVersion[];
@@ -145,6 +148,12 @@ const rawContractDefinitions: readonly {
     partition: "EN-OCEANIA",
     reconciliationAreas: ["catalogue", "errata"],
     inheritDiscoveryRequestHeaders: false,
+    listingReconciliation: {
+      releasesSurfaceCarriesLegality: true,
+      groupsPublisherPages: false,
+      strictListingIdentity: false,
+      duplicateLocatorCompatibility: "semantic",
+    },
     requiredSurfaces: [
       "card-list",
       "products",
@@ -206,6 +215,12 @@ const rawContractDefinitions: readonly {
     // Catalogue coverage only.
     reconciliationAreas: ["catalogue"],
     inheritDiscoveryRequestHeaders: false,
+    listingReconciliation: {
+      releasesSurfaceCarriesLegality: false,
+      groupsPublisherPages: false,
+      strictListingIdentity: true,
+      duplicateLocatorCompatibility: "canonical",
+    },
     requiredSurfaces: [
       "card-search",
       "products",
@@ -263,6 +278,12 @@ const rawContractDefinitions: readonly {
     partition: "EN-OCEANIA",
     reconciliationAreas: ["catalogue", "errata"],
     inheritDiscoveryRequestHeaders: true,
+    listingReconciliation: {
+      releasesSurfaceCarriesLegality: false,
+      groupsPublisherPages: false,
+      strictListingIdentity: false,
+      duplicateLocatorCompatibility: "never",
+    },
     requiredSurfaces: [
       "card-list",
       "products",
@@ -324,6 +345,12 @@ const rawContractDefinitions: readonly {
     partition,
     reconciliationAreas: ["catalogue", "errata"] as const,
     inheritDiscoveryRequestHeaders: true,
+    listingReconciliation: {
+      releasesSurfaceCarriesLegality: false,
+      groupsPublisherPages: true,
+      strictListingIdentity: false,
+      duplicateLocatorCompatibility: "never" as const,
+    },
     requiredSurfaces: [
       "packages",
       "products",
@@ -394,6 +421,7 @@ export const officialRawAdapterContracts: readonly OfficialRawAdapterContract[] 
           reconciliationAreas: definition.reconciliationAreas,
           inheritDiscoveryRequestHeaders:
             definition.inheritDiscoveryRequestHeaders,
+          listingReconciliation: definition.listingReconciliation,
           requiredSurfaces,
           requestUrlForSurface: (surface: string) =>
             exactSurfaceUrl(

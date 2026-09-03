@@ -844,7 +844,7 @@ function isLegalitySurface(
   surface: string,
 ): boolean {
   return /(?:legality|restriction|block-policy|don-rules)/u.test(surface) ||
-    (["one-piece-en@5", "one-piece-en@6"].includes(adapter.adapterVersion) &&
+    (adapter.listingReconciliation?.releasesSurfaceCarriesLegality === true &&
       surface === "releases");
 }
 
@@ -994,12 +994,8 @@ export function validateGundamListingCollectionGraph(
   const grouped = new Map<string, Page[]>();
   for (const input of inputs) {
     if (
-      ![
-        "gundam-en-asia@6",
-        "gundam-en-asia@7",
-        "gundam-en-us@6",
-        "gundam-en-us@7",
-      ].includes(input.adapterVersion)
+      requiredSourceAdapter(input.adapterVersion).listingReconciliation
+        ?.groupsPublisherPages !== true
     ) continue;
     const retained = input.observations.flatMap((wrapped) => {
       const observation = isRecord(wrapped) && isRecord(wrapped.value)
@@ -1256,13 +1252,11 @@ function assertClosedRequestGraph(
     if (request.request_role === "listing") {
       for (const observation of document.observations) {
         if (!isRecord(observation) || !isRecord(observation.value)) continue;
-        const strictFusionIdentity = [
-            "fusion-world-en@8",
-            "fusion-world-en@9",
-          ].includes(row.adapter_version)
-          ? observation.value.listing_identity_evidence
-          : undefined;
-        const identity = strictFusionIdentity ??
+        const strictListingIdentity =
+          adapter.listingReconciliation?.strictListingIdentity === true
+            ? observation.value.listing_identity_evidence
+            : undefined;
+        const identity = strictListingIdentity ??
           observation.value.identity_evidence;
         if (!isRecord(identity) || typeof identity.locator !== "string") {
           continue;
@@ -1276,19 +1270,12 @@ function assertClosedRequestGraph(
           : null;
         const prior = listingLocators.get(locatorKey);
         if (prior !== undefined && prior.requestId !== request.request_id) {
-          const compatible = [
-              "one-piece-en@5",
-              "one-piece-en@6",
-            ].includes(
-              adapter.adapterVersion,
-            )
+          const compatibility =
+            adapter.listingReconciliation?.duplicateLocatorCompatibility ??
+              "never";
+          const compatible = compatibility === "semantic"
             ? prior.semantic === semantic
-            : [
-                "fusion-world-en@8",
-                "fusion-world-en@9",
-              ].includes(
-                adapter.adapterVersion,
-              )
+            : compatibility === "canonical"
               ? prior.canonical === canonical
               : false;
           if (!compatible) {

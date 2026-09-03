@@ -139,6 +139,21 @@ test("migration 0035 adds the hot-path indexes and drops the dead ones", async (
     ),
     ["SCAN ingestion_runs USING INDEX ingestion_runs_recent"],
   );
+  assert.deepEqual(
+    plan(
+      database,
+      `SELECT * FROM ingestion_runs
+       WHERE state = 'publishing'
+         AND publication_reconcile_after IS NOT NULL
+         AND publication_reconcile_after <= ?
+       ORDER BY publication_reconcile_after, id LIMIT 1`,
+    ),
+    ["SEARCH ingestion_runs USING INDEX ingestion_runs_by_state (state=? AND publication_reconcile_after>? AND publication_reconcile_after<?)"],
+  );
+  assert.deepEqual(
+    plan(database, "SELECT id FROM ingestion_runs WHERE state = 'expired'"),
+    ["SEARCH ingestion_runs USING COVERING INDEX ingestion_runs_by_state (state=?)"],
+  );
   database.close();
 });
 
