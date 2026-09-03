@@ -177,6 +177,7 @@ export async function terminateEvidenceCollection(
   runId: string,
   idempotencyKey: string,
 ): Promise<Record<string, unknown>> {
+  await pauseCollectingRunWithDeadWorkflow(database, parentWorkflow, runId);
   const document = await terminateEvidenceRun(database, runId, {
     idempotency_key: idempotencyKey,
   });
@@ -189,6 +190,38 @@ export async function terminateEvidenceCollection(
   // fences and reports the reservation's actual state.
   const activeRunReleased = await releaseTerminatedEvidenceRun(database, runId);
   return { ...document, active_run_released: activeRunReleased };
+}
+
+// Collection Termination is the only path from paused to terminal, and a
+// Workflow Pause is otherwise recorded only on the resume path, which
+// immediately reopens collection. A collecting run whose bound parent
+// Workflow is deterministically observed dead (stalled, errored, terminated,
+// or unavailable) is therefore moved into its Workflow Pause here first, so
+// the owner can abandon it without resuming it. A live parent leaves the run
+// collecting and the termination is refused as before.
+async function pauseCollectingRunWithDeadWorkflow(
+  database: D1Database,
+  parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
+  runId: string,
+): Promise<void> {
+  const run = await requiredEvidenceRun(database, runId);
+  if (run.state !== "collecting" || run.parent_workflow_id === null) return;
+  let status: SafeWorkflowStatus = "unavailable";
+  try {
+    const instance = await parentWorkflow.get(run.parent_workflow_id);
+    status = safeWorkflowStatus((await instance.status()).status);
+  } catch {
+    status = "unavailable";
+  }
+  const progress = await collectionProgressFacts(database, runId);
+  const classification = classifyCollectionProgress(status, progress);
+  if (classification.kind !== "recover") return;
+  await pauseEvidenceRunForWorkflowRecovery(database, runId, {
+    workflow_instance_id: run.parent_workflow_id,
+    pause_reason: classification.reason,
+    workflow_status: status,
+    last_progress_at: progress.last_progress_at,
+  });
 }
 
 // Best effort: a settled, absent, or unreachable instance rejects
