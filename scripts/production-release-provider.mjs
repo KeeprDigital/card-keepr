@@ -22,7 +22,7 @@ export async function verifyProductionTarget(environment, fetchImpl = fetch) {
   await Promise.all([
     verifyDatabases(fetchImpl, token, environment, target),
     verifyBuckets(fetchImpl, token, environment, target.r2_buckets),
-    verifyWorkers(fetchImpl, token, environment, configs),
+    verifyWorkerSecrets(fetchImpl, token, environment, configs),
   ]);
   return {
     account_id: target.cloudflare_account_id,
@@ -30,6 +30,36 @@ export async function verifyProductionTarget(environment, fetchImpl = fetch) {
     d1_databases: target.d1_databases,
     r2_buckets: target.r2_buckets,
   };
+}
+
+// Issue #122: vars and bindings are properties of the version a release
+// uploads, so they are verified on that exact version (found by its release
+// tag) after `wrangler versions upload` and before activation. Checking the
+// deployed script before mutation would fail every release that carries a
+// configuration change, which is what a release is for.
+export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
+  const token = required(environment, "CLOUDFLARE_API_TOKEN");
+  const worker = required(environment, "RELEASE_WORKER");
+  const tag = required(environment, "RELEASE_VERSION_TAG");
+  const configPath = required(environment, "RELEASE_WORKER_CONFIG");
+  if (!(worker in workerConfigs)) throw new Error(`unknown_release_worker:${worker}`);
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  if (config.name !== worker) throw new Error("worker_config_name_mismatch");
+  const root = `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/versions`;
+  const listing = await cloudflare(fetchImpl, token, root);
+  if (!record(listing.result) || !Array.isArray(listing.result.items)) throw new Error(`malformed_worker_versions:${worker}`);
+  const tagged = listing.result.items.filter((item) => record(item) && record(item.annotations) && item.annotations["workers/tag"] === tag);
+  if (tagged.length === 0) throw new Error(`release_version_not_found:${worker}:${tag}`);
+  if (tagged.length > 1 || typeof tagged[0].id !== "string" || tagged[0].id.length === 0) throw new Error(`release_version_ambiguous:${worker}:${tag}`);
+  const versionId = tagged[0].id;
+  const version = await cloudflare(fetchImpl, token, `${root}/${encodeURIComponent(versionId)}`);
+  if (!record(version.result) || !record(version.result.resources) || !Array.isArray(version.result.resources.bindings)) {
+    throw new Error(`malformed_worker_version:${worker}:${versionId}`);
+  }
+  const actual = normalizedBindings(version.result.resources.bindings, worker);
+  const expected = expectedBindings(config, expectedSecrets[worker], worker);
+  if (stableJson(actual) !== stableJson(expected)) throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
+  return { worker, version_tag: tag, version_id: versionId };
 }
 
 export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
@@ -125,6 +155,20 @@ function validPrivateCustomDomain(domain) {
     states.has(domain.status.ownership) && sslStates.has(domain.status.ssl);
 }
 
+// Secrets outlive versions and are managed by operators, so the exact secret
+// inventory of the deployed script is a precondition of the release.
+async function verifyWorkerSecrets(fetchImpl, token, environment, configs) {
+  await Promise.all(Object.keys(configs).map(async (worker) => {
+    const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`);
+    if (!record(document.result) || !Array.isArray(document.result.bindings)) throw new Error(`malformed_worker_settings:${worker}`);
+    const actual = normalizedBindings(document.result.bindings, worker)
+      .filter((binding) => binding.type === "secret_text")
+      .map((binding) => binding.name);
+    const expected = [...expectedSecrets[worker]].sort((left, right) => left.localeCompare(right));
+    if (stableJson(actual) !== stableJson(expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
+  }));
+}
+
 async function verifyWorkers(fetchImpl, token, environment, configs) {
   await Promise.all(Object.entries(configs).map(async ([worker, config]) => {
     const document = await cloudflare(fetchImpl, token, `/accounts/${account(environment)}/workers/scripts/${encodeURIComponent(worker)}/settings`);
@@ -197,4 +241,5 @@ function account(environment) { return required(environment, "CLOUDFLARE_ACCOUNT
 function required(environment, name) { const value = environment[name]; if (typeof value !== "string" || value.length === 0) throw new Error(`missing_${name.toLowerCase()}`); return value; }
 
 if (process.argv[2] === "verify-target") process.stdout.write(`${JSON.stringify(await verifyProductionTarget(process.env))}\n`);
+else if (process.argv[2] === "verify-version") process.stdout.write(`${JSON.stringify(await verifyUploadedVersion(process.env))}\n`);
 else if (process.argv[2] === "observe-bindings") process.stdout.write(`${JSON.stringify(await observeCatalogueBindings(process.env))}\n`);
