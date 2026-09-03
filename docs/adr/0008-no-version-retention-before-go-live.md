@@ -11,7 +11,7 @@ recreated empty on 2026-09-03 (ADR 0006) and the first production Ingestion
 Run started the same day. Despite that, the repository carried every
 versioning mechanism a live system needs: five Catalogue Export schema
 majors with earlier majors kept readable (ADRs 0001 to 0003), 53 registered
-Source Adapter Versions of which 22 are retired registrations and 4 are
+Source Adapter Versions of which 22 are retired registrations and 5 are
 parseable predecessors (ADR 0004), a retirement runbook, a retired-runs
 query, and tickets that bump a version to change one number.
 
