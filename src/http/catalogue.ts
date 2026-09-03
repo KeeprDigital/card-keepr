@@ -1,4 +1,5 @@
 import { ifNoneMatch } from "./conditional";
+import { publicUrl, type PublicBase } from "./public-base";
 
 declare const catalogueRevisionIdBrand: unique symbol;
 declare const publicationInstantBrand: unique symbol;
@@ -46,9 +47,13 @@ export function parsePublicationInstant(value: string): PublicationInstant {
 
 export function catalogueResponse(
   status: CatalogueStatus,
+  base: PublicBase,
   request?: Request,
 ): Response {
-  const currentExport = `/v1/catalogue-exports/${status.revisionId}`;
+  const currentExport = publicUrl(
+    base,
+    `/v1/catalogue-exports/${status.revisionId}`,
+  );
   const headers = {
     "cache-control": "private, no-cache",
     etag: `"${status.etag}"`,
@@ -71,11 +76,11 @@ export function catalogueResponse(
         published_at: status.publishedAt,
       },
       links: {
-        self: "/v1/catalogue",
-        cards: "/v1/cards",
-        printings: "/v1/printings",
-        products: "/v1/products",
-        catalogue_exports: "/v1/catalogue-exports",
+        self: publicUrl(base, "/v1/catalogue"),
+        cards: publicUrl(base, "/v1/cards"),
+        printings: publicUrl(base, "/v1/printings"),
+        products: publicUrl(base, "/v1/products"),
+        catalogue_exports: publicUrl(base, "/v1/catalogue-exports"),
       },
     },
     {

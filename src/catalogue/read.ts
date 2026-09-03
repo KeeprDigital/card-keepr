@@ -3,6 +3,11 @@ import {
   parsePublicationInstant,
 } from "../http/catalogue";
 import { ifNoneMatch } from "../http/conditional";
+import {
+  absoluteDocumentLinks,
+  publicUrl,
+  type PublicBase,
+} from "../http/public-base";
 import { problemResponse } from "../http/problem";
 import { canonicalJson, sha256Text } from "./serialization";
 import {
@@ -93,6 +98,7 @@ export async function catalogueExportsResponse(
   request: Request,
   database: D1Database,
   bucket: R2Bucket,
+  base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
   assertCatalogueExportCollectionParameters(url);
@@ -181,8 +187,10 @@ export async function catalogueExportsResponse(
       published_at: exportRow.published_at,
       manifest_sha256: exportRow.manifest_digest,
       links: {
-        self:
+        self: publicUrl(
+          base,
           `/v1/catalogue-exports/${encodeURIComponent(exportRow.catalogue_revision_id)}`,
+        ),
       },
     };
   }));
@@ -207,7 +215,7 @@ export async function catalogueExportsResponse(
       published_at: revision.published_at,
     },
     page: { limit, next_cursor: next },
-    links: { self: `${url.pathname}${url.search}` },
+    links: { self: publicUrl(base, `${url.pathname}${url.search}`) },
   };
   const etag = `"${await sha256Text(canonicalJson(document))}"`;
   const headers = revisionHeaders(revisionId, etag);
@@ -361,6 +369,7 @@ export async function currentCardResponse(
   database: D1Database,
   cardId: string,
   request: Request,
+  base: PublicBase,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -402,12 +411,12 @@ export async function currentCardResponse(
     : { results: [] as PrintingDocumentRow[] };
   return Response.json(
     {
-      data: envelope.data,
+      data: absoluteDocumentLinks(envelope.data, base),
       ...(include.has("printings") || include.has("evidence")
         ? {
             included: [
               ...printings.results.map(({ document_json }) =>
-                detailEnvelope(document_json).data
+                absoluteDocumentLinks(detailEnvelope(document_json).data, base)
               ),
               ...(include.has("evidence") ? envelope.included : []),
             ],
@@ -423,7 +432,7 @@ export async function currentCardResponse(
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
       },
-      links: { self: canonicalDetailSelf(url, include) },
+      links: { self: publicUrl(base, canonicalDetailSelf(url, include)) },
     },
     { headers },
   );
@@ -433,6 +442,7 @@ export async function currentPrintingResponse(
   database: D1Database,
   printingId: string,
   request: Request,
+  base: PublicBase,
 ): Promise<Response | null> {
   const row = await database
     .prepare(
@@ -462,7 +472,7 @@ export async function currentPrintingResponse(
   }
   return Response.json(
     {
-      data: envelope.data,
+      data: absoluteDocumentLinks(envelope.data, base),
       ...(include.has("evidence")
         ? {
             included: envelope.included,
@@ -476,7 +486,7 @@ export async function currentPrintingResponse(
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
       },
-      links: { self: canonicalDetailSelf(url, include) },
+      links: { self: publicUrl(base, canonicalDetailSelf(url, include)) },
     },
     { headers },
   );
@@ -606,6 +616,7 @@ export async function catalogueExportResponse(
   database: D1Database,
   bucket: R2Bucket,
   revisionId: string,
+  base: PublicBase,
 ): Promise<Response | null> {
   const verifiedExport = await loadVerifiedExportManifest(
     database,
@@ -629,7 +640,10 @@ export async function catalogueExportResponse(
         published_at: exportRow.published_at,
       },
       links: {
-        self: `/v1/catalogue-exports/${encodeURIComponent(revisionId)}`,
+        self: publicUrl(
+          base,
+          `/v1/catalogue-exports/${encodeURIComponent(revisionId)}`,
+        ),
       },
     },
     {

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   exitCodeForStatus,
   parseOptions,
+  runtimeUrl,
   writeCliFailure,
 } from "./command-support.mjs";
 import { validatedProductionTarget } from "./production-target.mjs";
@@ -274,7 +275,7 @@ async function request(environment, json, pathname, method, body, administration
   }
   let response;
   try {
-    response = await fetch(new URL(pathname, environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788"), {
+    response = await fetch(runtimeUrl(environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788", pathname), {
       method,
       headers: {
         authorization: `Bearer ${administrationKey}`,
@@ -303,7 +304,7 @@ async function request(environment, json, pathname, method, body, administration
 async function rawRequest(environment, pathname, method, body, administrationKey) {
   let response;
   try {
-    response = await fetch(new URL(pathname, environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788"), {
+    response = await fetch(runtimeUrl(environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788", pathname), {
       method,
       headers: {
         authorization: `Bearer ${administrationKey}`,

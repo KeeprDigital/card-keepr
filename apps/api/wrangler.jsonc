@@ -7,8 +7,13 @@
   "placement": {
     "mode": "smart"
   },
+  "routes": [
+    { "pattern": "card.keepr.digital/api", "zone_name": "keepr.digital" },
+    { "pattern": "card.keepr.digital/api/*", "zone_name": "keepr.digital" }
+  ],
   "vars": {
-    "CORS_ALLOWED_ORIGINS": "http://localhost:3000"
+    "CORS_ALLOWED_ORIGINS": "http://localhost:3000",
+    "PUBLIC_BASE_URL": "https://card.keepr.digital/api"
   },
   "d1_databases": [
     {

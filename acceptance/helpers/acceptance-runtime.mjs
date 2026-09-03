@@ -177,7 +177,14 @@ export async function startWorker({
   const boundInspectorPort = inspectorPort ?? await allocatePort();
   const boundRegistryPath = registryPath ??
     join(dirname(statePath), "wrangler-registry");
-  const allVars = { SOURCE_HOST_PACING_MODE: pacingMode, ...vars };
+  // The checked-in PUBLIC_BASE_URL mounts each Worker under its production
+  // path; the emulated Worker is addressed at its root, so the base is
+  // overridden with the bound local origin unless the caller passes one.
+  const allVars = {
+    SOURCE_HOST_PACING_MODE: pacingMode,
+    PUBLIC_BASE_URL: `http://127.0.0.1:${boundPort}`,
+    ...vars,
+  };
   let output = "";
   const child = spawn(resolve(root, "node_modules/.bin/wrangler"), [
     "dev", "--config", config,

@@ -43,11 +43,19 @@ import {
   LegalityStatusProblem,
 } from "../../../src/catalogue/legality-status";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
+import {
+  mountedRequest,
+  publicBase,
+  publicUrl,
+  routePath,
+  type PublicBase,
+} from "../../../src/http/public-base";
 
 async function handleApiRequest(
   request: Request,
   env: Env,
   requestId: string,
+  base: PublicBase,
 ): Promise<Response> {
     try {
       const preflight = allowedPreflightResponse(
@@ -110,6 +118,7 @@ async function handleApiRequest(
           request,
           catalogueResponse(
             await currentCatalogueStatus(env.CATALOGUE_DB),
+            base,
             request,
           ),
         );
@@ -122,6 +131,7 @@ async function handleApiRequest(
             env.CATALOGUE_DB,
             request,
             requestId,
+            base,
           ),
         );
       }
@@ -136,6 +146,7 @@ async function handleApiRequest(
             await contextualLegalityStatusResponse(
               request,
               env.CATALOGUE_DB,
+              base,
             ),
           );
         } catch (error) {
@@ -171,6 +182,7 @@ async function handleApiRequest(
           env.CATALOGUE_DB,
           decodeURIComponent(cardMatch[1]!),
           request,
+          base,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -183,6 +195,7 @@ async function handleApiRequest(
           env.CATALOGUE_DB,
           decodeURIComponent(printingMatch[1]!),
           request,
+          base,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -190,7 +203,7 @@ async function handleApiRequest(
       if (request.method === "GET" && url.pathname === "/v1/printings") {
         return withCorsHeaders(
           request,
-          await currentPrintingsResponse(env.CATALOGUE_DB, request),
+          await currentPrintingsResponse(env.CATALOGUE_DB, request, base),
         );
       }
 
@@ -213,7 +226,7 @@ async function handleApiRequest(
       if (request.method === "GET" && url.pathname === "/v1/products") {
         return withCorsHeaders(
           request,
-          await currentProductsResponse(env.CATALOGUE_DB, request),
+          await currentProductsResponse(env.CATALOGUE_DB, request, base),
         );
       }
 
@@ -223,6 +236,7 @@ async function handleApiRequest(
           env.CATALOGUE_DB,
           decodeURIComponent(productMatch[1]!),
           request,
+          base,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -256,6 +270,7 @@ async function handleApiRequest(
             request,
             env.CATALOGUE_DB,
             env.CATALOGUE_EXPORTS,
+            base,
           ),
         );
       }
@@ -269,6 +284,7 @@ async function handleApiRequest(
           env.CATALOGUE_DB,
           env.CATALOGUE_EXPORTS,
           decodeURIComponent(exportMatch[1]!),
+          base,
         );
         if (response !== null) return withCorsHeaders(request, response);
       }
@@ -317,7 +333,7 @@ async function handleApiRequest(
             ...(error.code === "cursor_revision_unavailable"
               ? {
                   extensions: {
-                    links: { collection: "/v1/products" },
+                    links: { collection: publicUrl(base, "/v1/products") },
                   },
                 }
               : error.invalidParameter === null
@@ -345,7 +361,7 @@ async function handleApiRequest(
             ...(error.code === "cursor_revision_unavailable"
               ? {
                   extensions: {
-                    links: { collection: "/v1/printings" },
+                    links: { collection: publicUrl(base, "/v1/printings") },
                   },
                 }
               : error.invalidParameter === null
@@ -400,7 +416,9 @@ async function handleApiRequest(
             ...(error.status === 409
               ? {
                   extensions: {
-                    links: { collection: "/v1/catalogue-exports" },
+                    links: {
+                      collection: publicUrl(base, "/v1/catalogue-exports"),
+                    },
                   },
                 }
               : {}),
@@ -425,15 +443,42 @@ const apiWorker = {
     request: Request,
     env: Env,
   ): Promise<Response> {
+    // The worker is mounted at the path of PUBLIC_BASE_URL (ADR 0007). A
+    // request outside the mount is not routed at all: no rate limit, no
+    // authentication, just a 404 problem. Everything under the mount is
+    // handled as if the worker served the root, so routes, cursors, and
+    // operational log routes stay mount-free.
+    const base = publicBase(env);
+    const route = routePath(new URL(request.url), base.basePath);
+    if (route === null) {
+      return withOperationalRequestLog(
+        "api",
+        request,
+        env,
+        async (_observedEnv, requestId) =>
+          withCorsHeaders(request, outsideMountResponse(requestId)),
+      );
+    }
+    const mounted = mountedRequest(request, route);
     return withOperationalRequestLog(
       "api",
-      request,
+      mounted,
       env,
       (observedEnv, requestId) =>
-        handleApiRequest(request, observedEnv, requestId),
+        handleApiRequest(mounted, observedEnv, requestId, base),
     );
   },
 } satisfies ExportedHandler<Env>;
+
+function outsideMountResponse(requestId: string): Response {
+  return problemResponse({
+    requestId,
+    status: 404,
+    code: "not_found",
+    title: "Not found",
+    detail: "The requested resource does not exist.",
+  });
+}
 
 export default apiWorker;
 

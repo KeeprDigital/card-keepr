@@ -33,6 +33,11 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /versions upload[\s\S]*production-release-provider\.mjs verify-version[\s\S]*versions deploy/u);
   assert.match(release, /RELEASE_WORKER=card-keepr-api [^\n]*\$\{API_RELEASE_CONFIG\}[^\n]*verify-version/u);
   assert.match(release, /RELEASE_WORKER=card-keepr-ingestion [^\n]*\$\{INGESTION_RELEASE_CONFIG\}[^\n]*verify-version/u);
+  // Issue #123: zone routes are script-level triggers that `versions deploy`
+  // never applies, so both workers' routes are deployed after activation and
+  // before the binding observation and smoke checks read the public mounts.
+  assert.match(release, /versions deploy[\s\S]*Deploy the route triggers[\s\S]*triggers deploy --config "\$\{API_RELEASE_CONFIG\}"[\s\S]*triggers deploy --config "\$\{INGESTION_RELEASE_CONFIG\}"[\s\S]*Observe the binding while recovery remains blocked[\s\S]*production-smoke\.mjs/u);
+  assert.doesNotMatch(release, /triggers deploy[\s\S]*versions deploy/u);
   // GitHub rejects a workflow with more than 25 workflow_dispatch inputs and
   // records a failed run on every push instead; the file carried 26 until #120.
   const inputs = release.split("\n    inputs:\n")[1].split(/\n  [a-z]/u)[0].match(/^      [a-z_]+:$/gmu) ?? [];
@@ -55,6 +60,23 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(ci, /workflow_dispatch:/u);
   assert.doesNotMatch(ci, /^\s*push:/mu);
   assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
+});
+
+test("each worker owns one public base and the zone routes that mount it", () => {
+  // Issue #123 / ADR 0006: one host, two path mounts, no router worker.
+  for (const [config, mount] of [
+    ["apps/api/wrangler.jsonc", "api"],
+    ["apps/ingestion/wrangler.jsonc", "ingest"],
+  ]) {
+    const parsed = JSON.parse(readFileSync(config, "utf8"));
+    assert.equal(parsed.vars.PUBLIC_BASE_URL, `https://card.keepr.digital/${mount}`);
+    assert.deepEqual(parsed.routes, [
+      { pattern: `card.keepr.digital/${mount}`, zone_name: "keepr.digital" },
+      { pattern: `card.keepr.digital/${mount}/*`, zone_name: "keepr.digital" },
+    ]);
+    assert.equal(parsed.custom_domain, undefined);
+    assert.equal(parsed.workers_dev, undefined);
+  }
 });
 
 test("provider credentials stay in fetch headers and out of process arguments", () => {

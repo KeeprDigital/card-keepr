@@ -1,6 +1,7 @@
 import {
   exitCodeForStatus,
   parseOptions,
+  runtimeUrl,
   writeCliFailure,
 } from "./command-support.mjs";
 
@@ -50,9 +51,9 @@ async function catalogueRequest(environment, json, pathname) {
   let response;
   try {
     response = await fetch(
-      new URL(
-        pathname,
+      runtimeUrl(
         environment.KEEPR_API_URL ?? "http://127.0.0.1:8787",
+        pathname,
       ),
       {
         headers: {

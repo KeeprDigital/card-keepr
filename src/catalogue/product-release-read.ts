@@ -1,5 +1,10 @@
 import { ifNoneMatch } from "../http/conditional";
 import {
+  absoluteDocumentLinks,
+  publicUrl,
+  type PublicBase,
+} from "../http/public-base";
+import {
   canonicalDetailSelf,
   detailIncludeProjection,
   detailRepresentationKey,
@@ -54,6 +59,7 @@ export async function currentProductResponse(
   database: D1Database,
   productId: string,
   request: Request,
+  base: PublicBase,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   const row = await database
@@ -94,7 +100,7 @@ export async function currentProductResponse(
     : {};
   return Response.json(
     {
-      data: envelope.data,
+      data: absoluteDocumentLinks(envelope.data, base),
       ...evidenceSidecar,
       ...(include.has("disagreements")
         ? { disagreements: envelope.disagreements }
@@ -103,7 +109,7 @@ export async function currentProductResponse(
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
       },
-      links: { self: canonicalDetailSelf(url, include) },
+      links: { self: publicUrl(base, canonicalDetailSelf(url, include)) },
     },
     {
       headers: productHeaders(row.current_revision_id, etag),
@@ -226,6 +232,7 @@ function curatedFieldReferences(
 export async function currentProductsResponse(
   database: D1Database,
   request: Request,
+  base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
   const state = await database
@@ -338,7 +345,9 @@ export async function currentProductsResponse(
   const selected = rows.results.map(
     ({ document_json }) => storedProductApiProjection(document_json),
   );
-  const data = selected.slice(0, limit);
+  const data = selected
+    .slice(0, limit)
+    .map((product) => absoluteDocumentLinks(product, base));
   const next =
     selected.length > limit
       ? encodeCursor({
@@ -358,13 +367,16 @@ export async function currentProductsResponse(
       },
       page: { limit, next_cursor: next },
       links: {
-        self: canonicalProductSelf(url, {
-          q,
-          game,
-          region,
-          limit,
-          after: requestedAfter,
-        }),
+        self: publicUrl(
+          base,
+          canonicalProductSelf(url, {
+            q,
+            game,
+            region,
+            limit,
+            after: requestedAfter,
+          }),
+        ),
       },
     },
     {

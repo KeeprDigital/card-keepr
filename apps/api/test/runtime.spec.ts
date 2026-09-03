@@ -29,6 +29,7 @@ import {
 import {
   apiCard,
   apiHeaders,
+  apiPublicBase,
   canonicalLegalityRuleStatements,
   cardSearchStatements,
   installApiSuite,
@@ -227,7 +228,7 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
   expect(response.status).toBe(409);
   await expect(response.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/cards" },
+    links: { collection: `${apiPublicBase}/v1/cards` },
   });
 });
 
@@ -720,7 +721,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   expect(defaultList.status).toBe(200);
   const defaultListEtag = defaultList.headers.get("etag");
   await expect(defaultList.json()).resolves.toMatchObject({
-    links: { self: "/v1/catalogue-exports" },
+    links: { self: `${apiPublicBase}/v1/catalogue-exports` },
   });
   const explicitDefault = await request(
     "/v1/catalogue-exports?limit=50",
@@ -729,7 +730,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   expect(explicitDefault.status).toBe(200);
   expect(explicitDefault.headers.get("etag")).not.toBe(defaultListEtag);
   await expect(explicitDefault.json()).resolves.toMatchObject({
-    links: { self: "/v1/catalogue-exports?limit=50" },
+    links: { self: `${apiPublicBase}/v1/catalogue-exports?limit=50` },
   });
 
   const firstDocument = await list.json<{
@@ -763,7 +764,7 @@ test("Catalogue Export JSON routes validate requests and support conditional rea
   expect(unavailable.status).toBe(409);
   await expect(unavailable.json()).resolves.toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/catalogue-exports" },
+    links: { collection: `${apiPublicBase}/v1/catalogue-exports` },
   });
 
   const manifestPath =
@@ -3310,7 +3311,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
     .toBe(true);
   expect(problem).toMatchObject({
     code: "cursor_revision_unavailable",
-    links: { collection: "/v1/cards" },
+    links: { collection: `${apiPublicBase}/v1/cards` },
   });
 });
 

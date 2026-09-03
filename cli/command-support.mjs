@@ -25,6 +25,16 @@ export function parseOptions(
   return { error: null, values, flags };
 }
 
+// KEEPR_API_URL and KEEPR_INGESTION_URL are base URLs that may carry a path
+// (issue #123: https://card.keepr.digital/api and /ingest). `new URL(path,
+// base)` discards a base path, so route paths are appended to the base.
+export function runtimeUrl(base, path) {
+  if (!path.startsWith("/")) {
+    throw new Error(`Route path ${JSON.stringify(path)} must start with "/"`);
+  }
+  return new URL(`${String(base).replace(/\/+$/u, "")}${path}`);
+}
+
 export function writeCliFailure(json, failure, exitCode) {
   if (json) {
     const document = {

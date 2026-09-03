@@ -1600,17 +1600,19 @@ test("CLI Card search uses the authenticated catalogue HTTP seam", async (t) => 
   const address = server.address();
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
+  // KEEPR_API_URL is a base that may carry the production mount path
+  // (issue #123); the CLI appends route paths to it.
   const result = await runCli(
     ["cards", "search", "--query", "éclair", "--limit", "25", "--json"],
     {
-      KEEPR_API_URL: `http://127.0.0.1:${address.port}`,
+      KEEPR_API_URL: `http://127.0.0.1:${address.port}/api/`,
       KEEPR_API_KEY: "cli-api-test-key",
     },
   );
   assert.equal(result.code, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).data[0].id, "card_cli_erratum");
   assert.deepEqual(observed, {
-    path: "/v1/cards?q=%C3%A9clair&limit=25",
+    path: "/api/v1/cards?q=%C3%A9clair&limit=25",
     authorization: "Bearer cli-api-test-key",
   });
 });
