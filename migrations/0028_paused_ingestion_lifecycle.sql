@@ -29,6 +29,20 @@ DROP TRIGGER guard_catalogue_publication;
 DROP TRIGGER guard_ingestion_transition_delete;
 DROP TRIGGER guard_no_change_result;
 
+-- The two curated-revision pin tables from 0014 reference ingestion_runs
+-- with ON DELETE CASCADE, and deferring foreign keys does not defer cascade
+-- actions: dropping the parent below would delete every pin row, and their
+-- immutability triggers abort the migration as soon as one exists. Their
+-- rows move through holding tables exactly like the runs do; the tables are
+-- dropped (an implicit delete on the dropped table fires no triggers) and
+-- recreated verbatim once the rebuilt parent holds its rows again.
+CREATE TABLE ingestion_run_curated_revisions_holding AS
+  SELECT * FROM ingestion_run_curated_revisions;
+CREATE TABLE ingestion_run_curated_revision_sets_holding AS
+  SELECT * FROM ingestion_run_curated_revision_sets;
+DROP TABLE ingestion_run_curated_revisions;
+DROP TABLE ingestion_run_curated_revision_sets;
+
 CREATE TABLE ingestion_runs_with_pause (
   id TEXT PRIMARY KEY,
   state TEXT NOT NULL CHECK (
@@ -111,6 +125,69 @@ SELECT
 FROM ingestion_runs_holding;
 
 DROP TABLE ingestion_runs_holding;
+
+CREATE TABLE ingestion_run_curated_revisions (
+  ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  revision_id TEXT NOT NULL REFERENCES curated_revisions(id),
+  content_digest TEXT NOT NULL CHECK (
+    length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
+  ),
+  reviewed_source_digest TEXT NOT NULL CHECK (
+    length(reviewed_source_digest) = 64 AND reviewed_source_digest NOT GLOB '*[^0-9a-f]*'
+  ),
+  PRIMARY KEY (ingestion_run_id, ordinal),
+  UNIQUE (ingestion_run_id, revision_id)
+);
+
+CREATE TABLE ingestion_run_curated_revision_sets (
+  ingestion_run_id TEXT PRIMARY KEY REFERENCES ingestion_runs(id) ON DELETE CASCADE,
+  revision_ids_json TEXT NOT NULL CHECK (json_valid(revision_ids_json)),
+  set_digest TEXT NOT NULL CHECK (
+    length(set_digest) = 64 AND set_digest NOT GLOB '*[^0-9a-f]*'
+      AND set_digest <> '0000000000000000000000000000000000000000000000000000000000000000'
+  ),
+  pinned_at TEXT NOT NULL
+);
+
+INSERT INTO ingestion_run_curated_revisions (
+  ingestion_run_id, ordinal, revision_id, content_digest, reviewed_source_digest
+)
+SELECT ingestion_run_id, ordinal, revision_id, content_digest, reviewed_source_digest
+FROM ingestion_run_curated_revisions_holding;
+
+INSERT INTO ingestion_run_curated_revision_sets (
+  ingestion_run_id, revision_ids_json, set_digest, pinned_at
+)
+SELECT ingestion_run_id, revision_ids_json, set_digest, pinned_at
+FROM ingestion_run_curated_revision_sets_holding;
+
+DROP TABLE ingestion_run_curated_revisions_holding;
+DROP TABLE ingestion_run_curated_revision_sets_holding;
+
+CREATE TRIGGER curated_revision_pins_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_curated_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pins_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_curated_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pin_sets_are_immutable_on_update
+BEFORE UPDATE ON ingestion_run_curated_revision_sets
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_set_immutable');
+END;
+
+CREATE TRIGGER curated_revision_pin_sets_are_immutable_on_delete
+BEFORE DELETE ON ingestion_run_curated_revision_sets
+BEGIN
+  SELECT RAISE(ABORT, 'curated_revision_pin_set_immutable');
+END;
 
 CREATE TRIGGER record_initial_ingestion_state
 AFTER INSERT ON ingestion_runs
