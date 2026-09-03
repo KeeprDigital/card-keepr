@@ -1,0 +1,33 @@
+name: cache-warm
+
+# ci.yml restores node_modules from a cache scoped to the PR's merge ref or
+# to main. Nothing else runs on main, so this warms the main-scoped cache
+# whenever the lockfile changes; a new PR's first run then hits it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - package-lock.json
+      - .github/workflows/cache-warm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: actions/cache@v6
+        id: node-modules
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules.outputs.cache-hit != 'true'
+        run: npm ci
