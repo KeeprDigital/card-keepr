@@ -445,13 +445,13 @@ export async function completeOfficialCollectionRequestsFromDiscovery(
       isRecord(match.discovered_from) &&
       match.discovered_from.kind === "retained_stage_request"
     ) {
-      const seed = records.find((candidate) =>
-        isRecord(candidate) &&
-        typeof candidate.surface === "string" &&
-        candidate.surface.startsWith("@seed:") &&
-        candidate.url === match.url &&
-        isRecord(candidate.discovered_from) &&
-        candidate.discovered_from.kind === "publisher_navigation"
+      const seed = records.find((record) =>
+        isRecord(record) &&
+        typeof record.surface === "string" &&
+        record.surface.startsWith("@seed:") &&
+        record.url === match.url &&
+        isRecord(record.discovered_from) &&
+        record.discovered_from.kind === "publisher_navigation"
       );
       if (!isRecord(seed) || !isRecord(seed.discovered_from)) {
         throw new AdministrationProblem(

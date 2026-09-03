@@ -83,9 +83,9 @@ const strategies = {
       const raw = attributes[effect.attribute];
       if (raw === null || raw === undefined) return "indeterminate";
       const values = Array.isArray(raw) ? raw : [raw];
-      return values.some((candidate) => typeof candidate === "string" &&
+      return values.some((value) => typeof value === "string" &&
         effect.includes_any.some((member) =>
-          member.toUpperCase() === candidate.toUpperCase()
+          member.toUpperCase() === value.toUpperCase()
         )) ? "legal" : "not_legal";
     },
   ),

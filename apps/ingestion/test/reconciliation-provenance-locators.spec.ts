@@ -809,7 +809,7 @@ test("historical locator bindings reactivate only for the same Printing and expo
       {
         code: "printing_match_contradictory",
         locator: "/official/locator-binding/stable",
-        candidate_printing_ids: [printingId],
+        matched_printing_ids: [printingId],
         detail: expect.stringContaining(
           "retained locator contradicts",
         ),

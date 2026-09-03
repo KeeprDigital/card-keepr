@@ -331,7 +331,7 @@ export async function exportComponentRecords(
     }[];
   }>();
   const component = manifest?.components.find(
-    (candidate) => candidate.name === componentName,
+    (entry) => entry.name === componentName,
   );
   const object = await testEnv.CATALOGUE_EXPORTS.get(
     `catalogue-exports/${revisionId}/components/${component?.compressed_sha256}.ndjson.gz`,

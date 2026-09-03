@@ -39,7 +39,7 @@ export function requiredOfficialSourceScope(
   sourceLineage: string,
 ): OfficialSourceScope {
   const scope = scopes.find(
-    (candidate) => candidate.sourceLineage === sourceLineage,
+    (entry) => entry.sourceLineage === sourceLineage,
   );
   if (scope === undefined) {
     throw new Error("Official Source Lineage has no registered scope.");
