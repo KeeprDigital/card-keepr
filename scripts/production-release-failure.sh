@@ -31,7 +31,10 @@ if test -f "${release_directory}/post-schema-status.sql"; then
   fi
 fi
 
-if test "${migration_started}" = 1 && test "${production_releases_available}" = 1; then
+# Bootstrap Mode writes no failed.sql: without a verified backup no
+# production_releases row can exist, so the failure stays in the idempotency
+# ledger (failure-evidence.sql) and only the fence is released below.
+if test "${migration_started}" = 1 && test "${production_releases_available}" = 1 && test -f "${release_directory}/failed.sql"; then
   failed_result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${config}" --file "${release_directory}/failed.sql")"
   failed_command_status=$?
   if test "${failed_command_status}" -eq 0; then

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runProductionSmoke } from "../scripts/production-smoke.mjs";
+import { runBootstrapSmoke, runProductionSmoke } from "../scripts/production-smoke.mjs";
 
 test("black-box smoke covers auth, representative reads, retained exports, and stale cursors", async () => {
   const visited = [];
@@ -103,5 +103,48 @@ test("black-box smoke rejects missing retained or stale fixtures before traffic"
     calls += 1;
     return new Response();
   }), /invalid_smoke_input/u);
+  assert.equal(calls, 0);
+});
+
+test("Bootstrap Mode smoke proves health and auth on both mounts and the Spine Revision, and reads no catalogue data", async () => {
+  const visited = [];
+  const result = await runBootstrapSmoke({
+    apiUrl: "https://card.keepr.digital/api", apiKey: "traffic-key",
+    ingestionUrl: "https://card.keepr.digital/ingest/", currentRevisionId: "catrev_spine_000",
+  }, async (url, init) => {
+    const parsed = new URL(url);
+    visited.push(`${parsed.pathname}${parsed.search}`);
+    if (init.headers.authorization !== "Bearer traffic-key") {
+      return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401, headers: { "content-type": "application/problem+json" } });
+    }
+    if (parsed.pathname === "/api/health") return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+    if (parsed.pathname === "/api/v1/catalogue") {
+      return new Response(JSON.stringify({ meta: { catalogue_revision_id: "catrev_spine_000" } }), { status: 200, headers: { "x-catalogue-revision": "catrev_spine_000" } });
+    }
+    return new Response("unexpected", { status: 500 });
+  });
+  assert.deepEqual(result, { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: "catrev_spine_000", checks: 4 });
+  assert.deepEqual(visited, ["/api/health", "/api/health", "/ingest/health", "/api/v1/catalogue"]);
+});
+
+test("Bootstrap Mode smoke fails when the catalogue no longer reports the Spine Revision", async () => {
+  await assert.rejects(runBootstrapSmoke({
+    apiUrl: "https://card.keepr.digital/api", apiKey: "traffic-key",
+    ingestionUrl: "https://card.keepr.digital/ingest", currentRevisionId: "catrev_spine_000",
+  }, async (url, init) => {
+    const parsed = new URL(url);
+    if (init.headers.authorization !== "Bearer traffic-key") return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401 });
+    if (parsed.pathname === "/api/v1/catalogue") {
+      return new Response(JSON.stringify({ meta: { catalogue_revision_id: "catrev_first" } }), { status: 200, headers: { "x-catalogue-revision": "catrev_first" } });
+    }
+    return new Response("{}", { status: 200 });
+  }), /smoke_revision_header_\/api\/v1\/catalogue/u);
+});
+
+test("Bootstrap Mode smoke refuses any revision other than the Spine Revision before traffic", async () => {
+  let calls = 0;
+  await assert.rejects(runBootstrapSmoke({
+    apiUrl: "https://card.keepr.digital/api", apiKey: "key", ingestionUrl: "https://card.keepr.digital/ingest", currentRevisionId: "catrev_first",
+  }, async () => { calls += 1; return new Response(); }), /invalid_smoke_input/u);
   assert.equal(calls, 0);
 });

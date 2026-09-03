@@ -1,11 +1,33 @@
 #!/usr/bin/env node
+import { runtimeUrl } from "../cli/command-support.mjs";
+import { SPINE_REVISION_ID } from "../src/catalogue/spine-revision.mjs";
+
+// Bootstrap Mode (issue #141): before the first published Catalogue Revision
+// there is no Card, Printing, export, or retained revision to read, so the
+// smoke proves only that both mounts answer, enforce authentication, and
+// that the API reports the Spine Revision.
+export async function runBootstrapSmoke(input, fetchImpl = fetch) {
+  if (input === null || typeof input !== "object" ||
+      [input.apiUrl, input.apiKey, input.ingestionUrl, input.currentRevisionId].some((value) => typeof value !== "string" || value.length === 0) ||
+      input.currentRevisionId !== SPINE_REVISION_ID) throw new Error("invalid_smoke_input");
+  const apiUrl = (path) => runtimeUrl(input.apiUrl, path);
+  const ingestionUrl = (path) => runtimeUrl(input.ingestionUrl, path);
+  const authorized = { authorization: `Bearer ${input.apiKey}` };
+  await expectStatus(fetchImpl, apiUrl("/health"), authorized, 200);
+  await expectStatus(fetchImpl, apiUrl("/health"), { authorization: "Bearer deliberately-invalid" }, 401);
+  // The workflow holds no administration credential. An unauthenticated 401
+  // problem from the ingestion mount proves the route reaches the Worker and
+  // that it enforces authentication; the placeholder origin never answers so.
+  const unauthenticated = await expectJson(fetchImpl, ingestionUrl("/health"), {}, 401);
+  if (unauthenticated.code !== "authentication_required") throw new Error("ingestion_authentication_not_enforced");
+  const catalogue = await expectJson(fetchImpl, apiUrl("/v1/catalogue"), authorized, 200, SPINE_REVISION_ID);
+  if (catalogue.meta?.catalogue_revision_id !== SPINE_REVISION_ID) throw new Error("current_revision_mismatch");
+  return { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: SPINE_REVISION_ID, checks: 4 };
+}
 
 export async function runProductionSmoke(input, fetchImpl = fetch) {
   validateInput(input);
-  // apiUrl is a base that may carry a path (https://card.keepr.digital/api);
-  // route paths are appended to it rather than resolved against it.
-  const base = new URL(input.apiUrl);
-  const apiUrl = (path) => new URL(`${base.href.replace(/\/+$/u, "")}${path}`);
+  const apiUrl = (path) => runtimeUrl(input.apiUrl, path);
   const authorized = { authorization: `Bearer ${input.apiKey}` };
   await expectStatus(fetchImpl, apiUrl("/health"), authorized, 200);
   await expectStatus(fetchImpl, apiUrl("/health"), { authorization: "Bearer deliberately-invalid" }, 401);
@@ -73,5 +95,6 @@ async function expectJson(fetchImpl, url, headers, status, revision) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const input = JSON.parse(process.env.KEEPR_SMOKE_INPUT ?? "null");
   if (input === null) throw new Error("KEEPR_SMOKE_INPUT is required");
-  process.stdout.write(`${JSON.stringify(await runProductionSmoke(input))}\n`);
+  const run = process.argv[2] === "bootstrap" ? runBootstrapSmoke : runProductionSmoke;
+  process.stdout.write(`${JSON.stringify(await run(input))}\n`);
 }
