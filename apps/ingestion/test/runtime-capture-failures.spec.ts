@@ -67,7 +67,7 @@ test(
         {
           supported_game: "one-piece",
           source_lineage: "one-piece-en",
-          adapter_version: "fixture-one-piece-json@1",
+          adapter_version: "fixture-one-piece-json@3",
           idempotency_key: scenario.key,
           requests: [
             {
@@ -138,7 +138,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const firstRun = await createCollection(
     "source_collection_cache_first_001",
     "https://official-source.invalid/conditional",
-    "fixture-one-piece-json@1",
+    "fixture-one-piece-json@3",
     { "accept-language": "en" },
   );
   const first = await resumeCollection(firstRun.id);
@@ -149,7 +149,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const differentRepresentationRun = await createCollection(
     "source_collection_cache_language_changed_001",
     "https://official-source.invalid/conditional",
-    "fixture-one-piece-json@1",
+    "fixture-one-piece-json@3",
     { "accept-language": "fr" },
   );
   const differentRepresentation = await resumeCollection(
@@ -164,7 +164,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const revalidatedRun = await createCollection(
     "source_collection_cache_second_001",
     "https://official-source.invalid/conditional",
-    "fixture-one-piece-json@1",
+    "fixture-one-piece-json@3",
     { "accept-language": "en" },
   );
   const revalidated = await resumeCollection(revalidatedRun.id);
@@ -189,7 +189,7 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
   const changedAdapterRun = await createCollection(
     "source_collection_cache_adapter_changed_001",
     "https://official-source.invalid/conditional",
-    "fixture-one-piece-json@2",
+    "fixture-one-piece-json-capped@1",
     { "accept-language": "en" },
   );
   const changedAdapter = await resumeCollection(changedAdapterRun.id);

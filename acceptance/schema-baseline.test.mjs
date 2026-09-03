@@ -22,7 +22,7 @@ const root = resolve(import.meta.dirname, "..");
 const chainCommit = "30751a2a46548530d48dc37a1dc507efbbd07c03";
 const chainLevel = 36;
 const chainSchemaDigest = "4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4";
-const baselineSeedDigest = "62bd36896ce5a7ad80f5693c3f6dd90f92869af19508b3d0711660c71fc48787";
+const baselineSeedDigest = "f5523576e21a352acd13f70a41fe5cdb5fd067d6bd4e2abc78f1c7d0dbe5856e";
 
 test("the baseline is the first migration and a fresh apply yields level 1", async () => {
   const names = await migrationNames();

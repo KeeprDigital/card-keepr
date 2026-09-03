@@ -31,7 +31,7 @@ test("each request uses its owning Evidence Plan adapter capture cap", async () 
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fixture-fusion-world-json@1",
+        adapter_version: "fixture-fusion-world-json@2",
         requests: [{
           id: "large-cap-first-plan",
           method: "GET",

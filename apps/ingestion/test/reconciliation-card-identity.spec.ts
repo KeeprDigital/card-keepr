@@ -275,7 +275,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
     },
   );
   const asia = await reconcile(asiaRun.id);
@@ -300,7 +300,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const productMismatch = await reconcile(productMismatchRun.id);
@@ -322,7 +322,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const us = await reconcile(usRun.id);
@@ -377,7 +377,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const usMissing = await reconcile(usMissingRun.id);
@@ -451,7 +451,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const cardConflict = await reconcile(cardConflictRun.id);
@@ -471,7 +471,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const conflict = await reconcile(conflictRun.id);
@@ -491,7 +491,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const variantMismatch = await reconcile(variantMismatchRun.id);
@@ -509,7 +509,7 @@ test("Gundam Printing identity is independent of locale observation order when E
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const us = await reconcile(usRun.id);
@@ -528,7 +528,7 @@ test("Gundam Printing identity is independent of locale observation order when E
     {
       game: "gundam",
       lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
     },
   );
   const asia = await reconcile(asiaRun.id);
@@ -545,7 +545,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
     {
       game: "gundam",
       lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
     },
   );
   const asia = await reconcile(asiaRun.id);
@@ -562,7 +562,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const us = await reconcile(usRun.id);
@@ -598,12 +598,12 @@ test("historical Gundam locators survive disappearance without retaining stale C
   const asiaOptions = {
     game: "gundam",
     lineage: "gundam-en-asia",
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
   } as const;
   const usOptions = {
     game: "gundam",
     lineage: "gundam-en-us",
-    adapter: "fixture-gundam-en-us-json@1",
+    adapter: "fixture-gundam-en-us-json@2",
   } as const;
 
   const asiaRun = await collect(
@@ -861,7 +861,7 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const us = await reconcile(usRun.id);
@@ -877,7 +877,7 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
     {
       game: "gundam",
       lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
     },
   );
   const asia = await reconcile(asiaRun.id);
@@ -914,18 +914,18 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
     {
       firstScenario: "gundam-printing-conflict-asia-first",
       firstLineage: "gundam-en-asia",
-      firstAdapter: "fixture-gundam-en-asia-json@1",
+      firstAdapter: "fixture-gundam-en-asia-json@2",
       secondScenario: "gundam-printing-conflict-us-second",
       secondLineage: "gundam-en-us",
-      secondAdapter: "fixture-gundam-en-us-json@1",
+      secondAdapter: "fixture-gundam-en-us-json@2",
     },
     {
       firstScenario: "gundam-printing-conflict-us-first",
       firstLineage: "gundam-en-us",
-      firstAdapter: "fixture-gundam-en-us-json@1",
+      firstAdapter: "fixture-gundam-en-us-json@2",
       secondScenario: "gundam-printing-conflict-asia-second",
       secondLineage: "gundam-en-asia",
-      secondAdapter: "fixture-gundam-en-asia-json@1",
+      secondAdapter: "fixture-gundam-en-asia-json@2",
     },
   ] as const) {
     const firstRun = await collect(
@@ -977,7 +977,7 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const us = await reconcile(usRun.id);
@@ -989,7 +989,7 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     {
       game: "gundam",
       lineage: "gundam-en-asia",
-      adapter: "fixture-gundam-en-asia-json@1",
+      adapter: "fixture-gundam-en-asia-json@2",
     },
   );
   const asia = await reconcile(asiaRun.id);
@@ -1006,7 +1006,7 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const laterUs = await reconcile(laterUsRun.id);
@@ -1021,18 +1021,18 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     [
       "gundam-conflict-us-first",
       "gundam-en-us",
-      "fixture-gundam-en-us-json@1",
+      "fixture-gundam-en-us-json@2",
       "gundam-conflict-asia-second",
       "gundam-en-asia",
-      "fixture-gundam-en-asia-json@1",
+      "fixture-gundam-en-asia-json@2",
     ],
     [
       "gundam-conflict-asia-first",
       "gundam-en-asia",
-      "fixture-gundam-en-asia-json@1",
+      "fixture-gundam-en-asia-json@2",
       "gundam-conflict-us-second",
       "gundam-en-us",
-      "fixture-gundam-en-us-json@1",
+      "fixture-gundam-en-us-json@2",
     ],
   ] as const) {
     const [firstScenario, firstLineage, firstAdapter, secondScenario, secondLineage, secondAdapter] =

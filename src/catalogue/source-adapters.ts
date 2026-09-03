@@ -111,31 +111,6 @@ function sourceRequestCapacity(adapterVersion: string): number {
   return capacity;
 }
 
-const parseSourceDocument = (document: unknown): readonly unknown[] => {
-  if (
-    typeof document === "object" &&
-    document !== null &&
-    !Array.isArray(document)
-  ) {
-    const record = document as {
-      cards?: unknown;
-      product_surfaces?: unknown;
-    };
-    if (
-      Array.isArray(record.cards) ||
-      Array.isArray(record.product_surfaces)
-    ) {
-      return [
-        ...(Array.isArray(record.cards) ? record.cards : []),
-        ...(Array.isArray(record.product_surfaces)
-          ? record.product_surfaces
-          : []),
-      ];
-    }
-  }
-  return [document];
-};
-
 const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
   if (
     typeof document === "object" &&
@@ -166,18 +141,6 @@ const parseLegalitySourceDocument = (document: unknown): readonly unknown[] => {
             }]),
       ];
     }
-  }
-  return [document];
-};
-
-const parsePinnedCardDocument = (document: unknown): readonly unknown[] => {
-  if (
-    typeof document === "object" &&
-    document !== null &&
-    !Array.isArray(document) &&
-    Array.isArray((document as { cards?: unknown }).cards)
-  ) {
-    return (document as { cards: unknown[] }).cards;
   }
   return [document];
 };
@@ -289,67 +252,6 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           requiredSurfaces: adapter.requiredSurfaces,
         },
       })),
-      ...[
-        {
-          adapterVersion: "one-piece-json-document@1",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "one-piece-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-        {
-          adapterVersion: "one-piece-json-document@2",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "one-piece-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-        {
-          adapterVersion: "fusion-world-en@1",
-          sourceLineage: "fusion-world-en",
-          supportedGame: "fusion-world",
-          gameProfileVersion: "fusion-world@1",
-          parserContract: "fusion-world-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-        {
-          adapterVersion: "digimon-en@1",
-          sourceLineage: "digimon-en",
-          supportedGame: "digimon",
-          gameProfileVersion: "digimon@1",
-          parserContract: "digimon-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-        {
-          adapterVersion: "gundam-en-asia@1",
-          sourceLineage: "gundam-en-asia",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "gundam-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-        {
-          adapterVersion: "gundam-en-us@1",
-          sourceLineage: "gundam-en-us",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "gundam-card-document@1",
-          maximumSnapshotBytes: 1024 * 1024,
-          parse: parsePinnedCardDocument,
-        },
-      ].map((adapter) => ({
-        ...adapter,
-        origin: "production" as const,
-        requestSurface: { kind: "credential-free-https" as const },
-        reconciliationCapability: "unavailable" as const,
-      })),
       {
         adapterVersion: "fixture-one-piece-official-errata-json@1",
         sourceLineage: "one-piece-en",
@@ -360,49 +262,27 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         origin: "synthetic_fixture" as const,
         requestSurface: { kind: "synthetic-fixture" as const },
         reconciliationCapability: "errata" as const,
-        parse: parseSourceDocument,
+        parse: parseLegalitySourceDocument,
       },
+      // Before Go-Live (ADR 0008) each Source Lineage keeps one synthetic
+      // fixture adapter; the -capped and -large fixtures are distinct
+      // behaviours (byte cap, request capacity), not versions. Every fixture
+      // shares the legality-aware parser contract.
       ...[
-        {
-          adapterVersion: "fixture-one-piece-json@1",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
-        },
-        {
-          adapterVersion: "fixture-one-piece-json@2",
-          sourceLineage: "one-piece-en",
-          supportedGame: "one-piece",
-          gameProfileVersion: "one-piece@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
-        },
         {
           adapterVersion: "fixture-one-piece-json@3",
           sourceLineage: "one-piece-en",
           supportedGame: "one-piece",
           gameProfileVersion: "one-piece@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
-          legalityAware: true,
         },
         {
           adapterVersion: "fixture-one-piece-json-capped@1",
           sourceLineage: "one-piece-en",
           supportedGame: "one-piece",
           gameProfileVersion: "one-piece@1",
-          parserContract: "synthetic-fixture-card-document@1",
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
           maximumSnapshotBytes: 1024 * 1024,
-          legalityAware: false,
-        },
-        {
-          adapterVersion: "fixture-fusion-world-json@1",
-          sourceLineage: "fusion-world-en",
-          supportedGame: "fusion-world",
-          gameProfileVersion: "fusion-world@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
         },
         {
           adapterVersion: "fixture-fusion-world-json@2",
@@ -410,23 +290,13 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           supportedGame: "fusion-world",
           gameProfileVersion: "fusion-world@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
-          legalityAware: true,
         },
         {
           adapterVersion: "fixture-fusion-world-json-large@1",
           sourceLineage: "fusion-world-en",
           supportedGame: "fusion-world",
           gameProfileVersion: "fusion-world@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
-        },
-        {
-          adapterVersion: "fixture-digimon-json@1",
-          sourceLineage: "digimon-en",
-          supportedGame: "digimon",
-          gameProfileVersion: "digimon@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
+          parserContract: "synthetic-fixture-card-document-with-legality@2",
         },
         {
           adapterVersion: "fixture-digimon-json@2",
@@ -434,15 +304,6 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           supportedGame: "digimon",
           gameProfileVersion: "digimon@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
-          legalityAware: true,
-        },
-        {
-          adapterVersion: "fixture-gundam-en-asia-json@1",
-          sourceLineage: "gundam-en-asia",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
         },
         {
           adapterVersion: "fixture-gundam-en-asia-json@2",
@@ -450,15 +311,6 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
-          legalityAware: true,
-        },
-        {
-          adapterVersion: "fixture-gundam-en-us-json@1",
-          sourceLineage: "gundam-en-us",
-          supportedGame: "gundam",
-          gameProfileVersion: "gundam@1",
-          parserContract: "synthetic-fixture-card-document@1",
-          legalityAware: false,
         },
         {
           adapterVersion: "fixture-gundam-en-us-json@2",
@@ -466,18 +318,15 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           supportedGame: "gundam",
           gameProfileVersion: "gundam@1",
           parserContract: "synthetic-fixture-card-document-with-legality@2",
-          legalityAware: true,
         },
-      ].map(({ legalityAware, ...adapter }) => ({
+      ].map((adapter) => ({
         ...adapter,
         maximumSnapshotBytes:
           adapter.maximumSnapshotBytes ?? 16 * 1024 * 1024,
         origin: "synthetic_fixture" as const,
         requestSurface: { kind: "synthetic-fixture" as const },
         reconciliationCapability: "catalogue" as const,
-        parse: legalityAware
-          ? parseLegalitySourceDocument
-          : parseSourceDocument,
+        parse: parseLegalitySourceDocument,
       })),
     ].map((adapter) => Object.freeze({
       ...adapter,

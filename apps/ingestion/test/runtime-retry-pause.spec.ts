@@ -191,7 +191,7 @@ test("a captured request crosses a retry pause without another Official Source f
   const created = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "retry_pause_captured_001",
     requests: [
       {

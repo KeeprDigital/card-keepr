@@ -381,7 +381,7 @@ test("child identity exhaustion fails only the exhausted hostname shard", async 
   const created = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "workflow_scoped_exhaustion_001",
     requests: [
       {
@@ -482,7 +482,7 @@ test("a parent Workflow that completed with a request still pending resumes as a
   const created = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "workflow_completed_parent_resume_001",
     requests: [
       {

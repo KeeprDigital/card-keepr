@@ -231,7 +231,7 @@ test("heterogeneous empty plans report each lineage independently regardless of 
     {
       game: "fusion-world",
       lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@1",
+      adapter: "fixture-fusion-world-json@2",
     },
   );
   const seeded = await reconcile(seededRun.id);
@@ -254,8 +254,8 @@ test("heterogeneous empty plans report each lineage independently regardless of 
           ? "one-piece-en"
           : "fusion-world-en",
         adapter_version: game === "one-piece"
-          ? "fixture-one-piece-json@1"
-          : "fixture-fusion-world-json@1",
+          ? "fixture-one-piece-json@3"
+          : "fixture-fusion-world-json@2",
         requests: [{
           id: `${game}-empty-${suffix}`,
           method: "GET" as const,

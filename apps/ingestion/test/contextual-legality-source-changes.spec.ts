@@ -256,7 +256,7 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
          game_profile_version, adapter_version, request_plan_json,
          plan_origin
        ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@1', ?, 'synthetic_fixture')`,
+         'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
     ).bind(runId, plan),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_requests (
@@ -290,7 +290,7 @@ test("authenticated reparse rejects a normalized fixture envelope through an una
          'https://official-source.invalid/normalized-envelope', '{}', ?, '[]',
          '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?, ?, ?,
          'one-piece-en', 'one-piece', 'one-piece@1',
-         'fixture-one-piece-json@1', NULL)`,
+         'fixture-one-piece-json@3', NULL)`,
     ).bind(
       snapshotId,
       runId,

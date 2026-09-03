@@ -172,7 +172,7 @@ test("a resumed run advances through the existing completeness gates once collec
   const created = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "capacity_resume_complete_001",
     requests: [
       {

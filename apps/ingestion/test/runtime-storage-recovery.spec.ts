@@ -233,7 +233,7 @@ test("reparse retries recover one staged immutable observation set while new int
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
     {
-      adapter_version: "fixture-one-piece-json@1",
+      adapter_version: "fixture-one-piece-json@3",
       idempotency_key: "reparse_intent_001",
     },
   );
@@ -243,7 +243,7 @@ test("reparse retries recover one staged immutable observation set while new int
      WHERE source_snapshot_id = ? AND adapter_version = ?
        AND idempotency_key = ?`,
   )
-    .bind(snapshot.id, "fixture-one-piece-json@1", "reparse_intent_001")
+    .bind(snapshot.id, "fixture-one-piece-json@3", "reparse_intent_001")
     .first<{ state: string; content_object_key: string }>();
   expect(staged?.state).toBe("uploaded");
   expect(
@@ -258,7 +258,7 @@ test("reparse retries recover one staged immutable observation set while new int
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "fixture-one-piece-json@1",
+        adapter_version: "fixture-one-piece-json@3",
         idempotency_key: "reparse_intent_001",
       },
     ),
@@ -266,7 +266,7 @@ test("reparse retries recover one staged immutable observation set while new int
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "fixture-one-piece-json@1",
+        adapter_version: "fixture-one-piece-json@3",
         idempotency_key: "reparse_intent_001",
       },
     ),
@@ -283,7 +283,7 @@ test("reparse retries recover one staged immutable observation set while new int
   }
   expect(reparsed).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     observation_count: 1,
   });
   expect(replayed).toEqual(reparsed);
@@ -294,7 +294,7 @@ test("reparse retries recover one staged immutable observation set while new int
     `/v1/source-snapshots/${snapshot.id}/observations`,
     "POST",
     {
-      adapter_version: "fixture-one-piece-json@1",
+      adapter_version: "fixture-one-piece-json@3",
       idempotency_key: "reparse_intent_002",
     },
   );

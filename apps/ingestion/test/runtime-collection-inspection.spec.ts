@@ -195,7 +195,7 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
   });
   expect(collection.capacity).toEqual([{
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     capacity_generation: 1,
     request_capacity: 5_000,
     used_capacity: 1,

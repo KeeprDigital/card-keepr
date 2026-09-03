@@ -92,7 +92,13 @@ parseable and no retired registration exists; #135 removed the predecessor
 versions and the 22 retired registrations, the retirement runbook, and the
 retired-runs query. A Source Snapshot is reparsed only by its exact
 capturing version, and an unregistered version is refused with
-`adapter_not_supported`. From Go-Live, ADR 0004 applies: parser
+`adapter_not_supported`. Synthetic fixture adapters follow the same rule:
+one legality-aware fixture adapter per Source Lineage (`fixture-one-piece-json@3`,
+`fixture-fusion-world-json@2`, `fixture-digimon-json@2`,
+`fixture-gundam-en-asia-json@2`, `fixture-gundam-en-us-json@2`), all on the
+single `synthetic-fixture-card-document-with-legality@2` parser contract;
+the `-capped` and `-large` fixtures are distinct behaviours, not versions.
+From Go-Live, ADR 0004 applies: parser
 implementation is retained for the active version and its immediate
 predecessor, older versions are retired with their registration kept, and
 reparsing retained Source Snapshots is done by registering a new version.

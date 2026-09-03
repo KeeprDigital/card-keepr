@@ -145,7 +145,7 @@ export type CollectionDocument = {
 export async function createCollection(
   idempotencyKey: string,
   url: string,
-  adapterVersion = "fixture-one-piece-json@1",
+  adapterVersion = "fixture-one-piece-json@3",
   headers: Record<string, string> = {},
 ): Promise<CollectionDocument> {
   const response = await fixtureEvidenceRequest(

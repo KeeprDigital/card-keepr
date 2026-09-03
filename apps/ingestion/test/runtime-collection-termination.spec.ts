@@ -201,7 +201,7 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
   const created = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "termination_gates_001",
     requests: [
       { id: "cards", url: "https://official-source.invalid/cards" },
@@ -323,7 +323,7 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
   const successor = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "termination_gates_successor_001",
     requests: [
       { id: "cards", url: "https://official-source.invalid/cards" },
@@ -508,7 +508,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
   const third = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "termination_race_extension_001",
     requests: [
       { id: "cards", url: "https://official-source.invalid/cards" },

@@ -40,7 +40,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "fixture-one-piece-json@1",
+      adapter_version: "fixture-one-piece-json@3",
       idempotency_key: "source_collection_success_001",
       requests: [
         {
@@ -110,7 +110,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
         etag: '"cards-v1"',
       },
     },
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     ingestion_run_id: planned.id,
   });
   expect(snapshot.content).toMatchObject({
@@ -130,7 +130,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }
   expect(observationSet).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     observation_count: 1,
   });
   expect(observationSet.content_digest).toMatch(
@@ -164,7 +164,7 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   }>();
   expect(observationDocument).toMatchObject({
     source_snapshot_id: snapshot.id,
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
   });
   expect(observationDocument.observations).toHaveLength(1);
 
@@ -494,7 +494,7 @@ test("a full parent restart retains history and appends one bounded child identi
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "fixture-one-piece-json@1",
+      adapter_version: "fixture-one-piece-json@3",
       idempotency_key: "source_stable_hostname_mapping_001",
       requests: [
         {
