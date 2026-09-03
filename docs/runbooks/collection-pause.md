@@ -54,8 +54,9 @@ terminal and never pause.
 
 ## Stop a collecting run
 
-Stopping is two owner actions: pause, then terminate. There is no direct
-path from collecting to terminal.
+Stopping is two owner actions: pause, then terminate. Termination alone is
+refused while the collection Workflow is live; it accepts a collecting run
+only when the Workflow is already deterministically observed dead.
 
 ```sh
 npm run keepr -- source pause \
@@ -73,9 +74,11 @@ npm run keepr -- source terminate \
 the parent and hostname-shard Workflow Attempts current at the pause are
 terminated best-effort, and the run reports `resume` and `terminate` as its
 actions. Replaying the same key returns the original result; pausing a run
-that is not collecting is refused with `ingestion_run_not_collecting`. A
-paused run that should continue after all is resumed as usual under a new
-Workflow Attempt.
+that is not collecting is refused with `ingestion_run_not_collecting`, a
+key reused for another request with `idempotency_conflict`, and a pause
+that lost a race with a concurrent resume with `collection_pause_conflict`.
+A paused run that should continue after all is resumed as usual under a
+new Workflow Attempt.
 
 Terminating Workflow instances directly (the Cloudflare dashboard, or
 `wrangler workflows instances terminate`) is not a supported way to stop a

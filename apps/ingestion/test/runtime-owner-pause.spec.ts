@@ -29,7 +29,7 @@ async function releaseParentRecordStep(): Promise<void> {
   ).run();
 }
 
-async function pauseDocument(
+async function requestPause(
   runId: string,
   idempotencyKey: string,
 ): Promise<{ status: number; document: Record<string, unknown> }> {
@@ -58,7 +58,7 @@ test("an owner pause stops a live collecting run so it can be terminated without
   await started.body?.cancel();
   const parentId = `evidence-${run.id}`;
 
-  const paused = await pauseDocument(run.id, "owner_pause_terminate_001_pause");
+  const paused = await requestPause(run.id, "owner_pause_terminate_001_pause");
   expect(paused.status).toBe(200);
   expect(paused.document).toMatchObject({
     contract: "card-keepr-collection-pause@1",
@@ -116,20 +116,35 @@ test("an owner pause stops a live collecting run so it can be terminated without
   ).toHaveLength(1);
 });
 
-test("an owner-paused run resumes under a new Workflow Attempt and completes", async () => {
+test("an owner-paused live run resumes under a new Workflow Attempt and completes", async () => {
   const run = await createCollection(
     "owner_pause_resume_001",
     "https://official-source.invalid/cards",
   );
+  await holdParentAtRecordStep();
+  const started = await administrationRequest(
+    `/v1/ingestion-runs/${run.id}/collection/resume`,
+    "POST",
+  );
+  expect(started.status).toBe(202);
+  await started.body?.cancel();
   const parentId = `evidence-${run.id}`;
 
-  const paused = await pauseDocument(run.id, "owner_pause_resume_001_pause");
+  const paused = await requestPause(run.id, "owner_pause_resume_001_pause");
   expect(paused.status).toBe(200);
   expect(paused.document).toMatchObject({
     state: "paused",
     pause_reason: "owner_requested",
-    workflow: { id: parentId, attempt_number: 1, status: "unavailable" },
+    workflow: { id: parentId, attempt_number: 1, status: "running" },
   });
+  await waitForWorkflowStatus(
+    parentId,
+    async () =>
+      (await env.EVIDENCE_INGESTION_WORKFLOW.get(parentId)).status(),
+    "terminated",
+    20_000,
+  );
+  await releaseParentRecordStep();
 
   const resumed = await administrationRequest(
     `/v1/ingestion-runs/${run.id}/collection/resume`,
@@ -145,6 +160,9 @@ test("an owner-paused run resumes under a new Workflow Attempt and completes", a
 
   const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
   expect(completed.snapshots).toHaveLength(1);
+  expect(
+    completed.diagnostics.filter((entry) => entry.outcome === "success"),
+  ).toHaveLength(1);
   expect(
     completed.workflow.attempts
       .filter((attempt) => attempt.kind === "parent")
@@ -174,10 +192,15 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
     "owner_pause_idempotent_001",
     "https://official-source.invalid/cards",
   );
-  const first = await pauseDocument(run.id, "owner_pause_idempotent_001_pause");
+  // A first attempt that never started is paused under its bound identity
+  // and reports the instance as unavailable.
+  const first = await requestPause(run.id, "owner_pause_idempotent_001_pause");
   expect(first.status).toBe(200);
+  expect(first.document).toMatchObject({
+    workflow: { id: `evidence-${run.id}`, attempt_number: 1, status: "unavailable" },
+  });
 
-  const replayed = await pauseDocument(run.id, "owner_pause_idempotent_001_pause");
+  const replayed = await requestPause(run.id, "owner_pause_idempotent_001_pause");
   expect(replayed.status).toBe(200);
   expect(replayed.document).toEqual(first.document);
   const pauses = await env.CATALOGUE_DB.prepare(
@@ -186,7 +209,7 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   expect(pauses?.count).toBe(1);
 
   // A new request against the already-paused run is a typed state conflict.
-  const alreadyPaused = await pauseDocument(run.id, "owner_pause_idempotent_001_again");
+  const alreadyPaused = await requestPause(run.id, "owner_pause_idempotent_001_again");
   expect(alreadyPaused.status).toBe(409);
   expect(alreadyPaused.document).toMatchObject({
     code: "ingestion_run_not_collecting",
@@ -200,7 +223,7 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
   );
   expect(terminated.status).toBe(200);
   await terminated.body?.cancel();
-  const afterTermination = await pauseDocument(run.id, "owner_pause_idempotent_001_late");
+  const afterTermination = await requestPause(run.id, "owner_pause_idempotent_001_late");
   expect(afterTermination.status).toBe(409);
   expect(afterTermination.document).toMatchObject({
     code: "ingestion_run_not_collecting",
@@ -211,7 +234,7 @@ test("an owner pause replays idempotently and refuses a run that is not collecti
     "owner_pause_idempotent_002",
     "https://official-source.invalid/cards",
   );
-  const reused = await pauseDocument(other.id, "owner_pause_idempotent_001_pause");
+  const reused = await requestPause(other.id, "owner_pause_idempotent_001_pause");
   expect(reused.status).toBe(409);
   expect(reused.document).toMatchObject({ code: "idempotency_conflict" });
 });

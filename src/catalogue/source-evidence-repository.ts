@@ -1482,7 +1482,19 @@ export async function pauseEvidenceRunForWorkflowRecovery(
   runId: string,
   facts: WorkflowRecoveryFacts,
 ): Promise<void> {
-  await database.batch([
+  await database.batch(
+    workflowPauseStatements(database, runId, facts, new Date().toISOString()),
+  );
+}
+
+// The two guarded statements every Workflow Pause applies atomically.
+function workflowPauseStatements(
+  database: D1Database,
+  runId: string,
+  facts: WorkflowRecoveryFacts,
+  pausedAt: string,
+): D1PreparedStatement[] {
+  return [
     // Compare-and-set on the abandoned instance still being the bound
     // parent: a concurrent recovery that already superseded it rebound the
     // identity, so a stale classification of the old instance must not
@@ -1524,10 +1536,10 @@ export async function pauseEvidenceRunForWorkflowRecovery(
         facts.workflow_instance_id,
         facts.pause_reason,
         facts.workflow_status,
-        new Date().toISOString(),
+        pausedAt,
         facts.last_progress_at,
       ),
-  ]);
+  ];
 }
 
 export type CollectionPauseRequest = {
@@ -1586,47 +1598,20 @@ export async function pauseEvidenceRunOnOwnerRequest(
     last_progress_at: request.last_progress_at,
     actions: collectionActions("paused", ownerRequestedPauseReason),
   };
+  let applied = false;
   try {
-    await database.batch([
-      // Compare-and-set on the abandoned instance still being the bound
-      // parent, exactly like a recovery pause: a concurrent resume that
-      // already superseded it must not be paused by a stale request.
-      database
-        .prepare(
-          `UPDATE ingestion_runs
-           SET state = 'paused',
-               progress_json =
-                 '{"completed_stages":["planning"],"current_stage":"paused"}'
-           WHERE id = ?1 AND state = 'collecting'
-             AND EXISTS (
-               SELECT 1 FROM ingestion_evidence_plans
-               WHERE ingestion_run_id = ?1 AND parent_workflow_id = ?2
-             )`,
-        )
-        .bind(runId, request.workflow_instance_id),
-      database
-        .prepare(
-          `INSERT INTO ingestion_run_workflow_pauses (
-             ingestion_run_id, workflow_instance_id, pause_reason,
-             workflow_status, paused_at, last_progress_at
-           )
-           SELECT ?1, ?2, ?3, ?4, ?5, ?6
-           WHERE EXISTS (
-             SELECT 1 FROM ingestion_runs WHERE id = ?1 AND state = 'paused'
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM ingestion_run_workflow_pauses
-             WHERE ingestion_run_id = ?1 AND workflow_instance_id = ?2
-           )`,
-        )
-        .bind(
-          runId,
-          request.workflow_instance_id,
-          ownerRequestedPauseReason,
-          request.workflow_status,
-          pausedAt,
-          request.last_progress_at,
-        ),
+    const outcome = await database.batch([
+      ...workflowPauseStatements(
+        database,
+        runId,
+        {
+          workflow_instance_id: request.workflow_instance_id,
+          pause_reason: ownerRequestedPauseReason,
+          workflow_status: request.workflow_status,
+          last_progress_at: request.last_progress_at,
+        },
+        pausedAt,
+      ),
       // The retained response exists only when this request's own pause
       // record does, so a request that lost the race records no outcome and
       // re-reads the winner's instead.
@@ -1654,6 +1639,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
           ownerRequestedPauseReason,
         ),
     ]);
+    applied = outcome[2]?.meta.changes === 1;
   } catch {
     // A raced key or fence; the retained state below reports the outcome.
   }
@@ -1662,9 +1648,7 @@ export async function pauseEvidenceRunOnOwnerRequest(
     request.idempotency_key,
     requestJson,
   );
-  if (recorded !== null) {
-    return { document: recorded, applied: recorded.paused_at === pausedAt };
-  }
+  if (recorded !== null) return { document: recorded, applied };
   const current = await requiredEvidenceRun(database, runId);
   if (current.state !== "collecting") throw ingestionRunNotCollectingForPause();
   throw new AdministrationProblem(

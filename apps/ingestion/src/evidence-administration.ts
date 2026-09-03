@@ -271,13 +271,10 @@ async function pauseCollectingRunWithDeadWorkflow(
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
   if (run.state !== "collecting" || run.parent_workflow_id === null) return;
-  let status: SafeWorkflowStatus = "unavailable";
-  try {
-    const instance = await parentWorkflow.get(run.parent_workflow_id);
-    status = safeWorkflowStatus((await instance.status()).status);
-  } catch {
-    status = "unavailable";
-  }
+  const status = await observeWorkflowStatus(
+    parentWorkflow,
+    run.parent_workflow_id,
+  );
   const progress = await collectionProgressFacts(database, runId);
   const classification = classifyCollectionProgress(status, progress);
   if (classification.kind !== "recover") return;

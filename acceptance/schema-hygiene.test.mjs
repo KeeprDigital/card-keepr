@@ -54,6 +54,96 @@ test("a guarded migration aborts before changing anything when the recorded leve
   }
 });
 
+// Migration 0002 rebuilds the two tables whose CHECK enumerates the Workflow
+// Pause reasons. Production already holds retained pause and termination
+// rows, so the rebuild is proven on a populated database: every row
+// survives, the immutability and paused-run guards are back, and the new
+// owner_requested reason is accepted where the old vocabulary was.
+test("migration 0002 retains pause and termination rows and re-guards both tables", async () => {
+  const migrations = await readMigrations();
+  const baseline = migrations.find(({ level }) => level === 1);
+  const rebuild = migrations.find(({ level }) => level === 2);
+  assert.ok(baseline && rebuild);
+  const database = new DatabaseSync(":memory:");
+  database.exec("PRAGMA foreign_keys = ON");
+  database.exec(baseline.sql);
+  const terminateRun = (id, reason) => {
+    database.exec(
+      `INSERT INTO ingestion_runs (
+         id, state, selected_games_json, started_at,
+         expected_current_revision_id, idempotency_key, candidate_json
+       ) VALUES ('${id}', 'planning', '["one-piece"]', '2026-09-03T00:00:00.000Z',
+                 'catrev_spine_000', 'key_${id}', '{}')`,
+    );
+    database.exec(
+      `UPDATE operation_state SET active_ingestion_run_id = '${id}' WHERE singleton = 1`,
+    );
+    database.exec(`UPDATE ingestion_runs SET state = 'collecting' WHERE id = '${id}'`);
+    database.exec(`UPDATE ingestion_runs SET state = 'paused' WHERE id = '${id}'`);
+    database.exec(
+      `INSERT INTO ingestion_run_workflow_pauses VALUES
+         ('${id}', 'evidence-${id}', '${reason}', 'terminated',
+          '2026-09-03T01:00:00.000Z', NULL)`,
+    );
+    database.exec(
+      `INSERT INTO ingestion_run_terminations VALUES
+         ('${id}', '${reason}', '2026-09-03T01:00:00.000Z',
+          '2026-09-03T02:00:00.000Z', 'terminate_${id}', '${"a".repeat(64)}', '{}')`,
+    );
+    database.exec(
+      `UPDATE ingestion_runs SET state = 'failed', failure_code = 'ingestion_run_terminated'
+       WHERE id = '${id}'`,
+    );
+    database.exec(
+      "UPDATE operation_state SET active_ingestion_run_id = NULL WHERE singleton = 1",
+    );
+  };
+  terminateRun("run_retained", "source_workflow_terminated");
+  const rows = (table) =>
+    database.prepare(`SELECT * FROM ${table} ORDER BY ingestion_run_id`).all();
+  const before = {
+    pauses: rows("ingestion_run_workflow_pauses"),
+    terminations: rows("ingestion_run_terminations"),
+  };
+
+  database.exec(rebuild.sql);
+
+  assert.equal(schemaLevel(database), 2);
+  assert.deepEqual(
+    { pauses: rows("ingestion_run_workflow_pauses"), terminations: rows("ingestion_run_terminations") },
+    before,
+  );
+  assert.equal(database.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
+  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.throws(
+    () => database.exec(
+      `INSERT INTO ingestion_run_workflow_pauses VALUES
+         ('run_retained', 'late', 'owner_requested', 'running', '2026-09-03T03:00:00.000Z', NULL)`,
+    ),
+    /workflow_pause_requires_paused_run/u,
+  );
+  assert.throws(
+    () => database.exec("UPDATE ingestion_run_workflow_pauses SET workflow_status = 'errored'"),
+    /workflow_pause_immutable/u,
+  );
+  assert.throws(
+    () => database.exec("DELETE FROM ingestion_run_terminations"),
+    /termination_immutable/u,
+  );
+  assert.throws(
+    () => database.exec("UPDATE ingestion_run_terminations SET terminated_at = '2026-09-04T00:00:00.000Z'"),
+    /termination_immutable/u,
+  );
+  // The widened vocabulary is accepted end to end: an owner-requested pause
+  // can be recorded and terminated on the migrated schema.
+  terminateRun("run_owner", "owner_requested");
+  assert.equal(
+    database.prepare("SELECT state FROM ingestion_runs WHERE id = 'run_owner'").get().state,
+    "failed",
+  );
+  database.close();
+});
+
 test("the schema carries the hot-path indexes and not the dead ones", async () => {
   const database = await migratedDatabase();
   const indexes = database.prepare(
