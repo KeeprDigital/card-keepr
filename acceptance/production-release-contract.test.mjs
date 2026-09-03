@@ -84,8 +84,8 @@ test("owner preparation is durable before dispatch and post-migration failure is
   assert.match(script, /roll_forward_required/u);
 });
 
-test("guarded release migration retains immutable state and legal transitions", () => {
-  const sql = readFileSync("migrations/0019_guarded_production_release.sql", "utf8");
+test("the guarded release schema retains immutable state and legal transitions", () => {
+  const sql = readFileSync("migrations/0001_baseline.sql", "utf8");
   assert.match(sql, /CREATE TABLE production_releases/u);
   assert.match(sql, /requested.*preflight.*migrating.*deploying.*smoke_testing.*succeeded.*failed/su);
   assert.match(sql, /one_active_production_release/u);

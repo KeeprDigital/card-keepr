@@ -22,6 +22,10 @@ npm run dev
 
 The API listens on `http://127.0.0.1:8787` and ingestion listens on
 `http://127.0.0.1:8788`. Local D1 and R2 state is emulated by Wrangler.
+`migrations/` starts from a single schema baseline, `0001_baseline.sql`,
+which creates the whole schema and its seed rows at schema level 1 (ADR
+0006); every later migration opens with a schema-level guard and bumps the
+level by one.
 `GET /v1/catalogue` reads the current Catalogue Revision pointer from D1. A new
 database starts at the schema-valid `catrev_spine_000` bootstrap pointer until
 the first controlled fixture is approved.
@@ -122,9 +126,9 @@ target exits `7`; exit `2` is reserved for malformed usage. An accepted
 Workflow that is not yet terminal exits `10`; a Workflow that completes during
 the initial POST and every terminal replay return HTTP `200` and exit `0`.
 
-After applying the Errata/search migration to a database that already contains
-Catalogue Revisions, run the bounded, idempotent search repair until its JSON
-response reports `"complete": true`:
+After applying a migration that changes the search projection to a database
+that already contains Catalogue Revisions, run the bounded, idempotent search
+repair until its JSON response reports `"complete": true`:
 
 ```sh
 npm run keepr -- catalogue search repair \

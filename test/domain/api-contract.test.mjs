@@ -434,16 +434,10 @@ test("export schema major 3 carries typed Product, Release, and Legality project
   }
 });
 
-test("migration 0006 upgrades an applied 0001-0005 database and also applies fresh", async () => {
-  const migrations = await Promise.all(
-    [
-      "0001_catalogue_publication.sql",
-      "0002_ingestion_lifecycle.sql",
-      "0003_immutable_source_evidence.sql",
-      "0004_card_printing_reconciliation.sql",
-      "0005_credential_rotation.sql",
-      "0006_product_release_distribution.sql",
-    ].map((name) => readFile(resolve(root, "migrations", name), "utf8")),
+test("the baseline registers the production adapter versions immutably", async () => {
+  const baseline = await readFile(
+    resolve(root, "migrations", "0001_baseline.sql"),
+    "utf8",
   );
   const assertVersionSet = (database) => {
     const versions = database.prepare(
@@ -529,22 +523,8 @@ test("migration 0006 upgrades an applied 0001-0005 database and also applies fre
     );
   };
 
-  const upgraded = new DatabaseSync(":memory:");
-  migrations.slice(0, 5).forEach((migration) => upgraded.exec(migration));
-  assert.equal(
-    upgraded.prepare(
-      `SELECT count(*) AS count
-       FROM source_adapter_versions
-       WHERE adapter_version = 'one-piece-json-document@2'`,
-    ).get().count,
-    1,
-  );
-  upgraded.exec(migrations[5]);
-  assertVersionSet(upgraded);
-  upgraded.close();
-
   const fresh = new DatabaseSync(":memory:");
-  migrations.forEach((migration) => fresh.exec(migration));
+  fresh.exec(baseline);
   assertVersionSet(fresh);
   fresh.close();
 });

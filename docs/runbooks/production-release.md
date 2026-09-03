@@ -25,7 +25,7 @@ npm run keepr -- release production \
   --release-id release-2026-08-05-01 \
   --expected-current-revision catrev_example \
   --expected-head-sha 0123456789abcdef0123456789abcdef01234567 \
-  --expected-migration-level 20 \
+  --expected-migration-level 1 \
   --idempotency-key release-2026-08-05-01 \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
 ```
@@ -35,6 +35,11 @@ Production Release succeeded. Inspect the workflow and the durable `production_r
 record for terminal evidence.
 
 ## Production Release behavior
+
+`migrations/` is one schema baseline (`0001_baseline.sql`, schema level 1,
+ADR 0006) followed by guarded forward migrations. An empty database is
+built by applying the baseline; `keepr status` reports the level of the
+last applied file, and `--expected-migration-level` must name that level.
 
 The workflow rechecks the SHA, actor, complete target digest, current Catalogue
 Revision, migration level, idle ingestion, recovery evidence and retained
