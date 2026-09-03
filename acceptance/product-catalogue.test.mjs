@@ -594,7 +594,7 @@ test("the CLI publishes separated Product catalogue data consumed through authen
     await readFile(
       resolve(
         root,
-        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json",
+        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json",
       ),
       "utf8",
     ),

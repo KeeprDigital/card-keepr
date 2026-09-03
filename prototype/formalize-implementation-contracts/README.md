@@ -25,8 +25,8 @@ The proposed handoff artifacts are:
 - `openapi.json` — OpenAPI 3.1 contract for the authenticated `/v1` read API;
 - `schemas/api.schema.json` — exact JSON response resource shapes, including
   shared lifecycle and Product/Release evidence sidecars;
-- `schemas/catalogue-export-manifest.schema.json` and
-  `schemas/catalogue-export-record.schema.json` — Catalogue Export schemas;
+- `schemas/catalogue-export-manifest-v5.schema.json` and
+  `schemas/catalogue-export-record-v5.schema.json` — Catalogue Export schemas;
 - `SERIALIZATION.md` — deterministic NDJSON, ordering, digest, and gzip rules;
 - `ADMINISTRATION.md` and `schemas/administration.schema.json` — administration
   API/CLI commands, guards, states, and transitions, including two-step

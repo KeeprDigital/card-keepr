@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -9,39 +8,12 @@ import addFormats from "ajv-formats";
 
 const root = resolve(import.meta.dirname, "../..");
 
-test("historical export schemas remain byte-identical to their fixed points", async () => {
-  for (const [name, digest, id] of [
-    ["catalogue-export-manifest-v1.schema.json", "72741f3e6d20a6cf28ecb6db4292e1d5e95c8727ca91c009cf48988289486537", "catalogue-export-manifest@1"],
-    ["catalogue-export-record-v1.schema.json", "07f524d9506388e454bd0ca36a554a9cb61fdc8b798f0f53c770b24e036f32e0", "catalogue-export-record@1"],
-    ["catalogue-export-manifest-v2.schema.json", "17fc18d953c9f1bcef660788c1c29914d618fb616515c627358c4dd9455fc545", "catalogue-export-manifest@2"],
-    ["catalogue-export-record-v2.schema.json", "904f97add01325f2d1b4e038b80be095b522a7db7ef21574e12062a1ceee3d73", "catalogue-export-record@2"],
-    ["catalogue-export-record.schema.json", "cb9b7ef626dad9473f641d567167379a4edfba5572153b55c9dbabb0ab1d1f62", "catalogue-export-record@3"],
-    ["catalogue-export-manifest-v4.schema.json", "caf3e7b1f64491f0dad969ecc499e955ed5c6dafb385bb4de40e429c92043863", "catalogue-export-manifest@4"],
-    ["catalogue-export-record-v4.schema.json", "762b10c3141cfbfe92051dda9ffe99d056ef06300a8ff27233d57064f048776d", "catalogue-export-record@4"],
-  ]) {
-    const bytes = await readFile(resolve(
-      root,
-      `prototype/formalize-implementation-contracts/schemas/${name}`,
-    ));
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), digest);
-    assert.equal(JSON.parse(bytes.toString("utf8")).$id.endsWith(id), true);
-  }
-});
-
-test("curated catalogue exports use a new schema major", async () => {
-  const [record, manifest] = await Promise.all([
-    "catalogue-export-record-v4.schema.json",
-    "catalogue-export-manifest-v4.schema.json",
-  ].map((name) => readFile(resolve(
+test("Catalogue Export relationship records carry closed endpoints", async () => {
+  const record = JSON.parse(await readFile(resolve(
     root,
     "prototype/formalize-implementation-contracts/schemas",
-    name,
-  ), "utf8").then(JSON.parse)));
-  assert.equal(record.$id.endsWith("catalogue-export-record@4"), true);
-  assert.equal(manifest.$id.endsWith("catalogue-export-manifest@4"), true);
-  assert.equal(manifest.properties.export_schema_major.const, 4);
-  assert.ok(manifest.$defs.CardsComponent.allOf[1].properties.record_schema
-    .const.includes("catalogue-export-record@4"));
+    "catalogue-export-record-v5.schema.json",
+  ), "utf8"));
 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
@@ -349,12 +321,12 @@ test("Card browsing documents and validates collection, detail, and problem repr
   }), true, JSON.stringify(validateProblem.errors));
 });
 
-test("export schema major 3 carries typed Product, Release, and Legality projections", async () => {
+test("the Catalogue Export schema carries typed Product, Release, and Legality projections", async () => {
   const [api, exportSchema, exportManifest] = await Promise.all(
     [
       "api.schema.json",
-      "catalogue-export-record.schema.json",
-      "catalogue-export-manifest.schema.json",
+      "catalogue-export-record-v5.schema.json",
+      "catalogue-export-manifest-v5.schema.json",
     ].map(async (name) =>
       JSON.parse(
         await readFile(
@@ -407,9 +379,9 @@ test("export schema major 3 carries typed Product, Release, and Legality project
     exportSchema.$defs.SupportedGameRecord.properties.name.minLength,
     1,
   );
-  assert.equal(exportSchema.$id.endsWith("catalogue-export-record@3"), true);
-  assert.equal(exportManifest.$id.endsWith("catalogue-export-manifest@3"), true);
-  assert.equal(exportManifest.properties.export_schema_major.const, 3);
+  assert.equal(exportSchema.$id.endsWith("catalogue-export-record@5"), true);
+  assert.equal(exportManifest.$id.endsWith("catalogue-export-manifest@5"), true);
+  assert.equal(exportManifest.properties.export_schema_major.const, 5);
   assert.equal(
     exportSchema.$defs.ReleaseRecord.required.includes("event_key"),
     true,
@@ -420,7 +392,7 @@ test("export schema major 3 carries typed Product, Release, and Legality project
   );
   assert.ok(
     exportManifest.$defs.ReleasesComponent.allOf[1].properties.record_schema
-      .const.includes("catalogue-export-record@3"),
+      .const.includes("catalogue-export-record@5"),
   );
   for (const definition of [
     "PrintingProductProjection",

@@ -3087,7 +3087,7 @@ async function seedDeletionExport(
   const manifestKey = `catalogue-exports/${revisionId}/manifest.json`;
   const componentKey = `catalogue-exports/${revisionId}/components/${digest}.ndjson.gz`;
   const manifestWithPlaceholder = {
-    export_schema_major: 4,
+    export_schema_major: 5,
     catalogue_revision: { id: revisionId, content_sha256: digest },
     components: [{
       name: "cards",

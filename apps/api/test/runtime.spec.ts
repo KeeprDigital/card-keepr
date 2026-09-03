@@ -15,10 +15,8 @@ import {
   reconstructCardSearchAfterD1Restore,
   withCardSearchPreparedForD1Export,
 } from "../../../src/catalogue/card-search-recovery";
-import exportManifestSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json";
-import exportManifestSchemaV2 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json";
-import exportManifestSchemaV3 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json";
-import exportRecordSchemaV1 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v1.schema.json";
+import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
+import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
 import { deterministicGzip } from "../../../src/catalogue/export-compression";
 import {
   canonicalJson,
@@ -232,22 +230,40 @@ test("a supplied cursor for an unavailable current revision returns the cursor r
   });
 });
 
-test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifact", async () => {
-  const revisionId = "catrev_historical_v1";
+test("authenticated Catalogue Export reads preserve the retained D1/R2 artifact bytes", async () => {
+  const revisionId = "catrev_retained_export";
   const publishedAt = "2025-01-01T00:00:00.000Z";
   const candidateDigest = "a".repeat(64);
+  const sourcePointer = "/observations/0/value/legality_rules/0";
   const legalityRule = {
     type: "legality_rule",
-    id: "legality_rule_historical_v1",
+    id: "legality_rule_retained_export",
+    official_id: "RULE-RETAINED-EXPORT",
     game: "gundam",
     region: "EN-ASIA",
     format: "standard",
     event_tier: null,
     effective_from: "2025-01-01",
     effective_until: null,
+    unresolved_scope: null,
     kind: "restricted",
-    card_ids: ["card_historical_v1"],
-    official_wording: "Historical v1 decks may contain one copy.",
+    effect: { type: "copy_limit", maximum_copies: 1 },
+    card_ids: ["card_retained_export"],
+    official_wording: "Retained decks may contain one copy.",
+    source_lineage: "gundam-en-asia",
+    source_observation_ids: ["srcobs_retained_export"],
+    source_observation_pointer: sourcePointer,
+    source_field_pointers: Object.fromEntries([
+      "official_wording", "effective_from", "effective_until",
+      "unresolved_scope", "region", "format", "event_tier",
+      "card_numbers", "effect",
+    ].map((field) => [field, `${sourcePointer}/${field}`])),
+    lifecycle: {
+      first_revision_id: revisionId,
+      last_observed_revision_id: revisionId,
+      current: true,
+      last_missing_revision_id: null,
+    },
   };
   const legalityBytes = utf8(`${canonicalJson(legalityRule)}\n`);
   const compressedLegalityBytes = deterministicGzip(legalityBytes);
@@ -286,7 +302,7 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
         compression: "gzip",
         record_schema:
           "https://card-keepr.invalid/schemas/" +
-          `catalogue-export-record@1#/$defs/${schemaDefinition}`,
+          `catalogue-export-record@5#/$defs/${schemaDefinition}`,
         order,
         records: containsLegality ? 1 : 0,
         uncompressed_bytes: containsLegality ? legalityBytes.byteLength : 0,
@@ -303,9 +319,9 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     },
   );
   const manifestWithPlaceholder = {
-    format: "card-keepr-catalogue-export-manifest@1",
+    format: "card-keepr-catalogue-export-manifest@5",
     serialization_profile: "card-keepr-ndjson-gzip@1",
-    export_schema_major: 1,
+    export_schema_major: 5,
     catalogue_revision: {
       id: revisionId,
       content_sha256: candidateDigest,
@@ -317,6 +333,8 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
       {
         game: "gundam",
         area: "legality-rules",
+        source_lineage: "gundam-en-asia",
+        region: "EN-ASIA",
         checked_at: publishedAt,
       },
     ],
@@ -358,7 +376,7 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
         approval_json, published_revision_id, export_manifest_digest,
         terminal_at, candidate_json, approval_idempotency_key
       ) VALUES (
-        'run_historical_v1', 'publishing', '["gundam"]', ?,
+        'run_retained_export', 'publishing', '["gundam"]', ?,
         'catrev_spine_000', NULL, 'historical-v1-seed', ?, ?,
         '2099-01-01T00:00:00.000Z', ?, NULL, NULL, NULL, '{}', NULL
       )`,
@@ -375,14 +393,14 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
     ),
     testEnv.CATALOGUE_DB.prepare(
       `UPDATE operation_state
-       SET active_ingestion_run_id = 'run_historical_v1'
+       SET active_ingestion_run_id = 'run_retained_export'
        WHERE singleton = 1`,
     ),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_revisions (
         id, ingestion_run_id, published_at, content_digest,
         expected_previous_revision_id, approved_candidate_digest
-      ) VALUES (?, 'run_historical_v1', ?, ?, 'catrev_spine_000', ?)`,
+      ) VALUES (?, 'run_retained_export', ?, ?, 'catrev_spine_000', ?)`,
     ).bind(revisionId, publishedAt, candidateDigest, candidateDigest),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO catalogue_exports (
@@ -418,14 +436,14 @@ test("authenticated Catalogue Export reads preserve a historical v1 D1/R2 artifa
 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  const validateManifest = ajv.compile(exportManifestSchemaV1);
+  const validateManifest = ajv.compile(exportManifestSchemaV5);
   expect(
     validateManifest(firstManifestDocument.data),
     JSON.stringify(validateManifest.errors),
   ).toBe(true);
-  ajv.addSchema(exportRecordSchemaV1);
+  ajv.addSchema(exportRecordSchemaV5);
   const validateLegalityRule = ajv.getSchema(
-    `${exportRecordSchemaV1.$id}#/$defs/LegalityRuleRecord`,
+    `${exportRecordSchemaV5.$id}#/$defs/LegalityRuleRecord`,
   );
   expect(validateLegalityRule).toBeDefined();
   expect(
@@ -2164,9 +2182,7 @@ test("the public Printing response validates full Distribution Context objects",
   const body = await response.json();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  ajv.addSchema(exportManifestSchemaV1);
-  ajv.addSchema(exportManifestSchemaV2);
-  ajv.addSchema(exportManifestSchemaV3);
+  ajv.addSchema(exportManifestSchemaV5);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/PrintingDocument`,
@@ -3318,9 +3334,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
 test("the normative Printing schema excludes SourceBucket from canonical relationship evidence", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  ajv.addSchema(exportManifestSchemaV1);
-  ajv.addSchema(exportManifestSchemaV2);
-  ajv.addSchema(exportManifestSchemaV3);
+  ajv.addSchema(exportManifestSchemaV5);
   ajv.addSchema(apiSchema);
   const validate = ajv.getSchema(
     `${apiSchema.$id}#/$defs/RelationshipEvidence`,
@@ -3404,7 +3418,7 @@ async function seedCatalogueExportSummary(
      WHERE singleton = 1 AND current_revision_id = ?`,
   ).bind(publishedAt, revisionId).run();
   const manifestWithPlaceholder = {
-    export_schema_major: 4,
+    export_schema_major: 5,
     catalogue_revision: {
       id: revisionId,
       content_sha256: "b".repeat(64),

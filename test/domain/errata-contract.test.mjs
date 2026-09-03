@@ -29,7 +29,7 @@ test("Official Errata evidence has an explicit normative contract", async () => 
     await readFile(
       resolve(
         root,
-        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json",
+        "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json",
       ),
       "utf8",
     ),
