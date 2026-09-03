@@ -14,6 +14,60 @@ import { AdministrationProblem } from "./ingestion";
 // hostname when no deployment override is configured.
 export const defaultSourceHostPacingIntervalMilliseconds = 500;
 
+export type SourceRequestRole =
+  | "surface"
+  | "listing"
+  | "detail"
+  | "product_detail"
+  | "image";
+
+// Per-role transport policy. A missing listing, detail, product, or surface
+// response means missing catalogue facts, so exhausting those bounded
+// transport retries pauses the run (Retry Pause) until the Official Source
+// recovers. A Printing Image is a static file that reconciliation can
+// publish without: exhausting its retries records that one request as failed
+// under a distinct code and collection continues, so a slow CDN path cannot
+// stall a run once per stubborn image. Image fetches also get a longer
+// bound, so slow-but-succeeding transfers complete instead of retrying.
+export type SourceRequestTransportPolicy = Readonly<{
+  timeout_ms: number;
+  on_transport_exhaustion: "pause_run" | "fail_request";
+}>;
+
+const catalogueFactTransportPolicy: SourceRequestTransportPolicy = {
+  timeout_ms: 30_000,
+  on_transport_exhaustion: "pause_run",
+};
+
+const printingImageTransportPolicy: SourceRequestTransportPolicy = {
+  timeout_ms: 60_000,
+  on_transport_exhaustion: "fail_request",
+};
+
+export function transportPolicyForRole(
+  role: SourceRequestRole,
+): SourceRequestTransportPolicy {
+  return role === "image"
+    ? printingImageTransportPolicy
+    : catalogueFactTransportPolicy;
+}
+
+// The stable failure code of an image Source Request whose bounded
+// transport retries were exhausted under the fail-request policy.
+export const printingImageRetriesExhaustedFailureCode =
+  "source_image_retries_exhausted";
+
+// A failed Source Request that collection completion, reconciliation, and
+// publication tolerate: the run proceeds and the missing Printing Image is
+// recorded explicitly instead of failing the run.
+export function toleratesRequestFailure(
+  role: SourceRequestRole,
+  failureCode: string | null,
+): boolean {
+  return role === "image" &&
+    failureCode === printingImageRetriesExhaustedFailureCode;
+}
+
 const allowedRequestHeaders = new Set([
   "accept",
   "accept-language",

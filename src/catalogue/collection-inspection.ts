@@ -7,7 +7,10 @@
 // status document. Nothing here carries request headers, credentials,
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
-import type { EvidencePlan } from "./source-evidence-model";
+import {
+  printingImageRetriesExhaustedFailureCode,
+  type EvidencePlan,
+} from "./source-evidence-model";
 import type {
   CurrentPause,
   ObservationSetRow,
@@ -83,7 +86,7 @@ export async function collectionInspection(
   input: CollectionInspectionInput,
 ): Promise<{ collection: Record<string, unknown>; counts: EvidenceCounts }> {
   const runId = input.run.id;
-  const [groups, counts, latestFailure, currentRequest, hosts] =
+  const [groups, counts, latestFailure, currentRequest, hosts, failedImages] =
     await Promise.all([
       // Dynamically discovered and collection-plan identities carry their
       // Source Lineage as a prefix and group by it; every other identity is
@@ -217,8 +220,37 @@ export async function collectionInspection(
           captured_request_count: number;
           next_request_not_before: string | null;
         }>(),
+      // Printing Images whose transport retries were exhausted: tolerated
+      // failures the run completed around. The list is bounded like every
+      // other per-request detail; the count is exact.
+      database
+        .prepare(
+          `SELECT requests.request_id, ${hostnameSql} AS hostname,
+                  requests.failure_code,
+                  (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
+                   WHERE attempts.ingestion_run_id = requests.ingestion_run_id
+                     AND attempts.request_id = requests.request_id
+                  ) AS attempt_count,
+                  COUNT(*) OVER () AS total
+           FROM source_requests AS requests
+           WHERE requests.ingestion_run_id = ?1
+             AND requests.request_role = 'image'
+             AND requests.state = 'failed'
+             AND requests.failure_code = ?2
+           ORDER BY requests.request_id
+           LIMIT ?3`,
+        )
+        .bind(runId, printingImageRetriesExhaustedFailureCode, inspectionDetailLimit)
+        .all<{
+          request_id: string;
+          hostname: string;
+          failure_code: string;
+          attempt_count: number;
+          total: number;
+        }>(),
     ]);
   if (counts === null) throw new Error("Evidence counts are unavailable.");
+  const failedImageCount = failedImages.results[0]?.total ?? 0;
   const requests = groupedRequests(groups.results, input.plans);
   const capacityPause = input.run.state === "paused" &&
       input.pause?.reason === "source_request_capacity_exhausted"
@@ -311,6 +343,17 @@ export async function collectionInspection(
       observation_sets_truncated:
         counts.observation_set_count > inspectionDetailLimit,
       diagnostics_truncated: counts.fetch_attempt_count > inspectionDetailLimit,
+    },
+    failed_images: {
+      count: failedImageCount,
+      detail_limit: inspectionDetailLimit,
+      truncated: failedImageCount > inspectionDetailLimit,
+      requests: failedImages.results.map((image) => ({
+        request_id: image.request_id,
+        hostname: image.hostname,
+        failure_code: image.failure_code,
+        attempt_count: image.attempt_count,
+      })),
     },
     progress: {
       current_request: currentRequest === null ? null : {
