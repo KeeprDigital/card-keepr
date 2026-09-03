@@ -70,7 +70,7 @@ async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>
     expected_current_revision_id: "catrev_spine_000",
     expected_head_sha: "a".repeat(40),
     expected_actor: "keepr-release[bot]",
-    expected_migration_level: 1,
+    expected_migration_level: await schemaMigrationLevel(),
     production_target: target,
     production_target_digest: await sha256Text(canonicalJson(target)),
     bootstrap: true,
@@ -80,6 +80,16 @@ async function bootstrapPlan(releaseId: string): Promise<Record<string, unknown>
     retained_revision_evidence: null,
     replacement_handoff: null,
   };
+}
+
+// The release gate binds the recorded schema level, which every migration
+// in the repository advances; the plan reads it rather than pinning it.
+async function schemaMigrationLevel(): Promise<number> {
+  const state = await testEnv.CATALOGUE_DB.prepare(
+    "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
+  ).first<{ migration_level: number }>();
+  if (state === null) throw new Error("The schema level is unavailable.");
+  return state.migration_level;
 }
 
 async function publishFixtureRevision(): Promise<string> {

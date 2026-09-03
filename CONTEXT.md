@@ -65,7 +65,7 @@ One append-only recorded execution identity of the parent or hostname-shard Clou
 _Avoid_: Fetch attempt, retry generation, mutable workflow id
 
 **Workflow Pause**:
-The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid. Stall classification derives last progress from persisted lifecycle events and never counts a durable pacing sleep, Retry-After wait, or scheduled retry as a stall; nothing is recorded as failed, and resuming opens a new Workflow Attempt for the same run.
+The non-terminal paused condition an Ingestion Run enters when its collection Workflow is deterministically observed stalled, errored, terminated, or unavailable while the retained collection work remains valid, or when the owner deliberately pauses a collecting run (reason `owner_requested`). Stall classification derives last progress from persisted lifecycle events and never counts a durable pacing sleep, Retry-After wait, or scheduled retry as a stall; nothing is recorded as failed, the current Workflow Attempt is abandoned, and resuming opens a new Workflow Attempt for the same run. Pause then Collection Termination is the only way to stop a collecting run.
 _Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
 
 **Collection Termination**:

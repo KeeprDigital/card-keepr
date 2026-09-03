@@ -11,6 +11,14 @@ import {
   writeReplacementSeedSql,
 } from "../scripts/production-release.mjs";
 
+// realDatabase() applies every file in migrations/, so the plans below bind
+// the level the newest migration records rather than pinning one.
+const currentSchemaMigrationLevel = Number.parseInt(
+  (await readdir("migrations")).filter((name) => name.endsWith(".sql")).sort().at(-1) ?? "",
+  10,
+);
+assert.ok(Number.isSafeInteger(currentSchemaMigrationLevel));
+
 test("workflow validator accepts only the exact durably prepared plan", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-validator-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -421,7 +429,7 @@ function releaseEnvironment() {
   const smoke = smokeTargets();
   const plan = {
     expected_actor: "keepr-release[bot]", expected_current_revision_id: "catrev-current",
-    expected_head_sha: "a".repeat(40), expected_migration_level: 1,
+    expected_head_sha: "a".repeat(40), expected_migration_level: currentSchemaMigrationLevel,
     bootstrap: false,
     idempotency_key: "release-47-key", production_target: target,
     production_target_digest: hash(stableJson(target)), recovery_backup_attempt_id: "backup-current",
@@ -476,7 +484,7 @@ function seedOriginalReplacementRelease(database, environment) {
         failure_code,failure_detail,started_at,completed_at,manifest_key,content_sha256,manifest_sha256,
         export_bytes,schema_migration_level,linked_attempt_id,publication_ingestion_run_id,
         disposable_database_id,restore_generation,restore_phase)
-       VALUES (?,'{}',?,?,'verified',?, ?,NULL,NULL,?,?,?, ?,?,100,1,NULL,NULL,?,1,'verified')`,
+       VALUES (?,'{}',?,?,'verified',?, ?,NULL,NULL,?,?,?, ?,?,100,?,NULL,NULL,?,1,'verified')`,
     ).run(
       backup.id,
       backup.owner,
@@ -488,6 +496,7 @@ function seedOriginalReplacementRelease(database, environment) {
       `backups/${backup.id}.manifest.json`,
       String(index + 1).repeat(64),
       backup.digest,
+      plan.expected_migration_level,
       `disposable-${index}`,
     );
   }
@@ -503,7 +512,7 @@ function seedOriginalReplacementRelease(database, environment) {
     "recovery-failed", "failed", "time_travel", "{}", "recovery-failed-key",
     plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
     "backup-recovery", null, plan.expected_current_revision_id, "bookmark-current", null, null,
-    "original-db", null, null, 1, "{}", null, null, null, null, null,
+    "original-db", null, null, plan.expected_migration_level, "{}", null, null, null, null, null,
     now, null, null, null, "restore_failed", "retry with replacement", "2026-08-05T00:01:00.000Z",
   );
   database.prepare(recoverySql).run(
@@ -511,7 +520,7 @@ function seedOriginalReplacementRelease(database, environment) {
     plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
     "backup-recovery", "recovery-failed", plan.expected_current_revision_id, "bookmark-current", "bookmark-restored", null,
     "original-db", plan.replacement_handoff.replacement_database_id, plan.replacement_handoff.retained_database_id,
-    1, "{}", "{}", "recovery-verify-key", "e".repeat(64), null, null,
+    plan.expected_migration_level, "{}", "{}", "recovery-verify-key", "e".repeat(64), null, null,
     "2026-08-05T00:01:01.000Z", "2026-08-05T00:01:02.000Z", "2026-08-05T00:01:03.000Z", null, null, null, null,
   );
   const dispatch = environment.DISPATCH_DIGEST;
@@ -560,7 +569,7 @@ function liveGateDatabase(environment) {
     CREATE TABLE ingestion_run_transitions (ingestion_run_id TEXT);
     INSERT INTO catalogue_state VALUES (1,'catrev-current');
     INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL);
-    INSERT INTO catalogue_schema_state VALUES (1,1);
+    INSERT INTO catalogue_schema_state VALUES (1,${currentSchemaMigrationLevel});
     INSERT INTO catalogue_revisions VALUES ('catrev-current','catrev-previous'),('catrev-previous','catrev-old'),('catrev-old',NULL);
     INSERT INTO catalogue_exports VALUES ('catrev-current',1,'available'),('catrev-previous',1,'available'),('catrev-old',1,'available');
     INSERT INTO catalogue_backup_attempts VALUES ('backup-current','catrev-current','verified','bookmark-current','${"a".repeat(64)}'),('backup-previous','catrev-previous','verified','bookmark-previous','${"b".repeat(64)}'),('backup-old','catrev-old','verified','bookmark-old','${"c".repeat(64)}');

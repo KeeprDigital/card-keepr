@@ -13,6 +13,7 @@ import {
   collectionProgressFacts,
   currentCollectionWorkflowIds,
   pauseEvidenceRunForWorkflowRecovery,
+  pauseEvidenceRunOnOwnerRequest,
   releaseTerminatedEvidenceRun,
   requiredEvidenceRun,
   resumePausedEvidenceRun,
@@ -161,6 +162,70 @@ export async function resumeEvidenceRun(
   };
 }
 
+// Pause a collecting Ingestion Run on the owner's request. The run moves into
+// its Workflow Pause with the reason 'owner_requested' under the same
+// compare-and-set fence as a recovery pause, so every durable collection step
+// that re-reads the run stops on its own; the parent and hostname-shard
+// attempts that were current at the pause are then terminated best-effort to
+// cut short any in-flight sleep. A replayed request returns the retained
+// response and re-runs no fence, because the run may since have resumed
+// under a new Workflow Attempt that must keep driving collection.
+export async function pauseEvidenceCollection(
+  database: D1Database,
+  parentWorkflow: Workflow<EvidenceParentWorkflowParams>,
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
+  runId: string,
+  idempotencyKey: string,
+): Promise<Record<string, unknown>> {
+  let run = await requiredEvidenceRun(database, runId);
+  if (run.state === "collecting" && run.parent_workflow_id === null) {
+    // A first attempt that has not bound its identity yet is bound before
+    // the pause, exactly as resume does, so the pause record names the
+    // attempt it abandons and the fence has an identity to compare against.
+    await database
+      .prepare(
+        `UPDATE ingestion_evidence_plans SET parent_workflow_id = ?
+         WHERE ingestion_run_id = ? AND parent_workflow_id IS NULL`,
+      )
+      .bind(parentWorkflowAttemptId(runId, 1), runId)
+      .run();
+    run = await requiredEvidenceRun(database, runId);
+  }
+  const workflowId = run.parent_workflow_id ?? parentWorkflowAttemptId(runId, 1);
+  const [status, progress, current] = await Promise.all([
+    observeWorkflowStatus(parentWorkflow, workflowId),
+    collectionProgressFacts(database, runId),
+    currentCollectionWorkflowIds(database, runId),
+  ]);
+  const outcome = await pauseEvidenceRunOnOwnerRequest(database, runId, {
+    idempotency_key: idempotencyKey,
+    workflow_instance_id: workflowId,
+    workflow_status: status,
+    last_progress_at: progress.last_progress_at,
+  });
+  if (outcome.applied) {
+    await Promise.all([
+      terminateWorkflowInstance(parentWorkflow, workflowId),
+      ...current.child.map((id) => terminateWorkflowInstance(hostWorkflow, id)),
+    ]);
+  }
+  return outcome.document;
+}
+
+// The safe status of one parent instance; an absent or unreachable instance
+// reports as unavailable rather than failing the owner's request.
+async function observeWorkflowStatus(
+  workflow: Workflow<EvidenceParentWorkflowParams>,
+  instanceId: string,
+): Promise<SafeWorkflowStatus> {
+  try {
+    const instance = await workflow.get(instanceId);
+    return safeWorkflowStatus((await instance.status()).status);
+  } catch {
+    return "unavailable";
+  }
+}
+
 // Terminate a paused Ingestion Run deliberately. The compare-and-set
 // transition to the terminal owner-termination state is itself the fence for
 // every durable collection step, because each step re-reads the run before
@@ -206,13 +271,10 @@ async function pauseCollectingRunWithDeadWorkflow(
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
   if (run.state !== "collecting" || run.parent_workflow_id === null) return;
-  let status: SafeWorkflowStatus = "unavailable";
-  try {
-    const instance = await parentWorkflow.get(run.parent_workflow_id);
-    status = safeWorkflowStatus((await instance.status()).status);
-  } catch {
-    status = "unavailable";
-  }
+  const status = await observeWorkflowStatus(
+    parentWorkflow,
+    run.parent_workflow_id,
+  );
   const progress = await collectionProgressFacts(database, runId);
   const classification = classifyCollectionProgress(status, progress);
   if (classification.kind !== "recover") return;

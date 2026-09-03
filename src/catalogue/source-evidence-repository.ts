@@ -24,12 +24,14 @@ import {
 import { operationalDiagnostics } from "./operational-diagnostics";
 import {
   classifyCollectionProgress,
+  ownerRequestedPauseReason,
+  parentAttemptNumber,
   parentWorkflowAttemptId,
   safeWorkflowStatus,
   workflowAttemptRecord,
   type CollectionProgressFacts,
+  type RecordedWorkflowPauseReason,
   type SafeWorkflowStatus,
-  type WorkflowPauseReason,
 } from "./collection-recovery";
 import type {
   EvidenceHostWorkflowParams,
@@ -1464,7 +1466,7 @@ export function retryExhaustionPauseStatements(
 
 export type WorkflowRecoveryFacts = {
   workflow_instance_id: string;
-  pause_reason: WorkflowPauseReason;
+  pause_reason: RecordedWorkflowPauseReason;
   workflow_status: SafeWorkflowStatus;
   last_progress_at: string | null;
 };
@@ -1480,7 +1482,19 @@ export async function pauseEvidenceRunForWorkflowRecovery(
   runId: string,
   facts: WorkflowRecoveryFacts,
 ): Promise<void> {
-  await database.batch([
+  await database.batch(
+    workflowPauseStatements(database, runId, facts, new Date().toISOString()),
+  );
+}
+
+// The two guarded statements every Workflow Pause applies atomically.
+function workflowPauseStatements(
+  database: D1Database,
+  runId: string,
+  facts: WorkflowRecoveryFacts,
+  pausedAt: string,
+): D1PreparedStatement[] {
+  return [
     // Compare-and-set on the abandoned instance still being the bound
     // parent: a concurrent recovery that already superseded it rebound the
     // identity, so a stale classification of the old instance must not
@@ -1522,10 +1536,160 @@ export async function pauseEvidenceRunForWorkflowRecovery(
         facts.workflow_instance_id,
         facts.pause_reason,
         facts.workflow_status,
-        new Date().toISOString(),
+        pausedAt,
         facts.last_progress_at,
       ),
-  ]);
+  ];
+}
+
+export type CollectionPauseRequest = {
+  idempotency_key: string;
+  workflow_instance_id: string;
+  workflow_status: SafeWorkflowStatus;
+  last_progress_at: string | null;
+};
+
+export type CollectionPauseOutcome = {
+  document: Record<string, unknown>;
+  // True when this call recorded the pause, false when it replayed one.
+  applied: boolean;
+};
+
+const collectionPauseOperation = "pause_collection";
+const collectionPauseContract = "card-keepr-collection-pause@1";
+
+// The owner's deliberate pause of a collecting Ingestion Run. It is a
+// Workflow Pause with the reason 'owner_requested': the current parent
+// attempt is abandoned and recorded with the safe status observed at the
+// time, nothing is recorded as failed, and the paused run admits exactly the
+// resume and terminate actions. The pause is idempotent under its key: the
+// retained response replays without applying anything, and a key reused for
+// another request is refused. Only a collecting run can be paused.
+export async function pauseEvidenceRunOnOwnerRequest(
+  database: D1Database,
+  runId: string,
+  request: CollectionPauseRequest,
+): Promise<CollectionPauseOutcome> {
+  assertIdentifier(request.idempotency_key, "idempotency_key");
+  const requestJson = canonicalJson({
+    ingestion_run_id: runId,
+    idempotency_key: request.idempotency_key,
+  });
+  const replayed = await collectionPauseReplay(
+    database,
+    request.idempotency_key,
+    requestJson,
+  );
+  if (replayed !== null) return { document: replayed, applied: false };
+  const run = await requiredEvidenceRun(database, runId);
+  if (run.state !== "collecting") throw ingestionRunNotCollectingForPause();
+  const pausedAt = new Date().toISOString();
+  const response: Record<string, unknown> = {
+    contract: collectionPauseContract,
+    ingestion_run_id: runId,
+    state: "paused",
+    pause_reason: ownerRequestedPauseReason,
+    paused_at: pausedAt,
+    workflow: {
+      id: request.workflow_instance_id,
+      attempt_number: parentAttemptNumber(runId, request.workflow_instance_id),
+      status: request.workflow_status,
+    },
+    last_progress_at: request.last_progress_at,
+    actions: collectionActions("paused", ownerRequestedPauseReason),
+  };
+  let applied = false;
+  try {
+    const outcome = await database.batch([
+      ...workflowPauseStatements(
+        database,
+        runId,
+        {
+          workflow_instance_id: request.workflow_instance_id,
+          pause_reason: ownerRequestedPauseReason,
+          workflow_status: request.workflow_status,
+          last_progress_at: request.last_progress_at,
+        },
+        pausedAt,
+      ),
+      // The retained response exists only when this request's own pause
+      // record does, so a request that lost the race records no outcome and
+      // re-reads the winner's instead.
+      database
+        .prepare(
+          `INSERT INTO administration_idempotency (
+             idempotency_key, operation, request_json, response_json,
+             http_status, outcome, created_at
+           )
+           SELECT ?1, ?2, ?3, ?4, 200, 'success', ?5
+           WHERE EXISTS (
+             SELECT 1 FROM ingestion_run_workflow_pauses
+             WHERE ingestion_run_id = ?6 AND workflow_instance_id = ?7
+               AND pause_reason = ?8 AND paused_at = ?5
+           )`,
+        )
+        .bind(
+          request.idempotency_key,
+          collectionPauseOperation,
+          requestJson,
+          canonicalJson(response),
+          pausedAt,
+          runId,
+          request.workflow_instance_id,
+          ownerRequestedPauseReason,
+        ),
+    ]);
+    applied = outcome[2]?.meta.changes === 1;
+  } catch {
+    // A raced key or fence; the retained state below reports the outcome.
+  }
+  const recorded = await collectionPauseReplay(
+    database,
+    request.idempotency_key,
+    requestJson,
+  );
+  if (recorded !== null) return { document: recorded, applied };
+  const current = await requiredEvidenceRun(database, runId);
+  if (current.state !== "collecting") throw ingestionRunNotCollectingForPause();
+  throw new AdministrationProblem(
+    409,
+    "collection_pause_conflict",
+    "A concurrent lifecycle action prevented this pause from applying.",
+  );
+}
+
+function ingestionRunNotCollectingForPause(): AdministrationProblem {
+  return new AdministrationProblem(
+    409,
+    "ingestion_run_not_collecting",
+    "Only a collecting Ingestion Run can be paused.",
+  );
+}
+
+async function collectionPauseReplay(
+  database: D1Database,
+  idempotencyKey: string,
+  requestJson: string,
+): Promise<Record<string, unknown> | null> {
+  const retained = await database
+    .prepare(
+      `SELECT operation, request_json, response_json
+       FROM administration_idempotency WHERE idempotency_key = ?`,
+    )
+    .bind(idempotencyKey)
+    .first<{ operation: string; request_json: string; response_json: string }>();
+  if (retained === null) return null;
+  if (
+    retained.operation !== collectionPauseOperation ||
+    retained.request_json !== requestJson
+  ) {
+    throw new AdministrationProblem(
+      409,
+      "idempotency_conflict",
+      "The idempotency key was already used for a different request.",
+    );
+  }
+  return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 
 export type { CollectionProgressFacts } from "./collection-recovery";
@@ -1950,6 +2114,7 @@ export function collectionActions(
       ? ["resume", "extend_capacity", "terminate"]
       : ["resume", "terminate"];
   }
+  if (state === "collecting") return ["pause"];
   if (state === "failed" || state === "rejected" || state === "expired") {
     return ["retry"];
   }
@@ -2331,11 +2496,14 @@ export async function finalizeEvidenceRun(
                WHERE id = ? AND state = 'collecting'`,
             )
             .bind(completedAt, runId),
+      // Completion is recorded once: a superseded parent attempt that wakes
+      // from its barrier sleep after the run completed under a later attempt
+      // must not move the retained completion facts.
       database
         .prepare(
           `UPDATE ingestion_evidence_plans
            SET collection_completed_at = ?, failure_code = ?
-           WHERE ingestion_run_id = ?`,
+           WHERE ingestion_run_id = ? AND collection_completed_at IS NULL`,
         )
         .bind(completedAt, failureCode, runId),
       database
@@ -2368,7 +2536,7 @@ export async function finalizeEvidenceRun(
       .prepare(
         `UPDATE ingestion_evidence_plans
          SET collection_completed_at = ?, failure_code = NULL
-         WHERE ingestion_run_id = ?`,
+         WHERE ingestion_run_id = ? AND collection_completed_at IS NULL`,
       )
       .bind(completedAt, runId),
   ]);

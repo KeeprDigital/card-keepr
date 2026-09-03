@@ -35,8 +35,8 @@ Both forms carry the same material facts. The `collection` block reports:
 - `workflow`: every parent and hostname-shard Workflow Attempt with a safe
   status; exactly one attempt per scope is current.
 - `actions`: the exact collection actions the lifecycle admits right now
-  (`resume`, `extend_capacity`, `terminate`, or `retry`); approval and
-  rejection stay on the run document.
+  (`pause` while collecting; `resume`, `extend_capacity`, `terminate`, or
+  `retry` otherwise); approval and rejection stay on the run document.
 
 ## Pause reasons
 
@@ -46,10 +46,45 @@ Both forms carry the same material facts. The `collection` block reports:
 | `source_transport_retries_exhausted` | One Source Request exhausted its bounded transport retries on a recoverable failure. | Resume once the Official Source recovers. |
 | `source_storage_retries_exhausted` | One Source Request exhausted its bounded R2 persistence retries. | Resume once storage recovers. |
 | `source_workflow_stalled` / `source_workflow_errored` / `source_workflow_terminated` / `source_workflow_unavailable` | The collection Workflow stopped driving the run; a durable pacing sleep or Retry-After wait is never a stall. | Resume; a new Workflow Attempt is recorded. |
+| `owner_requested` | The owner paused the collecting run with `source pause`. Nothing failed; the current Workflow Attempt was abandoned. | Resume (a new Workflow Attempt is recorded) or terminate. |
 
 Genuine integrity failures (redirects, identity collisions, malformed
 discovery, parser contract failures, completeness contradictions) remain
 terminal and never pause.
+
+## Stop a collecting run
+
+Stopping is two owner actions: pause, then terminate. Termination alone is
+refused while the collection Workflow is live; it accepts a collecting run
+only when the Workflow is already deterministically observed dead.
+
+```sh
+npm run keepr -- source pause \
+  --run-id RUN_ID \
+  --idempotency-key pause_RUN_ID \
+  --json
+npm run keepr -- source terminate \
+  --run-id RUN_ID \
+  --idempotency-key terminate_RUN_ID \
+  --json
+```
+
+`source pause` is an idempotent Workflow Pause with the reason
+`owner_requested`: the run's state fences every durable collection step,
+the parent and hostname-shard Workflow Attempts current at the pause are
+terminated best-effort, and the run reports `resume` and `terminate` as its
+actions. Replaying the same key returns the original result; pausing a run
+that is not collecting is refused with `ingestion_run_not_collecting`, a
+key reused for another request with `idempotency_conflict`, and a pause
+that lost a race with a concurrent resume with `collection_pause_conflict`.
+A paused run that should continue after all is resumed as usual under a
+new Workflow Attempt.
+
+Terminating Workflow instances directly (the Cloudflare dashboard, or
+`wrangler workflows instances terminate`) is not a supported way to stop a
+run: it leaves the run collecting until its dead Workflow is classified,
+and the wrangler commands have built the API path wrong or failed on the
+request body. Pause the run instead.
 
 ## Extend capacity
 
