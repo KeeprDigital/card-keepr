@@ -1,5 +1,9 @@
 # Runbook: retiring a Source Adapter Version
 
+> **Applies from Go-Live only** (ADR 0008). Before Go-Live each Source
+> Lineage has one Source Adapter Version, edited in place; nothing is
+> retired and this runbook is not used.
+
 ADR 0004 (`docs/adr/0004-superseded-parser-code-is-retired.md`): registration
 is permanent, implementation is not. Parser implementation is retained only
 for the current Source Adapter Version and its immediate predecessor on each

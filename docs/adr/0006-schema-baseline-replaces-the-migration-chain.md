@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Before Go-Live, forward migrations are folded back into the baseline whenever the production database is recreated, and all of them are folded in before Go-Live (ADR 0008); the "never edit the baseline" rule applies from Go-Live.
 
 ## Context
 

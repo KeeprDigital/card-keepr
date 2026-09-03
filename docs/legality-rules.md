@@ -89,23 +89,15 @@ Card-associated publications are promoted to Products; accessory pages
 `non-card:accessory` distribution-context evidence instead of being skipped
 by URL vocabulary or promoted to Products.
 
-Parser implementation is retained only for the active version and its
-immediate predecessor on each Source Lineage (`one-piece-en@5`,
-`fusion-world-en@8`, `digimon-en@6`, and the Gundam `@6` versions are the
-predecessors). New production Evidence Plans accept only the active
-registrations listed above; a predecessor may still reparse the Source
-Snapshots it captured. Every older production version (`one-piece-en@1`
-through `@4`, `fusion-world-en@2` through `@7`, `digimon-en@2` through
-`@5`, and the Gundam `@2` through `@5` versions) is retired under ADR
-0004: it remains registered with its immutable parser contract so retained
-Source Observation Sets, Evidence Plans, and Ingestion Runs stay
-attributable, but it carries no parser and the runtime refuses to capture
-or parse under it with `adapter_version_retired`. Reparsing retained Source
-Snapshots is done by registering a new version, never by reviving a retired
-one; see `docs/runbooks/adapter-version-retirement.md`. Synthetic fixture
-adapters follow the append-only rule: One Piece `@3` and the other games'
-`@2` versions are the legality-aware identities, while prior fixture
-versions retain their original behavior.
+Before Go-Live (ADR 0008) each Source Lineage keeps exactly one Source
+Adapter Version, edited in place; no predecessor is parseable and no retired
+registration exists. The predecessor versions (`one-piece-en@5`,
+`fusion-world-en@8`, `digimon-en@6`, and the Gundam `@6` versions) and the
+22 retired registrations still present in the tree are removed by #135. From Go-Live, ADR 0004 applies: parser
+implementation is retained for the active version and its immediate
+predecessor, older versions are retired with their registration kept, and
+reparsing retained Source Snapshots is done by registering a new version;
+see `docs/runbooks/adapter-version-retirement.md`.
 
 An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
 separate plan for every selected Source Lineage. Each complete production plan
