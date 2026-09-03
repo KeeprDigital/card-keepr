@@ -1,14 +1,14 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   validatePrintingIdentityContract,
-} from "../prototype/v1-game-profiles-source-adapters/contract.mjs";
+} from "../../prototype/v1-game-profiles-source-adapters/contract.mjs";
 
 test("the parsed Gundam contract keeps Product and variant provenance out of Printing identity", async () => {
   const text = await readFile(
     new URL(
-      "../prototype/v1-game-profiles-source-adapters/CONTRACT.md",
+      "../../prototype/v1-game-profiles-source-adapters/CONTRACT.md",
       import.meta.url,
     ),
     "utf8",

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import {
   sourceHostPacingMode,
-} from "../../../src/catalogue/source-evidence-capture";
+} from "../../src/catalogue/source-evidence-capture";
 
 test("source host pacing mode defaults to production and accepts both modes", () => {
   expect(sourceHostPacingMode(undefined)).toBe("production");

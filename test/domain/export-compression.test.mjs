@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import {
   deterministicGzip,
   deterministicGzipStream,
-} from "../src/catalogue/export-compression.ts";
+} from "../../src/catalogue/export-compression.ts";
 import {
   verifyComponentExportRecord,
   verifyExportRecord,
-} from "../src/catalogue/export-validation.ts";
+} from "../../src/catalogue/export-validation.ts";
 
 const goldenInput = new TextEncoder().encode('{"id":"golden"}\n');
 const goldenHex =

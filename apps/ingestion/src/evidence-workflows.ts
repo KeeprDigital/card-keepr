@@ -32,6 +32,7 @@ import {
 } from "../../../src/catalogue/card-printing-reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/serialization";
 import {
+  collectionBarrierSleepDuration,
   isWorkflowInstanceNotFound,
 } from "../../../src/catalogue/collection-recovery";
 import {
@@ -305,15 +306,6 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<
 // Shards of one hostname run sequentially, so a deep multi-shard collection
 // waits on the barrier for whole shard durations; a minute of poll slack per
 // stage keeps the parent under its step budget without dominating wall clock.
-export function collectionBarrierSleepDuration(
-  maximumShardDepth: number,
-  maximumActiveRequestCount: number,
-): "1 minute" | "1 second" {
-  return maximumShardDepth > 1 && maximumActiveRequestCount > 10
-    ? "1 minute"
-    : "1 second";
-}
-
 function childAttempt(id: string): number {
   const value = id.match(/-attempt-(\d+)$/u)?.[1];
   return value === undefined ? 0 : Number.parseInt(value, 10) + 1;

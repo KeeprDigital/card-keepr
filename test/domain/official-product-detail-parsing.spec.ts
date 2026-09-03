@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { requiredSourceAdapter } from "../../../src/catalogue/source-adapters";
+import { requiredSourceAdapter } from "../../src/catalogue/source-adapters";
 
 const productDetailRequestId = `gundam-en-asia:product_detail:${"a".repeat(64)}`;
 const cardDetailRequestId = `fusion-world-en:detail:${"b".repeat(64)}`;

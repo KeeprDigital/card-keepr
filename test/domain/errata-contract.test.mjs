@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import { test } from "vitest";
 
-const root = resolve(import.meta.dirname, "..");
+const root = resolve(import.meta.dirname, "../..");
 
 test("Official Errata evidence has an explicit normative contract", async () => {
   const schema = JSON.parse(

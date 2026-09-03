@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { collectionBarrierSleepDuration } from "../src/evidence-workflows";
+import { collectionBarrierSleepDuration } from "../../src/catalogue/collection-recovery";
 
 test("deep multi-shard collections poll the barrier every minute", () => {
   expect(collectionBarrierSleepDuration(2, 11)).toBe("1 minute");

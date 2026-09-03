@@ -3,13 +3,13 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import test from "node:test";
+import { test } from "vitest";
 import {
   prepareCardSearchForD1ExportStatements,
   reconstructCardSearchAfterD1RestoreStatements,
-} from "../src/catalogue/card-search-recovery-statements.ts";
+} from "../../src/catalogue/card-search-recovery-statements.ts";
 
-const root = resolve(import.meta.dirname, "..");
+const root = resolve(import.meta.dirname, "../..");
 
 test("D1 backup export restores the reconstructible Card FTS index", async () => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-fts-restore-"));

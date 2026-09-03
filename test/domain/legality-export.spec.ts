@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import type { CatalogueCandidate } from "../../../src/catalogue/catalogue-candidate";
-import { legalityRuleExportRecords } from "../../../src/catalogue/legality-export";
-import type { LegalityRuleEffect } from "../../../src/catalogue/legality-rule";
-import { canonicalNdjson } from "../../../src/catalogue/serialization";
+import type { CatalogueCandidate } from "../../src/catalogue/catalogue-candidate";
+import { legalityRuleExportRecords } from "../../src/catalogue/legality-export";
+import type { LegalityRuleEffect } from "../../src/catalogue/legality-rule";
+import { canonicalNdjson } from "../../src/catalogue/serialization";
 
 test("v3 Legality Rule export canonicalizes every set-valued effect operand", () => {
   const rule = {

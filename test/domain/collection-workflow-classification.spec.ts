@@ -8,7 +8,7 @@ import {
   parentWorkflowAttemptId,
   safeWorkflowStatus,
   workflowAttemptRecord,
-} from "../../../src/catalogue/collection-recovery";
+} from "../../src/catalogue/collection-recovery";
 
 const minute = 60_000;
 const nowMs = Date.parse("2026-09-02T12:00:00.000Z");
