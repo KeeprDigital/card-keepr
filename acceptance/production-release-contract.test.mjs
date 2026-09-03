@@ -63,7 +63,7 @@ test("production release is manual, serialized, versioned, and owns all producti
 });
 
 test("each worker owns one public base and the zone routes that mount it", () => {
-  // Issue #123 / ADR 0006: one host, two path mounts, no router worker.
+  // Issue #123 / ADR 0007: one host, two path mounts, no router worker.
   for (const [config, mount] of [
     ["apps/api/wrangler.jsonc", "api"],
     ["apps/ingestion/wrangler.jsonc", "ingest"],
@@ -77,6 +77,14 @@ test("each worker owns one public base and the zone routes that mount it", () =>
     assert.equal(parsed.custom_domain, undefined);
     assert.equal(parsed.workers_dev, undefined);
   }
+});
+
+test("the production preflight rehearsal is read-only", () => {
+  const preflight = readFileSync(".github/workflows/production-preflight.yml", "utf8");
+  assert.match(preflight, /workflow_dispatch:/u);
+  assert.match(preflight, /environment: production/u);
+  assert.match(preflight, /production-release-provider\.mjs verify-target/u);
+  assert.doesNotMatch(preflight, /versions upload|versions deploy|wrangler deploy|migrations apply|d1 execute|secret put|triggers deploy/u);
 });
 
 test("provider credentials stay in fetch headers and out of process arguments", () => {

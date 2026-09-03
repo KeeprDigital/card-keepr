@@ -1,0 +1,47 @@
+name: production-preflight
+
+# Read-only rehearsal of the guarded release's first gate: proves the
+# production deployment token can read the D1 databases, R2 buckets, and
+# Worker settings, and that each deployed Worker's secret inventory matches
+# the expected set. It mutates nothing; use it after setting or rotating
+# CLOUDFLARE_DEPLOYMENT_TOKEN and before dispatching a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-target:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify the immutable production target without mutation
+        run: |
+          set -euo pipefail
+          target="$(node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            const ingestion = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+            const d1 = ingestion.d1_databases[0];
+            process.stdout.write(JSON.stringify({
+              cloudflare_account_id: ingestion.vars.CLOUDFLARE_ACCOUNT_ID,
+              worker_scripts: ["card-keepr-api", "card-keepr-ingestion"],
+              d1_databases: [
+                { name: d1.database_name, id: d1.database_id },
+                { name: "card-keepr-disposable-verification", id: ingestion.vars.DISPOSABLE_D1_DATABASE_ID },
+              ],
+              r2_buckets: ingestion.r2_buckets.map((binding) => binding.bucket_name),
+            }));
+          ')"
+          CLOUDFLARE_ACCOUNT_ID="$(jq -r .cloudflare_account_id <<<"${target}")" \
+          PRODUCTION_TARGET_JSON="${target}" \
+            node scripts/production-release-provider.mjs verify-target | jq '.'
