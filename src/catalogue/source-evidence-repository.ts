@@ -2496,11 +2496,14 @@ export async function finalizeEvidenceRun(
                WHERE id = ? AND state = 'collecting'`,
             )
             .bind(completedAt, runId),
+      // Completion is recorded once: a superseded parent attempt that wakes
+      // from its barrier sleep after the run completed under a later attempt
+      // must not move the retained completion facts.
       database
         .prepare(
           `UPDATE ingestion_evidence_plans
            SET collection_completed_at = ?, failure_code = ?
-           WHERE ingestion_run_id = ?`,
+           WHERE ingestion_run_id = ? AND collection_completed_at IS NULL`,
         )
         .bind(completedAt, failureCode, runId),
       database
@@ -2533,7 +2536,7 @@ export async function finalizeEvidenceRun(
       .prepare(
         `UPDATE ingestion_evidence_plans
          SET collection_completed_at = ?, failure_code = NULL
-         WHERE ingestion_run_id = ?`,
+         WHERE ingestion_run_id = ? AND collection_completed_at IS NULL`,
       )
       .bind(completedAt, runId),
   ]);

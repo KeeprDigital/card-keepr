@@ -103,6 +103,7 @@ export type CollectionDocument = {
   state: string;
   linked_run_id: string | null;
   failure_code: string | null;
+  collection_completed_at: string | null;
   pause?: Record<string, unknown>;
   termination?: Record<string, unknown>;
   actions?: string[];
