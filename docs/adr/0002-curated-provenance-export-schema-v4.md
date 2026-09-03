@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. The retention of earlier majors applies from Go-Live only (ADR 0008); before Go-Live the export schema is edited in place and earlier majors are deleted.
 
 ## Decision
 

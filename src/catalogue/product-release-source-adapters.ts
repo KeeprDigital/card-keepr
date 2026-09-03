@@ -109,11 +109,12 @@ type LiveContractVersion = LiveContractFlags & {
   urls?: Readonly<Record<string, string>>;
 };
 
-// ADR 0004: parser implementation is retained for the current Source Adapter
-// Version and its immediate predecessor on each Source Lineage only. Each
-// lineage lists its live versions oldest first; the last entry is the
-// active registration for new collection. Retired versions keep their
-// registration in src/catalogue/retired-source-adapter-versions.ts.
+// ADR 0008: before Go-Live each Source Lineage registers exactly one Source
+// Adapter Version, edited in place; no predecessor is kept parseable and no
+// retired registration is kept. Each lineage's `versions` list therefore
+// holds its single active registration (the list shape and LiveContractFlags
+// stay so flags can still vary per lineage). From Go-Live ADR 0004 applies:
+// the list grows to the current version plus its immediate predecessor.
 //
 // Every URL below is the live Bandai site shape verified on 2026-08-06/07
 // (the 2026-08 site restructure) and re-verified for issue #58 on 2026-08-11.
@@ -179,16 +180,6 @@ const rawContractDefinitions: readonly {
     },
     versions: [
       {
-        adapterVersion: "one-piece-en@5",
-        parserContract: "one-piece-en-restructured-complete-catalogue@5",
-        expandedOnePieceCatalogue: true,
-        catalogueComplete: false,
-        completeDigimonCatalogue: false,
-        optionalCardFields: false,
-        unresolvedLegalityScopes: false,
-        liveShapes: false,
-      },
-      {
         adapterVersion: "one-piece-en@6",
         parserContract: "one-piece-en-restructured-complete-catalogue@6",
         expandedOnePieceCatalogue: true,
@@ -240,22 +231,10 @@ const rawContractDefinitions: readonly {
       "legality-history":
         "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
     },
-    // Issue #63: request capacity is an immutable policy of each exact
-    // Source Adapter Version. fusion-world-en@9 parses byte-for-byte like
-    // fusion-world-en@8 and differs only in the larger request capacity
-    // declared in src/catalogue/source-adapters.ts and the
+    // Issue #63: request capacity is a policy of each exact Source Adapter
+    // Version, declared in src/catalogue/source-adapters.ts and the
     // source_adapter_versions seed.
     versions: [
-      {
-        adapterVersion: "fusion-world-en@8",
-        parserContract: "fusion-world-en-restructured-complete-catalogue@7",
-        expandedOnePieceCatalogue: false,
-        catalogueComplete: true,
-        completeDigimonCatalogue: false,
-        optionalCardFields: true,
-        unresolvedLegalityScopes: false,
-        liveShapes: true,
-      },
       {
         adapterVersion: "fusion-world-en@9",
         parserContract: "fusion-world-en-restructured-complete-catalogue@7",
@@ -304,16 +283,6 @@ const rawContractDefinitions: readonly {
       errata: "https://world.digimoncard.com/rule/errata_card/",
     },
     versions: [
-      {
-        adapterVersion: "digimon-en@6",
-        parserContract: "digimon-en-restructured-complete-catalogue@5",
-        expandedOnePieceCatalogue: false,
-        catalogueComplete: false,
-        completeDigimonCatalogue: true,
-        optionalCardFields: false,
-        unresolvedLegalityScopes: false,
-        liveShapes: false,
-      },
       {
         adapterVersion: "digimon-en@7",
         parserContract: "digimon-en-restructured-complete-catalogue@6",
@@ -369,16 +338,6 @@ const rawContractDefinitions: readonly {
         `https://www.gundam-gcg.com/${locale}/news/?subcategory=news&tag=all&page=1`,
     },
     versions: [
-      {
-        adapterVersion: `${sourceLineage}@6`,
-        parserContract: `${sourceLineage}-restructured-complete-catalogue@5`,
-        expandedOnePieceCatalogue: false,
-        catalogueComplete: true,
-        completeDigimonCatalogue: false,
-        optionalCardFields: false,
-        unresolvedLegalityScopes: false,
-        liveShapes: false,
-      },
       // Issue #58: the Gundam adapters pin their legality surface to the
       // live news/01_279.html publication and represent its compound
       // open-predicate policy as explicit unresolved rules (including one

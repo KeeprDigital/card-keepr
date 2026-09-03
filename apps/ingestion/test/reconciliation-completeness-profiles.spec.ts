@@ -399,12 +399,12 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   expect((await approve(candidate.document)).response.status).toBe(200);
 });
 
-test("new collection rejects a superseded adapter while retained snapshots reparse with their exact capturing version", async () => {
+test("new collection rejects an unregistered adapter version while retained snapshots reparse with their exact capturing version", async () => {
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@8",
-    idempotency_key: "reject-superseded-production-adapter",
+    idempotency_key: "reject-unregistered-production-adapter",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
   expect(blocked.response.status).toBe(422);

@@ -12,7 +12,7 @@ techniques remain implementation choices.
 | Concern | Normative artifact |
 | --- | --- |
 | Authenticated read API | `openapi.json` and `schemas/api.schema.json` |
-| Catalogue Export shape | `schemas/catalogue-export-manifest.schema.json` and `schemas/catalogue-export-record.schema.json` |
+| Catalogue Export shape | `schemas/catalogue-export-manifest-v5.schema.json` and `schemas/catalogue-export-record-v5.schema.json` |
 | Catalogue Export bytes | `SERIALIZATION.md` |
 | Owner administration | `ADMINISTRATION.md`, `schemas/administration.schema.json`, and `administration.mjs` |
 | Game semantics and source mappings | `../v1-game-profiles-source-adapters/CONTRACT.md` and `contract.mjs` |

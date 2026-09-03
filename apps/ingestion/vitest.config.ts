@@ -1163,7 +1163,7 @@ export default defineConfig({
               url.pathname === "/fw/en/products/" &&
               artworkMarker === "card-keepr-product-authority"
             ) {
-              // The fusion-world-en@8 live listing shape: anchored status
+              // The fusion-world-en@9 live listing shape: anchored status
               // sections whose entries carry bracketed identities and one
               // published RELEASE row.
               return new Response(

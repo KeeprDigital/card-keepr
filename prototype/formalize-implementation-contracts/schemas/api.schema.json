@@ -1007,23 +1007,7 @@
       "required": ["data", "meta", "links"],
       "properties": {
         "data": {
-          "oneOf": [
-            {
-              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@1"
-            },
-            {
-              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@2"
-            },
-            {
-              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@3"
-            },
-            {
-              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@4"
-            },
-            {
-              "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@5"
-            }
-          ]
+          "$ref": "https://card-keepr.invalid/schemas/catalogue-export-manifest@5"
         },
         "meta": { "$ref": "#/$defs/Meta" },
         "links": { "$ref": "#/$defs/SelfLink" }

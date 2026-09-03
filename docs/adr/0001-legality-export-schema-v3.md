@@ -1,5 +1,9 @@
 # Use Catalogue Export schema v3 for exact Legality Rule effects
 
+## Status
+
+Accepted. The retention of earlier majors applies from Go-Live only (ADR 0008); before Go-Live the export schema is edited in place and earlier majors are deleted.
+
 Catalogue Export schema v2 cannot represent membership predicates, release
 dates, unresolved reasons, or other rule operands without losing semantics. It
 also leaves a globally applicable rule without a Card relationship unable to

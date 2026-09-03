@@ -25,51 +25,6 @@ const apiSchema = JSON.parse(
     "utf8",
   ),
 );
-const exportRecordSchema = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-record.schema.json",
-    ),
-    "utf8",
-  ),
-);
-const exportManifestSchema = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest.schema.json",
-    ),
-    "utf8",
-  ),
-);
-const exportManifestSchemaV1 = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v1.schema.json",
-    ),
-    "utf8",
-  ),
-);
-const exportManifestSchemaV2 = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v2.schema.json",
-    ),
-    "utf8",
-  ),
-);
-const exportManifestSchemaV4 = JSON.parse(
-  readFileSync(
-    resolve(
-      root,
-      "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v4.schema.json",
-    ),
-    "utf8",
-  ),
-);
 const exportManifestSchemaV5 = JSON.parse(
   readFileSync(
     resolve(
@@ -99,13 +54,8 @@ const gzipGolden = JSON.parse(
 );
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
-ajv.addSchema(exportManifestSchema);
-ajv.addSchema(exportManifestSchemaV1);
-ajv.addSchema(exportManifestSchemaV2);
-ajv.addSchema(exportManifestSchemaV4);
 ajv.addSchema(exportManifestSchemaV5);
 ajv.addSchema(apiSchema);
-ajv.addSchema(exportRecordSchema);
 ajv.addSchema(exportRecordSchemaV5);
 const validateLegalityStatus = ajv.getSchema(
   `${apiSchema.$id}#/$defs/LegalityStatusDocument`,

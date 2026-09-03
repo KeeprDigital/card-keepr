@@ -12,8 +12,8 @@ const reset = "\x1b[0m";
 for (const file of [
   "openapi.json",
   "schemas/api.schema.json",
-  "schemas/catalogue-export-manifest.schema.json",
-  "schemas/catalogue-export-record.schema.json",
+  "schemas/catalogue-export-manifest-v5.schema.json",
+  "schemas/catalogue-export-record-v5.schema.json",
   "schemas/administration.schema.json"
 ]) {
   JSON.parse(readFileSync(join(here, file), "utf8"));

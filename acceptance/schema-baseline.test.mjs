@@ -10,14 +10,19 @@ const root = resolve(import.meta.dirname, "..");
 
 // ADR 0006: migrations/0001_baseline.sql replaces the 36-file chain that
 // ended at level 36. The chain's last commit is the source of truth for the
-// baseline's schema and seed rows; these digests were computed from it and
-// are recorded in the ADR. The digest checks always run; when the commit is
-// present locally (it is not in a shallow CI checkout) the chain is also
-// replayed and diffed object by object so a mismatch names the object.
+// baseline's schema DDL; that digest was computed from it and is recorded
+// in the ADR. The digest check always runs; when the commit is present
+// locally (it is not in a shallow CI checkout) the chain is also replayed
+// and diffed object by object so a mismatch names the object.
+//
+// Seed rows are no longer compared with the chain: under ADR 0008 the
+// baseline's source_adapter_versions seed was edited in place (#134, #135)
+// and legitimately diverges. The baseline's own seed digest is pinned
+// instead so an unintended seed change still fails here.
 const chainCommit = "30751a2a46548530d48dc37a1dc507efbbd07c03";
 const chainLevel = 36;
 const chainSchemaDigest = "4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4";
-const chainSeedDigest = "6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0";
+const baselineSeedDigest = "62bd36896ce5a7ad80f5693c3f6dd90f92869af19508b3d0711660c71fc48787";
 
 test("the baseline is the first migration and a fresh apply yields level 1", async () => {
   const names = await migrationNames();
@@ -33,7 +38,7 @@ test("the baseline is the first migration and a fresh apply yields level 1", asy
   database.close();
 });
 
-test("the baseline schema and seed rows equal the level-36 chain", async () => {
+test("the baseline schema equals the level-36 chain and its seed rows are pinned", async () => {
   const baseline = new DatabaseSync(":memory:");
   baseline.exec(
     await readFile(resolve(root, "migrations", "0001_baseline.sql"), "utf8"),
@@ -47,11 +52,10 @@ test("the baseline schema and seed rows equal the level-36 chain", async () => {
   if (chain !== null) {
     assert.equal(schemaLevel(chain), chainLevel);
     assert.deepEqual(baselineSchema, schemaObjects(chain));
-    assert.deepEqual(baselineSeeds, seedRows(chain));
     chain.close();
   }
   assert.equal(digest(baselineSchema), chainSchemaDigest);
-  assert.equal(digest(baselineSeeds), chainSeedDigest);
+  assert.equal(digest(baselineSeeds), baselineSeedDigest);
 });
 
 // Replays the 36-file chain from git history, or returns null when the
@@ -105,8 +109,7 @@ function normalizeSql(sql) {
     .trim();
 }
 
-// Every row of every table except the schema level itself, which is the one
-// value the baseline deliberately changes.
+// Every row of every table except the schema level itself.
 function seedRows(database) {
   const tables = database.prepare(
     `SELECT name FROM sqlite_schema

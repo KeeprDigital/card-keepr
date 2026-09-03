@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted from Go-Live (ADR 0008). Before Go-Live there is no predecessor window and no retired registration: each Source Lineage has one Source Adapter Version, edited in place.
 
 ## Context
 

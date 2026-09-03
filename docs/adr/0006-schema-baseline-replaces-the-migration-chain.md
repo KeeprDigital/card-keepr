@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Before Go-Live, forward migrations are folded back into the baseline whenever the production database is recreated, and all of them are folded in before Go-Live (ADR 0008); the "never edit the baseline" rule applies from Go-Live.
 
 ## Context
 
@@ -86,16 +86,24 @@ renamed table with its quoted name. The comparison excludes only
 `catalogue_schema_state.migration_level`, which is 36 on the chain and 1 on
 the baseline by design.
 
-The digests recorded in the test were computed from that replay:
+The digests recorded in the test:
 
-| Input                               | SHA-256                                                            |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| normalized `sqlite_schema` rows     | `4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4` |
-| seed rows of every table            | `6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0` |
+| Input                                        | SHA-256                                                            | Source                     |
+| -------------------------------------------- | ------------------------------------------------------------------ | -------------------------- |
+| normalized `sqlite_schema` rows              | `4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4` | chain replay (unchanged)   |
+| seed rows of every table                     | `62bd36896ce5a7ad80f5693c3f6dd90f92869af19508b3d0711660c71fc48787` | the baseline itself        |
 
-The digest assertions always run. When that commit is present in the
+The schema digest assertion always runs. When that commit is present in the
 checkout the chain is also replayed and diffed object by object, so a
 mismatch names the object; a shallow CI clone runs the digest check alone.
+
+Under ADR 0008 the seed rows diverged from the chain: #135 removed the
+retired and predecessor `source_adapter_versions` rows from the baseline and
+#134 raised `one-piece-en@6`'s `request_capacity` in place, so the chain's
+seed digest (`6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0`)
+no longer matches. Only the schema DDL is still proven equivalent to the
+chain; the seed digest above is the baseline's own and is pinned so an
+unintended seed change still fails the test.
 
 ## Consequences
 

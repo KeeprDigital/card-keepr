@@ -33,15 +33,19 @@ The stable identity of one Official Source across dated captures and compatible 
 _Avoid_: Request URL, Source Snapshot, hostname
 
 **Source Adapter Version**:
-An immutable parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. A new version may reparse retained Source Snapshots without changing their captured bytes.
+A parser contract registered to exactly one Source Lineage, Supported Game, and Game Profile. From Go-Live it is immutable and a new version may reparse retained Source Snapshots without changing their captured bytes; before Go-Live each Source Lineage has exactly one, edited in place.
 _Avoid_: Generic parser name, mutable scraper, Source schema
+
+**Go-Live**:
+The first Production Release that serves Catalogue Consumers. Before it, every definition exists in exactly one version and nothing is retained for compatibility; from it, versions are immutable and advance by registration.
+_Avoid_: Version one, launch, first deploy
 
 **Source Request**:
 One immutable planned retrieval within an Ingestion Run's collection coverage, identified stably by its Source Lineage, request role, and immutable identity whether it originates from the initial Evidence Plan, an Official Source Collection Plan, or dynamic discovery. Repeated fetch attempts and retained evidence attach to the same Source Request rather than creating a new one.
 _Avoid_: Fetch attempt, Source Snapshot, request URL
 
 **Request Capacity**:
-The immutable bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; changing a version's capacity requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
+The bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; from Go-Live it is immutable and changing it requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
 **Capacity Pause**:
