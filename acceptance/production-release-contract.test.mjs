@@ -21,6 +21,15 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.doesNotMatch(release, /\/acceptance|ADMINISTRATION_TOKEN/u);
   assert.doesNotMatch(release, /curl|Authorization:\s*Bearer|--header|-H\s/u);
   assert.doesNotMatch(release, /d1 execute[^\n]*--command/u);
+  // Issue #148: a remote `d1 execute --file` runs through the D1 import API
+  // and returns no statement rows, so every release state read and write goes
+  // through the query-endpoint runner with the generated file; only the
+  // migrations still run through wrangler.
+  assert.doesNotMatch(release, /d1 execute/u);
+  assert.doesNotMatch(failure, /d1 execute/u);
+  assert.match(release, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/live-preflight\.sql/u);
+  assert.match(release, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file \/tmp\/production-release\/claim\.sql/u);
+  assert.match(failure, /production-release-d1\.mjs execute --config "\$\{config\}" --file "\$\{release_directory\}\/cleanup\.sql"/u);
   // The guarded release is the workflow's only job (ADR 0005 removed the
   // credential-probe job), and it is selected by the operation input alone.
   assert.equal((release.split("\njobs:\n")[1].match(/^  [\w-]+:$/gmu) ?? []).length, 1);
@@ -116,6 +125,10 @@ test("the production preflight rehearsal is read-only", () => {
   assert.match(preflight, /environment: production/u);
   assert.match(preflight, /production-release-provider\.mjs verify-target/u);
   assert.doesNotMatch(preflight, /versions upload|versions deploy|wrangler deploy|migrations apply|d1 execute|secret put|triggers deploy/u);
+  // Issue #148: the rehearsal proves the release state query path against
+  // the live database with a read-only statement.
+  assert.match(preflight, /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file [^\n]*ready\.sql/u);
+  assert.match(preflight, /SELECT 1 AS ready/u);
 });
 
 test("provider credentials stay in fetch headers and out of process arguments", () => {
