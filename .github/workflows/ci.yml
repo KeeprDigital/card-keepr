@@ -38,7 +38,10 @@ jobs:
 
   ingestion-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A shard normally finishes in ~4 min. The workers pool occasionally
+    # wedges in per-file teardown after every test has passed (seen on main
+    # before sharding); the cap bounds what such a hang costs.
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
