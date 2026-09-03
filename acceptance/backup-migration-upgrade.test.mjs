@@ -125,6 +125,85 @@ test("migration 0015 distrusts legacy verified backups without degrading a fresh
   fresh.close();
 });
 
+// Every other migration test starts from an empty database. 0028 rebuilds
+// ingestion_runs by dropping it, and the curated-revision pin tables cascade
+// on delete, so it lost their rows on any populated database: production
+// aborted on the pin sets' immutability trigger at level 27. D1 applies a
+// migration as one transaction, which is what lets 0028 defer the foreign
+// keys of the other children, so each migration is applied inside one here.
+test("migration 0028 rebuilds ingestion_runs on a populated database without losing curated pins", async () => {
+  const migrations = await readMigrations();
+  const names = await migrationNames();
+  const database = new DatabaseSync(":memory:");
+  database.exec("PRAGMA foreign_keys = ON");
+  for (const [index, migration] of migrations.entries()) {
+    if (names[index] >= "0028_") break;
+    database.exec(migration);
+  }
+  database.prepare(
+    `INSERT INTO ingestion_runs (
+       id, state, selected_games_json, started_at, expected_current_revision_id,
+       idempotency_key, candidate_json
+     ) VALUES (?, 'planning', '["one-piece"]', ?, 'catrev_spine_000', ?, '{}')`,
+  ).run("run-populated-upgrade", "2026-08-20T00:00:00.000Z", "run-populated-upgrade");
+  database.prepare(
+    `INSERT INTO ingestion_run_curated_revision_sets (
+       ingestion_run_id, revision_ids_json, set_digest, pinned_at
+     ) VALUES (?, '[]', ?, ?)`,
+  ).run("run-populated-upgrade", "a".repeat(64), "2026-08-20T00:00:00.000Z");
+  const pinsBefore = database.prepare(
+    "SELECT * FROM ingestion_run_curated_revision_sets ORDER BY ingestion_run_id",
+  ).all();
+  const transitionsBefore = database.prepare(
+    "SELECT count(*) AS count FROM ingestion_run_transitions",
+  ).get().count;
+
+  for (const [index, migration] of migrations.entries()) {
+    if (names[index] < "0028_") continue;
+    database.exec("BEGIN");
+    try {
+      database.exec(migration);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw new Error(`${names[index]} failed on a populated database: ${error.message}`);
+    }
+  }
+
+  assert.equal(
+    database.prepare("SELECT migration_level FROM catalogue_schema_state").get().migration_level,
+    Number.parseInt(names.at(-1), 10),
+  );
+  assert.deepEqual(
+    database.prepare("SELECT * FROM ingestion_run_curated_revision_sets ORDER BY ingestion_run_id").all(),
+    pinsBefore,
+  );
+  assert.equal(
+    database.prepare("SELECT count(*) AS count FROM ingestion_runs").get().count,
+    1,
+  );
+  assert.equal(
+    database.prepare("SELECT count(*) AS count FROM ingestion_run_transitions").get().count,
+    transitionsBefore,
+  );
+  assert.deepEqual(database.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.throws(
+    () => database.prepare("DELETE FROM ingestion_run_curated_revision_sets").run(),
+    /curated_revision_pin_set_immutable/u,
+  );
+
+  const fresh = new DatabaseSync(":memory:");
+  for (const migration of migrations) fresh.exec(migration);
+  const schema = (source) => source.prepare(
+    `SELECT type, name, tbl_name, sql FROM sqlite_schema
+     WHERE name LIKE '%curated%' OR name LIKE 'ingestion_run%'
+     ORDER BY type, name`,
+  ).all();
+  assert.deepEqual(schema(database), schema(fresh));
+  database.close();
+  fresh.close();
+});
+
 function insertFailedAttempt(database, id) {
   database.prepare(
     `INSERT INTO catalogue_backup_attempts (
@@ -166,11 +245,15 @@ function insertWorkflowRequest(database, id, linkedAttemptId) {
   ).run(id, `workflow:${id}`, "2026-08-05T06:02:00.000Z", linkedAttemptId);
 }
 
-async function readMigrations() {
-  const directory = resolve(root, "migrations");
-  const names = (await readdir(directory))
+async function migrationNames() {
+  return (await readdir(resolve(root, "migrations")))
     .filter((name) => name.endsWith(".sql"))
     .sort();
+}
+
+async function readMigrations() {
+  const directory = resolve(root, "migrations");
+  const names = await migrationNames();
   return Promise.all(names.map((name) =>
     readFile(resolve(directory, name), "utf8")
   ));
