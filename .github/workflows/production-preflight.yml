@@ -45,3 +45,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID="$(jq -r .cloudflare_account_id <<<"${target}")" \
           PRODUCTION_TARGET_JSON="${target}" \
             node scripts/production-release-provider.mjs verify-target | jq '.'
+      # Issue #148: the guarded release reads and writes its state through the
+      # D1 query endpoint (a remote wrangler file execution runs the import API and
+      # returns no rows). The rehearsal proves that path with one read-only
+      # statement against the live catalogue database.
+      - name: Prove the release state query path without mutation
+        run: |
+          set -euo pipefail
+          printf 'SELECT 1 AS ready;\n' > /tmp/production-preflight-ready.sql
+          result="$(CLOUDFLARE_ACCOUNT_ID="$(node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            process.stdout.write(JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8")).vars.CLOUDFLARE_ACCOUNT_ID);
+          ')" node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-preflight-ready.sql)"
+          test "$(jq -r '.[-1].results[0].ready' <<<"${result}")" = 1

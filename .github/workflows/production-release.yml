@@ -133,12 +133,12 @@ jobs:
       - name: Recheck live Production Release gates without mutation
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/live-preflight.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/live-preflight.sql)"
           test "$(jq -r '.[-1].results[0].ready' <<<"${result}")" = 1
       - name: Claim the prepared pre-migration fence
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/claim.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/claim.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].claimed' <<<"${result}")" = 1
       - name: Apply compatible forward migrations
@@ -156,7 +156,7 @@ jobs:
             fi
           }
           trap release_migration_exit EXIT
-          marker="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
+          marker="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${marker}")" = 1
           test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
           npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
@@ -165,7 +165,7 @@ jobs:
         if: inputs.bootstrap != 'true'
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
           test "$(jq -r '.[-1].results[0].transition_rows' <<<"${result}")" = 3
           test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
       - name: Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode
@@ -175,7 +175,7 @@ jobs:
         if: inputs.bootstrap == 'true'
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
           test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
       - name: Bind an exact verified replacement D1 when requested
         run: |
@@ -189,10 +189,10 @@ jobs:
           else
             node scripts/production-release.mjs replacement-configs "${REPLACEMENT_DATABASE_ID}" "${api_config}" "${ingestion_config}"
             npx wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
-            handoff_result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/replacement-handoff.sql)"
+            handoff_result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/replacement-handoff.sql)"
             handoff="$(jq -er 'if length == 1 and (.[0].results | length) == 1 and (.[0].results[0].handoff_json | type) == "string" then .[0].results[0].handoff_json else error("invalid replacement handoff result") end' <<<"${handoff_result}")"
             KEEPR_REPLACEMENT_HANDOFF_EVIDENCE="${handoff}" node scripts/production-release.mjs replacement-seed /tmp/production-release/replacement-seed.sql
-            seed_result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${ingestion_config}" --file /tmp/production-release/replacement-seed.sql)"
+            seed_result="$(node scripts/production-release-d1.mjs execute --config "${ingestion_config}" --file /tmp/production-release/replacement-seed.sql)"
             test "$(jq -r '.[-1].results[0].seeded' <<<"${seed_result}")" = 1
             release_state_config="${ingestion_config}"
           fi
@@ -202,7 +202,7 @@ jobs:
           set -euo pipefail
           npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
           npx wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/deploying.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/deploying.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Verify the uploaded versions bind the release configuration
@@ -227,7 +227,7 @@ jobs:
           set -euo pipefail
           binding="$(node scripts/production-release-provider.mjs observe-bindings)"
           KEEPR_RELEASE_EVIDENCE="${binding}" node scripts/production-release.mjs evidence-sql binding "${RELEASE_ID}" /tmp/production-release/binding.sql
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/binding.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/binding.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Run black-box production smoke checks
@@ -237,7 +237,7 @@ jobs:
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,legalityCardId:$targets.legality_card_id,legalityDate:(now|strftime("%Y-%m-%d")),legalityFormat:$targets.legality_format,legalityRegion:$targets.legality_region,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
           test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
@@ -253,7 +253,7 @@ jobs:
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg ingestion "${ingestion_url}" --arg revision "${EXPECTED_CURRENT_REVISION}" '{apiUrl:$url,apiKey:$key,ingestionUrl:$ingestion,currentRevisionId:$revision}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs bootstrap)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
-          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
+          result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
           test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1

@@ -100,7 +100,16 @@ last applied file, and `--expected-migration-level` must name that level.
 
 The workflow rechecks the SHA, actor, complete target digest, current Catalogue
 Revision, migration level, idle ingestion, recovery evidence and retained
-revision window before mutation. It acquires the D1 Production Release lease, applies only
+revision window before mutation. Every release state statement the validator
+generates (`live-preflight.sql`, `claim.sql`, `materialize.sql`, the phase
+evidence, and the failure handler's files) runs through
+`scripts/production-release-d1.mjs`, which posts the file to the D1 query
+endpoint and prints each statement's rows; a remote `wrangler d1 execute
+--file` goes through the D1 import API instead, returns no rows, and can make
+the database unavailable while it runs (issue #148). Only
+`wrangler d1 migrations apply` still runs through wrangler, and the
+`production-preflight` rehearsal proves the query path with one read-only
+statement. It acquires the D1 Production Release lease, applies only
 checked-in forward migrations, uploads tagged immutable Worker versions,
 verifies that each uploaded version binds exactly the checked-in vars,
 bindings, and expected secrets, activates the API and ingestion pair,
