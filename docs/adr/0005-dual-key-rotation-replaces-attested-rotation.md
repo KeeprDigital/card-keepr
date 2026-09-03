@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded: the rotation log, route, and runbook were removed in #154 and
+credential rotation is deferred until after Go-Live (the two-slot bearer keys
+remain).
 
 ## Context
 

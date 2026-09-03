@@ -244,9 +244,10 @@ Replace `CLOUDFLARE_ACCOUNT_ID` and both D1 IDs in
 
 Set `API_BEARER_KEY` only on the API Worker and `ADMINISTRATION_KEY` only on
 the ingestion Worker using `wrangler secret put`. Each Worker also accepts the
-matching `*_REPLACEMENT` key so a rotation never has a gap; rotate either key
-by the dual-key procedure in `docs/runbooks/credential-rotation.md`. Set
-`D1_EXPORT_TOKEN` and `D1_VERIFICATION_TOKEN` only on ingestion. Set the
-production CORS allowlist to the exact owner origins before deploying. API and
-administration bearer replacements use token68 characters and must encode at
-least 128 bits (22 characters without padding).
+matching `*_REPLACEMENT` key as a second valid bearer, so a key can be changed
+without a gap; both slots must hold a value because the guarded Production
+Release verifies the secret inventory. Set `D1_EXPORT_TOKEN` and
+`D1_VERIFICATION_TOKEN` only on ingestion. Set the production CORS allowlist to
+the exact owner origins before deploying. API and administration bearer keys
+use token68 characters and must encode at least 128 bits (22 characters
+without padding).
