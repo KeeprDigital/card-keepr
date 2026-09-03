@@ -24,6 +24,13 @@ on:
       expected_current_revision:
         required: false
         type: string
+      # "true" only while the catalogue is provably empty (issue #141): the
+      # validator, live gate, and CLI all refuse a bootstrap dispatch once a
+      # Catalogue Revision exists.
+      bootstrap:
+        required: false
+        default: "false"
+        type: string
       expected_migration_level:
         required: false
         type: string
@@ -91,6 +98,7 @@ jobs:
       EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
       EXPECTED_ACTOR: ${{ inputs.expected_actor }}
       EXPECTED_CURRENT_REVISION: ${{ inputs.expected_current_revision }}
+      BOOTSTRAP: ${{ inputs.bootstrap }}
       EXPECTED_MIGRATION_LEVEL: ${{ inputs.expected_migration_level }}
       PRODUCTION_TARGET_JSON: ${{ inputs.production_target_json }}
       PRODUCTION_TARGET_DIGEST: ${{ inputs.production_target_digest }}
@@ -153,11 +161,21 @@ jobs:
           test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
           npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
           trap - EXIT
-      - name: Transfer bootstrap evidence to the durable Production Release
+      - name: Transfer the pre-migration fence to the durable Production Release
+        if: inputs.bootstrap != 'true'
         run: |
           set -euo pipefail
           result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
           test "$(jq -r '.[-1].results[0].transition_rows' <<<"${result}")" = 3
+          test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
+      - name: Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode
+        # No production_releases row can exist without a verified backup, so a
+        # Bootstrap Mode Production Release holds the lease only and keeps its
+        # phase evidence in the administration idempotency ledger.
+        if: inputs.bootstrap == 'true'
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
           test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
       - name: Bind an exact verified replacement D1 when requested
         run: |
@@ -213,10 +231,27 @@ jobs:
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Run black-box production smoke checks
+        if: inputs.bootstrap != 'true'
         run: |
           set -euo pipefail
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,legalityCardId:$targets.legality_card_id,legalityDate:(now|strftime("%Y-%m-%d")),legalityFormat:$targets.legality_format,legalityRegion:$targets.legality_region,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
+          KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
+          result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
+          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
+      - name: Run reduced Bootstrap Mode smoke checks
+        # An empty catalogue has no Card, Printing, export, or retained
+        # revision to read: only health and auth on both mounts and the spine
+        # revision from /v1/catalogue are checked. Nothing is rolled back.
+        if: inputs.bootstrap == 'true'
+        run: |
+          set -euo pipefail
+          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg ingestion "${ingestion_url}" --arg revision "${EXPECTED_CURRENT_REVISION}" '{apiUrl:$url,apiKey:$key,ingestionUrl:$ingestion,currentRevisionId:$revision}')"
+          smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs bootstrap)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
           test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1

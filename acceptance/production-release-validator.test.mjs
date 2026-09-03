@@ -296,6 +296,117 @@ test("zero-row phase transitions are observable and cannot release the fence", a
   assert.equal(database.prepare("SELECT active_release_id FROM operation_state").get().active_release_id, "release-47");
 });
 
+test("a Bootstrap Mode dispatch relaxes only the data-dependent gates and keeps every durable write in the idempotency ledger", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-bootstrap-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const environment = bootstrapEnvironment();
+  const plan = await validateDispatchAndWriteSql(environment, directory);
+  assert.equal(plan.bootstrap, true);
+  const files = (await readdir(directory)).sort();
+  // No production_releases row can exist without a verified backup, so the
+  // bootstrap branch writes no failed.sql: a failure releases the fence and
+  // is retained in the idempotency ledger, with nothing to roll back to.
+  assert.deepEqual(files, ["claim.sql", "cleanup.sql", "deploying.sql", "failure-evidence.sql", "live-preflight.sql", "materialize.sql", "migration-started.sql", "migration-status.sql", "post-schema-status.sql"]);
+  const preflight = await readFile(join(directory, "live-preflight.sql"), "utf8");
+  assert.match(preflight, /NOT EXISTS \(SELECT 1 FROM catalogue_revisions\)/u);
+  assert.match(preflight, /current_revision_id='catrev_spine_000'/u);
+  assert.match(preflight, /catalogue_schema_state/u);
+  assert.doesNotMatch(preflight, /catalogue_backup_attempts|catalogue_exports|catalogue_query_revisions/u);
+  for (const file of files) {
+    assert.doesNotMatch(await readFile(join(directory, file), "utf8"), /(?:INTO|UPDATE) production_releases\b/u, file);
+  }
+
+  const database = await realDatabase();
+  t.after(() => database.close());
+  seedPreparedRequest(database, environment);
+  assert.equal(database.prepare(preflight).get().ready, 1);
+  assert.equal(lastRow(database, await readFile(join(directory, "claim.sql"), "utf8")).claimed, 1);
+  assert.equal(lastRow(database, await readFile(join(directory, "migration-started.sql"), "utf8")).migration_started, 1);
+  assert.equal(lastRow(database, await readFile(join(directory, "materialize.sql"), "utf8")).transferred, 1);
+  assert.deepEqual(
+    { ...database.prepare("SELECT active_ingestion_run_id,active_release_id FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: null, active_release_id: "release-0" },
+  );
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs").get().count, 0);
+  const deploying = lastRow(database, await readFile(join(directory, "deploying.sql"), "utf8"));
+  assert.deepEqual({ ...deploying }, { changed_rows: 1, transitioned: 1 });
+  await writeEvidenceSql("binding", "release-0", JSON.stringify({ worker_database_ids: {} }), join(directory, "binding.sql"), environment);
+  const binding = lastRow(database, await readFile(join(directory, "binding.sql"), "utf8"));
+  assert.deepEqual({ ...binding }, { changed_rows: 1, transitioned: 1 });
+  await writeEvidenceSql("smoke", "release-0", JSON.stringify({ contract: "card-keepr-production-bootstrap-smoke@1" }), join(directory, "smoke.sql"), environment);
+  const smokeRows = allResultRows(database, await readFile(join(directory, "smoke.sql"), "utf8"));
+  assert.deepEqual(smokeRows.at(-2), { changed_rows: 1, transitioned: 1 });
+  assert.deepEqual(smokeRows.at(-1), { changed_rows: 1, fence_released: 1 });
+  assert.deepEqual(
+    { ...database.prepare("SELECT active_ingestion_run_id,active_release_id,active_release_expires_at FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: null, active_release_id: null, active_release_expires_at: null },
+  );
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM production_releases").get().count, 0);
+  assert.deepEqual(
+    database.prepare("SELECT operation FROM administration_idempotency ORDER BY created_at, rowid").all().map((row) => row.operation),
+    ["prepare_production_release", "claim_production_release", "production_release_migration_started", "production_release_deploying", "production_release_binding_observed", "production_release_succeeded"],
+  );
+  // A second Bootstrap Mode Production Release is allowed while the catalogue stays empty.
+  assert.equal(database.prepare(preflight).get().ready, 1);
+
+  // Once a Catalogue Revision exists the same dispatch is refused live.
+  const populated = await realDatabase();
+  t.after(() => populated.close());
+  seedPreparedRequest(populated, environment);
+  publishRevision(populated, "catrev_first");
+  assert.equal(populated.prepare(preflight).get().ready, 0);
+  assert.equal(lastRow(populated, await readFile(join(directory, "claim.sql"), "utf8")).claimed, 0);
+  assert.equal(populated.prepare("SELECT active_ingestion_run_id FROM operation_state WHERE singleton=1").get().active_ingestion_run_id, null);
+
+  // The workflow input and the prepared plan must agree on Bootstrap Mode.
+  await assert.rejects(validateDispatchAndWriteSql({ ...environment, BOOTSTRAP: "false" }, join(directory, "mismatch")), /bootstrap_mismatch/u);
+  const populatedEnvironment = releaseEnvironment();
+  await assert.rejects(validateDispatchAndWriteSql({ ...populatedEnvironment, BOOTSTRAP: "true" }, join(directory, "mismatch-populated")), /bootstrap_mismatch/u);
+});
+
+function bootstrapEnvironment() {
+  const environment = releaseEnvironment();
+  const plan = JSON.parse(environment.PREPARED_PLAN_JSON);
+  Object.assign(plan, {
+    bootstrap: true, expected_current_revision_id: "catrev_spine_000", release_id: "release-0", idempotency_key: "release-0-key",
+    recovery_bookmark: null, recovery_backup_attempt_id: null, smoke_targets: null, retained_revision_evidence: null, replacement_handoff: null,
+  });
+  return {
+    ...environment,
+    BOOTSTRAP: "true", RELEASE_ID: plan.release_id, IDEMPOTENCY_KEY: plan.idempotency_key,
+    EXPECTED_CURRENT_REVISION: plan.expected_current_revision_id,
+    RECOVERY_BACKUP_ATTEMPT_ID: "none", RECOVERY_BOOKMARK: "none",
+    SMOKE_TARGETS_JSON: "null", RETAINED_REVISION_EVIDENCE_JSON: "null",
+    PREPARED_PLAN_JSON: stableJson(plan), DISPATCH_DIGEST: hash(stableJson(plan)),
+  };
+}
+
+function seedPreparedRequest(database, environment) {
+  database.prepare("INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) VALUES (?,?,?,?,201,'success','2026-09-03T00:00:00.000Z')").run(
+    environment.IDEMPOTENCY_KEY, "prepare_production_release", environment.PREPARED_PLAN_JSON,
+    stableJson({ contract: "card-keepr-production-release-request@1", release_id: environment.RELEASE_ID, state: "requested", dispatch_digest: environment.DISPATCH_DIGEST }),
+  );
+}
+
+function publishRevision(database, revision) {
+  database.exec("DROP TRIGGER guard_catalogue_publication");
+  database.prepare("INSERT INTO ingestion_runs (id,state,selected_games_json,started_at,expected_current_revision_id,idempotency_key,candidate_json) VALUES ('run_first','planning','[\"one-piece\"]','2026-09-03T00:00:00.000Z','catrev_spine_000','run-first','{}')").run();
+  database.prepare("INSERT INTO catalogue_revisions (id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest) VALUES (?,'run_first','2026-09-03T00:01:00.000Z',?,'catrev_spine_000',?)").run(revision, "b".repeat(64), "a".repeat(64));
+  database.prepare("UPDATE catalogue_state SET current_revision_id=?,published_at='2026-09-03T00:01:00.000Z' WHERE singleton=1").run(revision);
+}
+
+function lastRow(database, sql) { return allResultRows(database, sql).at(-1); }
+
+function allResultRows(database, sql) {
+  const rows = [];
+  for (const statement of statements(sql)) {
+    const prepared = database.prepare(statement);
+    if (/^\s*SELECT/iu.test(statement)) rows.push({ ...prepared.get() });
+    else prepared.run();
+  }
+  return rows;
+}
+
 function releaseEnvironment() {
   const target = {
     cloudflare_account_id: "0123456789abcdef0123456789abcdef",
@@ -311,6 +422,7 @@ function releaseEnvironment() {
   const plan = {
     expected_actor: "keepr-release[bot]", expected_current_revision_id: "catrev-current",
     expected_head_sha: "a".repeat(40), expected_migration_level: 1,
+    bootstrap: false,
     idempotency_key: "release-47-key", production_target: target,
     production_target_digest: hash(stableJson(target)), recovery_backup_attempt_id: "backup-current",
     recovery_bookmark: "bookmark-current", release_id: "release-47", replacement_handoff: null,
@@ -320,7 +432,7 @@ function releaseEnvironment() {
     EXPECTED_ACTOR: plan.expected_actor, EXPECTED_CURRENT_REVISION: plan.expected_current_revision_id,
     EXPECTED_HEAD_SHA: plan.expected_head_sha, EXPECTED_MIGRATION_LEVEL: String(plan.expected_migration_level),
     IDEMPOTENCY_KEY: plan.idempotency_key, PRODUCTION_TARGET_JSON: JSON.stringify(target),
-    PRODUCTION_TARGET_DIGEST: plan.production_target_digest,
+    PRODUCTION_TARGET_DIGEST: plan.production_target_digest, BOOTSTRAP: "false",
     RECOVERY_BACKUP_ATTEMPT_ID: plan.recovery_backup_attempt_id, RECOVERY_BOOKMARK: plan.recovery_bookmark,
     RELEASE_ID: plan.release_id, REPLACEMENT_RECOVERY_ID: "none", REPLACEMENT_DATABASE_ID: "none",
     RETAINED_DATABASE_ID: "none", REPLACEMENT_TARGET_DIGEST: "none",

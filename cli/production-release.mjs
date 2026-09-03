@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { parseOptions, writeCliFailure } from "./command-support.mjs";
+import { parseOptions, runtimeUrl, writeCliFailure } from "./command-support.mjs";
 import { validatedProductionTarget } from "./production-target.mjs";
+import { SPINE_REVISION_ID } from "../src/catalogue/spine-revision.mjs";
 import { dispatchProductionRelease } from "./provider-github-release.mjs";
 
 export async function runProductionReleaseCommand(args, environment, json) {
@@ -9,7 +10,7 @@ export async function runProductionReleaseCommand(args, environment, json) {
     "--expected-migration-level", "--idempotency-key", "--environment",
     "--confirm", "--replacement-recovery-id", "--replacement-database-id",
     "--retained-database-id",
-  ], ["--json", "--yes"]);
+  ], ["--json", "--yes", "--bootstrap"]);
   if (options.error !== null) return failure(json, "invalid_arguments", options.error, 2);
   const value = options.values;
   const releaseId = value["--release-id"];
@@ -30,6 +31,13 @@ export async function runProductionReleaseCommand(args, environment, json) {
   if (replacement === false) {
     return failure(json, "invalid_arguments", "Replacement recovery id, replacement D1 id, and retained D1 id must be supplied together and differ.", 2);
   }
+  // Bootstrap Mode (issue #141): before the first published Catalogue
+  // Revision there is no backup, bookmark, retained window, or smoke target,
+  // so those gates are relaxed while the catalogue is provably empty.
+  const bootstrap = options.flags.has("--bootstrap");
+  if (bootstrap && replacement !== null) {
+    return failure(json, "invalid_arguments", "A Bootstrap Mode Production Release cannot hand off a replacement D1; no recovery can exist before the first published revision.", 2);
+  }
   const status = await readStatus(environment);
   if (!status.ok) return failure(json, status.code, status.detail, status.exitCode);
   const target = validatedProductionTarget(status.document?.production_target);
@@ -40,10 +48,20 @@ export async function runProductionReleaseCommand(args, environment, json) {
   const replacementMutationSafe = replacement !== null && safe?.recovery_health === "blocked" &&
     safe?.active_recovery_id === replacement.recovery_id &&
     safe?.active_ingestion_run_id === null && safe?.active_production_release_id === null;
-  if (target === null || safe?.current_revision_id !== expectedRevision ||
+  const exactGates = target !== null && safe?.current_revision_id === expectedRevision &&
+    preflight?.schema_migration_level === expectedLevel &&
+    preflight?.production_target_digest === targetDigest;
+  if (bootstrap) {
+    if (preflight?.bootstrap !== true) {
+      return failure(json, "bootstrap_not_applicable", "The catalogue is not provably empty: Bootstrap Mode is only usable before the first published Catalogue Revision.", 7);
+    }
+    if (!exactGates || !ordinaryMutationSafe || expectedRevision !== SPINE_REVISION_ID) {
+      return failure(json, "release_preflight_failed", "Production status did not satisfy the exact Spine Revision, migration, target, and idle mutation gates.", 7);
+    }
+  } else if (preflight?.bootstrap === true) {
+    return failure(json, "release_preflight_failed", "The catalogue is provably empty and carries no recovery, retention, or smoke evidence; dispatch a Bootstrap Mode Production Release with --bootstrap.", 7);
+  } else if (!exactGates ||
       (!ordinaryMutationSafe && !replacementMutationSafe) ||
-      preflight?.schema_migration_level !== expectedLevel ||
-      preflight?.production_target_digest !== targetDigest ||
       typeof preflight?.recovery_bookmark !== "string" ||
       typeof preflight?.recovery_backup_attempt_id !== "string" ||
       preflight?.retention_ready !== true ||
@@ -62,8 +80,10 @@ export async function runProductionReleaseCommand(args, environment, json) {
     expected_current_revision_id: expectedRevision,
     expected_head_sha: expectedHeadSha,
     expected_migration_level: expectedLevel,
-    recovery_bookmark: preflight.recovery_bookmark,
-    recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
+    ...(bootstrap ? { bootstrap: true } : {
+      recovery_bookmark: preflight.recovery_bookmark,
+      recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
+    }),
     idempotency_key: idempotencyKey,
     ...(replacement === null ? {} : { replacement_handoff: replacement }),
   };
@@ -85,10 +105,11 @@ export async function runProductionReleaseCommand(args, environment, json) {
     expected_migration_level: expectedLevel,
     production_target: target,
     production_target_digest: targetDigest,
-    recovery_bookmark: preflight.recovery_bookmark,
-    recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
-    smoke_targets: preflight.smoke_targets,
-    retained_revision_evidence: preflight.retained_revision_evidence,
+    bootstrap,
+    recovery_bookmark: bootstrap ? null : preflight.recovery_bookmark,
+    recovery_backup_attempt_id: bootstrap ? null : preflight.recovery_backup_attempt_id,
+    smoke_targets: bootstrap ? null : preflight.smoke_targets,
+    retained_revision_evidence: bootstrap ? null : preflight.retained_revision_evidence,
     replacement_handoff: replacementHandoff,
   };
   const prepared = await prepareRequest(environment, preparedPlan);
@@ -114,10 +135,11 @@ export async function runProductionReleaseCommand(args, environment, json) {
       expected_current_revision: expectedRevision,
       expected_migration_level: String(expectedLevel),
       production_target_json: JSON.stringify(target), production_target_digest: targetDigest,
-      recovery_bookmark: preflight.recovery_bookmark,
-      recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
-      smoke_targets_json: JSON.stringify(preflight.smoke_targets),
-      retained_revision_evidence_json: JSON.stringify(preflight.retained_revision_evidence),
+      bootstrap: String(bootstrap),
+      recovery_bookmark: preparedPlan.recovery_bookmark ?? "none",
+      recovery_backup_attempt_id: preparedPlan.recovery_backup_attempt_id ?? "none",
+      smoke_targets_json: JSON.stringify(preparedPlan.smoke_targets),
+      retained_revision_evidence_json: JSON.stringify(preparedPlan.retained_revision_evidence),
       replacement_recovery_id: replacement?.recovery_id ?? "none",
       replacement_database_id: replacement?.replacement_database_id ?? "none",
       retained_database_id: replacement?.retained_database_id ?? "none",
@@ -134,7 +156,7 @@ async function prepareRequest(environment, body) {
   const base = environment.KEEPR_INGESTION_URL;
   const key = environment.KEEPR_ADMINISTRATION_KEY;
   try {
-    const response = await fetch(new URL("/v1/production-releases", base), {
+    const response = await fetch(runtimeUrl(base, "/v1/production-releases"), {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -159,7 +181,7 @@ async function readStatus(environment) {
   const key = environment.KEEPR_ADMINISTRATION_KEY;
   if (!base || !key) return { ok: false, code: "configuration_error", detail: "Ingestion URL and administration key are required.", exitCode: 2 };
   try {
-    const response = await fetch(new URL("/v1/status", base), { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
+    const response = await fetch(runtimeUrl(base, "/v1/status"), { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
     const document = await response.json();
     return response.ok ? { ok: true, document } : { ok: false, code: document.code ?? "administration_error", detail: document.detail ?? "Status failed.", exitCode: response.status === 401 ? 4 : 9 };
   } catch {

@@ -1,6 +1,10 @@
 import { AdministrationProblem } from "./administration-problem.ts";
 import { canonicalJson, sha256Text } from "./serialization";
 
+import { SPINE_REVISION_ID } from "./spine-revision.mjs";
+
+export { SPINE_REVISION_ID };
+
 export type ProductionTarget = Readonly<{
   cloudflare_account_id: string;
   worker_scripts: readonly string[];
@@ -36,6 +40,50 @@ export async function prepareProductionRelease(
     }
     return JSON.parse(existing.response_json) as Record<string, unknown>;
   }
+  const gate = plan.bootstrap
+    ? bootstrapGate(database, plan, observedAt)
+    : populatedGate(database, plan, observedAt);
+  try {
+    await database.batch([
+      gate,
+      database.prepare(
+        `INSERT INTO administration_idempotency (
+           idempotency_key, operation, request_json, response_json,
+           http_status, outcome, created_at
+         ) VALUES (?, 'prepare_production_release', ?, ?, 201, 'success', ?)`,
+      ).bind(plan.idempotency_key, requestJson, canonicalJson(response), observedAt),
+    ]);
+  } catch {
+    throw new AdministrationProblem(409, "release_preflight_failed", "Production changed while the Production Release request was prepared.");
+  }
+  return response;
+}
+
+type PreparedPlan = ReturnType<typeof validatedPlan>;
+
+// Bootstrap Mode (issue #141): the catalogue is provably empty, so no backup,
+// bookmark, retained window, or smoke target can exist. The gate keeps every
+// data-independent check and additionally proves emptiness, so a bootstrap
+// plan is refused the moment a Catalogue Revision has been published.
+function bootstrapGate(database: D1Database, plan: Extract<PreparedPlan, { bootstrap: true }>, observedAt: string): D1PreparedStatement {
+  return database.prepare(
+    `SELECT CASE WHEN EXISTS (
+       SELECT 1 FROM catalogue_state AS catalogue
+       JOIN operation_state AS operation ON operation.singleton = 1
+       JOIN catalogue_schema_state AS schema_state ON schema_state.singleton = 1
+       WHERE catalogue.singleton = 1
+         AND catalogue.current_revision_id = ?
+         AND NOT EXISTS (SELECT 1 FROM catalogue_revisions)
+         AND schema_state.migration_level = ?
+         AND operation.active_ingestion_run_id IS NULL
+         AND (operation.active_release_id IS NULL
+           OR operation.active_release_expires_at <= ?)
+         AND operation.recovery_health = 'healthy' AND operation.active_recovery_id IS NULL
+     ) THEN 1 ELSE json_extract('invalid', '$') END`,
+  ).bind(SPINE_REVISION_ID, plan.expected_migration_level, observedAt);
+}
+
+function populatedGate(database: D1Database, plan: Extract<PreparedPlan, { bootstrap: false }>, observedAt: string): D1PreparedStatement {
   const replacement = plan.replacement_handoff;
   const recoveryGate = replacement === null
     ? `operation.recovery_health = 'healthy' AND operation.active_recovery_id IS NULL`
@@ -54,7 +102,7 @@ export async function prepareProductionRelease(
   const retainedRevisionIds = plan.retained_revision_evidence.map((item) =>
     item.revision_id
   );
-  const gate = database.prepare(
+  return database.prepare(
     `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM catalogue_state AS catalogue
        JOIN operation_state AS operation ON operation.singleton = 1
@@ -89,31 +137,30 @@ export async function prepareProductionRelease(
   ).bind(plan.expected_current_revision_id, plan.expected_migration_level, observedAt, ...gateBindings,
     plan.recovery_backup_attempt_id, plan.expected_current_revision_id, plan.recovery_bookmark,
     ...retainedRevisionIds, plan.smoke_targets.stale_revision_id);
-  try {
-    await database.batch([
-      gate,
-      database.prepare(
-        `INSERT INTO administration_idempotency (
-           idempotency_key, operation, request_json, response_json,
-           http_status, outcome, created_at
-         ) VALUES (?, 'prepare_production_release', ?, ?, 201, 'success', ?)`,
-      ).bind(plan.idempotency_key, requestJson, canonicalJson(response), observedAt),
-    ]);
-  } catch {
-    throw new AdministrationProblem(409, "release_preflight_failed", "Production changed while the Production Release request was prepared.");
-  }
-  return response;
 }
 
 function validatedPlan(request: Record<string, unknown>, target: ProductionTarget) {
-  const required = ["release_id", "idempotency_key", "expected_current_revision_id", "expected_head_sha", "expected_actor", "expected_migration_level", "production_target", "production_target_digest", "recovery_bookmark", "recovery_backup_attempt_id", "smoke_targets", "retained_revision_evidence", "replacement_handoff"];
+  const required = ["release_id", "idempotency_key", "expected_current_revision_id", "expected_head_sha", "expected_actor", "expected_migration_level", "production_target", "production_target_digest", "bootstrap", "recovery_bookmark", "recovery_backup_attempt_id", "smoke_targets", "retained_revision_evidence", "replacement_handoff"];
   if (Object.keys(request).sort().join("|") !== required.sort().join("|")) invalid();
   const opaque = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$/u.test(value);
   if (!opaque(request.release_id) || !opaque(request.idempotency_key) || !opaque(request.expected_current_revision_id) ||
       !/^[0-9a-f]{40}$/u.test(String(request.expected_head_sha)) || !/^[A-Za-z0-9-]+\[bot\]$/u.test(String(request.expected_actor)) ||
       !Number.isSafeInteger(request.expected_migration_level) || (request.expected_migration_level as number) < 1 ||
       canonicalJson(request.production_target) !== canonicalJson(target) || !/^[0-9a-f]{64}$/u.test(String(request.production_target_digest)) ||
-      !opaque(request.recovery_bookmark) || !opaque(request.recovery_backup_attempt_id) ||
+      typeof request.bootstrap !== "boolean") invalid();
+  const common = request as {
+    release_id: string; idempotency_key: string; expected_current_revision_id: string;
+    expected_head_sha: string; expected_actor: string; expected_migration_level: number;
+    production_target: ProductionTarget; production_target_digest: string;
+  };
+  if (request.bootstrap) {
+    if (request.expected_current_revision_id !== SPINE_REVISION_ID ||
+        request.recovery_bookmark !== null || request.recovery_backup_attempt_id !== null ||
+        request.smoke_targets !== null || request.retained_revision_evidence !== null ||
+        request.replacement_handoff !== null) invalid();
+    return { ...common, bootstrap: true as const, recovery_bookmark: null, recovery_backup_attempt_id: null, smoke_targets: null, retained_revision_evidence: null, replacement_handoff: null };
+  }
+  if (!opaque(request.recovery_bookmark) || !opaque(request.recovery_backup_attempt_id) ||
       !Array.isArray(request.retained_revision_evidence) || request.retained_revision_evidence.length !== 3) invalid();
   const retained = request.retained_revision_evidence;
   if (!retained.every((item, depth) => isRecord(item) && exactKeys(item, ["depth", "export_verified", "recovery_verified", "revision_id"]) &&
@@ -123,10 +170,8 @@ function validatedPlan(request: Record<string, unknown>, target: ProductionTarge
       !validSmokeTargets(request.smoke_targets, retained.map((item) => String(item.revision_id)))) invalid();
   const replacement = request.replacement_handoff;
   if (replacement !== null && (typeof replacement !== "object" || Array.isArray(replacement))) invalid();
-  return request as {
-    release_id: string; idempotency_key: string; expected_current_revision_id: string;
-    expected_head_sha: string; expected_actor: string; expected_migration_level: number;
-    production_target: ProductionTarget; production_target_digest: string;
+  return request as typeof common & {
+    bootstrap: false;
     recovery_bookmark: string; recovery_backup_attempt_id: string;
     smoke_targets: {
       revisions: Array<{ revision_id: string; card_id: string; printing_id: string; search_query: string; card_cursor: string; search_cursor: string; printing_cursor: string }>;

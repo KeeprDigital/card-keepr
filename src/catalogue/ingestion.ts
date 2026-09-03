@@ -62,6 +62,7 @@ import { legalityPublicationStatements } from "./legality-publication";
 import { catalogueRevisionIdentity } from "./idempotent-identities";
 import { publicationBackupReservation } from "./backup-recovery";
 import { operationalDiagnostics } from "./operational-diagnostics";
+import { SPINE_REVISION_ID } from "./production-release";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 const publicationLeaseMilliseconds = 5 * 60 * 1_000;
@@ -544,6 +545,12 @@ export async function administrationStatus(
     },
     active_production_release: activeProductionRelease,
     release_preflight: {
+      // Bootstrap Mode (issue #141): the catalogue is provably empty, so the
+      // guarded Production Release relaxes only the gates that presuppose
+      // published data.
+      bootstrap:
+        catalogue.current_revision_id === SPINE_REVISION_ID &&
+        (revisionCount?.count ?? 0) === 0,
       schema_migration_level: schema?.migration_level ?? 0,
       production_target_digest: productionTargetDigest,
       recovery_bookmark: recoveryBackup?.d1_bookmark ?? null,

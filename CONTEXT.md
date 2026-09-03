@@ -179,6 +179,20 @@ Worker versions through the guarded production workflow. It is operational and
 must not be shortened to Release, which is a Product availability event.
 _Avoid_: Release, ordinary CI, unguarded deployment
 
+**Spine Revision**:
+The schema-valid Catalogue Revision pointer (`catrev_spine_000`) a fresh
+catalogue database starts at until the first approved candidate is published.
+It is a pointer, not a published Catalogue Revision, and is never retained.
+_Avoid_: Bootstrap revision, empty revision, first revision
+
+**Bootstrap Mode**:
+The state of the guarded Production Release while the Spine Revision is
+current and no Catalogue Revision has ever been published. It relaxes only the
+gates that presuppose published data (recovery bookmark, verified backup,
+retained window, smoke targets) and switches off permanently at the first
+publication.
+_Avoid_: Unguarded deployment, direct `wrangler deploy`, pre-migration fence
+
 **Distribution Context**:
 An official context through which a Printing is made available, such as a Product, tournament pack, winner prize, or promotion.
 _Avoid_: Product, Source Bucket

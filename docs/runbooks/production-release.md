@@ -26,7 +26,8 @@ deployment credentials.
 4. Run `keepr status --json`. Production Release preflight must report the expected
    schema level, idle mutation state, a verified current-revision backup and
    usable bookmark, complete current-plus-two export/recovery evidence, exact
-   production bindings, and representative smoke targets.
+   production bindings, and representative smoke targets. On an empty
+   catalogue it reports `bootstrap: true` instead; see Bootstrap Mode below.
 5. Copy the complete confirmation JSON printed by a deliberately unconfirmed
    command. Do not edit or reorder it. Supply the GitHub Actions-write token in
    `KEEPR_GITHUB_RELEASE_TOKEN`; deployment credentials never enter the CLI.
@@ -44,6 +45,51 @@ npm run keepr -- release production \
 Exit `10` means GitHub accepted the immutable request; it does not mean the
 Production Release succeeded. Inspect the workflow and the durable `production_releases`
 record for terminal evidence.
+
+## Bootstrap Mode: before the first published revision
+
+A freshly provisioned or recreated catalogue database points at the Spine
+Revision `catrev_spine_000` and holds no Catalogue Revision, so nothing the
+ordinary preflight demands can exist: no verified backup or bookmark, no
+current-plus-two retained window, no smoke targets. Bootstrap Mode ships the
+code that publishes the first revision through the same guard instead of a
+direct `wrangler deploy`.
+
+1. `keepr status --json` reports `release_preflight.bootstrap: true` exactly
+   when the current revision is the Spine Revision and no Catalogue Revision
+   has ever been published. The recovery, retention, and smoke fields are
+   `null`/`false` and are not required.
+2. Add `--bootstrap` to the command in step 5 with
+   `--expected-current-revision catrev_spine_000`. The confirmation envelope
+   carries `"bootstrap": true` in place of the recovery bookmark and backup
+   attempt. A replacement-D1 handoff cannot be combined with Bootstrap Mode.
+3. Every data-independent gate still applies and is rechecked live by the
+   workflow: exact SHA and actor, complete target digest, migration level,
+   idle mutation state and healthy recovery, secret inventory
+   (`verify-target`), uploaded-version bindings (`verify-version`), and the
+   route triggers. The live gate additionally proves the catalogue is empty.
+4. The workflow runs a reduced smoke instead of the data-dependent checks:
+   `/health` with and without a valid key on the API mount, an
+   unauthenticated `401` from the ingestion mount (the workflow holds no
+   administration credential; the placeholder origin never answers so), and
+   `/v1/catalogue` reporting the Spine Revision.
+5. No `production_releases` row is written: its recovery columns presuppose a
+   verified backup. The Production Release holds the same lease and keeps its
+   phase evidence (`release-deploying`, `release-binding`, `release-smoke`)
+   in `administration_idempotency`, keyed by the dispatch digest. A failure
+   after migration is retained there too, the fence is released, and there is
+   nothing to roll back to; correct it with another Bootstrap Mode Production
+   Release.
+
+Bootstrap Mode switches off permanently once a Catalogue Revision is
+published. `keepr status` then reports `bootstrap: false`, the CLI refuses
+`--bootstrap` with `bootstrap_not_applicable`, the ingestion runtime refuses
+to prepare the request, and the workflow's live recheck fails closed. Any
+number of Bootstrap Mode Production Releases may run while the catalogue
+stays empty, so a provisioned environment never needs a direct
+`wrangler deploy`: apply the baseline, set the secrets and DNS placeholder,
+run the preflight rehearsal, and dispatch a Bootstrap Mode Production
+Release.
 
 ## Production Release behavior
 

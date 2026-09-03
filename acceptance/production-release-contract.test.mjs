@@ -45,7 +45,7 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
   assert.match(release, /replacement-handoff\.sql[\s\S]*replacement-seed[\s\S]*seeded[\s\S]*RELEASE_STATE_CONFIG/u);
-  assert.equal((release.match(/--config "\$\{RELEASE_STATE_CONFIG\}" --file \/tmp\/production-release\/(?:deploying|binding|smoke)\.sql/gu) ?? []).length, 3);
+  assert.equal((release.match(/--config "\$\{RELEASE_STATE_CONFIG\}" --file \/tmp\/production-release\/(?:deploying|binding|smoke)\.sql/gu) ?? []).length, 4);
   assert.ok(release.indexOf("seeded' <<<") < release.indexOf("versions upload"));
   assert.match(failure, /RELEASE_STATE_CONFIG:-apps\/ingestion\/wrangler\.jsonc/u);
   assert.doesNotMatch(release, /recovery accept|acceptCatalogueRecovery|\/acceptance/u);
@@ -60,6 +60,37 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(ci, /workflow_dispatch:/u);
   assert.doesNotMatch(ci, /^\s*push:/mu);
   assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
+});
+
+test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-dependent smoke, and rolls nothing back", () => {
+  // Issue #141: before the first published Catalogue Revision the guarded
+  // Production Release runs in Bootstrap Mode, selected by one workflow input
+  // that the validator checks against the prepared plan.
+  const release = readFileSync(".github/workflows/production-release.yml", "utf8");
+  const failure = readFileSync("scripts/production-release-failure.sh", "utf8");
+  assert.match(release, /^      bootstrap:\n        required: false\n        default: "false"\n        type: string$/mu);
+  assert.match(release, /BOOTSTRAP: \$\{\{ inputs\.bootstrap \}\}/u);
+  const steps = release.split(/\n      - name: /u).slice(1).map((step) => ({ name: step.split("\n")[0], body: step }));
+  const bootstrapOnly = steps.filter((step) => /if: inputs\.bootstrap == 'true'/u.test(step.body));
+  const populatedOnly = steps.filter((step) => /if: inputs\.bootstrap != 'true'/u.test(step.body));
+  const shared = steps.filter((step) => !/inputs\.bootstrap/u.test(step.body));
+  assert.deepEqual(bootstrapOnly.map((step) => step.name), ["Transfer the pre-migration fence to the Production Release lease in Bootstrap Mode", "Run reduced Bootstrap Mode smoke checks"]);
+  assert.deepEqual(populatedOnly.map((step) => step.name), ["Transfer the pre-migration fence to the durable Production Release", "Run black-box production smoke checks"]);
+  // Every other gate stays: exact dispatch, target and secret inventory,
+  // live recheck, fence, migrations, version bindings, activation, routes.
+  for (const required of [/validate-dispatch/u, /verify-target/u, /live-preflight\.sql/u, /claim\.sql/u, /migrations apply/u, /versions upload/u, /verify-version/u, /versions deploy/u, /triggers deploy/u, /observe-bindings/u, /production-release-failure\.sh/u]) {
+    assert.ok(shared.some((step) => required.test(step.body)), String(required));
+  }
+  const smoke = bootstrapOnly[1].body;
+  assert.match(smoke, /production-smoke\.mjs bootstrap/u);
+  assert.match(smoke, /evidence-sql smoke/u);
+  assert.doesNotMatch(smoke, /SMOKE_TARGETS_JSON|RETAINED_REVISION_EVIDENCE_JSON|RECOVERY_BOOKMARK|RECOVERY_BACKUP_ATTEMPT_ID|legality|printing|cards|exports|stale/u);
+  assert.doesNotMatch(release, /rollback|versions rollback|restore|recovery accept/iu);
+  // The bootstrap branch writes no failed.sql (no production_releases row can
+  // exist without a backup); the handler only records the ledger failure and
+  // releases the fence.
+  assert.match(failure, /test -f "\$\{release_directory\}\/failed\.sql"/u);
+  assert.match(failure, /failure-evidence\.sql[\s\S]*cleanup\.sql/u);
 });
 
 test("each worker owns one public base and the zone routes that mount it", () => {
