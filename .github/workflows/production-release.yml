@@ -187,6 +187,11 @@ jobs:
           result="$(npx wrangler d1 execute CATALOGUE_DB --remote --json --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/deploying.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
+      - name: Verify the uploaded versions bind the release configuration
+        run: |
+          set -euo pipefail
+          RELEASE_WORKER=card-keepr-api RELEASE_VERSION_TAG="release-${RELEASE_ID}-api" RELEASE_WORKER_CONFIG="${API_RELEASE_CONFIG}" node scripts/production-release-provider.mjs verify-version >/dev/null
+          RELEASE_WORKER=card-keepr-ingestion RELEASE_VERSION_TAG="release-${RELEASE_ID}-ingestion" RELEASE_WORKER_CONFIG="${INGESTION_RELEASE_CONFIG}" node scripts/production-release-provider.mjs verify-version >/dev/null
       - name: Activate the compatible version pair
         run: |
           set -euo pipefail

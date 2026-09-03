@@ -28,6 +28,15 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /validate-dispatch \/tmp\/production-release/u);
   assert.match(release, /production-release-provider\.mjs verify-target/u);
   assert.match(release, /production-release-provider\.mjs observe-bindings/u);
+  // Issue #122: vars and bindings are verified on the uploaded version, after
+  // upload and before activation, so config changes ship through the guard.
+  assert.match(release, /versions upload[\s\S]*production-release-provider\.mjs verify-version[\s\S]*versions deploy/u);
+  assert.match(release, /RELEASE_WORKER=card-keepr-api [^\n]*\$\{API_RELEASE_CONFIG\}[^\n]*verify-version/u);
+  assert.match(release, /RELEASE_WORKER=card-keepr-ingestion [^\n]*\$\{INGESTION_RELEASE_CONFIG\}[^\n]*verify-version/u);
+  // GitHub rejects a workflow with more than 25 workflow_dispatch inputs and
+  // records a failed run on every push instead; the file carried 26 until #120.
+  const inputs = release.split("\n    inputs:\n")[1].split(/\n  [a-z]/u)[0].match(/^      [a-z_]+:$/gmu) ?? [];
+  assert.ok(inputs.length >= 1 && inputs.length <= 25, `workflow_dispatch declares ${inputs.length} inputs`);
   assert.match(release, /live-preflight\.sql[\s\S]*claim\.sql[\s\S]*d1 migrations apply[\s\S]*materialize\.sql/u);
   assert.match(release, /migration-started\.sql[\s\S]*d1 migrations apply/u);
   assert.match(release, /replacement-handoff\.sql[\s\S]*replacement-seed[\s\S]*seeded[\s\S]*RELEASE_STATE_CONFIG/u);

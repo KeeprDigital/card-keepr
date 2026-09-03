@@ -40,9 +40,33 @@ The workflow rechecks the SHA, actor, complete target digest, current Catalogue
 Revision, migration level, idle ingestion, recovery evidence and retained
 revision window before mutation. It acquires the D1 Production Release lease, applies only
 checked-in forward migrations, uploads tagged immutable Worker versions,
-activates the API and ingestion pair, observes the resulting binding, and runs
+verifies that each uploaded version binds exactly the checked-in vars,
+bindings, and expected secrets, activates the API and ingestion pair,
+observes the resulting binding, and runs
 black-box health/auth/revision/Card/Printing/search/Legality Status/export/image
-checks. Current and two predecessor export packages must remain queryable;
+checks.
+
+### Binding inventory checks
+
+Two checks cover the Worker inventory, at different points:
+
+- **Before mutation** (`verify-target`): the D1 and R2 identities and privacy,
+  and each deployed Worker's **secret** inventory, which must equal the
+  expected set exactly. Secrets outlive versions and are managed by
+  operators: a deploy never adds or removes one. When a release removes a
+  secret from the expected list, delete it from the live Worker first with
+  `wrangler secret delete`; when it adds one, `wrangler secret put` it first.
+  Never delete an expected slot (see the credential rotation runbook).
+- **After upload, before activation** (`verify-version`): the version tagged
+  `release-<id>-api` / `-ingestion` must bind exactly the vars, D1, R2,
+  service, Workflow, and rate-limit bindings of the release configuration
+  plus the expected secrets. Vars and bindings therefore change through the
+  guarded release like any other change, and the deployed script is never
+  compared against a configuration it has not been deployed from.
+
+`workflow_dispatch` accepts at most 25 inputs; a file that declares more is
+invalid, GitHub records a failed run on every push to `main`, and no dispatch
+can run. The contract test asserts the count. Current and two predecessor export packages must remain queryable;
 displacement is blocked without verified export and recovery evidence.
 
 After migration begins, a failure is recorded with
