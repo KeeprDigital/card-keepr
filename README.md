@@ -124,10 +124,13 @@ actions available. Extend a capacity-paused run with
 `source capacity extend --run-id RUN_ID --expected-capacity 15000
 --expected-generation 1 --capacity 20000 --idempotency-key KEY`, then
 `source resume --run-id RUN_ID` continues the same run from its retained
-evidence. Abandon a paused run deliberately with
+evidence. Stop a collecting run deliberately with
+`source pause --run-id RUN_ID --idempotency-key KEY`, which pauses it with
+the reason `owner_requested`, then abandon the paused run with
 `source terminate --run-id RUN_ID --idempotency-key KEY`; termination keeps
 every retained Source Snapshot and diagnostic, marks the run terminal, and
-releases the active-run reservation.
+releases the active-run reservation. See
+`docs/runbooks/collection-pause.md`.
 A failed Ingestion Run can only be retried as a new linked Ingestion Run with
 `source retry --run-id RUN_ID --idempotency-key NEW_KEY`. A Source Snapshot can
 be parsed again without changing its earlier Source Observation set with

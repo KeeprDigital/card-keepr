@@ -22,6 +22,16 @@ export type WorkflowPauseReason =
   | "source_workflow_terminated"
   | "source_workflow_unavailable";
 
+// The owner's deliberate pause of a collecting run is recorded as a Workflow
+// Pause too: it abandons the current parent Workflow Attempt exactly like a
+// classified recovery does, but its reason is the owner's decision, never a
+// classification of the Workflow's health.
+export const ownerRequestedPauseReason = "owner_requested";
+
+export type RecordedWorkflowPauseReason =
+  | WorkflowPauseReason
+  | typeof ownerRequestedPauseReason;
+
 export type CollectionWorkflowFacts = Readonly<{
   now_ms: number;
   workflow_status: SafeWorkflowStatus;

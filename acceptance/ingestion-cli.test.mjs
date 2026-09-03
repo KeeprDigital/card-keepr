@@ -2243,6 +2243,143 @@ test("source terminate performs the idempotent termination mutation", async (t) 
   );
 });
 
+test("source pause performs the idempotent owner pause mutation", async (t) => {
+  const pauseDocument = {
+    contract: "card-keepr-collection-pause@1",
+    ingestion_run_id: "run_collecting_cli",
+    state: "paused",
+    pause_reason: "owner_requested",
+    paused_at: "2026-09-03T00:00:00.000Z",
+    workflow: {
+      id: "evidence-run_collecting_cli",
+      attempt_number: 1,
+      status: "running",
+    },
+    last_progress_at: "2026-09-02T23:55:00.000Z",
+    actions: ["resume", "terminate"],
+  };
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push({
+        method: request.method,
+        path: request.url,
+        authorization: request.headers.authorization,
+        body: body === "" ? null : JSON.parse(body),
+      });
+      response.setHeader("content-type", "application/json");
+      if (
+        request.url === "/v1/ingestion-runs/run_collecting_cli/collection/pause"
+      ) {
+        response.end(JSON.stringify(pauseDocument));
+        return;
+      }
+      if (
+        request.url === "/v1/ingestion-runs/run_paused_cli/collection/pause"
+      ) {
+        response.statusCode = 409;
+        response.setHeader("content-type", "application/problem+json");
+        response.end(JSON.stringify({
+          type: "https://card-keepr.invalid/problems/ingestion_run_not_collecting",
+          title: "Conflict",
+          status: 409,
+          code: "ingestion_run_not_collecting",
+          detail: "Only a collecting Ingestion Run can be paused.",
+          request_id: "request_not_collecting_cli",
+        }));
+        return;
+      }
+      response.statusCode = 404;
+      response.end(JSON.stringify({ code: "not_found" }));
+    });
+  });
+  await new Promise((resolveListen) =>
+    server.listen(0, "127.0.0.1", resolveListen),
+  );
+  t.after(
+    () => new Promise((resolveClose) => server.close(resolveClose)),
+  );
+  const address = server.address();
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${address.port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const pauseArguments = [
+    "source",
+    "pause",
+    "--run-id",
+    "run_collecting_cli",
+    "--idempotency-key",
+    "pause-cli-demo",
+  ];
+
+  const pausedJson = await runCli([...pauseArguments, "--json"], environment);
+  assert.equal(pausedJson.code, 0, pausedJson.stderr);
+  assert.deepEqual(JSON.parse(pausedJson.stdout), pauseDocument);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/ingestion-runs/run_collecting_cli/collection/pause",
+    authorization: "Bearer cli-test-key",
+    body: { idempotency_key: "pause-cli-demo" },
+  });
+
+  const paused = await runCli(pauseArguments, environment);
+  assert.equal(paused.code, 0, paused.stderr);
+  assert.match(paused.stdout, /Ingestion Run run_collecting_cli paused/);
+  assert.match(
+    paused.stdout,
+    /Paused: owner_requested at 2026-09-03T00:00:00.000Z/,
+  );
+  assert.match(
+    paused.stdout,
+    /Workflow attempt 1 \(evidence-run_collecting_cli\): running/,
+  );
+  assert.match(paused.stdout, /Available actions: resume, terminate/);
+  assert.doesNotMatch(paused.stdout, /cli-test-key/);
+
+  // A state conflict renders the problem document and the conflict exit
+  // code.
+  const conflict = await runCli(
+    [
+      "source",
+      "pause",
+      "--run-id",
+      "run_paused_cli",
+      "--idempotency-key",
+      "pause-conflict-cli",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(conflict.code, 7);
+  assert.deepEqual(JSON.parse(conflict.stdout), {
+    contract: "card-keepr-cli-problem@1",
+    status: "error",
+    code: "ingestion_run_not_collecting",
+    detail: "Only a collecting Ingestion Run can be paused.",
+  });
+
+  // Missing arguments fail as usage errors before any request is made.
+  const mutationCount = requests.length;
+  for (const missing of [
+    ["source", "pause", "--run-id", "run_collecting_cli"],
+    ["source", "pause", "--idempotency-key", "pause-cli-demo"],
+    ["source", "pause"],
+  ]) {
+    const invalid = await runCli(missing, environment);
+    assert.equal(invalid.code, 2, missing.join(" "));
+  }
+  assert.equal(
+    requests.length,
+    mutationCount,
+    "usage failures must stop before any administration request",
+  );
+});
+
 test("source show renders aggregated collection progress in human-readable form", async (t) => {
   const evidence = {
     id: "run_progress_cli",
@@ -2252,7 +2389,7 @@ test("source show renders aggregated collection progress in human-readable form"
     adapter_version: "fusion-world-en@9",
     failure_code: null,
     collection_completed_at: null,
-    actions: [],
+    actions: ["pause"],
     collection: {
       state: "collecting",
       pause_reason: null,
@@ -2456,5 +2593,6 @@ test("source show renders aggregated collection progress in human-readable form"
     out,
     /Workflow attempts: 3 recorded, 2 current; child evidence-host-abc attempt 1 errored; child evidence-host-abc-attempt-0 attempt 2 running \(current\)/,
   );
+  assert.match(out, /Available actions: pause/);
   assert.doesNotMatch(out, /cli-test-key/);
 });

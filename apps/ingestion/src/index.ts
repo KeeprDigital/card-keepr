@@ -56,6 +56,7 @@ import {
   verifyCatalogueRecovery,
 } from "../../../src/catalogue/recovery";
 import {
+  pauseEvidenceCollection,
   resumeEvidenceRun,
   terminateEvidenceCollection,
 } from "./evidence-administration";
@@ -638,6 +639,28 @@ async function handleIngestionRequest(
             decodeURIComponent(evidenceResumeMatch[1]!),
           ),
           { status: 202 },
+        );
+      }
+
+      const evidencePauseMatch =
+        /^\/v1\/ingestion-runs\/([^/]+)\/collection\/pause$/.exec(
+          url.pathname,
+        );
+      if (
+        request.method === "POST" &&
+        evidencePauseMatch !== null
+      ) {
+        const body = await readAdministrationBody(request);
+        assertOnlyFields(body, ["idempotency_key"]);
+        return Response.json(
+          await pauseEvidenceCollection(
+            env.CATALOGUE_DB,
+            env.EVIDENCE_INGESTION_WORKFLOW,
+            env.EVIDENCE_HOST_WORKFLOW,
+            decodeURIComponent(evidencePauseMatch[1]!),
+            requiredString(body, "idempotency_key"),
+          ),
+          { status: 200 },
         );
       }
 

@@ -121,6 +121,9 @@ export async function main(arguments_, environment) {
   ) {
     return extendSourceCapacity(arguments_.slice(3), environment, json);
   }
+  if (isCommand(arguments_, "source", "pause")) {
+    return pauseEvidenceCollection(arguments_.slice(2), environment, json);
+  }
   if (isCommand(arguments_, "source", "resume")) {
     return resumeEvidenceCollection(arguments_.slice(2), environment, json);
   }
@@ -1180,6 +1183,33 @@ async function resumeEvidenceCollection(arguments_, environment, json) {
   );
 }
 
+// An owner pause stops a collecting Ingestion Run deliberately: the run
+// enters its Workflow Pause with the reason owner_requested, retains every
+// evidence object, and then resumes or is terminated. It is idempotent under
+// its key.
+async function pauseEvidenceCollection(arguments_, environment, json) {
+  const options = parseOptions(arguments_, [
+    "--run-id",
+    "--idempotency-key",
+  ]);
+  const runId = options.values["--run-id"];
+  const idempotencyKey = options.values["--idempotency-key"];
+  if (
+    options.error !== null ||
+    runId === undefined ||
+    idempotencyKey === undefined
+  ) {
+    return usageFailure(json);
+  }
+  return administrationRequest(
+    environment,
+    json,
+    `/v1/ingestion-runs/${encodeURIComponent(runId)}/collection/pause`,
+    "POST",
+    { idempotency_key: idempotencyKey },
+  );
+}
+
 // Termination is the owner's deliberate decision to abandon a paused
 // Ingestion Run: it is idempotent under its key and releases the single
 // active-run reservation while retaining every evidence object.
@@ -1648,7 +1678,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run start | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | legality status | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );
@@ -1676,6 +1706,9 @@ function formatAdministrationResult(document) {
   }
   if (document.contract === "card-keepr-capacity-extension@1") {
     return formatCapacityExtension(document);
+  }
+  if (document.contract === "card-keepr-collection-pause@1") {
+    return formatCollectionPause(document);
   }
   if (document.contract === "card-keepr-collection-termination@1") {
     return formatCollectionTermination(document);
@@ -2105,6 +2138,38 @@ function formatEvidenceTermination(termination) {
       terminatedAt === null ? "" : ` at ${terminatedAt}`
     }${abandoned}`,
   ];
+}
+
+// The confirmation facts of an applied owner pause: which run paused, when,
+// which parent Workflow Attempt was abandoned with the safe status observed
+// at the time, and the actions the paused run now admits.
+function formatCollectionPause(document) {
+  const lines = [];
+  const runId = safeDiagnosticReference(document.ingestion_run_id);
+  if (runId !== null) lines.push(`Ingestion Run ${runId} paused`);
+  const pauseReason = safeMachineCode(document.pause_reason);
+  const pausedAt = safeDiagnosticReference(document.paused_at);
+  if (pauseReason !== null) {
+    lines.push(
+      `Paused: ${pauseReason}${pausedAt === null ? "" : ` at ${pausedAt}`}`,
+    );
+  }
+  const workflow = typeof document.workflow === "object" &&
+      document.workflow !== null
+    ? document.workflow
+    : {};
+  const workflowId = safeDiagnosticReference(workflow.id);
+  const status = safeMachineCode(workflow.status);
+  if (workflowId !== null) {
+    const attempt = Number.isSafeInteger(workflow.attempt_number)
+      ? `Workflow attempt ${workflow.attempt_number} (${workflowId})`
+      : `Workflow ${workflowId}`;
+    lines.push(status === null ? attempt : `${attempt}: ${status}`);
+  }
+  const lastProgressAt = safeDiagnosticReference(document.last_progress_at);
+  if (lastProgressAt !== null) lines.push(`Last progress: ${lastProgressAt}`);
+  lines.push(...formatEvidenceActions(document.actions));
+  return lines.length === 0 ? JSON.stringify(document) : lines.join("; ");
 }
 
 // The confirmation facts of an applied termination: which run became
