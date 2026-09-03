@@ -341,8 +341,8 @@ function seedRepresentativeCatalogue(database) {
       game_profile_version, adapter_version, request_plan_json, plan_origin
     ) VALUES (
       'run_restore_acceptance', 'one-piece-en', 'one-piece',
-      'one-piece@1', 'one-piece-en@3',
-      '{"source_lineage":"one-piece-en","supported_game":"one-piece","game_profile_version":"one-piece@1","adapter_version":"one-piece-en@3","requests":[{"id":"request_alpha","method":"GET","url":"https://example.invalid/alpha","headers":{},"representation_fingerprint":"${"b".repeat(64)}"}]}',
+      'one-piece@1', 'one-piece-en@6',
+      '{"source_lineage":"one-piece-en","supported_game":"one-piece","game_profile_version":"one-piece@1","adapter_version":"one-piece-en@6","requests":[{"id":"request_alpha","method":"GET","url":"https://example.invalid/alpha","headers":{},"representation_fingerprint":"${"b".repeat(64)}"}]}',
       'production'
     );
     INSERT INTO source_requests (
@@ -374,14 +374,14 @@ function seedRepresentativeCatalogue(database) {
       '${"b".repeat(64)}', '[]', '2026-08-05T00:00:01.000Z', 200,
       '{}', 'application/json', '${"e".repeat(64)}', 2,
       'evidence/snapshot-alpha.json', 'one-piece-en', 'one-piece',
-      'one-piece@1', 'one-piece-en@3'
+      'one-piece@1', 'one-piece-en@6'
     );
     INSERT INTO source_parse_operations (
       id, source_snapshot_id, adapter_version, intent, idempotency_key,
       observation_set_id, content_object_key, parsed_at, state,
       content_digest, content_byte_length, observation_count
     ) VALUES (
-      'parse_alpha', 'snapshot_alpha', 'one-piece-en@3', 'collection',
+      'parse_alpha', 'snapshot_alpha', 'one-piece-en@6', 'collection',
       'parse-alpha', 'set_alpha', 'evidence/set-alpha.json',
       '2026-08-05T00:00:02.000Z', 'finalized', '${"f".repeat(64)}', 2, 1
     );
@@ -392,7 +392,7 @@ function seedRepresentativeCatalogue(database) {
       observation_count
     ) VALUES (
       'set_alpha', 'parse_alpha', 'snapshot_alpha', 'one-piece-en',
-      'one-piece', 'one-piece@1', 'one-piece-en@3',
+      'one-piece', 'one-piece@1', 'one-piece-en@6',
       '2026-08-05T00:00:02.000Z', '${"f".repeat(64)}', 2,
       'evidence/set-alpha.json', 1
     );
