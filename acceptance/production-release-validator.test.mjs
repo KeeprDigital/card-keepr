@@ -85,13 +85,12 @@ test("replacement release state is rehydrated into a distinct blocked database b
   t.after(() => rm(directory, { recursive: true, force: true }));
   const environment = replacementEnvironment();
   await validateDispatchAndWriteSql(environment, directory);
-  const original = await realDatabaseThrough0018();
-  const replacement = await realDatabaseThrough0018();
-  const failedReplacement = await realDatabaseThrough0018();
-  const competingReplacement = await realDatabaseThrough0018();
+  const original = await realDatabase();
+  const replacement = await realDatabase();
+  const failedReplacement = await realDatabase();
+  const competingReplacement = await realDatabase();
   t.after(() => [original, replacement, failedReplacement, competingReplacement].forEach((database) => database.close()));
   for (const database of [original, replacement, failedReplacement, competingReplacement]) {
-    database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
     database.prepare("UPDATE catalogue_state SET current_revision_id=? WHERE singleton=1").run(environment.EXPECTED_CURRENT_REVISION);
   }
   seedOriginalReplacementRelease(original, environment);
@@ -173,60 +172,36 @@ test("replacement release state is rehydrated into a distinct blocked database b
 });
 
 test("a durable pre-command marker conservatively terminalizes partial migration failure", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "keepr-release-migration-marker-"));
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-schema-boundary-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const environment = releaseEnvironment();
   await validateDispatchAndWriteSql(environment, directory);
-  const database = liveGateDatabase(environment);
-  database.exec(await readFile(join(directory, "claim.sql"), "utf8"));
+  const database = await realDatabase();
+  t.after(() => database.close());
+  seedRealReleaseBoundary(database, environment, await readFile(join(directory, "migration-started.sql"), "utf8"));
   database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency WHERE operation='production_release_migration_started'").get().count, 1);
-  database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
   database.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
+  const failure = JSON.parse(database.prepare(
+    "SELECT response_json FROM administration_idempotency WHERE operation='production_release_migration_failed'",
+  ).get().response_json);
+  assert.equal(failure.release_id, environment.RELEASE_ID);
+  assert.equal(failure.roll_forward_required, true);
   database.exec(await readFile(join(directory, "failed.sql"), "utf8"));
   assert.deepEqual(
     { ...database.prepare("SELECT state,roll_forward_required FROM production_releases WHERE id='release-47'").get() },
     { state: "failed", roll_forward_required: 1 },
   );
+  database.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
+  assert.deepEqual(
+    { ...database.prepare("SELECT active_ingestion_run_id,active_release_id AS active_production_release_id FROM operation_state WHERE singleton=1").get() },
+    { active_ingestion_run_id: null, active_production_release_id: null },
+  );
+  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%'").get().count, 0);
 });
 
-test("failure evidence and cleanup survive both 0018 and 0019 schemas", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "keepr-release-schema-boundary-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const environment = releaseEnvironment();
-  await validateDispatchAndWriteSql(environment, directory);
-  for (const post0019 of [false, true]) {
-    const database = await realDatabaseThrough0018();
-    seedRealReleaseBoundary(database, environment, await readFile(join(directory, "migration-started.sql"), "utf8"));
-    database.exec(await readFile(join(directory, "migration-started.sql"), "utf8"));
-    if (post0019) database.exec(await readFile("migrations/0019_guarded_production_release.sql", "utf8"));
-    database.exec(await readFile(join(directory, "failure-evidence.sql"), "utf8"));
-    const failure = JSON.parse(database.prepare(
-      "SELECT response_json FROM administration_idempotency WHERE operation='production_release_migration_failed'",
-    ).get().response_json);
-    assert.equal(failure.release_id, environment.RELEASE_ID);
-    assert.equal(failure.roll_forward_required, true);
-    if (post0019) {
-      database.exec(await readFile(join(directory, "failed.sql"), "utf8"));
-      assert.deepEqual(
-        { ...database.prepare("SELECT state,roll_forward_required FROM production_releases").get() },
-        { state: "failed", roll_forward_required: 1 },
-      );
-    } else {
-      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE name='production_releases'").get().count, 0);
-    }
-    database.exec(await readFile(join(directory, "cleanup.sql"), "utf8"));
-    assert.deepEqual(
-      { ...database.prepare("SELECT active_ingestion_run_id,active_release_id AS active_production_release_id FROM operation_state WHERE singleton=1").get() },
-      { active_ingestion_run_id: null, active_production_release_id: null },
-    );
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM ingestion_runs WHERE id LIKE 'release-bootstrap|%'").get().count, 0);
-    database.close();
-  }
-});
-
-test("Production Release lease vocabulary expands compatibly after migration 0020", async (t) => {
-  const database = await realDatabaseThrough0020();
+test("both Production Release lease vocabularies stay in step", async (t) => {
+  const database = await realDatabase();
   t.after(() => database.close());
   const legacyExpiry = "2026-08-05T01:00:00.000Z";
   database.prepare(
@@ -234,11 +209,6 @@ test("Production Release lease vocabulary expands compatibly after migration 002
      SET active_release_id = ?, active_release_expires_at = ?
      WHERE singleton = 1`,
   ).run("release-legacy", legacyExpiry);
-
-  database.exec(await readFile(
-    "migrations/0021_production_release_lease_vocabulary.sql",
-    "utf8",
-  ));
   assert.deepEqual(
     { ...database.prepare(
       `SELECT active_release_id, active_release_expires_at,
@@ -253,13 +223,6 @@ test("Production Release lease vocabulary expands compatibly after migration 002
       active_production_release_expires_at: legacyExpiry,
     },
   );
-  assert.equal(
-    database.prepare(
-      "SELECT migration_level FROM catalogue_schema_state WHERE singleton = 1",
-    ).get().migration_level,
-    21,
-  );
-
   const productionExpiry = "2026-08-05T02:00:00.000Z";
   database.prepare(
     `UPDATE operation_state
@@ -347,7 +310,7 @@ function releaseEnvironment() {
   const smoke = smokeTargets();
   const plan = {
     expected_actor: "keepr-release[bot]", expected_current_revision_id: "catrev-current",
-    expected_head_sha: "a".repeat(40), expected_migration_level: 19,
+    expected_head_sha: "a".repeat(40), expected_migration_level: 1,
     idempotency_key: "release-47-key", production_target: target,
     production_target_digest: hash(stableJson(target)), recovery_backup_attempt_id: "backup-current",
     recovery_bookmark: "bookmark-current", release_id: "release-47", replacement_handoff: null,
@@ -401,7 +364,7 @@ function seedOriginalReplacementRelease(database, environment) {
         failure_code,failure_detail,started_at,completed_at,manifest_key,content_sha256,manifest_sha256,
         export_bytes,schema_migration_level,linked_attempt_id,publication_ingestion_run_id,
         disposable_database_id,restore_generation,restore_phase)
-       VALUES (?,'{}',?,?,'verified',?, ?,NULL,NULL,?,?,?, ?,?,100,19,NULL,NULL,?,1,'verified')`,
+       VALUES (?,'{}',?,?,'verified',?, ?,NULL,NULL,?,?,?, ?,?,100,1,NULL,NULL,?,1,'verified')`,
     ).run(
       backup.id,
       backup.owner,
@@ -428,7 +391,7 @@ function seedOriginalReplacementRelease(database, environment) {
     "recovery-failed", "failed", "time_travel", "{}", "recovery-failed-key",
     plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
     "backup-recovery", null, plan.expected_current_revision_id, "bookmark-current", null, null,
-    "original-db", null, null, 19, "{}", null, null, null, null, null,
+    "original-db", null, null, 1, "{}", null, null, null, null, null,
     now, null, null, null, "restore_failed", "retry with replacement", "2026-08-05T00:01:00.000Z",
   );
   database.prepare(recoverySql).run(
@@ -436,7 +399,7 @@ function seedOriginalReplacementRelease(database, environment) {
     plan.expected_current_revision_id, "bookmark-recovery", plan.replacement_handoff.target_digest,
     "backup-recovery", "recovery-failed", plan.expected_current_revision_id, "bookmark-current", "bookmark-restored", null,
     "original-db", plan.replacement_handoff.replacement_database_id, plan.replacement_handoff.retained_database_id,
-    19, "{}", "{}", "recovery-verify-key", "e".repeat(64), null, null,
+    1, "{}", "{}", "recovery-verify-key", "e".repeat(64), null, null,
     "2026-08-05T00:01:01.000Z", "2026-08-05T00:01:02.000Z", "2026-08-05T00:01:03.000Z", null, null, null, null,
   );
   const dispatch = environment.DISPATCH_DIGEST;
@@ -485,7 +448,7 @@ function liveGateDatabase(environment) {
     CREATE TABLE ingestion_run_transitions (ingestion_run_id TEXT);
     INSERT INTO catalogue_state VALUES (1,'catrev-current');
     INSERT INTO operation_state VALUES (1,NULL,NULL,NULL,'healthy',NULL);
-    INSERT INTO catalogue_schema_state VALUES (1,19);
+    INSERT INTO catalogue_schema_state VALUES (1,1);
     INSERT INTO catalogue_revisions VALUES ('catrev-current','catrev-previous'),('catrev-previous','catrev-old'),('catrev-old',NULL);
     INSERT INTO catalogue_exports VALUES ('catrev-current',1,'available'),('catrev-previous',1,'available'),('catrev-old',1,'available');
     INSERT INTO catalogue_backup_attempts VALUES ('backup-current','catrev-current','verified','bookmark-current','${"a".repeat(64)}'),('backup-previous','catrev-previous','verified','bookmark-previous','${"b".repeat(64)}'),('backup-old','catrev-old','verified','bookmark-old','${"c".repeat(64)}');
@@ -499,19 +462,9 @@ function liveGateDatabase(environment) {
   return db;
 }
 
-async function realDatabaseThrough0018() {
+async function realDatabase() {
   const database = new DatabaseSync(":memory:");
-  for (const migration of (await readdir("migrations")).sort().filter((name) => name < "0019_")) {
-    database.exec(await readFile(join("migrations", migration), "utf8"));
-  }
-  return database;
-}
-
-async function realDatabaseThrough0020() {
-  const database = new DatabaseSync(":memory:");
-  for (const migration of (await readdir("migrations")).sort().filter(
-    (name) => name < "0021_",
-  )) {
+  for (const migration of (await readdir("migrations")).sort()) {
     database.exec(await readFile(join("migrations", migration), "utf8"));
   }
   return database;

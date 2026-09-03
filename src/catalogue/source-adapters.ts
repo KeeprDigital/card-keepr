@@ -88,7 +88,7 @@ export const globalEmergencySourceRequestCeiling = 25_000;
 // Version, counted per Source Lineage over unique Source Request identities.
 // Versions registered before issue #63 keep the historical 5,000-request
 // behavior; a larger capacity requires a new immutable version registered
-// here and in the source_adapter_versions seed migrations.
+// here and in the source_adapter_versions seed rows in migrations/.
 const historicalSourceRequestCapacity = 5_000;
 const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
   // The production Fusion World graph legitimately exceeds the historical

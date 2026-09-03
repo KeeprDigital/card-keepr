@@ -220,7 +220,7 @@ export default defineConfig({
         configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
       },
       miniflare: {
-        d1Databases: ["LEGACY_DB"],
+        d1Databases: ["SCRATCH_DB"],
         bindings: {
           SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
           // The test suite is hermetic: it pins the placeholder resource

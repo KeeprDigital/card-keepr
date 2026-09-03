@@ -14,7 +14,7 @@ export type ProductionDiscoveryRequest = ReturnType<
 
 export const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
-  LEGACY_DB: D1Database;
+  SCRATCH_DB: D1Database;
 };
 let requestSequence = 0;
 

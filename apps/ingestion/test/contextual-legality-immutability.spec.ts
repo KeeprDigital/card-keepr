@@ -322,23 +322,17 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
   );
 });
 
-test("an upgraded D1 enforces full lowercase digests and canonical revision rule identity", async () => {
-  const legacyDatabase = testEnv.LEGACY_DB;
-  const legalityMigration = testEnv.TEST_MIGRATIONS.at(-1);
-  if (legalityMigration === undefined) {
-    throw new Error("Legality migration is absent");
-  }
-  await applyD1Migrations(
-    legacyDatabase,
-    testEnv.TEST_MIGRATIONS.slice(0, -1),
-  );
-  await applyD1Migrations(legacyDatabase, [legalityMigration]);
-  await legacyDatabase.prepare(
+test("a fresh D1 enforces full lowercase digests and canonical revision rule identity", async () => {
+  // A separate database: the discovery-owner trigger is dropped below so
+  // the digest and identity guards can be exercised without a real plan.
+  const scratchDatabase = testEnv.SCRATCH_DB;
+  await applyD1Migrations(scratchDatabase, testEnv.TEST_MIGRATIONS);
+  await scratchDatabase.prepare(
     `DROP TRIGGER official_source_collection_plan_discovery_owner`,
   ).run();
 
   const malformedDigest = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO official_source_collection_plans (
         ingestion_run_id, source_lineage,
         discovery_observation_set_id, contract,
@@ -349,7 +343,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ).bind(`a${"Z".repeat(63)}`).run(),
   );
   const validDigestMissingOwner = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO official_source_collection_plans (
         ingestion_run_id, source_lineage,
         discovery_observation_set_id, contract,
@@ -364,7 +358,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     /official_source_collection_plan_discovery_owner_mismatch|FOREIGN KEY constraint failed/,
   );
 
-  const foreignKeys = await legacyDatabase.prepare(
+  const foreignKeys = await scratchDatabase.prepare(
     `PRAGMA foreign_key_list(revision_legality_rules)`,
   ).all<{ table: string; from: string }>();
   expect(foreignKeys.results).toEqual(
@@ -375,7 +369,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       }),
     ]),
   );
-  const guards = await legacyDatabase.prepare(
+  const guards = await scratchDatabase.prepare(
     `SELECT name FROM sqlite_master
      WHERE type = 'trigger' AND name IN (
        'guard_legality_rule_identity',
@@ -447,8 +441,8 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     current: true,
     last_missing_revision_id: null,
   };
-  await legacyDatabase.batch([
-    legacyDatabase.prepare(
+  await scratchDatabase.batch([
+    scratchDatabase.prepare(
       `INSERT INTO ingestion_runs (
          id, state, selected_games_json, started_at,
          expected_current_revision_id, linked_run_id, idempotency_key,
@@ -465,12 +459,12 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
         expected_current_revision_id: "catrev_spine_000",
       }),
     ),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `UPDATE operation_state
        SET active_ingestion_run_id = 'run_upgraded_legality_guard'
        WHERE singleton = 1`,
     ),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO ingestion_evidence_plans (
          ingestion_run_id, source_lineage, supported_game,
          game_profile_version, adapter_version, request_plan_json,
@@ -479,7 +473,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          'one-piece', 'one-piece@1', 'one-piece-json-document@1', ?,
          'production')`,
     ).bind(requestPlan),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO source_requests (
          ingestion_run_id, request_id, sequence_number, method, url,
          request_headers_json, representation_fingerprint, state,
@@ -488,7 +482,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          'GET', 'https://en.onepiece-cardgame.com/rules/restriction/',
          '{}', ?, 'observed', 'srcsnap_upgraded_legality_guard')`,
     ).bind("5".repeat(64)),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO source_fetch_attempts (
          id, ingestion_run_id, request_id, attempt_number,
          requested_at, completed_at, outcome, http_status,
@@ -498,7 +492,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z',
          'success', 200, '{}', NULL, NULL)`,
     ),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO source_snapshots (
          id, ingestion_run_id, request_id, fetch_attempt_id,
          request_method, request_url, request_headers_json,
@@ -516,7 +510,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          'source-snapshots/upgraded-legality-guard.bin', 'one-piece-en',
          'one-piece', 'one-piece@1', 'one-piece-json-document@1', NULL)`,
     ).bind("5".repeat(64), "6".repeat(64)),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO source_parse_operations (
          id, source_snapshot_id, adapter_version, intent,
          idempotency_key, observation_set_id, content_object_key,
@@ -529,7 +523,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          'source-observations/upgraded-legality-guard.json',
          '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
     ).bind("7".repeat(64)),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO source_observation_sets (
          id, parse_operation_id, source_snapshot_id, source_lineage,
          supported_game, game_profile_version, adapter_version, parsed_at,
@@ -542,7 +536,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          '2026-08-01T00:00:02.000Z', ?, 2,
          'source-observations/upgraded-legality-guard.json', 1)`,
     ).bind("7".repeat(64)),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO catalogue_revisions (
          id, ingestion_run_id, published_at, content_digest,
          expected_previous_revision_id, approved_candidate_digest
@@ -550,7 +544,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
          'run_upgraded_legality_guard', '2026-08-01T00:00:03.000Z', ?,
          'catrev_spine_000', ?)`,
     ).bind("8".repeat(64), "8".repeat(64)),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, official_wording, effect_json,
@@ -586,7 +580,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
       upgradedRule.first_revision_id,
       upgradedRule.last_observed_revision_id,
     ),
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game,
          region, format, event_tier, effective_from, effective_until,
@@ -609,7 +603,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   ]);
   const upgradedCanonicalCardIdErrors =
     await canonicalLegalityCardIdInvariantErrors(
-      legacyDatabase,
+      scratchDatabase,
       {
         ...upgradedRule,
         effect_json: JSON.stringify(upgradedRule.effect),
@@ -624,7 +618,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   );
   const upgradedCanonicalEffectErrors =
     await canonicalLegalityEffectInvariantErrors(
-      legacyDatabase,
+      scratchDatabase,
       {
         ...upgradedRule,
         source_field_pointers_json: sourceFieldPointers,
@@ -637,7 +631,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ),
   );
   const upgradedScopeErrors = await canonicalLegalityScopeInvariantErrors(
-    legacyDatabase,
+    scratchDatabase,
     {
       ...upgradedRule,
       source_field_pointers_json: sourceFieldPointers,
@@ -650,14 +644,14 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ),
   );
   const upgradedProvenanceMutation = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `UPDATE legality_rules
        SET source_snapshot_id = 'srcsnap_attacker'
        WHERE id = ?`,
     ).bind(upgradedRule.id).run(),
   );
   const upgradedCrossOwner = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO legality_rules (
          id, official_id, supported_game, region, format, event_tier,
          effective_from, effective_until, official_wording, effect_json,
@@ -676,14 +670,14 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ).run(),
   );
   const upgradedRevisionMutation = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `UPDATE revision_legality_rules SET format = 'attacker-format'
        WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
          AND legality_rule_id = ?`,
     ).bind(upgradedRule.id).run(),
   );
   const upgradedRevisionDelete = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `DELETE FROM revision_legality_rules
        WHERE catalogue_revision_id = 'catrev_upgraded_legality_guard'
          AND legality_rule_id = ?`,
@@ -698,7 +692,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ...upgradedWithReplacementKey
   } = upgradedRule;
   const upgradedMissingNullableKey = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game,
          region, format, event_tier, effective_from, effective_until,
@@ -717,7 +711,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ).run(),
   );
   const upgradedArbitraryKeySubstitution = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game,
          region, format, event_tier, effective_from, effective_until,
@@ -739,7 +733,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
     ).run(),
   );
   const upgradedDuplicateRequiredKey = await rejectedError(
-    legacyDatabase.prepare(
+    scratchDatabase.prepare(
       `INSERT INTO revision_legality_rules (
          catalogue_revision_id, legality_rule_id, supported_game,
          region, format, event_tier, effective_from, effective_until,
@@ -777,7 +771,7 @@ test("an upgraded D1 enforces full lowercase digests and canonical revision rule
   const upgradedNestedCardIds = await Promise.all(
     upgradedNestedDocuments.map((document) =>
       rejectedError(
-        legacyDatabase.prepare(
+        scratchDatabase.prepare(
           `INSERT INTO revision_legality_rules (
              catalogue_revision_id, legality_rule_id, supported_game,
              region, format, event_tier, effective_from, effective_until,

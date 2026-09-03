@@ -37,7 +37,8 @@ but may still reparse the Source Snapshots it captured. A version bump
 therefore adds one live contract and retires the former predecessor:
 
 1. Add the new version to its lineage's `versions` list (last position) and
-   its `source_adapter_versions` seed migration.
+   insert its `source_adapter_versions` seed row in a new guarded migration
+   (ADR 0006).
 2. Move the former predecessor's registration facts (adapter version,
    lineage, game, parser contract, reconciliation areas, header
    inheritance) into `retiredSourceAdapterVersions`, copying the parser

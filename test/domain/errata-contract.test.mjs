@@ -61,26 +61,14 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   );
 });
 
-test("the 0007 schema migration is additive and leaves historical Card backfill to the resumable application repair", async () => {
-  const migrations = await Promise.all(
-    [
-      "0001_catalogue_publication.sql",
-      "0002_ingestion_lifecycle.sql",
-      "0003_immutable_source_evidence.sql",
-      "0004_card_printing_reconciliation.sql",
-      "0005_credential_rotation.sql",
-      "0006_product_release_distribution.sql",
-      "0007_errata_rules_text.sql",
-    ].map((filename) =>
-      readFile(
-        resolve(root, "migrations", filename),
-        "utf8",
-      )
-    ),
+test("the baseline enforces the reconciliation workflow and Errata constraints", async () => {
+  const baseline = await readFile(
+    resolve(root, "migrations", "0001_baseline.sql"),
+    "utf8",
   );
   const database = new DatabaseSync(":memory:");
   try {
-    for (const migration of migrations.slice(0, 6)) database.exec(migration);
+    database.exec(baseline);
     database.exec(`
       INSERT INTO ingestion_runs (
         id, state, selected_games_json, started_at,
@@ -109,22 +97,8 @@ test("the 0007 schema migration is additive and leaves historical Card backfill 
         'catrev_schema', 'card_historical', '{"id":"card_historical"}'
       );
     `);
-    const historicalDocument = database.prepare(
-      `SELECT document_json FROM revision_cards
-       WHERE catalogue_revision_id = 'catrev_schema'
-         AND card_id = 'card_historical'`,
-    ).get().document_json;
-
-    database.exec(migrations[6]);
-
-    assert.equal(
-      database.prepare(
-        `SELECT document_json FROM revision_cards
-         WHERE catalogue_revision_id = 'catrev_schema'
-           AND card_id = 'card_historical'`,
-      ).get().document_json,
-      historicalDocument,
-    );
+    // Card query documents are built by the resumable application repair,
+    // never by a trigger on revision_cards.
     assert.equal(
       database.prepare(
         "SELECT COUNT(*) AS count FROM revision_card_query_documents",

@@ -255,18 +255,11 @@ the requested region before loading stored rule documents. Publication and one
 status result are bounded to 16,384 applicability rows; exceeding that bound
 fails closed instead of scanning or allocating an unbounded result.
 
-Migrations `0009_one_piece_complete_catalogue.sql`,
-`0010_fusion_world_complete_catalogue.sql`,
-`0011_digimon_complete_catalogue.sql`, and
-`0012_gundam_dual_lineage_complete_catalogue.sql` register the complete One
-Piece, Fusion World, Digimon, and Gundam adapters after
-`0008_legality_rules.sql`, and
-`0022_restructured_source_adapters.sql` registers the 2026-08
-site-restructure generation, `0023_live_product_source_adapters.sql`
-registers the live product-detail generation,
-`0024_unresolved_target_scope.sql` extends the unresolved-scope vocabulary
-with `target_scope`, materializes its `all_cards` applicability, and
-registers the issue-58 generation, and
-`0025_optional_card_field_source_adapters.sql` registers the
-optional-card-field generation. Apply all of them before deploying either
-Worker.
+The schema baseline (`migrations/0001_baseline.sql`, ADR 0006) registers
+every Source Adapter Version generation: the complete One Piece, Fusion
+World, Digimon, and Gundam adapters, the 2026-08 site-restructure
+generation, the live product-detail generation, the issue-58 generation
+with the `target_scope` unresolved-scope dimension and its `all_cards`
+applicability, and the optional-card-field generation. A new generation is
+registered by a later migration. Apply every migration before deploying
+either Worker.

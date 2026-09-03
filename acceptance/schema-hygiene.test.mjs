@@ -5,10 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 const root = resolve(import.meta.dirname, "..");
-const firstSchemaStateLevel = 15;
-const firstGuardedLevel = 35;
+// ADR 0006: the baseline seeds catalogue_schema_state at level 1 and every
+// later migration opens with the level guard, so the walk starts at the
+// first file and the guard proof covers every file after it.
+const firstSchemaStateLevel = 1;
+const firstGuardedLevel = 2;
 
-test("every migration from 0015 leaves catalogue_schema_state at its own level", async () => {
+test("every migration leaves catalogue_schema_state at its own level", async () => {
   const migrations = await readMigrations();
   const database = new DatabaseSync(":memory:");
   for (const { level, sql } of migrations) {
@@ -23,10 +26,13 @@ test("every migration from 0015 leaves catalogue_schema_state at its own level",
   database.close();
 });
 
-test("a guarded migration aborts before changing anything when the recorded level mismatches", async () => {
+test("a guarded migration aborts before changing anything when the recorded level mismatches", async (t) => {
   const migrations = await readMigrations();
   const guarded = migrations.filter(({ level }) => level >= firstGuardedLevel);
-  assert.ok(guarded.length > 0, "at least one guarded migration exists");
+  if (guarded.length === 0) {
+    t.skip("no migration after the baseline yet; every later file is guarded");
+    return;
+  }
   for (const migration of guarded) {
     const database = new DatabaseSync(":memory:");
     for (const earlier of migrations) {
@@ -48,7 +54,7 @@ test("a guarded migration aborts before changing anything when the recorded leve
   }
 });
 
-test("migration 0035 adds the hot-path indexes and drops the dead ones", async () => {
+test("the schema carries the hot-path indexes and not the dead ones", async () => {
   const database = await migratedDatabase();
   const indexes = database.prepare(
     "SELECT name FROM sqlite_schema WHERE type = 'index' ORDER BY name",

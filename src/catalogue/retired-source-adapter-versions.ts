@@ -7,8 +7,8 @@
 // to capture or parse under a retired version (`adapter_version_retired`);
 // reparsing retained Source Snapshots is done by registering a new version.
 //
-// Parser contract strings are the immutable values seeded in the
-// source_adapter_versions migrations and must never drift from them. The
+// Parser contract strings are the immutable values seeded into
+// source_adapter_versions by the migrations and must never drift from them. The
 // reconciliation areas and discovery-header inheritance flags are the
 // registration facts the retired parser code previously implied.
 //
