@@ -52,6 +52,35 @@ Genuine integrity failures (redirects, identity collisions, malformed
 discovery, parser contract failures, completeness contradictions) remain
 terminal and never pause.
 
+## Failed images do not pause
+
+`source_transport_retries_exhausted` applies to the listing, detail,
+product, and surface roles, where a missing response means missing
+catalogue facts. Image requests follow a different transport policy: they
+get a longer fetch bound (60 s instead of 30 s) and the same bounded
+retries, but when an image exhausts its transport retries that one Source
+Request is recorded as `failed` with the code
+`source_image_retries_exhausted` and collection continues. Storage (R2)
+retry exhaustion still pauses the run for every role.
+
+The run completes collection, parses, and reconciles with the gap recorded
+explicitly: the Catalogue Candidate carries one `printing_image_unavailable`
+warning per failed image (request reference, source URL, Source Lineage,
+failure code), the affected Printing is published without that Printing
+Image, and nothing blocks approval. Inspect the gap with:
+
+```sh
+npm run keepr -- source show --run-id RUN_ID --json
+```
+
+The `collection.failed_images` block reports the exact `count` and a list
+bounded to the first `detail_limit` entries (`truncated` says whether the
+list is bounded), each with the safe request reference, hostname, failure
+code, and attempt count. The text form prints one `Failed images:` line.
+Nothing here needs an owner action on the run itself: start a later
+Ingestion Run to collect the missing images once the Official Source's image
+path recovers.
+
 ## Stop a collecting run
 
 Stopping is two owner actions: pause, then terminate. Termination alone is

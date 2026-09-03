@@ -6,6 +6,7 @@ import {
   defaultSourceHostPacingIntervalMilliseconds,
   parseEvidencePlans,
   parseStringRecord,
+  printingImageRetriesExhaustedFailureCode,
   type EvidencePlan,
   type OfficialSourceCollectionPlan,
   type OfficialSourceCollectionRequest,
@@ -2456,14 +2457,20 @@ export async function finalizeEvidenceRun(
   database: D1Database,
   runId: string,
 ): Promise<void> {
+  // A Printing Image whose transport retries were exhausted is a tolerated
+  // failure: it is recorded on its own request, reported by inspection, and
+  // carried into reconciliation as an explicit gap, but it never fails the
+  // run. Every other failed request is missing catalogue facts.
   const counts = await database
     .prepare(
       `SELECT
         SUM(CASE WHEN state IN ('pending', 'captured') THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) AS failed
-       FROM source_requests WHERE ingestion_run_id = ?`,
+        SUM(CASE WHEN state = 'failed'
+                  AND NOT (request_role = 'image' AND failure_code = ?2)
+                 THEN 1 ELSE 0 END) AS failed
+       FROM source_requests WHERE ingestion_run_id = ?1`,
     )
-    .bind(runId)
+    .bind(runId, printingImageRetriesExhaustedFailureCode)
     .first<{ active: number | null; failed: number | null }>();
   if (counts === null || (counts.active ?? 0) > 0) return;
   const completedAt = new Date().toISOString();
@@ -2472,10 +2479,11 @@ export async function finalizeEvidenceRun(
     const failure = await database
       .prepare(
         `SELECT failure_code FROM source_requests
-         WHERE ingestion_run_id = ? AND state = 'failed'
+         WHERE ingestion_run_id = ?1 AND state = 'failed'
+           AND NOT (request_role = 'image' AND failure_code = ?2)
          ORDER BY sequence_number LIMIT 1`,
       )
-      .bind(runId)
+      .bind(runId, printingImageRetriesExhaustedFailureCode)
       .first<{ failure_code: string | null }>();
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([
