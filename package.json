@@ -14,6 +14,7 @@
     "test:workers:api": "vitest run --config apps/api/vitest.config.ts",
     "test:workers:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
     "test:acceptance": "node --test acceptance/*.test.mjs",
+    "test:acceptance:shard": "node scripts/acceptance-shard.mjs",
     "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/api/vitest.config.ts && KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
     "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json",
     "types:generate": "node scripts/worker-types.mjs",

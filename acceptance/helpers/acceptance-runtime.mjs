@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { cp, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -30,12 +34,104 @@ export async function allocatePort() {
   throw new Error("An unused local port could not be allocated.");
 }
 
+// Migrate CATALOGUE_DB under statePath. Running the wrangler CLI costs
+// several seconds per boot, so the migrated D1 directory is built once into
+// a template shared by every acceptance process on the machine, then copied
+// into each fresh statePath. The template is keyed by the migration files
+// and the database identity, which every config in this repository shares,
+// so per-test config copies reuse it and a changed migration invalidates it.
+// A statePath that already holds D1 state is migrated in place instead, so
+// callers layering migrations onto restored or seeded state keep the real
+// wrangler run.
+const migratedTemplates = new Map();
+const D1_STATE = join("v3", "d1");
+const TEMPLATE_ROOT = join(tmpdir(), "card-keepr-migrated");
+const TEMPLATE_WAIT_MS = 120_000;
+
 export async function applyMigrations(statePath, config) {
+  const resolvedConfig = config ?? "apps/ingestion/wrangler.jsonc";
+  if (existsSync(join(statePath, D1_STATE))) {
+    await runMigrations(statePath, resolvedConfig);
+    return;
+  }
+  const key = await templateKey(resolvedConfig);
+  let template = migratedTemplates.get(key);
+  if (template === undefined) {
+    template = ensureMigratedTemplate(key, resolvedConfig);
+    migratedTemplates.set(key, template);
+  }
+  await cp(join(await template, D1_STATE), join(statePath, D1_STATE), {
+    recursive: true,
+  });
+}
+
+async function templateKey(config) {
+  const configPath = resolve(root, config);
+  const parsed = JSON.parse(await readFile(configPath, "utf8"));
+  const database = parsed.d1_databases?.find(
+    (entry) => entry.binding === "CATALOGUE_DB",
+  );
+  assert.ok(database, `${config} does not bind CATALOGUE_DB`);
+  const migrationsDir = resolve(
+    dirname(configPath),
+    database.migrations_dir ?? "migrations",
+  );
+  const hash = createHash("sha256");
+  hash.update(`${database.database_id}\n${database.database_name}\n`);
+  for (const name of (await readdir(migrationsDir)).sort()) {
+    if (!name.endsWith(".sql")) continue;
+    hash.update(`${name}\n`);
+    hash.update(await readFile(join(migrationsDir, name)));
+    hash.update("\n");
+  }
+  return hash.digest("hex").slice(0, 32);
+}
+
+// Return the shared template directory for key, building it when absent.
+// The build lands in a private directory and is renamed into place, so a
+// template that exists is always complete; a lock directory lets one process
+// build while the others wait for the rename, falling back to building
+// themselves if the lock holder disappears.
+async function ensureMigratedTemplate(key, config) {
+  const template = join(TEMPLATE_ROOT, key);
+  if (existsSync(join(template, D1_STATE))) return template;
+  await mkdir(TEMPLATE_ROOT, { recursive: true });
+  const lock = `${template}.lock`;
+  const deadline = Date.now() + TEMPLATE_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      await mkdir(lock);
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      await delay(200);
+      if (existsSync(join(template, D1_STATE))) return template;
+    }
+  }
+  try {
+    if (existsSync(join(template, D1_STATE))) return template;
+    const building = `${template}.building-${process.pid}`;
+    await rm(building, { recursive: true, force: true });
+    await runMigrations(building, config);
+    try {
+      await rename(building, template);
+    } catch (error) {
+      // Another process won the rename; its template is equivalent.
+      if (!["EEXIST", "ENOTEMPTY"].includes(error.code)) throw error;
+      await rm(building, { recursive: true, force: true });
+    }
+    return template;
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
+async function runMigrations(statePath, config) {
   const result = await runProcess(
     resolve(root, "node_modules/.bin/wrangler"),
     [
       "d1", "migrations", "apply", "CATALOGUE_DB", "--local",
-      "--config", config ?? "apps/ingestion/wrangler.jsonc",
+      "--config", config,
       "--persist-to", statePath,
     ],
     { ...processEnvironment(statePath), CI: "1" },
