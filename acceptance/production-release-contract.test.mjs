@@ -57,6 +57,14 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.doesNotMatch(ci, /CLOUDFLARE_API_TOKEN|environment:\s*production|--remote|wrangler (?:deploy|versions deploy)/u);
 });
 
+test("the production preflight rehearsal is read-only", () => {
+  const preflight = readFileSync(".github/workflows/production-preflight.yml", "utf8");
+  assert.match(preflight, /workflow_dispatch:/u);
+  assert.match(preflight, /environment: production/u);
+  assert.match(preflight, /production-release-provider\.mjs verify-target/u);
+  assert.doesNotMatch(preflight, /versions upload|versions deploy|wrangler deploy|migrations apply|d1 execute|secret put|triggers deploy/u);
+});
+
 test("provider credentials stay in fetch headers and out of process arguments", () => {
   const provider = readFileSync("scripts/production-release-provider.mjs", "utf8");
   assert.match(provider, /headers:\s*\{ authorization: `Bearer \$\{token\}` \}/u);
