@@ -213,7 +213,7 @@ export function productionOfficialStageResponse(
     );
   }
   // The live Fusion World listing publishes its statuses as anchored
-  // sections (fusion-world-en@8); the synthetic stage mirrors that shape
+  // sections (fusion-world-en@9); the synthetic stage mirrors that shape
   // with structurally empty product lists.
   const fusionProductCoverage =
     lineage === "fusion-world-en" && url.pathname === "/fw/en/products/"

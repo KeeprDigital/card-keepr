@@ -8,7 +8,6 @@ import {
   assertAdapterBinding,
   installedSourceAdapterRegistrations,
   requiredActiveSourceAdapter,
-  requiredLiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
 } from "../../src/catalogue/source-adapters.ts";
@@ -106,17 +105,6 @@ test("the issue-58 One Piece don-rules contract retains the live hub as coverage
   assert.equal(legality.observation_type, "legality_rules");
   assert.deepEqual(legality.legality_rules, []);
   assert.equal(legality.completeness.declared_record_count, 0);
-
-  // The earlier generation keeps its frozen fail-closed contract.
-  assert.throws(
-    () =>
-      requiredSourceAdapter("one-piece-en@5").parseBytes(fixture.bytes, {
-        mediaType: fixture.metadata.content_type,
-        url: fixture.metadata.source_url,
-        requestId: "one-piece-en:don-rules",
-      }),
-    /DON!! Card facts require explicit snapshot evidence/u,
-  );
 });
 
 test("retained One Piece and Digimon policies reject unconsumed event scope while allowing text-free framing", () => {

@@ -368,7 +368,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
 }, 30_000);
 
 test("a registered code-less Product refresh preserves its established code", async () => {
-  // The fusion-world-en@8 live listing derives Product codes from bracketed
+  // The fusion-world-en@9 live listing derives Product codes from bracketed
   // titles, so a code cannot disappear while the published name stays
   // identical; the digimon-en listing keeps publishing explicit
   // data-product-code attributes and exercises the code-preserving refresh.

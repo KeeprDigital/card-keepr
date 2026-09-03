@@ -1,6 +1,5 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   officialSourceDiscoveryRequests,
 } from "../../src/catalogue/product-release-source-adapters.ts";
@@ -9,13 +8,9 @@ import {
   assertAdapterBinding,
   installedSourceAdapterRegistrations,
   requiredActiveSourceAdapter,
-  requiredLiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
 } from "../../src/catalogue/source-adapters.ts";
-import {
-  retiredSourceAdapterVersions,
-} from "../../src/catalogue/retired-source-adapter-versions.ts";
 import syntheticOfficialSource, {
   officialBandaiNavigationHeader,
   officialDiscoveryDefinitions,
@@ -179,13 +174,9 @@ function discoveryHtml(sourceLineage, mutate = (entries) => entries) {
     ).join("")}</nav></header></body></html>`;
 }
 
-// The active registration per lineage. The issue-58 unresolved-scope
-// generation advanced One Piece and both Gundam locales, the
-// optional-card-field generation advanced Digimon, and the issue-63
-// request-capacity generation advanced Fusion World: fusion-world-en@9
-// parses byte-for-byte like fusion-world-en@8 and differs only in its
-// immutable request capacity. Each lineage keeps exactly one parseable
-// predecessor (ADR 0004).
+// The single registration per lineage. Before Go-Live (ADR 0008) no
+// predecessor is parseable and no retired registration exists; the
+// production One Piece capacity of 2026-09-03 (#134) is edited in place.
 const expectedProductionAdapterVersions = [
   "digimon-en@7",
   "fusion-world-en@9",
@@ -668,194 +659,76 @@ test("production discovery is proven by complete exact retained navigation", () 
   }
 });
 
-// ADR 0004: superseded parser code is retired. Every retired Source Adapter
-// Version keeps its registration identity, lineage, and immutable parser
-// contract so retained evidence stays attributable, but carries no parser
-// and can neither capture nor parse.
-const expectedRetiredParserContracts = {
-  "one-piece-en@1": "one-piece-en-raw-surfaces@1",
-  "one-piece-en@2": "one-piece-en-raw-surfaces-with-legality@2",
-  "one-piece-en@3": "one-piece-en-complete-catalogue@3",
-  "one-piece-en@4": "one-piece-en-restructured-complete-catalogue@4",
-  "fusion-world-en@2": "fusion-world-en-raw-surfaces@1",
-  "fusion-world-en@3": "fusion-world-en-raw-surfaces-with-legality@2",
-  "fusion-world-en@4":
-    "fusion-world-en-raw-surfaces-with-legality-and-catalogue@3",
-  "fusion-world-en@5": "fusion-world-en-restructured-complete-catalogue@4",
-  "fusion-world-en@6": "fusion-world-en-restructured-complete-catalogue@5",
-  "fusion-world-en@7": "fusion-world-en-restructured-complete-catalogue@6",
-  "digimon-en@2": "digimon-en-raw-surfaces@1",
-  "digimon-en@3": "digimon-en-raw-surfaces-with-legality@2",
-  "digimon-en@4": "digimon-en-raw-surfaces-complete-catalogue@3",
-  "digimon-en@5": "digimon-en-restructured-complete-catalogue@4",
-  "gundam-en-asia@2": "gundam-en-asia-raw-surfaces@1",
-  "gundam-en-asia@3": "gundam-en-asia-raw-surfaces-with-legality@2",
-  "gundam-en-asia@4": "gundam-en-asia-raw-surfaces-complete-catalogue@3",
-  "gundam-en-asia@5": "gundam-en-asia-restructured-complete-catalogue@4",
-  "gundam-en-us@2": "gundam-en-us-raw-surfaces@1",
-  "gundam-en-us@3": "gundam-en-us-raw-surfaces-with-legality@2",
-  "gundam-en-us@4": "gundam-en-us-raw-surfaces-complete-catalogue@3",
-  "gundam-en-us@5": "gundam-en-us-restructured-complete-catalogue@4",
-};
-
-const expectedRetiredLegalityRegions = {
-  "one-piece-en": "EN-OCEANIA",
-  "fusion-world-en": "EN-OCEANIA",
-  "digimon-en": "EN-OCEANIA",
-  "gundam-en-asia": "EN-ASIA",
-  "gundam-en-us": "EN-US",
-};
-
-const expectedErrataCoveredRetiredVersions = [
-  "one-piece-en@3",
-  "one-piece-en@4",
-  "fusion-world-en@4",
-  "digimon-en@4",
-  "digimon-en@5",
-  "gundam-en-asia@4",
-  "gundam-en-asia@5",
-  "gundam-en-us@4",
-  "gundam-en-us@5",
-];
-
-const expectedHeaderInheritingRetiredVersions = [
-  "digimon-en@4",
-  "digimon-en@5",
-  "gundam-en-asia@4",
-  "gundam-en-asia@5",
-  "gundam-en-us@4",
-  "gundam-en-us@5",
-];
-
+// ADR 0008: before Go-Live every installed Source Adapter Version carries
+// its parser and no registration is retired or superseded. An unknown
+// version is simply not supported.
 function isAdministrationProblem(code) {
   return (error) => error.status === 422 && error.code === code;
 }
 
-test("retired production adapter versions stay registered without a parser", () => {
-  assert.deepEqual(
-    retiredSourceAdapterVersions.map(({ adapterVersion }) => adapterVersion)
-      .sort(),
-    Object.keys(expectedRetiredParserContracts).sort(),
+const expectedRequestCapacities = {
+  "one-piece-en@6": 10_000,
+  "fusion-world-en@9": 15_000,
+  "digimon-en@7": 5_000,
+  "gundam-en-asia@7": 5_000,
+  "gundam-en-us@7": 5_000,
+};
+
+test("every installed adapter version carries its parser and unknown versions are not supported", () => {
+  const rawProduction = installedSourceAdapterRegistrations.filter((adapter) =>
+    adapter.origin === "production" &&
+    adapter.reconciliationCapability === "catalogue" &&
+    typeof adapter.parseBytes === "function"
   );
-  for (
-    const [adapterVersion, parserContract] of Object.entries(
-      expectedRetiredParserContracts,
-    )
-  ) {
-    const adapter = requiredSourceAdapter(adapterVersion);
-    assert.equal(adapter.retired, true, adapterVersion);
-    assert.equal(adapter.adapterVersion, adapterVersion);
-    assert.equal(adapter.parserContract, parserContract);
-    assert.equal(adapter.sourceLineage, adapterVersion.replace(/@\d+$/u, ""));
-    assert.equal(adapter.gameProfileVersion, `${adapter.supportedGame}@1`);
-    assert.equal(adapter.origin, "production");
-    assert.deepEqual(adapter.requestSurface, { kind: "credential-free-https" });
-    assert.equal(adapter.reconciliationCapability, "catalogue");
+  assert.deepEqual(
+    rawProduction.map(({ adapterVersion }) => adapterVersion).sort(),
+    expectedProductionAdapterVersions,
+  );
+  assert.equal(
+    new Set(rawProduction.map(({ sourceLineage }) => sourceLineage)).size,
+    rawProduction.length,
+    "each Source Lineage registers exactly one raw production version",
+  );
+  for (const adapter of rawProduction) {
     assert.equal(
-      adapter.legalityRegion,
-      expectedRetiredLegalityRegions[adapter.sourceLineage],
-    );
-    assert.ok(Number.isSafeInteger(adapter.requestCapacity));
-    assert.ok(Number.isSafeInteger(adapter.maximumSnapshotBytes));
-    for (
-      const retiredMember of [
-        "parse",
-        "parseBytes",
-        "discoverRequests",
-        "requiredSurfaces",
-        "requestUrlForDiscovery",
-        "requestUrlForSurface",
-        "officialSourceContract",
-      ]
-    ) {
-      assert.equal(adapter[retiredMember], undefined, `${adapterVersion} ${retiredMember}`);
-    }
-    assert.deepEqual(
-      adapterReconciliationAreas(adapter),
-      expectedErrataCoveredRetiredVersions.includes(adapterVersion)
-        ? ["catalogue", "errata"]
-        : ["catalogue"],
-      adapterVersion,
-    );
-    assert.equal(
-      adapter.inheritDiscoveryRequestHeaders,
-      expectedHeaderInheritingRetiredVersions.includes(adapterVersion),
-      adapterVersion,
-    );
-    assert.ok(installedSourceAdapterRegistrations.includes(adapter));
-    assert.ok(!sourceAdapterRegistrations.includes(adapter));
-    assert.ok(!productionAdapterVersions.includes(adapterVersion));
-    assert.throws(
-      () => requiredActiveSourceAdapter(adapterVersion),
-      isAdministrationProblem("adapter_version_retired"),
-      adapterVersion,
-    );
-    assert.throws(
-      () => requiredLiveSourceAdapter(adapterVersion),
-      isAdministrationProblem("adapter_version_retired"),
-      adapterVersion,
+      adapter.requestCapacity,
+      expectedRequestCapacities[adapter.adapterVersion],
+      adapter.adapterVersion,
     );
   }
   for (const adapter of installedSourceAdapterRegistrations) {
-    if (adapter.retired === true) {
-      assert.ok(
-        Object.hasOwn(expectedRetiredParserContracts, adapter.adapterVersion),
-        `${adapter.adapterVersion} is retired but not expected to be`,
-      );
-      continue;
-    }
-    assert.equal(adapter.retired, undefined);
-    assert.equal(requiredLiveSourceAdapter(adapter.adapterVersion), adapter);
     assert.equal(
       typeof adapter.parseBytes === "function" ||
         typeof adapter.parse === "function",
       true,
       adapter.adapterVersion,
     );
+    assert.equal(requiredSourceAdapter(adapter.adapterVersion), adapter);
+    assert.ok(sourceAdapterRegistrations.includes(adapter));
   }
-  assert.throws(
-    () => requiredActiveSourceAdapter("one-piece-en@999"),
-    isAdministrationProblem("adapter_not_supported"),
-  );
-  assert.throws(
-    () => requiredLiveSourceAdapter("one-piece-en@999"),
-    isAdministrationProblem("adapter_not_supported"),
-  );
-});
-
-test("one-piece-en@4 resolves as a retired registration and is refused for new collection", () => {
-  const adapter = requiredSourceAdapter("one-piece-en@4");
-  assert.equal(
-    adapter.parserContract,
-    "one-piece-en-restructured-complete-catalogue@4",
-  );
-  assert.equal(adapter.retired, true);
-  assert.equal(adapter.parseBytes, undefined);
-  assert.throws(
-    () => requiredActiveSourceAdapter("one-piece-en@4"),
-    (error) =>
-      error.status === 422 &&
-      error.code === "adapter_version_retired" &&
-      /one-piece-en@4/u.test(error.message) &&
-      /ADR 0004/u.test(error.message),
-  );
-});
-
-test("the retired-adapter pre-merge query names exactly the retired versions", () => {
-  const sql = readFileSync(
-    new URL("../../scripts/retired-adapter-runs.sql", import.meta.url),
-    "utf8",
-  );
-  const quoted = [...sql.matchAll(/'([a-z0-9-]+@\d+)'/gu)].map(
-    ([, adapterVersion]) => adapterVersion,
-  );
-  assert.deepEqual(
-    quoted,
-    retiredSourceAdapterVersions.map(({ adapterVersion }) => adapterVersion),
-  );
-  assert.match(sql, /run\.state NOT IN \('published', 'rejected', 'expired', 'failed'\)/u);
-  assert.match(sql, /FROM ingestion_evidence_plans AS plan/u);
-  assert.match(sql, /JOIN ingestion_runs AS run ON run\.id = plan\.ingestion_run_id/u);
+  for (
+    const unknown of [
+      "one-piece-en@999",
+      "one-piece-en@4",
+      "one-piece-en@5",
+      "fusion-world-en@8",
+      "digimon-en@6",
+      "gundam-en-asia@6",
+      "gundam-en-us@6",
+    ]
+  ) {
+    assert.throws(
+      () => requiredActiveSourceAdapter(unknown),
+      isAdministrationProblem("adapter_not_supported"),
+      unknown,
+    );
+    assert.throws(
+      () => requiredSourceAdapter(unknown),
+      isAdministrationProblem("adapter_not_supported"),
+      unknown,
+    );
+    assert.ok(!productionAdapterVersions.includes(unknown));
+  }
 });
 
 test("known navigation labels cannot hide an unrecognized publisher URL", () => {
@@ -2037,31 +1910,6 @@ test("the raw discovery decoder fails closed on caps, unfinished pages, and surf
     () => parseRegisteredSurface(adapter, "card-list", mismatched),
     /card-list page identity/u,
   );
-});
-
-// The issue-63 request-capacity generation changed no parsing: the retained
-// fusion-world-en@8 registration must keep replaying live-shape bytes exactly
-// like the active fusion-world-en@9 registration.
-const fusionRetainedLiveShapeAdapter = () =>
-  requiredSourceAdapter("fusion-world-en@8");
-
-test("the retained fusion-world-en@8 registration replays live-shape bytes exactly like fusion-world-en@9", () => {
-  const active = fusionLiveShapeAdapter();
-  const retained = fusionRetainedLiveShapeAdapter();
-  assert.equal(retained.parserContract, active.parserContract);
-  for (const { slug, url, requestId } of fusionProductListingFixtures) {
-    const fixture = retainedOfficialSourceFixture(slug);
-    const context = {
-      mediaType: fixture.metadata.content_type,
-      url,
-      requestId,
-    };
-    assert.deepEqual(
-      retained.parseBytes(fixture.bytes, context),
-      active.parseBytes(fixture.bytes, context),
-      `${slug} must parse identically on the retained registration`,
-    );
-  }
 });
 
 test("the live product listing still fails closed when a status section disappears", () => {

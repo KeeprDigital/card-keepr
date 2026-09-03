@@ -6,6 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "vitest";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import {
+  installedSourceAdapterRegistrations,
+} from "../../src/catalogue/source-adapters.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 
@@ -434,85 +437,63 @@ test("export schema major 3 carries typed Product, Release, and Legality project
   }
 });
 
-test("the baseline registers the production adapter versions immutably", async () => {
+test("the baseline registers exactly the installed adapter versions immutably", async () => {
   const baseline = await readFile(
     resolve(root, "migrations", "0001_baseline.sql"),
     "utf8",
   );
+  // The seed rows must equal installedSourceAdapterRegistrations in
+  // src/catalogue/source-adapters.ts. Before Go-Live (ADR 0008) each Source
+  // Lineage registers exactly one production raw version and a capacity
+  // change edits its row in place (#134, #135).
+  const expected = installedSourceAdapterRegistrations.map((adapter) => ({
+    adapter_version: adapter.adapterVersion,
+    source_lineage: adapter.sourceLineage,
+    supported_game: adapter.supportedGame,
+    game_profile_version: adapter.gameProfileVersion,
+    parser_contract: adapter.parserContract,
+    adapter_origin: adapter.origin,
+    request_capacity: adapter.requestCapacity,
+  })).sort((left, right) =>
+    left.adapter_version.localeCompare(right.adapter_version)
+  );
   const assertVersionSet = (database) => {
     const versions = database.prepare(
-      `SELECT adapter_version, adapter_origin
+      `SELECT adapter_version, source_lineage, supported_game,
+              game_profile_version, parser_contract, adapter_origin,
+              request_capacity
        FROM source_adapter_versions
-       WHERE adapter_version IN (
-         'one-piece-json-document@1',
-         'one-piece-json-document@2',
-         'one-piece-en@1',
-         'fusion-world-en@1',
-         'fusion-world-en@2',
-         'digimon-en@1',
-         'digimon-en@2',
-         'gundam-en-asia@1',
-         'gundam-en-asia@2',
-         'gundam-en-us@1',
-         'gundam-en-us@2'
-       )
        ORDER BY adapter_version`,
-    ).all().map(({ adapter_version, adapter_origin }) => ({
-      adapter_version,
-      adapter_origin,
-    }));
-    assert.deepEqual(versions, [
-      {
-        adapter_version: "digimon-en@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "digimon-en@2",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "fusion-world-en@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "fusion-world-en@2",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "gundam-en-asia@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "gundam-en-asia@2",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "gundam-en-us@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "gundam-en-us@2",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "one-piece-en@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "one-piece-json-document@1",
-        adapter_origin: "production",
-      },
-      {
-        adapter_version: "one-piece-json-document@2",
-        adapter_origin: "production",
-      },
-    ]);
+    ).all().map((row) => ({ ...row }));
+    assert.deepEqual(versions, expected);
+    assert.deepEqual(
+      versions
+        .filter(({ adapter_version }) =>
+          /^(one-piece-en|fusion-world-en|digimon-en|gundam-en-asia|gundam-en-us)@\d+$/u
+            .test(adapter_version) &&
+          !/-card-document@1$/u.test(
+            versions.find((row) => row.adapter_version === adapter_version)
+              .parser_contract,
+          )
+        )
+        .map(({ adapter_version, request_capacity }) => [
+          adapter_version,
+          request_capacity,
+        ]),
+      [
+        ["digimon-en@7", 5000],
+        ["fusion-world-en@9", 15000],
+        ["gundam-en-asia@7", 5000],
+        ["gundam-en-us@7", 5000],
+        ["one-piece-en@6", 10000],
+      ],
+    );
     assert.throws(
       () =>
         database.exec(
           `UPDATE source_adapter_versions
            SET parser_contract = 'mutated'
-           WHERE adapter_version = 'one-piece-en@1'`,
+           WHERE adapter_version = 'one-piece-en@6'`,
         ),
       /source_adapter_version_immutable/u,
     );

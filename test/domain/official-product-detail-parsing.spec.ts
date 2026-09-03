@@ -8,7 +8,7 @@ async function parseGundamProductDetail(
   html: string,
   url: string,
 ): Promise<unknown> {
-  const adapter = requiredSourceAdapter("gundam-en-asia@6");
+  const adapter = requiredSourceAdapter("gundam-en-asia@7");
   const observations = await adapter.parseBytes!(
     new TextEncoder().encode(html),
     {

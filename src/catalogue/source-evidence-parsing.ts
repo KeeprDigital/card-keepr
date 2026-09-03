@@ -3,7 +3,7 @@ import { canonicalJson, sha256, utf8 } from "./serialization";
 import {
   assertAdapterBinding,
   assertAdapterRequestSurface,
-  requiredLiveSourceAdapter,
+  requiredSourceAdapter,
 } from "./source-adapters";
 import {
   publicObservationSet,
@@ -49,7 +49,7 @@ export async function parseSnapshot(
       "The requested Source Snapshot does not exist.",
     );
   }
-  const adapter = requiredLiveSourceAdapter(adapterVersion);
+  const adapter = requiredSourceAdapter(adapterVersion);
   if (adapter.adapterVersion !== snapshot.adapter_version) {
     throw new AdministrationProblem(
       422,
@@ -192,7 +192,7 @@ export async function discoverSnapshotRequests(
   if (snapshot === null) {
     throw new Error("Source Snapshot disappeared before request discovery.");
   }
-  const adapter = requiredLiveSourceAdapter(adapterVersion);
+  const adapter = requiredSourceAdapter(adapterVersion);
   assertAdapterBinding(adapter, {
     sourceLineage: snapshot.source_lineage,
     supportedGame: snapshot.supported_game,

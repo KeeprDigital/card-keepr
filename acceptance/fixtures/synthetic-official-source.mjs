@@ -442,7 +442,7 @@ function officialBandaiDataset(
   requestUrl,
   requestSurface = null,
 ) {
-  // The live Digimon adapters (digimon-en@6 and @7) pin their current and
+  // The live Digimon adapter (digimon-en@7) pins its current and
   // historical restriction publications to one live URL, so that page must
   // retain identical bytes whichever surface asked for it — it therefore
   // publishes no surface-specific payload. The ?view=history variant is

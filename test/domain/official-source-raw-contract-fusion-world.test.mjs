@@ -5,7 +5,6 @@ import {
   assertAdapterBinding,
   installedSourceAdapterRegistrations,
   requiredActiveSourceAdapter,
-  requiredLiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
 } from "../../src/catalogue/source-adapters.ts";

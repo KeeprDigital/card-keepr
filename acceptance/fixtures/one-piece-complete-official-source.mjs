@@ -1,6 +1,6 @@
 const marker = "card-keepr-one-piece-complete-v1";
 const errataMarker = "card-keepr-one-piece-complete-errata-v1";
-// The live One Piece adapters (one-piece-en@5 and @6) pin their discovery
+// The live One Piece adapter (one-piece-en@6) pins its discovery
 // root at the live series redirect target.
 const discoveryRootSeries = "569116";
 

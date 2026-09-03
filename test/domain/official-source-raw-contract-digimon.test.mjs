@@ -8,7 +8,6 @@ import {
   assertAdapterBinding,
   installedSourceAdapterRegistrations,
   requiredActiveSourceAdapter,
-  requiredLiveSourceAdapter,
   requiredSourceAdapter,
   sourceAdapterRegistrations,
 } from "../../src/catalogue/source-adapters.ts";
@@ -21,13 +20,11 @@ import syntheticOfficialSource, {
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";
 import {
   registeredProductionAdapters,
-  retainedOfficialSourceFixture,
   retainedLegalityRules,
   restructuredStageDigest,
   retainedRestructuredParse,
   retainedRestructuredRequests,
   stageRecordSummaries,
-  exactMessage,
   retainedProductDetail,
 } from "./official-source-raw-contract-shared.mjs";
 
@@ -458,8 +455,8 @@ test("the restructured Digimon complete leaf retains vanilla Cards without Effec
 });
 
 // The nested Related Cards block inside a live Q&A answer truncated the whole
-// popup inventory for the digimon-en@6 parser, so these leaves are the exact
-// bytes that the optional-card-field generation had to learn to read.
+// popup inventory before the optional-card-field generation, so these leaves
+// are the exact bytes that generation had to learn to read.
 const digimonRelatedQaLeafUrl =
   "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black";
 
@@ -592,22 +589,6 @@ test("active Digimon leaves model unconstrained and bonus-token printed vocabula
         raw_condition: "Red Yellow 0 from Lv.2",
       },
     ],
-  );
-});
-
-test("the predecessor Digimon adapter still truncates the nested Related Cards leaf", () => {
-  const frozen = requiredSourceAdapter("digimon-en@6");
-  const fixture = retainedOfficialSourceFixture(
-    "digimon-en-card-list-related-qa-leaf",
-  );
-  assert.throws(
-    () =>
-      frozen.parseBytes(fixture.bytes, {
-        mediaType: fixture.metadata.content_type,
-        url: digimonRelatedQaLeafUrl,
-        requestId: `digimon-en:listing:${restructuredStageDigest}`,
-      }),
-    exactMessage("Official Digimon Card Q&A answer is structurally incomplete."),
   );
 });
 

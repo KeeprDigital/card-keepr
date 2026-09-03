@@ -44,12 +44,12 @@ answers may nest related-card lists that are retained as explicit
 related-card evidence alongside the Appmon crossover digivolution and
 Link DP bonus vocabulary.
 
-The fusion live-shape generation (`fusion-world-en@8`) models the five live
+The fusion live-shape generation (`fusion-world-en@9`) models the five live
 page shapes retained by the third full-scale production run, including the
-pinned legality-history restriction lift. The issue-63 request-capacity
-generation (`fusion-world-en@9`) parses byte-for-byte like
-`fusion-world-en@8` and differs only in its immutable request capacity,
-sized for the legitimate production Fusion World request graph.
+pinned legality-history restriction lift, and declares the issue-63 request
+capacity sized for the legitimate production Fusion World request graph.
+`one-piece-en@6` declares the request capacity sized for the first
+production One Piece run of 2026-09-03 (#134).
 
 These registrations establish request, byte, parser, graph, and surface
 coverage contracts; they do not authorize a shared normalized JSON envelope.
@@ -67,20 +67,16 @@ contradictory wording, and free-form notices without the exact versioned field
 contract fail closed. A structurally proven empty legality surface may
 establish complete empty coverage.
 
-`one-piece-en@5` and `@6`, `digimon-en@6` and `@7`, and the Gundam `@6`
-and `@7` versions explicitly own both Catalogue and standalone Official
-Errata reconciliation areas. A successful run records freshness
-independently for `cards-and-printings` and `errata`; neither area is
-inferred from the adapter version string. The reconciliation areas are
-registration data declared beside each version (live versions on their
-lineage contract, retired versions in
-`src/catalogue/retired-source-adapter-versions.ts`). `fusion-world-en@8`
-and `@9` own Catalogue coverage only: the live Fusion World EN site no
-longer publishes a Card Errata surface (its former
-`/fw/en/rules/errata-card/` URL returns 404).
+`one-piece-en@6`, `digimon-en@7`, and the Gundam `@7` versions explicitly
+own both Catalogue and standalone Official Errata reconciliation areas. A
+successful run records freshness independently for `cards-and-printings`
+and `errata`; neither area is inferred from the adapter version string. The
+reconciliation areas are registration data declared beside each version on
+its lineage contract. `fusion-world-en@9` owns Catalogue coverage only: the
+live Fusion World EN site no longer publishes a Card Errata surface (its
+former `/fw/en/rules/errata-card/` URL returns 404).
 
-The live-product generation (`one-piece-en@5`, `digimon-en@6`, the Gundam
-`@6` versions, and every later version) reads the live product detail pages:
+Every registered production version reads the live product detail pages:
 every game now publishes its product identity through the document title
 (the leading `h1` is the site logo), official codes are demonstrated as
 bracketed title suffixes, and the listings sweep accessory publications.
@@ -90,14 +86,16 @@ Card-associated publications are promoted to Products; accessory pages
 by URL vocabulary or promoted to Products.
 
 Before Go-Live (ADR 0008) each Source Lineage keeps exactly one Source
-Adapter Version, edited in place; no predecessor is parseable and no retired
-registration exists. The predecessor versions (`one-piece-en@5`,
-`fusion-world-en@8`, `digimon-en@6`, and the Gundam `@6` versions) and the
-22 retired registrations still present in the tree are removed by #135. From Go-Live, ADR 0004 applies: parser
+Adapter Version, edited in place: `one-piece-en@6`, `fusion-world-en@9`,
+`digimon-en@7`, `gundam-en-asia@7`, and `gundam-en-us@7`. No predecessor is
+parseable and no retired registration exists; #135 removed the predecessor
+versions and the 22 retired registrations, the retirement runbook, and the
+retired-runs query. A Source Snapshot is reparsed only by its exact
+capturing version, and an unregistered version is refused with
+`adapter_not_supported`. From Go-Live, ADR 0004 applies: parser
 implementation is retained for the active version and its immediate
 predecessor, older versions are retired with their registration kept, and
-reparsing retained Source Snapshots is done by registering a new version;
-see `docs/runbooks/adapter-version-retirement.md`.
+reparsing retained Source Snapshots is done by registering a new version.
 
 An Ingestion Run retains one canonical immutable Evidence Plan wrapper with a
 separate plan for every selected Source Lineage. Each complete production plan

@@ -3,9 +3,6 @@ import {
   officialRawAdapterContracts,
 } from "./product-release-source-adapters.ts";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
-import {
-  retiredSourceAdapterVersions,
-} from "./retired-source-adapter-versions.ts";
 import { requiredOfficialSourceScope } from "./official-source-scope.ts";
 
 export type OfficialSourceContract = Readonly<{
@@ -50,11 +47,6 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;
-  // ADR 0004: a retired Source Adapter Version keeps its registration so
-  // retained evidence stays attributable, but its parser implementation has
-  // been removed. It carries no parse, discovery, or request-surface
-  // members and the runtime refuses to capture or parse under it.
-  retired?: true;
   parse?: (
     document: unknown,
   ) => readonly unknown[] | Promise<readonly unknown[]>;
@@ -84,13 +76,17 @@ export type SourceAdapterRegistration = Readonly<{
 // discovery alone.
 export const globalEmergencySourceRequestCeiling = 25_000;
 
-// Request capacity is an immutable policy of each exact Source Adapter
-// Version, counted per Source Lineage over unique Source Request identities.
-// Versions registered before issue #63 keep the historical 5,000-request
-// behavior; a larger capacity requires a new immutable version registered
-// here and in the source_adapter_versions seed rows in migrations/.
+// Request capacity is a policy of each exact Source Adapter Version, counted
+// per Source Lineage over unique Source Request identities. Versions without
+// a declared capacity keep the historical 5,000-request behavior. Before
+// Go-Live (ADR 0008) a capacity is edited in place, here and in the
+// source_adapter_versions seed rows in migrations/0001_baseline.sql; from
+// Go-Live it is immutable and a larger capacity requires a new version.
 const historicalSourceRequestCapacity = 5_000;
 const declaredSourceRequestCapacities: ReadonlyMap<string, number> = new Map([
+  // The first production One Piece run of 2026-09-03 discovered 4,699
+  // requests and paused at the historical 5,000 bound (issue #134).
+  ["one-piece-en@6", 10_000],
   // The production Fusion World graph legitimately exceeds the historical
   // bound (issue #62 retained 3,946 detail and 984 image requests at the
   // 5,000 cutoff before completion).
@@ -221,8 +217,7 @@ export function assertOfficialSourceUrl(
   return url;
 }
 
-// The registration facts every production raw-catalogue version shares,
-// live or retired.
+// The registration facts every production raw-catalogue version shares.
 function productionCatalogueRegistration(adapter: Readonly<{
   adapterVersion: string;
   sourceLineage: string;
@@ -293,10 +288,6 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
           imagePathnamePrefixes: adapter.imagePathnamePrefixes,
           requiredSurfaces: adapter.requiredSurfaces,
         },
-      })),
-      ...retiredSourceAdapterVersions.map((adapter) => ({
-        ...productionCatalogueRegistration(adapter),
-        retired: true as const,
       })),
       ...[
         {
@@ -508,18 +499,15 @@ const activeOfficialRawAdapterVersions = new Set(
 );
 
 // Registrations that may start new collection: everything installed except
-// retired versions and the superseded (predecessor) raw contracts, which
-// remain parseable for retained-snapshot reprocessing only.
+// any superseded (predecessor) raw contract. Before Go-Live (ADR 0008) no
+// predecessor is registered, so this equals the installed set.
 export const sourceAdapterRegistrations: readonly SourceAdapterRegistration[] =
   Object.freeze(
     installedSourceAdapterRegistrations.filter((adapter) =>
-      adapter.retired !== true &&
-      (
-        adapter.origin !== "production" ||
-        adapter.reconciliationCapability !== "catalogue" ||
-        typeof adapter.parseBytes !== "function" ||
-        activeOfficialRawAdapterVersions.has(adapter.adapterVersion)
-      )
+      adapter.origin !== "production" ||
+      adapter.reconciliationCapability !== "catalogue" ||
+      typeof adapter.parseBytes !== "function" ||
+      activeOfficialRawAdapterVersions.has(adapter.adapterVersion)
     ),
   );
 
@@ -550,31 +538,6 @@ export function requiredSourceAdapter(
   return adapter;
 }
 
-function retiredAdapterVersionProblem(
-  adapterVersion: string,
-): AdministrationProblem {
-  return new AdministrationProblem(
-    422,
-    "adapter_version_retired",
-    `Source Adapter Version ${adapterVersion} is registered but retired; register a new version to reparse retained Source Snapshots (ADR 0004).`,
-  );
-}
-
-// Resolves an installed registration that still carries its parser: every
-// capture, parse, and discovery path must refuse a retired version
-// explicitly instead of falling through to another contract (ADR 0004).
-// Reconciliation reads and diagnostics keep using requiredSourceAdapter,
-// which resolves retired registrations.
-export function requiredLiveSourceAdapter(
-  adapterVersion: string,
-): SourceAdapterRegistration {
-  const adapter = requiredSourceAdapter(adapterVersion);
-  if (adapter.retired === true) {
-    throw retiredAdapterVersionProblem(adapterVersion);
-  }
-  return adapter;
-}
-
 export function adapterReconciliationAreas(
   adapter: SourceAdapterRegistration,
 ): readonly ("catalogue" | "errata")[] {
@@ -591,9 +554,6 @@ export function requiredActiveSourceAdapter(
 ): SourceAdapterRegistration {
   const adapter = activeAdapters.get(adapterVersion);
   if (adapter === undefined) {
-    if (installedAdapters.get(adapterVersion)?.retired === true) {
-      throw retiredAdapterVersionProblem(adapterVersion);
-    }
     throw new AdministrationProblem(
       422,
       "adapter_not_supported",
