@@ -332,7 +332,7 @@ test("sequential selected-game publications retain the complete current catalogu
     {
       game: "fusion-world",
       lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@1",
+      adapter: "fixture-fusion-world-json@2",
     },
   );
   const fusion = await reconcile(fusionRun.id);
@@ -679,7 +679,7 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     state: "collecting",
     linked_run_id: run.id,
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     plan_origin: "synthetic_fixture",
     expected_current_revision_id: currentRevision,
   });

@@ -32,7 +32,7 @@ test("authenticated Legality Status indexes evidence linearly at the 16,384-rule
     game: "one-piece",
     profile: "one-piece@1",
     lineage: "one-piece-en",
-    adapter: "fixture-one-piece-json@1",
+    adapter: "fixture-one-piece-json@3",
     snapshotId: "srcsnap_api_maximum_evidence",
     observationSetId: "srcset_api_maximum_evidence",
   }));

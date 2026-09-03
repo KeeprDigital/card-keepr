@@ -76,7 +76,7 @@ test("the repository CLI rejects Official Errata authority outside the documente
 
   const untrustedRun = await collectFixtureSource(
     {
-      adapter: "fixture-one-piece-json@1",
+      adapter: "fixture-one-piece-json@3",
       idempotencyKey: "retain-untrusted-generic-surface",
       requestId: "untrusted-generic",
       url: "https://publisher.example/claims/untrusted-card-list.json",
@@ -282,7 +282,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
 
   const seedRun = await collectFixtureSource(
     {
-      adapter: "fixture-one-piece-json@1",
+      adapter: "fixture-one-piece-json@3",
       idempotencyKey: "seed-published-errata-targets",
       requestId: "published-card-list",
       url: "https://synthetic-fixture.invalid/card-list",
@@ -717,7 +717,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
 
   const refreshRun = await collectFixtureSource(
     {
-      adapter: "fixture-one-piece-json@1",
+      adapter: "fixture-one-piece-json@3",
       idempotencyKey: "catalogue-refresh-after-repeated-errata",
       requestId: "published-card-list-refreshed",
       url: "https://synthetic-fixture.invalid/card-list-refreshed",

@@ -79,7 +79,7 @@ test("applied D1 request copies and owning run identities are immutable", async 
          game_profile_version, adapter_version, request_plan_json,
          plan_origin
        ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-         'one-piece-json-document@1', ?, 'production')`,
+         'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
     ).bind(
       runId,
       JSON.stringify({
@@ -222,7 +222,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
            game_profile_version, adapter_version, request_plan_json,
            plan_origin
          ) VALUES (?, 'one-piece-en', 'one-piece', 'one-piece@1',
-           'one-piece-json-document@1', ?, 'production')`,
+           'fixture-one-piece-json@3', ?, 'synthetic_fixture')`,
       ).bind(runId, plan),
     ),
     testEnv.CATALOGUE_DB.prepare(
@@ -255,7 +255,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
          'https://en.onepiece-cardgame.com/cardlist/', '{}', ?, '[]',
          '2026-08-01T00:00:01.000Z', 200, '{}', 'application/json', ?,
          2, 'source-snapshots/collection-owner.bin', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'one-piece-json-document@1', NULL)`,
+         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', NULL)`,
     ).bind(sourceRunId, "1".repeat(64), "2".repeat(64)),
     testEnv.CATALOGUE_DB.prepare(
       `INSERT INTO source_parse_operations (
@@ -264,7 +264,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
          parsed_at, state, content_digest, content_byte_length,
          observation_count
        ) VALUES ('srcparse_collection_owner', 'srcsnap_collection_owner',
-         'one-piece-json-document@1', 'collection',
+         'fixture-one-piece-json@3', 'collection',
          'collection-owner-parse', 'srcobsset_collection_owner',
          'source-observations/collection-owner.json',
          '2026-08-01T00:00:02.000Z', 'finalized', ?, 2, 1)`,
@@ -278,7 +278,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
        ) VALUES ('srcobsset_collection_owner',
          'srcparse_collection_owner', 'srcsnap_collection_owner',
          'one-piece-en', 'one-piece', 'one-piece@1',
-         'one-piece-json-document@1', '2026-08-01T00:00:02.000Z', ?, 2,
+         'fixture-one-piece-json@3', '2026-08-01T00:00:02.000Z', ?, 2,
          'source-observations/collection-owner.json', 1)`,
     ).bind("3".repeat(64)),
   ]);
@@ -288,7 +288,7 @@ test("an Official Source Collection Plan cannot freeze another run's discovery e
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     game_profile_version: "one-piece@1",
-    adapter_version: "one-piece-json-document@1",
+    adapter_version: "fixture-one-piece-json@3",
     discovery_observation_set_id: "srcobsset_collection_owner",
     requests: [],
   });
@@ -470,8 +470,8 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
          game_profile_version, adapter_version, request_plan_json,
          plan_origin
        ) VALUES ('run_upgraded_legality_guard', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'one-piece-json-document@1', ?,
-         'production')`,
+         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', ?,
+         'synthetic_fixture')`,
     ).bind(requestPlan),
     scratchDatabase.prepare(
       `INSERT INTO source_requests (
@@ -508,7 +508,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
          '[]', '2026-08-01T00:00:01.000Z', 200, '{}',
          'application/json', ?, 2,
          'source-snapshots/upgraded-legality-guard.bin', 'one-piece-en',
-         'one-piece', 'one-piece@1', 'one-piece-json-document@1', NULL)`,
+         'one-piece', 'one-piece@1', 'fixture-one-piece-json@3', NULL)`,
     ).bind("5".repeat(64), "6".repeat(64)),
     scratchDatabase.prepare(
       `INSERT INTO source_parse_operations (
@@ -517,7 +517,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
          parsed_at, state, content_digest, content_byte_length,
          observation_count
        ) VALUES ('srcparse_upgraded_legality_guard',
-         'srcsnap_upgraded_legality_guard', 'one-piece-json-document@1',
+         'srcsnap_upgraded_legality_guard', 'fixture-one-piece-json@3',
          'collection', 'upgraded-legality-guard-parse',
          'srcobsset_upgraded_legality_guard',
          'source-observations/upgraded-legality-guard.json',
@@ -532,7 +532,7 @@ test("a fresh D1 enforces full lowercase digests and canonical revision rule ide
        ) VALUES ('srcobsset_upgraded_legality_guard',
          'srcparse_upgraded_legality_guard',
          'srcsnap_upgraded_legality_guard', 'one-piece-en', 'one-piece',
-         'one-piece@1', 'one-piece-json-document@1',
+         'one-piece@1', 'fixture-one-piece-json@3',
          '2026-08-01T00:00:02.000Z', ?, 2,
          'source-observations/upgraded-legality-guard.json', 1)`,
     ).bind("7".repeat(64)),
@@ -1004,7 +1004,7 @@ test("a versioned production adapter derives and exports an exact representable 
   const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
-    adapter_version: "fixture-fusion-world-json@1",
+    adapter_version: "fixture-fusion-world-json@2",
     idempotency_key: "seed-production-legality-card",
     requests: [{
       id: "seed-card",
@@ -1336,7 +1336,7 @@ test("the One Piece production release surface publishes release timing through 
   const seeded = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "seed-production-one-piece-release-card",
     requests: [{
       id: "seed-card",

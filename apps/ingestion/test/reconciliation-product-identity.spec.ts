@@ -508,12 +508,12 @@ test("Product observations and disappearance remain scoped to their Source Linea
   const asiaSource = {
     game: "gundam",
     lineage: "gundam-en-asia",
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
   };
   const usSource = {
     game: "gundam",
     lineage: "gundam-en-us",
-    adapter: "fixture-gundam-en-us-json@1",
+    adapter: "fixture-gundam-en-us-json@2",
   };
   const asiaRun = await collect(
     "/reconciliation/gundam-product-asia",
@@ -641,7 +641,7 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
     {
       game: "gundam",
       lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@1",
+      adapter: "fixture-gundam-en-us-json@2",
     },
   );
   const usCandidate = await reconcile(usRun.id);
@@ -654,7 +654,7 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-asia",
-        adapter_version: "fixture-gundam-en-asia-json@1",
+        adapter_version: "fixture-gundam-en-asia-json@2",
         requests: [
           {
             id: "asia-product",
@@ -669,7 +669,7 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
       {
         supported_game: "gundam",
         source_lineage: "gundam-en-us",
-        adapter_version: "fixture-gundam-en-us-json@1",
+        adapter_version: "fixture-gundam-en-us-json@2",
         requests: [
           {
             id: "us-card",
@@ -800,7 +800,7 @@ test("a Digimon Release with unknown region remains schema-valid in the export",
     {
       game: "digimon",
       lineage: "digimon-en",
-      adapter: "fixture-digimon-json@1",
+      adapter: "fixture-digimon-json@2",
     },
   );
   const candidate = await reconcile(run.id);

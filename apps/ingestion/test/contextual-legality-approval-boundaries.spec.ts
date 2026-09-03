@@ -675,7 +675,7 @@ test("approval rejects a partial candidate when a carried-forward game's Legalit
   const started = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "legality-clock-carried-game-partial",
     requests: [{
       id: "cards",

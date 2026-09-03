@@ -105,7 +105,7 @@ test("every invalid capacity extension returns its explicit problem document", a
   const collecting = await fixtureEvidenceRequest({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "capacity_extension_collecting_001",
     requests: [
       { id: "cards", url: "https://official-source.invalid/cards" },

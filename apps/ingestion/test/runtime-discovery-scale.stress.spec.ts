@@ -73,7 +73,7 @@ test("dynamic discovery scopes each Source Adapter Version capacity to its ownin
       {
         supported_game: "fusion-world",
         source_lineage: "fusion-world-en",
-        adapter_version: "fixture-fusion-world-json@1",
+        adapter_version: "fixture-fusion-world-json@2",
         requests: [{
           id: "fusion-root",
           method: "GET",
@@ -83,7 +83,7 @@ test("dynamic discovery scopes each Source Adapter Version capacity to its ownin
       {
         supported_game: "one-piece",
         source_lineage: "one-piece-en",
-        adapter_version: "fixture-one-piece-json@1",
+        adapter_version: "fixture-one-piece-json@3",
         requests: [{
           id: "one-piece-root",
           method: "GET",

@@ -13,7 +13,7 @@ test("collection is sequential per hostname and different hostnames progress con
     {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "fixture-one-piece-json@1",
+      adapter_version: "fixture-one-piece-json@3",
       idempotency_key: "source_collection_pacing_001",
       requests: [
         {

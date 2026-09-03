@@ -1804,10 +1804,12 @@ test("production coverage rejects keyword-only HTML without structural entries",
 });
 
 test("the aggregate JSON adapter is fixture-only and cannot claim official coverage", () => {
+  // No production registration parses a decoded JSON document; the
+  // aggregate document parser belongs to synthetic fixture adapters only.
   assert.equal(
-    registeredProductionAdapters().some(
-      ({ adapterVersion }) =>
-        adapterVersion === "one-piece-json-document@1",
+    installedSourceAdapterRegistrations.some(
+      ({ origin, parse }) =>
+        origin === "production" && typeof parse === "function",
     ),
     false,
   );

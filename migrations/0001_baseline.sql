@@ -4502,10 +4502,11 @@ VALUES (1, 'ready', NULL, NULL);
 -- Source Adapter Version registrations, in registration order. This list
 -- must equal installedSourceAdapterRegistrations in
 -- src/catalogue/source-adapters.ts. Before Go-Live (ADR 0008) each Source
--- Lineage registers exactly one production Source Adapter Version and a
--- capacity change edits its row here in place; retired and predecessor
--- rows were removed under #135 and one-piece-en@6 was raised to 10000
--- under #134.
+-- Lineage registers exactly one production Source Adapter Version and one
+-- synthetic fixture adapter (the -capped and -large fixtures are distinct
+-- behaviours, not versions), and a capacity change edits its row here in
+-- place; retired and predecessor rows were removed under #135 and
+-- one-piece-en@6 was raised to 10000 under #134.
 INSERT INTO source_adapter_versions (
   adapter_version,
   source_lineage,
@@ -4515,32 +4516,20 @@ INSERT INTO source_adapter_versions (
   adapter_origin,
   request_capacity
 ) VALUES
-  ('one-piece-json-document@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-card-document@1', 'production', 5000),
-  ('one-piece-json-document@2', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-card-document@1', 'production', 5000),
-  ('fixture-one-piece-json@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fusion-world-en@1', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'fusion-world-card-document@1', 'production', 5000),
-  ('digimon-en@1', 'digimon-en', 'digimon', 'digimon@1', 'digimon-card-document@1', 'production', 5000),
-  ('gundam-en-asia@1', 'gundam-en-asia', 'gundam', 'gundam@1', 'gundam-card-document@1', 'production', 5000),
-  ('gundam-en-us@1', 'gundam-en-us', 'gundam', 'gundam@1', 'gundam-card-document@1', 'production', 5000),
-  ('fixture-fusion-world-json@1', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fixture-digimon-json@1', 'digimon-en', 'digimon', 'digimon@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-asia-json@1', 'gundam-en-asia', 'gundam', 'gundam@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-us-json@1', 'gundam-en-us', 'gundam', 'gundam@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fixture-one-piece-json@2', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
-  ('fixture-one-piece-json-capped@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 5000),
   ('one-piece-official-errata-html@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-official-errata-html@1', 'production', 5000),
-  ('fixture-one-piece-official-errata-json@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-official-errata-fixture@1', 'synthetic_fixture', 5000),
-  ('fixture-one-piece-json@3', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-fusion-world-json@2', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-digimon-json@2', 'digimon-en', 'digimon', 'digimon@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-asia-json@2', 'gundam-en-asia', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
-  ('fixture-gundam-en-us-json@2', 'gundam-en-us', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
   ('one-piece-en@6', 'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-en-restructured-complete-catalogue@6', 'production', 10000),
   ('gundam-en-asia@7', 'gundam-en-asia', 'gundam', 'gundam@1', 'gundam-en-asia-restructured-complete-catalogue@6', 'production', 5000),
   ('gundam-en-us@7', 'gundam-en-us', 'gundam', 'gundam@1', 'gundam-en-us-restructured-complete-catalogue@6', 'production', 5000),
   ('digimon-en@7', 'digimon-en', 'digimon', 'digimon@1', 'digimon-en-restructured-complete-catalogue@6', 'production', 5000),
   ('fusion-world-en@9', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'fusion-world-en-restructured-complete-catalogue@7', 'production', 15000),
-  ('fixture-fusion-world-json-large@1', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document@1', 'synthetic_fixture', 15000);
+  ('fixture-one-piece-official-errata-json@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-official-errata-fixture@1', 'synthetic_fixture', 5000),
+  ('fixture-one-piece-json@3', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
+  ('fixture-one-piece-json-capped@1', 'one-piece-en', 'one-piece', 'one-piece@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
+  ('fixture-fusion-world-json@2', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
+  ('fixture-fusion-world-json-large@1', 'fusion-world-en', 'fusion-world', 'fusion-world@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 15000),
+  ('fixture-digimon-json@2', 'digimon-en', 'digimon', 'digimon@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
+  ('fixture-gundam-en-asia-json@2', 'gundam-en-asia', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000),
+  ('fixture-gundam-en-us-json@2', 'gundam-en-us', 'gundam', 'gundam@1', 'synthetic-fixture-card-document-with-legality@2', 'synthetic_fixture', 5000);
 
 INSERT INTO catalogue_schema_state (singleton, migration_level)
 VALUES (1, 1);

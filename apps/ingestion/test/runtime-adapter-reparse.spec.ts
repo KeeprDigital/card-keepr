@@ -16,77 +16,60 @@ import {
 
 installRuntimeSuite();
 
-test("every pinned aggregate adapter retains its immutable parser contract", () => {
-  const pinned = [
-    "one-piece-json-document@1",
-    "one-piece-json-document@2",
-    "fusion-world-en@1",
-    "digimon-en@1",
-    "gundam-en-asia@1",
-    "gundam-en-us@1",
-  ];
-  for (const adapterVersion of pinned) {
-    const adapter = requiredSourceAdapter(adapterVersion);
-    expect(adapter, adapterVersion).toBeDefined();
-    expect(adapter?.maximumSnapshotBytes, adapterVersion).toBe(1024 * 1024);
-    expect(adapter?.parse, adapterVersion).toBeTypeOf("function");
-    expect(
-      adapter?.parse?.({
-        cards: [{ card: adapterVersion }],
-        product_surfaces: [{
-          product: "must-not-be-added-by-the-pinned-parser",
-        }],
-      }),
-      adapterVersion,
-    ).toEqual([{ card: adapterVersion }]);
-  }
-});
-
 test.each([
   {
-    adapter: "one-piece-json-document@1",
-    fixture: "fixture-one-piece-json@1",
+    adapter: "fixture-one-piece-json-capped@1",
+    fixture: "fixture-one-piece-json@3",
     game: "one-piece",
     lineage: "one-piece-en",
   },
   {
-    adapter: "one-piece-json-document@2",
-    fixture: "fixture-one-piece-json@1",
+    adapter: "fixture-one-piece-json@3",
+    fixture: "fixture-one-piece-json-capped@1",
     game: "one-piece",
     lineage: "one-piece-en",
   },
   {
-    adapter: "fusion-world-en@1",
-    fixture: "fixture-fusion-world-json@1",
+    adapter: "fixture-fusion-world-json-large@1",
+    fixture: "fixture-fusion-world-json@2",
     game: "fusion-world",
     lineage: "fusion-world-en",
   },
   {
-    adapter: "digimon-en@1",
-    fixture: "fixture-digimon-json@1",
+    adapter: "fixture-fusion-world-json@2",
+    fixture: "fixture-fusion-world-json-large@1",
+    game: "fusion-world",
+    lineage: "fusion-world-en",
+  },
+  {
+    adapter: "digimon-en@7",
+    fixture: "fixture-digimon-json@2",
     game: "digimon",
     lineage: "digimon-en",
   },
   {
-    adapter: "gundam-en-asia@1",
-    fixture: "fixture-gundam-en-asia-json@1",
+    adapter: "gundam-en-asia@7",
+    fixture: "fixture-gundam-en-asia-json@2",
     game: "gundam",
     lineage: "gundam-en-asia",
   },
   {
-    adapter: "gundam-en-us@1",
-    fixture: "fixture-gundam-en-us-json@1",
+    adapter: "gundam-en-us@7",
+    fixture: "fixture-gundam-en-us-json@2",
     game: "gundam",
     lineage: "gundam-en-us",
   },
 ])(
   "the authenticated API rejects cross-version reparsing from $fixture to $adapter",
   async ({ adapter, fixture, game, lineage }) => {
+    // Both versions are installed on the same Source Lineage; a Source
+    // Snapshot is parsed only by its exact capturing version.
+    expect(requiredSourceAdapter(adapter).sourceLineage).toBe(lineage);
     const created = await fixtureEvidenceRequest({
       supported_game: game,
       source_lineage: lineage,
       adapter_version: fixture,
-      idempotency_key: `pinned-reparse-source-${adapter}`,
+      idempotency_key: `cross-version-reparse-source-${fixture}-${adapter}`,
       requests: [{
         id: `source-${adapter}`,
         url: "https://official-source.invalid/cards",
@@ -103,7 +86,7 @@ test.each([
       "POST",
       {
         adapter_version: adapter,
-        idempotency_key: `pinned-reparse-intent-${adapter}`,
+        idempotency_key: `cross-version-reparse-intent-${fixture}-${adapter}`,
       },
     );
 
@@ -116,9 +99,9 @@ test.each([
 
 test("authenticated reparse requires the exact Digimon snapshot capture version", async () => {
   const current = requiredSourceAdapter("digimon-en@7");
-  // digimon-en@1 is an installed pinned-document version on the same
-  // lineage; digimon-en@6 is no longer registered at all (ADR 0008).
-  const unrelated = requiredSourceAdapter("digimon-en@1");
+  // fixture-digimon-json@2 is the installed synthetic fixture version on
+  // the same lineage; digimon-en@6 is no longer registered at all (ADR 0008).
+  const unrelated = requiredSourceAdapter("fixture-digimon-json@2");
   const currentDiscoveryUrl = current.requestUrlForDiscovery?.();
   if (currentDiscoveryUrl === undefined) {
     throw new Error("Digimon versioned URL contracts are unavailable");
@@ -182,7 +165,7 @@ test("authenticated reparse requires the exact Digimon snapshot capture version"
       `/v1/source-snapshots/${snapshot.id}/observations`,
       "POST",
       {
-        adapter_version: "digimon-en@1",
+        adapter_version: "fixture-digimon-json@2",
         idempotency_key: "digimon-mismatched-capture-version-reparse",
       },
     );

@@ -91,14 +91,17 @@ The digests recorded in the test:
 | Input                                        | SHA-256                                                            | Source                     |
 | -------------------------------------------- | ------------------------------------------------------------------ | -------------------------- |
 | normalized `sqlite_schema` rows              | `4e16338cc27afa79f3ac39bacee5c36ad4807bb09a41d8ea06fcf2fdc78c1bf4` | chain replay (unchanged)   |
-| seed rows of every table                     | `62bd36896ce5a7ad80f5693c3f6dd90f92869af19508b3d0711660c71fc48787` | the baseline itself        |
+| seed rows of every table                     | `f5523576e21a352acd13f70a41fe5cdb5fd067d6bd4e2abc78f1c7d0dbe5856e` | the baseline itself        |
 
 The schema digest assertion always runs. When that commit is present in the
 checkout the chain is also replayed and diffed object by object, so a
 mismatch names the object; a shallow CI clone runs the digest check alone.
 
 Under ADR 0008 the seed rows diverged from the chain: #135 removed the
-retired and predecessor `source_adapter_versions` rows from the baseline and
+retired and predecessor `source_adapter_versions` rows from the baseline,
+the pinned-JSON-document production rows and the non-legality-aware
+synthetic fixture rows were removed so each Source Lineage keeps one
+production and one fixture registration, and
 #134 raised `one-piece-en@6`'s `request_capacity` in place, so the chain's
 seed digest (`6955a52bb80e757e765b5d6db9e1db025b1e16d0f849771719ae89e2ca00b1c0`)
 no longer matches. Only the schema DDL is still proven equivalent to the

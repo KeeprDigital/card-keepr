@@ -175,7 +175,7 @@ test("a Fusion Leader publishes immutable role-labelled Printing Images and expo
     {
       game: "fusion-world",
       lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@1",
+      adapter: "fixture-fusion-world-json@2",
     },
   );
   const candidate = await reconcile(run.id);

@@ -208,11 +208,11 @@ describe("Errata rules-text lifecycle", () => {
     }
   });
 
-  test("a retired generic production Card adapter cannot self-assert Official Errata authority", async () => {
+  test("an unregistered generic Card adapter cannot self-assert Official Errata authority", async () => {
     const started = await post("/v1/ingestion-runs/evidence", {
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
-      adapter_version: "one-piece-json-document@1",
+      adapter_version: "one-piece-json-document@999",
       idempotency_key: "reject-generic-production-errata-authority",
       requests: [{
         id: "cards",
@@ -302,7 +302,7 @@ describe("Errata rules-text lifecycle", () => {
       {
         game: "gundam",
         lineage: "gundam-en-asia",
-        adapter: "fixture-gundam-en-asia-json@1",
+        adapter: "fixture-gundam-en-asia-json@2",
       },
     );
     const asia = await reconcile(asiaRun.id);
@@ -315,7 +315,7 @@ describe("Errata rules-text lifecycle", () => {
       {
         game: "gundam",
         lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
+        adapter: "fixture-gundam-en-us-json@2",
       },
     );
     const us = await reconcile(usRun.id);
@@ -334,7 +334,7 @@ describe("Errata rules-text lifecycle", () => {
       {
         game: "gundam",
         lineage: "gundam-en-asia",
-        adapter: "fixture-gundam-en-asia-json@1",
+        adapter: "fixture-gundam-en-asia-json@2",
       },
     );
     const asia = await reconcile(asiaRun.id);
@@ -347,7 +347,7 @@ describe("Errata rules-text lifecycle", () => {
       {
         game: "gundam",
         lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
+        adapter: "fixture-gundam-en-us-json@2",
       },
     );
     const us = await reconcile(usRun.id);
@@ -514,7 +514,7 @@ describe("Errata rules-text lifecycle", () => {
       {
         game: "gundam",
         lineage: "gundam-en-us",
-        adapter: "fixture-gundam-en-us-json@1",
+        adapter: "fixture-gundam-en-us-json@2",
       },
     );
     const subset = await reconcile(
@@ -1324,7 +1324,7 @@ async function collect(
   const started = await postFixtureEvidence({
     supported_game: source?.game ?? "one-piece",
     source_lineage: source?.lineage ?? "one-piece-en",
-    adapter_version: source?.adapter ?? "fixture-one-piece-json@1",
+    adapter_version: source?.adapter ?? "fixture-one-piece-json@3",
     idempotency_key: key,
     requests: [
       {

@@ -171,7 +171,7 @@ test.each([
   {
     game: "fusion-world",
     lineage: "fusion-world-en",
-    adapter: "fixture-fusion-world-json@1",
+    adapter: "fixture-fusion-world-json@2",
     scenario: "profile-fusion-world",
     profile: "fusion-world@1",
     identity: "FB01-001",
@@ -180,7 +180,7 @@ test.each([
   {
     game: "digimon",
     lineage: "digimon-en",
-    adapter: "fixture-digimon-json@1",
+    adapter: "fixture-digimon-json@2",
     scenario: "profile-digimon",
     profile: "digimon@1",
     identity: "BT1-001",
@@ -189,7 +189,7 @@ test.each([
   {
     game: "gundam",
     lineage: "gundam-en-asia",
-    adapter: "fixture-gundam-en-asia-json@1",
+    adapter: "fixture-gundam-en-asia-json@2",
     scenario: "profile-gundam",
     profile: "gundam@1",
     identity: "GD01-001",
@@ -198,7 +198,7 @@ test.each([
   {
     game: "one-piece",
     lineage: "one-piece-en",
-    adapter: "fixture-one-piece-json@1",
+    adapter: "fixture-one-piece-json@3",
     scenario: "profile-don",
     profile: "one-piece@1",
     identity: "DON!!",
@@ -251,7 +251,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
   const digimonSource = {
     game: "digimon",
     lineage: "digimon-en",
-    adapter: "fixture-digimon-json@1",
+    adapter: "fixture-digimon-json@2",
   };
   const initial = await collect(
     "/reconciliation/profile-digimon",
@@ -599,7 +599,7 @@ test("the production source-plan route rejects synthetic fixture adapters withou
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: "production-route-fixture-bypass",
     requests: [
       {
@@ -710,7 +710,7 @@ test("the profile registry strips and warns on unknown nested fields while enfor
     {
       game: "fusion-world",
       lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@1",
+      adapter: "fixture-fusion-world-json@2",
     },
   );
   const warned = await reconcile(warningRun.id);
@@ -743,7 +743,7 @@ test("the profile registry strips and warns on unknown nested fields while enfor
     {
       game: "fusion-world",
       lineage: "fusion-world-en",
-      adapter: "fixture-fusion-world-json@1",
+      adapter: "fixture-fusion-world-json@2",
     },
   );
   const invalid = await reconcile(invalidRun.id);

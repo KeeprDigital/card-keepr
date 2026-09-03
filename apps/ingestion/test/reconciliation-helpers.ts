@@ -73,7 +73,7 @@ export async function collect(
   const started = await postFixtureEvidence({
     supported_game: source?.game ?? "one-piece",
     source_lineage: source?.lineage ?? "one-piece-en",
-    adapter_version: source?.adapter ?? "fixture-one-piece-json@1",
+    adapter_version: source?.adapter ?? "fixture-one-piece-json@3",
     idempotency_key: key,
     requests: [
       {
@@ -102,7 +102,7 @@ export async function collectRequests(
   const started = await postFixtureEvidence({
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@1",
+    adapter_version: "fixture-one-piece-json@3",
     idempotency_key: key,
     requests: requests.map((request) => ({
       id: request.id,
