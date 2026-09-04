@@ -92,6 +92,7 @@ export type Diagnostic = {
   request_id: string;
   attempt_number: number;
   requested_at: string;
+  completed_at: string;
   outcome: string;
   http_status: number | null;
   retry_after_ms: number | null;
