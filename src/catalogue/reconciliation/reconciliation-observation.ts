@@ -9,8 +9,8 @@ import {
   requiredProfileContract,
   sourceFieldWarning,
   type ProfileWarning,
-} from "./shared";
-import { parsedOfficialArtworkIdentity } from "./adapters";
+} from "../shared";
+import { parsedOfficialArtworkIdentity } from "../adapters";
 import { parseRulesTextErrata, type ParsedRulesTextErratum } from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{

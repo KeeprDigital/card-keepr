@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, byteBoundedJsonArrays } from "./shared";
+import { type CatalogueCandidate, byteBoundedJsonArrays } from "../shared";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
 
 export type ProductRelationshipLifecycle = {

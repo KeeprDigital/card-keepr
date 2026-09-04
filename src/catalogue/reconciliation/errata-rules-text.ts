@@ -1,7 +1,7 @@
-import { type CatalogueCard, type CatalogueErratum, type SupportedGame, canonicalJson, sha256Text } from "./shared";
+import { type CatalogueCard, type CatalogueErratum, type SupportedGame, canonicalJson, sha256Text } from "../shared";
 // The Erratum shape lives in the leaf module `catalogue-candidate-types`; it
 // stays importable from here.
-export type { CatalogueErratum } from "./shared";
+export type { CatalogueErratum } from "../shared";
 
 export type ParsedRulesTextErratum = Readonly<{
   targetType: "card" | "printing";

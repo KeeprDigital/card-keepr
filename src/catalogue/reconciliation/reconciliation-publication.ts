@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, byteBoundedJsonArrays, retainedPayload, canonicalJson } from "./shared";
+import { type CatalogueCandidate, byteBoundedJsonArrays, retainedPayload, canonicalJson } from "../shared";
 import { reconciliationCandidatePlans, type CandidatePlanRow } from "./reconciliation-candidate-store";
 import {
   aggregateRelationshipEvidence,
@@ -15,8 +15,8 @@ import {
 import type { ReconciledCardRow, ReconciledPrintingRow } from "./reconciliation-repository";
 import { productReleaseLifecyclePlan, type ProductRelationshipLifecycle } from "./product-release-publication";
 import { applicableRulesTextErrata, erratumTargetLifecycleKey } from "./errata-rules-text";
-import { requiredSourceAdapter } from "./adapters";
-import { curatedPublicationStatements } from "./curated-revisions";
+import { requiredSourceAdapter } from "../adapters";
+import { curatedPublicationStatements } from "../curated";
 import type { NormalizedLifecycle } from "./publication-lifecycle-types";
 // The published lifecycle shape lives in the leaf module
 // `publication-lifecycle-types`; it stays importable from here.

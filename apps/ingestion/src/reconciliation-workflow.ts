@@ -1,7 +1,9 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
-import { failReconciliationWorkflow } from "../../../src/catalogue/reconciliation-candidate-store";
-import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation-workflow";
+import {
+  reconcileRetainedCardPrintingEvidence,
+  failReconciliationWorkflow,
+  type ReconciliationWorkflowParams,
+} from "../../../src/catalogue/reconciliation";
 import { canonicalJson } from "../../../src/catalogue/shared";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
 

@@ -1,4 +1,4 @@
-import { type CatalogueCard, canonicalJson } from "./shared";
+import { type CatalogueCard, canonicalJson } from "../shared";
 
 type CardFacts = Omit<CatalogueCard, "id">;
 

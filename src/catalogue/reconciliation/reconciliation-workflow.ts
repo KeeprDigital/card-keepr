@@ -1,6 +1,6 @@
-import { AdministrationProblem, canonicalJson, sha256Text } from "./shared";
+import { AdministrationProblem, canonicalJson, sha256Text } from "../shared";
 import { failReconciliationWorkflow, retainedReconciliationResult } from "./reconciliation-candidate-store";
-import { assertIdentifier } from "./source-evidence-model";
+import { assertIdentifier } from "../source-evidence/index";
 
 export type ReconciliationWorkflowParams = Readonly<{
   ingestion_run_id: string;

@@ -16,7 +16,7 @@ import {
   requiredEvidenceRun,
   type EvidenceRequestRow,
 } from "../../../src/catalogue/source-evidence-repository";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
+import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/reconciliation";
 import { canonicalJson, sha256, utf8 } from "../../../src/catalogue/shared";
 import { collectionBarrierSleepDuration, isWorkflowInstanceNotFound } from "../../../src/catalogue/collection-recovery";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";

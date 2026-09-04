@@ -7,13 +7,13 @@ import {
   sourceFreshnessKey,
   type SourceFreshnessStorageRow,
 } from "../../../src/catalogue/source-freshness";
-import { reconcileRetainedCardPrintingEvidence } from "../../../src/catalogue/card-printing-reconciliation";
-import { parseReconciliationObservation } from "../../../src/catalogue/reconciliation-observation";
-import { reconciliationPublication } from "../../../src/catalogue/reconciliation-publication";
 import {
+  reconcileRetainedCardPrintingEvidence,
+  parseReconciliationObservation,
+  reconciliationPublication,
   startOrObserveReconciliationWorkflow,
   type ReconciliationWorkflowParams,
-} from "../../../src/catalogue/reconciliation-workflow";
+} from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueRevisionIdentity } from "../../../src/catalogue/shared";
 import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
 import {

@@ -6,7 +6,7 @@ import {
   guardedAtomicBatch,
   payloadChunkStatements,
   retainedPayload,
-} from "./shared";
+} from "../shared";
 import type {
   Memberships,
   PrintingCompatibility,

@@ -17,7 +17,7 @@ import {
   type SupportedGame,
   canonicalJson,
   sha256Text,
-} from "./shared";
+} from "../shared";
 
 // The product-and-release shapes of a Catalogue Candidate live in the leaf
 // module `catalogue-candidate-types`; they stay importable from here.
@@ -36,7 +36,7 @@ export type {
   ProductWithdrawal,
   ReleasePrecision,
   ReleaseStatus,
-} from "./shared";
+} from "../shared";
 
 export type ProductReleaseEvidenceInput = {
   value: unknown;

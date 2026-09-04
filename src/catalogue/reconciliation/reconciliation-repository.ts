@@ -1,4 +1,4 @@
-import { type CatalogueCard, type CataloguePrinting, canonicalJson } from "./shared";
+import { type CatalogueCard, type CataloguePrinting, canonicalJson } from "../shared";
 import { compatibilityFields, isGundamEnglishLineage, type PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {

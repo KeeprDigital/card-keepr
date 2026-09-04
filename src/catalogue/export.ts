@@ -15,14 +15,15 @@ import {
   maximumExportRecordBytes,
   deterministicGzipStream,
 } from "./shared";
-import type {
-  NormalizedLifecycle,
-  LocatorEvidenceCollection,
-  RelationshipEvidence,
-} from "./reconciliation-publication";
+import {
+  type NormalizedLifecycle,
+  type LocatorEvidenceCollection,
+  type RelationshipEvidence,
+  typedPrintingProjections,
+  erratumTargetLifecycleKey,
+  exportErratum,
+} from "./reconciliation";
 import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
-import { typedPrintingProjections } from "./product-release-projection";
-import { erratumTargetLifecycleKey, exportErratum } from "./errata-rules-text";
 import { legalityRuleExportRecords, legalityRuleRelationshipRecords } from "./legality";
 
 const componentDefinitions = [

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter, officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
-import { validateGundamListingCollectionGraph } from "../../../src/catalogue/reconciliation-evidence";
+import { validateGundamListingCollectionGraph } from "../../../src/catalogue/reconciliation";
 import { productionSourceFixtureMarker } from "./production-source-fixture-routing";
 import {
   administrationRequest,

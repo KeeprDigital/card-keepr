@@ -1,5 +1,5 @@
 import type { Memberships } from "./reconciliation-model";
-import { canonicalJson } from "./shared";
+import { canonicalJson } from "../shared";
 
 export type RelationshipKind = "product" | "distribution_context" | "source_bucket";
 

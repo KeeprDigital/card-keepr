@@ -4,7 +4,7 @@ import type {
   EvidenceCategory,
   ProductRelationship,
 } from "./product-release-catalogue";
-import type { CuratedProvenance } from "./shared";
+import type { CuratedProvenance } from "../shared";
 
 export type PrintingProductProjection = {
   id: string;

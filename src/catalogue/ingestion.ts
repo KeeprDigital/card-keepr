@@ -38,11 +38,11 @@ import {
   reconciliationPublication,
   type PublicationEvidenceResource,
   type ReconciliationPublicationPlan,
-} from "./reconciliation-publication";
-import { digestBoundCandidatePayload } from "./reconciliation-candidate-store";
+  digestBoundCandidatePayload,
+  productReleasePublicationStatements,
+  typedPrintingProjections,
+} from "./reconciliation";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
-import { productReleasePublicationStatements } from "./product-release-publication";
-import { typedPrintingProjections } from "./product-release-projection";
 import { cardSearchChunks, cardSearchFtsQuery, cardSearchTerms, cardSearchText } from "./card-search";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
 import { adapterReconciliationAreas, requiredSourceAdapter } from "./adapters";

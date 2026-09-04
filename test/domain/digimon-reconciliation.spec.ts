@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { CatalogueCard } from "../../src/catalogue/shared";
-import { reconcileDigimonCardAuthority } from "../../src/catalogue/digimon-reconciliation";
+import { reconcileDigimonCardAuthority } from "../../src/catalogue/reconciliation";
 
 type CardFacts = Omit<CatalogueCard, "id">;
 

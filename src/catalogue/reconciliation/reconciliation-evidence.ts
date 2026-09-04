@@ -1,14 +1,14 @@
-import { canonicalJson, sha256, type SupportedGame, type LegalityRegion } from "./shared";
+import { canonicalJson, sha256, type SupportedGame, type LegalityRegion } from "../shared";
 import { parseReconciliationObservation } from "./reconciliation-model";
-import { adapterReconciliationAreas, requiredSourceAdapter, parsedOfficialArtworkIdentity } from "./adapters";
-import { evidencePlanForRequest } from "./source-evidence-repository";
+import { adapterReconciliationAreas, requiredSourceAdapter, parsedOfficialArtworkIdentity } from "../adapters";
 import {
+  evidencePlanForRequest,
   parseEvidencePlans,
   printingImageRetriesExhaustedFailureCode,
   toleratesRequestFailure,
   type EvidencePlanRequest,
-} from "./source-evidence-model";
-import { parseRetainedLegalityRules, regionForLineage, type RetainedLegalityRule } from "./legality";
+} from "../source-evidence/index";
+import { parseRetainedLegalityRules, regionForLineage, type RetainedLegalityRule } from "../legality";
 
 type PlannedRequestRow = {
   request_id: string;

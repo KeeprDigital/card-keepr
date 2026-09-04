@@ -5,10 +5,7 @@ import {
   membershipEntries,
   type RelationshipEvidenceRow,
 } from "./reconciliation-relationships";
-import type {
-  LocatorEvidence,
-  LocatorEvidenceCollection,
-} from "./reconciliation-publication";
+import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
 
 type MembershipRow = RelationshipEvidenceRow;
 
@@ -43,19 +40,15 @@ export async function relationshipDisappearanceWarnings(
     .all<MembershipRow>();
   const current = new Set(membershipEntries(memberships).map(membershipKey));
   const disappeared = new Map(
-    existing.results
-      .filter((row) => !current.has(membershipKey(row)))
-      .map((row) => [membershipKey(row), row]),
+    existing.results.filter((row) => !current.has(membershipKey(row))).map((row) => [membershipKey(row), row]),
   );
-  return [...disappeared.values()]
-    .map((row) => ({
-      code: "relationship_not_observed",
-      printing_id: printingId,
-      relationship_kind: row.relationship_kind,
-      relationship_value: row.relationship_value,
-      detail:
-        "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
-    }));
+  return [...disappeared.values()].map((row) => ({
+    code: "relationship_not_observed",
+    printing_id: printingId,
+    relationship_kind: row.relationship_kind,
+    relationship_value: row.relationship_value,
+    detail: "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
+  }));
 }
 
 export async function printingDisappearanceWarnings(
@@ -83,8 +76,7 @@ export async function printingDisappearanceWarnings(
   return result.results.map((row) => ({
     code: "record_not_observed",
     printing_id: row.id,
-    detail:
-      "The Printing was not observed in this complete run; it remains historical and is not withdrawn.",
+    detail: "The Printing was not observed in this complete run; it remains historical and is not withdrawn.",
   }));
 }
 
@@ -113,8 +105,7 @@ export async function cardDisappearanceWarnings(
   return result.results.map((row) => ({
     code: "record_not_observed",
     card_id: row.id,
-    detail:
-      "The Card was not observed in this complete run; it remains historical and is not withdrawn.",
+    detail: "The Card was not observed in this complete run; it remains historical and is not withdrawn.",
   }));
 }
 
@@ -137,9 +128,7 @@ export async function publicReconciledPrinting(
          WHERE printing_id = ? ORDER BY locator`,
       )
       .bind(printingId)
-      .all<
-        Omit<LocatorEvidence, "current"> & { current: number }
-      >(),
+      .all<Omit<LocatorEvidence, "current"> & { current: number }>(),
     database
       .prepare(
         `SELECT source_lineage, source_observation_id,
@@ -175,9 +164,7 @@ export async function publicReconciledPrinting(
       last_missing_revision_id: string | null;
     }[]
   >(() => []);
-  const allRelationshipEvidence = aggregateRelationshipEvidence(
-    memberships.results,
-  );
+  const allRelationshipEvidence = aggregateRelationshipEvidence(memberships.results);
   for (const membership of allRelationshipEvidence) {
     const key = projectionKey(membership.relationship_kind);
     if (membership.current) {
@@ -213,9 +200,7 @@ export async function publicReconciledPrinting(
 }
 
 function locatorEvidenceCollection(
-  rows: readonly (
-    Omit<LocatorEvidence, "current"> & { current: number }
-  )[],
+  rows: readonly (Omit<LocatorEvidence, "current"> & { current: number })[],
 ): LocatorEvidenceCollection {
   const evidence = rows.map((row) => ({
     ...row,
@@ -227,9 +212,7 @@ function locatorEvidenceCollection(
   };
 }
 
-function membershipKey(
-  row: Pick<MembershipRow, "relationship_kind" | "relationship_value">,
-): string {
+function membershipKey(row: Pick<MembershipRow, "relationship_kind" | "relationship_value">): string {
   return `${row.relationship_kind}\u0000${row.relationship_value}`;
 }
 
@@ -246,11 +229,7 @@ function membershipProjection<T>(create: () => T): {
 }
 
 function projectionKey(kind: MembershipRow["relationship_kind"]) {
-  return kind === "product"
-    ? "products"
-    : kind === "distribution_context"
-      ? "distribution_contexts"
-      : "source_buckets";
+  return kind === "product" ? "products" : kind === "distribution_context" ? "distribution_contexts" : "source_buckets";
 }
 
 function lifecycle(

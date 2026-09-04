@@ -1,4 +1,4 @@
-import { type CatalogueCard, canonicalJson, sha256Text } from "./shared";
+import { type CatalogueCard, canonicalJson, sha256Text } from "../shared";
 import {
   type Withdrawal,
   compatibilityFields,

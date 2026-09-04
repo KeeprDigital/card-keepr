@@ -11,7 +11,7 @@ import {
   type CuratedProvenance,
   byteBoundedJsonArrays,
   retainedPayload,
-} from "./shared";
+} from "../shared";
 import { retainedReconciliationObservation } from "./reconciliation-evidence";
 import {
   cardIdFor,
@@ -47,11 +47,7 @@ import {
   publicReconciledPrinting,
   relationshipDisappearanceWarnings,
 } from "./reconciliation-read";
-import {
-  applyPinnedCuratedRevisions,
-  CuratedRevisionSourceChangeError,
-  stripCuratedRevisionEffects,
-} from "./curated-revisions";
+import { applyPinnedCuratedRevisions, CuratedRevisionSourceChangeError, stripCuratedRevisionEffects } from "../curated";
 import { reconcileProductReleaseCatalogue } from "./product-release-catalogue";
 import {
   canonicalErratum,
@@ -61,7 +57,7 @@ import {
   mergeCatalogueErrata,
   type CatalogueErratum,
 } from "./errata-rules-text";
-import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "./legality";
+import { legalityRulesForCandidate, normalizedLegalityRuleLifecycle, resolveLegalityRuleCards } from "../legality";
 import { reconcileDigimonCardAuthority, type DigimonCardAuthority } from "./digimon-reconciliation";
 
 type ActiveRunRow = {

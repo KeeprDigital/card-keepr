@@ -6,7 +6,7 @@ import { beforeEach, expect, test } from "vitest";
 import { apiPublicBase } from "./api-fixtures";
 import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
 import { catalogueCandidateContract, type CatalogueCandidate } from "../../../src/catalogue/shared";
-import { productReleasePublicationStatements } from "../../../src/catalogue/product-release-publication";
+import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 
