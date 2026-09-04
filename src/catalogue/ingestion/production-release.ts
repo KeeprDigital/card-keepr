@@ -1,4 +1,4 @@
-import { AdministrationProblem, canonicalJson, sha256Text, SPINE_REVISION_ID } from "./shared";
+import { AdministrationProblem, canonicalJson, sha256Text, SPINE_REVISION_ID } from "../shared";
 
 export { SPINE_REVISION_ID };
 

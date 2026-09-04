@@ -3,7 +3,7 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import ingestionWorker from "../src/index";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import { fixtureCandidate } from "../../../src/catalogue/fixture";
+import { fixtureCandidate } from "../../../src/catalogue/ingestion";
 import { catalogueRevisionIdentity, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import {
   AdministrationProblem,
@@ -11,7 +11,7 @@ import {
   approveRun as approveRunDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
-} from "../../../src/catalogue/ingestion";
+} from "../../../src/catalogue/ingestion/ingestion";
 import { injectFixturePublication } from "./fixture-plan-injection";
 
 const testEnv = env as Env & {

@@ -1,5 +1,4 @@
-const repairableCatalogueRevisionCte =
-  `WITH RECURSIVE repairable_catalogue_revisions(
+const repairableCatalogueRevisionCte = `WITH RECURSIVE repairable_catalogue_revisions(
      revision_id, depth
    ) AS (
      SELECT revision.id, 0

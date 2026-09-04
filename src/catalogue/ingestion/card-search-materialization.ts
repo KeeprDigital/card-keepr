@@ -1,4 +1,4 @@
-import { cardSearchChunks, cardSearchTerms, cardSearchText } from "./read";
+import { cardSearchChunks, cardSearchTerms, cardSearchText } from "../read";
 
 type SearchableCard = {
   official_identity: { value: string };

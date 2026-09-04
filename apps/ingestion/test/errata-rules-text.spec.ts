@@ -3,7 +3,7 @@ import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
-import { fixtureCandidate } from "../../../src/catalogue/fixture";
+import { fixtureCandidate } from "../../../src/catalogue/ingestion";
 import { parseOnePieceOfficialErrataHtml } from "../../../src/catalogue/adapters";
 import { onePieceOfficialErrataHtml } from "../../../acceptance/fixtures/one-piece-official-errata-html";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";

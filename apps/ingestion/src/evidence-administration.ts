@@ -1,5 +1,8 @@
-import { AdministrationProblem } from "../../../src/catalogue/ingestion";
-import type { EvidenceParentWorkflowParams } from "../../../src/catalogue/source-evidence-model";
+import { AdministrationProblem } from "../../../src/catalogue/shared";
+import type {
+  EvidenceParentWorkflowParams,
+  EvidenceHostWorkflowParams,
+} from "../../../src/catalogue/source-evidence-model";
 import {
   classifyCollectionProgress,
   parentAttemptNumber,
@@ -8,7 +11,6 @@ import {
   type CollectionProgressFacts,
   type SafeWorkflowStatus,
 } from "../../../src/catalogue/collection-recovery";
-import type { EvidenceHostWorkflowParams } from "../../../src/catalogue/source-evidence-model";
 import {
   collectionProgressFacts,
   currentCollectionWorkflowIds,
@@ -112,9 +114,10 @@ export async function resumeEvidenceRun(
   // A freshly created instance is the new current attempt by construction;
   // classification only judges an attempt that already existed, from its
   // platform status and the persisted progress evidence.
-  const classification = acquired !== null && acquired.created
-    ? { kind: "active" as const }
-    : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
+  const classification =
+    acquired !== null && acquired.created
+      ? { kind: "active" as const }
+      : classifyCollectionProgress(acquired?.status ?? "unavailable", progress);
   if (classification.kind === "instance_paused" && acquired !== null) {
     // The Workflow instance's own paused status is a platform condition
     // distinct from a paused Ingestion Run: the same attempt resumes in
@@ -148,9 +151,7 @@ export async function resumeEvidenceRun(
   // The bound identity becomes (or replays) its append-only Workflow Attempt
   // record, so the very first parent attempt is retained exactly like every
   // recovery attempt.
-  await database.batch(workflowAttemptStatements(database, runId, [
-    workflowId,
-  ]));
+  await database.batch(workflowAttemptStatements(database, runId, [workflowId]));
   return {
     ingestion_run_id: runId,
     workflow: {
@@ -271,10 +272,7 @@ async function pauseCollectingRunWithDeadWorkflow(
 ): Promise<void> {
   const run = await requiredEvidenceRun(database, runId);
   if (run.state !== "collecting" || run.parent_workflow_id === null) return;
-  const status = await observeWorkflowStatus(
-    parentWorkflow,
-    run.parent_workflow_id,
-  );
+  const status = await observeWorkflowStatus(parentWorkflow, run.parent_workflow_id);
   const progress = await collectionProgressFacts(database, runId);
   const classification = classifyCollectionProgress(status, progress);
   if (classification.kind !== "recover") return;
@@ -345,11 +343,7 @@ async function recoverParentWorkflow(
   return {
     run: resumed,
     workflowId: resumed.parent_workflow_id,
-    acquired: await acquireParentWorkflow(
-      workflow,
-      resumed.parent_workflow_id,
-      runId,
-    ),
+    acquired: await acquireParentWorkflow(workflow, resumed.parent_workflow_id, runId),
     recovery: {
       reason,
       superseded_workflow_id: supersededWorkflowId,
@@ -358,4 +352,3 @@ async function recoverParentWorkflow(
     },
   };
 }
-

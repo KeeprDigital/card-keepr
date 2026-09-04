@@ -1,4 +1,4 @@
-import { type CatalogueCandidate, canonicalJson } from "./shared";
+import { type CatalogueCandidate, canonicalJson } from "../shared";
 
 export async function inspectCatalogueCandidate(
   database: D1Database,

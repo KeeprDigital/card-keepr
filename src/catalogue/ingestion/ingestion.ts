@@ -4,7 +4,7 @@ import {
   type BuiltCatalogueExport,
   type ExportObject,
   type SourceFreshness,
-} from "./export";
+} from "../export";
 import {
   CatalogueExportLimitError,
   catalogueCandidateContract,
@@ -19,13 +19,13 @@ import {
   AdministrationProblem,
   catalogueRevisionIdentity,
   operationalDiagnostics,
-} from "./shared";
+} from "../shared";
 import { firstCatalogueFixture, FixtureInputError, fixtureCandidate } from "./fixture";
 import {
   assertCuratedGamesUnblocked,
   curatedRevisionInspectionForRun,
   prepareCuratedRevisionRunStart,
-} from "./curated";
+} from "../curated";
 import {
   compareSourceFreshness,
   isCatalogueSourceCheck,
@@ -37,7 +37,7 @@ import {
   cardSearchFtsQuery,
   cardSearchTerms,
   cardSearchText,
-} from "./read";
+} from "../read";
 import {
   reconciliationPublication,
   type PublicationEvidenceResource,
@@ -45,12 +45,12 @@ import {
   digestBoundCandidatePayload,
   productReleasePublicationStatements,
   typedPrintingProjections,
-} from "./reconciliation";
+} from "../reconciliation";
 import { inspectCatalogueCandidate } from "./candidate-inspection";
 import { repairableCatalogueRevisionWindow } from "./catalogue-revision-retention";
-import { adapterReconciliationAreas, requiredSourceAdapter } from "./adapters";
-import { legalityPublicationStatements } from "./legality";
-import { publicationBackupReservation } from "./backup-recovery";
+import { adapterReconciliationAreas, requiredSourceAdapter } from "../adapters";
+import { legalityPublicationStatements } from "../legality";
+import { publicationBackupReservation } from "../backup-recovery";
 import { SPINE_REVISION_ID } from "./production-release";
 
 const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
@@ -1180,7 +1180,7 @@ async function rejectRunAttempt(
   return resultingRun;
 }
 
-export { AdministrationProblem } from "./shared";
+export { AdministrationProblem } from "../shared";
 
 class PublicationPrefixOwnershipError extends Error {}
 

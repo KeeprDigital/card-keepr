@@ -1,6 +1,6 @@
 import { authenticateBearer } from "../../../src/http/authentication";
+import { AdministrationProblem } from "../../../src/catalogue/shared";
 import {
-  AdministrationProblem,
   administrationStatus,
   approveRun,
   inspectCandidate,
@@ -8,9 +8,10 @@ import {
   retryPublicationCleanup,
   retryRun,
   showRun,
+  prepareProductionRelease,
+  runGuardedCardSearchRepair,
 } from "../../../src/catalogue/ingestion";
 import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
-import { prepareProductionRelease } from "../../../src/catalogue/production-release";
 import { problemResponse } from "../../../src/http/problem";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { readBoundedJsonObject } from "../../../src/http/bounded-json";
@@ -25,7 +26,6 @@ import {
   startEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
 import { showReconciledPrinting, startOrObserveReconciliationWorkflow } from "../../../src/catalogue/reconciliation";
-import { runGuardedCardSearchRepair } from "../../../src/catalogue/card-search-repair-administration";
 import {
   startOrObserveCatalogueBackupWorkflow,
   catalogueBackupAttemptStatus,

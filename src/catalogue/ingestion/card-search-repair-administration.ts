@@ -1,7 +1,7 @@
 import { repairCardSearchMaterialization, type CardSearchRepairResult } from "./card-search-materialization";
 import { repairableCatalogueRevisionTarget } from "./catalogue-revision-retention";
-import { AdministrationProblem, replayByDigest, canonicalJson } from "./shared";
-import { assertIdentifier } from "./source-evidence-model";
+import { AdministrationProblem, replayByDigest, canonicalJson } from "../shared";
+import { assertIdentifier } from "../source-evidence/index";
 
 type SearchRepairRequestRow = {
   idempotency_key: string;
