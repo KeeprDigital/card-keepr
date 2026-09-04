@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion, waitForEvidenceRun } from "./runtime-helpers";
 import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -6,13 +7,7 @@ import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
 import { pauseEvidenceRunForRequestCapacity, RequestCapacityProblem } from "../../../src/catalogue/source-evidence";
-import {
-  administrationRequest,
-  fixtureEvidenceRequest,
-  installRuntimeSuite,
-  waitForEvidenceRun,
-} from "./runtime-helpers";
-import { reconcile } from "./reconciliation-helpers";
+import { administrationRequest, fixtureEvidenceRequest, installRuntimeSuite } from "./runtime-helpers";
 import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
@@ -187,15 +182,14 @@ test("a resumed run advances through the existing completeness gates once collec
 
   // The same Ingestion Run collects its pending request and advances into
   // parsing through the unchanged completeness gates.
-  const completed = await waitForEvidenceRun(run.id, "parsing");
-  expect(completed.state).toBe("parsing");
+  const completed = await waitForCollectionCompletion(run.id);
+  expect(completed.collection_completed_at).toEqual(expect.any(String));
   expect(completed.snapshots).toHaveLength(1);
 
   // The same run continues through reconciliation with the unchanged gates
   // and awaits approval; the current Catalogue Revision is untouched
   // throughout pause, extension, and resumed collection.
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
+  await waitForEvidenceRun(run.id, "awaiting_approval");
   expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe(
     "awaiting_approval",
   );

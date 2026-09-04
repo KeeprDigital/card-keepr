@@ -16,6 +16,7 @@ import {
   stopWorker,
   waitForHealth,
 } from "./fixtures/catalogue-runtime-harness.mjs";
+import { persistedDatabaseDirectory } from "./helpers/acceptance-runtime.mjs";
 import * as schemaQueries from "./helpers/query-helpers/schema.mjs";
 import * as sourceEvidenceQueries from "./helpers/query-helpers/source-evidence.mjs";
 
@@ -659,7 +660,7 @@ async function waitForRunState(runId, expectedState, environment, worker, stateP
 }
 
 async function persistedRunDiagnostics(statePath, runId) {
-  const sqliteFiles = await sqliteFilesUnder(statePath);
+  const sqliteFiles = await sqliteFilesUnder(await persistedDatabaseDirectory(statePath));
   const failures = [];
   for (const path of sqliteFiles) {
     let database;

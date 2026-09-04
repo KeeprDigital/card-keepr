@@ -1,3 +1,5 @@
+import { pendingEvidenceRequests } from "../../../src/catalogue/source-evidence";
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -15,7 +17,6 @@ import {
   installRuntimeSuite,
   showCollection,
   waitForEvidenceCondition,
-  waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
 
@@ -92,7 +93,7 @@ test("a recorded Workflow Pause is inspectable, immutable, and resumable", async
       attempt_number: 2,
     },
   });
-  const completed = await waitForEvidenceRun(run.id, "parsing");
+  const completed = await waitForCollectionCompletion(run.id);
   expect(completed.snapshots).toHaveLength(1);
   expect(completed.workflow.current_attempt).toMatchObject({
     id: `evidence-${run.id}-resume-1`,
@@ -143,7 +144,7 @@ test("an errored parent Workflow recovers as a recorded new attempt without dupl
     },
   });
 
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   // The retained collection work is preserved, not repeated: one Source
   // Snapshot, one Source Observation Set, and exactly one successful fetch
   // attempt for the lone Source Request.
@@ -193,7 +194,7 @@ test("a terminated parent Workflow recovers with its own safe reason", async () 
       workflow_status: "terminated",
     },
   });
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.snapshots).toHaveLength(1);
 });
 
@@ -268,7 +269,7 @@ test("a bound but never-created parent instance is recreated under its own ident
     workflow: { id: `evidence-${run.id}`, attempt_number: 1 },
   });
   expect(resumed.document.recovery).toBeUndefined();
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.snapshots).toHaveLength(1);
 });
 
@@ -306,7 +307,7 @@ test("concurrent resumes of a dead Workflow cannot create competing attempts", a
     .bind(run.id)
     .first<{ count: number }>();
   expect(pauseRecords?.count).toBe(1);
-  await waitForEvidenceRun(run.id, "parsing", 20_000);
+  await waitForCollectionCompletion(run.id, 20_000);
 });
 
 test("child identity exhaustion fails only the exhausted hostname shard", async () => {
@@ -328,6 +329,13 @@ test("child identity exhaustion fails only the exhausted hostname shard", async 
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
+  const plannedRequests = await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id);
+  const exhaustedRequest = plannedRequests.find(
+    (request) => new URL(request.url).hostname === "mapping-z-official-source.invalid",
+  )!;
+  const healthyRequest = plannedRequests.find(
+    (request) => new URL(request.url).hostname === "mapping-a-official-source.invalid",
+  )!;
   const baseChildId = `evidence-host-${await sha256(
     utf8(
       canonicalJson({
@@ -360,15 +368,15 @@ test("child identity exhaustion fails only the exhausted hostname shard", async 
   const byRequest = Object.fromEntries(requestStates.results.map((row) => [row.request_id, row.state]));
   // Only the exhausted hostname's shard fails; the healthy host's request
   // is never marked failed by another shard's identity exhaustion.
-  expect(byRequest["exhausted-host"]).toBe("failed");
-  expect(byRequest["healthy-host"]).not.toBe("failed");
+  expect(byRequest[exhaustedRequest.request_id]).toBe("failed");
+  expect(byRequest[healthyRequest.request_id]).not.toBe("failed");
 });
 
 test("inspection classifies a healthy collecting Workflow without pausing it", async () => {
   const run = await createCollection("workflow_active_inspection_001", "https://official-source.invalid/cards");
   const started = await resumeDocument(run.id);
   expect(started.status).toBe(202);
-  const completed = await waitForEvidenceRun(run.id, "parsing", 20_000);
+  const completed = await waitForCollectionCompletion(run.id, 20_000);
   expect(completed.workflow.last_progress_at).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
   expect(completed.workflow.status).toBeDefined();
   // A run beyond its collection phase carries no stall classification.
@@ -395,7 +403,7 @@ test("a parent Workflow that completed with a request still pending resumes as a
   // once without touching this run's evidence.
   const parsed = await createCollection("workflow_completed_parent_donor_001", "https://official-source.invalid/cards");
   expect((await resumeDocument(parsed.id)).status).toBe(202);
-  await waitForEvidenceRun(parsed.id, "parsing", 20_000);
+  await waitForCollectionCompletion(parsed.id, 20_000);
   await clearActiveRunForNextScenario();
 
   const created = await fixtureEvidenceRequest({
@@ -416,13 +424,16 @@ test("a parent Workflow that completed with a request still pending resumes as a
   });
   expect(created.status).toBe(201);
   const run = await created.json<CollectionDocument>();
+  const pendingRequestId = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id)).find(
+    (request) => new URL(request.url).hostname === "completed-parent-official-source.invalid",
+  )!.request_id;
   expect((await resumeDocument(run.id)).status).toBe(202);
   const interrupted = await waitForEvidenceCondition(
     run.id,
     (current) =>
       current.snapshots.length === 1 &&
       current.diagnostics.some(
-        (diagnostic) => diagnostic.request_id === "pending-host" && diagnostic.outcome === "http_failure",
+        (diagnostic) => diagnostic.request_id === pendingRequestId && diagnostic.outcome === "http_failure",
       ),
     20_000,
   );
@@ -473,7 +484,10 @@ test("a parent Workflow that completed with a request still pending resumes as a
 
   const completed = await waitForEvidenceCondition(
     run.id,
-    (current) => current.state === "parsing" && current.snapshots.length === 2 && current.observation_sets.length === 2,
+    (current) =>
+      current.collection_completed_at !== null &&
+      current.snapshots.length === 2 &&
+      current.observation_sets.length === 2,
     25_000,
   );
   // Only the pending request is fetched again: the captured host keeps its
@@ -483,15 +497,15 @@ test("a parent Workflow that completed with a request still pending resumes as a
   for (const entry of completed.diagnostics) {
     outcomesByRequest.set(entry.request_id, [...(outcomesByRequest.get(entry.request_id) ?? []), entry.outcome]);
   }
-  expect(outcomesByRequest.get("captured-host")).toEqual(["success"]);
-  expect(outcomesByRequest.get("pending-host")?.sort()).toEqual(["http_failure", "success"]);
+  expect(outcomesByRequest.get("one-piece-en:discovery")).toEqual(["success"]);
+  expect(outcomesByRequest.get(pendingRequestId)?.sort()).toEqual(["http_failure", "success"]);
   const captureOperations = await sourceEvidenceQueries
     .countSourceCaptureOperationsCountForParentWorkflowThatCompletedRequestStillPendingResumesAs(env.CATALOGUE_DB)
     .bind(run.id)
     .all<{ request_id: string; count: number }>();
   expect(captureOperations.results).toEqual([
-    { request_id: "captured-host", count: 1 },
-    { request_id: "pending-host", count: 2 },
+    { request_id: "one-piece-en:discovery", count: 1 },
+    { request_id: pendingRequestId, count: 2 },
   ]);
   expect(completed.workflow.current_attempt).toMatchObject({
     id: `evidence-${run.id}-resume-2`,

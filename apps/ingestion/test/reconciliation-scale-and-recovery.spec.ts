@@ -1,25 +1,25 @@
-import { sourceRequestInsertionStatement } from "../../../src/catalogue/source-evidence/source-plan-repository";
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
-import { type CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-recovery";
+import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backup-recovery";
 import { currentCatalogueStatus } from "../../../src/catalogue/read";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { sourceRequestInsertionStatement } from "../../../src/catalogue/source-evidence/source-plan-repository";
+import ingestionWorker from "../src/index";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   collectRequests,
   expectRetainedEvidenceInvalid,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
 } from "./reconciliation-helpers";
-import ingestionWorker from "../src/index";
 
 installReconciliationSuite();
 
@@ -48,7 +48,14 @@ test("every planned request contributes exactly one provenance-bound observation
       source_snapshot_id: string;
       source_observation_set_id: string;
     }>();
-  expect(plans.results.map((row) => row.request_id)).toEqual(["partition-a", "partition-b"]);
+  const requests = await sourceEvidenceQueries
+    .sourceRequestIdentitiesInSequence(testEnv.CATALOGUE_DB, run.id)
+    .all<{ request_id: string; url: string }>();
+  expect(requests.results.map(({ url }) => url)).toEqual([
+    "https://official-source.invalid/reconciliation/base",
+    "https://official-source.invalid/reconciliation/new-locator",
+  ]);
+  expect(plans.results.map((row) => row.request_id)).toEqual(requests.results.map(({ request_id }) => request_id));
   expect(new Set(plans.results.map((row) => row.source_snapshot_id)).size).toBe(2);
   expect(new Set(plans.results.map((row) => row.source_observation_set_id)).size).toBe(2);
   await post(`/v1/ingestion-runs/${run.id}/rejection`, {
@@ -109,7 +116,15 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
         source_snapshot_id: string;
         source_observation_set_id: string;
       }>();
-    expect(partitions.results.map(({ request_id }) => request_id)).toEqual(requests.map(({ id }) => id));
+    const retainedRequests = await sourceEvidenceQueries
+      .sourceRequestIdentitiesInSequence(testEnv.CATALOGUE_DB, run.id)
+      .all<{ request_id: string; url: string }>();
+    expect(retainedRequests.results.map(({ url }) => url)).toEqual(
+      requests.map(({ scenario }) => `https://official-source.invalid/reconciliation/${scenario}`),
+    );
+    expect(partitions.results.map(({ request_id }) => request_id)).toEqual(
+      retainedRequests.results.map(({ request_id }) => request_id),
+    );
     expect(
       partitions.results.every(
         (row) =>
@@ -121,8 +136,8 @@ test("empty first, middle, and last partitions remain durable and digest-bound",
       .bind(run.id)
       .first<{ value: string }>();
     expect(digest?.value).toContain('"evidence_partitions"');
-    for (const request of requests) {
-      expect(digest?.value).toContain(`"requestId":"${request.id}"`);
+    for (const request of retainedRequests.results) {
+      expect(digest?.value).toContain(`"requestId":"${request.request_id}"`);
     }
     await post(`/v1/ingestion-runs/${run.id}/rejection`, {
       candidate_digest: requiredString(reconciled.document, "candidate_digest"),

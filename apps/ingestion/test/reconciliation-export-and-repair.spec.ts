@@ -1,27 +1,28 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as cardSearchQueries from "./query-helpers/card-search";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
   canonicalJson,
-  sha256,
   catalogueCandidateContract,
   catalogueRevisionIdentity,
+  catalogueStore,
+  sha256,
 } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
+import * as cardSearchQueries from "./query-helpers/card-search";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   get,
+  installReconciliationSuite,
   post,
   postFixtureEvidence,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
   waitForRunState,
 } from "./reconciliation-helpers";
 
@@ -225,7 +226,12 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
     });
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
-    expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      runId,
+    );
     await waitForRunState(runId, "parsing");
     const candidate = await reconcile(runId);
     expect(candidate.response.status).toBe(200);

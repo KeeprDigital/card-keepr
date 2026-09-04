@@ -1,22 +1,22 @@
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as curatedQueries from "./query-helpers/curated";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { expect, test } from "vitest";
-import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
+import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
+import * as curatedQueries from "./query-helpers/curated";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   exportComponentRecords,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
   waitForRunState,
 } from "./reconciliation-helpers";
 
@@ -487,11 +487,11 @@ test("production Evidence Plans bind discovery identity to its exact Official So
   });
 });
 
-test("the production source-plan route rejects synthetic fixture adapters without creating provenance", async () => {
+test("the source-plan route rejects unregistered adapters without creating provenance", async () => {
   const blocked = await post("/v1/ingestion-runs/evidence", {
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
-    adapter_version: "fixture-one-piece-json@3",
+    adapter_version: "unregistered-source-adapter@1",
     idempotency_key: "production-route-fixture-bypass",
     requests: [
       {
@@ -504,7 +504,7 @@ test("the production source-plan route rejects synthetic fixture adapters withou
   });
   expect(blocked.response.status).toBe(422);
   expect(blocked.document).toMatchObject({
-    code: "adapter_origin_not_permitted",
+    code: "adapter_not_supported",
   });
   const retained = await sourceEvidenceQueries
     .countIngestionEvidencePlansCount(testEnv.CATALOGUE_DB)

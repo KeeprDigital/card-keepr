@@ -1,14 +1,14 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
 import { expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   approve,
   installReconciliationSuite,
-  post,
   postFixtureEvidence,
   reconcile,
   requiredString,
@@ -65,8 +65,7 @@ for (const scenario of [
       { role: "image", url: scenario.url, headers: { accept: "*/*" } },
     ]);
     if (image === undefined) throw new Error("image request missing");
-    const resumed = await post(`/v1/ingestion-runs/${id}/collection/resume`, {});
-    expect(resumed.response.status).toBe(202);
+    await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
     await waitForRunState(id, "parsing");
 
     // The failed image is not missing catalogue facts: the candidate carries

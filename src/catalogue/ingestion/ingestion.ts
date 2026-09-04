@@ -6,11 +6,10 @@ export {
   releaseSmokeSearchQuery,
 } from "./administration-inspection";
 export { approveRun } from "./publication-lifecycle";
-export { rejectRun, retryPublicationCleanup, retryRun, showRun, startFixtureRun } from "./run-lifecycle";
+export { rejectRun, retryPublicationCleanup, retryRun, showRun } from "./run-lifecycle";
 export type {
   ApproveRunRequest,
   RejectRunRequest,
   RetryPublicationCleanupRequest,
   RetryRunRequest,
-  StartRunRequest,
 } from "./run-types";

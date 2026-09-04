@@ -1,22 +1,22 @@
-import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env } from "cloudflare:test";
 import { expect, test } from "vitest";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   collectRequests,
+  expectRetainedEvidenceInvalid,
   exportComponentRecords,
   exportManifest,
-  expectRetainedEvidenceInvalid,
-  post,
+  installReconciliationSuite,
   postFixtureEvidence,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
   waitForRunState,
 } from "./reconciliation-helpers";
 
@@ -496,7 +496,12 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
   });
   expect(mixed.response.status).toBe(201);
   const runId = requiredString(mixed.document, "id");
-  expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    runId,
+  );
   await waitForRunState(runId, "parsing");
   const candidate = await reconcile(runId);
   expect(candidate.response.status).toBe(200);

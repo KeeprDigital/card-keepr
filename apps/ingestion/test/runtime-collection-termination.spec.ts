@@ -1,3 +1,4 @@
+import { waitForCollectionCompletion } from "./runtime-helpers";
 import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -23,7 +24,6 @@ import {
   installRuntimeSuite,
   showCollection,
   waitForEvidenceCondition,
-  waitForEvidenceRun,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
 import { pauseRunAtCapacity } from "./capacity-pause-helpers";
@@ -448,7 +448,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
     await expect(terminateOutcome.json()).resolves.toMatchObject({
       code: "ingestion_run_not_paused",
     });
-    await waitForEvidenceRun(second.id, "parsing", 20_000);
+    await waitForCollectionCompletion(second.id, 20_000);
   }
   await clearActiveRunForNextScenario();
 

@@ -1,9 +1,9 @@
 import {
   catalogueStore,
-  runEventCommand,
-  runEventStatement,
-  runEventIdentitySql,
   runCompletedStageCount,
+  runEventCommand,
+  runEventIdentitySql,
+  runEventStatement,
 } from "../../../../src/catalogue/shared";
 import { bindRunFixtureStatement, seedRunFixtureStatement } from "./run-events";
 // Dedicated test queries. Tests retain binding, execution, and atomic batch composition.
@@ -537,7 +537,7 @@ export function insertAdministrationIdempotencyClaims(database: D1Database): D1P
       owner_token,
       claim_version,
       claim_expires_at
-    ) VALUES (?, 'start_ingestion_run', ?, ?, ?, 7, ?)`);
+    ) VALUES (?, 'retry_ingestion_run', ?, ?, ?, 7, ?)`);
 }
 
 export function readAdministrationIdempotencyClaimsIdempotencyKey(database: D1Database): D1PreparedStatement {
@@ -571,7 +571,7 @@ export function insertAdministrationIdempotency(database: D1Database): D1Prepare
       http_status,
       outcome,
       created_at
-    ) VALUES (?, 'start_ingestion_run', ?, ?, 201, 'success', ?)`);
+    ) VALUES (?, 'retry_ingestion_run', ?, ?, 201, 'success', ?)`);
 }
 
 export function insertAdministrationIdempotencyForSuccessfulReplayStatusRequestCorrelationStateLegalityAreExact(
@@ -585,7 +585,7 @@ export function insertAdministrationIdempotencyForSuccessfulReplayStatusRequestC
         http_status,
         outcome,
         created_at
-      ) VALUES (?, 'start_ingestion_run', ?, ?, ?, 'success', ?)`);
+      ) VALUES (?, 'retry_ingestion_run', ?, ?, ?, 'success', ?)`);
 }
 
 export function setOperationStateActiveIngestionRunIdForExpiryRepairsDanglingActiveIdentityStillWinsAtDeadline(

@@ -1,4 +1,9 @@
-import { canonicalJson, sha256Text, catalogueCandidateContract, type CatalogueCandidate } from "../shared";
+import {
+  type CatalogueCandidate,
+  canonicalJson,
+  catalogueCandidateContract,
+  sha256Text,
+} from "../../src/catalogue/shared";
 
 export const firstCatalogueFixture = "first-catalogue";
 export const firstFixtureCardId = "card_01k_first_catalogue_0001";
