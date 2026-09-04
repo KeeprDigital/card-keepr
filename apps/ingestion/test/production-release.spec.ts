@@ -1,3 +1,5 @@
+import { publishCardSearchChunksStatement } from "../../../src/catalogue/ingestion/publication-commit-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as cardSearchQueries from "./query-helpers/card-search";
@@ -29,7 +31,6 @@ test("Production Release search fixtures come from realistic revision-pinned Car
   const document = JSON.stringify({ data });
   const summary = JSON.stringify(data);
   const searchDocument = cardSearchText(data);
-  await publishedCatalogueQueries.dropGuardCataloguePublication(testEnv.CATALOGUE_DB).run();
   await testEnv.CATALOGUE_DB.batch([
     ingestionQueries
       .insertIngestionRunsForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(testEnv.CATALOGUE_DB)
@@ -52,14 +53,17 @@ test("Production Release search fixtures come from realistic revision-pinned Car
       )
       .bind(revision, cardId, summary, searchDocument),
   ]);
-  for (const chunk of cardSearchChunks(searchDocument)) {
-    await cardSearchQueries
-      .insertRevisionCardSearchChunksForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(revision, cardId, chunk.field, chunk.ordinal, chunk.text)
-      .run();
-  }
+  await publishCardSearchChunksStatement(catalogueStore(testEnv.CATALOGUE_DB), {
+    revisionId: revision,
+    chunksJson: JSON.stringify(
+      cardSearchChunks(searchDocument).map((chunk) => ({
+        card_id: cardId,
+        field_ordinal: chunk.field,
+        chunk_ordinal: chunk.ordinal,
+        search_text: chunk.text,
+      })),
+    ),
+  }).run();
 
   const query = releaseSmokeSearchQuery(document);
   expect(query).toBe("op99-002");
